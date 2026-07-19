@@ -14,6 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'search_result_cell.dart';
+import 'page_inspection_panel.dart';
 import 'search_layout.dart';
 
 class SearchResultList extends StatefulWidget {
@@ -90,9 +91,20 @@ class _SearchResultListState extends State<SearchResultList> {
                     ),
                     if (!hidePreview && selectedView != null)
                       Expanded(
-                        child: Align(
-                          alignment: Alignment.topRight,
-                          child: SearchResultPreview(view: selectedView),
+                        child: PageInspectionPanel(
+                          view: selectedView,
+                          cachedViews: widget.cachedViews,
+                          currentUserId: context
+                              .read<UserWorkspaceBloc?>()
+                              ?.state
+                              .userProfile
+                              .id,
+                          onOpen: () => bloc.add(
+                            SearchResultListEvent.openPage(
+                              pageId: selectedView.id,
+                            ),
+                          ),
+                          onClose: () => FlowyOverlay.pop(context),
                         ),
                       ),
                   ],

@@ -14,7 +14,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fixnum/fixnum.dart';
 
-import 'page_preview.dart';
+import 'page_inspection_panel.dart';
 import 'search_ask_ai_entrance.dart';
 import 'search_layout.dart';
 
@@ -57,7 +57,7 @@ class RecentViewsList extends StatelessWidget {
                     listWidth,
                   ),
                   if (!hidePreview && selectedView != null)
-                    Expanded(child: buildPreview(selectedView)),
+                    Expanded(child: buildPreview(context, selectedView)),
                 ],
               );
             },
@@ -171,17 +171,16 @@ class RecentViewsList extends StatelessWidget {
     );
   }
 
-  Widget buildPreview(ViewPB selectedView) {
-    return Align(
-      alignment: Alignment.topRight,
-      child: PagePreview(
-        key: ValueKey(selectedView.id),
-        view: selectedView,
-        onViewOpened: () {
-          selectedView.id.navigateTo();
-          onSelected();
-        },
-      ),
+  Widget buildPreview(BuildContext context, ViewPB selectedView) {
+    return PageInspectionPanel(
+      view: selectedView,
+      cachedViews: cachedViews,
+      currentUserId: currentUserId,
+      onOpen: () {
+        selectedView.id.navigateTo();
+        onSelected();
+      },
+      onClose: () => FlowyOverlay.pop(context),
     );
   }
 

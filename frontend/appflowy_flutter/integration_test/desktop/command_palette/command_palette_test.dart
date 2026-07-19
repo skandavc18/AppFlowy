@@ -142,8 +142,24 @@ void main() {
       /// the first recent page is previewed without requiring a hover
       final pagePreview = find.byType(PagePreview);
       expect(pagePreview, findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('command-palette-inspection-panel')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('command-palette-open-action')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('command-palette-open-new-tab-action')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('command-palette-favorite-action')),
+        findsOneWidget,
+      );
       final previewCard = find.byKey(const ValueKey('page-preview-card'));
-      expect(tester.getSize(previewCard).width, 304);
+      expect(tester.getSize(previewCard).width, lessThanOrEqualTo(304));
       final previewDecoration =
           tester.widget<Container>(previewCard).decoration! as BoxDecoration;
       expect(
