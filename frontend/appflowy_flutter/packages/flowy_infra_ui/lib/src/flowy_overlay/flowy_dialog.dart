@@ -19,6 +19,9 @@ class FlowyDialog extends StatelessWidget {
     this.alignment,
     this.insetPadding,
     this.width,
+    this.elevation,
+    this.shadowColor,
+    this.surfaceTintColor,
   });
 
   final Widget? title;
@@ -36,6 +39,9 @@ class FlowyDialog extends StatelessWidget {
   final EdgeInsets? insetPadding;
 
   final double? width;
+  final double? elevation;
+  final Color? shadowColor;
+  final Color? surfaceTintColor;
 
   @override
   Widget build(BuildContext context) {
@@ -48,6 +54,9 @@ class FlowyDialog extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       backgroundColor: backgroundColor ?? Theme.of(context).cardColor,
       title: title,
+      elevation: elevation,
+      shadowColor: shadowColor,
+      surfaceTintColor: surfaceTintColor,
       shape: shape ??
           RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       clipBehavior: Clip.antiAliasWithSaveLayer,

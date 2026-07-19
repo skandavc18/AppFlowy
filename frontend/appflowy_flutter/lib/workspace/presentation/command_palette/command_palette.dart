@@ -1,17 +1,22 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
+import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/recent_views_list.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_field.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/search_filter_bar.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_results_list.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy_backend/log.dart';
-import 'package:appflowy_backend/protobuf/flowy-folder/view.pbenum.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/workspace.pbenum.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -130,6 +135,7 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
       commandBloc.add(CommandPaletteEvent.refreshCachedViews());
       FlowyOverlay.show(
         context: context,
+        barrierColor: Colors.transparent,
         builder: (_) => MultiBlocProvider(
           providers: [
             BlocProvider.value(value: commandBloc),
@@ -172,10 +178,17 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
       );
 }
 
-class CommandPaletteModal extends StatelessWidget {
+class CommandPaletteModal extends StatefulWidget {
   const CommandPaletteModal({super.key, required this.shortcutBuilder});
 
   final Widget Function(Widget) shortcutBuilder;
+
+  @override
+  State<CommandPaletteModal> createState() => _CommandPaletteModalState();
+}
+
+class _CommandPaletteModalState extends State<CommandPaletteModal> {
+  CommandPaletteFilter filter = const CommandPaletteFilter();
 
   @override
   Widget build(BuildContext context) {
@@ -204,39 +217,89 @@ class CommandPaletteModal extends StatelessWidget {
         builder: (context, state) {
           final theme = AppFlowyTheme.of(context);
           final noQuery = state.query?.isEmpty ?? true, hasQuery = !noQuery;
-          final hasResult = state.combinedResponseItems.isNotEmpty,
-              searching = state.searching;
+          final currentUserId = workspaceState?.userProfile.id;
+          final resultItems = state.combinedResponseItems.values
+              .where(
+                (item) =>
+                    state.cachedViews.isEmpty ||
+                    state.cachedViews.containsKey(item.id),
+              )
+              .where(
+                (item) => filter.matchesSearchResult(
+                  item: item,
+                  view: state.cachedViews[item.id],
+                  query: state.query ?? '',
+                  cachedViews: state.cachedViews,
+                  currentUserId: currentUserId,
+                ),
+              )
+              .toList();
+          final hasResult = resultItems.isNotEmpty, searching = state.searching;
+          final spaces =
+              context.read<SpaceBloc?>()?.state.spaces ?? const <ViewPB>[];
           final spaceXl = theme.spacing.xl;
+          final viewportSize = MediaQuery.sizeOf(context);
+          final dialogWidth = math.min(
+            960.0,
+            math.min(
+              viewportSize.width - 80,
+              (viewportSize.height - 96) * 4 / 3,
+            ),
+          );
+          final dialogHeight = dialogWidth * 3 / 4;
           return FlowyDialog(
-            backgroundColor: theme.surfaceColorScheme.layer01,
-            alignment: Alignment.topCenter,
-            insetPadding: const EdgeInsets.only(top: 100),
-            constraints: const BoxConstraints(
-              maxHeight: 640,
-              maxWidth: 960,
-              minWidth: 572,
-              minHeight: 640,
+            backgroundColor: EditorSurfaceStyle.canvasBackgroundFor(
+              Theme.of(context).brightness,
+              theme.surfaceColorScheme.layer01,
+            ),
+            width: dialogWidth,
+            elevation: 32,
+            shadowColor: Colors.black.withValues(
+              alpha: Theme.of(context).brightness == Brightness.light
+                  ? 0.34
+                  : 0.55,
+            ),
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: BorderSide(color: theme.borderColorScheme.primary),
+            ),
+            alignment: Alignment.center,
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 40,
+              vertical: 48,
+            ),
+            constraints: BoxConstraints.tightFor(
+              width: dialogWidth,
+              height: dialogHeight,
             ),
             expandHeight: false,
-            child: shortcutBuilder(
+            child: widget.shortcutBuilder(
               // Change mainAxisSize to max so Expanded works correctly.
               Padding(
                 padding: EdgeInsets.fromLTRB(spaceXl, spaceXl, spaceXl, 0),
                 child: Column(
                   children: [
                     SearchField(query: state.query, isLoading: searching),
+                    SearchFilterBar(
+                      filter: filter,
+                      spaces: spaces,
+                      onChanged: (value) => setState(() => filter = value),
+                    ),
                     if (noQuery)
                       Flexible(
                         child: RecentViewsList(
                           onSelected: () => FlowyOverlay.pop(context),
+                          filter: filter,
+                          cachedViews: state.cachedViews,
+                          currentUserId: currentUserId,
                         ),
                       ),
                     if (hasResult && hasQuery)
                       Flexible(
                         child: SearchResultList(
                           cachedViews: state.cachedViews,
-                          resultItems:
-                              state.combinedResponseItems.values.toList(),
+                          resultItems: resultItems,
                           resultSummaries: state.resultSummaries,
                         ),
                       )

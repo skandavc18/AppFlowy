@@ -1,23 +1,36 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
 import 'package:appflowy/workspace/application/recent/recent_views_bloc.dart';
 import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_extension.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_icon.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_recent_view_cell.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/workspace.pbenum.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fixnum/fixnum.dart';
 
 import 'page_preview.dart';
 import 'search_ask_ai_entrance.dart';
+import 'search_layout.dart';
 
 class RecentViewsList extends StatelessWidget {
-  const RecentViewsList({super.key, required this.onSelected});
+  const RecentViewsList({
+    required this.onSelected,
+    required this.filter,
+    required this.cachedViews,
+    required this.currentUserId,
+    super.key,
+  });
 
   final VoidCallback onSelected;
+  final CommandPaletteFilter filter;
+  final Map<String, ViewPB> cachedViews;
+  final Int64? currentUserId;
 
   @override
   Widget build(BuildContext context) {
@@ -26,14 +39,25 @@ class RecentViewsList extends StatelessWidget {
           RecentViewsBloc()..add(const RecentViewsEvent.initial()),
       child: BlocBuilder<RecentViewsBloc, RecentViewsState>(
         builder: (context, state) {
+          final visibleViews = _visibleViews(state);
+          final selectedView = _selectedView(state, visibleViews);
           return LayoutBuilder(
             builder: (context, constrains) {
               final maxWidth = constrains.maxWidth;
-              final hidePreview = maxWidth < 884;
+              final hidePreview = maxWidth < commandPalettePreviewBreakpoint;
+              final listWidth =
+                  hidePreview ? maxWidth : commandPaletteListWidth(maxWidth);
               return Row(
                 children: [
-                  buildLeftPanel(state, context, hidePreview),
-                  if (!hidePreview) buildPreview(state),
+                  buildLeftPanel(
+                    visibleViews,
+                    selectedView,
+                    context,
+                    hidePreview,
+                    listWidth,
+                  ),
+                  if (!hidePreview && selectedView != null)
+                    Expanded(child: buildPreview(selectedView)),
                 ],
               );
             },
@@ -44,14 +68,18 @@ class RecentViewsList extends StatelessWidget {
   }
 
   Widget buildLeftPanel(
-    RecentViewsState state,
+    List<ViewPB> visibleViews,
+    ViewPB? selectedView,
     BuildContext context,
     bool hidePreview,
+    double width,
   ) {
     final workspaceState = context.read<UserWorkspaceBloc?>()?.state;
     final showAskingAI =
         workspaceState?.userProfile.workspaceType == WorkspaceTypePB.ServerW;
-    return Flexible(
+    return SizedBox(
+      key: const ValueKey('command-palette-recent-list-panel'),
+      width: width,
       child: Align(
         alignment: Alignment.topLeft,
         child: ScrollControllerBuilder(
@@ -73,7 +101,12 @@ class RecentViewsList extends StatelessWidget {
                       children: [
                         if (showAskingAI) SearchAskAiEntrance(),
                         buildTitle(context),
-                        buildViewList(state, context, hidePreview),
+                        buildViewList(
+                          visibleViews,
+                          selectedView,
+                          context,
+                          hidePreview,
+                        ),
                         VSpace(16),
                       ],
                     ),
@@ -108,12 +141,11 @@ class RecentViewsList extends StatelessWidget {
   }
 
   Widget buildViewList(
-    RecentViewsState state,
+    List<ViewPB> recentViews,
+    ViewPB? selectedView,
     BuildContext context,
     bool hidePreview,
   ) {
-    final recentViews = state.views.map((e) => e.item).toSet().toList();
-
     if (recentViews.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -133,26 +165,55 @@ class RecentViewsList extends StatelessWidget {
           view: view,
           onSelected: onSelected,
           isNarrowWindow: hidePreview,
+          isSelected: selectedView?.id == view.id,
         );
       },
     );
   }
 
-  Widget buildPreview(RecentViewsState state) {
-    final hoveredView = state.hoveredView;
-    if (hoveredView == null) {
-      return SizedBox.shrink();
-    }
+  Widget buildPreview(ViewPB selectedView) {
     return Align(
-      alignment: Alignment.topLeft,
+      alignment: Alignment.topRight,
       child: PagePreview(
-        key: ValueKey(hoveredView.id),
-        view: hoveredView,
+        key: ValueKey(selectedView.id),
+        view: selectedView,
         onViewOpened: () {
-          hoveredView.id.navigateTo();
+          selectedView.id.navigateTo();
           onSelected();
         },
       ),
     );
+  }
+
+  List<ViewPB> _visibleViews(RecentViewsState state) {
+    final recentViews = state.views.map((entry) => entry.item).toSet().toList();
+    final viewsById = <String, ViewPB>{
+      ...cachedViews,
+      for (final view in recentViews) view.id: view,
+    };
+    return recentViews
+        .where(
+          (view) => filter.matchesRecentView(
+            view: view,
+            cachedViews: viewsById,
+            currentUserId: currentUserId,
+          ),
+        )
+        .toList();
+  }
+
+  ViewPB? _selectedView(
+    RecentViewsState state,
+    List<ViewPB> visibleViews,
+  ) {
+    final hoveredView = state.hoveredView;
+    if (hoveredView != null) {
+      for (final view in visibleViews) {
+        if (view.id == hoveredView.id) {
+          return view;
+        }
+      }
+    }
+    return visibleViews.isEmpty ? null : visibleViews.first;
   }
 }

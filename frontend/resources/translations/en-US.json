@@ -2829,7 +2829,20 @@
     "clearSearchTooltip": "Clear input",
     "location": "Location",
     "created": "Created",
-    "edited": "Edited"
+    "edited": "Edited",
+    "titleOnly": "Title only",
+    "createdBy": "Created by",
+    "anyone": "Anyone",
+    "me": "Me",
+    "in": "In",
+    "everywhere": "Everywhere",
+    "filter": "Filter",
+    "allPageTypes": "All page types",
+    "documents": "Documents",
+    "grids": "Grids",
+    "boards": "Boards",
+    "calendars": "Calendars",
+    "chats": "Chats"
   },
   "space": {
     "delete": "Delete",

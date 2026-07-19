@@ -13,8 +13,8 @@ import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import 'page_preview.dart';
 import 'search_result_cell.dart';
+import 'search_layout.dart';
 
 class SearchResultList extends StatefulWidget {
   const SearchResultList({
@@ -39,6 +39,13 @@ class _SearchResultListState extends State<SearchResultList> {
   void initState() {
     super.initState();
     bloc = SearchResultListBloc();
+    _syncSelection();
+  }
+
+  @override
+  void didUpdateWidget(covariant SearchResultList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncSelection();
   }
 
   @override
@@ -61,17 +68,33 @@ class _SearchResultListState extends State<SearchResultList> {
         },
         child: BlocBuilder<SearchResultListBloc, SearchResultListState>(
           builder: (context, state) {
-            final hasHoverResult = state.hoveredResult != null;
+            final selectedResult = _selectedResult(state);
+            final selectedView = selectedResult == null
+                ? null
+                : widget.cachedViews[selectedResult.id];
             return LayoutBuilder(
               builder: (context, constrains) {
                 final maxWidth = constrains.maxWidth;
-                final hidePreview = maxWidth < 884;
+                final hidePreview = maxWidth < commandPalettePreviewBreakpoint;
+                final listWidth =
+                    hidePreview ? maxWidth : commandPaletteListWidth(maxWidth);
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: _buildResultsSection(context, hidePreview)),
-                    if (!hidePreview && hasHoverResult)
-                      const SearchCellPreview(),
+                    SizedBox(
+                      key: const ValueKey(
+                        'command-palette-search-results-panel',
+                      ),
+                      width: listWidth,
+                      child: _buildResultsSection(context, hidePreview),
+                    ),
+                    if (!hidePreview && selectedView != null)
+                      Expanded(
+                        child: Align(
+                          alignment: Alignment.topRight,
+                          child: SearchResultPreview(view: selectedView),
+                        ),
+                      ),
                   ],
                 );
               },
@@ -105,14 +128,8 @@ class _SearchResultListState extends State<SearchResultList> {
     final workspaceState = context.read<UserWorkspaceBloc?>()?.state;
     final showAskingAI =
         workspaceState?.userProfile.workspaceType == WorkspaceTypePB.ServerW;
-    if (widget.resultItems.isEmpty) return const SizedBox.shrink();
-    List<SearchResultItem> resultItems = widget.resultItems;
-    final hasCachedViews = widget.cachedViews.isNotEmpty;
-    if (hasCachedViews) {
-      resultItems = widget.resultItems
-          .where((item) => widget.cachedViews[item.id] != null)
-          .toList();
-    }
+    final resultItems = _visibleResultItems;
+    if (resultItems.isEmpty) return const SizedBox.shrink();
     return ScrollControllerBuilder(
       builder: (context, controller) {
         final hoveredId = bloc.state.hoveredResult?.id;
@@ -168,23 +185,43 @@ class _SearchResultListState extends State<SearchResultList> {
       },
     );
   }
-}
 
-class SearchCellPreview extends StatelessWidget {
-  const SearchCellPreview({super.key});
+  List<SearchResultItem> get _visibleResultItems {
+    if (widget.cachedViews.isEmpty) {
+      return widget.resultItems;
+    }
+    return widget.resultItems
+        .where((item) => widget.cachedViews.containsKey(item.id))
+        .toList();
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return BlocBuilder<SearchResultListBloc, SearchResultListState>(
-      builder: (context, state) {
-        final hoverdId = state.hoveredResult?.id ?? '';
-        final commandPaletteState = context.read<CommandPaletteBloc>().state;
-        final view = commandPaletteState.cachedViews[hoverdId];
-        if (view != null) {
-          return SearchResultPreview(view: view);
-        }
-        return SomethingWentWrong();
-      },
-    );
+  SearchResultItem? _selectedResult(SearchResultListState state) {
+    final selected = state.hoveredResult;
+    if (selected == null) {
+      return null;
+    }
+    for (final item in _visibleResultItems) {
+      if (item.id == selected.id) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  void _syncSelection() {
+    final visibleItems = _visibleResultItems;
+    final selectedId = bloc.state.hoveredResult?.id;
+    if (selectedId != null &&
+        visibleItems.any((item) => item.id == selectedId)) {
+      return;
+    }
+    if (visibleItems.isNotEmpty) {
+      bloc.add(
+        SearchResultListEvent.onHoverResult(
+          item: visibleItems.first,
+          userHovered: false,
+        ),
+      );
+    }
   }
 }

@@ -1,20 +1,23 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
-import 'package:appflowy/mobile/presentation/search/mobile_view_ancestors.dart';
+import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
+import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
+import 'package:appflowy/plugins/document/application/document_service.dart';
+import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/document_immersive_cover_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
-import 'package:appflowy/util/int64_extension.dart';
-import 'package:appflowy/util/theme_extension.dart';
-import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
-import 'package:appflowy/workspace/application/settings/date_time/date_format_ext.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -23,6 +26,7 @@ import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:provider/provider.dart';
 
 class PagePreview extends StatelessWidget {
   const PagePreview({
@@ -36,9 +40,10 @@ class PagePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
-    final backgroundColor = Theme.of(context).isLightMode
-        ? Color(0xffF8FAFF)
-        : theme.surfaceColorScheme.layer02;
+    final backgroundColor = EditorSurfaceStyle.previewBackgroundFor(
+      Theme.of(context).brightness,
+      theme.surfaceColorScheme.layer02,
+    );
 
     return BlocProvider(
       create: (context) => DocumentImmersiveCoverBloc(view: view)
@@ -47,66 +52,48 @@ class PagePreview extends StatelessWidget {
           BlocBuilder<DocumentImmersiveCoverBloc, DocumentImmersiveCoverState>(
         builder: (context, state) {
           final cover = buildCover(state, context);
-          return Container(
-            height: MediaQuery.of(context).size.height,
-            width: 280,
-            decoration: BoxDecoration(
-              color: backgroundColor,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            margin: EdgeInsets.only(
-              top: theme.spacing.xs,
-              bottom: theme.spacing.xl,
-            ),
-            child: Stack(
-              children: [
-                SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.only(
-                          topLeft: Radius.circular(12),
-                          topRight: Radius.circular(12),
-                        ),
-                        child: cover ?? VSpace(80),
-                      ),
-                      VSpace(24),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            buildTitle(context, view),
-                            buildPath(context, view),
-                            ...buildTime(
-                              context,
-                              LocaleKeys.commandPalette_created.tr(),
-                              view.createTime.toDateTime(),
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 8, 20),
+            child: Container(
+              key: const ValueKey('page-preview-card'),
+              height: double.infinity,
+              width: 304,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                color: backgroundColor,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: theme.borderColorScheme.primary),
+                boxShadow: theme.shadow.small,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (cover != null) cover,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (view.icon.value.isNotEmpty || cover == null) ...[
+                          SizedBox.square(
+                            dimension: 24,
+                            child: Center(
+                              child: buildIcon(theme, view, cover != null),
                             ),
-                            if (view.lastEdited != view.createTime)
-                              ...buildTime(
-                                context,
-                                LocaleKeys.commandPalette_edited.tr(),
-                                view.lastEdited.toDateTime(),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
+                          ),
+                          const VSpace(10),
+                        ],
+                        buildTitle(context, view),
+                      ],
+                    ),
                   ),
-                ),
-                Positioned(
-                  top: 70,
-                  left: 20,
-                  child: SizedBox.square(
-                    dimension: 24,
-                    child: Center(child: buildIcon(theme, view, cover != null)),
+                  const AFDivider(),
+                  Expanded(
+                    child: _buildPageContent(),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -114,10 +101,26 @@ class PagePreview extends StatelessWidget {
     );
   }
 
+  Widget _buildPageContent() {
+    if (view.layout.isDocumentView) {
+      return _DocumentPagePreview(
+        key: ValueKey('document-preview-${view.id}'),
+        viewId: view.id,
+      );
+    }
+    if (view.layout.isDatabaseView) {
+      return _DatabasePagePreview(
+        key: ValueKey('database-preview-${view.id}'),
+        view: view,
+      );
+    }
+    return const _PreviewError();
+  }
+
   Widget? buildCover(DocumentImmersiveCoverState state, BuildContext context) {
     final cover = state.cover;
     final type = state.cover.type;
-    const height = 80.0;
+    const height = 96.0;
     if (type == PageStyleCoverImageType.customImage ||
         type == PageStyleCoverImageType.unsplashImage) {
       final userProfile = context.read<UserWorkspaceBloc?>()?.state.userProfile;
@@ -256,104 +259,254 @@ class PagePreview extends StatelessWidget {
       },
     );
   }
-
-  Widget buildPath(BuildContext context, ViewPB view) {
-    final theme = AppFlowyTheme.of(context);
-    return BlocProvider(
-      key: ValueKey(view.id),
-      create: (context) => ViewAncestorBloc(view.id),
-      child: BlocBuilder<ViewAncestorBloc, ViewAncestorState>(
-        builder: (context, state) {
-          final isEmpty = state.ancestor.ancestors.isEmpty;
-          if (!state.isLoading && isEmpty) return const SizedBox.shrink();
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              VSpace(20),
-              Text(
-                LocaleKeys.commandPalette_location.tr(),
-                style: theme.textStyle.caption
-                    .standard(color: theme.textColorScheme.primary),
-              ),
-              state.buildPath(
-                context,
-                style: theme.textStyle.caption.standard(
-                  color: theme.textColorScheme.secondary,
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  List<Widget> buildTime(BuildContext context, String title, DateTime time) {
-    final theme = AppFlowyTheme.of(context);
-    final appearanceSettings = context.watch<AppearanceSettingsCubit>().state;
-    final dateFormat = appearanceSettings.dateFormat,
-        timeFormat = appearanceSettings.timeFormat;
-    return [
-      VSpace(12),
-      Text(
-        title,
-        style: theme.textStyle.caption
-            .standard(color: theme.textColorScheme.primary),
-      ),
-      Text(
-        dateFormat.formatDate(time, true, timeFormat),
-        style: theme.textStyle.caption
-            .standard(color: theme.textColorScheme.secondary),
-      ),
-    ];
-  }
 }
 
-class SomethingWentWrong extends StatelessWidget {
-  const SomethingWentWrong({super.key});
+class _DocumentPagePreview extends StatefulWidget {
+  const _DocumentPagePreview({
+    required this.viewId,
+    super.key,
+  });
+
+  final String viewId;
+
+  @override
+  State<_DocumentPagePreview> createState() => _DocumentPagePreviewState();
+}
+
+class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
+  static const double _canvasWidth = 520;
+  static const double _lineHeight = 1.4;
+
+  EditorState? editorState;
+  bool isLoading = true;
+  bool hasError = false;
+  int requestId = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadDocument());
+  }
+
+  @override
+  void didUpdateWidget(covariant _DocumentPagePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewId != widget.viewId) {
+      unawaited(_loadDocument());
+    }
+  }
+
+  @override
+  void dispose() {
+    requestId++;
+    editorState?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadDocument() async {
+    final currentRequestId = ++requestId;
+    final previousEditorState = editorState;
+    editorState = null;
+    previousEditorState?.dispose();
+
+    if (mounted && !isLoading) {
+      setState(() {
+        isLoading = true;
+        hasError = false;
+      });
+    }
+
+    final result = await DocumentService().getDocument(
+      documentId: widget.viewId,
+    );
+    var requestFailed = false;
+    final document = result.fold(
+      (data) => data.toDocument(),
+      (error) {
+        requestFailed = true;
+        Log.warn(
+          'Unable to load search preview for ${widget.viewId}: $error',
+        );
+        return null;
+      },
+    );
+
+    if (!mounted || currentRequestId != requestId) {
+      return;
+    }
+
+    if (document == null && !requestFailed) {
+      Log.warn('Search preview document is invalid: ${widget.viewId}');
+    }
+    setState(() {
+      editorState = document == null ? null : EditorState(document: document);
+      hasError = document == null;
+      isLoading = false;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-    return SizedBox(
-      width: 300,
-      child: Row(
-        children: [
-          AFDivider(axis: Axis.vertical),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 100),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    FlowySvg(
-                      FlowySvgs.something_wrong_warning_m,
-                      color: theme.iconColorScheme.secondary,
-                      size: Size.square(24),
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator.adaptive());
+    }
+
+    final editorState = this.editorState;
+    if (hasError || editorState == null) {
+      return _PreviewError(onRetry: () => unawaited(_loadDocument()));
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        final scale = constraints.maxWidth / _canvasWidth;
+        final canvasHeight = constraints.maxHeight / scale;
+        final styleCustomizer = EditorStyleCustomizer(
+          context: context,
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          width: _canvasWidth,
+          editorState: editorState,
+        );
+        final baseEditorStyle = styleCustomizer.style();
+        final editorStyle = baseEditorStyle.copyWith(
+          cursorColor: Colors.transparent,
+          cursorWidth: 0,
+          textStyleConfiguration: baseEditorStyle.textStyleConfiguration
+              .copyWith(lineHeight: _lineHeight),
+        );
+        final blockBuilders = buildBlockComponentBuilders(
+          context: context,
+          editorState: editorState,
+          styleCustomizer: styleCustomizer,
+          editable: false,
+          customPadding: (node) => node.type == HeadingBlockKeys.type
+              ? const EdgeInsets.only(top: 6, bottom: 2)
+              : EdgeInsets.zero,
+          alwaysDistributeSimpleTableColumnWidths: true,
+        );
+
+        return ClipRect(
+          child: FittedBox(
+            key: const ValueKey('document-preview-canvas'),
+            alignment: Alignment.topLeft,
+            fit: BoxFit.fill,
+            child: SizedBox(
+              width: _canvasWidth,
+              height: canvasHeight,
+              child: AppFlowyEditor(
+                editorState: editorState,
+                editorStyle: editorStyle,
+                blockComponentBuilders: blockBuilders,
+                contextMenuItems: const [],
+                disableSelectionService: true,
+                disableKeyboardService: true,
+                disableAutoScroll: true,
+                editable: false,
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DatabasePagePreview extends StatelessWidget {
+  const _DatabasePagePreview({
+    required this.view,
+    super.key,
+  });
+
+  static const double _canvasWidth = 720;
+  static const double _canvasHeight = 960;
+
+  final ViewPB view;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+          return const SizedBox.shrink();
+        }
+
+        final scale = constraints.maxWidth / _canvasWidth;
+        final renderedHeight = _canvasHeight * scale;
+        return SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          child: SizedBox(
+            width: constraints.maxWidth,
+            height: renderedHeight,
+            child: FittedBox(
+              alignment: Alignment.topLeft,
+              fit: BoxFit.fill,
+              child: SizedBox(
+                width: _canvasWidth,
+                height: _canvasHeight,
+                child: FocusScope(
+                  canRequestFocus: false,
+                  descendantsAreFocusable: false,
+                  child: IgnorePointer(
+                    child: Provider(
+                      create: (_) => const DatabasePluginWidgetBuilderSize(
+                        horizontalPadding: 16,
+                      ),
+                      child: DatabaseTabBarView(
+                        view: view,
+                        shrinkWrap: false,
+                        showActions: false,
+                      ),
                     ),
-                    const VSpace(8),
-                    Text(
-                      LocaleKeys.search_somethingWentWrong.tr(),
-                      style: theme.textStyle.body
-                          .enhanced(color: theme.textColorScheme.secondary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const VSpace(4),
-                    Text(
-                      LocaleKeys.search_tryAgainOrLater.tr(),
-                      style: theme.textStyle.caption
-                          .standard(color: theme.textColorScheme.secondary),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ],
+        );
+      },
+    );
+  }
+}
+
+class _PreviewError extends StatelessWidget {
+  const _PreviewError({this.onRetry});
+
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppFlowyTheme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FlowySvg(
+              FlowySvgs.something_wrong_warning_m,
+              color: theme.iconColorScheme.secondary,
+              size: const Size.square(24),
+            ),
+            const VSpace(8),
+            Text(
+              LocaleKeys.search_somethingWentWrong.tr(),
+              textAlign: TextAlign.center,
+              style: theme.textStyle.body.enhanced(
+                color: theme.textColorScheme.secondary,
+              ),
+            ),
+            if (onRetry != null) ...[
+              const VSpace(8),
+              TextButton(
+                onPressed: onRetry,
+                child: Text(LocaleKeys.button_tryAgain.tr()),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

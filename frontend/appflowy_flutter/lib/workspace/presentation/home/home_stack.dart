@@ -6,6 +6,7 @@ import 'package:appflowy/core/frameless_window.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/window_title_bar.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -199,7 +200,11 @@ class _PageStackState extends State<PageStack>
     super.build(context);
 
     return Container(
-      color: Theme.of(context).colorScheme.surface,
+      key: const ValueKey('workspace-page-canvas'),
+      color: EditorSurfaceStyle.canvasBackgroundFor(
+        Theme.of(context).brightness,
+        Theme.of(context).colorScheme.surface,
+      ),
       child: FocusTraversalGroup(
         child: widget.pageManager.stackWidget(
           userProfile: widget.userProfile,
@@ -323,7 +328,10 @@ class _SecondaryViewState extends State<SecondaryView>
                             width: 36,
                             decoration: BoxDecoration(
                               borderRadius: getBorderRadius(),
-                              color: Theme.of(context).colorScheme.surface,
+                              color: EditorSurfaceStyle.canvasBackgroundFor(
+                                Theme.of(context).brightness,
+                                Theme.of(context).colorScheme.surface,
+                              ),
                               boxShadow: [
                                 BoxShadow(
                                   offset: const Offset(0, 4),
@@ -359,7 +367,10 @@ class _SecondaryViewState extends State<SecondaryView>
       child: CompositedTransformTarget(
         link: layerLink,
         child: Container(
-          color: Theme.of(context).colorScheme.surface,
+          color: EditorSurfaceStyle.canvasBackgroundFor(
+            Theme.of(context).brightness,
+            Theme.of(context).colorScheme.surface,
+          ),
           child: FocusTraversalGroup(
             child: ValueListenableBuilder(
               valueListenable: widthNotifier,
@@ -819,7 +830,10 @@ class _HomeTopBarState extends State<HomeTopBar>
 
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
+        color: EditorSurfaceStyle.canvasBackgroundFor(
+          Theme.of(context).brightness,
+          Theme.of(context).colorScheme.surface,
+        ),
       ),
       height: HomeSizes.topBarHeight + HomeInsets.topBarTitleVerticalPadding,
       child: Padding(

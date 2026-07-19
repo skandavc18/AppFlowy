@@ -115,10 +115,12 @@ class FlowyOverlay extends StatefulWidget {
   static Future<void> show({
     required BuildContext context,
     required WidgetBuilder builder,
+    Color? barrierColor,
   }) async {
     await showDialog(
       context: context,
       builder: builder,
+      barrierColor: barrierColor,
     );
   }
 

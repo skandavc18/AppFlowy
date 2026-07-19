@@ -18,12 +18,14 @@ class SearchRecentViewCell extends StatefulWidget {
     required this.view,
     required this.onSelected,
     required this.isNarrowWindow,
+    required this.isSelected,
   });
 
   final Widget icon;
   final ViewPB view;
   final VoidCallback onSelected;
   final bool isNarrowWindow;
+  final bool isSelected;
 
   @override
   State<SearchRecentViewCell> createState() => _SearchRecentViewCellState();
@@ -45,7 +47,7 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
     final theme = AppFlowyTheme.of(context);
     final spaceL = theme.spacing.l;
     final bloc = context.read<RecentViewsBloc>(), state = bloc.state;
-    final hoveredView = state.hoveredView, hasHovered = hoveredView != null;
+    final hoveredView = state.hoveredView;
     final hovering = hoveredView == view;
 
     return GestureDetector(
@@ -76,7 +78,7 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
             hoverColor: theme.fillColorScheme.contentHover,
             foregroundColorOnHover: AFThemeExtension.of(context).textColor,
           ),
-          isSelected: () => hovering,
+          isSelected: () => widget.isSelected,
           child: Padding(
             padding: EdgeInsets.all(spaceL),
             child: Row(
@@ -85,8 +87,7 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
                 HSpace(8),
                 Container(
                   constraints: BoxConstraints(
-                    maxWidth:
-                        (!widget.isNarrowWindow && hasHovered) ? 480.0 : 680.0,
+                    maxWidth: !widget.isNarrowWindow ? 480.0 : 680.0,
                   ),
                   child: Text(
                     view.nameOrDefault,
