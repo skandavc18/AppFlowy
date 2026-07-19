@@ -8,6 +8,7 @@ import 'package:appflowy/workspace/application/settings/plan/workspace_subscript
 import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/billing/sidebar_plan_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/workspace.pb.dart';
@@ -188,17 +189,16 @@ class _PlanIndicatorState extends State<PlanIndicator> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              FlowyText(
+              SidebarText(
                 widget.text,
                 color: AFThemeExtension.of(context).strongText,
               ),
               const VSpace(12),
               Opacity(
                 opacity: 0.7,
-                child: FlowyText.regular(
+                child: SidebarText(
                   widget.reason,
                   maxLines: null,
-                  lineHeight: 1.3,
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -224,12 +224,11 @@ class _PlanIndicatorState extends State<PlanIndicator> {
                             borderRadius: BorderRadius.circular(9),
                           ),
                           child: Center(
-                            child: FlowyText(
+                            child: SidebarText(
                               LocaleKeys
                                   .settings_comparePlanDialog_actions_upgrade
                                   .tr(),
                               color: Colors.white,
-                              fontSize: 12,
                               strutStyle: const StrutStyle(
                                 forceStrutHeight: true,
                               ),
@@ -265,7 +264,7 @@ class _PlanIndicatorState extends State<PlanIndicator> {
               ShaderMask(
                 shaderCallback: (bounds) => textGradient.createShader(bounds),
                 blendMode: BlendMode.srcIn,
-                child: FlowyText(
+                child: SidebarText(
                   widget.text,
                   color: AFThemeExtension.of(context).strongText,
                 ),

@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
@@ -57,20 +58,8 @@ class _FolderHeaderState extends State<FolderHeader> {
               onPressed: widget.onAdded,
             ),
           ),
-          iconPadding: 10.0,
-          text: Row(
-            children: [
-              FlowyText(
-                widget.title,
-                lineHeight: 1.15,
-              ),
-              const HSpace(4.0),
-              FlowySvg(
-                widget.isExpanded
-                    ? FlowySvgs.workspace_drop_down_menu_show_s
-                    : FlowySvgs.workspace_drop_down_menu_hide_s,
-              ),
-            ],
+          text: SidebarText.section(
+            widget.title,
           ),
         ),
       ),

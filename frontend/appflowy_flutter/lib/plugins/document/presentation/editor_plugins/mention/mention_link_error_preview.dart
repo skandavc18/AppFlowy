@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_create_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/paste_as/paste_as_menu.dart';
 import 'package:appflowy/util/theme_extension.dart';
@@ -167,7 +168,7 @@ class _MentionLinkErrorPreviewState extends State<MentionLinkErrorPreview> {
               child: FlowyButton(
                 text: FlowyText(
                   command.title,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: EditorChromeStyle.menuFontWeight,
                   figmaLineHeight: 20,
                 ),
                 onTap: () => onTap(command),

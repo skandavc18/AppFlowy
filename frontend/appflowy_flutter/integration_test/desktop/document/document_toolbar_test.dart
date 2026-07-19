@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_to
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_hover_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/toolbar_item/custom_link_toolbar_item.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/toolbar_item/custom_format_toolbar_items.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/toolbar_item/more_option_toolbar_item.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/toolbar_item/text_suggestions_toolbar_item.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -191,9 +192,9 @@ void main() {
       Finder toolbar = find.byType(DesktopFloatingToolbar);
       Element toolbarElement = toolbar.evaluate().first;
       final elementHashcode = toolbarElement.hashCode;
-      final boldButton = find.byFlowySvg(FlowySvgs.toolbar_bold_m),
-          underlineButton = find.byFlowySvg(FlowySvgs.toolbar_underline_m),
-          italicButton = find.byFlowySvg(FlowySvgs.toolbar_inline_italic_m);
+      final boldButton = find.byKey(kBoldToolbarItemKey),
+          underlineButton = find.byKey(kUnderlineToolbarItemKey),
+          italicButton = find.byKey(kItalicToolbarItemKey);
 
       /// tap format buttons
       await tester.tapButton(boldButton);

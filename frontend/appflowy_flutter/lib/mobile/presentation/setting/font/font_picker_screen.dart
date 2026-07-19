@@ -102,10 +102,7 @@ class _FontSelectorState extends State<FontSelector> {
         }
 
         final fontFamilyName = availableFonts[index - 1];
-        final usingDefaultFontFamily = fontFamilyName == defaultFontFamily;
-        final fontFamily = !usingDefaultFontFamily
-            ? getGoogleFontSafely(fontFamilyName).fontFamily
-            : defaultFontFamily;
+        final fontFamily = getGoogleFontSafely(fontFamilyName).fontFamily;
         return FlowyOptionTile.checkbox(
           text: fontFamilyName.fontFamilyDisplayName,
           isSelected: widget.selectedFontFamilyName == fontFamilyName,

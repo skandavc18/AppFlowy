@@ -290,7 +290,7 @@ class HoverButton extends StatelessWidget {
                 HSpace(ActionListSizes.itemHPadding),
               ],
               Expanded(
-                child: FlowyText.regular(
+                child: FlowyText.medium(
                   name,
                   overflow: TextOverflow.visible,
                   lineHeight: 1.15,

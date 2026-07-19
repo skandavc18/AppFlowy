@@ -236,7 +236,12 @@ class PopoverState extends State<Popover> with SingleTickerProviderStateMixin {
       context,
       widget.debugId ?? '',
       this,
-      OverlayEntry(builder: (_) => _buildOverlayContent(shouldAddMask)),
+      OverlayEntry(
+        builder: (_) => InheritedTheme.captureAll(
+          context,
+          _buildOverlayContent(shouldAddMask),
+        ),
+      ),
       widget.asBarrier,
       animationController,
     );

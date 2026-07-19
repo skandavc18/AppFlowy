@@ -1,7 +1,8 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
+import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 
 class SharedSectionHeader extends StatelessWidget {
@@ -14,21 +15,14 @@ class SharedSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-    return AFGhostIconTextButton.primary(
-      text: LocaleKeys.shareSection_shared.tr(),
-      mainAxisAlignment: MainAxisAlignment.start,
-      size: AFButtonSize.l,
-      onTap: onTap,
-      // todo: ask the designer to provide the token.
-      padding: EdgeInsets.symmetric(
-        horizontal: 4,
-        vertical: 6,
-      ),
-      borderRadius: theme.borderRadius.s,
-      iconBuilder: (context, isHover, disabled) => FlowySvg(
-        FlowySvgs.shared_with_me_m,
-        color: theme.badgeColorScheme.color13Thick2,
+    return SizedBox(
+      height: HomeSizes.workspaceSectionHeight,
+      child: FlowyButton(
+        text: SidebarText.section(
+          LocaleKeys.shareSection_shared.tr(),
+        ),
+        margin: const EdgeInsets.only(left: 6.0, right: 4.0),
+        onTap: onTap,
       ),
     );
   }

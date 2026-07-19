@@ -7,6 +7,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/base/font_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/inline_actions/inline_actions_menu.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/object_type_typography.dart';
 import 'package:appflowy/util/font_family_extension.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/util/theme_extension.dart';
@@ -20,6 +22,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flowy_infra_ui/widget/flowy_tooltip.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -89,6 +92,11 @@ class EditorStyleCustomizer {
         ? (appearance.cursorColor ??
             DefaultAppearanceSettings.getDefaultCursorColor(context))
         : Colors.transparent;
+    final baseStyle = baseTextStyle(fontFamily, fontSize: fontSize);
+    final textStyle = _enhanceEditorTextStyle(
+      baseStyle,
+      fallbackColor: afThemeExtension.onBackground,
+    );
 
     return EditorStyle.desktop(
       padding: padding,
@@ -98,32 +106,33 @@ class EditorStyleCustomizer {
           DefaultAppearanceSettings.getDefaultSelectionColor(context),
       defaultTextDirection: appearance.defaultTextDirection,
       textStyleConfiguration: TextStyleConfiguration(
-        lineHeight: 1.4,
+        lineHeight: ObjectTypeTypography.editorLineHeight,
         // on Windows, if applyHeightToFirstAscent is true, the first line will be too high.
         // it will cause the first line not aligned with the prefix icon.
         applyHeightToFirstAscent: UniversalPlatform.isWindows ? false : true,
         applyHeightToLastDescent: true,
-        text: baseTextStyle(fontFamily).copyWith(
-          fontSize: fontSize,
-          color: afThemeExtension.onBackground,
+        text: textStyle,
+        bold: _enhanceEditorTextStyle(
+          baseTextStyle(
+            fontFamily,
+            fontWeight: FontWeight.w700,
+            fontSize: fontSize,
+          ),
+          fallbackColor: afThemeExtension.onBackground,
         ),
-        bold: baseTextStyle(fontFamily, fontWeight: FontWeight.bold).copyWith(
-          fontWeight: FontWeight.w600,
-        ),
-        italic: baseTextStyle(fontFamily).copyWith(fontStyle: FontStyle.italic),
-        underline: baseTextStyle(fontFamily).copyWith(
+        italic: textStyle.copyWith(fontStyle: FontStyle.italic),
+        underline: textStyle.copyWith(
           decoration: TextDecoration.underline,
         ),
-        strikethrough: baseTextStyle(fontFamily).copyWith(
+        strikethrough: textStyle.copyWith(
           decoration: TextDecoration.lineThrough,
         ),
-        href: baseTextStyle(fontFamily).copyWith(
+        href: textStyle.copyWith(
           color: theme.colorScheme.primary,
           decoration: TextDecoration.underline,
         ),
         code: GoogleFonts.robotoMono(
-          textStyle: baseTextStyle(fontFamily).copyWith(
-            fontSize: fontSize,
+          textStyle: baseStyle.copyWith(
             fontWeight: FontWeight.normal,
             color: Colors.red,
             backgroundColor:
@@ -150,29 +159,40 @@ class EditorStyleCustomizer {
         context.read<DocumentAppearanceCubit>().state.defaultTextDirection;
     final textScaleFactor =
         context.read<AppearanceSettingsCubit>().state.textScaleFactor;
-    final baseTextStyle = this.baseTextStyle(fontFamily);
+    final baseStyle = baseTextStyle(
+      fontFamily,
+      fontSize: fontSize,
+    );
+    final textStyle = _enhanceEditorTextStyle(
+      baseStyle,
+      fallbackColor: afThemeExtension.onBackground,
+    );
 
     return EditorStyle.mobile(
       padding: padding,
       defaultTextDirection: defaultTextDirection,
       textStyleConfiguration: TextStyleConfiguration(
         lineHeight: lineHeight,
-        text: baseTextStyle.copyWith(
-          fontSize: fontSize,
-          color: afThemeExtension.onBackground,
+        text: textStyle,
+        bold: _enhanceEditorTextStyle(
+          baseTextStyle(
+            fontFamily,
+            fontWeight: FontWeight.w700,
+            fontSize: fontSize,
+          ),
+          fallbackColor: afThemeExtension.onBackground,
         ),
-        bold: baseTextStyle.copyWith(fontWeight: FontWeight.w600),
-        italic: baseTextStyle.copyWith(fontStyle: FontStyle.italic),
-        underline: baseTextStyle.copyWith(decoration: TextDecoration.underline),
-        strikethrough: baseTextStyle.copyWith(
+        italic: textStyle.copyWith(fontStyle: FontStyle.italic),
+        underline: textStyle.copyWith(decoration: TextDecoration.underline),
+        strikethrough: textStyle.copyWith(
           decoration: TextDecoration.lineThrough,
         ),
-        href: baseTextStyle.copyWith(
+        href: textStyle.copyWith(
           color: theme.colorScheme.primary,
           decoration: TextDecoration.underline,
         ),
         code: GoogleFonts.robotoMono(
-          textStyle: baseTextStyle.copyWith(
+          textStyle: baseStyle.copyWith(
             fontSize: fontSize,
             fontWeight: FontWeight.normal,
             color: Colors.red,
@@ -216,24 +236,41 @@ class EditorStyleCustomizer {
         fontSize,
       ];
     }
-    return baseTextStyle(fontFamily, fontWeight: FontWeight.w600).copyWith(
-      fontSize: fontSizes.elementAtOrNull(level - 1) ?? fontSize,
+    final headingFontSize = fontSizes.elementAtOrNull(level - 1) ?? fontSize;
+    return _enhanceEditorTextStyle(
+      baseTextStyle(
+        fontFamily,
+        fontWeight: level <= 2
+            ? FontWeight.w700
+            : ObjectTypeTypography.fontWeightForPlatform(defaultTargetPlatform),
+        fontSize: headingFontSize,
+      ),
     );
   }
 
   CodeBlockStyle codeBlockStyleBuilder() {
+    final theme = Theme.of(context);
+    final afThemeExtension = AFThemeExtension.of(context);
     final fontSize = context.read<DocumentAppearanceCubit>().state.fontSize;
     final fontFamily =
         context.read<DocumentAppearanceCubit>().state.codeFontFamily;
 
     return CodeBlockStyle(
-      textStyle: baseTextStyle(fontFamily).copyWith(
-        fontSize: fontSize,
-        height: 1.5,
-        color: AFThemeExtension.of(context).onBackground,
+      textStyle: _enhanceEditorTextStyle(
+        baseTextStyle(
+          fontFamily,
+          fontWeight: FontWeight.w500,
+          fontSize: fontSize,
+        ).copyWith(
+          height: 1.5,
+        ),
+        fallbackColor: afThemeExtension.onBackground,
       ),
-      backgroundColor: AFThemeExtension.of(context).calloutBGColor,
-      foregroundColor: AFThemeExtension.of(context).textColor.withAlpha(155),
+      backgroundColor: EditorSurfaceStyle.codeBlockBackgroundFor(
+        theme.brightness,
+        afThemeExtension.calloutBGColor,
+      ),
+      foregroundColor: afThemeExtension.textColor.withAlpha(180),
     );
   }
 
@@ -243,25 +280,33 @@ class EditorStyleCustomizer {
       final pageStyle = context.read<DocumentPageStyleBloc>().state;
       final fontSize = pageStyle.fontLayout.fontSize;
       final fontFamily = pageStyle.fontFamily ?? defaultFontFamily;
-      final baseTextStyle = this.baseTextStyle(fontFamily);
-      return baseTextStyle.copyWith(
+      final baseTextStyle = this.baseTextStyle(
+        fontFamily,
         fontSize: fontSize,
-        color: afThemeExtension.onBackground,
+      );
+      return _enhanceEditorTextStyle(
+        baseTextStyle,
+        fallbackColor: afThemeExtension.onBackground,
       );
     } else {
       final fontSize = context.read<DocumentAppearanceCubit>().state.fontSize;
-      return baseTextStyle(null).copyWith(
-        fontSize: fontSize,
-        height: 1.5,
+      return _enhanceEditorTextStyle(
+        baseTextStyle(
+          null,
+          fontSize: fontSize,
+        ).copyWith(
+          height: 1.5,
+        ),
       );
     }
   }
 
   TextStyle outlineBlockPlaceholderStyleBuilder() {
     final fontSize = context.read<DocumentAppearanceCubit>().state.fontSize;
-    return TextStyle(
-      fontFamily: defaultFontFamily,
+    return baseTextStyle(
+      null,
       fontSize: fontSize,
+    ).copyWith(
       height: 1.5,
       color: AFThemeExtension.of(context).onBackground.withValues(alpha: 0.6),
     );
@@ -272,15 +317,21 @@ class EditorStyleCustomizer {
       final pageStyle = context.read<DocumentPageStyleBloc>().state;
       final fontSize = pageStyle.fontLayout.fontSize;
       final fontFamily = pageStyle.fontFamily ?? defaultFontFamily;
-      final baseTextStyle = this.baseTextStyle(fontFamily);
-      return baseTextStyle.copyWith(
-        fontSize: fontSize,
+      return _enhanceEditorTextStyle(
+        baseTextStyle(
+          fontFamily,
+          fontSize: fontSize,
+        ),
       );
     } else {
       final fontSize = context.read<DocumentAppearanceCubit>().state.fontSize;
-      return baseTextStyle(null).copyWith(
-        fontSize: fontSize,
-        height: 1.5,
+      return _enhanceEditorTextStyle(
+        baseTextStyle(
+          null,
+          fontSize: fontSize,
+        ).copyWith(
+          height: 1.5,
+        ),
       );
     }
   }
@@ -319,22 +370,38 @@ class EditorStyleCustomizer {
     );
   }
 
-  TextStyle baseTextStyle(String? fontFamily, {FontWeight? fontWeight}) {
-    if (fontFamily == null) {
-      return TextStyle(fontWeight: fontWeight);
-    } else if (fontFamily == defaultFontFamily) {
-      return TextStyle(fontFamily: fontFamily, fontWeight: fontWeight);
+  TextStyle baseTextStyle(
+    String? fontFamily, {
+    FontWeight? fontWeight,
+    double? fontSize,
+  }) {
+    final resolvedFontFamily = fontFamily ?? defaultFontFamily;
+    if (resolvedFontFamily.isEmpty) {
+      return ObjectTypeTypography.textStyleForPlatform(
+        defaultTargetPlatform,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+      );
     }
 
-    try {
-      return getGoogleFontSafely(fontFamily, fontWeight: fontWeight);
-    } on Exception {
-      if ([defaultFontFamily, builtInCodeFontFamily].contains(fontFamily)) {
-        return TextStyle(fontFamily: fontFamily, fontWeight: fontWeight);
-      }
+    return getGoogleFontSafely(
+      resolvedFontFamily,
+      fontWeight: fontWeight ?? defaultFontWeight,
+      fontSize: fontSize,
+    );
+  }
 
-      return TextStyle(fontWeight: fontWeight);
-    }
+  TextStyle _enhanceEditorTextStyle(
+    TextStyle style, {
+    Color? fallbackColor,
+  }) {
+    final theme = Theme.of(context);
+    return ObjectTypeTypography.enhanceEditorTextStyle(
+      style,
+      platform: theme.platform,
+      brightness: theme.brightness,
+      fallbackColor: fallbackColor ?? AFThemeExtension.of(context).onBackground,
+    );
   }
 
   InlineSpan customizeAttributeDecorator(
@@ -372,19 +439,15 @@ class EditorStyleCustomizer {
 
     // try to refresh font here.
     if (attributes.fontFamily != null) {
-      try {
-        if (before.text?.contains('_regular') == true) {
-          getGoogleFontSafely(attributes.fontFamily!.parseFontFamilyName());
-        } else {
-          return TextSpan(
-            text: before.text,
-            style: newStyle?.merge(
-              getGoogleFontSafely(attributes.fontFamily!),
-            ),
-          );
-        }
-      } catch (_) {
-        // ignore
+      if (before.text?.contains('_regular') == true) {
+        getGoogleFontSafely(attributes.fontFamily!.parseFontFamilyName());
+      } else {
+        return TextSpan(
+          text: before.text,
+          style: newStyle?.merge(
+            getGoogleFontSafely(attributes.fontFamily!),
+          ),
+        );
       }
     }
 

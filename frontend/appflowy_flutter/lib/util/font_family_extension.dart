@@ -18,6 +18,6 @@ extension FontFamilyExtension on String {
   // for example, the display name is "Noto Sans HK"
   // the font family name is "NotoSansHK_Regular"
   String get fontFamilyName => isEmpty || this == defaultFontFamily
-      ? defaultFontFamily
-      : getGoogleFontSafely(this).fontFamily ?? defaultFontFamily;
+      ? preferredFontFamily
+      : getGoogleFontSafely(this).fontFamily ?? preferredFontFamily;
 }

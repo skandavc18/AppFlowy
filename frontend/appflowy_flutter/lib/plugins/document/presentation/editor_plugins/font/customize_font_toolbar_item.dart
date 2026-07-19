@@ -151,6 +151,7 @@ class _FontFamilyDropDownState extends State<FontFamilyDropDown> {
                           itemBuilder: (context, index) =>
                               _fontFamilyItemButton(
                             context,
+                            displayed[index],
                             getGoogleFontSafely(displayed[index]),
                           ),
                           itemCount: displayed.length,
@@ -165,6 +166,7 @@ class _FontFamilyDropDownState extends State<FontFamilyDropDown> {
                             displayed.length,
                             (index) => _fontFamilyItemButton(
                               context,
+                              displayed[index],
                               getGoogleFontSafely(displayed[index]),
                             ),
                           ),
@@ -180,12 +182,11 @@ class _FontFamilyDropDownState extends State<FontFamilyDropDown> {
 
   Widget _fontFamilyItemButton(
     BuildContext context,
+    String buttonFontFamily,
     TextStyle style,
   ) {
-    final buttonFontFamily =
-        style.fontFamily?.parseFontFamilyName() ?? defaultFontFamily;
     return Tooltip(
-      message: buttonFontFamily,
+      message: buttonFontFamily.fontFamilyDisplayName,
       waitDuration: const Duration(milliseconds: 150),
       child: SizedBox(
         key: ValueKey(buttonFontFamily),
@@ -194,9 +195,9 @@ class _FontFamilyDropDownState extends State<FontFamilyDropDown> {
           onHover: (_) => FocusScope.of(context).unfocus(),
           text: FlowyText(
             buttonFontFamily.fontFamilyDisplayName,
-            fontFamily: buttonFontFamily,
+            fontFamily: style.fontFamily,
             figmaLineHeight: 20,
-            fontWeight: FontWeight.w400,
+            fontWeight: defaultFontWeight,
           ),
           rightIcon:
               buttonFontFamily == widget.currentFontFamily.parseFontFamilyName()

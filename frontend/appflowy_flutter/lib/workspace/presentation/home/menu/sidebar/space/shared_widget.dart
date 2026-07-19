@@ -9,6 +9,7 @@ import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/_extension.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/sidebar_space_menu.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/space_icon.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -157,7 +158,7 @@ class SpacePermissionButton extends StatelessWidget {
           const VSpace(4.0),
           FlowyText.regular(
             desc,
-            fontSize: 12.0,
+            fontSize: 14.0,
             color: Theme.of(context).hintColor,
           ),
         ],
@@ -544,10 +545,8 @@ class CurrentSpace extends StatelessWidget {
         ),
         const HSpace(10),
         Flexible(
-          child: FlowyText.medium(
+          child: SidebarText(
             space.name,
-            fontSize: 14.0,
-            figmaLineHeight: 18.0,
             overflow: TextOverflow.ellipsis,
             color: isHovered ? Theme.of(context).colorScheme.onSurface : null,
           ),
@@ -718,10 +717,10 @@ class _SpaceSearchFieldState extends State<SpaceSearchField> {
         ),
         placeholderStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: Theme.of(context).hintColor,
-              fontWeight: FontWeight.w400,
+              fontWeight: FontWeight.w500,
             ),
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w400,
+              fontWeight: FontWeight.w500,
             ),
       ),
     );

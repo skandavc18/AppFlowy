@@ -1,4 +1,5 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/toolbar_extension.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
@@ -56,8 +57,10 @@ class _DesktopFloatingToolbarState extends State<DesktopFloatingToolbar> {
       top: position!.top,
       right: position!.right,
       child: widget.enableAnimation
-          ? ToolbarAnimationWidget(child: widget.child)
-          : widget.child,
+          ? ToolbarAnimationWidget(
+              child: EditorChromeTheme(child: widget.child),
+            )
+          : EditorChromeTheme(child: widget.child),
     );
   }
 

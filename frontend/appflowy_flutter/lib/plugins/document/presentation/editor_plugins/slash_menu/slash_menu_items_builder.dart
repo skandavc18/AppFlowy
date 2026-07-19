@@ -7,6 +7,7 @@ import 'package:universal_platform/universal_platform.dart';
 
 import 'slash_menu_items/mobile_items.dart';
 import 'slash_menu_items/slash_menu_items.dart';
+import 'slash_menu_metadata.dart';
 
 /// Build slash menu items
 ///
@@ -60,89 +61,83 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
   DocumentBloc? documentBloc,
   bool isEmpty = false,
 }) {
-  return [
-    // ai
-    if (!isEmpty) continueWritingSlashMenuItem,
-    aiWriterSlashMenuItem,
-
-    paragraphSlashMenuItem,
-
-    // heading 1-3
-    heading1SlashMenuItem,
-    heading2SlashMenuItem,
-    heading3SlashMenuItem,
-
-    // image
-    imageSlashMenuItem,
-
-    // list
-    bulletedListSlashMenuItem,
-    numberedListSlashMenuItem,
-    todoListSlashMenuItem,
-
-    // divider
-    dividerSlashMenuItem,
-
-    // quote
-    quoteSlashMenuItem,
-
-    // simple table
+  final databaseItems = <SelectionMenuItem>[
     tableSlashMenuItem,
-
-    // link to page
     linkToPageSlashMenuItem,
-
-    // columns
-    // 2-4 columns
-    twoColumnsSlashMenuItem,
-    threeColumnsSlashMenuItem,
-    fourColumnsSlashMenuItem,
-
-    // grid
     if (documentBloc != null) gridSlashMenuItem(documentBloc),
     referencedGridSlashMenuItem,
-
-    // kanban
     if (documentBloc != null) kanbanSlashMenuItem(documentBloc),
     referencedKanbanSlashMenuItem,
-
-    // calendar
     if (documentBloc != null) calendarSlashMenuItem(documentBloc),
     referencedCalendarSlashMenuItem,
-
-    // callout
-    calloutSlashMenuItem,
-
-    // outline
-    outlineSlashMenuItem,
-
-    // math equation
-    mathEquationSlashMenuItem,
-
-    // code block
-    codeBlockSlashMenuItem,
-
-    // toggle list - toggle headings
-    toggleListSlashMenuItem,
-    toggleHeading1SlashMenuItem,
-    toggleHeading2SlashMenuItem,
-    toggleHeading3SlashMenuItem,
-
-    // emoji
-    emojiSlashMenuItem,
-
-    // date or reminder
-    dateOrReminderSlashMenuItem,
-
-    // photo gallery
-    photoGallerySlashMenuItem,
-
-    // file
-    fileSlashMenuItem,
-
-    // sub page
-    subPageSlashMenuItem,
   ];
+
+  return registerSlashMenuSections([
+    SlashMenuSectionItems(
+      section: SlashMenuSection.suggestions,
+      items: [
+        if (!isEmpty) continueWritingSlashMenuItem,
+        aiWriterSlashMenuItem,
+      ],
+      newItems: {
+        if (!isEmpty) continueWritingSlashMenuItem,
+      },
+    ),
+    SlashMenuSectionItems(
+      section: SlashMenuSection.basicBlocks,
+      items: [
+        paragraphSlashMenuItem,
+        heading1SlashMenuItem,
+        heading2SlashMenuItem,
+        heading3SlashMenuItem,
+        bulletedListSlashMenuItem,
+        numberedListSlashMenuItem,
+        todoListSlashMenuItem,
+        toggleListSlashMenuItem,
+      ],
+      shortcuts: {
+        heading1SlashMenuItem: '#',
+        heading2SlashMenuItem: '##',
+        heading3SlashMenuItem: '###',
+        bulletedListSlashMenuItem: '-',
+        numberedListSlashMenuItem: '1.',
+        todoListSlashMenuItem: '-[]',
+        toggleListSlashMenuItem: '>',
+      },
+    ),
+    SlashMenuSectionItems(
+      section: SlashMenuSection.media,
+      items: [
+        imageSlashMenuItem,
+        photoGallerySlashMenuItem,
+        fileSlashMenuItem,
+      ],
+    ),
+    SlashMenuSectionItems(
+      section: SlashMenuSection.database,
+      items: databaseItems,
+    ),
+    SlashMenuSectionItems(
+      section: SlashMenuSection.advanced,
+      items: [
+        dividerSlashMenuItem,
+        quoteSlashMenuItem,
+        twoColumnsSlashMenuItem,
+        threeColumnsSlashMenuItem,
+        fourColumnsSlashMenuItem,
+        calloutSlashMenuItem,
+        outlineSlashMenuItem,
+        mathEquationSlashMenuItem,
+        codeBlockSlashMenuItem,
+        toggleHeading1SlashMenuItem,
+        toggleHeading2SlashMenuItem,
+        toggleHeading3SlashMenuItem,
+        emojiSlashMenuItem,
+        dateOrReminderSlashMenuItem,
+        subPageSlashMenuItem,
+      ],
+    ),
+  ]);
 }
 
 /// The slash menu items in the simple table block.
@@ -152,56 +147,55 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
 /// - Database Items
 /// - Image Gallery
 List<SelectionMenuItem> _simpleTableSlashMenuItems() {
-  return [
-    paragraphSlashMenuItem,
-
-    // heading 1-3
-    heading1SlashMenuItem,
-    heading2SlashMenuItem,
-    heading3SlashMenuItem,
-
-    // image
-    imageSlashMenuItem,
-
-    // list
-    bulletedListSlashMenuItem,
-    numberedListSlashMenuItem,
-    todoListSlashMenuItem,
-
-    // divider
-    dividerSlashMenuItem,
-
-    // quote
-    quoteSlashMenuItem,
-
-    // link to page
-    linkToPageSlashMenuItem,
-
-    // callout
-    calloutSlashMenuItem,
-
-    // math equation
-    mathEquationSlashMenuItem,
-
-    // code block
-    codeBlockSlashMenuItem,
-
-    // toggle list - toggle headings
-    toggleListSlashMenuItem,
-    toggleHeading1SlashMenuItem,
-    toggleHeading2SlashMenuItem,
-    toggleHeading3SlashMenuItem,
-
-    // emoji
-    emojiSlashMenuItem,
-
-    // date or reminder
-    dateOrReminderSlashMenuItem,
-
-    // file
-    fileSlashMenuItem,
-
-    // sub page
-    subPageSlashMenuItem,
-  ];
+  return registerSlashMenuSections([
+    SlashMenuSectionItems(
+      section: SlashMenuSection.basicBlocks,
+      items: [
+        paragraphSlashMenuItem,
+        heading1SlashMenuItem,
+        heading2SlashMenuItem,
+        heading3SlashMenuItem,
+        bulletedListSlashMenuItem,
+        numberedListSlashMenuItem,
+        todoListSlashMenuItem,
+        toggleListSlashMenuItem,
+      ],
+      shortcuts: {
+        heading1SlashMenuItem: '#',
+        heading2SlashMenuItem: '##',
+        heading3SlashMenuItem: '###',
+        bulletedListSlashMenuItem: '-',
+        numberedListSlashMenuItem: '1.',
+        todoListSlashMenuItem: '-[]',
+        toggleListSlashMenuItem: '>',
+      },
+    ),
+    SlashMenuSectionItems(
+      section: SlashMenuSection.media,
+      items: [
+        imageSlashMenuItem,
+        fileSlashMenuItem,
+      ],
+    ),
+    SlashMenuSectionItems(
+      section: SlashMenuSection.database,
+      items: [linkToPageSlashMenuItem],
+    ),
+    SlashMenuSectionItems(
+      section: SlashMenuSection.advanced,
+      items: [
+        dividerSlashMenuItem,
+        quoteSlashMenuItem,
+        calloutSlashMenuItem,
+        mathEquationSlashMenuItem,
+        codeBlockSlashMenuItem,
+        toggleHeading1SlashMenuItem,
+        toggleHeading2SlashMenuItem,
+        toggleHeading3SlashMenuItem,
+        emojiSlashMenuItem,
+        dateOrReminderSlashMenuItem,
+        subPageSlashMenuItem,
+      ],
+    ),
+  ]);
 }

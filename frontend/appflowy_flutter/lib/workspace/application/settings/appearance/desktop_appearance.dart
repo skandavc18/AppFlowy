@@ -1,4 +1,5 @@
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flowy_infra/theme_extension.dart';
@@ -14,10 +15,9 @@ class DesktopAppearance extends BaseAppearance {
   ) {
     assert(codeFontFamily.isNotEmpty);
 
-    fontFamily = fontFamily.isEmpty ? defaultFontFamily : fontFamily;
-
     final isLight = brightness == Brightness.light;
     final theme = isLight ? appTheme.lightTheme : appTheme.darkTheme;
+    final fontStyle = getFontStyle(fontFamily: fontFamily);
 
     final colorScheme = ColorScheme(
       brightness: brightness,
@@ -53,6 +53,7 @@ class DesktopAppearance extends BaseAppearance {
       useMaterial3: false,
       brightness: brightness,
       dialogBackgroundColor: theme.surface,
+      fontFamily: fontStyle.fontFamily,
       textTheme: getTextTheme(
         fontFamily: fontFamily,
         fontColor: theme.text,
@@ -70,15 +71,15 @@ class DesktopAppearance extends BaseAppearance {
       tooltipTheme: TooltipThemeData(
         textStyle: getFontStyle(
           fontFamily: fontFamily,
-          fontSize: FontSizes.s11,
-          fontWeight: FontWeight.w400,
+          fontSize: FontSizes.s14,
+          fontWeight: defaultFontWeight,
           fontColor: theme.surface,
         ),
       ),
       scaffoldBackgroundColor: theme.surface,
       snackBarTheme: SnackBarThemeData(
         backgroundColor: colorScheme.primary,
-        contentTextStyle: TextStyle(color: colorScheme.onSurface),
+        contentTextStyle: fontStyle.copyWith(color: colorScheme.onSurface),
       ),
       scrollbarTheme: ScrollbarThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
@@ -134,15 +135,18 @@ class DesktopAppearance extends BaseAppearance {
           ),
           callout: getFontStyle(
             fontFamily: fontFamily,
-            fontSize: FontSizes.s11,
+            fontSize: FontSizes.s14,
             fontColor: theme.shader3,
           ),
-          calloutBGColor: theme.hoverBG3,
+          calloutBGColor: EditorSurfaceStyle.calloutBackgroundFor(
+            brightness,
+            theme.hoverBG3,
+          ),
           tableCellBGColor: theme.surface,
           caption: getFontStyle(
             fontFamily: fontFamily,
-            fontSize: FontSizes.s11,
-            fontWeight: FontWeight.w400,
+            fontSize: FontSizes.s14,
+            fontWeight: defaultFontWeight,
             fontColor: theme.hint,
           ),
           onBackground: theme.text,

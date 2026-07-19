@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_option_cubit.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/toolbar_item/text_suggestions_toolbar_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
@@ -270,7 +271,7 @@ class TurnIntoOptionMenu extends StatelessWidget {
         iconPadding: 12,
         text: FlowyText(
           item.title,
-          fontWeight: FontWeight.w400,
+          fontWeight: EditorChromeStyle.menuFontWeight,
           figmaLineHeight: 20,
         ),
         rightIcon: isSelected ? FlowySvg(FlowySvgs.toolbar_check_m) : null,

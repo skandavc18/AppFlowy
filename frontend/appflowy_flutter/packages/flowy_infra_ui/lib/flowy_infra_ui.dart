@@ -14,6 +14,7 @@ export 'src/keyboard/keyboard_visibility_detector.dart';
 export 'style_widget/button.dart';
 export 'style_widget/color_picker.dart';
 export 'style_widget/divider.dart';
+export 'style_widget/font_weight.dart';
 export 'style_widget/icon_button.dart';
 export 'style_widget/primary_rounded_button.dart';
 export 'style_widget/scrollbar.dart';

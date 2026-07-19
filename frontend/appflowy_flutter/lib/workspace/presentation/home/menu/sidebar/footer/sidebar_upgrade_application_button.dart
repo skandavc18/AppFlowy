@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/util/theme_extension.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -47,10 +48,8 @@ class SidebarUpgradeApplicationButton extends StatelessWidget {
           blendMode: null,
         ),
         const HSpace(6),
-        FlowyText.medium(
+        SidebarText(
           LocaleKeys.autoUpdate_bannerUpdateTitle.tr(),
-          fontSize: 14,
-          figmaLineHeight: 18,
         ),
         const Spacer(),
         FlowyButton(
@@ -65,10 +64,8 @@ class SidebarUpgradeApplicationButton extends StatelessWidget {
   Widget _buildDescription() {
     return Opacity(
       opacity: 0.7,
-      child: FlowyText(
+      child: SidebarText(
         LocaleKeys.autoUpdate_bannerUpdateDescription.tr(),
-        fontSize: 13,
-        figmaLineHeight: 16,
         maxLines: null,
       ),
     );
@@ -91,11 +88,9 @@ class SidebarUpgradeApplicationButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(9),
             ),
           ),
-          child: FlowyText.medium(
+          child: SidebarText(
             LocaleKeys.autoUpdate_settingsUpdateButton.tr(),
             color: Colors.white,
-            fontSize: 12.0,
-            figmaLineHeight: 15.0,
           ),
         ),
       ),

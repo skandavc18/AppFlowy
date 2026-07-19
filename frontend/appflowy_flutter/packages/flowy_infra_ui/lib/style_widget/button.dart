@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flowy_infra/size.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flowy_infra_ui/widget/flowy_tooltip.dart';
 import 'package:flowy_infra_ui/widget/ignore_parent_gesture.dart';
@@ -430,7 +431,10 @@ class FlowyTextButton extends StatelessWidget {
           ),
           textStyle: WidgetStateProperty.all(
             Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  fontWeight: fontWeight ?? FontWeight.w500,
+                  fontWeight: fontWeight ?? flowyRegularFontWeight,
+                  fontVariations: flowyFontVariationsForWeight(
+                    fontWeight ?? flowyRegularFontWeight,
+                  ),
                   fontSize: fontSize,
                   color: fontColor ?? Theme.of(context).colorScheme.onPrimary,
                   decoration: decoration,

@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_hover_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_replace_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/link_embed_block_component.dart';
@@ -93,7 +94,7 @@ class _CustomLinkPreviewMenuState extends State<CustomLinkPreviewMenu> {
                 hoverColor: enableButton ? null : Colors.transparent,
                 text: FlowyText(
                   command.title,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: EditorChromeStyle.menuFontWeight,
                   figmaLineHeight: 20,
                 ),
                 onTap: enableButton ? () => onTap(command) : null,

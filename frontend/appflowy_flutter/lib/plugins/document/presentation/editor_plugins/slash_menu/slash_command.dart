@@ -5,6 +5,8 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:universal_platform/universal_platform.dart';
 
+import 'desktop_selection_menu.dart';
+
 typedef SlashMenuItemsBuilder = List<SelectionMenuItem> Function(
   EditorState editorState,
   Node node,
@@ -110,13 +112,12 @@ Future<bool> _showSlashMenu(
                 : MobileSelectionMenuStyle.dark,
             startOffset: editorState.selection?.start.offset ?? 0,
           )
-        : SelectionMenu(
+        : AppFlowyDesktopSelectionMenu(
             context: context,
             editorState: editorState,
             selectionMenuItems: items,
             deleteSlashByDefault: shouldInsertSlash,
             deleteKeywordsByDefault: deleteKeywordsByDefault,
-            singleColumn: singleColumn,
             style: style,
           );
 

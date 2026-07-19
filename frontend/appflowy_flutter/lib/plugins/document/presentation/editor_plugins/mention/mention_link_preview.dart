@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_create_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/custom_link_parser.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/paste_as/paste_as_menu.dart';
@@ -209,7 +210,7 @@ class _MentionLinkPreviewState extends State<MentionLinkPreview> {
                 hoverColor: enableButton ? null : Colors.transparent,
                 text: FlowyText(
                   command.title,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: EditorChromeStyle.menuFontWeight,
                   figmaLineHeight: 20,
                 ),
                 onTap: enableButton ? () => onTap(command) : null,

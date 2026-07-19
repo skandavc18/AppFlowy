@@ -4,6 +4,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -51,11 +52,9 @@ class _SpaceMigrationState extends State<SpaceMigration> {
         const VSpace(6.0),
         Opacity(
           opacity: 0.7,
-          child: FlowyText.regular(
+          child: SidebarText(
             LocaleKeys.space_upgradeSpaceDescription.tr(),
             maxLines: null,
-            fontSize: 13.0,
-            lineHeight: 1.3,
           ),
         ),
         const VSpace(12.0),
@@ -89,7 +88,7 @@ class _SpaceMigrationState extends State<SpaceMigration> {
               shaderCallback: (Rect bounds) =>
                   linearGradient.createShader(bounds),
               blendMode: BlendMode.srcIn,
-              child: FlowyText(
+              child: SidebarText(
                 LocaleKeys.space_upgradeYourSpace.tr(),
               ),
             ),
@@ -121,10 +120,9 @@ class _MigrationTitle extends StatelessWidget {
         ),
         const HSpace(8.0),
         Expanded(
-          child: FlowyText(
+          child: SidebarText(
             LocaleKeys.space_upgradeSpaceTitle.tr(),
             maxLines: 3,
-            lineHeight: 1.2,
           ),
         ),
       ],
@@ -148,10 +146,9 @@ class _ExpandedUpgradeButton extends StatelessWidget {
           color: const Color(0xFFA44AFD),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
         ),
-        child: FlowyText(
+        child: SidebarText(
           LocaleKeys.space_upgrade.tr(),
           color: Colors.white,
-          fontSize: 12.0,
           strutStyle: const StrutStyle(forceStrutHeight: true),
         ),
       ),

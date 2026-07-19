@@ -1,16 +1,24 @@
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
 
-// the default font family is empty, so we can use the default font family of the platform
-// the system will choose the default font family of the platform
-// iOS: San Francisco
-// Android: Roboto
-// Desktop: Based on the OS
+// Keep the persisted default value empty so existing settings remain compatible.
 const defaultFontFamily = '';
 
+const preferredFontFamily = 'DM Sans';
+const bundledFontFamily = 'Inter';
 const builtInCodeFontFamily = 'RobotoMono';
+const defaultFontWeight = flowyRegularFontWeight;
+const defaultFontWeightValue = flowyRegularFontWeightValue;
+const defaultFontVariations = flowyRegularFontVariations;
+const emphasizedFontWeight = FontWeight.w600;
+const defaultLetterSpacing = -0.005;
+const defaultFontFamilyFallback = [bundledFontFamily];
+
+String resolveFontFamily(String? fontFamily) =>
+    fontFamily == null || fontFamily.isEmpty ? preferredFontFamily : fontFamily;
 
 abstract class BaseAppearance {
   final white = const Color(0xFFFFFFFF);
@@ -30,34 +38,17 @@ abstract class BaseAppearance {
     double? lineHeight,
   }) {
     fontSize = fontSize ?? FontSizes.s14;
-    fontWeight = fontWeight ?? FontWeight.w400;
-    letterSpacing = fontSize * (letterSpacing ?? 0.005);
+    fontWeight = fontWeight ?? defaultFontWeight;
+    letterSpacing = fontSize * (letterSpacing ?? defaultLetterSpacing);
 
-    final textStyle = TextStyle(
-      fontFamily: fontFamily.isEmpty ? null : fontFamily,
+    return getGoogleFontSafely(
+      fontFamily,
       fontSize: fontSize,
-      color: fontColor,
+      fontColor: fontColor,
       fontWeight: fontWeight,
       letterSpacing: letterSpacing,
-      height: lineHeight,
+      lineHeight: lineHeight,
     );
-
-    if (fontFamily == defaultFontFamily) {
-      return textStyle;
-    }
-
-    try {
-      return getGoogleFontSafely(
-        fontFamily,
-        fontSize: fontSize,
-        fontColor: fontColor,
-        fontWeight: fontWeight,
-        letterSpacing: letterSpacing,
-        lineHeight: lineHeight,
-      );
-    } catch (e) {
-      return textStyle;
-    }
   }
 
   TextTheme getTextTheme({
@@ -69,40 +60,40 @@ abstract class BaseAppearance {
         fontFamily: fontFamily,
         fontSize: FontSizes.s32,
         fontColor: fontColor,
-        fontWeight: FontWeight.w600,
+        fontWeight: emphasizedFontWeight,
         lineHeight: 42.0,
       ), // h2
       displayMedium: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s24,
         fontColor: fontColor,
-        fontWeight: FontWeight.w600,
+        fontWeight: emphasizedFontWeight,
         lineHeight: 34.0,
       ), // h3
       displaySmall: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s20,
         fontColor: fontColor,
-        fontWeight: FontWeight.w600,
+        fontWeight: emphasizedFontWeight,
         lineHeight: 28.0,
       ), // h4
       titleLarge: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s18,
         fontColor: fontColor,
-        fontWeight: FontWeight.w600,
+        fontWeight: emphasizedFontWeight,
       ), // title
       titleMedium: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s16,
         fontColor: fontColor,
-        fontWeight: FontWeight.w600,
+        fontWeight: emphasizedFontWeight,
       ), // heading
       titleSmall: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s14,
         fontColor: fontColor,
-        fontWeight: FontWeight.w600,
+        fontWeight: emphasizedFontWeight,
       ), // subheading
       bodyMedium: getFontStyle(
         fontFamily: fontFamily,
@@ -111,7 +102,7 @@ abstract class BaseAppearance {
       bodySmall: getFontStyle(
         fontFamily: fontFamily,
         fontColor: fontColor,
-        fontWeight: FontWeight.w400,
+        fontWeight: defaultFontWeight,
       ), // body-thin
     );
   }

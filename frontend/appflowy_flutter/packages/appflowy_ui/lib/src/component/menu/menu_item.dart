@@ -16,6 +16,7 @@ class AFMenuItem extends StatelessWidget {
     this.trailing,
     this.padding,
     this.showSelectedBackground = true,
+    this.selectedBackgroundColor,
   });
 
   /// Widget to display before the title (e.g., an icon or avatar).
@@ -32,6 +33,9 @@ class AFMenuItem extends StatelessWidget {
 
   /// Whether to show the selected background color.
   final bool showSelectedBackground;
+
+  /// Optional background color used when this item is selected.
+  final Color? selectedBackgroundColor;
 
   /// Called when the menu item is tapped.
   final VoidCallback? onTap;
@@ -65,7 +69,7 @@ class AFMenuItem extends StatelessWidget {
           return theme.fillColorScheme.content;
         }
         if (selected && showSelectedBackground) {
-          return theme.fillColorScheme.themeSelect;
+          return selectedBackgroundColor ?? theme.fillColorScheme.themeSelect;
         }
         if (isHovering && onTap != null) {
           return theme.fillColorScheme.contentHover;

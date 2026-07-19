@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/search/view_ancestor_cache.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
@@ -35,6 +34,8 @@ import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/sidebar_space.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/space_migration.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/sidebar_workspace.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart';
@@ -329,104 +330,105 @@ class _SidebarState extends State<_Sidebar> {
 
   @override
   Widget build(BuildContext context) {
-    const menuHorizontalInset = EdgeInsets.symmetric(horizontal: 8);
-    return MouseRegion(
-      onEnter: (_) => _isHovered.value = true,
-      onExit: (_) => _isHovered.value = false,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          border: Border(
-            right: BorderSide(color: Theme.of(context).dividerColor),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // top menu
-            Padding(
-              padding: menuHorizontalInset,
-              child: SidebarTopMenu(
-                isSidebarOnHover: _isHovered,
-              ),
-            ),
-            // user or workspace, setting
-            BlocBuilder<UserWorkspaceBloc, UserWorkspaceState>(
-              builder: (context, state) => Container(
-                height: HomeSizes.workspaceSectionHeight,
-                padding: menuHorizontalInset - const EdgeInsets.only(right: 6),
-                // if the workspaces are empty, show the user profile instead
-                child: state.isCollabWorkspaceOn && state.workspaces.isNotEmpty
-                    ? SidebarWorkspace(userProfile: widget.userProfile)
-                    : SidebarUser(userProfile: widget.userProfile),
-              ),
-            ),
-            if (FeatureFlag.search.isOn) ...[
-              const VSpace(6),
-              Container(
-                padding: menuHorizontalInset,
-                height: HomeSizes.searchSectionHeight,
-                child: const _SidebarSearchButton(),
-              ),
-            ],
-
-            if (context
-                    .read<UserWorkspaceBloc>()
-                    .state
-                    .currentWorkspace
-                    ?.role !=
-                AFRolePB.Guest) ...[
-              const VSpace(6.0),
-              // new page button
-              const SidebarNewPageButton(),
-            ],
-
-            // scrollable document list
-            const VSpace(12.0),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              child: ValueListenableBuilder(
-                valueListenable: _scrollOffset,
-                builder: (_, offset, child) => Opacity(
-                  opacity: offset > 0 ? 1 : 0,
-                  child: child,
+    const menuHorizontalInset = EdgeInsets.symmetric(
+      horizontal: HomeSizes.sidebarHorizontalInset,
+    );
+    return Theme(
+      data: SidebarStyle.themeData(context),
+      child: MouseRegion(
+        onEnter: (_) => _isHovered.value = true,
+        onExit: (_) => _isHovered.value = false,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: SidebarStyle.background(context),
+            border: Border(
+              right: BorderSide(
+                color: SidebarStyle.edgeBorderFor(
+                  Theme.of(context).brightness,
                 ),
-                child: const FlowyDivider(),
               ),
             ),
+          ),
+          child: Column(
+            children: [
+              // top menu
+              Padding(
+                padding: menuHorizontalInset,
+                child: SidebarTopMenu(
+                  isSidebarOnHover: _isHovered,
+                ),
+              ),
+              // user or workspace, setting
+              BlocBuilder<UserWorkspaceBloc, UserWorkspaceState>(
+                builder: (context, state) => Container(
+                  height: HomeSizes.workspaceSectionHeight,
+                  padding:
+                      menuHorizontalInset - const EdgeInsets.only(right: 6),
+                  // if the workspaces are empty, show the user profile instead
+                  child:
+                      state.isCollabWorkspaceOn && state.workspaces.isNotEmpty
+                          ? SidebarWorkspace(userProfile: widget.userProfile)
+                          : SidebarUser(userProfile: widget.userProfile),
+                ),
+              ),
+              if (FeatureFlag.search.isOn) ...[
+                const VSpace(4),
+                Container(
+                  padding: menuHorizontalInset,
+                  height: HomeSizes.searchSectionHeight,
+                  child: const _SidebarSearchButton(),
+                ),
+              ],
 
-            _renderFolderOrSpace(menuHorizontalInset),
+              if (context
+                      .read<UserWorkspaceBloc>()
+                      .state
+                      .currentWorkspace
+                      ?.role !=
+                  AFRolePB.Guest) ...[
+                const VSpace(2.0),
+                // new page button
+                const SidebarNewPageButton(),
+              ],
 
-            // trash
-            Padding(
-              padding: menuHorizontalInset +
-                  const EdgeInsets.symmetric(horizontal: 4.0),
-              child: const FlowyDivider(),
-            ),
-            const VSpace(8),
+              // scrollable document list
+              const VSpace(6.0),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                child: ValueListenableBuilder(
+                  valueListenable: _scrollOffset,
+                  builder: (_, offset, child) => Opacity(
+                    opacity: offset > 0 ? 1 : 0,
+                    child: child,
+                  ),
+                  child: const FlowyDivider(),
+                ),
+              ),
 
-            _renderUpgradeSpaceButton(menuHorizontalInset),
-            _buildUpgradeApplicationButton(menuHorizontalInset),
+              _renderFolderOrSpace(),
 
-            const VSpace(8),
-            Padding(
-              padding: menuHorizontalInset +
-                  const EdgeInsets.symmetric(horizontal: 4.0),
-              child: const SidebarFooter(),
-            ),
-            const VSpace(14),
-          ],
+              _renderUpgradeSpaceButton(menuHorizontalInset),
+              _buildUpgradeApplicationButton(menuHorizontalInset),
+
+              const VSpace(4),
+              Padding(
+                padding: menuHorizontalInset,
+                child: const SidebarFooter(),
+              ),
+              const VSpace(8),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _renderFolderOrSpace(EdgeInsets menuHorizontalInset) {
+  Widget _renderFolderOrSpace() {
     final spaceState = context.read<SpaceBloc>().state;
     final workspaceState = context.read<UserWorkspaceBloc>().state;
 
     if (!spaceState.isInitialized) {
-      return const SizedBox.shrink();
+      return const Expanded(child: SizedBox.shrink());
     }
 
     // there's no space or the workspace is not collaborative,
@@ -444,9 +446,13 @@ class _SidebarState extends State<_Sidebar> {
             !workspaceState.isCollabWorkspaceOn
         ? Expanded(
             child: Padding(
-              padding: menuHorizontalInset - const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.only(
+                left: HomeSpaceViewSizes.viewListLeftPadding,
+              ),
               child: SingleChildScrollView(
-                padding: const EdgeInsets.only(right: 6),
+                padding: const EdgeInsets.only(
+                  right: HomeSpaceViewSizes.viewListRightPadding,
+                ),
                 controller: _scrollController,
                 physics: const ClampingScrollPhysics(),
                 child: SidebarFolder(
@@ -458,11 +464,15 @@ class _SidebarState extends State<_Sidebar> {
           )
         : Expanded(
             child: Padding(
-              padding: menuHorizontalInset - const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.only(
+                left: HomeSpaceViewSizes.viewListLeftPadding,
+              ),
               child: FlowyScrollbar(
                 controller: _scrollController,
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.only(
+                    right: HomeSpaceViewSizes.viewListRightPadding,
+                  ),
                   controller: _scrollController,
                   physics: const ClampingScrollPhysics(),
                   child: SidebarSpace(
@@ -576,10 +586,15 @@ class _SidebarSearchButton extends StatelessWidget {
             spaceBloc: spaceBloc,
           );
         },
-        leftIcon: const FlowySvg(FlowySvgs.search_s),
-        iconPadding: 12.0,
-        margin: const EdgeInsets.only(left: 8.0),
-        text: FlowyText.regular(LocaleKeys.search_label.tr()),
+        leftIcon: const SidebarSearchIcon(),
+        leftIconSize: const Size.square(HomeSizes.sidebarActionIconSize),
+        iconPadding: HomeSizes.sidebarActionIconTextSpacing,
+        margin: const EdgeInsets.symmetric(
+          horizontal: HomeSizes.sidebarButtonHorizontalMargin,
+        ),
+        text: SidebarText(
+          LocaleKeys.search_label.tr(),
+        ),
       ),
     );
   }

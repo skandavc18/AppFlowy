@@ -1,5 +1,6 @@
 // ThemeData in mobile
 import 'package:appflowy/plugins/document/presentation/editor_plugins/mobile_toolbar_v3/aa_menu/_toolbar_theme.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme.dart';
@@ -25,7 +26,7 @@ class MobileAppearance extends BaseAppearance {
     final fontStyle = getFontStyle(
       fontFamily: fontFamily,
       fontSize: 16.0,
-      fontWeight: FontWeight.w400,
+      fontWeight: defaultFontWeight,
     );
 
     final isLight = brightness == Brightness.light;
@@ -87,7 +88,7 @@ class MobileAppearance extends BaseAppearance {
         foregroundColor: onBackground,
         backgroundColor: background,
         centerTitle: false,
-        titleTextStyle: TextStyle(
+        titleTextStyle: fontStyle.copyWith(
           color: onBackground,
           fontSize: 18,
           fontWeight: FontWeight.w600,
@@ -109,9 +110,8 @@ class MobileAppearance extends BaseAppearance {
           fixedSize: WidgetStateProperty.all(const Size.fromHeight(48)),
           elevation: WidgetStateProperty.all(0),
           textStyle: WidgetStateProperty.all(
-            TextStyle(
+            fontStyle.copyWith(
               fontSize: 14,
-              fontFamily: fontStyle.fontFamily,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -130,9 +130,8 @@ class MobileAppearance extends BaseAppearance {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: ButtonStyle(
           textStyle: WidgetStateProperty.all(
-            TextStyle(
+            fontStyle.copyWith(
               fontSize: 14,
-              fontFamily: fontStyle.fontFamily,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -157,7 +156,7 @@ class MobileAppearance extends BaseAppearance {
       // text
       fontFamily: fontStyle.fontFamily,
       textTheme: TextTheme(
-        displayLarge: const TextStyle(
+        displayLarge: fontStyle.copyWith(
           color: _primaryColor,
           fontSize: 32,
           fontWeight: FontWeight.w700,
@@ -181,7 +180,7 @@ class MobileAppearance extends BaseAppearance {
         // body2 14 Regular
         bodyMedium: fontStyle.copyWith(
           color: onBackground,
-          fontWeight: FontWeight.w400,
+          fontWeight: defaultFontWeight,
           letterSpacing: 0.07,
         ),
         // Trash empty title
@@ -262,11 +261,14 @@ class MobileAppearance extends BaseAppearance {
             fontSize: FontSizes.s11,
             color: theme.shader3,
           ),
-          calloutBGColor: theme.hoverBG3,
+          calloutBGColor: EditorSurfaceStyle.calloutBackgroundFor(
+            brightness,
+            theme.hoverBG3,
+          ),
           tableCellBGColor: theme.surface,
           caption: fontStyle.copyWith(
             fontSize: FontSizes.s11,
-            fontWeight: FontWeight.w400,
+            fontWeight: defaultFontWeight,
             color: theme.hint,
           ),
           onBackground: onBackground,

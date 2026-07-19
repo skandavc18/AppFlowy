@@ -16,9 +16,7 @@ import 'package:universal_platform/universal_platform.dart';
 
 /// Sidebar top menu is the top bar of the sidebar.
 ///
-/// in the top menu, we have:
-///   - appflowy icon (Windows or Linux)
-///   - close / expand sidebar button
+/// Provides a draggable title-bar area and the close / expand sidebar button.
 class SidebarTopMenu extends StatelessWidget {
   const SidebarTopMenu({
     super.key,
@@ -31,35 +29,15 @@ class SidebarTopMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<SidebarSectionsBloc, SidebarSectionsState>(
       builder: (context, _) => SizedBox(
-        height: !UniversalPlatform.isWindows ? HomeSizes.topBarHeight : 45,
+        height: !UniversalPlatform.isWindows ? HomeSizes.topBarHeight : 36,
         child: MoveWindowDetector(
           child: Row(
             children: [
-              _buildLogoIcon(context),
               const Spacer(),
               _buildCollapseMenuButton(context),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _buildLogoIcon(BuildContext context) {
-    if (Platform.isMacOS) {
-      return const SizedBox.shrink();
-    }
-
-    final svgData = Theme.of(context).brightness == Brightness.dark
-        ? FlowySvgs.app_logo_with_text_dark_xl
-        : FlowySvgs.app_logo_with_text_light_xl;
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 12.0, left: 8),
-      child: FlowySvg(
-        svgData,
-        size: const Size(92, 17),
-        blendMode: null,
       ),
     );
   }
@@ -91,7 +69,7 @@ class SidebarTopMenu extends StatelessWidget {
       builder: (_, value, ___) => Opacity(
         opacity: value ? 1 : 0,
         child: Padding(
-          padding: const EdgeInsets.only(top: 12.0, right: 6.0),
+          padding: const EdgeInsets.only(top: 6.0),
           child: FlowyTooltip(
             richMessage: textSpan,
             child: Listener(

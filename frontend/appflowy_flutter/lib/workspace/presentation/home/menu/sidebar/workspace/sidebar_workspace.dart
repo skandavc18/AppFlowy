@@ -7,6 +7,7 @@ import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_menu.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/workspace_notifier.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/notifications/widgets/notification_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/log.dart';
@@ -66,10 +67,9 @@ class _SidebarWorkspaceState extends State<SidebarWorkspace> {
           child: ValueListenableBuilder(
             valueListenable: onHover,
             builder: (_, onHover, child) {
-              return Container(
-                margin: const EdgeInsets.only(right: 8.0),
+              return DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8.0),
+                  borderRadius: BorderRadius.circular(6.0),
                   color: onHover
                       ? Theme.of(context).colorScheme.secondary
                       : Colors.transparent,
@@ -83,13 +83,25 @@ class _SidebarWorkspaceState extends State<SidebarWorkspace> {
                         isHover: onHover,
                       ),
                     ),
-                    UserSettingButton(
-                      isHover: onHover,
+                    Visibility(
+                      visible: onHover,
+                      maintainAnimation: true,
+                      maintainSize: true,
+                      maintainState: true,
+                      child: UserSettingButton(
+                        isHover: onHover,
+                      ),
                     ),
-                    const HSpace(8.0),
-                    NotificationButton(
-                      isHover: onHover,
-                      key: ValueKey(currentWorkspace.workspaceId),
+                    const HSpace(4.0),
+                    Visibility(
+                      visible: onHover,
+                      maintainAnimation: true,
+                      maintainSize: true,
+                      maintainState: true,
+                      child: NotificationButton(
+                        isHover: onHover,
+                        key: ValueKey(currentWorkspace.workspaceId),
+                      ),
                     ),
                     const HSpace(4.0),
                   ],
@@ -371,13 +383,13 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
               WorkspaceIcon(
                 workspaceIcon: currentWorkspace.icon,
                 workspaceName: currentWorkspace.name,
-                iconSize: 26,
-                fontSize: 16,
-                emojiSize: 20,
+                iconSize: 22,
+                fontSize: 14,
+                emojiSize: 16,
                 isEditable: false,
                 showBorder: false,
-                borderRadius: 8.0,
-                figmaLineHeight: 18.0,
+                borderRadius: 5.0,
+                figmaLineHeight: 16.0,
                 onSelected: (result) => context.read<UserWorkspaceBloc>().add(
                       UserWorkspaceEvent.updateWorkspaceIcon(
                         workspaceId: currentWorkspace.workspaceId,
@@ -387,13 +399,12 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
               ),
               const HSpace(6),
               Flexible(
-                child: FlowyText.medium(
+                child: SidebarText(
                   currentWorkspace.name,
                   color:
                       isHover ? Theme.of(context).colorScheme.onSurface : null,
                   overflow: TextOverflow.ellipsis,
                   withTooltip: true,
-                  fontSize: 15.0,
                 ),
               ),
               if (isHover) ...[

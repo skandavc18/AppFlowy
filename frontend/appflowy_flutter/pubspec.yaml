@@ -259,6 +259,16 @@ flutter:
   uses-material-design: true
 
   fonts:
+    - family: DM Sans
+      fonts:
+        - asset: assets/google_fonts/DM_Sans/DMSans-Variable.ttf
+        - asset: assets/google_fonts/DM_Sans/DMSans-VariableItalic.ttf
+          style: italic
+    - family: Inter
+      fonts:
+        - asset: assets/google_fonts/Inter/Inter-Variable.ttf
+        - asset: assets/google_fonts/Inter/Inter-VariableItalic.ttf
+          style: italic
     - family: Poppins
       fonts:
         - asset: assets/google_fonts/Poppins/Poppins-ExtraLight.ttf

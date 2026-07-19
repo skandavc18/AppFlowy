@@ -8,9 +8,9 @@ import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_menu.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_more_actions.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_pin_action.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -164,21 +164,14 @@ class FavoriteHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-    return AFGhostIconTextButton.primary(
-      text: LocaleKeys.sideBar_favorites.tr(),
-      mainAxisAlignment: MainAxisAlignment.start,
-      size: AFButtonSize.l,
-      onTap: onPressed,
-      // todo: ask the designer to provide the token.
-      padding: EdgeInsets.symmetric(
-        horizontal: 4,
-        vertical: 6,
-      ),
-      borderRadius: theme.borderRadius.s,
-      iconBuilder: (context, isHover, disabled) => const FlowySvg(
-        FlowySvgs.favorite_header_m,
-        blendMode: null,
+    return SizedBox(
+      height: HomeSizes.workspaceSectionHeight,
+      child: FlowyButton(
+        text: SidebarText.section(
+          LocaleKeys.sideBar_favorites.tr(),
+        ),
+        margin: const EdgeInsets.only(left: 6.0, right: 4.0),
+        onTap: onPressed,
       ),
     );
   }
@@ -213,7 +206,9 @@ class FavoriteMoreButton extends StatelessWidget {
       child: FlowyButton(
         margin: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 7.0),
         leftIcon: const FlowySvg(FlowySvgs.workspace_three_dots_s),
-        text: FlowyText.regular(LocaleKeys.button_more.tr()),
+        text: SidebarText(
+          LocaleKeys.button_more.tr(),
+        ),
       ),
     );
   }

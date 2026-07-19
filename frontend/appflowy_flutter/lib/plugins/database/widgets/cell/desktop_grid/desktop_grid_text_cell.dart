@@ -2,11 +2,34 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/database/application/cell/bloc/text_cell_bloc.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
+import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../editable_cell_skeleton/text.dart';
+
+abstract final class DesktopGridTextCellStyle {
+  static const primaryFontSize = 16.0;
+  static const primaryFontWeight = FontWeight.w600;
+
+  static TextStyle resolve(
+    BuildContext context, {
+    required bool isPrimary,
+  }) {
+    final style = Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    if (!isPrimary) {
+      return style;
+    }
+
+    return style.copyWith(
+      color: AFThemeExtension.of(context).strongText,
+      fontSize: primaryFontSize,
+      fontWeight: primaryFontWeight,
+      fontVariations: flowyFontVariationsForWeight(primaryFontWeight),
+    );
+  }
+}
 
 class DesktopGridTextCellSkin extends IEditableTextCellSkin {
   @override
@@ -35,15 +58,14 @@ class DesktopGridTextCellSkin extends IEditableTextCellSkin {
                   controller: textEditingController,
                   focusNode: focusNode,
                   maxLines: context.watch<TextCellBloc>().state.wrap ? null : 1,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: context
-                                .read<TextCellBloc>()
-                                .cellController
-                                .fieldInfo
-                                .isPrimary
-                            ? FontWeight.w500
-                            : null,
-                      ),
+                  style: DesktopGridTextCellStyle.resolve(
+                    context,
+                    isPrimary: context
+                        .read<TextCellBloc>()
+                        .cellController
+                        .fieldInfo
+                        .isPrimary,
+                  ),
                   decoration: const InputDecoration(
                     border: InputBorder.none,
                     focusedBorder: InputBorder.none,

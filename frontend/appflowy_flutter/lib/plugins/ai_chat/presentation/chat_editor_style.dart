@@ -9,6 +9,7 @@
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
+import 'package:appflowy/shared/object_type_typography.dart';
 import 'package:appflowy/workspace/application/appearance_defaults.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -28,13 +29,14 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
     super.width,
   });
 
+  static const _fontSize = 14.0;
+
   @override
   EditorStyle desktop() {
     final theme = Theme.of(context);
     final afThemeExtension = AFThemeExtension.of(context);
     final appearanceFont = context.read<AppearanceSettingsCubit>().state.font;
     final appearance = context.read<DocumentAppearanceCubit>().state;
-    const fontSize = 14.0;
     String fontFamily = appearance.fontFamily;
     if (fontFamily.isEmpty && appearanceFont.isNotEmpty) {
       fontFamily = appearanceFont;
@@ -52,27 +54,45 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
         lineHeight: 20 / 14,
         applyHeightToFirstAscent: true,
         applyHeightToLastDescent: true,
-        text: baseTextStyle(fontFamily).copyWith(
-          fontSize: fontSize,
+        text: baseTextStyle(
+          fontFamily,
+          fontSize: _fontSize,
+        ).copyWith(
           color: afThemeExtension.onBackground,
         ),
-        bold: baseTextStyle(fontFamily, fontWeight: FontWeight.bold).copyWith(
-          fontWeight: FontWeight.w600,
+        bold: baseTextStyle(
+          fontFamily,
+          fontWeight: FontWeight.w700,
+          fontSize: _fontSize,
         ),
-        italic: baseTextStyle(fontFamily).copyWith(fontStyle: FontStyle.italic),
-        underline: baseTextStyle(fontFamily).copyWith(
+        italic: baseTextStyle(
+          fontFamily,
+          fontSize: _fontSize,
+        ).copyWith(fontStyle: FontStyle.italic),
+        underline: baseTextStyle(
+          fontFamily,
+          fontSize: _fontSize,
+        ).copyWith(
           decoration: TextDecoration.underline,
         ),
-        strikethrough: baseTextStyle(fontFamily).copyWith(
+        strikethrough: baseTextStyle(
+          fontFamily,
+          fontSize: _fontSize,
+        ).copyWith(
           decoration: TextDecoration.lineThrough,
         ),
-        href: baseTextStyle(fontFamily).copyWith(
+        href: baseTextStyle(
+          fontFamily,
+          fontSize: _fontSize,
+        ).copyWith(
           color: theme.colorScheme.primary,
           decoration: TextDecoration.underline,
         ),
         code: GoogleFonts.robotoMono(
-          textStyle: baseTextStyle(fontFamily).copyWith(
-            fontSize: fontSize,
+          textStyle: baseTextStyle(
+            fontFamily,
+            fontSize: _fontSize,
+          ).copyWith(
             fontWeight: FontWeight.normal,
             color: Colors.red,
             backgroundColor:
@@ -90,18 +110,23 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
   TextStyle headingStyleBuilder(int level) {
     final String? fontFamily;
     final List<double> fontSizes;
-    const fontSize = 14.0;
-
     fontFamily = context.read<DocumentAppearanceCubit>().state.fontFamily;
     fontSizes = [
-      fontSize + 12,
-      fontSize + 10,
-      fontSize + 6,
-      fontSize + 2,
-      fontSize,
+      _fontSize + 12,
+      _fontSize + 10,
+      _fontSize + 6,
+      _fontSize + 2,
+      _fontSize,
     ];
-    return baseTextStyle(fontFamily, fontWeight: FontWeight.w600).copyWith(
-      fontSize: fontSizes.elementAtOrNull(level - 1) ?? fontSize,
+    final headingFontSize = fontSizes.elementAtOrNull(level - 1) ?? _fontSize;
+    return baseTextStyle(
+      fontFamily,
+      fontWeight: level <= 2
+          ? FontWeight.w700
+          : ObjectTypeTypography.fontWeightForPlatform(
+              Theme.of(context).platform,
+            ),
+      fontSize: headingFontSize,
     );
   }
 
@@ -111,7 +136,10 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
         context.read<DocumentAppearanceCubit>().state.codeFontFamily;
 
     return CodeBlockStyle(
-      textStyle: baseTextStyle(fontFamily).copyWith(
+      textStyle: baseTextStyle(
+        fontFamily,
+        fontSize: _fontSize,
+      ).copyWith(
         height: 1.4,
         color: AFThemeExtension.of(context).onBackground,
       ),
@@ -127,14 +155,19 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
       final afThemeExtension = AFThemeExtension.of(context);
       final pageStyle = context.read<DocumentPageStyleBloc>().state;
       final fontFamily = pageStyle.fontFamily ?? defaultFontFamily;
-      final baseTextStyle = this.baseTextStyle(fontFamily);
+      final fontSize = pageStyle.fontLayout.fontSize;
+      final baseTextStyle = this.baseTextStyle(
+        fontFamily,
+        fontSize: fontSize,
+      );
       return baseTextStyle.copyWith(
         color: afThemeExtension.onBackground,
       );
     } else {
-      final fontSize = context.read<DocumentAppearanceCubit>().state.fontSize;
-      return baseTextStyle(null).copyWith(
-        fontSize: fontSize,
+      return baseTextStyle(
+        null,
+        fontSize: _fontSize,
+      ).copyWith(
         height: 1.5,
       );
     }
@@ -142,8 +175,10 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
 
   @override
   TextStyle outlineBlockPlaceholderStyleBuilder() {
-    return TextStyle(
-      fontFamily: defaultFontFamily,
+    return baseTextStyle(
+      null,
+      fontSize: _fontSize,
+    ).copyWith(
       height: 1.5,
       color: AFThemeExtension.of(context).onBackground.withValues(alpha: 0.6),
     );

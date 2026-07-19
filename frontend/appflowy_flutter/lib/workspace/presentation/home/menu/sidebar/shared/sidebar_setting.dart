@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/document/application/document_appearance_cubit.
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/password/password_bloc.dart';
 import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
+import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/af_focus_manager.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
 import 'package:appflowy/workspace/presentation/settings/settings_dialog.dart';
@@ -99,10 +100,10 @@ class _UserSettingButtonState extends State<UserSettingButton> {
             margin: EdgeInsets.zero,
             text: FlowySvg(
               FlowySvgs.settings_s,
+              size: const Size.square(HomeSizes.sidebarActionIconSize),
               color: widget.isHover
                   ? Theme.of(context).colorScheme.onSurface
                   : null,
-              opacity: 0.7,
             ),
           ),
         ),

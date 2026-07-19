@@ -17,6 +17,8 @@ import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/draggable_view_item.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.dart';
@@ -534,7 +536,11 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     }
 
     return FlowyHover(
-      style: HoverStyle(hoverColor: Theme.of(context).colorScheme.secondary),
+      style: HoverStyle(
+        hoverColor: isSelected || widget.showActions
+            ? SidebarStyle.selectedBackground(context)
+            : Theme.of(context).colorScheme.secondary,
+      ),
       resetHoverOnRebuild: widget.showActions || !isIconPickerOpened,
       buildWhenOnHover: () =>
           !widget.showActions && !_isDragging && !isIconPickerOpened,
@@ -544,20 +550,18 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
   }
 
   Widget _buildViewItem(bool onHover, [bool isSelected = false]) {
-    final name = FlowyText.regular(
+    final name = SidebarText.page(
       widget.view.nameOrDefault,
       overflow: TextOverflow.ellipsis,
-      fontSize: 14.0,
-      figmaLineHeight: 18.0,
     );
     final children = [
-      const HSpace(2),
+      const HSpace(HomeSpaceViewSizes.viewLeadingSpacing),
       // expand icon or placeholder
       widget.leftIconBuilder?.call(context, widget.view) ?? _buildLeftIcon(),
-      const HSpace(2),
+      const HSpace(HomeSpaceViewSizes.viewDisclosureIconSpacing),
       // icon
       _buildViewIconButton(),
-      const HSpace(6),
+      const HSpace(HomeSpaceViewSizes.viewIconTextSpacing),
       // title
       Expanded(
         child: widget.extendBuilder != null
@@ -653,10 +657,16 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     final icon = iconData.isNotEmpty
         ? RawEmojiIconWidget(
             emoji: iconData,
-            emojiSize: 16.0,
-            lineHeight: 18.0 / 16.0,
+            emojiSize: HomeSpaceViewSizes.viewIconSize,
+            lineHeight: HomeSpaceViewSizes.viewIconLineHeight /
+                HomeSpaceViewSizes.viewIconSize,
           )
-        : Opacity(opacity: 0.6, child: widget.view.defaultIcon());
+        : Opacity(
+            opacity: HomeSpaceViewSizes.viewIconOpacity,
+            child: widget.view.defaultIcon(
+              size: const Size.square(HomeSpaceViewSizes.viewIconSize),
+            ),
+          );
 
     final Widget child = AppFlowyPopover(
       offset: const Offset(20, 0),
@@ -670,7 +680,10 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
         onTap: () {},
         child: FlowyTooltip(
           message: LocaleKeys.document_plugins_cover_changeIcon.tr(),
-          child: SizedBox(width: 16.0, child: icon),
+          child: SizedBox.square(
+            dimension: HomeSpaceViewSizes.viewIconSize,
+            child: icon,
+          ),
         ),
       ),
       popupBuilder: (context) {

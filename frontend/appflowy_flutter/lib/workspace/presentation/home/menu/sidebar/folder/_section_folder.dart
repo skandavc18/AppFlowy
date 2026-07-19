@@ -55,7 +55,7 @@ class _SectionFolderState extends State<SectionFolder> {
             children: [
               _buildHeader(context),
               // Pages
-              const VSpace(4.0),
+              const VSpace(2.0),
               ..._buildViews(context, state, isHovered),
               // Add a placeholder if there are no views
               _buildDraggablePlaceholder(context),

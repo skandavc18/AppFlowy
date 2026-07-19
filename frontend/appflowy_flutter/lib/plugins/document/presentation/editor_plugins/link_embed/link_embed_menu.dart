@@ -1,6 +1,7 @@
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_hover_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_replace_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/shared.dart';
@@ -64,7 +65,6 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
 
   Widget buildChild() {
     final theme = AppFlowyTheme.of(context),
-        iconScheme = theme.iconColorScheme,
         surfaceColorScheme = theme.surfaceColorScheme;
 
     return Container(
@@ -79,7 +79,7 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
           // FlowyIconButton(
           //   icon: FlowySvg(
           //     FlowySvgs.embed_fullscreen_m,
-          //     color: iconScheme.tertiary,
+          //     color: EditorChromeStyle.iconColor(context),
           //   ),
           //   tooltipText: LocaleKeys.document_imageBlock_openFullScreen.tr(),
           //   preferBelow: false,
@@ -88,7 +88,7 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
           FlowyIconButton(
             icon: FlowySvg(
               FlowySvgs.toolbar_link_m,
-              color: iconScheme.tertiary,
+              color: EditorChromeStyle.iconColor(context),
             ),
             radius: BorderRadius.all(Radius.circular(theme.borderRadius.m)),
             tooltipText: LocaleKeys.editor_copyLink.tr(),
@@ -103,11 +103,11 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   }
 
   Widget buildConvertButton() {
-    final theme = AppFlowyTheme.of(context), iconScheme = theme.iconColorScheme;
+    final theme = AppFlowyTheme.of(context);
     final button = FlowyIconButton(
       icon: FlowySvg(
         FlowySvgs.turninto_m,
-        color: iconScheme.tertiary,
+        color: EditorChromeStyle.iconColor(context),
       ),
       radius: BorderRadius.all(Radius.circular(theme.borderRadius.m)),
       tooltipText: LocaleKeys.editor_convertTo.tr(),
@@ -148,7 +148,7 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
             child: FlowyButton(
               text: FlowyText(
                 command.title,
-                fontWeight: FontWeight.w400,
+                fontWeight: EditorChromeStyle.menuFontWeight,
                 figmaLineHeight: 20,
               ),
               onTap: () {
@@ -173,12 +173,12 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   }
 
   Widget buildMoreOptionButton() {
-    final theme = AppFlowyTheme.of(context), iconScheme = theme.iconColorScheme;
+    final theme = AppFlowyTheme.of(context);
     final button = FlowyIconButton(
       key: moreOptionButtonKey,
       icon: FlowySvg(
         FlowySvgs.toolbar_more_m,
-        color: iconScheme.tertiary,
+        color: EditorChromeStyle.iconColor(context),
       ),
       radius: BorderRadius.all(Radius.circular(theme.borderRadius.m)),
       tooltipText: LocaleKeys.document_toolbar_moreOptions.tr(),
@@ -219,7 +219,7 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
             child: FlowyButton(
               text: FlowyText(
                 command.title,
-                fontWeight: FontWeight.w400,
+                fontWeight: EditorChromeStyle.menuFontWeight,
                 figmaLineHeight: 20,
               ),
               onTap: () => onEmbedMenuCommand(command),

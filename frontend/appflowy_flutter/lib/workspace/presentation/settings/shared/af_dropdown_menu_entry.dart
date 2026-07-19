@@ -16,9 +16,9 @@ DropdownMenuEntry<T> buildDropdownMenuEntry<T>(
   String? fontFamily,
   double maximumHeight = 29,
 }) {
-  final fontFamilyUsed = fontFamily != null
-      ? getGoogleFontSafely(fontFamily).fontFamily ?? defaultFontFamily
-      : defaultFontFamily;
+  final fontFamilyUsed =
+      getGoogleFontSafely(fontFamily ?? defaultFontFamily).fontFamily ??
+          preferredFontFamily;
   Widget? labelWidget;
   if (subLabel.isNotEmpty) {
     labelWidget = Column(

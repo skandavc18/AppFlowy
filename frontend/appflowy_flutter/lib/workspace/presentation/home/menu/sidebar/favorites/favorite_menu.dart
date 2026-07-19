@@ -185,9 +185,9 @@ class _FavoriteGroups extends StatelessWidget {
     return [
       if (views.isNotEmpty) ...[
         if (showHeader)
-          FlowyText(
+          FlowyText.semibold(
             title,
-            fontSize: 12.0,
+            fontSize: 14.0,
             color: Theme.of(context).hintColor,
           ),
         const VSpace(2),

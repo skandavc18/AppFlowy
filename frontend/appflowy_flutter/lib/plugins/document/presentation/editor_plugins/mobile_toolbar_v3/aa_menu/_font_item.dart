@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/mobile_too
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/util/font_family_extension.dart';
+import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -25,6 +26,7 @@ class FontFamilyItem extends StatelessWidget {
     final fontFamily = _getCurrentSelectedFontFamilyName();
     final systemFonFamily =
         context.read<DocumentAppearanceCubit>().state.fontFamily;
+    final selectedFontFamily = fontFamily ?? systemFonFamily;
     return MobileToolbarMenuItemWrapper(
       size: const Size(144, 52),
       onTap: () async {
@@ -70,13 +72,15 @@ class FontFamilyItem extends StatelessWidget {
           if (newFont != null && selection.isCollapsed) {
             editorState.updateToggledStyle(
               AppFlowyRichTextKeys.fontFamily,
-              getGoogleFontSafely(newFont).fontFamily,
+              newFont == defaultFontFamily
+                  ? defaultFontFamily
+                  : getGoogleFontSafely(newFont).fontFamily,
             );
           }
         });
       },
-      text: (fontFamily ?? systemFonFamily).fontFamilyDisplayName,
-      fontFamily: fontFamily ?? systemFonFamily,
+      text: selectedFontFamily.fontFamilyDisplayName,
+      fontFamily: resolveFontFamily(selectedFontFamily),
       backgroundColor: theme.toolbarMenuItemBackgroundColor,
       isSelected: false,
       enable: true,

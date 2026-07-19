@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/list_extension.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -79,10 +80,8 @@ class LinkSearchTextField {
       textAlign: TextAlign.left,
       controller: textEditingController,
       style: textStyle ??
-          TextStyle(
-            fontSize: 14,
+          EditorChromeStyle.textStyle(context).copyWith(
             height: 20 / 14,
-            fontWeight: FontWeight.w400,
           ),
       onChanged: (text) {
         if (text.isEmpty) {

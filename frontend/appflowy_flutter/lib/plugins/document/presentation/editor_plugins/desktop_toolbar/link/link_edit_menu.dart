@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/toolbar_item/custom_link_toolbar_item.dart';
 import 'package:appflowy/plugins/shared/share/constants.dart';
 import 'package:appflowy/user/application/user_service.dart';
@@ -241,7 +242,7 @@ class _LinkEditMenuState extends State<LinkEditMenu> {
                 lineHeight: 20 / 14,
                 fontColor: theme?.textColorScheme.primary,
                 fillColor: Colors.transparent,
-                fontWeight: FontWeight.w400,
+                fontWeight: EditorChromeStyle.menuFontWeight,
                 onPressed: onDismiss,
               ),
             ),
@@ -259,7 +260,7 @@ class _LinkEditMenuState extends State<LinkEditMenu> {
                   hoverColor: theme?.fillColorScheme.themeThick.withAlpha(200),
                   fontColor: Colors.white,
                   fillColor: theme?.fillColorScheme.themeThick,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: EditorChromeStyle.menuFontWeight,
                   onPressed: onApply,
                 );
               },
@@ -280,10 +281,8 @@ class _LinkEditMenuState extends State<LinkEditMenu> {
         autofocus: true,
         textAlign: TextAlign.left,
         controller: linkNameController,
-        style: TextStyle(
-          fontSize: 14,
+        style: EditorChromeStyle.textStyle(context).copyWith(
           height: 20 / 14,
-          fontWeight: FontWeight.w400,
         ),
         onChanged: (text) {
           linkInfo = LinkInfo(

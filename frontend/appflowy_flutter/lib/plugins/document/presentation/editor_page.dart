@@ -4,6 +4,7 @@ import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/background_color/theme_background_color.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/i18n/editor_i18n.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
@@ -354,53 +355,57 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
 
     final editor = Directionality(
       textDirection: textDirection,
-      child: AppFlowyEditor(
+      child: EditorContextMenuRegion(
         editorState: widget.editorState,
-        editable: !isViewDeleted && isEditable,
-        disableSelectionService: UniversalPlatform.isMobile && !isEditable,
-        disableKeyboardService: UniversalPlatform.isMobile && !isEditable,
-        editorScrollController: editorScrollController,
-        // setup the auto focus parameters
-        autoFocus: widget.autoFocus ?? autoFocus,
-        focusedSelection: selection,
-        // setup the theme
-        editorStyle: styleCustomizer.style(),
-        // customize the block builders
-        blockComponentBuilders: buildBlockComponentBuilders(
-          slashMenuItemsBuilder: (editorState, node) => _customSlashMenuItems(
-            editorState: editorState,
-            node: node,
-          ),
-          context: context,
+        enabled: UniversalPlatform.isDesktopOrWeb,
+        child: AppFlowyEditor(
           editorState: widget.editorState,
-          styleCustomizer: widget.styleCustomizer,
-          showParagraphPlaceholder: widget.showParagraphPlaceholder,
-          placeholderText: widget.placeholderText,
-        ),
-        // customize the shortcuts
-        characterShortcutEvents: characterShortcutEvents,
-        commandShortcutEvents: commandShortcuts,
-        // customize the context menu items
-        contextMenuItems: customContextMenuItems,
-        // customize the header and footer.
-        header: widget.header,
-        autoScrollEdgeOffset: UniversalPlatform.isDesktopOrWeb
-            ? 250
-            : appFlowyEditorAutoScrollEdgeOffset,
-        footer: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () async {
-            // if the last one isn't a empty node, insert a new empty node.
-            await _focusOnLastEmptyParagraph();
-          },
-          child: SizedBox(
-            width: double.infinity,
-            height: UniversalPlatform.isDesktopOrWeb ? 600 : 400,
+          editable: !isViewDeleted && isEditable,
+          disableSelectionService: UniversalPlatform.isMobile && !isEditable,
+          disableKeyboardService: UniversalPlatform.isMobile && !isEditable,
+          editorScrollController: editorScrollController,
+          // setup the auto focus parameters
+          autoFocus: widget.autoFocus ?? autoFocus,
+          focusedSelection: selection,
+          // setup the theme
+          editorStyle: styleCustomizer.style(),
+          // customize the block builders
+          blockComponentBuilders: buildBlockComponentBuilders(
+            slashMenuItemsBuilder: (editorState, node) => _customSlashMenuItems(
+              editorState: editorState,
+              node: node,
+            ),
+            context: context,
+            editorState: widget.editorState,
+            styleCustomizer: widget.styleCustomizer,
+            showParagraphPlaceholder: widget.showParagraphPlaceholder,
+            placeholderText: widget.placeholderText,
           ),
-        ),
-        dropTargetStyle: AppFlowyDropTargetStyle(
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
-          margin: const EdgeInsets.only(left: 44),
+          // customize the shortcuts
+          characterShortcutEvents: characterShortcutEvents,
+          commandShortcutEvents: commandShortcuts,
+          // The app-owned menu matches the rest of AppFlowy's menu surfaces.
+          contextMenuItems: const [],
+          // customize the header and footer.
+          header: widget.header,
+          autoScrollEdgeOffset: UniversalPlatform.isDesktopOrWeb
+              ? 250
+              : appFlowyEditorAutoScrollEdgeOffset,
+          footer: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () async {
+              // if the last one isn't a empty node, insert a new empty node.
+              await _focusOnLastEmptyParagraph();
+            },
+            child: SizedBox(
+              width: double.infinity,
+              height: UniversalPlatform.isDesktopOrWeb ? 600 : 400,
+            ),
+          ),
+          dropTargetStyle: AppFlowyDropTargetStyle(
+            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+            margin: const EdgeInsets.only(left: 44),
+          ),
         ),
       ),
     );
@@ -440,6 +445,7 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
           style: FloatingToolbarStyle(
             backgroundColor: Theme.of(context).cardColor,
             toolbarActiveColor: Color(0xffe0f8fd),
+            toolbarIconColor: EditorChromeStyle.iconColor(context),
           ),
           items: toolbarItems,
           decoration: BoxDecoration(

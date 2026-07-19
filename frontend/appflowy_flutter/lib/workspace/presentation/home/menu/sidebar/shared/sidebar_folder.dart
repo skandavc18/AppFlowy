@@ -25,7 +25,7 @@ class SidebarFolder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const sectionPadding = 16.0;
+    const sectionPadding = 10.0;
     return ValueListenableBuilder(
       valueListenable: getIt<MenuSharedState>().notifier,
       builder: (context, value, child) {
@@ -74,7 +74,7 @@ class SidebarFolder extends StatelessWidget {
                 );
               },
             ),
-            const VSpace(200),
+            const VSpace(80),
           ],
         );
       },

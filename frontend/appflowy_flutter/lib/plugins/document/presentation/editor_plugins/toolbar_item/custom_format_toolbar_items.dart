@@ -1,12 +1,12 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_page.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 // ignore: implementation_imports
 import 'package:appflowy_editor/src/editor/toolbar/desktop/items/utils/tooltip_util.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/style_widget/icon_button.dart';
 import 'package:flutter/material.dart';
@@ -14,23 +14,35 @@ import 'package:flutter/material.dart';
 import 'custom_placeholder_toolbar_item.dart';
 import 'toolbar_id_enum.dart';
 
+@visibleForTesting
+const kBoldToolbarItemKey = ValueKey('BoldToolbarItem');
+
+@visibleForTesting
+const kUnderlineToolbarItemKey = ValueKey('UnderlineToolbarItem');
+
+@visibleForTesting
+const kItalicToolbarItemKey = ValueKey('ItalicToolbarItem');
+
 final List<ToolbarItem> customMarkdownFormatItems = [
   _FormatToolbarItem(
     id: ToolbarId.bold,
     name: 'bold',
-    svg: FlowySvgs.toolbar_bold_m,
+    glyph: EditorToolbarGlyph.bold,
+    itemKey: kBoldToolbarItemKey,
   ),
   group1PaddingItem,
   _FormatToolbarItem(
     id: ToolbarId.underline,
     name: 'underline',
-    svg: FlowySvgs.toolbar_underline_m,
+    glyph: EditorToolbarGlyph.underline,
+    itemKey: kUnderlineToolbarItemKey,
   ),
   group1PaddingItem,
   _FormatToolbarItem(
     id: ToolbarId.italic,
     name: 'italic',
-    svg: FlowySvgs.toolbar_inline_italic_m,
+    glyph: EditorToolbarGlyph.italic,
+    itemKey: kItalicToolbarItemKey,
   ),
 ];
 
@@ -45,9 +57,12 @@ class _FormatToolbarItem extends ToolbarItem {
   _FormatToolbarItem({
     required ToolbarId id,
     required String name,
-    required FlowySvgData svg,
+    FlowySvgData? svg,
+    EditorToolbarGlyph? glyph,
+    Key? itemKey,
     super.group = 1,
-  }) : super(
+  })  : assert((svg == null) != (glyph == null)),
+        super(
           id: id.id,
           isActive: showInAnyTextType,
           builder: (
@@ -70,20 +85,26 @@ class _FormatToolbarItem extends ToolbarItem {
                 ? highlightColor
                 : EditorStyleCustomizer.toolbarHoverColor(context);
             final isDark = !Theme.of(context).isLightMode;
-            final theme = AppFlowyTheme.of(context);
+            final effectiveIconColor = (isDark && isHighlight)
+                ? Color(0xFF282E3A)
+                : iconColor ?? EditorChromeStyle.iconColor(context);
 
             final child = FlowyIconButton(
+              key: itemKey,
               width: 36,
               height: 32,
               hoverColor: hoverColor,
               isSelected: isHighlight,
-              icon: FlowySvg(
-                svg,
-                size: Size.square(20.0),
-                color: (isDark && isHighlight)
-                    ? Color(0xFF282E3A)
-                    : theme.iconColorScheme.primary,
-              ),
+              icon: glyph != null
+                  ? EditorToolbarGlyphIcon(
+                      glyph: glyph,
+                      color: effectiveIconColor,
+                    )
+                  : FlowySvg(
+                      svg!,
+                      size: Size.square(20.0),
+                      color: effectiveIconColor,
+                    ),
               onPressed: () => editorState.toggleAttribute(
                 name,
                 selection: selection,

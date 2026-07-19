@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/document/presentation/editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/desktop_floating_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_create_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_hover_menu.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -108,7 +109,7 @@ class _MoreOptionActionListState extends State<MoreOptionActionList> {
   }
 
   Widget buildChild(BuildContext context) {
-    final iconColor = Theme.of(context).iconTheme.color;
+    final iconColor = EditorChromeStyle.iconColor(context);
     final child = FlowyIconButton(
       width: 36,
       height: 32,
@@ -192,7 +193,7 @@ class _MoreOptionActionListState extends State<MoreOptionActionList> {
               color: fontColor,
               fontSize: 12,
               figmaLineHeight: 16,
-              fontWeight: FontWeight.w400,
+              fontWeight: EditorChromeStyle.menuFontWeight,
             ),
           ),
           if (showFormula)
@@ -207,7 +208,7 @@ class _MoreOptionActionListState extends State<MoreOptionActionList> {
                 color: fontColor,
                 fontSize: 12,
                 figmaLineHeight: 16,
-                fontWeight: FontWeight.w400,
+                fontWeight: EditorChromeStyle.menuFontWeight,
               ),
             ),
         ],
@@ -232,7 +233,7 @@ class _MoreOptionActionListState extends State<MoreOptionActionList> {
         text: FlowyText(
           command.title,
           figmaLineHeight: 20,
-          fontWeight: FontWeight.w400,
+          fontWeight: EditorChromeStyle.menuFontWeight,
         ),
         onTap: onTap ??
             () {

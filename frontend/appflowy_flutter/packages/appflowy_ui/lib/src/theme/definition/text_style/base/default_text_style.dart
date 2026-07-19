@@ -1,5 +1,23 @@
 import 'package:flutter/widgets.dart';
 
+const _standardFontWeight = FontWeight.w500;
+const _standardFontWeightValue = 550.0;
+const _enhancedFontWeight = FontWeight.w600;
+const _prominentFontWeight = FontWeight.w700;
+const _fontFamilyFallback = ['Inter'];
+const _letterSpacing = -0.1;
+const _fontFeatures = <FontFeature>[
+  FontFeature.enable('kern'),
+  FontFeature.enable('liga'),
+];
+
+List<FontVariation> _fontVariationsForWeight(FontWeight weight) {
+  final value = weight == _standardFontWeight
+      ? _standardFontWeightValue
+      : weight.value.toDouble();
+  return <FontVariation>[FontVariation.weight(value)];
+}
+
 abstract class TextThemeType {
   const TextThemeType({
     required this.fontFamily,
@@ -48,7 +66,7 @@ class TextThemeHeading1 extends TextThemeType {
         fontSize: 36,
         height: 40 / 36,
         color: color,
-        weight: weight ?? FontWeight.w400,
+        weight: weight ?? _standardFontWeight,
       );
 
   @override
@@ -62,7 +80,7 @@ class TextThemeHeading1 extends TextThemeType {
         fontSize: 36,
         height: 40 / 36,
         color: color,
-        weight: weight ?? FontWeight.w600,
+        weight: weight ?? _enhancedFontWeight,
       );
 
   @override
@@ -76,7 +94,7 @@ class TextThemeHeading1 extends TextThemeType {
         fontSize: 36,
         height: 40 / 36,
         color: color,
-        weight: weight ?? FontWeight.w700,
+        weight: weight ?? _prominentFontWeight,
       );
 
   @override
@@ -100,7 +118,7 @@ class TextThemeHeading1 extends TextThemeType {
     required double height,
     TextDecoration decoration = TextDecoration.none,
     Color? color,
-    FontWeight weight = FontWeight.bold,
+    FontWeight weight = _standardFontWeight,
   }) =>
       TextStyle(
         inherit: false,
@@ -108,8 +126,12 @@ class TextThemeHeading1 extends TextThemeType {
         decoration: decoration,
         fontStyle: FontStyle.normal,
         fontWeight: weight,
+        fontVariations: _fontVariationsForWeight(weight),
+        fontFeatures: _fontFeatures,
         height: height,
         fontFamily: family,
+        fontFamilyFallback: _fontFamilyFallback,
+        letterSpacing: _letterSpacing,
         color: color,
         textBaseline: TextBaseline.alphabetic,
         leadingDistribution: TextLeadingDistribution.even,
@@ -126,7 +148,7 @@ class TextThemeHeading2 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w400,
+        weight: weight ?? _standardFontWeight,
       );
 
   @override
@@ -134,7 +156,7 @@ class TextThemeHeading2 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w600,
+        weight: weight ?? _enhancedFontWeight,
       );
 
   @override
@@ -142,7 +164,7 @@ class TextThemeHeading2 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w700,
+        weight: weight ?? _prominentFontWeight,
       );
 
   @override
@@ -150,7 +172,7 @@ class TextThemeHeading2 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w400,
+        weight: weight ?? _standardFontWeight,
         decoration: TextDecoration.underline,
       );
 
@@ -159,7 +181,7 @@ class TextThemeHeading2 extends TextThemeType {
     double fontSize = 24,
     double height = 32 / 24,
     TextDecoration decoration = TextDecoration.none,
-    FontWeight weight = FontWeight.w400,
+    FontWeight weight = _standardFontWeight,
     Color? color,
   }) =>
       TextStyle(
@@ -168,8 +190,12 @@ class TextThemeHeading2 extends TextThemeType {
         decoration: decoration,
         fontStyle: FontStyle.normal,
         fontWeight: weight,
+        fontVariations: _fontVariationsForWeight(weight),
+        fontFeatures: _fontFeatures,
         height: height,
         fontFamily: family,
+        fontFamilyFallback: _fontFamilyFallback,
+        letterSpacing: _letterSpacing,
         color: color,
         textBaseline: TextBaseline.alphabetic,
         leadingDistribution: TextLeadingDistribution.even,
@@ -186,7 +212,7 @@ class TextThemeHeading3 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w400,
+        weight: weight ?? _standardFontWeight,
       );
 
   @override
@@ -194,7 +220,7 @@ class TextThemeHeading3 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w600,
+        weight: weight ?? _enhancedFontWeight,
       );
 
   @override
@@ -202,7 +228,7 @@ class TextThemeHeading3 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w700,
+        weight: weight ?? _prominentFontWeight,
       );
 
   @override
@@ -210,7 +236,7 @@ class TextThemeHeading3 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w400,
+        weight: weight ?? _standardFontWeight,
         decoration: TextDecoration.underline,
       );
 
@@ -219,7 +245,7 @@ class TextThemeHeading3 extends TextThemeType {
     double fontSize = 20,
     double height = 28 / 20,
     TextDecoration decoration = TextDecoration.none,
-    FontWeight weight = FontWeight.w400,
+    FontWeight weight = _standardFontWeight,
     Color? color,
   }) =>
       TextStyle(
@@ -228,8 +254,12 @@ class TextThemeHeading3 extends TextThemeType {
         decoration: decoration,
         fontStyle: FontStyle.normal,
         fontWeight: weight,
+        fontVariations: _fontVariationsForWeight(weight),
+        fontFeatures: _fontFeatures,
         height: height,
         fontFamily: family,
+        fontFamilyFallback: _fontFamilyFallback,
+        letterSpacing: _letterSpacing,
         color: color,
         textBaseline: TextBaseline.alphabetic,
         leadingDistribution: TextLeadingDistribution.even,
@@ -246,7 +276,7 @@ class TextThemeHeading4 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w400,
+        weight: weight ?? _standardFontWeight,
       );
 
   @override
@@ -254,7 +284,7 @@ class TextThemeHeading4 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w600,
+        weight: weight ?? _enhancedFontWeight,
       );
 
   @override
@@ -262,7 +292,7 @@ class TextThemeHeading4 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w700,
+        weight: weight ?? _prominentFontWeight,
       );
 
   @override
@@ -270,7 +300,7 @@ class TextThemeHeading4 extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w400,
+        weight: weight ?? _standardFontWeight,
         decoration: TextDecoration.underline,
       );
 
@@ -279,7 +309,7 @@ class TextThemeHeading4 extends TextThemeType {
     double fontSize = 16,
     double height = 22 / 16,
     TextDecoration decoration = TextDecoration.none,
-    FontWeight weight = FontWeight.w400,
+    FontWeight weight = _standardFontWeight,
     Color? color,
   }) =>
       TextStyle(
@@ -288,8 +318,12 @@ class TextThemeHeading4 extends TextThemeType {
         decoration: decoration,
         fontStyle: FontStyle.normal,
         fontWeight: weight,
+        fontVariations: _fontVariationsForWeight(weight),
+        fontFeatures: _fontFeatures,
         height: height,
         fontFamily: family,
+        fontFamilyFallback: _fontFamilyFallback,
+        letterSpacing: _letterSpacing,
         color: color,
         textBaseline: TextBaseline.alphabetic,
         leadingDistribution: TextLeadingDistribution.even,
@@ -306,7 +340,7 @@ class TextThemeHeadline extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.normal,
+        weight: weight ?? _standardFontWeight,
       );
 
   @override
@@ -314,7 +348,7 @@ class TextThemeHeadline extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w500,
+        weight: weight ?? _enhancedFontWeight,
       );
 
   @override
@@ -322,7 +356,7 @@ class TextThemeHeadline extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.bold,
+        weight: weight ?? _prominentFontWeight,
       );
 
   @override
@@ -330,7 +364,7 @@ class TextThemeHeadline extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.normal,
+        weight: weight ?? _standardFontWeight,
         decoration: TextDecoration.underline,
       );
 
@@ -339,7 +373,7 @@ class TextThemeHeadline extends TextThemeType {
     double fontSize = 24,
     double height = 36 / 24,
     TextDecoration decoration = TextDecoration.none,
-    FontWeight weight = FontWeight.normal,
+    FontWeight weight = _standardFontWeight,
     Color? color,
   }) =>
       TextStyle(
@@ -348,8 +382,12 @@ class TextThemeHeadline extends TextThemeType {
         decoration: decoration,
         fontStyle: FontStyle.normal,
         fontWeight: weight,
+        fontVariations: _fontVariationsForWeight(weight),
+        fontFeatures: _fontFeatures,
         height: height,
         fontFamily: family,
+        fontFamilyFallback: _fontFamilyFallback,
+        letterSpacing: _letterSpacing,
         textBaseline: TextBaseline.alphabetic,
         leadingDistribution: TextLeadingDistribution.even,
         color: color,
@@ -366,7 +404,7 @@ class TextThemeTitle extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.normal,
+        weight: weight ?? _standardFontWeight,
       );
 
   @override
@@ -374,7 +412,7 @@ class TextThemeTitle extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w500,
+        weight: weight ?? _enhancedFontWeight,
       );
 
   @override
@@ -382,7 +420,7 @@ class TextThemeTitle extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.bold,
+        weight: weight ?? _prominentFontWeight,
       );
 
   @override
@@ -390,7 +428,7 @@ class TextThemeTitle extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.normal,
+        weight: weight ?? _standardFontWeight,
         decoration: TextDecoration.underline,
       );
 
@@ -398,7 +436,7 @@ class TextThemeTitle extends TextThemeType {
     required String family,
     double fontSize = 20,
     double height = 28 / 20,
-    FontWeight weight = FontWeight.normal,
+    FontWeight weight = _standardFontWeight,
     TextDecoration decoration = TextDecoration.none,
     Color? color,
   }) =>
@@ -408,8 +446,12 @@ class TextThemeTitle extends TextThemeType {
         decoration: decoration,
         fontStyle: FontStyle.normal,
         fontWeight: weight,
+        fontVariations: _fontVariationsForWeight(weight),
+        fontFeatures: _fontFeatures,
         height: height,
         fontFamily: family,
+        fontFamilyFallback: _fontFamilyFallback,
+        letterSpacing: _letterSpacing,
         textBaseline: TextBaseline.alphabetic,
         leadingDistribution: TextLeadingDistribution.even,
         color: color,
@@ -426,7 +468,7 @@ class TextThemeBody extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.normal,
+        weight: weight ?? _standardFontWeight,
       );
 
   @override
@@ -434,7 +476,7 @@ class TextThemeBody extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w500,
+        weight: weight ?? _enhancedFontWeight,
       );
 
   @override
@@ -442,7 +484,7 @@ class TextThemeBody extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.bold,
+        weight: weight ?? _prominentFontWeight,
       );
 
   @override
@@ -450,7 +492,7 @@ class TextThemeBody extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.normal,
+        weight: weight ?? _standardFontWeight,
         decoration: TextDecoration.underline,
       );
 
@@ -458,7 +500,7 @@ class TextThemeBody extends TextThemeType {
     required String family,
     double fontSize = 14,
     double height = 20 / 14,
-    FontWeight weight = FontWeight.normal,
+    FontWeight weight = _standardFontWeight,
     TextDecoration decoration = TextDecoration.none,
     Color? color,
   }) =>
@@ -468,8 +510,12 @@ class TextThemeBody extends TextThemeType {
         decoration: decoration,
         fontStyle: FontStyle.normal,
         fontWeight: weight,
+        fontVariations: _fontVariationsForWeight(weight),
+        fontFeatures: _fontFeatures,
         height: height,
         fontFamily: family,
+        fontFamilyFallback: _fontFamilyFallback,
+        letterSpacing: _letterSpacing,
         textBaseline: TextBaseline.alphabetic,
         leadingDistribution: TextLeadingDistribution.even,
         color: color,
@@ -486,7 +532,7 @@ class TextThemeCaption extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.normal,
+        weight: weight ?? _standardFontWeight,
       );
 
   @override
@@ -494,7 +540,7 @@ class TextThemeCaption extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.w500,
+        weight: weight ?? _enhancedFontWeight,
       );
 
   @override
@@ -502,7 +548,7 @@ class TextThemeCaption extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.bold,
+        weight: weight ?? _prominentFontWeight,
       );
 
   @override
@@ -510,15 +556,15 @@ class TextThemeCaption extends TextThemeType {
       _defaultTextStyle(
         family: family ?? super.fontFamily,
         color: color,
-        weight: weight ?? FontWeight.normal,
+        weight: weight ?? _standardFontWeight,
         decoration: TextDecoration.underline,
       );
 
   static TextStyle _defaultTextStyle({
     required String family,
-    double fontSize = 12,
-    double height = 18 / 12,
-    FontWeight weight = FontWeight.normal,
+    double fontSize = 14,
+    double height = 20 / 14,
+    FontWeight weight = _standardFontWeight,
     TextDecoration decoration = TextDecoration.none,
     Color? color,
   }) =>
@@ -528,8 +574,12 @@ class TextThemeCaption extends TextThemeType {
         decoration: decoration,
         fontStyle: FontStyle.normal,
         fontWeight: weight,
+        fontVariations: _fontVariationsForWeight(weight),
+        fontFeatures: _fontFeatures,
         height: height,
         fontFamily: family,
+        fontFamilyFallback: _fontFamilyFallback,
+        letterSpacing: _letterSpacing,
         textBaseline: TextBaseline.alphabetic,
         leadingDistribution: TextLeadingDistribution.even,
         color: color,

@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/menu/menu_extension.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -36,13 +37,15 @@ void showReplaceMenu({
     right: ltrb.right,
     dismissCallback: () => keepEditorFocusNotifier.decrease(),
     builder: (context) {
-      return LinkReplaceMenu(
-        link: url ?? '',
-        onSubmitted: (link) async {
-          onReplace.call(link);
-          dismissOverlay();
-        },
-        onDismiss: dismissOverlay,
+      return EditorChromeTheme(
+        child: LinkReplaceMenu(
+          link: url ?? '',
+          onSubmitted: (link) async {
+            onReplace.call(link);
+            dismissOverlay();
+          },
+          onDismiss: dismissOverlay,
+        ),
       );
     },
   ).build();
@@ -117,10 +120,8 @@ class _LinkReplaceMenuState extends State<LinkReplaceMenu> {
             focusNode: focusNode,
             textAlign: TextAlign.left,
             controller: textEditingController,
-            style: TextStyle(
-              fontSize: 14,
+            style: EditorChromeStyle.textStyle(context).copyWith(
               height: 20 / 14,
-              fontWeight: FontWeight.w400,
             ),
             decoration: LinkStyle.buildLinkTextFieldInputDecoration(
               LocaleKeys.document_plugins_linkPreview_linkPreviewMenu_pasteHint
@@ -156,7 +157,7 @@ class _LinkReplaceMenuState extends State<LinkReplaceMenu> {
       hoverColor: fillTheme?.themeThick.withAlpha(200),
       fontColor: Colors.white,
       fillColor: fillTheme?.themeThick,
-      fontWeight: FontWeight.w400,
+      fontWeight: EditorChromeStyle.menuFontWeight,
       onPressed: onSubmit,
     );
   }

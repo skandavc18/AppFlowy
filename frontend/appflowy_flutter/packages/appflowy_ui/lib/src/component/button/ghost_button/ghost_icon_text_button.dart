@@ -21,6 +21,7 @@ class AFGhostIconTextButton extends StatelessWidget {
     this.borderRadius,
     this.disabled = false,
     this.mainAxisAlignment = MainAxisAlignment.center,
+    this.textStyle,
   });
 
   /// Primary ghost text button.
@@ -34,6 +35,7 @@ class AFGhostIconTextButton extends StatelessWidget {
     double? borderRadius,
     bool disabled = false,
     MainAxisAlignment mainAxisAlignment = MainAxisAlignment.center,
+    TextStyle? textStyle,
   }) {
     return AFGhostIconTextButton(
       key: key,
@@ -45,6 +47,7 @@ class AFGhostIconTextButton extends StatelessWidget {
       borderRadius: borderRadius,
       disabled: disabled,
       mainAxisAlignment: mainAxisAlignment,
+      textStyle: textStyle,
       backgroundColor: (context, isHovering, disabled) {
         final theme = AppFlowyTheme.of(context);
         if (disabled) {
@@ -74,6 +77,7 @@ class AFGhostIconTextButton extends StatelessWidget {
     EdgeInsetsGeometry? padding,
     double? borderRadius,
     MainAxisAlignment mainAxisAlignment = MainAxisAlignment.center,
+    TextStyle? textStyle,
   }) {
     return AFGhostIconTextButton(
       key: key,
@@ -85,6 +89,7 @@ class AFGhostIconTextButton extends StatelessWidget {
       borderRadius: borderRadius,
       disabled: true,
       mainAxisAlignment: mainAxisAlignment,
+      textStyle: textStyle,
       backgroundColor: (context, isHovering, disabled) {
         return Colors.transparent;
       },
@@ -108,6 +113,7 @@ class AFGhostIconTextButton extends StatelessWidget {
   final AFBaseButtonColorBuilder? backgroundColor;
 
   final MainAxisAlignment mainAxisAlignment;
+  final TextStyle? textStyle;
 
   @override
   Widget build(BuildContext context) {
@@ -136,9 +142,9 @@ class AFGhostIconTextButton extends StatelessWidget {
             SizedBox(width: theme.spacing.m),
             Text(
               text,
-              style: size.buildTextStyle(context).copyWith(
-                    color: textColor,
-                  ),
+              style: (textStyle ?? size.buildTextStyle(context)).copyWith(
+                color: textColor,
+              ),
             ),
           ],
         );

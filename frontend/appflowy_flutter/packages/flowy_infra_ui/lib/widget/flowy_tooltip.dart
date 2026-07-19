@@ -1,3 +1,4 @@
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
 
 const _tooltipWaitDuration = Duration(milliseconds: 300);
@@ -129,7 +130,8 @@ extension FlowyToolTipExtension on BuildContext {
     return Theme.of(this).textTheme.bodyMedium?.copyWith(
           color: fontColor ?? tooltipFontColor(),
           fontSize: fontSize ?? tooltipFontSize(),
-          fontWeight: FontWeight.w400,
+          fontWeight: flowyRegularFontWeight,
+          fontVariations: flowyRegularFontVariations,
           height: tooltipHeight(fontSize: fontSize),
           leadingDistribution: TextLeadingDistribution.even,
         );

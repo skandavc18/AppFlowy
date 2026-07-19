@@ -15,6 +15,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../layout/sizes.dart';
 
+abstract final class DesktopGridHeaderStyle {
+  static const fieldNameFontSize = 15.0;
+  static const fieldNameFontWeight = FontWeight.w600;
+
+  static Color fieldNameColor(BuildContext context) =>
+      AFThemeExtension.of(context).strongText;
+}
+
 class GridFieldCell extends StatefulWidget {
   const GridFieldCell({
     super.key,
@@ -102,6 +110,9 @@ class _GridFieldCellState extends State<GridFieldCell> {
                 child: FieldCellButton(
                   field: widget.fieldInfo.field,
                   onTap: widget.onTap,
+                  fontSize: DesktopGridHeaderStyle.fieldNameFontSize,
+                  fontWeight: DesktopGridHeaderStyle.fieldNameFontWeight,
+                  textColor: DesktopGridHeaderStyle.fieldNameColor(context),
                   margin: const EdgeInsetsDirectional.fromSTEB(12, 9, 10, 9),
                 ),
               ),
@@ -211,6 +222,9 @@ class FieldCellButton extends StatelessWidget {
     this.maxLines = 1,
     this.radius = BorderRadius.zero,
     this.margin,
+    this.fontSize,
+    this.fontWeight,
+    this.textColor,
   });
 
   final FieldPB field;
@@ -218,6 +232,9 @@ class FieldCellButton extends StatelessWidget {
   final int? maxLines;
   final BorderRadius? radius;
   final EdgeInsetsGeometry? margin;
+  final double? fontSize;
+  final FontWeight? fontWeight;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -240,7 +257,9 @@ class FieldCellButton extends StatelessWidget {
         lineHeight: 1.0,
         maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
-        color: AFThemeExtension.of(context).textColor,
+        color: textColor ?? AFThemeExtension.of(context).textColor,
+        fontSize: fontSize,
+        fontWeight: fontWeight,
       ),
       margin: margin ?? GridSize.cellContentInsets,
     );

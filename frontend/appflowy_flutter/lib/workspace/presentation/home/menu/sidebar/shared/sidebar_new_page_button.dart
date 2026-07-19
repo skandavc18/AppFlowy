@@ -5,6 +5,7 @@ import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -36,20 +37,24 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: HomeSizes.sidebarHorizontalInset,
+      ),
       height: HomeSizes.newPageSectionHeight,
       child: FlowyButton(
         onTap: () async => _createNewPage(),
-        leftIcon: const FlowySvg(
-          FlowySvgs.new_app_m,
-          blendMode: null,
+        leftIcon: FlowySvg(
+          FlowySvgs.edit_s,
+          color: Theme.of(context).iconTheme.color,
+          size: const Size.square(HomeSizes.sidebarActionIconSize),
         ),
-        leftIconSize: const Size.square(24.0),
-        margin: const EdgeInsets.only(left: 4.0),
-        iconPadding: 8.0,
-        text: FlowyText.regular(
+        leftIconSize: const Size.square(HomeSizes.sidebarActionIconSize),
+        iconPadding: HomeSizes.sidebarActionIconTextSpacing,
+        margin: const EdgeInsets.symmetric(
+          horizontal: HomeSizes.sidebarButtonHorizontalMargin,
+        ),
+        text: SidebarText(
           LocaleKeys.newPageText.tr(),
-          lineHeight: 1.15,
         ),
       ),
     );

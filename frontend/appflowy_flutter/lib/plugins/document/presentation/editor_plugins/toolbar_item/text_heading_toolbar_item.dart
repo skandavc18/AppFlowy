@@ -1,15 +1,18 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_option_cubit.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 
 import 'toolbar_id_enum.dart';
+
+@visibleForTesting
+const kTextHeadingToolbarItemKey = ValueKey('TextHeadingToolbarItem');
 
 final ToolbarItem customTextHeadingItem = ToolbarItem(
   id: ToolbarId.textHeading.id,
@@ -78,9 +81,9 @@ class _TextHeadingActionListState extends State<TextHeadingActionList> {
   }
 
   Widget buildChild(BuildContext context) {
-    final theme = AppFlowyTheme.of(context),
-        iconColor = theme.iconColorScheme.primary;
+    final iconColor = EditorChromeStyle.iconColor(context);
     final child = FlowyIconButton(
+      key: kTextHeadingToolbarItemKey,
       width: 48,
       height: 32,
       isSelected: isSelected,
@@ -88,9 +91,8 @@ class _TextHeadingActionListState extends State<TextHeadingActionList> {
       icon: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FlowySvg(
-            FlowySvgs.toolbar_text_format_m,
-            size: Size.square(20),
+          EditorToolbarGlyphIcon(
+            glyph: EditorToolbarGlyph.textFormat,
             color: iconColor,
           ),
           HSpace(4),
@@ -134,7 +136,7 @@ class _TextHeadingActionListState extends State<TextHeadingActionList> {
               iconPadding: 12,
               text: FlowyText(
                 command.title,
-                fontWeight: FontWeight.w400,
+                fontWeight: EditorChromeStyle.menuFontWeight,
                 figmaLineHeight: 20,
               ),
               rightIcon: selectingCommand == command

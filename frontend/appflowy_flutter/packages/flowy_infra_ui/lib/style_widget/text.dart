@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flowy_infra_ui/widget/flowy_tooltip.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -17,6 +18,8 @@ class FlowyText extends StatelessWidget {
   final double? decorationThickness;
   final String? fontFamily;
   final List<String>? fallbackFontFamily;
+  final List<FontVariation>? fontVariations;
+  final double? letterSpacing;
   final bool withTooltip;
   final StrutStyle? strutStyle;
   final bool isEmoji;
@@ -42,6 +45,8 @@ class FlowyText extends StatelessWidget {
     this.decorationColor,
     this.fontFamily,
     this.fallbackFontFamily,
+    this.fontVariations,
+    this.letterSpacing,
     // // https://api.flutter.dev/flutter/painting/TextStyle/height.html
     this.lineHeight,
     this.figmaLineHeight,
@@ -52,7 +57,7 @@ class FlowyText extends StatelessWidget {
     this.decorationThickness,
   });
 
-  FlowyText.small(
+  const FlowyText.small(
     this.text, {
     super.key,
     this.overflow,
@@ -63,6 +68,8 @@ class FlowyText extends StatelessWidget {
     this.decorationColor,
     this.fontFamily,
     this.fallbackFontFamily,
+    this.fontVariations,
+    this.letterSpacing,
     this.lineHeight,
     this.withTooltip = false,
     this.isEmoji = false,
@@ -70,8 +77,8 @@ class FlowyText extends StatelessWidget {
     this.figmaLineHeight,
     this.optimizeEmojiAlign = false,
     this.decorationThickness,
-  })  : fontWeight = FontWeight.w400,
-        fontSize = (Platform.isIOS || Platform.isAndroid) ? 14 : 12;
+  })  : fontWeight = flowyRegularFontWeight,
+        fontSize = 14;
 
   const FlowyText.regular(
     this.text, {
@@ -85,6 +92,8 @@ class FlowyText extends StatelessWidget {
     this.decorationColor,
     this.fontFamily,
     this.fallbackFontFamily,
+    this.fontVariations,
+    this.letterSpacing,
     this.lineHeight,
     this.withTooltip = false,
     this.isEmoji = false,
@@ -92,7 +101,7 @@ class FlowyText extends StatelessWidget {
     this.figmaLineHeight,
     this.optimizeEmojiAlign = false,
     this.decorationThickness,
-  }) : fontWeight = FontWeight.w400;
+  }) : fontWeight = flowyRegularFontWeight;
 
   const FlowyText.medium(
     this.text, {
@@ -106,6 +115,8 @@ class FlowyText extends StatelessWidget {
     this.decorationColor,
     this.fontFamily,
     this.fallbackFontFamily,
+    this.fontVariations,
+    this.letterSpacing,
     this.lineHeight,
     this.withTooltip = false,
     this.isEmoji = false,
@@ -113,7 +124,7 @@ class FlowyText extends StatelessWidget {
     this.figmaLineHeight,
     this.optimizeEmojiAlign = false,
     this.decorationThickness,
-  }) : fontWeight = FontWeight.w500;
+  }) : fontWeight = FontWeight.w600;
 
   const FlowyText.semibold(
     this.text, {
@@ -127,6 +138,8 @@ class FlowyText extends StatelessWidget {
     this.decorationColor,
     this.fontFamily,
     this.fallbackFontFamily,
+    this.fontVariations,
+    this.letterSpacing,
     this.lineHeight,
     this.withTooltip = false,
     this.isEmoji = false,
@@ -152,6 +165,8 @@ class FlowyText extends StatelessWidget {
     this.strutStyle = const StrutStyle(forceStrutHeight: true),
     this.isEmoji = true,
     this.fontFamily,
+    this.fontVariations,
+    this.letterSpacing,
     this.figmaLineHeight,
     this.optimizeEmojiAlign = false,
     this.decorationThickness,
@@ -192,12 +207,17 @@ class FlowyText extends StatelessWidget {
     final textStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
           fontSize: fontSize,
           fontWeight: fontWeight,
+          fontVariations: fontVariations ??
+              (fontWeight == null
+                  ? null
+                  : flowyFontVariationsForWeight(fontWeight!)),
           color: color,
           decoration: decoration,
           decorationColor: decorationColor,
           decorationThickness: decorationThickness,
           fontFamily: fontFamily,
           fontFamilyFallback: fallbackFontFamily,
+          letterSpacing: letterSpacing,
           height: lineHeight,
           leadingDistribution: isEmoji && optimizeEmojiAlign
               ? TextLeadingDistribution.even

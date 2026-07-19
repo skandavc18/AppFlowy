@@ -59,9 +59,9 @@ class _WorkspacesMenuState extends State<WorkspacesMenu> {
           child: Row(
             children: [
               Expanded(
-                child: FlowyText.medium(
+                child: FlowyText.regular(
                   _getUserInfo(),
-                  fontSize: 12.0,
+                  fontSize: 14.0,
                   overflow: TextOverflow.ellipsis,
                   color: Theme.of(context).hintColor,
                 ),
@@ -282,9 +282,10 @@ class _WorkspaceInfo extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 // workspace name
-                FlowyText.medium(
+                FlowyText(
                   workspace.name,
                   fontSize: 14.0,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
                   figmaLineHeight: 17.0,
                   overflow: TextOverflow.ellipsis,
                   withTooltip: true,
@@ -298,8 +299,8 @@ class _WorkspaceInfo extends StatelessWidget {
                             .plural(
                             memberCount,
                           ),
-                    fontSize: 10.0,
-                    figmaLineHeight: 12.0,
+                    fontSize: 14.0,
+                    figmaLineHeight: 18.0,
                     color: Theme.of(context).hintColor,
                   ),
                 ],

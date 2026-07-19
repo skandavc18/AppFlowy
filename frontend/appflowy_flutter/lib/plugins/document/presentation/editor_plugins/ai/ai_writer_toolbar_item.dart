@@ -1,10 +1,10 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -103,7 +103,7 @@ class _AiWriterToolbarActionListState extends State<AiWriterToolbarActionList> {
         ),
         onTap: () {
           popoverController.close();
-          _insertAiNode(widget.editorState, command);
+          insertAiWriterNode(widget.editorState, command);
         },
       ),
     );
@@ -117,7 +117,7 @@ class _AiWriterToolbarActionListState extends State<AiWriterToolbarActionList> {
   }
 
   Widget buildChild(BuildContext context) {
-    final theme = AppFlowyTheme.of(context), iconScheme = theme.iconColorScheme;
+    final iconColor = EditorChromeStyle.iconColor(context);
     final child = FlowyIconButton(
       width: 48,
       height: 32,
@@ -129,13 +129,13 @@ class _AiWriterToolbarActionListState extends State<AiWriterToolbarActionList> {
           FlowySvg(
             FlowySvgs.toolbar_ai_writer_m,
             size: Size.square(20),
-            color: iconScheme.primary,
+            color: iconColor,
           ),
           HSpace(4),
           FlowySvg(
             FlowySvgs.toolbar_arrow_down_m,
             size: Size(12, 20),
-            color: iconScheme.primary,
+            color: iconColor,
           ),
         ],
       ),
@@ -178,7 +178,7 @@ class ImproveWritingButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
+    final iconColor = EditorChromeStyle.iconColor(context);
     final child = FlowyIconButton(
       width: 36,
       height: 32,
@@ -186,12 +186,12 @@ class ImproveWritingButton extends StatelessWidget {
       icon: FlowySvg(
         FlowySvgs.toolbar_ai_improve_writing_m,
         size: Size.square(20.0),
-        color: theme.iconColorScheme.primary,
+        color: iconColor,
       ),
       onPressed: () {
         if (_isAIWriterEnabled(editorState)) {
           keepEditorFocusNotifier.increase();
-          _insertAiNode(editorState, AiWriterCommand.improveWriting);
+          insertAiWriterNode(editorState, AiWriterCommand.improveWriting);
         } else {
           showToastNotification(
             message: LocaleKeys.document_plugins_appflowyAIEditDisabled.tr(),
@@ -212,7 +212,10 @@ class ImproveWritingButton extends StatelessWidget {
   }
 }
 
-void _insertAiNode(EditorState editorState, AiWriterCommand command) async {
+Future<void> insertAiWriterNode(
+  EditorState editorState,
+  AiWriterCommand command,
+) async {
   final selection = editorState.selection?.normalized;
   if (selection == null) {
     return;

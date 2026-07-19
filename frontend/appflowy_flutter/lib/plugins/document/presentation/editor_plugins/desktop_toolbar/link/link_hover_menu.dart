@@ -5,6 +5,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/desktop_floating_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/link_embed_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/shared.dart';
@@ -512,7 +513,7 @@ class _LinkHoverMenuState extends State<LinkHoverMenu> {
               child: FlowyButton(
                 text: FlowyText(
                   command.title,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: EditorChromeStyle.menuFontWeight,
                   figmaLineHeight: 20,
                 ),
                 onTap: () {

@@ -1,3 +1,4 @@
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
@@ -25,10 +26,8 @@ class LinkStyle {
             : theme.fillColorScheme.themeThick,
       ),
     );
-    final hintStyle = TextStyle(
-      fontSize: 14,
+    final hintStyle = EditorChromeStyle.textStyle(context).copyWith(
       height: 20 / 14,
-      fontWeight: FontWeight.w400,
       color: theme.textColorScheme.tertiary,
     );
     return InputDecoration(

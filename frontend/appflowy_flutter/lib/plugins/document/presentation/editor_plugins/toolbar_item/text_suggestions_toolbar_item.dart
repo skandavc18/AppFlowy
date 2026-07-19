@@ -2,13 +2,13 @@ import 'dart:collection';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_option_cubit.dart';
+import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy_editor/appflowy_editor.dart'
     hide QuoteBlockComponentBuilder, quoteNode, QuoteBlockKeys;
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -119,8 +119,7 @@ class _SuggestionsActionListState extends State<SuggestionsActionList> {
   }
 
   Widget buildChild(BuildContext context) {
-    final theme = AppFlowyTheme.of(context),
-        iconColor = theme.iconColorScheme.primary;
+    final iconColor = EditorChromeStyle.iconColor(context);
     final child = FlowyHover(
       isSelected: () => isSelected,
       style: HoverStyle(
@@ -154,10 +153,9 @@ class _SuggestionsActionListState extends State<SuggestionsActionList> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                FlowyText(
+                Text(
                   currentSuggestionItem.title,
-                  fontWeight: FontWeight.w400,
-                  figmaLineHeight: 20,
+                  style: EditorChromeStyle.toolbarLabelTextStyle(context),
                 ),
                 HSpace(4),
                 FlowySvg(
@@ -217,7 +215,7 @@ class _SuggestionsActionListState extends State<SuggestionsActionList> {
         iconPadding: 12,
         text: FlowyText(
           item.title,
-          fontWeight: FontWeight.w400,
+          fontWeight: EditorChromeStyle.menuFontWeight,
           figmaLineHeight: 20,
         ),
         rightIcon: isSelected ? FlowySvg(FlowySvgs.toolbar_check_m) : null,

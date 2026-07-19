@@ -46,7 +46,7 @@ class _SettingsDropdownState<T> extends State<SettingsDropdown<T>> {
   Widget build(BuildContext context) {
     final fontFamily = context.read<AppearanceSettingsCubit>().state.font;
     final fontFamilyUsed =
-        getGoogleFontSafely(fontFamily).fontFamily ?? defaultFontFamily;
+        getGoogleFontSafely(fontFamily).fontFamily ?? preferredFontFamily;
 
     return Row(
       children: [
@@ -60,7 +60,7 @@ class _SettingsDropdownState<T> extends State<SettingsDropdown<T>> {
             textStyle: widget.textStyle ??
                 Theme.of(context).textTheme.bodyLarge?.copyWith(
                       fontFamily: fontFamilyUsed,
-                      fontWeight: FontWeight.w400,
+                      fontWeight: defaultFontWeight,
                     ),
             menuStyle: MenuStyle(
               maximumSize:

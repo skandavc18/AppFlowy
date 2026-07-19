@@ -146,11 +146,12 @@ class _DocumentImmersiveCoverState extends State<DocumentImmersiveCover> {
     BuildContext context,
     DocumentImmersiveCoverState state,
   ) {
-    String? fontFamily = defaultFontFamily;
+    var fontFamily = preferredFontFamily;
     final documentFontFamily =
         context.read<DocumentPageStyleBloc>().state.fontFamily;
     if (documentFontFamily != null && fontFamily != documentFontFamily) {
-      fontFamily = getGoogleFontSafely(documentFontFamily).fontFamily;
+      fontFamily = getGoogleFontSafely(documentFontFamily).fontFamily ??
+          preferredFontFamily;
     }
 
     if (widget.fixedTitle != null) {
