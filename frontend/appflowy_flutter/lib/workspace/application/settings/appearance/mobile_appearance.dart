@@ -1,6 +1,7 @@
 // ThemeData in mobile
 import 'package:appflowy/plugins/document/presentation/editor_plugins/mobile_toolbar_v3/aa_menu/_toolbar_theme.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme.dart';
@@ -33,6 +34,7 @@ class MobileAppearance extends BaseAppearance {
     final codeFontStyle = getFontStyle(fontFamily: codeFontFamily);
 
     final theme = isLight ? appTheme.lightTheme : appTheme.darkTheme;
+    final isPaper = PaperTheme.isPaper(appTheme);
 
     final colorTheme = isLight
         ? ColorScheme(
@@ -231,6 +233,7 @@ class MobileAppearance extends BaseAppearance {
       colorScheme: colorTheme,
       indicatorColor: Colors.blue,
       extensions: [
+        PaperThemeExtension(enabled: isPaper),
         AFThemeExtension(
           warning: theme.yellow,
           success: theme.green,
@@ -264,6 +267,7 @@ class MobileAppearance extends BaseAppearance {
           calloutBGColor: EditorSurfaceStyle.calloutBackgroundFor(
             brightness,
             theme.hoverBG3,
+            isPaper: isPaper,
           ),
           tableCellBGColor: theme.surface,
           caption: fontStyle.copyWith(

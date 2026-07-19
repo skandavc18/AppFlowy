@@ -6,6 +6,7 @@ import 'package:appflowy/shared/clipboard_state.dart';
 import 'package:appflowy/shared/easy_localiation_service.dart';
 import 'package:appflowy/shared/feature_flags.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/user_settings_service.dart';
@@ -252,10 +253,15 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
                           .orDefault(defaultFontFamily)
                           .fontFamilyName;
 
+                      final baseAppFlowyTheme = brightness == Brightness.light
+                          ? themeBuilder.light(fontFamily: fontFamily)
+                          : themeBuilder.dark(fontFamily: fontFamily);
                       return AnimatedAppFlowyTheme(
-                        data: brightness == Brightness.light
-                            ? themeBuilder.light(fontFamily: fontFamily)
-                            : themeBuilder.dark(fontFamily: fontFamily),
+                        data: PaperTheme.appFlowyTheme(
+                          base: baseAppFlowyTheme,
+                          enabled: PaperTheme.isPaper(state.appTheme),
+                          brightness: brightness,
+                        ),
                         child: DefaultTextStyle.merge(
                           style: AppTextRendering.rootStyleFor(brightness),
                           child: MediaQuery(

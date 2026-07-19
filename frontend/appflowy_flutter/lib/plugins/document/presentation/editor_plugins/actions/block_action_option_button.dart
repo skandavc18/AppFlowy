@@ -1,5 +1,7 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_option_cubit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/option/option_actions.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/columns/simple_column_node_extension.dart';
+import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -55,6 +57,12 @@ class _BlockOptionButtonState extends State<BlockOptionButton> {
           beginScaleFactor: 1.0,
           beginOpacity: 0.8,
           direction: direction,
+          constraints: const BoxConstraints(
+            minWidth: 220,
+            maxWidth: 460,
+            maxHeight: 460,
+          ),
+          backgroundColor: ContextMenuSurfaceStyle.background(context),
           onPopupBuilder: _onPopoverBuilder,
           onClosed: () => _onPopoverClosed(context),
           onSelected: (action, controller) => _onActionSelected(
@@ -81,7 +89,17 @@ class _BlockOptionButtonState extends State<BlockOptionButton> {
   }
 
   List<PopoverAction> _buildPopoverActions(BuildContext context) {
-    return widget.actions.map((e) {
+    final node = widget.blockComponentContext.node;
+    final actions = widget.actions.where((action) {
+      if (action == OptionAction.splitIntoColumns) {
+        return !node.isInColumnsBlock;
+      }
+      if (action == OptionAction.stackColumns) {
+        return node.isInColumnsBlock;
+      }
+      return true;
+    });
+    return actions.map((e) {
       switch (e) {
         case OptionAction.divider:
           return DividerOptionAction();

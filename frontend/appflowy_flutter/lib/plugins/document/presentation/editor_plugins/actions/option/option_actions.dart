@@ -59,10 +59,15 @@ enum EditorOptionActionType {
 
 enum OptionAction {
   delete,
+  cut,
+  copy,
+  paste,
   duplicate,
   turnInto,
   moveUp,
   moveDown,
+  splitIntoColumns,
+  stackColumns,
   copyLinkToBlock,
 
   /// callout background color
@@ -81,14 +86,23 @@ enum OptionAction {
     switch (this) {
       case OptionAction.delete:
         return FlowySvgs.trash_s;
+      case OptionAction.cut:
+        return FlowySvgs.m_table_quick_action_cut_s;
+      case OptionAction.copy:
+        return FlowySvgs.copy_s;
+      case OptionAction.paste:
+        return FlowySvgs.m_table_quick_action_paste_s;
       case OptionAction.duplicate:
         return FlowySvgs.copy_s;
       case OptionAction.turnInto:
         return FlowySvgs.turninto_s;
       case OptionAction.moveUp:
-        return const FlowySvgData('editor/move_up');
+        return FlowySvgs.arrow_up_s;
       case OptionAction.moveDown:
-        return const FlowySvgData('editor/move_down');
+        return FlowySvgs.arrow_down_s;
+      case OptionAction.splitIntoColumns:
+      case OptionAction.stackColumns:
+        return FlowySvgs.slash_menu_icon_two_columns_s;
       case OptionAction.color:
         return const FlowySvgData('editor/color');
       case OptionAction.divider:
@@ -110,6 +124,12 @@ enum OptionAction {
     switch (this) {
       case OptionAction.delete:
         return LocaleKeys.document_plugins_optionAction_delete.tr();
+      case OptionAction.cut:
+        return LocaleKeys.document_plugins_contextMenu_cut.tr();
+      case OptionAction.copy:
+        return LocaleKeys.document_plugins_contextMenu_copy.tr();
+      case OptionAction.paste:
+        return LocaleKeys.document_plugins_contextMenu_paste.tr();
       case OptionAction.duplicate:
         return LocaleKeys.document_plugins_optionAction_duplicate.tr();
       case OptionAction.turnInto:
@@ -118,6 +138,10 @@ enum OptionAction {
         return LocaleKeys.document_plugins_optionAction_moveUp.tr();
       case OptionAction.moveDown:
         return LocaleKeys.document_plugins_optionAction_moveDown.tr();
+      case OptionAction.splitIntoColumns:
+        return '${LocaleKeys.document_slashMenu_name_twoColumns.tr()} (split)';
+      case OptionAction.stackColumns:
+        return 'Stack columns vertically';
       case OptionAction.color:
         return LocaleKeys.document_plugins_optionAction_color.tr();
       case OptionAction.align:

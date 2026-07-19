@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/shared/clipboard_state.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -30,20 +32,27 @@ CommandShortcutEventHandler _cutCommandHandler = (editorState) {
     return KeyEventResult.ignored;
   }
 
+  unawaited(_cutSelection(editorState, selection, context));
+  return KeyEventResult.handled;
+};
+
+Future<void> _cutSelection(
+  EditorState editorState,
+  Selection selection,
+  BuildContext context,
+) async {
   context.read<ClipboardState>().didCut();
-
-  handleCopyCommand(editorState, isCut: true);
-
+  await copySelectionToClipboard(editorState, isCut: true);
   if (!selection.isCollapsed) {
-    editorState.deleteSelectionIfNeeded();
+    await editorState.deleteSelectionIfNeeded();
   } else {
     final node = editorState.getNodeAtPath(selection.end.path);
     if (node == null) {
-      return KeyEventResult.handled;
+      return;
     }
     // prevent to cut the node that is selecting the table.
     if (node.parentTableNode != null) {
-      return KeyEventResult.skipRemainingHandlers;
+      return;
     }
 
     final transaction = editorState.transaction;
@@ -54,8 +63,6 @@ CommandShortcutEventHandler _cutCommandHandler = (editorState) {
         Position(path: node.path, offset: nextNode.delta?.length ?? 0),
       );
     }
-    editorState.apply(transaction);
+    await editorState.apply(transaction);
   }
-
-  return KeyEventResult.handled;
-};
+}

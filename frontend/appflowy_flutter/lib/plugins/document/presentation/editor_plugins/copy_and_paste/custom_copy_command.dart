@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
@@ -33,6 +34,19 @@ KeyEventResult handleCopyCommand(
     return KeyEventResult.ignored;
   }
 
+  unawaited(copySelectionToClipboard(editorState, isCut: isCut));
+  return KeyEventResult.handled;
+}
+
+Future<void> copySelectionToClipboard(
+  EditorState editorState, {
+  bool isCut = false,
+}) async {
+  final selection = editorState.selection?.normalized;
+  if (selection == null) {
+    return;
+  }
+
   String? text;
   String? html;
   String? inAppJson;
@@ -41,7 +55,7 @@ KeyEventResult handleCopyCommand(
     // if the selection is collapsed, we will copy the text of the current line.
     final node = editorState.getNodeAtPath(selection.end.path);
     if (node == null) {
-      return KeyEventResult.ignored;
+      return;
     }
 
     // plain text.
@@ -70,17 +84,13 @@ KeyEventResult handleCopyCommand(
     html = documentToHTML(document);
   }
 
-  () async {
-    await getIt<ClipboardService>().setData(
-      ClipboardServiceData(
-        plainText: text,
-        html: html,
-        inAppJson: inAppJson,
-      ),
-    );
-  }();
-
-  return KeyEventResult.handled;
+  await getIt<ClipboardService>().setData(
+    ClipboardServiceData(
+      plainText: text,
+      html: html,
+      inAppJson: inAppJson,
+    ),
+  );
 }
 
 Document _buildCopiedDocument(

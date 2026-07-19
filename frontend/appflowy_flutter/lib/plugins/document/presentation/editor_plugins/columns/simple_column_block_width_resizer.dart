@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/drag_to_reorder/draggable_option_button.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
@@ -56,20 +58,25 @@ class _SimpleColumnBlockWidthResizerState
         child: ValueListenableBuilder<bool>(
           valueListenable: isHovering,
           builder: (context, isHovering, child) {
+            Widget buildDivider(Color color) => Container(
+                  width: 2,
+                  height: widget.height ?? 20,
+                  margin: const EdgeInsets.symmetric(horizontal: 8),
+                  child: CustomPaint(
+                    painter: _TaperedDividerPainter(color),
+                  ),
+                );
             if (UniversalPlatform.isMobile) {
-              return const SizedBox.shrink();
+              return buildDivider(Theme.of(context).dividerColor);
             }
 
             final hide = isDraggingAppFlowyEditorBlock.value || !isHovering;
             return MouseRegion(
               cursor: SystemMouseCursors.resizeLeftRight,
-              child: Container(
-                width: 2,
-                height: widget.height ?? 20,
-                margin: EdgeInsets.symmetric(horizontal: 2),
-                color: !hide
+              child: buildDivider(
+                !hide
                     ? Theme.of(context).colorScheme.primary
-                    : Colors.transparent,
+                    : Theme.of(context).dividerColor,
               ),
             );
           },
@@ -166,4 +173,29 @@ class _SimpleColumnBlockWidthResizerState
     isHovering.value = false;
     EditorGlobalConfiguration.enableDragMenu.value = true;
   }
+}
+
+class _TaperedDividerPainter extends CustomPainter {
+  const _TaperedDividerPainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final centerX = size.width / 2;
+    final centerY = size.height / 2;
+    final path = ui.Path()
+      ..moveTo(centerX - 0.25, 0)
+      ..lineTo(0, centerY)
+      ..lineTo(centerX - 0.25, size.height)
+      ..lineTo(centerX + 0.25, size.height)
+      ..lineTo(size.width, centerY)
+      ..lineTo(centerX + 0.25, 0)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_TaperedDividerPainter oldDelegate) =>
+      color != oldDelegate.color;
 }

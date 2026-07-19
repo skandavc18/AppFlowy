@@ -4,6 +4,7 @@ import 'plugins/service/plugin_service.dart';
 
 class BuiltInTheme {
   static const String defaultTheme = 'Default';
+  static const String paper = 'Paper';
   static const String dandelion = 'Dandelion';
   static const String lemonade = 'Lemonade';
   static const String lavender = 'Lavender';

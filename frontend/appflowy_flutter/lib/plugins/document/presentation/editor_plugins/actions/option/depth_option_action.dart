@@ -135,7 +135,16 @@ class OptionActionWrapper extends ActionCell {
   final OptionAction inner;
 
   @override
-  Widget? leftIcon(Color iconColor) => FlowySvg(inner.svg);
+  Widget? leftIcon(Color iconColor) => SizedBox.square(
+        dimension: 20,
+        child: Center(
+          child: FlowySvg(
+            inner.svg,
+            size: const Size.square(16),
+            color: iconColor,
+          ),
+        ),
+      );
 
   @override
   String get name => inner.description;

@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/operati
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_copy_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_cut_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_paste_command.dart';
+import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -161,6 +162,12 @@ class EditorContextMenuRegion extends StatefulWidget {
   final Widget child;
   final bool enabled;
 
+  static void preventForPointer(BuildContext context, int pointer) {
+    context
+        .findAncestorStateOfType<_EditorContextMenuRegionState>()
+        ?._preventForPointer(pointer);
+  }
+
   @override
   State<EditorContextMenuRegion> createState() =>
       _EditorContextMenuRegionState();
@@ -168,6 +175,13 @@ class EditorContextMenuRegion extends StatefulWidget {
 
 class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
   OverlayEntry? _overlayEntry;
+  final Set<int> _preventedPointers = {};
+
+  void _preventForPointer(int pointer) {
+    if (widget.enabled) {
+      _preventedPointers.add(pointer);
+    }
+  }
 
   @override
   void dispose() {
@@ -183,6 +197,9 @@ class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
           return;
         }
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_preventedPointers.remove(event.pointer)) {
+            return;
+          }
           if (mounted) {
             _show(event.position);
           }
@@ -331,6 +348,7 @@ class _EditorContextMenu extends StatelessWidget {
 
     return AFMenu(
       width: AppFlowyEditorMenuStyle.menuWidth,
+      backgroundColor: ContextMenuSurfaceStyle.background(context),
       children: children,
     );
   }

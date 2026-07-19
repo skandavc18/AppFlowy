@@ -192,7 +192,14 @@ void main() {
       expect(HomeSpaceViewSizes.viewIconOpacity, 0.82);
       expect(
         SidebarStyle.backgroundFor(Brightness.light),
-        const Color(0xFFFAF9F6),
+        SidebarStyle.defaultLightBackground,
+      );
+      expect(
+        SidebarStyle.backgroundFor(
+          Brightness.light,
+          isPaper: true,
+        ),
+        const Color(0xFFF8F3E8),
       );
       expect(
         SidebarStyle.backgroundFor(Brightness.dark),

@@ -155,11 +155,18 @@ BlockComponentConfiguration _buildDefaultConfiguration(
 /// Build the option actions for the block component.
 ///
 /// Notes: different block type may have different option actions.
-/// All the block types have the delete and duplicate options.
+/// All the block types have the delete, copy, and duplicate options.
 List<OptionAction> _buildOptionActions(BuildContext context, String type) {
   final standardActions = [
     OptionAction.delete,
+    OptionAction.cut,
+    OptionAction.copy,
+    OptionAction.paste,
     OptionAction.duplicate,
+    OptionAction.moveUp,
+    OptionAction.moveDown,
+    OptionAction.splitIntoColumns,
+    OptionAction.stackColumns,
   ];
 
   // filter out the copy link to block option if in local mode

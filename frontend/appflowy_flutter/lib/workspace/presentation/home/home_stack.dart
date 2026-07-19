@@ -7,6 +7,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/window_title_bar.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -14,6 +15,7 @@ import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
 import 'package:appflowy/workspace/presentation/home/navigation.dart';
 import 'package:appflowy/workspace/presentation/home/tabs/tabs_manager.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
@@ -66,7 +68,10 @@ class _HomeStackState extends State<HomeStack> with WindowListener {
         builder: (context, state) => Column(
           children: [
             if (UniversalPlatform.isWindows)
-              WindowTitleBar(leftChildren: [_buildToggleMenuButton(context)]),
+              WindowTitleBar(
+                backgroundColor: SidebarStyle.background(context),
+                leftChildren: [_buildToggleMenuButton(context)],
+              ),
             Padding(
               padding: EdgeInsets.only(left: widget.layout.menuSpacing),
               child: TabsManager(
@@ -204,6 +209,7 @@ class _PageStackState extends State<PageStack>
       color: EditorSurfaceStyle.canvasBackgroundFor(
         Theme.of(context).brightness,
         Theme.of(context).colorScheme.surface,
+        isPaper: PaperTheme.isEnabled(context),
       ),
       child: FocusTraversalGroup(
         child: widget.pageManager.stackWidget(
@@ -331,6 +337,7 @@ class _SecondaryViewState extends State<SecondaryView>
                               color: EditorSurfaceStyle.canvasBackgroundFor(
                                 Theme.of(context).brightness,
                                 Theme.of(context).colorScheme.surface,
+                                isPaper: PaperTheme.isEnabled(context),
                               ),
                               boxShadow: [
                                 BoxShadow(
@@ -370,6 +377,7 @@ class _SecondaryViewState extends State<SecondaryView>
           color: EditorSurfaceStyle.canvasBackgroundFor(
             Theme.of(context).brightness,
             Theme.of(context).colorScheme.surface,
+            isPaper: PaperTheme.isEnabled(context),
           ),
           child: FocusTraversalGroup(
             child: ValueListenableBuilder(
@@ -833,6 +841,7 @@ class _HomeTopBarState extends State<HomeTopBar>
         color: EditorSurfaceStyle.canvasBackgroundFor(
           Theme.of(context).brightness,
           Theme.of(context).colorScheme.surface,
+          isPaper: PaperTheme.isEnabled(context),
         ),
       ),
       height: HomeSizes.topBarHeight + HomeInsets.topBarTitleVerticalPadding,

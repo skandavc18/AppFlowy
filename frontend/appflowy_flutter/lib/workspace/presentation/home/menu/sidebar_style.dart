@@ -2,8 +2,11 @@ import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:flutter/material.dart';
 
+import '../../../../shared/paper_theme.dart';
+
 abstract final class SidebarStyle {
-  static const lightBackground = Color(0xFFFAF9F6);
+  static const defaultLightBackground = Color(0xFFFAF9F6);
+  static const lightBackground = PaperTheme.sidebarBackground;
   static const darkBackground = Color(0xFF202020);
   static const lightPrimaryText = Color(0xFF37352F);
   static const darkPrimaryText = Color(0xCFFFFFFF);
@@ -20,8 +23,16 @@ abstract final class SidebarStyle {
   static const lightEdge = Color(0x1437352F);
   static const darkEdge = Color(0x1AFFFFFF);
 
-  static Color backgroundFor(Brightness brightness) =>
-      brightness == Brightness.light ? lightBackground : darkBackground;
+  static Color backgroundFor(
+    Brightness brightness, {
+    bool isPaper = false,
+    Color? lightFallback,
+  }) =>
+      brightness == Brightness.light
+          ? isPaper
+              ? lightBackground
+              : lightFallback ?? defaultLightBackground
+          : darkBackground;
 
   static Color primaryTextFor(Brightness brightness) =>
       brightness == Brightness.light ? lightPrimaryText : darkPrimaryText;
@@ -47,8 +58,11 @@ abstract final class SidebarStyle {
   static Color edgeBorderFor(Brightness brightness) =>
       brightness == Brightness.light ? lightEdge : darkEdge;
 
-  static Color background(BuildContext context) =>
-      backgroundFor(Theme.of(context).brightness);
+  static Color background(BuildContext context) => backgroundFor(
+        Theme.of(context).brightness,
+        isPaper: PaperTheme.isEnabled(context),
+        lightFallback: Theme.of(context).colorScheme.surfaceContainerHighest,
+      );
 
   static Color selectedBackground(BuildContext context) =>
       selectedBackgroundFor(Theme.of(context).brightness);

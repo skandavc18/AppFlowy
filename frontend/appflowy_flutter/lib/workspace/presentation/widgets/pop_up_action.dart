@@ -28,6 +28,7 @@ class PopoverActionList<T extends PopoverAction> extends StatefulWidget {
       maxWidth: 460,
       maxHeight: 300,
     ),
+    this.backgroundColor,
     this.showAtCursor = false,
   });
 
@@ -43,6 +44,7 @@ class PopoverActionList<T extends PopoverAction> extends StatefulWidget {
   final bool asBarrier;
   final Offset offset;
   final BoxConstraints constraints;
+  final Color? backgroundColor;
   final Duration animationDuration;
   final double slideDistance;
   final double beginScaleFactor;
@@ -124,9 +126,15 @@ class _PopoverActionListState<T extends PopoverAction>
           }
         }).toList();
 
-        return IntrinsicHeight(
-          child: IntrinsicWidth(
-            child: Column(children: children),
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: ColoredBox(
+            color: widget.backgroundColor ?? Theme.of(context).cardColor,
+            child: IntrinsicHeight(
+              child: IntrinsicWidth(
+                child: Column(children: children),
+              ),
+            ),
           ),
         );
       },

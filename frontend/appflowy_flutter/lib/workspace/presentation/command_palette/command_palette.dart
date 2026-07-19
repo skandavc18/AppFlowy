@@ -4,6 +4,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
@@ -251,6 +252,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
             backgroundColor: EditorSurfaceStyle.canvasBackgroundFor(
               Theme.of(context).brightness,
               theme.surfaceColorScheme.layer01,
+              isPaper: PaperTheme.isEnabled(context),
             ),
             width: dialogWidth,
             elevation: 32,

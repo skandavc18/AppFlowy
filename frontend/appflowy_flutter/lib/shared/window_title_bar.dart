@@ -21,9 +21,11 @@ class WindowTitleBar extends StatefulWidget {
   const WindowTitleBar({
     super.key,
     this.leftChildren = const [],
+    this.backgroundColor,
   });
 
   final List<Widget> leftChildren;
+  final Color? backgroundColor;
 
   @override
   State<WindowTitleBar> createState() => _WindowTitleBarState();
@@ -74,7 +76,8 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
     return Container(
       height: 40,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: widget.backgroundColor ??
+            Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
       child: DragToMoveArea(
         child: Row(

@@ -14,6 +14,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -43,6 +44,7 @@ class PagePreview extends StatelessWidget {
     final backgroundColor = EditorSurfaceStyle.previewBackgroundFor(
       Theme.of(context).brightness,
       theme.surfaceColorScheme.layer02,
+      isPaper: PaperTheme.isEnabled(context),
     );
 
     return BlocProvider(

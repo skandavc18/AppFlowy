@@ -31,15 +31,36 @@ class BlockActionOptionCubit extends Cubit<BlockActionOptionState> {
       case OptionAction.delete:
         _deleteBlocks(transaction, node);
         break;
+      case OptionAction.cut:
+        await copySelectionToClipboard(editorState, isCut: true);
+        _deleteBlocks(transaction, node);
+        break;
+      case OptionAction.copy:
+        handleCopyCommand(editorState);
+        return;
+      case OptionAction.paste:
+        await doPaste(editorState);
+        return;
       case OptionAction.duplicate:
         await _duplicateBlock(transaction, node);
         EditorNotification.paste().post();
         break;
       case OptionAction.moveUp:
-        transaction.moveNode(node.path.previous, node);
+        if (node.path.last > 0) {
+          transaction.moveNode(node.path.previous, node);
+        }
         break;
       case OptionAction.moveDown:
-        transaction.moveNode(node.path.next.next, node);
+        final parent = node.parent;
+        if (parent != null && node.path.last < parent.children.length - 1) {
+          transaction.moveNode(node.path.next.next, node);
+        }
+        break;
+      case OptionAction.splitIntoColumns:
+        _splitIntoColumns(transaction, node);
+        break;
+      case OptionAction.stackColumns:
+        _stackColumns(transaction, node);
         break;
       case OptionAction.copyLinkToBlock:
         await _copyLinkToBlock(node);
@@ -59,6 +80,45 @@ class BlockActionOptionCubit extends Cubit<BlockActionOptionState> {
     }
 
     await editorState.apply(transaction);
+  }
+
+  void _splitIntoColumns(Transaction transaction, Node node) {
+    if (node.isInColumnsBlock) {
+      return;
+    }
+
+    final path = node.path;
+    transaction
+      ..deleteNode(node)
+      ..insertNode(
+        path,
+        simpleColumnsNode(
+          children: [
+            simpleColumnNode(children: [node.deepCopy()], ratio: 0.5),
+            simpleColumnNode(ratio: 0.5),
+          ],
+        ),
+      )
+      ..afterSelection = Selection.collapsed(
+        Position(path: path.child(0).child(0)),
+      );
+  }
+
+  void _stackColumns(Transaction transaction, Node node) {
+    final columns = node.columnsParent;
+    if (columns == null) {
+      return;
+    }
+
+    final path = columns.path;
+    final children = columns.children
+        .expand((column) => column.children)
+        .map((child) => child.deepCopy())
+        .toList();
+    transaction
+      ..insertNodes(path, children)
+      ..deleteNode(columns)
+      ..afterSelection = Selection.collapsed(Position(path: path));
   }
 
   /// If the selection is a block selection, delete the selected blocks.

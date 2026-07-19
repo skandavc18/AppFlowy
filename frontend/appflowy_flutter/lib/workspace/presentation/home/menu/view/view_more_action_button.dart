@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
+import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
@@ -45,6 +46,7 @@ class ViewMoreActionPopover extends StatelessWidget {
       offset: const Offset(0, 8),
       actions: wrappers,
       constraints: const BoxConstraints(minWidth: 260),
+      backgroundColor: ContextMenuSurfaceStyle.background(context),
       onPopupBuilder: () => onEditing(true),
       buildChild: buildChild,
       onSelected: (_, __) {},

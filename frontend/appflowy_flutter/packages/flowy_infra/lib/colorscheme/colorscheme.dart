@@ -19,6 +19,10 @@ const Map<String, List<FlowyColorScheme>> themeMap = {
     DefaultColorScheme.light(),
     DefaultColorScheme.dark(),
   ],
+  BuiltInTheme.paper: [
+    DefaultColorScheme.light(),
+    DefaultColorScheme.dark(),
+  ],
   BuiltInTheme.dandelion: [
     DandelionColorScheme.light(),
     DandelionColorScheme.dark(),

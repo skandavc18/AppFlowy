@@ -3,6 +3,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/tab_bar_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/mention/mention_page_block.dart';
+import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -220,75 +221,83 @@ class _TabBarItemButtonState extends State<TabBarItemButton> {
       direction: PopoverDirection.bottomWithCenterAligned,
       clickHandler: PopoverClickHandler.gestureDetector,
       popupBuilder: (_) {
-        return IntrinsicHeight(
-          child: IntrinsicWidth(
-            child: Column(
-              children: [
-                ActionCellWidget(
-                  action: TabBarViewAction.rename,
-                  itemHeight: ActionListSizes.itemHeight,
-                  onSelected: (action) {
-                    showAFTextFieldDialog(
-                      context: context,
-                      title: LocaleKeys.menuAppHeader_renameDialog.tr(),
-                      initialValue: widget.view.nameOrDefault,
-                      onConfirm: (newValue) {
-                        context.read<DatabaseTabBarBloc>().add(
-                              DatabaseTabBarEvent.renameView(
-                                widget.view.id,
-                                newValue,
-                              ),
-                            );
-                      },
-                    );
-                    menuController.close();
-                  },
-                ),
-                AppFlowyPopover(
-                  controller: iconController,
-                  direction: PopoverDirection.rightWithCenterAligned,
-                  constraints: BoxConstraints.loose(const Size(364, 356)),
-                  margin: const EdgeInsets.all(0),
-                  child: ActionCellWidget(
-                    action: TabBarViewAction.changeIcon,
-                    itemHeight: ActionListSizes.itemHeight,
-                    onSelected: (action) {
-                      iconController.show();
-                    },
-                  ),
-                  popupBuilder: (context) {
-                    return FlowyIconEmojiPicker(
-                      tabs: const [PickerTabType.icon],
-                      enableBackgroundColorSelection: false,
-                      onSelectedEmoji: (r) {
-                        ViewBackendService.updateViewIcon(
-                          view: widget.view,
-                          viewIcon: r.data,
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: ColoredBox(
+            color: ContextMenuSurfaceStyle.background(context),
+            child: IntrinsicHeight(
+              child: IntrinsicWidth(
+                child: Column(
+                  children: [
+                    ActionCellWidget(
+                      action: TabBarViewAction.rename,
+                      itemHeight: ActionListSizes.itemHeight,
+                      onSelected: (action) {
+                        showAFTextFieldDialog(
+                          context: context,
+                          title: LocaleKeys.menuAppHeader_renameDialog.tr(),
+                          initialValue: widget.view.nameOrDefault,
+                          onConfirm: (newValue) {
+                            context.read<DatabaseTabBarBloc>().add(
+                                  DatabaseTabBarEvent.renameView(
+                                    widget.view.id,
+                                    newValue,
+                                  ),
+                                );
+                          },
                         );
-                        if (!r.keepOpen) {
-                          iconController.close();
-                          menuController.close();
-                        }
+                        menuController.close();
                       },
-                    );
-                  },
-                ),
-                ActionCellWidget(
-                  action: TabBarViewAction.delete,
-                  itemHeight: ActionListSizes.itemHeight,
-                  onSelected: (action) {
-                    NavigatorAlertDialog(
-                      title: LocaleKeys.grid_deleteView.tr(),
-                      confirm: () {
-                        context.read<DatabaseTabBarBloc>().add(
-                              DatabaseTabBarEvent.deleteView(widget.view.id),
+                    ),
+                    AppFlowyPopover(
+                      controller: iconController,
+                      direction: PopoverDirection.rightWithCenterAligned,
+                      constraints: BoxConstraints.loose(const Size(364, 356)),
+                      margin: const EdgeInsets.all(0),
+                      child: ActionCellWidget(
+                        action: TabBarViewAction.changeIcon,
+                        itemHeight: ActionListSizes.itemHeight,
+                        onSelected: (action) {
+                          iconController.show();
+                        },
+                      ),
+                      popupBuilder: (context) {
+                        return FlowyIconEmojiPicker(
+                          tabs: const [PickerTabType.icon],
+                          enableBackgroundColorSelection: false,
+                          onSelectedEmoji: (r) {
+                            ViewBackendService.updateViewIcon(
+                              view: widget.view,
+                              viewIcon: r.data,
                             );
+                            if (!r.keepOpen) {
+                              iconController.close();
+                              menuController.close();
+                            }
+                          },
+                        );
                       },
-                    ).show(context);
-                    menuController.close();
-                  },
+                    ),
+                    ActionCellWidget(
+                      action: TabBarViewAction.delete,
+                      itemHeight: ActionListSizes.itemHeight,
+                      onSelected: (action) {
+                        NavigatorAlertDialog(
+                          title: LocaleKeys.grid_deleteView.tr(),
+                          confirm: () {
+                            context.read<DatabaseTabBarBloc>().add(
+                                  DatabaseTabBarEvent.deleteView(
+                                      widget.view.id,
+                                  ),
+                                );
+                          },
+                        ).show(context);
+                        menuController.close();
+                      },
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );

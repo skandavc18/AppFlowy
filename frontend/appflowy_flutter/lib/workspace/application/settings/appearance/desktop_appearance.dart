@@ -1,5 +1,7 @@
-import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
+import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flowy_infra/theme_extension.dart';
@@ -18,6 +20,10 @@ class DesktopAppearance extends BaseAppearance {
     final isLight = brightness == Brightness.light;
     final theme = isLight ? appTheme.lightTheme : appTheme.darkTheme;
     final fontStyle = getFontStyle(fontFamily: fontFamily);
+    final isPaper = PaperTheme.isPaper(appTheme);
+    final surface = isLight && isPaper
+        ? ContextMenuSurfaceStyle.lightBackground
+        : theme.surface;
 
     final colorScheme = ColorScheme(
       brightness: brightness,
@@ -35,7 +41,7 @@ class DesktopAppearance extends BaseAppearance {
       // Editor: toolbarColor
       onTertiary: theme.toolbarColor,
       tertiaryContainer: theme.questionBubbleBG,
-      surface: theme.surface,
+      surface: surface,
       // text&icon color when it is hovered
       onSurface: theme.hoverFG,
       // grey hover color
@@ -52,7 +58,7 @@ class DesktopAppearance extends BaseAppearance {
       visualDensity: VisualDensity.standard,
       useMaterial3: false,
       brightness: brightness,
-      dialogBackgroundColor: theme.surface,
+      dialogBackgroundColor: surface,
       fontFamily: fontStyle.fontFamily,
       textTheme: getTextTheme(
         fontFamily: fontFamily,
@@ -76,7 +82,7 @@ class DesktopAppearance extends BaseAppearance {
           fontColor: theme.surface,
         ),
       ),
-      scaffoldBackgroundColor: theme.surface,
+      scaffoldBackgroundColor: surface,
       snackBarTheme: SnackBarThemeData(
         backgroundColor: colorScheme.primary,
         contentTextStyle: fontStyle.copyWith(color: colorScheme.onSurface),
@@ -94,7 +100,7 @@ class DesktopAppearance extends BaseAppearance {
       ),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       //dropdown menu color
-      canvasColor: theme.surface,
+      canvasColor: surface,
       dividerColor: theme.divider,
       hintColor: theme.hint,
       //action item hover color
@@ -102,10 +108,11 @@ class DesktopAppearance extends BaseAppearance {
       disabledColor: theme.shader4,
       highlightColor: theme.main1,
       indicatorColor: theme.main1,
-      cardColor: theme.input,
+      cardColor: isLight && isPaper ? surface : theme.input,
       colorScheme: colorScheme,
 
       extensions: [
+        PaperThemeExtension(enabled: isPaper),
         AFThemeExtension(
           warning: theme.yellow,
           success: theme.green,
@@ -141,6 +148,7 @@ class DesktopAppearance extends BaseAppearance {
           calloutBGColor: EditorSurfaceStyle.calloutBackgroundFor(
             brightness,
             theme.hoverBG3,
+            isPaper: isPaper,
           ),
           tableCellBGColor: theme.surface,
           caption: getFontStyle(

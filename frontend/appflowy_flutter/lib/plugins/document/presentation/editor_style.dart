@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.da
 import 'package:appflowy/plugins/inline_actions/inline_actions_menu.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/object_type_typography.dart';
 import 'package:appflowy/util/font_family_extension.dart';
 import 'package:appflowy/util/string_extension.dart';
@@ -269,6 +270,7 @@ class EditorStyleCustomizer {
       backgroundColor: EditorSurfaceStyle.codeBlockBackgroundFor(
         theme.brightness,
         afThemeExtension.calloutBGColor,
+        isPaper: PaperTheme.isEnabled(context),
       ),
       foregroundColor: afThemeExtension.textColor.withAlpha(180),
     );

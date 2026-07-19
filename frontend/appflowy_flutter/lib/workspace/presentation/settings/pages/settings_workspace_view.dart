@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/application/document_appearance_cubit.
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/af_role_pb_extension.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/util/font_family_extension.dart';
 import 'package:appflowy/workspace/application/appearance_defaults.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
@@ -680,7 +681,11 @@ class _ThemeDropdown extends StatelessWidget {
                     selectedValue: appearance.appTheme.themeName,
                     value: t.themeName,
                     label: t.themeName,
-                    leadingWidget: _ThemeLeading(color: theme.sidebarBg),
+                    leadingWidget: _ThemeLeading(
+                      color: PaperTheme.isPaper(t)
+                          ? PaperTheme.sidebarBackground
+                          : theme.sidebarBg,
+                    ),
                   );
                 },
               ),
