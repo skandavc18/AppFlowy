@@ -5,13 +5,13 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/widgets/flowy_option_tile.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/custom_image_block_component/unsupport_image_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_placeholder.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/resizeable_image.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/custom_image_cache_manager.dart';
 import 'package:appflowy/shared/permission/permission_checker.dart';
-import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
@@ -167,8 +167,8 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
     final alignment = AlignmentExtension.fromString(
       attributes[CustomImageBlockKeys.align] ?? 'center',
     );
-    final width = attributes[CustomImageBlockKeys.width]?.toDouble() ??
-        MediaQuery.of(context).size.width;
+    final width =
+        attributes[CustomImageBlockKeys.width]?.toDouble() ?? defaultImageWidth;
     final height = attributes[CustomImageBlockKeys.height]?.toDouble();
     final rawImageType = attributes[CustomImageBlockKeys.imageType] ?? 0;
     final imageType = CustomImageType.fromIntValue(rawImageType);
@@ -371,6 +371,15 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
     return [
       FlowyOptionTile.text(
         showTopBorder: false,
+        text: LocaleKeys.button_download.tr(),
+        leftIcon: const FlowySvg(FlowySvgs.download_s),
+        onTap: () async {
+          context.pop();
+          await downloadMedia(source: url, name: _mediaName(url));
+        },
+      ),
+      FlowyOptionTile.text(
+        showTopBorder: false,
         text: LocaleKeys.editor_copy.tr(),
         leftIcon: const FlowySvg(
           FlowySvgs.m_field_copy_s,
@@ -380,7 +389,22 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
           showToastNotification(
             message: LocaleKeys.document_plugins_image_copiedToPasteBoard.tr(),
           );
-          await getIt<ClipboardService>().setPlainText(url);
+          await copyMedia(
+            source: url,
+            name: _mediaName(url),
+          );
+        },
+      ),
+      FlowyOptionTile.text(
+        showTopBorder: false,
+        text: LocaleKeys.button_share.tr(),
+        leftIcon: const FlowySvg(FlowySvgs.share_s),
+        onTap: () async {
+          context.pop();
+          await shareMedia(
+            source: url,
+            name: _mediaName(url),
+          );
         },
       ),
       FlowyOptionTile.text(
@@ -397,6 +421,11 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
         },
       ),
     ];
+  }
+
+  String _mediaName(String source) {
+    final name = Uri.tryParse(source)?.pathSegments.lastOrNull;
+    return name == null || name.isEmpty ? 'appflowy-image.png' : name;
   }
 
   bool _checkIfURLIsValid(dynamic url) {

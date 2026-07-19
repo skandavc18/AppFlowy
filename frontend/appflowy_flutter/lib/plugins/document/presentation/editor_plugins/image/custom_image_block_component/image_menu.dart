@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:io';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
@@ -8,6 +9,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/block_menu
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/resizeable_image.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -20,7 +22,9 @@ import 'package:flowy_infra_ui/widget/ignore_parent_gesture.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 class ImageMenu extends StatefulWidget {
   const ImageMenu({
@@ -81,6 +85,18 @@ class _ImageMenuState extends State<ImageMenu> {
                   onTap: copyImageLink,
                 ),
                 const HSpace(4),
+                MenuBlockButton(
+                  tooltip: LocaleKeys.button_download.tr(),
+                  iconData: FlowySvgs.download_s,
+                  onTap: downloadImage,
+                ),
+                const HSpace(4),
+                MenuBlockButton(
+                  tooltip: LocaleKeys.button_share.tr(),
+                  iconData: FlowySvgs.share_s,
+                  onTap: shareImage,
+                ),
+                const HSpace(4),
               ],
               if (widget.state.editorState.editable) ...[
                 if (!isPlaceholder) ...[
@@ -138,6 +154,28 @@ class _ImageMenuState extends State<ImageMenu> {
     transaction.deleteNode(node);
     transaction.afterSelection = null;
     await editorState.apply(transaction);
+  }
+
+  Future<void> downloadImage() async {
+    final bytes = await captureImage();
+    final saved = await saveMediaBytes(
+      name: 'appflowy-image.png',
+      bytes: bytes,
+    );
+    if (saved && mounted) {
+      showToastNotification(
+        message: LocaleKeys.grid_media_downloadSuccess.tr(),
+      );
+    }
+  }
+
+  Future<void> shareImage() async {
+    final bytes = await captureImage();
+    final directory = await getTemporaryDirectory();
+    final file =
+        File('${directory.path}${Platform.pathSeparator}appflowy-image.png');
+    await file.writeAsBytes(bytes, flush: true);
+    await Share.shareXFiles([XFile(file.path)]);
   }
 
   void openFullScreen() {

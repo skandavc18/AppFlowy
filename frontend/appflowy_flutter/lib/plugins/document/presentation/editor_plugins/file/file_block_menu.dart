@@ -3,6 +3,8 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/prelude.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_block.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/date_time/date_format_ext.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -70,26 +72,66 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
           itemHeight: 20,
           leftIcon: const FlowySvg(FlowySvgs.download_s),
           name: LocaleKeys.button_download.tr(),
-          onTap: () {
+          onTap: () async {
+            final url = widget.node.attributes[FileBlockKeys.url] as String?;
+            if (url != null && isYoutubeVideoUrl(url)) {
+              widget.controller.close();
+              await downloadYoutubeVideo(context, url);
+              return;
+            }
+            final name = widget.node.attributes[FileBlockKeys.name] as String?;
+            if (url != null &&
+                name != null &&
+                fileUploadType != FileUploadTypePB.CloudFile) {
+              widget.controller.close();
+              try {
+                if (await downloadMedia(source: url, name: name) && mounted) {
+                  showToastNotification(
+                    message: LocaleKeys.grid_media_downloadSuccess.tr(),
+                  );
+                }
+              } on Exception catch (error) {
+                if (mounted) {
+                  showToastNotification(
+                    message: error.toString(),
+                    type: ToastificationType.error,
+                  );
+                }
+              }
+              return;
+            }
+
             final userProfile = widget.editorState.document.root.context
                 ?.read<DocumentBloc>()
                 .state
                 .userProfilePB;
-            final url = widget.node.attributes[FileBlockKeys.url];
-            final name = widget.node.attributes[FileBlockKeys.name];
             if (url != null && name != null) {
               final filePB = MediaFilePB(
                 url: url,
                 name: name,
                 uploadType: fileUploadType,
               );
-              downloadMediaFile(
+              await downloadMediaFile(
                 context,
                 filePB,
                 userProfile: userProfile,
               );
             }
           },
+        ),
+        const VSpace(4),
+        HoverButton(
+          itemHeight: 20,
+          leftIcon: const FlowySvg(FlowySvgs.copy_s),
+          name: LocaleKeys.editor_copy.tr(),
+          onTap: () => _copyOrShare(copy: true),
+        ),
+        const VSpace(4),
+        HoverButton(
+          itemHeight: 20,
+          leftIcon: const FlowySvg(FlowySvgs.share_s),
+          name: LocaleKeys.button_share.tr(),
+          onTap: () => _copyOrShare(copy: false),
         ),
         const VSpace(4),
         HoverButton(
@@ -168,6 +210,38 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
 
     if (renameContext != null) {
       Navigator.of(renameContext!).pop();
+    }
+  }
+
+  Future<void> _copyOrShare({required bool copy}) async {
+    final url = widget.node.attributes[FileBlockKeys.url] as String?;
+    final name = widget.node.attributes[FileBlockKeys.name] as String?;
+    if (url == null || name == null) {
+      return;
+    }
+
+    widget.controller.close();
+    final urlType = FileUrlType.fromIntValue(
+      widget.node.attributes[FileBlockKeys.urlType],
+    );
+    final shareAsLink =
+        urlType == FileUrlType.network && isYoutubeVideoUrl(url);
+    try {
+      if (copy) {
+        await copyMedia(source: url, name: name, shareAsLink: shareAsLink);
+      } else {
+        await shareMedia(source: url, name: name, shareAsLink: shareAsLink);
+      }
+      if (copy && mounted) {
+        showToastNotification(message: LocaleKeys.message_copy_success.tr());
+      }
+    } on Exception catch (error) {
+      if (mounted) {
+        showToastNotification(
+          message: error.toString(),
+          type: ToastificationType.error,
+        );
+      }
     }
   }
 }

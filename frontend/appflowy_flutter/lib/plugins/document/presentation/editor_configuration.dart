@@ -158,6 +158,9 @@ BlockComponentConfiguration _buildDefaultConfiguration(
 /// All the block types have the delete, copy, and duplicate options.
 List<OptionAction> _buildOptionActions(BuildContext context, String type) {
   final standardActions = [
+    OptionAction.addAbove,
+    OptionAction.addBelow,
+    OptionAction.divider,
     OptionAction.delete,
     OptionAction.cut,
     OptionAction.copy,

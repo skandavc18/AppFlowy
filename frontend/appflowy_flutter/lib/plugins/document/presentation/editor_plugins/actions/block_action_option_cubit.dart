@@ -28,6 +28,12 @@ class BlockActionOptionCubit extends Cubit<BlockActionOptionState> {
   Future<void> handleAction(OptionAction action, Node node) async {
     final transaction = editorState.transaction;
     switch (action) {
+      case OptionAction.addAbove:
+        _addBlock(transaction, node.path);
+        break;
+      case OptionAction.addBelow:
+        _addBlock(transaction, node.path.next);
+        break;
       case OptionAction.delete:
         _deleteBlocks(transaction, node);
         break;
@@ -80,6 +86,12 @@ class BlockActionOptionCubit extends Cubit<BlockActionOptionState> {
     }
 
     await editorState.apply(transaction);
+  }
+
+  void _addBlock(Transaction transaction, Path path) {
+    transaction
+      ..insertNode(path, paragraphNode())
+      ..afterSelection = Selection.collapsed(Position(path: path));
   }
 
   void _splitIntoColumns(Transaction transaction, Node node) {

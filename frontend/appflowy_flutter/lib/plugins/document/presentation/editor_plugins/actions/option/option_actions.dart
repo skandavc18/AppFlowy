@@ -58,6 +58,8 @@ enum EditorOptionActionType {
 }
 
 enum OptionAction {
+  addAbove,
+  addBelow,
   delete,
   cut,
   copy,
@@ -84,6 +86,10 @@ enum OptionAction {
 
   FlowySvgData get svg {
     switch (this) {
+      case OptionAction.addAbove:
+        return FlowySvgs.table_insert_above_s;
+      case OptionAction.addBelow:
+        return FlowySvgs.table_insert_below_s;
       case OptionAction.delete:
         return FlowySvgs.trash_s;
       case OptionAction.cut:
@@ -122,6 +128,10 @@ enum OptionAction {
 
   String get description {
     switch (this) {
+      case OptionAction.addAbove:
+        return LocaleKeys.button_insertAbove.tr();
+      case OptionAction.addBelow:
+        return LocaleKeys.button_insertBelow.tr();
       case OptionAction.delete:
         return LocaleKeys.document_plugins_optionAction_delete.tr();
       case OptionAction.cut:

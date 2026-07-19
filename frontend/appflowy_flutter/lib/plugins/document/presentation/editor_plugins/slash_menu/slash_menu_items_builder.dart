@@ -110,6 +110,8 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       items: [
         imageSlashMenuItem,
         photoGallerySlashMenuItem,
+        audioSlashMenuItem,
+        videoSlashMenuItem,
         fileSlashMenuItem,
       ],
     ),
@@ -174,6 +176,8 @@ List<SelectionMenuItem> _simpleTableSlashMenuItems() {
       section: SlashMenuSection.media,
       items: [
         imageSlashMenuItem,
+        audioSlashMenuItem,
+        videoSlashMenuItem,
         fileSlashMenuItem,
       ],
     ),

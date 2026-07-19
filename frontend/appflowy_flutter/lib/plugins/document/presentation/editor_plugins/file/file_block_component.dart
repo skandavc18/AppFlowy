@@ -6,10 +6,14 @@ import 'package:appflowy/mobile/presentation/widgets/flowy_option_tile.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
-import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_embed_player.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
+import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
+import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/file_entities.pbenum.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:cross_file/cross_file.dart';
@@ -24,6 +28,7 @@ import 'package:string_validator/string_validator.dart';
 import 'package:universal_platform/universal_platform.dart';
 
 import 'file_block_menu.dart';
+import 'file_media_player.dart';
 import 'file_upload_menu.dart';
 
 class FileBlockKeys {
@@ -61,6 +66,8 @@ class FileBlockKeys {
   /// The value is a String, in form of user id.
   ///
   static const String uploadedBy = 'uploaded_by';
+
+  static const String width = 'width';
 
   /// The GlobalKey of the FileBlockComponentState.
   ///
@@ -201,56 +208,65 @@ class FileBlockComponentState extends State<FileBlockComponent>
     final url = node.attributes[FileBlockKeys.url];
     final FileUrlType urlType =
         FileUrlType.fromIntValue(node.attributes[FileBlockKeys.urlType] ?? 0);
+    final name = node.attributes[FileBlockKeys.name] as String?;
+    final mediaKind = fileMediaKind(name, url);
+    final isYoutubeVideo = url != null && isYoutubeVideoUrl(url);
 
-    Widget child = MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) {
-        setState(() => isHovering = true);
-        showActionsNotifier.value = true;
-      },
-      onExit: (_) {
-        setState(() => isHovering = false);
-        if (!alwaysShowMenu) {
-          showActionsNotifier.value = false;
-        }
-      },
-      opaque: false,
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: url != null && url.isNotEmpty
-            ? () async => _openFile(context, urlType, url)
-            : _openMenu,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: isHovering
-                ? Theme.of(context).colorScheme.secondary
-                : Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(4),
-            border: isDragging
-                ? Border.all(
-                    color: Theme.of(context).colorScheme.primary,
-                    width: 2,
-                  )
-                : null,
-          ),
-          child: SizedBox(
-            height: 52,
-            child: Row(
-              children: [
-                const HSpace(10),
-                FlowySvg(
-                  FlowySvgs.slash_menu_icon_file_s,
-                  color: Theme.of(context).hintColor,
-                  size: const Size.square(24),
+    Widget child = isYoutubeVideo
+        ? _buildYoutubePlayer(url)
+        : mediaKind != null && url?.isNotEmpty == true
+            ? _buildMediaPlayer(url!, name ?? '', mediaKind)
+            : MouseRegion(
+                cursor: SystemMouseCursors.click,
+                onEnter: (_) {
+                  setState(() => isHovering = true);
+                  showActionsNotifier.value = true;
+                },
+                onExit: (_) {
+                  setState(() => isHovering = false);
+                  if (!alwaysShowMenu) {
+                    showActionsNotifier.value = false;
+                  }
+                },
+                opaque: false,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onTap: url != null && url.isNotEmpty
+                      ? () async => _openFile(context, urlType, url)
+                      : _openMenu,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: isHovering
+                          ? Theme.of(context).colorScheme.secondary
+                          : Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                      border: isDragging
+                          ? Border.all(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2,
+                            )
+                          : null,
+                    ),
+                    child: SizedBox(
+                      height: 52,
+                      child: Row(
+                        children: [
+                          const HSpace(10),
+                          FlowySvg(
+                            FlowySvgs.slash_menu_icon_file_s,
+                            color: Theme.of(context).hintColor,
+                            size: const Size.square(24),
+                          ),
+                          const HSpace(10),
+                          ..._buildTrailing(context),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
-                const HSpace(10),
-                ..._buildTrailing(context),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+              );
 
     if (UniversalPlatform.isDesktopOrWeb) {
       if (url == null || url.isEmpty) {
@@ -290,7 +306,8 @@ class FileBlockComponentState extends State<FileBlockComponent>
             ),
             popupBuilder: (_) => FileUploadMenu(
               onInsertLocalFile: insertFileFromLocal,
-              onInsertNetworkFile: insertNetworkFile,
+              onInsertNetworkFileWithOptions: (url, saveOffline) =>
+                  insertNetworkFile(url, saveOffline),
             ),
             child: child,
           ),
@@ -341,6 +358,170 @@ class FileBlockComponentState extends State<FileBlockComponent>
     }
 
     return child;
+  }
+
+  Widget _buildMediaPlayer(
+    String url,
+    String name,
+    FileMediaKind kind,
+  ) {
+    final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
+        (kind == FileMediaKind.audio
+            ? defaultAudioMediaWidth
+            : defaultVisualMediaWidth);
+    return ResizableMedia(
+      width: width,
+      minWidth: kind == FileMediaKind.audio ? 320 : 240,
+      editable: editorState.editable,
+      onResize: _saveMediaWidth,
+      child: MouseRegion(
+        onEnter: (_) {
+          isHovering = true;
+          showActionsNotifier.value = true;
+        },
+        onExit: (_) {
+          isHovering = false;
+          if (!alwaysShowMenu) {
+            showActionsNotifier.value = false;
+          }
+        },
+        child: Stack(
+          children: [
+            FileMediaPlayer(url: url, name: name, kind: kind),
+            if (UniversalPlatform.isDesktopOrWeb)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: showActionsNotifier,
+                  builder: (_, showActions, __) {
+                    if (!showActions) {
+                      return const SizedBox.shrink();
+                    }
+                    return AppFlowyPopover(
+                      controller: menuController,
+                      triggerActions: PopoverTriggerFlags.none,
+                      direction: PopoverDirection.bottomWithRightAligned,
+                      onOpen: () {
+                        alwaysShowMenu = true;
+                        showActionsNotifier.value = true;
+                      },
+                      onClose: () {
+                        alwaysShowMenu = false;
+                        if (!isHovering) {
+                          showActionsNotifier.value = false;
+                        }
+                      },
+                      popupBuilder: (_) => FileBlockMenu(
+                        controller: menuController,
+                        node: node,
+                        editorState: editorState,
+                      ),
+                      child: GestureDetector(
+                        onTap: _showMediaMenu,
+                        child: const DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.all(Radius.circular(4)),
+                          ),
+                          child: FileMenuTrigger(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildYoutubePlayer(String url) {
+    final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
+        defaultVisualMediaWidth;
+    return ResizableMedia(
+      width: width,
+      editable: editorState.editable,
+      onResize: _saveMediaWidth,
+      child: MouseRegion(
+        onEnter: (_) {
+          isHovering = true;
+          showActionsNotifier.value = true;
+        },
+        onExit: (_) {
+          isHovering = false;
+          if (!alwaysShowMenu) {
+            showActionsNotifier.value = false;
+          }
+        },
+        child: Stack(
+          children: [
+            AspectRatio(
+              aspectRatio: 16 / 9,
+              child: YoutubeEmbedPlayer(url: url),
+            ),
+            if (UniversalPlatform.isDesktopOrWeb)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: ValueListenableBuilder<bool>(
+                  valueListenable: showActionsNotifier,
+                  builder: (_, showActions, __) {
+                    if (!showActions) {
+                      return const SizedBox.shrink();
+                    }
+                    return AppFlowyPopover(
+                      controller: menuController,
+                      triggerActions: PopoverTriggerFlags.none,
+                      direction: PopoverDirection.bottomWithRightAligned,
+                      onOpen: () {
+                        alwaysShowMenu = true;
+                        showActionsNotifier.value = true;
+                      },
+                      onClose: () {
+                        alwaysShowMenu = false;
+                        if (!isHovering) {
+                          showActionsNotifier.value = false;
+                        }
+                      },
+                      popupBuilder: (_) => FileBlockMenu(
+                        controller: menuController,
+                        node: node,
+                        editorState: editorState,
+                      ),
+                      child: GestureDetector(
+                        onTap: _showMediaMenu,
+                        child: const DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.all(Radius.circular(4)),
+                          ),
+                          child: FileMenuTrigger(),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _saveMediaWidth(double width) {
+    final transaction = editorState.transaction
+      ..updateNode(node, {FileBlockKeys.width: width});
+    editorState.apply(transaction);
+  }
+
+  void _showMediaMenu() {
+    // Keep the anchor mounted before opening the overlay. Waiting for the
+    // popover's onOpen callback is too late when the overlay triggers onExit.
+    alwaysShowMenu = true;
+    showActionsNotifier.value = true;
+    menuController.show();
   }
 
   Future<void> _openFile(
@@ -441,11 +622,21 @@ class FileBlockComponentState extends State<FileBlockComponent>
       widget.node.attributes[FileBlockKeys.urlType] ?? 0,
     );
 
-    if (urlType != FileUrlType.network) {
-      return [];
-    }
+    final name =
+        widget.node.attributes[FileBlockKeys.name] as String? ?? 'media';
+    final shareAsLink =
+        urlType == FileUrlType.network && isYoutubeVideoUrl(url);
 
     return [
+      FlowyOptionTile.text(
+        showTopBorder: false,
+        text: LocaleKeys.button_download.tr(),
+        leftIcon: const FlowySvg(FlowySvgs.download_s),
+        onTap: () async {
+          context.pop();
+          await downloadMedia(source: url, name: name);
+        },
+      ),
       FlowyOptionTile.text(
         showTopBorder: false,
         text: LocaleKeys.editor_copyLink.tr(),
@@ -454,11 +645,24 @@ class FileBlockComponentState extends State<FileBlockComponent>
         ),
         onTap: () async {
           context.pop();
-          showSnackBarMessage(
-            context,
-            LocaleKeys.document_plugins_image_copiedToPasteBoard.tr(),
+          await copyMedia(
+            source: url,
+            name: name,
+            shareAsLink: shareAsLink,
           );
-          await getIt<ClipboardService>().setPlainText(url);
+        },
+      ),
+      FlowyOptionTile.text(
+        showTopBorder: false,
+        text: LocaleKeys.button_share.tr(),
+        leftIcon: const FlowySvg(FlowySvgs.share_s),
+        onTap: () async {
+          context.pop();
+          await shareMedia(
+            source: url,
+            name: name,
+            shareAsLink: shareAsLink,
+          );
         },
       ),
     ];
@@ -483,9 +687,9 @@ class FileBlockComponentState extends State<FileBlockComponent>
               context.pop();
               await insertFileFromLocal(file);
             },
-            onInsertNetworkFile: (url) async {
+            onInsertNetworkFileWithOptions: (url, saveOffline) async {
               context.pop();
-              await insertNetworkFile(url);
+              await insertNetworkFile(url, saveOffline);
             },
           ),
         );
@@ -530,7 +734,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
     await editorState.apply(transaction);
   }
 
-  Future<void> insertNetworkFile(String url) async {
+  Future<void> insertNetworkFile(
+    String url, [
+    bool saveOffline = false,
+  ]) async {
     if (url.isEmpty || !isURL(url)) {
       // show error
       return showSnackBarMessage(
@@ -544,6 +751,39 @@ class FileBlockComponentState extends State<FileBlockComponent>
 
     final uri = Uri.tryParse(url);
     if (uri == null) {
+      return;
+    }
+
+    if (saveOffline && isYoutubeVideoUrl(url)) {
+      try {
+        final video = await downloadYoutubeVideoToInternalStorage(url);
+        if (!mounted) {
+          return;
+        }
+        dropManagerState?.remove(FileBlockKeys.type);
+        final transaction = editorState.transaction
+          ..updateNode(widget.node, {
+            FileBlockKeys.url: video.path,
+            FileBlockKeys.urlType: FileUrlType.local.toIntValue(),
+            FileBlockKeys.name: video.name,
+            FileBlockKeys.uploadedAt: DateTime.now().millisecondsSinceEpoch,
+          });
+        await editorState.apply(transaction);
+      } on Exception catch (error, stackTrace) {
+        Log.error(
+          'Failed to save YouTube video for offline viewing',
+          error,
+          stackTrace,
+        );
+        if (mounted) {
+          showToastNotification(
+            type: ToastificationType.error,
+            message: LocaleKeys
+                .document_plugins_linkPreview_linkPreviewMenu_downloadFailed
+                .tr(),
+          );
+        }
+      }
       return;
     }
 

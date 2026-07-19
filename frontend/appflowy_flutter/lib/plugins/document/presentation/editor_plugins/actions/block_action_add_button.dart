@@ -1,13 +1,14 @@
-import 'dart:io';
-
 import 'package:appflowy/generated/flowy_svgs.g.dart';
-import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_button.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_option_cubit.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/option/option_actions.dart';
+import 'package:appflowy/shared/context_menu_surface_style.dart';
+import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
+import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:appflowy_popover/appflowy_popover.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 class BlockAddButton extends StatelessWidget {
   const BlockAddButton({
@@ -26,57 +27,46 @@ class BlockAddButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlockActionButton(
-      svg: FlowySvgs.add_s,
-      richMessage: TextSpan(
-        children: [
-          TextSpan(
-            text: LocaleKeys.blockActions_addBelowTooltip.tr(),
-            style: context.tooltipTextStyle(),
-          ),
-          const TextSpan(text: '\n'),
-          TextSpan(
-            text: Platform.isMacOS
-                ? LocaleKeys.blockActions_addAboveMacCmd.tr()
-                : LocaleKeys.blockActions_addAboveCmd.tr(),
-            style: context.tooltipTextStyle(),
-          ),
-          const TextSpan(text: ' '),
-          TextSpan(
-            text: LocaleKeys.blockActions_addAboveTooltip.tr(),
-            style: context.tooltipTextStyle(),
-          ),
-        ],
+    final direction =
+        context.read<AppearanceSettingsCubit>().state.layoutDirection ==
+                LayoutDirection.rtlLayout
+            ? PopoverDirection.rightWithCenterAligned
+            : PopoverDirection.leftWithCenterAligned;
+    return BlocProvider(
+      create: (_) => BlockActionOptionCubit(
+        editorState: editorState,
+        blockComponentBuilder: const {},
       ),
-      onTap: () {
-        final isAltPressed = HardwareKeyboard.instance.isAltPressed;
-
-        final transaction = editorState.transaction;
-
-        // If the current block is not an empty paragraph block,
-        // then insert a new block above/below the current block.
-        final node = blockComponentContext.node;
-        if (node.type != ParagraphBlockKeys.type ||
-            (node.delta?.isNotEmpty ?? true)) {
-          final path = isAltPressed ? node.path : node.path.next;
-
-          transaction.insertNode(path, paragraphNode());
-          transaction.afterSelection = Selection.collapsed(
-            Position(path: path),
-          );
-        } else {
-          transaction.afterSelection = Selection.collapsed(
-            Position(path: node.path),
-          );
-        }
-
-        // show the slash menu.
-        editorState.apply(transaction).then(
-              (_) => WidgetsBinding.instance.addPostFrameCallback(
-                (_) => showSlashMenu(),
-              ),
-            );
-      },
+      child: Builder(
+        builder: (context) => PopoverActionList<PopoverAction>(
+          actions: [
+            OptionActionWrapper(OptionAction.addAbove),
+            OptionActionWrapper(OptionAction.addBelow),
+          ],
+          direction: direction,
+          constraints: const BoxConstraints(minWidth: 220, maxWidth: 300),
+          backgroundColor: ContextMenuSurfaceStyle.background(context),
+          onPopupBuilder: () => blockComponentState.alwaysShowActions = true,
+          onClosed: () => blockComponentState.alwaysShowActions = false,
+          onSelected: (action, controller) async {
+            if (action is! OptionActionWrapper) {
+              return;
+            }
+            await context.read<BlockActionOptionCubit>().handleAction(
+                  action.inner,
+                  blockComponentContext.node,
+                );
+            controller.close();
+            WidgetsBinding.instance
+                .addPostFrameCallback((_) => showSlashMenu());
+          },
+          buildChild: (controller) => BlockActionButton(
+            svg: FlowySvgs.add_s,
+            richMessage: const TextSpan(text: 'Add block'),
+            onTap: controller.show,
+          ),
+        ),
+      ),
     );
   }
 }

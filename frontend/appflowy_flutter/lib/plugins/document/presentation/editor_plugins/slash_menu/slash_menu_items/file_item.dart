@@ -8,7 +8,7 @@ import 'package:flutter/material.dart';
 
 import 'slash_menu_items.dart';
 
-final _keywords = [
+final _fileKeywords = [
   'file upload',
   'pdf',
   'zip',
@@ -17,18 +17,40 @@ final _keywords = [
   'attachment',
 ];
 
-// file menu item
-SelectionMenuItem fileSlashMenuItem = SelectionMenuItem(
+final fileSlashMenuItem = _buildFileSlashMenuItem(
   getName: () => LocaleKeys.document_slashMenu_name_file.tr(),
-  keywords: _keywords,
-  handler: (editorState, _, __) async => editorState.insertFileBlock(),
-  nameBuilder: slashMenuItemNameBuilder,
-  icon: (_, isSelected, style) => SelectableSvgWidget(
-    data: FlowySvgs.slash_menu_icon_file_s,
-    isSelected: isSelected,
-    style: style,
-  ),
+  keywords: _fileKeywords,
+  icon: FlowySvgs.slash_menu_icon_file_s,
 );
+
+final audioSlashMenuItem = _buildFileSlashMenuItem(
+  getName: () => LocaleKeys.document_slashMenu_name_audio.tr(),
+  keywords: const ['audio', 'music', 'sound', 'voice', 'recording'],
+  icon: FlowySvgs.ft_audio_s,
+);
+
+final videoSlashMenuItem = _buildFileSlashMenuItem(
+  getName: () => LocaleKeys.document_slashMenu_name_video.tr(),
+  keywords: const ['video', 'movie', 'clip', 'recording'],
+  icon: FlowySvgs.ft_video_s,
+);
+
+SelectionMenuItem _buildFileSlashMenuItem({
+  required String Function() getName,
+  required List<String> keywords,
+  required FlowySvgData icon,
+}) =>
+    SelectionMenuItem(
+      getName: getName,
+      keywords: keywords,
+      handler: (editorState, _, __) async => editorState.insertFileBlock(),
+      nameBuilder: slashMenuItemNameBuilder,
+      icon: (_, isSelected, style) => SelectableSvgWidget(
+        data: icon,
+        isSelected: isSelected,
+        style: style,
+      ),
+    );
 
 extension on EditorState {
   Future<void> insertFileBlock() async {

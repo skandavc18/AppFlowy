@@ -12,8 +12,10 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/widgets.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'link_embed_block_component.dart';
+import 'youtube_video_download.dart';
 
 class LinkEmbedMenu extends StatefulWidget {
   const LinkEmbedMenu({
@@ -38,11 +40,9 @@ class LinkEmbedMenu extends StatefulWidget {
 class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   final turnIntoController = PopoverController();
   final moreOptionController = PopoverController();
-  int turnIntoMenuNum = 0, moreOptionNum = 0, alignMenuNum = 0;
   final moreOptionButtonKey = GlobalKey();
-  bool get isTurnIntoShowing => turnIntoMenuNum > 0;
-  bool get isMoreOptionShowing => moreOptionNum > 0;
-  bool get isAlignMenuShowing => alignMenuNum > 0;
+  bool isTurnIntoShowing = false;
+  bool isMoreOptionShowing = false;
 
   Node get node => widget.node;
   EditorState get editorState => widget.editorState;
@@ -122,11 +122,11 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
       controller: turnIntoController,
       onOpen: () {
         keepEditorFocusNotifier.increase();
-        turnIntoMenuNum++;
+        isTurnIntoShowing = true;
       },
       onClose: () {
         keepEditorFocusNotifier.decrease();
-        turnIntoMenuNum--;
+        isTurnIntoShowing = false;
         checkToHideMenu();
       },
       popupBuilder: (context) => buildConvertMenu(),
@@ -193,11 +193,11 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
       controller: moreOptionController,
       onOpen: () {
         keepEditorFocusNotifier.increase();
-        moreOptionNum++;
+        isMoreOptionShowing = true;
       },
       onClose: () {
         keepEditorFocusNotifier.decrease();
-        moreOptionNum--;
+        isMoreOptionShowing = false;
         checkToHideMenu();
       },
       popupBuilder: (context) => buildMoreOptionMenu(),
@@ -206,7 +206,13 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   }
 
   Widget buildMoreOptionMenu() {
-    final types = LinkEmbedMenuCommand.values;
+    final types = LinkEmbedMenuCommand.values
+        .where(
+          (command) =>
+              command != LinkEmbedMenuCommand.download ||
+              isYoutubeVideoUrl(url),
+        )
+        .toList();
     return Padding(
       padding: const EdgeInsets.all(8.0),
       child: SeparatedColumn(
@@ -231,44 +237,38 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   }
 
   void showTurnIntoMenu() {
-    keepEditorFocusNotifier.increase();
-    turnIntoController.show();
+    isTurnIntoShowing = true;
     checkToShowMenu();
-    turnIntoMenuNum++;
+    turnIntoController.show();
     if (isMoreOptionShowing) closeMoreOptionMenu();
   }
 
   void closeTurnIntoMenu() {
     turnIntoController.close();
-    checkToHideMenu();
   }
 
   void showMoreOptionMenu() {
-    keepEditorFocusNotifier.increase();
-    moreOptionController.show();
+    isMoreOptionShowing = true;
     checkToShowMenu();
-    moreOptionNum++;
+    moreOptionController.show();
     if (isTurnIntoShowing) closeTurnIntoMenu();
   }
 
   void closeMoreOptionMenu() {
     moreOptionController.close();
-    checkToHideMenu();
   }
 
   void checkToHideMenu() {
     Future.delayed(Duration(milliseconds: 200), () {
       if (!mounted) return;
-      if (!isAlignMenuShowing && !isMoreOptionShowing && !isTurnIntoShowing) {
+      if (!isMoreOptionShowing && !isTurnIntoShowing) {
         widget.onMenuHided.call();
       }
     });
   }
 
   void checkToShowMenu() {
-    if (!isAlignMenuShowing && !isMoreOptionShowing && !isTurnIntoShowing) {
-      widget.onMenuShowed.call();
-    }
+    widget.onMenuShowed.call();
   }
 
   Future<void> copyLink(BuildContext context) async {
@@ -280,6 +280,12 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
     switch (command) {
       case LinkEmbedMenuCommand.openLink:
         afLaunchUrlString(url, addingHttpSchemeWhenFailed: true);
+        break;
+      case LinkEmbedMenuCommand.download:
+        downloadYoutubeVideo(context, url);
+        break;
+      case LinkEmbedMenuCommand.share:
+        Share.share(url);
         break;
       case LinkEmbedMenuCommand.replace:
         final box = moreOptionButtonKey.currentContext?.findRenderObject()
@@ -320,6 +326,8 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
 
 enum LinkEmbedMenuCommand {
   openLink,
+  download,
+  share,
   replace,
   reload,
   removeLink;
@@ -328,6 +336,10 @@ enum LinkEmbedMenuCommand {
     switch (this) {
       case openLink:
         return LocaleKeys.editor_openLink.tr();
+      case download:
+        return LocaleKeys.button_download.tr();
+      case share:
+        return LocaleKeys.button_share.tr();
       case replace:
         return LocaleKeys.document_plugins_linkPreview_linkPreviewMenu_replace
             .tr();

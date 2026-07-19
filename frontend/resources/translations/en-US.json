@@ -1828,6 +1828,8 @@
         "aiWriter": "Ask AI Anything",
         "dateOrReminder": "Date or Reminder",
         "photoGallery": "Photo Gallery",
+        "audio": "Audio",
+        "video": "Video",
         "file": "File",
         "twoColumns": "2 Columns",
         "threeColumns": "3 Columns",
@@ -2057,6 +2059,7 @@
         "fileUploadHintSuffix": "Browse",
         "networkHint": "Paste a file link",
         "networkUrlInvalid": "Invalid URL. Check the URL and try again.",
+        "saveForOfflineViewing": "Save for offline viewing",
         "networkAction": "Embed",
         "fileTooBigError": "File size is too big, please upload a file with size less than 10MB",
         "renameFile": {
@@ -2097,7 +2100,8 @@
           "reload": "Reload",
           "removeLink": "Remove Link",
           "pasteHint": "Paste in https://...",
-          "unableToDisplay": "unable to display"
+          "unableToDisplay": "unable to display",
+          "downloadFailed": "Video download failed, please try again"
         }
       }
     },

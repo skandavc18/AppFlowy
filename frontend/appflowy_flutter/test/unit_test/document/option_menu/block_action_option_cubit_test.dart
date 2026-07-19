@@ -250,6 +250,35 @@ void main() {
       editorState.dispose();
     });
 
+    test('add blocks above and below', () async {
+      final document = Document.blank()
+        ..insert([0], [paragraphNode(text: 'existing')]);
+      final editorState = EditorState(document: document);
+      final cubit = BlockActionOptionCubit(
+        editorState: editorState,
+        blockComponentBuilder: {},
+      );
+
+      await cubit.handleAction(
+        OptionAction.addAbove,
+        document.nodeAtPath([0])!,
+      );
+      expect(document.root.children, hasLength(2));
+      expect(document.nodeAtPath([0])!.delta, isEmpty);
+      expect(document.nodeAtPath([1])!.delta!.toPlainText(), 'existing');
+      expect(editorState.selection?.start.path, [0]);
+
+      await cubit.handleAction(
+        OptionAction.addBelow,
+        document.nodeAtPath([1])!,
+      );
+      expect(document.root.children, hasLength(3));
+      expect(document.nodeAtPath([2])!.delta, isEmpty);
+      expect(editorState.selection?.start.path, [2]);
+
+      editorState.dispose();
+    });
+
     test('paste clipboard contents into the block', () async {
       final document = Document.blank()
         ..insert([0], [paragraphNode(text: 'before ')]);

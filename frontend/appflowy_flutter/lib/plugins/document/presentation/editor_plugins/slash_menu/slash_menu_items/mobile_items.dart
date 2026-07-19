@@ -95,6 +95,8 @@ MobileSelectionMenuItem fileAndMediaMobileSlashMenuItem =
   children: [
     buildImageSlashMenuItem(svg: FlowySvgs.slash_menu_image_m),
     photoGallerySlashMenuItem,
+    audioSlashMenuItem,
+    videoSlashMenuItem,
     fileSlashMenuItem,
   ],
 );

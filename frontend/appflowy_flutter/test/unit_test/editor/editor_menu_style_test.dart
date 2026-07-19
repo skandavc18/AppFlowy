@@ -79,6 +79,15 @@ void main() {
       items.indexOf(toggleListSlashMenuItem),
       lessThan(items.indexOf(imageSlashMenuItem)),
     );
+    expect(items, containsAll([audioSlashMenuItem, videoSlashMenuItem]));
+    expect(
+      slashMenuMetadataFor(audioSlashMenuItem)?.section,
+      SlashMenuSection.media,
+    );
+    expect(
+      slashMenuMetadataFor(videoSlashMenuItem)?.section,
+      SlashMenuSection.media,
+    );
     expect(
       slashMenuMetadataFor(aiWriterSlashMenuItem)?.section,
       SlashMenuSection.suggestions,

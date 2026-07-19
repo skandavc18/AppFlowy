@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
 import 'package:appflowy/shared/patterns/common_patterns.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:cross_file/cross_file.dart';
@@ -19,12 +20,17 @@ class FileUploadMenu extends StatefulWidget {
   const FileUploadMenu({
     super.key,
     required this.onInsertLocalFile,
-    required this.onInsertNetworkFile,
+    this.onInsertNetworkFile,
+    this.onInsertNetworkFileWithOptions,
     this.allowMultipleFiles = false,
-  });
+  }) : assert(
+          onInsertNetworkFile != null || onInsertNetworkFileWithOptions != null,
+        );
 
   final void Function(List<XFile> files) onInsertLocalFile;
-  final void Function(String url) onInsertNetworkFile;
+  final void Function(String url)? onInsertNetworkFile;
+  final Future<void> Function(String url, bool saveOffline)?
+      onInsertNetworkFileWithOptions;
   final bool allowMultipleFiles;
 
   @override
@@ -79,7 +85,16 @@ class _FileUploadMenuState extends State<FileUploadMenu> {
                 },
               ),
             ] else ...[
-              _FileUploadNetwork(onSubmit: widget.onInsertNetworkFile),
+              _FileUploadNetwork(
+                onSubmit: (url, saveOffline) async {
+                  final callback = widget.onInsertNetworkFileWithOptions;
+                  if (callback != null) {
+                    await callback(url, saveOffline);
+                  } else {
+                    widget.onInsertNetworkFile!(url);
+                  }
+                },
+              ),
             ],
           ],
         ),
@@ -255,7 +270,7 @@ class _FileUploadLocalState extends State<_FileUploadLocal> {
 class _FileUploadNetwork extends StatefulWidget {
   const _FileUploadNetwork({required this.onSubmit});
 
-  final void Function(String url) onSubmit;
+  final Future<void> Function(String url, bool saveOffline) onSubmit;
 
   @override
   State<_FileUploadNetwork> createState() => _FileUploadNetworkState();
@@ -263,6 +278,8 @@ class _FileUploadNetwork extends StatefulWidget {
 
 class _FileUploadNetworkState extends State<_FileUploadNetwork> {
   bool isUrlValid = true;
+  bool saveOffline = false;
+  bool isSubmitting = false;
   String inputText = '';
 
   @override
@@ -278,7 +295,14 @@ class _FileUploadNetworkState extends State<_FileUploadNetwork> {
         children: [
           FlowyTextField(
             hintText: LocaleKeys.document_plugins_file_networkHint.tr(),
-            onChanged: (value) => inputText = value,
+            onChanged: (value) {
+              setState(() {
+                inputText = value;
+                if (!isYoutubeVideoUrl(value)) {
+                  saveOffline = false;
+                }
+              });
+            },
             onEditingComplete: submit,
           ),
           if (!isUrlValid) ...[
@@ -288,6 +312,21 @@ class _FileUploadNetworkState extends State<_FileUploadNetwork> {
               color: Theme.of(context).colorScheme.error,
               maxLines: 3,
               textAlign: TextAlign.start,
+            ),
+          ],
+          if (isYoutubeVideoUrl(inputText)) ...[
+            const VSpace(8),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: FlowyText(
+                LocaleKeys.document_plugins_file_saveForOfflineViewing.tr(),
+              ),
+              value: saveOffline,
+              onChanged: isSubmitting
+                  ? null
+                  : (value) => setState(() => saveOffline = value ?? false),
             ),
           ],
           const VSpace(16),
@@ -304,7 +343,7 @@ class _FileUploadNetworkState extends State<_FileUploadNetwork> {
                 textAlign: TextAlign.center,
                 color: Theme.of(context).colorScheme.onPrimary,
               ),
-              onTap: submit,
+              onTap: isSubmitting ? null : submit,
             ),
           ),
         ],
@@ -312,9 +351,17 @@ class _FileUploadNetworkState extends State<_FileUploadNetwork> {
     );
   }
 
-  void submit() {
+  Future<void> submit() async {
     if (checkUrlValidity(inputText)) {
-      return widget.onSubmit(inputText);
+      setState(() => isSubmitting = true);
+      try {
+        await widget.onSubmit(inputText, saveOffline);
+      } finally {
+        if (mounted) {
+          setState(() => isSubmitting = false);
+        }
+      }
+      return;
     }
 
     setState(() => isUrlValid = false);

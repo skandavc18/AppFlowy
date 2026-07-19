@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/callout/callout_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/custom_link_parser.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/default_selectable_mixin.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
@@ -15,12 +16,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:universal_platform/universal_platform.dart';
 
 import 'link_embed_menu.dart';
+import 'youtube_embed_player.dart';
+import 'youtube_video_download.dart';
 
 class LinkEmbedKeys {
   const LinkEmbedKeys._();
   static const String previewType = 'preview_type';
   static const String embed = 'embed';
   static const String align = 'align';
+  static const String width = 'width';
 }
 
 Node linkEmbedNode({required String url}) => Node(
@@ -127,14 +131,17 @@ class LinkEmbedBlockComponentState
         fillScheme = theme.fillColorScheme,
         borderScheme = theme.borderColorScheme;
     Widget child;
+    final isYoutubeVideo = isYoutubeVideoUrl(url);
     final isIdle = status == LinkLoadingStatus.idle;
-    if (isIdle) {
+    if (isYoutubeVideo) {
+      child = YoutubeEmbedPlayer(url: url);
+    } else if (isIdle) {
       child = buildContent(context);
     } else {
       child = buildErrorLoadingWidget(context);
     }
-    return Container(
-      height: 450,
+    final container = Container(
+      height: isYoutubeVideo ? null : 450,
       key: widgetKey,
       decoration: BoxDecoration(
         color: fillScheme.content,
@@ -146,6 +153,26 @@ class LinkEmbedBlockComponentState
           child,
           buildMenu(context),
         ],
+      ),
+    );
+    if (!isYoutubeVideo) {
+      return container;
+    }
+
+    final width = node.attributes[LinkEmbedKeys.width]?.toDouble() ??
+        defaultVisualMediaWidth;
+    return ResizableMedia(
+      width: width,
+      editable: context.read<EditorState>().editable,
+      onResize: (width) {
+        final editorState = context.read<EditorState>();
+        final transaction = editorState.transaction
+          ..updateNode(node, {LinkEmbedKeys.width: width});
+        editorState.apply(transaction);
+      },
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: container,
       ),
     );
   }
