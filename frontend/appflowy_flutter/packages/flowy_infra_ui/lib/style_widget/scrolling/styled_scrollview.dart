@@ -98,7 +98,7 @@ class StyledCustomScrollViewState extends State<StyledCustomScrollView> {
   @override
   Widget build(BuildContext context) {
     var child = ScrollConfiguration(
-      behavior: const ScrollBehavior().copyWith(scrollbars: false),
+      behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
       child: CustomScrollView(
         scrollDirection: widget.axis,
         physics: StyledScrollPhysics(),

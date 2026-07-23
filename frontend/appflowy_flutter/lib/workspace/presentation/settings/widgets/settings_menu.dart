@@ -43,7 +43,6 @@ class SettingsMenu extends StatelessWidget {
           vertical: 24,
           horizontal: theme.spacing.l,
         ),
-        physics: const ClampingScrollPhysics(),
         child: Column(
           spacing: theme.spacing.xs,
           children: [
@@ -177,7 +176,6 @@ class SimpleSettingsMenu extends StatelessWidget {
               // in the space between the menu and the content
               padding: const EdgeInsets.only(right: 4) +
                   const EdgeInsets.symmetric(vertical: 16),
-              physics: const ClampingScrollPhysics(),
               child: SeparatedColumn(
                 separatorBuilder: () => const VSpace(16),
                 children: [

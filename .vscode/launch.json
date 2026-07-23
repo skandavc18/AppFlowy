@@ -16,7 +16,7 @@
           },
           // uncomment the following line to testing performance.
           // "flutterMode": "profile",
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           // This task builds the Rust and Dart code of AppFlowy.
@@ -29,7 +29,7 @@
               "RUST_LOG": "trace",
               "RUST_BACKTRACE": "1"
           },
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           // This task builds will:
@@ -44,7 +44,7 @@
           "env": {
               "RUST_LOG": "trace"
           },
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           "name": "AF-iOS: Build All",
@@ -55,7 +55,7 @@
           "env": {
               "RUST_LOG": "trace"
           },
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           "name": "AF-iOS: Clean + Rebuild All",
@@ -66,7 +66,7 @@
           "env": {
               "RUST_LOG": "trace"
           },
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           "name": "AF-iOS-Simulator: Build All",
@@ -77,7 +77,7 @@
           "env": {
               "RUST_LOG": "trace"
           },
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           "name": "AF-iOS-Simulator: Clean + Rebuild All",
@@ -88,7 +88,7 @@
           "env": {
               "RUST_LOG": "trace"
           },
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           "name": "AF-Android: Build All",
@@ -99,7 +99,7 @@
           "env": {
               "RUST_LOG": "trace"
           },
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           "name": "AF-Android: Clean + Rebuild All",
@@ -110,7 +110,7 @@
           "env": {
               "RUST_LOG": "trace"
           },
-          "cwd": "${workspaceRoot}/appflowy_flutter"
+          "cwd": "${workspaceFolder}/frontend/appflowy_flutter"
       },
       {
           "name": "AF-desktop: Debug Rust",

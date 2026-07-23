@@ -24,7 +24,7 @@ import 'package:flutter/scheduler.dart';
 // void setState(VoidCallback fn) { }
 // enum Menu { itemOne, itemTwo, itemThree, itemFour }
 
-const Duration _kMenuDuration = Duration(milliseconds: 300);
+const Duration _kMenuDuration = Duration(milliseconds: 160);
 const double _kMenuCloseIntervalEnd = 2.0 / 3.0;
 const double _kMenuDividerHeight = 16.0;
 const double _kMenuMaxWidth = 5.0 * _kMenuWidthStep;
@@ -1513,7 +1513,7 @@ class PopupMenuButtonState<T> extends State<PopupMenuButton<T>> {
           defaultTargetPlatform == TargetPlatform.iOS) {
         popUpAnimationStyle = AnimationStyle(
           curve: Curves.easeInOut,
-          duration: const Duration(milliseconds: 300),
+          duration: _kMenuDuration,
         );
       }
       widget.onOpened?.call();

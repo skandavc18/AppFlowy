@@ -1,3 +1,4 @@
+import 'package:flowy_infra/time/duration.dart';
 import 'package:flutter/material.dart';
 
 typedef HoverBuilder = Widget Function(BuildContext context, bool onHover);
@@ -91,7 +92,7 @@ class HoverStyle {
 
   const HoverStyle({
     this.border,
-    this.borderRadius = const BorderRadius.all(Radius.circular(6)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(8)),
     this.contentMargin = EdgeInsets.zero,
     this.backgroundColor = Colors.transparent,
     this.hoverColor,
@@ -99,7 +100,7 @@ class HoverStyle {
   });
 
   const HoverStyle.transparent({
-    this.borderRadius = const BorderRadius.all(Radius.circular(6)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(8)),
     this.contentMargin = EdgeInsets.zero,
     this.backgroundColor = Colors.transparent,
     this.foregroundColorOnHover,
@@ -136,7 +137,9 @@ class FlowyHoverContainer extends StatelessWidget {
       ),
     );
 
-    return Container(
+    return AnimatedContainer(
+      duration: FlowyDurations.fastest,
+      curve: Curves.easeOutCubic,
       margin: style.contentMargin,
       decoration: BoxDecoration(
         border: style.border,

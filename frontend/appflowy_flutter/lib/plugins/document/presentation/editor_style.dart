@@ -135,9 +135,8 @@ class EditorStyleCustomizer {
         code: GoogleFonts.robotoMono(
           textStyle: baseStyle.copyWith(
             fontWeight: FontWeight.normal,
-            color: Colors.red,
-            backgroundColor:
-                theme.colorScheme.inverseSurface.withValues(alpha: 0.8),
+            color: EditorSurfaceStyle.inlineCodeForeground(context),
+            backgroundColor: EditorSurfaceStyle.inlineCodeBackground(context),
           ),
         ),
       ),
@@ -196,8 +195,8 @@ class EditorStyleCustomizer {
           textStyle: baseStyle.copyWith(
             fontSize: fontSize,
             fontWeight: FontWeight.normal,
-            color: Colors.red,
-            backgroundColor: Colors.grey.withValues(alpha: 0.3),
+            color: EditorSurfaceStyle.inlineCodeForeground(context),
+            backgroundColor: EditorSurfaceStyle.inlineCodeBackground(context),
           ),
         ),
         applyHeightToFirstAscent: true,
@@ -255,15 +254,24 @@ class EditorStyleCustomizer {
     final fontSize = context.read<DocumentAppearanceCubit>().state.fontSize;
     final fontFamily =
         context.read<DocumentAppearanceCubit>().state.codeFontFamily;
+    final effectiveFontFamily =
+        fontFamily.isEmpty || fontFamily == builtInCodeFontFamily
+            ? 'JetBrains Mono'
+            : fontFamily;
 
     return CodeBlockStyle(
       textStyle: _enhanceEditorTextStyle(
         baseTextStyle(
-          fontFamily,
+          effectiveFontFamily,
           fontWeight: FontWeight.w500,
           fontSize: fontSize,
         ).copyWith(
           height: 1.5,
+          fontFamilyFallback: const [
+            'Geist Mono',
+            'RobotoMono',
+            'monospace',
+          ],
         ),
         fallbackColor: afThemeExtension.onBackground,
       ),

@@ -1,6 +1,6 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/simple_table/simple_table.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
-import 'package:appflowy/util/theme_extension.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
@@ -288,38 +288,42 @@ enum SimpleTableBorderRenderType {
 }
 
 extension SimpleTableColors on BuildContext {
-  Color get simpleTableBorderColor => Theme.of(this).isLightMode
-      ? const Color(0xFFE4E5E5)
-      : const Color(0xFF3A3F49);
+  PremiumThemeExtension? get _premiumTablePalette =>
+      PremiumThemeExtension.maybeOf(this);
 
-  Color get simpleTableDividerColor => Theme.of(this).isLightMode
-      ? const Color(0x141F2329)
-      : const Color(0xFF23262B).withValues(alpha: 0.5);
+  Color get simpleTableBorderColor =>
+      _premiumTablePalette?.borderStrong ?? Theme.of(this).colorScheme.outline;
 
-  Color get simpleTableMoreActionBackgroundColor => Theme.of(this).isLightMode
-      ? const Color(0xFFF2F3F5)
-      : const Color(0xFF2D3036);
+  Color get simpleTableDividerColor =>
+      _premiumTablePalette?.border ?? Theme.of(this).dividerColor;
 
-  Color get simpleTableMoreActionBorderColor => Theme.of(this).isLightMode
-      ? const Color(0xFFCFD3D9)
-      : const Color(0xFF44484E);
+  Color get simpleTableMoreActionBackgroundColor =>
+      _premiumTablePalette?.mutedSurface ??
+      Theme.of(this).colorScheme.surfaceContainer;
 
-  Color get simpleTableMoreActionHoverColor => Theme.of(this).isLightMode
-      ? const Color(0xFF00C8FF)
-      : const Color(0xFF00C8FF);
+  Color get simpleTableMoreActionBorderColor =>
+      _premiumTablePalette?.borderStrong ?? Theme.of(this).colorScheme.outline;
 
-  Color get simpleTableDefaultHeaderColor => Theme.of(this).isLightMode
-      ? const Color(0xFFF2F2F2)
-      : const Color(0x08FFFFFF);
+  Color get simpleTableMoreActionHoverColor =>
+      _premiumTablePalette?.accent ?? Theme.of(this).colorScheme.primary;
 
-  Color get simpleTableActionButtonBackgroundColor => Theme.of(this).isLightMode
-      ? const Color(0xFFFFFFFF)
-      : const Color(0xFF2D3036);
+  Color get simpleTableDefaultHeaderColor =>
+      _premiumTablePalette?.mutedSurface ??
+      Theme.of(this).colorScheme.surfaceContainer;
 
-  Color get simpleTableInsertActionBackgroundColor => Theme.of(this).isLightMode
-      ? const Color(0xFFF2F2F7)
-      : const Color(0xFF2D3036);
+  Color get simpleTableActionButtonBackgroundColor =>
+      _premiumTablePalette?.floatingSurface ??
+      Theme.of(this).colorScheme.surfaceContainerLowest;
 
-  Color? get simpleTableQuickActionBackgroundColor =>
-      Theme.of(this).isLightMode ? null : const Color(0xFFBBC3CD);
+  Color get simpleTableInsertActionBackgroundColor =>
+      _premiumTablePalette?.mutedSurface ??
+      Theme.of(this).colorScheme.surfaceContainer;
+
+  Color? get simpleTableQuickActionBackgroundColor {
+    final theme = Theme.of(this);
+    return theme.brightness == Brightness.light
+        ? null
+        : _premiumTablePalette?.textSecondary ??
+            theme.colorScheme.onSurfaceVariant;
+  }
 }

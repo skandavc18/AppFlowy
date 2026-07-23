@@ -52,8 +52,8 @@ class AFMenuItem extends StatelessWidget {
 
     final effectivePadding = padding ??
         EdgeInsets.symmetric(
-          horizontal: theme.spacing.m,
-          vertical: theme.spacing.s,
+          horizontal: theme.spacing.l,
+          vertical: theme.spacing.m,
         );
 
     return AFBaseButton(

@@ -42,6 +42,7 @@ class _MobileBottomSheetRenameWidgetState
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
       padding: widget.padding,
       child: Row(
@@ -52,7 +53,7 @@ class _MobileBottomSheetRenameWidgetState
               height: 42.0,
               child: FlowyTextField(
                 controller: controller,
-                textStyle: Theme.of(context).textTheme.bodyMedium,
+                textStyle: theme.textTheme.bodyMedium,
                 keyboardType: TextInputType.text,
                 onSubmitted: (text) => widget.onRename(text),
               ),
@@ -65,8 +66,8 @@ class _MobileBottomSheetRenameWidgetState
             padding: const EdgeInsets.symmetric(
               horizontal: 16.0,
             ),
-            fontColor: Colors.white,
-            fillColor: Theme.of(context).primaryColor,
+            fontColor: theme.colorScheme.onPrimary,
+            fillColor: theme.colorScheme.primary,
             onPressed: () {
               widget.onRename(controller.text);
             },

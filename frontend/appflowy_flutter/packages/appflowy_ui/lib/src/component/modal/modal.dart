@@ -29,6 +29,10 @@ class AFModal extends StatelessWidget {
               boxShadow: theme.shadow.medium,
               borderRadius: BorderRadius.circular(theme.borderRadius.xl),
               color: backgroundColor ?? theme.surfaceColorScheme.primary,
+              border: Border.all(
+                color: theme.borderColorScheme.primary,
+                width: 0.6,
+              ),
             ),
             child: Material(
               color: Colors.transparent,

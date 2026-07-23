@@ -3,7 +3,7 @@ import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/code_block_copy_button.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/executable_code_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy_editor/appflowy_editor.dart'
@@ -893,12 +893,12 @@ CodeBlockComponentBuilder _buildCodeBlockComponentBuilder(
   BlockComponentConfiguration configuration,
   EditorStyleCustomizer styleCustomizer,
 ) {
-  return CodeBlockComponentBuilder(
-    styleBuilder: styleCustomizer.codeBlockStyleBuilder,
+  return ExecutableCodeBlockComponentBuilder(
+    baseStyleBuilder: styleCustomizer.codeBlockStyleBuilder,
     configuration: configuration,
-    padding: const EdgeInsets.only(left: 20, right: 30, bottom: 34),
-    languagePickerBuilder: codeBlockLanguagePickerBuilder,
-    copyButtonBuilder: codeBlockCopyBuilder,
+    padding: UniversalPlatform.isMobile
+        ? const EdgeInsets.fromLTRB(12, 6, 12, 16)
+        : const EdgeInsets.fromLTRB(8, 6, 16, 18),
   );
 }
 

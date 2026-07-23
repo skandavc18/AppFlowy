@@ -98,6 +98,15 @@ MobileSelectionMenuItem fileAndMediaMobileSlashMenuItem =
     audioSlashMenuItem,
     videoSlashMenuItem,
     fileSlashMenuItem,
+    pdfSlashMenuItem,
+    htmlSlashMenuItem,
+    markdownSlashMenuItem,
+    zipSlashMenuItem,
+    csvSlashMenuItem,
+    jsonSlashMenuItem,
+    codeFileSlashMenuItem,
+    textFileSlashMenuItem,
+    notebookSlashMenuItem,
   ],
 );
 

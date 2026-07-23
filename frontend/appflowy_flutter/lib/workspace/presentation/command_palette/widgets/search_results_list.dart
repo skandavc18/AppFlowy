@@ -152,7 +152,6 @@ class _SearchResultListState extends State<SearchResultList> {
             thumbVisibility: false,
             child: SingleChildScrollView(
               controller: controller,
-              physics: ClampingScrollPhysics(),
               child: Padding(
                 padding: EdgeInsets.only(
                   right: hidePreview ? 0 : 6,

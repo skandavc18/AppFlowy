@@ -190,7 +190,6 @@ class _ChatAnimatedListState extends State<ChatAnimatedList>
           initialAlignment: initialAlignment,
           scrollOffsetListener: scrollOffsetListener,
           itemPositionsListener: itemPositionsListener,
-          physics: ClampingScrollPhysics(),
           shrinkWrap: true,
           // the extra item is a vertical padding.
           itemCount: messages.length + 1,

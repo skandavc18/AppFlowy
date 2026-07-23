@@ -141,6 +141,7 @@ class _AFTextFieldState extends AFTextFieldState {
     final border = OutlineInputBorder(
       borderSide: BorderSide(
         color: hasError ? errorBorderColor : defaultBorderColor,
+        width: 0.6,
       ),
       borderRadius: borderRadius,
     );
@@ -148,6 +149,7 @@ class _AFTextFieldState extends AFTextFieldState {
     final enabledBorder = OutlineInputBorder(
       borderSide: BorderSide(
         color: hasError ? errorBorderColor : defaultBorderColor,
+        width: 0.6,
       ),
       borderRadius: borderRadius,
     );
@@ -159,6 +161,7 @@ class _AFTextFieldState extends AFTextFieldState {
             : hasError
                 ? errorBorderColor
                 : theme.borderColorScheme.themeThick,
+        width: widget.readOnly ? 0.6 : 1,
       ),
       borderRadius: borderRadius,
     );
@@ -166,6 +169,7 @@ class _AFTextFieldState extends AFTextFieldState {
     final errorBorder = OutlineInputBorder(
       borderSide: BorderSide(
         color: errorBorderColor,
+        width: 0.8,
       ),
       borderRadius: borderRadius,
     );
@@ -193,19 +197,21 @@ class _AFTextFieldState extends AFTextFieldState {
       maxLength: widget.maxLength,
       maxLengthEnforcement: MaxLengthEnforcement.truncateAfterCompositionEnds,
       decoration: InputDecoration(
+        filled: true,
+        fillColor: theme.surfaceColorScheme.layer01,
         hintText: widget.hintText,
         hintStyle: theme.textStyle.body.standard(
           color: theme.textColorScheme.tertiary,
         ),
         isDense: true,
-        constraints: BoxConstraints(),
+        constraints: const BoxConstraints(),
         contentPadding: contentPadding,
         border: border,
         enabledBorder: enabledBorder,
         focusedBorder: focusedBorder,
         errorBorder: errorBorder,
         focusedErrorBorder: focusedErrorBorder,
-        hoverColor: theme.borderColorScheme.primaryHover,
+        hoverColor: theme.fillColorScheme.contentHover,
         suffixIcon: widget.suffixIconBuilder?.call(context, isObscured),
         suffixIconConstraints: widget.suffixIconConstraints,
       ),
@@ -276,9 +282,12 @@ enum AFTextFieldSize {
     return EdgeInsets.symmetric(
       vertical: switch (this) {
         AFTextFieldSize.m => theme.spacing.s,
-        AFTextFieldSize.l => 10.0,
+        AFTextFieldSize.l => theme.spacing.m,
       },
-      horizontal: theme.spacing.m,
+      horizontal: switch (this) {
+        AFTextFieldSize.m => 10.0,
+        AFTextFieldSize.l => theme.spacing.l,
+      },
     );
   }
 

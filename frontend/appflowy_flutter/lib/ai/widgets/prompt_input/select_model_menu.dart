@@ -218,9 +218,6 @@ class _CurrentModelButton extends StatelessWidget {
         child: SizedBox(
           height: DesktopAIPromptSizes.actionBarButtonSize,
           child: FlowyHover(
-            style: const HoverStyle(
-              borderRadius: BorderRadius.all(Radius.circular(8)),
-            ),
             child: Padding(
               padding: const EdgeInsetsDirectional.all(4.0),
               child: Row(

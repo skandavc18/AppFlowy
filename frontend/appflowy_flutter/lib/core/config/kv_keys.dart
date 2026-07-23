@@ -68,6 +68,11 @@ class KVKeys {
   ///   the text to be too large and not aligned with the icon
   static const String textScaleFactor = 'textScaleFactor';
 
+  /// Whether application-wide premium kinetic scrolling is enabled.
+  ///
+  /// The value is stored locally as a boolean string.
+  static const String enableKineticScrolling = 'enableKineticScrolling';
+
   /// The key for saving the feature flags
   ///
   /// The value is a json string with the following format:

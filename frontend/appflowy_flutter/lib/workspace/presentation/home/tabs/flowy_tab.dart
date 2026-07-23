@@ -38,82 +38,86 @@ class _FlowyTabState extends State<FlowyTab> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: widget.pageManager.isPinned ? 54 : null,
-      child: _wrapInTooltip(
-        widget.pageManager.plugin.widgetBuilder.viewName,
-        child: FlowyHover(
-          resetHoverOnRebuild: false,
-          style: HoverStyle(
-            borderRadius: BorderRadius.zero,
-            backgroundColor: widget.isCurrent
-                ? Theme.of(context).colorScheme.surface
-                : Theme.of(context).colorScheme.surfaceContainerHighest,
-            hoverColor:
-                widget.isCurrent ? Theme.of(context).colorScheme.surface : null,
-          ),
-          builder: (context, isHovering) => AppFlowyPopover(
-            controller: controller,
-            offset: const Offset(4, 4),
-            triggerActions: PopoverTriggerFlags.secondaryClick,
-            showAtCursor: true,
-            popupBuilder: (_) => BlocProvider.value(
-              value: context.read<TabsBloc>(),
-              child: TabMenu(
-                controller: controller,
-                pageId: widget.pageManager.plugin.id,
-                isPinned: widget.pageManager.isPinned,
-                isAllPinned: widget.isAllPinned,
-              ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
+      child: SizedBox(
+        width: widget.pageManager.isPinned ? 50 : null,
+        child: _wrapInTooltip(
+          widget.pageManager.plugin.widgetBuilder.viewName,
+          child: FlowyHover(
+            resetHoverOnRebuild: false,
+            style: HoverStyle(
+              borderRadius: BorderRadius.circular(8),
+              backgroundColor: widget.isCurrent
+                  ? Theme.of(context).colorScheme.surface
+                  : Colors.transparent,
+              hoverColor: widget.isCurrent
+                  ? Theme.of(context).colorScheme.surface
+                  : Theme.of(context).hoverColor,
             ),
-            child: ChangeNotifierProvider.value(
-              value: widget.pageManager.notifier,
-              child: Consumer<PageNotifier>(
-                builder: (context, value, _) => Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  // We use a Listener to avoid gesture detector onPanStart debounce
-                  child: Listener(
-                    onPointerDown: (event) {
-                      if (event.buttons == kPrimaryButton) {
-                        widget.onTap();
-                      }
-                    },
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      // Stop move window detector
-                      onPanStart: (_) {},
-                      child: Container(
-                        constraints: BoxConstraints(
-                          maxWidth: HomeSizes.tabBarWidth,
-                          minWidth: widget.pageManager.isPinned ? 54 : 100,
-                        ),
-                        height: HomeSizes.tabBarHeight,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Flexible(
-                              child: widget.pageManager.notifier.tabBarWidget(
-                                widget.pageManager.plugin.id,
-                                widget.pageManager.isPinned,
+            builder: (context, isHovering) => AppFlowyPopover(
+              controller: controller,
+              offset: const Offset(4, 4),
+              triggerActions: PopoverTriggerFlags.secondaryClick,
+              showAtCursor: true,
+              popupBuilder: (_) => BlocProvider.value(
+                value: context.read<TabsBloc>(),
+                child: TabMenu(
+                  controller: controller,
+                  pageId: widget.pageManager.plugin.id,
+                  isPinned: widget.pageManager.isPinned,
+                  isAllPinned: widget.isAllPinned,
+                ),
+              ),
+              child: ChangeNotifierProvider.value(
+                value: widget.pageManager.notifier,
+                child: Consumer<PageNotifier>(
+                  builder: (context, value, _) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                    // We use a Listener to avoid gesture detector onPanStart debounce
+                    child: Listener(
+                      onPointerDown: (event) {
+                        if (event.buttons == kPrimaryButton) {
+                          widget.onTap();
+                        }
+                      },
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        // Stop move window detector
+                        onPanStart: (_) {},
+                        child: Container(
+                          constraints: BoxConstraints(
+                            maxWidth: HomeSizes.tabBarWidth,
+                            minWidth: widget.pageManager.isPinned ? 50 : 96,
+                          ),
+                          height: HomeSizes.tabBarHeight - 8,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Flexible(
+                                child: widget.pageManager.notifier.tabBarWidget(
+                                  widget.pageManager.plugin.id,
+                                  widget.pageManager.isPinned,
+                                ),
                               ),
-                            ),
-                            if (!widget.pageManager.isPinned) ...[
-                              Visibility(
-                                visible: isHovering,
-                                child: SizedBox(
-                                  width: 26,
-                                  height: 26,
-                                  child: FlowyIconButton(
-                                    onPressed: () => _closeTab(context),
-                                    icon: const FlowySvg(
-                                      FlowySvgs.close_s,
-                                      size: Size.square(22),
+                              if (!widget.pageManager.isPinned) ...[
+                                Visibility(
+                                  visible: isHovering,
+                                  child: SizedBox(
+                                    width: 26,
+                                    height: 26,
+                                    child: FlowyIconButton(
+                                      onPressed: () => _closeTab(context),
+                                      icon: const FlowySvg(
+                                        FlowySvgs.close_s,
+                                        size: Size.square(18),
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
+                              ],
                             ],
-                          ],
+                          ),
                         ),
                       ),
                     ),

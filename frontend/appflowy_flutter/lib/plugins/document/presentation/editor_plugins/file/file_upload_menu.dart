@@ -20,18 +20,29 @@ class FileUploadMenu extends StatefulWidget {
   const FileUploadMenu({
     super.key,
     required this.onInsertLocalFile,
+    this.onInsertLocalFileWithOptions,
     this.onInsertNetworkFile,
     this.onInsertNetworkFileWithOptions,
+    this.onInsertNetworkFileWithPreviewOptions,
     this.allowMultipleFiles = false,
+    this.defaultShowPreview = false,
   }) : assert(
           onInsertNetworkFile != null || onInsertNetworkFileWithOptions != null,
         );
 
   final void Function(List<XFile> files) onInsertLocalFile;
+  final void Function(List<XFile> files, bool showPreview)?
+      onInsertLocalFileWithOptions;
   final void Function(String url)? onInsertNetworkFile;
   final Future<void> Function(String url, bool saveOffline)?
       onInsertNetworkFileWithOptions;
+  final Future<void> Function(
+    String url,
+    bool saveOffline,
+    bool showPreview,
+  )? onInsertNetworkFileWithPreviewOptions;
   final bool allowMultipleFiles;
+  final bool defaultShowPreview;
 
   @override
   State<FileUploadMenu> createState() => _FileUploadMenuState();
@@ -39,6 +50,7 @@ class FileUploadMenu extends StatefulWidget {
 
 class _FileUploadMenuState extends State<FileUploadMenu> {
   int currentTab = 0;
+  late bool showPreview = widget.defaultShowPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -80,13 +92,22 @@ class _FileUploadMenuState extends State<FileUploadMenu> {
                 allowMultipleFiles: widget.allowMultipleFiles,
                 onFilesPicked: (files) {
                   if (files.isNotEmpty) {
-                    widget.onInsertLocalFile(files);
+                    final callback = widget.onInsertLocalFileWithOptions;
+                    callback != null
+                        ? callback(files, showPreview)
+                        : widget.onInsertLocalFile(files);
                   }
                 },
               ),
             ] else ...[
               _FileUploadNetwork(
                 onSubmit: (url, saveOffline) async {
+                  final previewCallback =
+                      widget.onInsertNetworkFileWithPreviewOptions;
+                  if (previewCallback != null) {
+                    await previewCallback(url, saveOffline, showPreview);
+                    return;
+                  }
                   final callback = widget.onInsertNetworkFileWithOptions;
                   if (callback != null) {
                     await callback(url, saveOffline);
@@ -96,6 +117,15 @@ class _FileUploadMenuState extends State<FileUploadMenu> {
                 },
               ),
             ],
+            CheckboxListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              title: const FlowyText('Show preview when supported'),
+              value: showPreview,
+              onChanged: (value) =>
+                  setState(() => showPreview = value ?? false),
+            ),
           ],
         ),
       ),

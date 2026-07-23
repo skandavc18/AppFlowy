@@ -1,8 +1,7 @@
-import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
-import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flutter/material.dart';
@@ -17,153 +16,102 @@ class DesktopAppearance extends BaseAppearance {
   ) {
     assert(codeFontFamily.isNotEmpty);
 
-    final isLight = brightness == Brightness.light;
-    final theme = isLight ? appTheme.lightTheme : appTheme.darkTheme;
-    final fontStyle = getFontStyle(fontFamily: fontFamily);
-    final isPaper = PaperTheme.isPaper(appTheme);
-    final surface = isLight && isPaper
-        ? ContextMenuSurfaceStyle.lightBackground
-        : theme.surface;
-
-    final colorScheme = ColorScheme(
+    final theme = brightness == Brightness.light
+        ? appTheme.lightTheme
+        : appTheme.darkTheme;
+    final palette = PremiumTheme.resolve(
+      appTheme: appTheme,
+      legacy: theme,
       brightness: brightness,
-      primary: theme.primary,
-      onPrimary: theme.onPrimary,
-      primaryContainer: theme.main2,
-      onPrimaryContainer: white,
-      // page title hover color
-      secondary: theme.hoverBG1,
-      onSecondary: theme.shader1,
-      // setting value hover color
-      secondaryContainer: theme.selector,
-      onSecondaryContainer: theme.topbarBg,
-      tertiary: theme.shader7,
-      // Editor: toolbarColor
-      onTertiary: theme.toolbarColor,
-      tertiaryContainer: theme.questionBubbleBG,
-      surface: surface,
-      // text&icon color when it is hovered
-      onSurface: theme.hoverFG,
-      // grey hover color
-      inverseSurface: theme.hoverBG3,
-      onError: theme.onPrimary,
-      error: theme.red,
-      outline: theme.shader4,
-      surfaceContainerHighest: theme.sidebarBg,
-      shadow: theme.shadow,
+    );
+    final isPaper = PaperTheme.isPaper(appTheme);
+    final textTheme = getTextTheme(
+      fontFamily: fontFamily,
+      fontColor: palette.textPrimary,
+    );
+    final materialTheme = PremiumTheme.materialTheme(
+      legacy: theme,
+      palette: palette,
+      brightness: brightness,
+      fontFamily: resolveFontFamily(fontFamily),
+      textTheme: textTheme,
+      isDesktop: true,
     );
 
-    // Due to Desktop version has multiple themes, it relies on the current theme to build the ThemeData
-    return ThemeData(
-      visualDensity: VisualDensity.standard,
-      useMaterial3: false,
-      brightness: brightness,
-      dialogBackgroundColor: surface,
-      fontFamily: fontStyle.fontFamily,
-      textTheme: getTextTheme(
-        fontFamily: fontFamily,
-        fontColor: theme.text,
-      ),
-      textButtonTheme: const TextButtonThemeData(
-        style: ButtonStyle(
-          minimumSize: WidgetStatePropertyAll(Size.zero),
-        ),
-      ),
-      textSelectionTheme: TextSelectionThemeData(
-        cursorColor: theme.main2,
-        selectionHandleColor: theme.main2,
-      ),
-      iconTheme: IconThemeData(color: theme.icon),
-      tooltipTheme: TooltipThemeData(
-        textStyle: getFontStyle(
-          fontFamily: fontFamily,
-          fontSize: FontSizes.s14,
-          fontWeight: defaultFontWeight,
-          fontColor: theme.surface,
-        ),
-      ),
-      scaffoldBackgroundColor: surface,
-      snackBarTheme: SnackBarThemeData(
-        backgroundColor: colorScheme.primary,
-        contentTextStyle: fontStyle.copyWith(color: colorScheme.onSurface),
-      ),
+    return materialTheme.copyWith(
       scrollbarTheme: ScrollbarThemeData(
         thumbColor: WidgetStateProperty.resolveWith(
-          (states) => states.any(scrollbarInteractiveStates.contains)
-              ? theme.scrollbarHoverColor
-              : theme.scrollbarColor,
+          (states) => brightness == Brightness.dark
+              ? states.any(scrollbarInteractiveStates.contains)
+                  ? theme.scrollbarHoverColor
+                  : theme.scrollbarColor
+              : states.any(scrollbarInteractiveStates.contains)
+                  ? palette.accent
+                  : palette.textMuted.withValues(alpha: 0.46),
         ),
-        thickness: WidgetStateProperty.resolveWith((_) => 4.0),
+        trackColor: const WidgetStatePropertyAll(Colors.transparent),
+        thickness: const WidgetStatePropertyAll(4),
         crossAxisMargin: 0.0,
         mainAxisMargin: 6.0,
-        radius: Corners.s10Radius,
+        radius: const Radius.circular(10),
       ),
-      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-      //dropdown menu color
-      canvasColor: surface,
-      dividerColor: theme.divider,
-      hintColor: theme.hint,
-      //action item hover color
-      hoverColor: theme.hoverBG2,
-      disabledColor: theme.shader4,
-      highlightColor: theme.main1,
-      indicatorColor: theme.main1,
-      cardColor: isLight && isPaper ? surface : theme.input,
-      colorScheme: colorScheme,
-
+      indicatorColor: palette.accent,
       extensions: [
+        palette,
         PaperThemeExtension(enabled: isPaper),
         AFThemeExtension(
-          warning: theme.yellow,
-          success: theme.green,
-          tint1: theme.tint1,
-          tint2: theme.tint2,
-          tint3: theme.tint3,
-          tint4: theme.tint4,
-          tint5: theme.tint5,
-          tint6: theme.tint6,
-          tint7: theme.tint7,
-          tint8: theme.tint8,
-          tint9: theme.tint9,
-          textColor: theme.text,
-          secondaryTextColor: theme.secondaryText,
-          strongText: theme.strongText,
-          greyHover: theme.hoverBG1,
-          greySelect: theme.bg3,
-          lightGreyHover: theme.hoverBG3,
-          toggleOffFill: theme.shader5,
-          progressBarBGColor: theme.progressBarBGColor,
-          toggleButtonBGColor: theme.toggleButtonBGColor,
-          calendarWeekendBGColor: theme.calendarWeekendBGColor,
-          gridRowCountColor: theme.gridRowCountColor,
+          warning: PremiumTheme.semanticColorFor(theme.yellow, palette),
+          success: PremiumTheme.semanticColorFor(theme.green, palette),
+          tint1: PremiumTheme.tintFor(theme.tint1, palette),
+          tint2: PremiumTheme.tintFor(theme.tint2, palette),
+          tint3: PremiumTheme.tintFor(theme.tint3, palette),
+          tint4: PremiumTheme.tintFor(theme.tint4, palette),
+          tint5: PremiumTheme.tintFor(theme.tint5, palette),
+          tint6: PremiumTheme.tintFor(theme.tint6, palette),
+          tint7: PremiumTheme.tintFor(theme.tint7, palette),
+          tint8: PremiumTheme.tintFor(theme.tint8, palette),
+          tint9: PremiumTheme.tintFor(theme.tint9, palette),
+          textColor: palette.textPrimary,
+          secondaryTextColor: palette.textSecondary,
+          strongText: palette.textPrimary,
+          greyHover: palette.hover,
+          greySelect: palette.selected,
+          lightGreyHover: palette.mutedSurface,
+          toggleOffFill: palette.pressed,
+          progressBarBGColor: palette.mutedSurface,
+          toggleButtonBGColor: palette.pressed,
+          calendarWeekendBGColor: palette.surface,
+          gridRowCountColor: palette.textSecondary,
           code: getFontStyle(
             fontFamily: codeFontFamily,
-            fontColor: theme.shader3,
+            fontColor: palette.textSecondary,
           ),
           callout: getFontStyle(
             fontFamily: fontFamily,
-            fontSize: FontSizes.s14,
-            fontColor: theme.shader3,
+            fontColor: palette.textSecondary,
           ),
           calloutBGColor: EditorSurfaceStyle.calloutBackgroundFor(
             brightness,
-            theme.hoverBG3,
+            palette.mutedSurface,
             isPaper: isPaper,
           ),
-          tableCellBGColor: theme.surface,
+          tableCellBGColor: palette.surface,
           caption: getFontStyle(
             fontFamily: fontFamily,
-            fontSize: FontSizes.s14,
             fontWeight: defaultFontWeight,
-            fontColor: theme.hint,
+            fontColor: palette.textMuted,
           ),
-          onBackground: theme.text,
-          background: theme.surface,
-          borderColor: theme.borderColor,
-          scrollbarColor: theme.scrollbarColor,
-          scrollbarHoverColor: theme.scrollbarHoverColor,
-          lightIconColor: theme.lightIconColor,
-          toolbarHoverColor: theme.toolbarHoverColor,
+          onBackground: palette.textPrimary,
+          background: palette.canvas,
+          borderColor: palette.border,
+          scrollbarColor: brightness == Brightness.dark
+              ? theme.scrollbarColor
+              : palette.textMuted.withValues(alpha: 0.46),
+          scrollbarHoverColor: brightness == Brightness.dark
+              ? theme.scrollbarHoverColor
+              : palette.accent,
+          lightIconColor: palette.textMuted,
+          toolbarHoverColor: palette.hover,
         ),
       ],
     );

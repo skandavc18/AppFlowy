@@ -28,10 +28,11 @@ class SettingsMenuElement extends StatelessWidget {
       borderRadius: theme.borderRadius.m,
       borderColor: (_, __, ___, ____) => Colors.transparent,
       backgroundColor: (_, isHovering, __) {
+        if (page == selectedPage) {
+          return theme.fillColorScheme.themeSelect;
+        }
         if (isHovering) {
           return theme.fillColorScheme.contentHover;
-        } else if (page == selectedPage) {
-          return theme.fillColorScheme.themeSelect;
         }
         return Colors.transparent;
       },

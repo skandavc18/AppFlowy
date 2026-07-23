@@ -180,7 +180,6 @@ class _InlineActionsHandlerState extends State<InlineActionsHandler> {
                 )
               : SingleChildScrollView(
                   controller: _scrollController,
-                  physics: const ClampingScrollPhysics(),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: results

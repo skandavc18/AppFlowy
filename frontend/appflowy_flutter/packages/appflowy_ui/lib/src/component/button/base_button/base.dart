@@ -23,20 +23,20 @@ enum AFButtonSize {
 
     return switch (this) {
       AFButtonSize.s => EdgeInsets.symmetric(
-          horizontal: theme.spacing.l,
+          horizontal: 10,
           vertical: theme.spacing.xs,
         ),
       AFButtonSize.m => EdgeInsets.symmetric(
-          horizontal: theme.spacing.xl,
+          horizontal: theme.spacing.l,
           vertical: theme.spacing.s,
         ),
       AFButtonSize.l => EdgeInsets.symmetric(
-          horizontal: theme.spacing.xl,
-          vertical: 10, // why?
+          horizontal: 14,
+          vertical: theme.spacing.m,
         ),
       AFButtonSize.xl => EdgeInsets.symmetric(
           horizontal: theme.spacing.xl,
-          vertical: 14, // why?
+          vertical: 10,
         ),
     };
   }
@@ -47,8 +47,8 @@ enum AFButtonSize {
     return switch (this) {
       AFButtonSize.s => theme.borderRadius.m,
       AFButtonSize.m => theme.borderRadius.m,
-      AFButtonSize.l => 10, // why?
-      AFButtonSize.xl => theme.borderRadius.xl,
+      AFButtonSize.l => 10,
+      AFButtonSize.xl => 10,
     };
   }
 }

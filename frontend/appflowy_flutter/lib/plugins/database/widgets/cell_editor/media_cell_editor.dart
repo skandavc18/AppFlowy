@@ -57,7 +57,6 @@ class _MediaCellEditorState extends State<MediaCellEditor> {
               Flexible(
                 child: ReorderableListView.builder(
                   padding: const EdgeInsets.all(6),
-                  physics: const ClampingScrollPhysics(),
                   shrinkWrap: true,
                   buildDefaultDragHandles: false,
                   itemBuilder: (_, index) => BlocProvider.value(

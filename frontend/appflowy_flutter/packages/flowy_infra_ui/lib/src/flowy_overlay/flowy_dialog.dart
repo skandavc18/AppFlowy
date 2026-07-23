@@ -45,32 +45,69 @@ class FlowyDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     final windowSize = MediaQuery.of(context).size;
     final size = windowSize * 0.7;
+    final effectiveShape = shape ??
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
+    final effectiveShadowColor = shadowColor ?? theme.shadowColor;
+    final shadows = (elevation ?? 1) <= 0
+        ? const <BoxShadow>[]
+        : [
+            BoxShadow(
+              color: effectiveShadowColor.withValues(alpha: 0.12),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
+              spreadRadius: -8,
+            ),
+            BoxShadow(
+              color: effectiveShadowColor.withValues(alpha: 0.06),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+              spreadRadius: -2,
+            ),
+          ];
 
-    return SimpleDialog(
+    return Dialog(
       alignment: alignment,
       insetPadding: insetPadding ?? _defaultInsetPadding,
-      contentPadding: EdgeInsets.zero,
-      backgroundColor: backgroundColor ?? Theme.of(context).cardColor,
-      title: title,
-      elevation: elevation,
-      shadowColor: shadowColor,
-      surfaceTintColor: surfaceTintColor,
-      shape: shape ??
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      clipBehavior: Clip.antiAliasWithSaveLayer,
-      children: [
-        Material(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shape: effectiveShape,
+      clipBehavior: Clip.none,
+      child: DecoratedBox(
+        decoration: ShapeDecoration(
+          color: backgroundColor ?? theme.cardColor,
+          shape: effectiveShape,
+          shadows: shadows,
+        ),
+        child: Material(
           type: MaterialType.transparency,
-          child: Container(
-            height: expandHeight ? size.height : null,
-            width: width ?? size.width,
-            constraints: constraints,
-            child: child,
+          shape: effectiveShape,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (title != null)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+                  child: title,
+                ),
+              Container(
+                height: expandHeight ? size.height : null,
+                width: width ?? size.width,
+                constraints: constraints,
+                child: Padding(
+                  padding: padding,
+                  child: child,
+                ),
+              ),
+            ],
           ),
-        )
-      ],
+        ),
+      ),
     );
   }
 }

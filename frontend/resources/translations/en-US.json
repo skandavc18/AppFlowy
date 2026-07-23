@@ -1277,6 +1277,10 @@
       },
       "fontScaleFactor": "Font Scale Factor",
       "displaySize": "Display Size",
+      "kineticScrolling": {
+        "label": "Premium kinetic scrolling",
+        "hint": "Adds natural momentum and macOS-style deceleration to scrolling. System reduced-motion preferences always disable this effect."
+      },
       "documentSettings": {
         "cursorColor": "Document cursor color",
         "selectionColor": "Document selection color",

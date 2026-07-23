@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/prelude.dart';
@@ -16,15 +18,23 @@ import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'file_preview_kind.dart';
+
 class FileBlockMenu extends StatefulWidget {
   const FileBlockMenu({
     super.key,
-    required this.controller,
+    this.controller,
+    this.onClose,
+    this.actionContext,
+    this.showDownload = true,
     required this.node,
     required this.editorState,
-  });
+  }) : assert(controller != null || onClose != null);
 
-  final PopoverController controller;
+  final PopoverController? controller;
+  final VoidCallback? onClose;
+  final BuildContext? actionContext;
+  final bool showDownload;
   final Node node;
   final EditorState editorState;
 
@@ -33,26 +43,6 @@ class FileBlockMenu extends StatefulWidget {
 }
 
 class _FileBlockMenuState extends State<FileBlockMenu> {
-  final nameController = TextEditingController();
-  final errorMessage = ValueNotifier<String?>(null);
-  BuildContext? renameContext;
-
-  @override
-  void initState() {
-    super.initState();
-    nameController.text = widget.node.attributes[FileBlockKeys.name] ?? '';
-    nameController.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: nameController.text.length,
-    );
-  }
-
-  @override
-  void dispose() {
-    errorMessage.dispose();
-    super.dispose();
-  }
-
   @override
   Widget build(BuildContext context) {
     final uploadedAtInMS =
@@ -64,62 +54,44 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
     final urlType =
         FileUrlType.fromIntValue(widget.node.attributes[FileBlockKeys.urlType]);
     final fileUploadType = urlType.toFileUploadTypePB();
+    final fileName =
+        widget.node.attributes[FileBlockKeys.name] as String? ?? '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        HoverButton(
-          itemHeight: 20,
-          leftIcon: const FlowySvg(FlowySvgs.download_s),
-          name: LocaleKeys.button_download.tr(),
-          onTap: () async {
-            final url = widget.node.attributes[FileBlockKeys.url] as String?;
-            if (url != null && isYoutubeVideoUrl(url)) {
-              widget.controller.close();
-              await downloadYoutubeVideo(context, url);
-              return;
-            }
-            final name = widget.node.attributes[FileBlockKeys.name] as String?;
-            if (url != null &&
-                name != null &&
-                fileUploadType != FileUploadTypePB.CloudFile) {
-              widget.controller.close();
-              try {
-                if (await downloadMedia(source: url, name: name) && mounted) {
-                  showToastNotification(
-                    message: LocaleKeys.grid_media_downloadSuccess.tr(),
-                  );
-                }
-              } on Exception catch (error) {
-                if (mounted) {
-                  showToastNotification(
-                    message: error.toString(),
-                    type: ToastificationType.error,
-                  );
-                }
-              }
-              return;
-            }
-
-            final userProfile = widget.editorState.document.root.context
-                ?.read<DocumentBloc>()
-                .state
-                .userProfilePB;
-            if (url != null && name != null) {
-              final filePB = MediaFilePB(
-                url: url,
-                name: name,
-                uploadType: fileUploadType,
-              );
-              await downloadMediaFile(
-                context,
-                filePB,
-                userProfile: userProfile,
-              );
-            }
-          },
-        ),
-        const VSpace(4),
+        if (filePreviewKindFromName(fileName) != null) ...[
+          HoverButton(
+            itemHeight: 20,
+            leftIcon: const Icon(Icons.preview_outlined, size: 18),
+            name: widget.node.attributes[FileBlockKeys.displayMode] == 'preview'
+                ? 'Show as file'
+                : 'Show preview',
+            onTap: () {
+              _closeMenu();
+              final mode =
+                  widget.node.attributes[FileBlockKeys.displayMode] == 'preview'
+                      ? 'file'
+                      : 'preview';
+              final transaction = widget.editorState.transaction
+                ..updateNode(
+                  widget.node,
+                  {FileBlockKeys.displayMode: mode},
+                );
+              widget.editorState.apply(transaction);
+            },
+          ),
+          const VSpace(4),
+        ],
+        if (widget.showDownload) ...[
+          HoverButton(
+            itemHeight: 20,
+            leftIcon: const FlowySvg(FlowySvgs.download_s),
+            name: LocaleKeys.button_download.tr(),
+            onTap: () => unawaited(_download(fileUploadType)),
+          ),
+          const VSpace(4),
+        ],
         HoverButton(
           itemHeight: 20,
           leftIcon: const FlowySvg(FlowySvgs.copy_s),
@@ -138,26 +110,7 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
           itemHeight: 20,
           leftIcon: const FlowySvg(FlowySvgs.edit_s),
           name: LocaleKeys.document_plugins_file_renameFile_title.tr(),
-          onTap: () {
-            widget.controller.close();
-            showCustomConfirmDialog(
-              context: context,
-              title: LocaleKeys.document_plugins_file_renameFile_title.tr(),
-              description:
-                  LocaleKeys.document_plugins_file_renameFile_description.tr(),
-              closeOnConfirm: false,
-              builder: (context) {
-                renameContext = context;
-                return FileRenameTextField(
-                  nameController: nameController,
-                  errorMessage: errorMessage,
-                  onSubmitted: _saveName,
-                );
-              },
-              confirmLabel: LocaleKeys.button_save.tr(),
-              onConfirm: _saveName,
-            );
-          },
+          onTap: () => unawaited(_showRenameDialog()),
         ),
         const VSpace(4),
         HoverButton(
@@ -165,10 +118,10 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
           leftIcon: const FlowySvg(FlowySvgs.delete_s),
           name: LocaleKeys.button_delete.tr(),
           onTap: () {
+            _closeMenu();
             final transaction = widget.editorState.transaction
               ..deleteNode(widget.node);
             widget.editorState.apply(transaction);
-            widget.controller.close();
           },
         ),
         if (uploadedAt != null) ...[
@@ -194,23 +147,122 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
     );
   }
 
-  void _saveName() {
-    if (nameController.text.isEmpty) {
-      errorMessage.value =
-          LocaleKeys.document_plugins_file_renameFile_nameEmptyError.tr();
+  BuildContext get _actionContext => widget.actionContext ?? context;
+
+  void _closeMenu() {
+    if (widget.onClose != null) {
+      widget.onClose!();
+    } else {
+      widget.controller?.close();
+    }
+  }
+
+  Future<void> _download(FileUploadTypePB fileUploadType) async {
+    final actionContext = _actionContext;
+    final url = widget.node.attributes[FileBlockKeys.url] as String?;
+    final name = widget.node.attributes[FileBlockKeys.name] as String?;
+    _closeMenu();
+    if (url != null && isYoutubeVideoUrl(url)) {
+      await downloadYoutubeVideo(actionContext, url);
+      return;
+    }
+    if (url != null &&
+        name != null &&
+        fileUploadType != FileUploadTypePB.CloudFile) {
+      try {
+        if (await downloadMedia(source: url, name: name) &&
+            actionContext.mounted) {
+          showToastNotification(
+            message: LocaleKeys.grid_media_downloadSuccess.tr(),
+          );
+        }
+      } on Exception catch (error) {
+        if (actionContext.mounted) {
+          showToastNotification(
+            message: error.toString(),
+            type: ToastificationType.error,
+          );
+        }
+      }
       return;
     }
 
-    final attributes = widget.node.attributes;
-    attributes[FileBlockKeys.name] = nameController.text;
-
-    final transaction = widget.editorState.transaction
-      ..updateNode(widget.node, attributes);
-    widget.editorState.apply(transaction);
-
-    if (renameContext != null) {
-      Navigator.of(renameContext!).pop();
+    final userProfile = widget.editorState.document.root.context
+        ?.read<DocumentBloc>()
+        .state
+        .userProfilePB;
+    if (url != null && name != null && actionContext.mounted) {
+      final filePB = MediaFilePB(
+        url: url,
+        name: name,
+        uploadType: fileUploadType,
+      );
+      await downloadMediaFile(
+        actionContext,
+        filePB,
+        userProfile: userProfile,
+      );
     }
+  }
+
+  Future<void> _showRenameDialog() async {
+    final actionContext = _actionContext;
+    final node = widget.node;
+    final editorState = widget.editorState;
+    final nameController = TextEditingController(
+      text: node.attributes[FileBlockKeys.name] as String? ?? '',
+    );
+    nameController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: nameController.text.length,
+    );
+    final errorMessage = ValueNotifier<String?>(null);
+    BuildContext? renameContext;
+
+    void saveName() {
+      if (nameController.text.isEmpty) {
+        errorMessage.value =
+            LocaleKeys.document_plugins_file_renameFile_nameEmptyError.tr();
+        return;
+      }
+      final transaction = editorState.transaction
+        ..updateNode(
+          node,
+          {FileBlockKeys.name: nameController.text},
+        );
+      editorState.apply(transaction);
+      final dialogContext = renameContext;
+      if (dialogContext != null && dialogContext.mounted) {
+        Navigator.of(dialogContext).pop();
+      }
+    }
+
+    _closeMenu();
+    await Future<void>.delayed(Duration.zero);
+    if (!actionContext.mounted) {
+      nameController.dispose();
+      errorMessage.dispose();
+      return;
+    }
+    await showCustomConfirmDialog(
+      context: actionContext,
+      title: LocaleKeys.document_plugins_file_renameFile_title.tr(),
+      description: LocaleKeys.document_plugins_file_renameFile_description.tr(),
+      closeOnConfirm: false,
+      builder: (context) {
+        renameContext = context;
+        return FileRenameTextField(
+          nameController: nameController,
+          errorMessage: errorMessage,
+          onSubmitted: saveName,
+          disposeController: false,
+        );
+      },
+      confirmLabel: LocaleKeys.button_save.tr(),
+      onConfirm: saveName,
+    );
+    nameController.dispose();
+    errorMessage.dispose();
   }
 
   Future<void> _copyOrShare({required bool copy}) async {
@@ -220,7 +272,8 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
       return;
     }
 
-    widget.controller.close();
+    final actionContext = _actionContext;
+    _closeMenu();
     final urlType = FileUrlType.fromIntValue(
       widget.node.attributes[FileBlockKeys.urlType],
     );
@@ -232,11 +285,11 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
       } else {
         await shareMedia(source: url, name: name, shareAsLink: shareAsLink);
       }
-      if (copy && mounted) {
+      if (copy && actionContext.mounted) {
         showToastNotification(message: LocaleKeys.message_copy_success.tr());
       }
     } on Exception catch (error) {
-      if (mounted) {
+      if (actionContext.mounted) {
         showToastNotification(
           message: error.toString(),
           type: ToastificationType.error,

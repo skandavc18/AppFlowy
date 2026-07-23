@@ -1,4 +1,4 @@
-import 'package:appflowy_ui/src/theme/appflowy_theme.dart';
+import 'package:appflowy_ui/src/theme/theme.dart';
 import 'package:flutter/material.dart';
 
 typedef AFBaseButtonColorBuilder = Color Function(
@@ -56,6 +56,9 @@ class _AFBaseButtonState extends State<AFBaseButton> {
 
   bool isHovering = false;
   bool isFocused = false;
+  bool isPressed = false;
+
+  bool get isDisabled => widget.disabled || widget.onTap == null;
 
   @override
   void dispose() {
@@ -69,56 +72,74 @@ class _AFBaseButtonState extends State<AFBaseButton> {
     final Color backgroundColor = _buildBackgroundColor(context);
     final Color ringColor = _buildRingColor(context);
 
-    return Actions(
-      actions: {
-        ActivateIntent: CallbackAction<ActivateIntent>(
-          onInvoke: (_) {
-            if (!widget.disabled) {
-              widget.onTap?.call();
-            }
-            return;
-          },
-        ),
-      },
-      child: Focus(
-        focusNode: focusNode,
-        onFocusChange: (isFocused) {
-          setState(() => this.isFocused = isFocused);
+    return Semantics(
+      button: true,
+      enabled: !isDisabled,
+      child: Actions(
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              if (!isDisabled) {
+                widget.onTap?.call();
+              }
+              return;
+            },
+          ),
         },
-        autofocus: widget.autofocus,
-        child: MouseRegion(
-          cursor: widget.onTap == null
-              ? SystemMouseCursors.basic
-              : widget.disabled
-                  ? SystemMouseCursors.basic
-                  : SystemMouseCursors.click,
-          onEnter: (_) => setState(() => isHovering = true),
-          onExit: (_) => setState(() => isHovering = false),
-          child: GestureDetector(
-            onTap: widget.disabled ? null : widget.onTap,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(widget.borderRadius),
-                border: isFocused && widget.showFocusRing
-                    ? Border.all(
-                        color: ringColor,
-                        width: 2,
-                        strokeAlign: BorderSide.strokeAlignOutside,
-                      )
-                    : null,
-              ),
-              child: DecoratedBox(
+        child: Focus(
+          focusNode: focusNode,
+          onFocusChange: (isFocused) {
+            setState(() => this.isFocused = isFocused);
+          },
+          autofocus: widget.autofocus,
+          child: MouseRegion(
+            cursor: isDisabled
+                ? SystemMouseCursors.basic
+                : SystemMouseCursors.click,
+            onEnter: (_) {
+              if (!isDisabled) setState(() => isHovering = true);
+            },
+            onExit: (_) => setState(() {
+              isHovering = false;
+              isPressed = false;
+            }),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: isDisabled ? null : widget.onTap,
+              onTapDown:
+                  isDisabled ? null : (_) => setState(() => isPressed = true),
+              onTapUp:
+                  isDisabled ? null : (_) => setState(() => isPressed = false),
+              onTapCancel:
+                  isDisabled ? null : () => setState(() => isPressed = false),
+              child: AnimatedContainer(
+                duration: AppFlowyMotion.fast,
+                curve: AppFlowyMotion.standardCurve,
                 decoration: BoxDecoration(
-                  color: backgroundColor,
-                  border: Border.all(color: borderColor),
                   borderRadius: BorderRadius.circular(widget.borderRadius),
+                  border: Border.all(
+                    color: isFocused && widget.showFocusRing
+                        ? ringColor
+                        : Colors.transparent,
+                    width: 1.5,
+                    strokeAlign: BorderSide.strokeAlignOutside,
+                  ),
                 ),
-                child: Padding(
-                  padding: widget.padding,
-                  child: widget.builder(
-                    context,
-                    isHovering,
-                    widget.disabled,
+                child: AnimatedContainer(
+                  duration: AppFlowyMotion.fast,
+                  curve: AppFlowyMotion.standardCurve,
+                  decoration: BoxDecoration(
+                    color: backgroundColor,
+                    border: Border.all(color: borderColor, width: 0.6),
+                    borderRadius: BorderRadius.circular(widget.borderRadius),
+                  ),
+                  child: Padding(
+                    padding: widget.padding,
+                    child: widget.builder(
+                      context,
+                      isHovering,
+                      isDisabled,
+                    ),
                   ),
                 ),
               ),
@@ -132,22 +153,29 @@ class _AFBaseButtonState extends State<AFBaseButton> {
   Color _buildBorderColor(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
     return widget.borderColor
-            ?.call(context, isHovering, widget.disabled, isFocused) ??
+            ?.call(context, isHovering, isDisabled, isFocused) ??
         theme.borderColorScheme.primary;
   }
 
   Color _buildBackgroundColor(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
-    return widget.backgroundColor?.call(context, isHovering, widget.disabled) ??
-        theme.fillColorScheme.content;
+    final background =
+        widget.backgroundColor?.call(context, isHovering, isDisabled) ??
+            theme.fillColorScheme.content;
+    if (isPressed && !isDisabled) {
+      return Color.alphaBlend(
+        theme.fillColorScheme.contentVisible,
+        background,
+      );
+    }
+    return background;
   }
 
   Color _buildRingColor(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
 
     if (widget.ringColor != null) {
-      return widget.ringColor!
-          .call(context, isHovering, widget.disabled, isFocused);
+      return widget.ringColor!.call(context, isHovering, isDisabled, isFocused);
     }
 
     if (isFocused) {

@@ -97,7 +97,6 @@ Future<bool> _showSlashMenu(
 
   final context = editorState.getNodeAtPath(selection.start.path)?.context;
   if (context != null && context.mounted) {
-    final isLight = Theme.of(context).brightness == Brightness.light;
     _selectionMenuService?.dismiss();
     _selectionMenuService = UniversalPlatform.isMobile
         ? MobileSelectionMenu(
@@ -107,9 +106,7 @@ Future<bool> _showSlashMenu(
             deleteSlashByDefault: shouldInsertSlash,
             deleteKeywordsByDefault: deleteKeywordsByDefault,
             singleColumn: singleColumn,
-            style: isLight
-                ? MobileSelectionMenuStyle.light
-                : MobileSelectionMenuStyle.dark,
+            style: MobileSelectionMenuStyle.fromContext(context),
             startOffset: editorState.selection?.start.offset ?? 0,
           )
         : AppFlowyDesktopSelectionMenu(

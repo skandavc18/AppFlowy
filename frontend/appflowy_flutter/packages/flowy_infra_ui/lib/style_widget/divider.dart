@@ -14,8 +14,8 @@ class FlowyDivider extends StatelessWidget {
     return Padding(
       padding: padding ?? EdgeInsets.zero,
       child: Divider(
-        height: 1.0,
-        thickness: 1.0,
+        height: 0.5,
+        thickness: 0.5,
         color: AFThemeExtension.of(context).borderColor,
       ),
     );

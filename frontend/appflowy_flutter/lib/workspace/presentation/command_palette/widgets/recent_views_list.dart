@@ -91,7 +91,6 @@ class RecentViewsList extends StatelessWidget {
                 thumbVisibility: false,
                 child: SingleChildScrollView(
                   controller: controller,
-                  physics: const ClampingScrollPhysics(),
                   child: Padding(
                     padding: EdgeInsets.only(
                       right: hidePreview ? 0 : 6,

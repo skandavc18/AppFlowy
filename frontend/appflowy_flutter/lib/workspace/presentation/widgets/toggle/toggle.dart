@@ -62,7 +62,9 @@ class Toggle extends StatelessWidget {
         padding: padding,
         child: Stack(
           children: [
-            Container(
+            AnimatedContainer(
+              duration: duration,
+              curve: Curves.easeOutCubic,
               height: style.height,
               width: style.width,
               decoration: BoxDecoration(
@@ -72,6 +74,7 @@ class Toggle extends StatelessWidget {
             ),
             AnimatedPositioned(
               duration: duration,
+              curve: Curves.easeOutCubic,
               top: (style.height - style.thumbRadius) / 2,
               left: value ? style.width - style.thumbRadius - 1 : 1,
               child: Container(

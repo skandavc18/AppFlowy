@@ -1,5 +1,6 @@
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet_buttons.dart';
 import 'package:appflowy/plugins/base/drag_handler.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -73,10 +74,12 @@ Future<T?> showMobileBottomSheet<T>(
     ),
   );
 
-  backgroundColor ??= Theme.of(context).brightness == Brightness.light
-      ? const Color(0xFFF7F8FB)
-      : const Color(0xFF23262B);
-  barrierColor ??= Colors.black.withValues(alpha: 0.3);
+  final theme = Theme.of(context);
+  final palette = PremiumThemeExtension.maybeOf(context);
+  backgroundColor ??= palette?.floatingSurface ??
+      theme.bottomSheetTheme.modalBackgroundColor ??
+      theme.colorScheme.surfaceContainerLow;
+  barrierColor ??= theme.colorScheme.scrim.withValues(alpha: 0.3);
 
   return showModalBottomSheet<T>(
     context: context,

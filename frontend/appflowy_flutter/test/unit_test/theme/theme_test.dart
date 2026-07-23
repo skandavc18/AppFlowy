@@ -45,6 +45,7 @@ void main() {
           theme.themeName,
           anyOf([
             BuiltInTheme.defaultTheme,
+            BuiltInTheme.paper,
             BuiltInTheme.dandelion,
             BuiltInTheme.lavender,
             BuiltInTheme.lemonade,

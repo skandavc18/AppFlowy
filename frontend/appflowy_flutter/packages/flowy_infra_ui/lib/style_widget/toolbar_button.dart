@@ -1,4 +1,5 @@
 import 'package:flowy_infra/size.dart';
+import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flowy_infra_ui/widget/flowy_tooltip.dart';
 import 'package:flutter/material.dart';
 
@@ -12,7 +13,7 @@ class FlowyToolbarButton extends StatelessWidget {
     super.key,
     this.onPressed,
     this.tooltip,
-    this.padding = const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+    this.padding = const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
     required this.child,
   });
 
@@ -22,21 +23,29 @@ class FlowyToolbarButton extends StatelessWidget {
 
     return FlowyTooltip(
       message: tooltipMessage,
-      padding: EdgeInsets.zero,
       child: RawMaterialButton(
         clipBehavior: Clip.antiAlias,
-        constraints: const BoxConstraints(minWidth: 36, minHeight: 32),
+        constraints: const BoxConstraints(minWidth: 32, minHeight: 30),
         hoverElevation: 0,
         highlightElevation: 0,
         padding: EdgeInsets.zero,
-        shape: const RoundedRectangleBorder(borderRadius: Corners.s6Border),
+        shape: const RoundedRectangleBorder(borderRadius: Corners.s8Border),
         hoverColor: Colors.transparent,
         focusColor: Colors.transparent,
         splashColor: Colors.transparent,
         highlightColor: Colors.transparent,
         elevation: 0,
         onPressed: onPressed,
-        child: child,
+        child: FlowyHover(
+          style: HoverStyle(
+            hoverColor: Theme.of(context).hoverColor,
+            borderRadius: Corners.s8Border,
+          ),
+          child: Padding(
+            padding: padding,
+            child: child,
+          ),
+        ),
       ),
     );
   }

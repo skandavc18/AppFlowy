@@ -343,9 +343,8 @@ class _SidebarState extends State<_Sidebar> {
             color: SidebarStyle.background(context),
             border: Border(
               right: BorderSide(
-                color: SidebarStyle.edgeBorderFor(
-                  Theme.of(context).brightness,
-                ),
+                color: SidebarStyle.edgeBorder(context),
+                width: 0.5,
               ),
             ),
           ),
@@ -454,7 +453,6 @@ class _SidebarState extends State<_Sidebar> {
                   right: HomeSpaceViewSizes.viewListRightPadding,
                 ),
                 controller: _scrollController,
-                physics: const ClampingScrollPhysics(),
                 child: SidebarFolder(
                   userProfile: widget.userProfile,
                   isHoverEnabled: !_isScrolling,
@@ -474,7 +472,6 @@ class _SidebarState extends State<_Sidebar> {
                     right: HomeSpaceViewSizes.viewListRightPadding,
                   ),
                   controller: _scrollController,
-                  physics: const ClampingScrollPhysics(),
                   child: SidebarSpace(
                     userProfile: widget.userProfile,
                     isHoverEnabled: !_isScrolling,

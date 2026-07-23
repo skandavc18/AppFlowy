@@ -70,7 +70,8 @@ class _TrashPageState extends State<TrashPage> {
           child: SizedBox(
             width: TrashSizes.totalWidth,
             child: ScrollConfiguration(
-              behavior: const ScrollBehavior().copyWith(scrollbars: false),
+              behavior:
+                  ScrollConfiguration.of(context).copyWith(scrollbars: false),
               child: CustomScrollView(
                 shrinkWrap: true,
                 physics: StyledScrollPhysics(),

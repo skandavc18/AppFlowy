@@ -126,7 +126,6 @@ class MobileHiddenGroupList extends StatelessWidget {
                 value: context.read<BoardBloc>(),
                 child: Material(color: Colors.transparent, child: child),
               ),
-              physics: const ClampingScrollPhysics(),
               onReorder: (oldIndex, newIndex) {
                 if (oldIndex < newIndex) {
                   newIndex--;

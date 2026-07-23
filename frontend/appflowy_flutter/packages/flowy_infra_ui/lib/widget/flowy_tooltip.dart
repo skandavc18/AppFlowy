@@ -1,7 +1,7 @@
 import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
 
-const _tooltipWaitDuration = Duration(milliseconds: 300);
+const _tooltipWaitDuration = Duration(milliseconds: 450);
 
 class FlowyTooltip extends StatelessWidget {
   const FlowyTooltip({
@@ -31,16 +31,13 @@ class FlowyTooltip extends StatelessWidget {
 
     return Tooltip(
       margin: margin,
-      verticalOffset: verticalOffset ?? 16.0,
+      verticalOffset: verticalOffset ?? 12.0,
       padding: padding ??
           const EdgeInsets.symmetric(
-            horizontal: 12.0,
-            vertical: 8.0,
+            horizontal: 8.0,
+            vertical: 6.0,
           ),
-      decoration: BoxDecoration(
-        color: context.tooltipBackgroundColor(),
-        borderRadius: BorderRadius.circular(10.0),
-      ),
+      decoration: context.tooltipDecoration(),
       waitDuration: _tooltipWaitDuration,
       message: message,
       textStyle: message != null ? context.tooltipTextStyle() : null,
@@ -95,17 +92,14 @@ class _ManualTooltipState extends State<ManualTooltip> {
     return Tooltip(
       key: key,
       margin: widget.margin,
-      verticalOffset: widget.verticalOffset ?? 16.0,
+      verticalOffset: widget.verticalOffset ?? 12.0,
       triggerMode: widget.showAutomaticlly ? TooltipTriggerMode.manual : null,
       padding: widget.padding ??
           const EdgeInsets.symmetric(
-            horizontal: 12.0,
-            vertical: 8.0,
+            horizontal: 8.0,
+            vertical: 6.0,
           ),
-      decoration: BoxDecoration(
-        color: context.tooltipBackgroundColor(),
-        borderRadius: BorderRadius.circular(10.0),
-      ),
+      decoration: context.tooltipDecoration(),
       waitDuration: _tooltipWaitDuration,
       message: widget.message,
       textStyle: widget.message != null ? context.tooltipTextStyle() : null,
@@ -117,14 +111,12 @@ class _ManualTooltipState extends State<ManualTooltip> {
 }
 
 extension FlowyToolTipExtension on BuildContext {
-  double tooltipFontSize() => 14.0;
+  double tooltipFontSize() => 12.0;
 
   double tooltipHeight({double? fontSize}) =>
-      20.0 / (fontSize ?? tooltipFontSize());
+      16.0 / (fontSize ?? tooltipFontSize());
 
-  Color tooltipFontColor() => Theme.of(this).brightness == Brightness.light
-      ? Colors.white
-      : Colors.black;
+  Color tooltipFontColor() => Theme.of(this).colorScheme.onInverseSurface;
 
   TextStyle? tooltipTextStyle({Color? fontColor, double? fontSize}) {
     return Theme.of(this).textTheme.bodyMedium?.copyWith(
@@ -142,8 +134,25 @@ extension FlowyToolTipExtension on BuildContext {
         fontSize: fontSize,
       );
 
-  Color tooltipBackgroundColor() =>
-      Theme.of(this).brightness == Brightness.light
-          ? const Color(0xFF1D2129)
-          : const Color(0xE5E5E5E5);
+  Color tooltipBackgroundColor() => Theme.of(this).colorScheme.inverseSurface;
+
+  BoxDecoration tooltipDecoration() {
+    final theme = Theme.of(this);
+    return BoxDecoration(
+      color: tooltipBackgroundColor(),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(
+        color: tooltipFontColor().withValues(alpha: 0.08),
+        width: 0.5,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: theme.shadowColor.withValues(alpha: 0.12),
+          blurRadius: 12,
+          offset: const Offset(0, 4),
+          spreadRadius: -3,
+        ),
+      ],
+    );
+  }
 }

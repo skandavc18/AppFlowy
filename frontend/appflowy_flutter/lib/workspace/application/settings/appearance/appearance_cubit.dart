@@ -66,9 +66,11 @@ class AppearanceSettingsCubit extends Cubit<AppearanceSettingsState> {
                     ),
                   ),
             1.0,
+            true,
           ),
         ) {
     readTextScaleFactor();
+    readKineticScrolling();
   }
 
   final AppearanceSettingsPB _appearanceSettings;
@@ -93,6 +95,25 @@ class AppearanceSettingsCubit extends Cubit<AppearanceSettingsState> {
         ) ??
         1.0;
     emit(state.copyWith(textScaleFactor: textScaleFactor.clamp(0.7, 1.0)));
+  }
+
+  Future<void> setKineticScrolling(bool enabled) async {
+    await getIt<KeyValueStorage>().set(
+      KVKeys.enableKineticScrolling,
+      enabled.toString(),
+    );
+    emit(state.copyWith(enableKineticScrolling: enabled));
+  }
+
+  Future<void> readKineticScrolling() async {
+    final stored = await getIt<KeyValueStorage>().get(
+      KVKeys.enableKineticScrolling,
+    );
+    emit(
+      state.copyWith(
+        enableKineticScrolling: stored == null || stored == 'true',
+      ),
+    );
   }
 
   /// Update selected theme in the user's settings and emit an updated state
@@ -396,6 +417,7 @@ class AppearanceSettingsState with _$AppearanceSettingsState {
     required Color? documentCursorColor,
     required Color? documentSelectionColor,
     required double textScaleFactor,
+    required bool enableKineticScrolling,
   }) = _AppearanceSettingsState;
 
   factory AppearanceSettingsState.initial(
@@ -414,6 +436,7 @@ class AppearanceSettingsState with _$AppearanceSettingsState {
     Color? documentCursorColor,
     Color? documentSelectionColor,
     double textScaleFactor,
+    bool enableKineticScrolling,
   ) {
     return AppearanceSettingsState(
       appTheme: appTheme,
@@ -431,6 +454,7 @@ class AppearanceSettingsState with _$AppearanceSettingsState {
       documentCursorColor: documentCursorColor,
       documentSelectionColor: documentSelectionColor,
       textScaleFactor: textScaleFactor,
+      enableKineticScrolling: enableKineticScrolling,
     );
   }
 

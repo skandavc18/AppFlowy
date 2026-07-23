@@ -170,7 +170,6 @@ class LinkSearchTextField {
         decoration: buildToolbarLinkDecoration(context),
         child: ScrollablePositionedList.builder(
           padding: EdgeInsets.all(8),
-          physics: const ClampingScrollPhysics(),
           shrinkWrap: true,
           itemCount: searchedViews.length,
           itemScrollController: searchController,

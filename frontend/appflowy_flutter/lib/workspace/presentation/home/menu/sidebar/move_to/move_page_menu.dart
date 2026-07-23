@@ -107,7 +107,6 @@ class _MovePageMenuState extends State<MovePageMenu> {
         ),
         Expanded(
           child: SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
             child: SpacePages(
               key: ValueKey(space.id),
               space: space,

@@ -61,49 +61,104 @@ abstract class BaseAppearance {
         fontSize: FontSizes.s32,
         fontColor: fontColor,
         fontWeight: emphasizedFontWeight,
-        lineHeight: 42.0,
-      ), // h2
+        lineHeight: 40.0 / 32.0,
+      ),
       displayMedium: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s24,
         fontColor: fontColor,
         fontWeight: emphasizedFontWeight,
-        lineHeight: 34.0,
-      ), // h3
+        lineHeight: 34.0 / 24.0,
+      ),
       displaySmall: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s20,
         fontColor: fontColor,
         fontWeight: emphasizedFontWeight,
-        lineHeight: 28.0,
-      ), // h4
+        lineHeight: 28.0 / 20.0,
+      ),
+      headlineLarge: getFontStyle(
+        fontFamily: fontFamily,
+        fontSize: FontSizes.s24,
+        fontColor: fontColor,
+        fontWeight: emphasizedFontWeight,
+        lineHeight: 32.0 / 24.0,
+      ),
+      headlineMedium: getFontStyle(
+        fontFamily: fontFamily,
+        fontSize: FontSizes.s20,
+        fontColor: fontColor,
+        fontWeight: emphasizedFontWeight,
+        lineHeight: 28.0 / 20.0,
+      ),
+      headlineSmall: getFontStyle(
+        fontFamily: fontFamily,
+        fontSize: FontSizes.s18,
+        fontColor: fontColor,
+        fontWeight: emphasizedFontWeight,
+        lineHeight: 26.0 / 18.0,
+      ),
       titleLarge: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s18,
         fontColor: fontColor,
         fontWeight: emphasizedFontWeight,
-      ), // title
+        lineHeight: 26.0 / 18.0,
+      ),
       titleMedium: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s16,
         fontColor: fontColor,
         fontWeight: emphasizedFontWeight,
-      ), // heading
+        lineHeight: 24.0 / 16.0,
+      ),
       titleSmall: getFontStyle(
         fontFamily: fontFamily,
         fontSize: FontSizes.s14,
         fontColor: fontColor,
         fontWeight: emphasizedFontWeight,
-      ), // subheading
+        lineHeight: 20.0 / 14.0,
+      ),
+      bodyLarge: getFontStyle(
+        fontFamily: fontFamily,
+        fontSize: FontSizes.s16,
+        fontColor: fontColor,
+        lineHeight: 24.0 / 16.0,
+      ),
       bodyMedium: getFontStyle(
         fontFamily: fontFamily,
+        fontSize: FontSizes.s14,
         fontColor: fontColor,
-      ), // body-regular
+        lineHeight: 21.0 / 14.0,
+      ),
       bodySmall: getFontStyle(
         fontFamily: fontFamily,
+        fontSize: FontSizes.s12,
         fontColor: fontColor,
         fontWeight: defaultFontWeight,
-      ), // body-thin
+        lineHeight: 18.0 / 12.0,
+      ),
+      labelLarge: getFontStyle(
+        fontFamily: fontFamily,
+        fontSize: FontSizes.s14,
+        fontColor: fontColor,
+        fontWeight: emphasizedFontWeight,
+        lineHeight: 20.0 / 14.0,
+      ),
+      labelMedium: getFontStyle(
+        fontFamily: fontFamily,
+        fontSize: FontSizes.s12,
+        fontColor: fontColor,
+        fontWeight: emphasizedFontWeight,
+        lineHeight: 18.0 / 12.0,
+      ),
+      labelSmall: getFontStyle(
+        fontFamily: fontFamily,
+        fontSize: FontSizes.s11,
+        fontColor: fontColor,
+        fontWeight: emphasizedFontWeight,
+        lineHeight: 16.0 / 11.0,
+      ),
     );
   }
 

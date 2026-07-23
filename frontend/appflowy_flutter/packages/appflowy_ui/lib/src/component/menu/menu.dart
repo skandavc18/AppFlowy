@@ -31,11 +31,12 @@ class AFMenu extends StatelessWidget {
         borderRadius: BorderRadius.circular(theme.borderRadius.l),
         border: Border.all(
           color: theme.borderColorScheme.primary,
+          width: 0.6,
         ),
-        boxShadow: theme.shadow.medium,
+        boxShadow: theme.shadow.small,
       ),
       width: width,
-      padding: EdgeInsets.all(theme.spacing.m),
+      padding: EdgeInsets.all(theme.spacing.s),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: children,

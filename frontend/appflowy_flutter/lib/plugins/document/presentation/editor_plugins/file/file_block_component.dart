@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
@@ -10,12 +12,14 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_embed_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/file_entities.pbenum.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -29,7 +33,11 @@ import 'package:universal_platform/universal_platform.dart';
 
 import 'file_block_menu.dart';
 import 'file_media_player.dart';
+import 'file_preview.dart';
+import 'file_preview_kind.dart';
 import 'file_upload_menu.dart';
+import 'pdf_preview.dart';
+import 'pdf_preview_scroll_physics.dart';
 
 class FileBlockKeys {
   const FileBlockKeys._();
@@ -68,6 +76,9 @@ class FileBlockKeys {
   static const String uploadedBy = 'uploaded_by';
 
   static const String width = 'width';
+  static const String height = 'height';
+  static const String displayMode = 'display_mode';
+  static const String previewMetadata = 'preview_metadata';
 
   /// The GlobalKey of the FileBlockComponentState.
   ///
@@ -188,6 +199,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
   final showActionsNotifier = ValueNotifier<bool>(false);
   final controller = PopoverController();
   final menuController = PopoverController();
+  final previewScrollController = PdfPreviewScrollController();
 
   late final editorState = Provider.of<EditorState>(context, listen: false);
 
@@ -211,62 +223,68 @@ class FileBlockComponentState extends State<FileBlockComponent>
     final name = node.attributes[FileBlockKeys.name] as String?;
     final mediaKind = fileMediaKind(name, url);
     final isYoutubeVideo = url != null && isYoutubeVideoUrl(url);
+    final previewKind = name == null ? null : filePreviewKindFromName(name);
+    final showPreview =
+        node.attributes[FileBlockKeys.displayMode] == 'preview' &&
+            previewKind != null;
 
     Widget child = isYoutubeVideo
         ? _buildYoutubePlayer(url)
         : mediaKind != null && url?.isNotEmpty == true
             ? _buildMediaPlayer(url!, name ?? '', mediaKind)
-            : MouseRegion(
-                cursor: SystemMouseCursors.click,
-                onEnter: (_) {
-                  setState(() => isHovering = true);
-                  showActionsNotifier.value = true;
-                },
-                onExit: (_) {
-                  setState(() => isHovering = false);
-                  if (!alwaysShowMenu) {
-                    showActionsNotifier.value = false;
-                  }
-                },
-                opaque: false,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: url != null && url.isNotEmpty
-                      ? () async => _openFile(context, urlType, url)
-                      : _openMenu,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: isHovering
-                          ? Theme.of(context).colorScheme.secondary
-                          : Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(4),
-                      border: isDragging
-                          ? Border.all(
-                              color: Theme.of(context).colorScheme.primary,
-                              width: 2,
-                            )
-                          : null,
-                    ),
-                    child: SizedBox(
-                      height: 52,
-                      child: Row(
-                        children: [
-                          const HSpace(10),
-                          FlowySvg(
-                            FlowySvgs.slash_menu_icon_file_s,
-                            color: Theme.of(context).hintColor,
-                            size: const Size.square(24),
+            : showPreview && url?.isNotEmpty == true
+                ? _buildFilePreview(url!, name!, previewKind)
+                : MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    onEnter: (_) {
+                      setState(() => isHovering = true);
+                      showActionsNotifier.value = true;
+                    },
+                    onExit: (_) {
+                      setState(() => isHovering = false);
+                      if (!alwaysShowMenu) {
+                        showActionsNotifier.value = false;
+                      }
+                    },
+                    opaque: false,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onTap: url != null && url.isNotEmpty
+                          ? () async => _openFile(context, urlType, url)
+                          : _openMenu,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: isHovering
+                              ? Theme.of(context).colorScheme.secondary
+                              : Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(4),
+                          border: isDragging
+                              ? Border.all(
+                                  color: Theme.of(context).colorScheme.primary,
+                                  width: 2,
+                                )
+                              : null,
+                        ),
+                        child: SizedBox(
+                          height: 52,
+                          child: Row(
+                            children: [
+                              const HSpace(10),
+                              Icon(
+                                fileIconForName(name),
+                                color: Theme.of(context).hintColor,
+                                size: 24,
+                              ),
+                              const HSpace(10),
+                              ..._buildTrailing(context),
+                            ],
                           ),
-                          const HSpace(10),
-                          ..._buildTrailing(context),
-                        ],
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              );
+                  );
 
     if (UniversalPlatform.isDesktopOrWeb) {
       if (url == null || url.isEmpty) {
@@ -306,26 +324,35 @@ class FileBlockComponentState extends State<FileBlockComponent>
             ),
             popupBuilder: (_) => FileUploadMenu(
               onInsertLocalFile: insertFileFromLocal,
+              onInsertLocalFileWithOptions: insertFileFromLocal,
               onInsertNetworkFileWithOptions: (url, saveOffline) =>
                   insertNetworkFile(url, saveOffline),
+              onInsertNetworkFileWithPreviewOptions:
+                  (url, saveOffline, showPreview) =>
+                      insertNetworkFile(url, saveOffline, showPreview),
+              defaultShowPreview:
+                  node.attributes[FileBlockKeys.displayMode] == 'preview',
             ),
             child: child,
           ),
         );
       }
 
-      child = BlockSelectionContainer(
-        node: node,
-        delegate: this,
-        listenable: editorState.selectionNotifier,
-        blockColor: editorState.editorStyle.selectionColor,
-        supportTypes: const [BlockSelectionType.block],
-        child: Padding(
-          key: fileKey,
-          padding: padding,
-          child: child,
-        ),
+      final paddedChild = Padding(
+        key: fileKey,
+        padding: padding,
+        child: child,
       );
+      child = showPreview
+          ? paddedChild
+          : BlockSelectionContainer(
+              node: node,
+              delegate: this,
+              listenable: editorState.selectionNotifier,
+              blockColor: editorState.editorStyle.selectionColor,
+              supportTypes: const [BlockSelectionType.block],
+              child: paddedChild,
+            );
     } else {
       return Padding(
         key: fileKey,
@@ -365,6 +392,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
     String name,
     FileMediaKind kind,
   ) {
+    final menuSurface = AppFlowyTheme.of(context).surfaceColorScheme.primary;
     final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
         (kind == FileMediaKind.audio
             ? defaultAudioMediaWidth
@@ -419,12 +447,13 @@ class FileBlockComponentState extends State<FileBlockComponent>
                       ),
                       child: GestureDetector(
                         onTap: _showMediaMenu,
-                        child: const DecoratedBox(
+                        child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.all(Radius.circular(4)),
+                            color: menuSurface,
+                            borderRadius:
+                                const BorderRadius.all(Radius.circular(4)),
                           ),
-                          child: FileMenuTrigger(),
+                          child: const FileMenuTrigger(),
                         ),
                       ),
                     );
@@ -438,6 +467,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
   }
 
   Widget _buildYoutubePlayer(String url) {
+    final menuSurface = AppFlowyTheme.of(context).surfaceColorScheme.primary;
     final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
         defaultVisualMediaWidth;
     return ResizableMedia(
@@ -492,12 +522,13 @@ class FileBlockComponentState extends State<FileBlockComponent>
                       ),
                       child: GestureDetector(
                         onTap: _showMediaMenu,
-                        child: const DecoratedBox(
+                        child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.all(Radius.circular(4)),
+                            color: menuSurface,
+                            borderRadius:
+                                const BorderRadius.all(Radius.circular(4)),
                           ),
-                          child: FileMenuTrigger(),
+                          child: const FileMenuTrigger(),
                         ),
                       ),
                     );
@@ -510,9 +541,152 @@ class FileBlockComponentState extends State<FileBlockComponent>
     );
   }
 
+  Widget _buildFilePreview(
+    String url,
+    String name,
+    FilePreviewKind kind,
+  ) {
+    final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
+        defaultVisualMediaWidth;
+    final height = node.attributes[FileBlockKeys.height]?.toDouble() ??
+        (kind == FilePreviewKind.code ? 560.0 : 420.0);
+    final preview = ResizableMedia(
+      width: width,
+      minWidth: kind == FilePreviewKind.code || kind == FilePreviewKind.pdf
+          ? 420
+          : 320,
+      height: height,
+      minHeight: kind == FilePreviewKind.code ? 260 : 240,
+      editable: editorState.editable,
+      onResize: _saveMediaWidth,
+      onResizeHeight: _saveMediaHeight,
+      frameBuilder: kind.usesFrameScrollGuard
+          ? (frame) => PremiumScrollExclusion(
+                child: PdfEmbedScrollGuard(
+                  onPointerSignal: previewScrollController.handlePointerSignal,
+                  onPointerPanZoomStart:
+                      previewScrollController.handlePointerPanZoomStart,
+                  onPointerPanZoomUpdate:
+                      previewScrollController.handlePointerPanZoomUpdate,
+                  onPointerPanZoomEnd:
+                      previewScrollController.handlePointerPanZoomEnd,
+                  child: frame,
+                ),
+              )
+          : null,
+      child: FutureBuilder<File>(
+        future: materializeMediaFile(source: url, name: name),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  snapshot.error.toString(),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+          final file = snapshot.data;
+          if (file == null) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          return FilePreview(
+            file: file,
+            name: name,
+            kind: kind,
+            editable: editorState.editable &&
+                FileUrlType.fromIntValue(
+                      node.attributes[FileBlockKeys.urlType] ?? 0,
+                    ) ==
+                    FileUrlType.local,
+            metadata: Map<String, dynamic>.from(
+              node.attributes[FileBlockKeys.previewMetadata] as Map? ??
+                  const {},
+            ),
+            onMetadataChanged: _savePreviewMetadata,
+            height: height,
+            toolbarTrailing:
+                UniversalPlatform.isDesktopOrWeb && kind != FilePreviewKind.pdf
+                    ? _buildPreviewMenu()
+                    : null,
+            pdfMenuBuilder:
+                UniversalPlatform.isDesktopOrWeb && kind == FilePreviewKind.pdf
+                    ? _buildPdfMenu
+                    : null,
+            previewScrollController:
+                kind.usesFrameScrollGuard ? previewScrollController : null,
+          );
+        },
+      ),
+    );
+    return preview;
+  }
+
+  Widget _buildPreviewMenu() {
+    final theme = AppFlowyTheme.of(context);
+    final hoverColor = Theme.of(context).brightness == Brightness.dark
+        ? const Color(0x12FFFFFF)
+        : const Color(0x0F302D28);
+    return AppFlowyPopover(
+      controller: menuController,
+      clickHandler: PopoverClickHandler.gestureDetector,
+      direction: PopoverDirection.bottomWithRightAligned,
+      popupBuilder: (_) => FileBlockMenu(
+        controller: menuController,
+        node: node,
+        editorState: editorState,
+      ),
+      child: Tooltip(
+        message: 'More actions',
+        child: SizedBox.square(
+          dimension: 30,
+          child: FlowyHover(
+            resetHoverOnRebuild: false,
+            style: HoverStyle(
+              hoverColor: hoverColor,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Icon(
+              Icons.more_horiz_rounded,
+              size: 19,
+              color: theme.iconColorScheme.secondary,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPdfMenu(
+    BuildContext menuContext,
+    VoidCallback closeMenu,
+  ) {
+    return FileBlockMenu(
+      onClose: closeMenu,
+      actionContext: context,
+      showDownload: false,
+      node: node,
+      editorState: editorState,
+    );
+  }
+
+  void _savePreviewMetadata(Map<String, dynamic> metadata) {
+    final transaction = editorState.transaction
+      ..updateNode(node, {FileBlockKeys.previewMetadata: metadata});
+    editorState.apply(transaction);
+  }
+
   void _saveMediaWidth(double width) {
     final transaction = editorState.transaction
       ..updateNode(node, {FileBlockKeys.width: width});
+    editorState.apply(transaction);
+  }
+
+  void _saveMediaHeight(double height) {
+    final transaction = editorState.transaction
+      ..updateNode(node, {FileBlockKeys.height: height});
     editorState.apply(transaction);
   }
 
@@ -628,6 +802,23 @@ class FileBlockComponentState extends State<FileBlockComponent>
         urlType == FileUrlType.network && isYoutubeVideoUrl(url);
 
     return [
+      if (filePreviewKindFromName(name) != null)
+        FlowyOptionTile.text(
+          showTopBorder: false,
+          text: node.attributes[FileBlockKeys.displayMode] == 'preview'
+              ? 'Show as file'
+              : 'Show preview',
+          leftIcon: const Icon(Icons.preview_outlined),
+          onTap: () {
+            context.pop();
+            final mode = node.attributes[FileBlockKeys.displayMode] == 'preview'
+                ? 'file'
+                : 'preview';
+            final transaction = editorState.transaction
+              ..updateNode(node, {FileBlockKeys.displayMode: mode});
+            editorState.apply(transaction);
+          },
+        ),
       FlowyOptionTile.text(
         showTopBorder: false,
         text: LocaleKeys.button_download.tr(),
@@ -687,17 +878,31 @@ class FileBlockComponentState extends State<FileBlockComponent>
               context.pop();
               await insertFileFromLocal(file);
             },
+            onInsertLocalFileWithOptions: (file, showPreview) async {
+              context.pop();
+              await insertFileFromLocal(file, showPreview);
+            },
             onInsertNetworkFileWithOptions: (url, saveOffline) async {
               context.pop();
               await insertNetworkFile(url, saveOffline);
             },
+            onInsertNetworkFileWithPreviewOptions:
+                (url, saveOffline, showPreview) async {
+              context.pop();
+              await insertNetworkFile(url, saveOffline, showPreview);
+            },
+            defaultShowPreview:
+                node.attributes[FileBlockKeys.displayMode] == 'preview',
           ),
         );
       },
     );
   }
 
-  Future<void> insertFileFromLocal(List<XFile> files) async {
+  Future<void> insertFileFromLocal(
+    List<XFile> files, [
+    bool? showPreview,
+  ]) async {
     if (files.isEmpty) return;
 
     final file = files.first;
@@ -730,6 +935,8 @@ class FileBlockComponentState extends State<FileBlockComponent>
       FileBlockKeys.urlType: urlType.toIntValue(),
       FileBlockKeys.name: file.name,
       FileBlockKeys.uploadedAt: DateTime.now().millisecondsSinceEpoch,
+      if (showPreview != null)
+        FileBlockKeys.displayMode: showPreview ? 'preview' : 'file',
     });
     await editorState.apply(transaction);
   }
@@ -737,6 +944,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
   Future<void> insertNetworkFile(
     String url, [
     bool saveOffline = false,
+    bool? showPreview,
   ]) async {
     if (url.isEmpty || !isURL(url)) {
       // show error
@@ -767,6 +975,8 @@ class FileBlockComponentState extends State<FileBlockComponent>
             FileBlockKeys.urlType: FileUrlType.local.toIntValue(),
             FileBlockKeys.name: video.name,
             FileBlockKeys.uploadedAt: DateTime.now().millisecondsSinceEpoch,
+            if (showPreview != null)
+              FileBlockKeys.displayMode: showPreview ? 'preview' : 'file',
           });
         await editorState.apply(transaction);
       } on Exception catch (error, stackTrace) {
@@ -800,6 +1010,8 @@ class FileBlockComponentState extends State<FileBlockComponent>
       FileBlockKeys.urlType: FileUrlType.network.toIntValue(),
       FileBlockKeys.name: name,
       FileBlockKeys.uploadedAt: DateTime.now().millisecondsSinceEpoch,
+      if (showPreview != null)
+        FileBlockKeys.displayMode: showPreview ? 'preview' : 'file',
     });
     await editorState.apply(transaction);
   }

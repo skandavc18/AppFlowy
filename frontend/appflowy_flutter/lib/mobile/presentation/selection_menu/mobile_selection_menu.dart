@@ -14,11 +14,11 @@ class MobileSelectionMenu extends SelectionMenuService {
     required this.selectionMenuItems,
     this.deleteSlashByDefault = false,
     this.deleteKeywordsByDefault = false,
-    this.style = MobileSelectionMenuStyle.light,
+    MobileSelectionMenuStyle? style,
     this.itemCountFilter = 0,
     this.startOffset = 0,
     this.singleColumn = false,
-  });
+  }) : style = style ?? MobileSelectionMenuStyle.fromContext(context);
 
   final BuildContext context;
   final EditorState editorState;

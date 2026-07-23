@@ -523,7 +523,6 @@ class _ToolbarItemListViewState extends State<_ToolbarItemListView> {
     return PageStorage(
       bucket: PageStorageBucket(),
       child: ScrollablePositionedList.builder(
-        physics: const ClampingScrollPhysics(),
         scrollOffsetListener: widget.offsetListener,
         itemScrollController: scrollController,
         scrollDirection: Axis.horizontal,

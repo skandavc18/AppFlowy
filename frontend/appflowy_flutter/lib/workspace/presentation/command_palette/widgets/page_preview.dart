@@ -438,7 +438,6 @@ class _DatabasePagePreview extends StatelessWidget {
         final scale = constraints.maxWidth / _canvasWidth;
         final renderedHeight = _canvasHeight * scale;
         return SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
           child: SizedBox(
             width: constraints.maxWidth,
             height: renderedHeight,

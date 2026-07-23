@@ -64,6 +64,7 @@ void main() {
               ),
             ),
       1.0,
+      true,
     );
     final mockAppearanceSettingsBloc = MockAppearanceSettingsBloc();
     when(() => mockAppearanceSettingsBloc.state).thenReturn(

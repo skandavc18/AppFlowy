@@ -9,6 +9,7 @@
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/object_type_typography.dart';
 import 'package:appflowy/workspace/application/appearance_defaults.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
@@ -94,9 +95,8 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
             fontSize: _fontSize,
           ).copyWith(
             fontWeight: FontWeight.normal,
-            color: Colors.red,
-            backgroundColor:
-                theme.colorScheme.inverseSurface.withValues(alpha: 0.8),
+            color: EditorSurfaceStyle.inlineCodeForeground(context),
+            backgroundColor: EditorSurfaceStyle.inlineCodeBackground(context),
           ),
         ),
       ),
@@ -134,14 +134,23 @@ class ChatEditorStyleCustomizer extends EditorStyleCustomizer {
   CodeBlockStyle codeBlockStyleBuilder() {
     final fontFamily =
         context.read<DocumentAppearanceCubit>().state.codeFontFamily;
+    final effectiveFontFamily =
+        fontFamily.isEmpty || fontFamily == builtInCodeFontFamily
+            ? 'JetBrains Mono'
+            : fontFamily;
 
     return CodeBlockStyle(
       textStyle: baseTextStyle(
-        fontFamily,
+        effectiveFontFamily,
         fontSize: _fontSize,
       ).copyWith(
         height: 1.4,
         color: AFThemeExtension.of(context).onBackground,
+        fontFamilyFallback: const [
+          'Geist Mono',
+          'RobotoMono',
+          'monospace',
+        ],
       ),
       backgroundColor: AFThemeExtension.of(context).calloutBGColor,
       foregroundColor: AFThemeExtension.of(context).textColor.withAlpha(155),

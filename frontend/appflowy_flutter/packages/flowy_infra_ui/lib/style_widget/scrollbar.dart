@@ -36,8 +36,7 @@ class _FlowyScrollbarState extends State<FlowyScrollbar> {
         builder: (context, isHovered, child) {
           return Scrollbar(
             thumbVisibility: isHovered && widget.thumbVisibility,
-            // the radius should be fixed to 12
-            radius: const Radius.circular(12),
+            radius: const Radius.circular(4),
             controller: widget.controller,
             child: ScrollConfiguration(
               behavior: ScrollConfiguration.of(context).copyWith(

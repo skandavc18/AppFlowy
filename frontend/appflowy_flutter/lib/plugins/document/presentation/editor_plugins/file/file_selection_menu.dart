@@ -3,7 +3,10 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 
 extension InsertFile on EditorState {
-  Future<void> insertEmptyFileBlock(GlobalKey key) async {
+  Future<void> insertEmptyFileBlock(
+    GlobalKey key, {
+    bool showPreview = false,
+  }) async {
     final selection = this.selection;
     if (selection == null || !selection.isCollapsed) {
       return;
@@ -14,7 +17,11 @@ extension InsertFile on EditorState {
     if (node == null || delta == null) {
       return;
     }
-    final file = fileNode(url: '')..extraInfos = {'global_key': key};
+    final file = fileNode(url: '');
+    if (showPreview) {
+      file.attributes[FileBlockKeys.displayMode] = 'preview';
+    }
+    file.extraInfos = {'global_key': key};
 
     final transaction = this.transaction;
 

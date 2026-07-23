@@ -283,7 +283,6 @@ class _GridRows extends StatelessWidget {
               builder: (context, state) {
                 final behavior = ScrollConfiguration.of(context).copyWith(
                   scrollbars: false,
-                  physics: const ClampingScrollPhysics(),
                 );
                 return ScrollConfiguration(
                   behavior: behavior,

@@ -2,6 +2,7 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/mobile_toolbar_v3/aa_menu/_toolbar_theme.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme.dart';
@@ -9,12 +10,6 @@ import 'package:flowy_infra/theme_extension.dart';
 import 'package:flutter/material.dart';
 
 class MobileAppearance extends BaseAppearance {
-  static const _primaryColor = Color(0xFF00BCF0); //primary 100
-  static const _onBackgroundColor = Color(0xff2F3030); // text/title color
-  static const _onSurfaceColor = Color(0xff676666); // text/body color
-  static const _onSecondaryColor = Color(0xFFC5C7CB); // text/body2 color
-  static const _hintColorInDarkMode = Color(0xff626262); // hint color
-
   @override
   ThemeData getThemeData(
     AppTheme appTheme,
@@ -24,266 +19,116 @@ class MobileAppearance extends BaseAppearance {
   ) {
     assert(codeFontFamily.isNotEmpty);
 
-    final fontStyle = getFontStyle(
+    final theme = brightness == Brightness.light
+        ? appTheme.lightTheme
+        : appTheme.darkTheme;
+    final palette = PremiumTheme.resolve(
+      appTheme: appTheme,
+      legacy: theme,
+      brightness: brightness,
+    );
+    final isPaper = PaperTheme.isPaper(appTheme);
+    final textTheme = getTextTheme(
       fontFamily: fontFamily,
-      fontSize: 16.0,
-      fontWeight: defaultFontWeight,
+      fontColor: palette.textPrimary,
+    );
+    final materialTheme = PremiumTheme.materialTheme(
+      legacy: theme,
+      palette: palette,
+      brightness: brightness,
+      fontFamily: resolveFontFamily(fontFamily),
+      textTheme: textTheme,
+      isDesktop: false,
     );
 
-    final isLight = brightness == Brightness.light;
-    final codeFontStyle = getFontStyle(fontFamily: codeFontFamily);
-
-    final theme = isLight ? appTheme.lightTheme : appTheme.darkTheme;
-    final isPaper = PaperTheme.isPaper(appTheme);
-
-    final colorTheme = isLight
-        ? ColorScheme(
-            brightness: brightness,
-            primary: _primaryColor,
-            onPrimary: Colors.white,
-            // group card header background color
-            primaryContainer: const Color(0xffF1F1F4), // primary 20
-            // group card & property edit background color
-            secondary: const Color(0xfff7f8fc), // shade 10
-            onSecondary: _onSecondaryColor,
-            // hidden group title & card text color
-            tertiary: const Color(0xff858585), // for light text
-            error: const Color(0xffFB006D),
-            onError: const Color(0xffFB006D),
-            outline: const Color(0xffe3e3e3),
-            outlineVariant: const Color(0xffCBD5E0).withValues(alpha: 0.24),
-            //Snack bar
-            surface: Colors.white,
-            onSurface: _onSurfaceColor, // text/body color
-            surfaceContainerHighest: theme.sidebarBg,
-          )
-        : ColorScheme(
-            brightness: brightness,
-            primary: _primaryColor,
-            onPrimary: Colors.black,
-            secondary: const Color(0xff2d2d2d), //temp
-            onSecondary: Colors.white,
-            tertiary: const Color(0xff858585), // temp
-            error: const Color(0xffFB006D),
-            onError: const Color(0xffFB006D),
-            outline: _hintColorInDarkMode,
-            outlineVariant: Colors.black,
-            //Snack bar
-            surface: const Color(0xFF171A1F),
-            onSurface: const Color(0xffC5C6C7), // text/body color
-            surfaceContainerHighest: theme.sidebarBg,
-          );
-    final hintColor = isLight ? const Color(0x991F2329) : _hintColorInDarkMode;
-    final onBackground = isLight ? _onBackgroundColor : Colors.white;
-    final background = isLight ? Colors.white : const Color(0xff121212);
-
-    return ThemeData(
-      useMaterial3: false,
-      primaryColor: colorTheme.primary, //primary 100
-      primaryColorLight: const Color(0xFF57B5F8), //primary 80
-      dividerColor: colorTheme.outline, //caption
-      hintColor: hintColor,
-      disabledColor: colorTheme.outline,
-      scaffoldBackgroundColor: background,
+    return materialTheme.copyWith(
+      primaryColor: palette.accent,
+      primaryColorLight: palette.accentHover,
       appBarTheme: AppBarTheme(
         toolbarHeight: 44.0,
-        foregroundColor: onBackground,
-        backgroundColor: background,
+        foregroundColor: palette.textPrimary,
+        backgroundColor: palette.canvas,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
         centerTitle: false,
-        titleTextStyle: fontStyle.copyWith(
-          color: onBackground,
+        titleTextStyle: textTheme.titleLarge?.copyWith(
+          color: palette.textPrimary,
           fontSize: 18,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.05,
-        ),
-        shadowColor: colorTheme.outlineVariant,
-      ),
-      radioTheme: RadioThemeData(
-        fillColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return colorTheme.primary;
-          }
-          return colorTheme.outline;
-        }),
-      ),
-      // button
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ButtonStyle(
-          fixedSize: WidgetStateProperty.all(const Size.fromHeight(48)),
-          elevation: WidgetStateProperty.all(0),
-          textStyle: WidgetStateProperty.all(
-            fontStyle.copyWith(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          shadowColor: WidgetStateProperty.all(null),
-          foregroundColor: WidgetStateProperty.all(Colors.white),
-          backgroundColor: WidgetStateProperty.resolveWith<Color>(
-            (Set<WidgetState> states) {
-              if (states.contains(WidgetState.disabled)) {
-                return _primaryColor;
-              }
-              return colorTheme.primary;
-            },
-          ),
         ),
       ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: ButtonStyle(
-          textStyle: WidgetStateProperty.all(
-            fontStyle.copyWith(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          foregroundColor: WidgetStateProperty.all(onBackground),
-          backgroundColor: WidgetStateProperty.all(background),
-          shape: WidgetStateProperty.all(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          ),
-          side: WidgetStateProperty.all(
-            BorderSide(color: colorTheme.outline, width: 0.5),
-          ),
-          padding: WidgetStateProperty.all(
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-          ),
+      indicatorColor: palette.accent,
+      scrollbarTheme: ScrollbarThemeData(
+        thumbColor: WidgetStateProperty.resolveWith(
+          (states) => states.any(scrollbarInteractiveStates.contains)
+              ? palette.accent
+              : palette.textMuted.withValues(alpha: 0.4),
         ),
+        thickness: const WidgetStatePropertyAll(3),
+        radius: const Radius.circular(10),
       ),
-      textButtonTheme: TextButtonThemeData(
-        style: ButtonStyle(
-          textStyle: WidgetStateProperty.all(fontStyle),
-        ),
-      ),
-      // text
-      fontFamily: fontStyle.fontFamily,
-      textTheme: TextTheme(
-        displayLarge: fontStyle.copyWith(
-          color: _primaryColor,
-          fontSize: 32,
-          fontWeight: FontWeight.w700,
-          height: 1.20,
-          letterSpacing: 0.16,
-        ),
-        displayMedium: fontStyle.copyWith(
-          color: onBackground,
-          fontSize: 32,
-          fontWeight: FontWeight.w600,
-          height: 1.20,
-          letterSpacing: 0.16,
-        ),
-        // H1 Semi 26
-        displaySmall: fontStyle.copyWith(
-          color: onBackground,
-          fontWeight: FontWeight.w600,
-          height: 1.10,
-          letterSpacing: 0.13,
-        ),
-        // body2 14 Regular
-        bodyMedium: fontStyle.copyWith(
-          color: onBackground,
-          fontWeight: defaultFontWeight,
-          letterSpacing: 0.07,
-        ),
-        // Trash empty title
-        labelLarge: fontStyle.copyWith(
-          color: onBackground,
-          fontSize: 22,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.3,
-        ),
-        // setting item title
-        labelMedium: fontStyle.copyWith(
-          color: onBackground,
-          fontSize: 18,
-          fontWeight: FontWeight.w500,
-        ),
-        // setting group title
-        labelSmall: fontStyle.copyWith(
-          color: onBackground,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.05,
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        contentPadding: const EdgeInsets.all(8),
-        focusedBorder: const OutlineInputBorder(
-          borderSide: BorderSide(
-            width: 2,
-            color: _primaryColor,
-          ),
-          borderRadius: BorderRadius.all(Radius.circular(6)),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: colorTheme.error),
-          borderRadius: const BorderRadius.all(Radius.circular(6)),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderSide: BorderSide(color: colorTheme.error),
-          borderRadius: const BorderRadius.all(Radius.circular(6)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderSide: BorderSide(
-            color: colorTheme.outline,
-          ),
-          borderRadius: const BorderRadius.all(Radius.circular(6)),
-        ),
-      ),
-      colorScheme: colorTheme,
-      indicatorColor: Colors.blue,
       extensions: [
+        palette,
         PaperThemeExtension(enabled: isPaper),
         AFThemeExtension(
-          warning: theme.yellow,
-          success: theme.green,
-          tint1: theme.tint1,
-          tint2: theme.tint2,
-          tint3: theme.tint3,
-          tint4: theme.tint4,
-          tint5: theme.tint5,
-          tint6: theme.tint6,
-          tint7: theme.tint7,
-          tint8: theme.tint8,
-          tint9: theme.tint9,
-          textColor: theme.text,
-          secondaryTextColor: theme.secondaryText,
-          strongText: theme.strongText,
-          greyHover: theme.hoverBG1,
-          greySelect: theme.bg3,
-          lightGreyHover: theme.hoverBG3,
-          toggleOffFill: theme.shader5,
-          progressBarBGColor: theme.progressBarBGColor,
-          toggleButtonBGColor: theme.toggleButtonBGColor,
-          calendarWeekendBGColor: theme.calendarWeekendBGColor,
-          gridRowCountColor: theme.gridRowCountColor,
-          code: codeFontStyle.copyWith(
-            color: theme.shader3,
+          warning: PremiumTheme.semanticColorFor(theme.yellow, palette),
+          success: PremiumTheme.semanticColorFor(theme.green, palette),
+          tint1: PremiumTheme.tintFor(theme.tint1, palette),
+          tint2: PremiumTheme.tintFor(theme.tint2, palette),
+          tint3: PremiumTheme.tintFor(theme.tint3, palette),
+          tint4: PremiumTheme.tintFor(theme.tint4, palette),
+          tint5: PremiumTheme.tintFor(theme.tint5, palette),
+          tint6: PremiumTheme.tintFor(theme.tint6, palette),
+          tint7: PremiumTheme.tintFor(theme.tint7, palette),
+          tint8: PremiumTheme.tintFor(theme.tint8, palette),
+          tint9: PremiumTheme.tintFor(theme.tint9, palette),
+          textColor: palette.textPrimary,
+          secondaryTextColor: palette.textSecondary,
+          strongText: palette.textPrimary,
+          greyHover: palette.hover,
+          greySelect: palette.selected,
+          lightGreyHover: palette.mutedSurface,
+          toggleOffFill: palette.pressed,
+          progressBarBGColor: palette.mutedSurface,
+          toggleButtonBGColor: palette.pressed,
+          calendarWeekendBGColor: palette.surface,
+          gridRowCountColor: palette.textSecondary,
+          code: getFontStyle(
+            fontFamily: codeFontFamily,
+            fontColor: palette.textSecondary,
           ),
-          callout: fontStyle.copyWith(
+          callout: getFontStyle(
+            fontFamily: fontFamily,
             fontSize: FontSizes.s11,
-            color: theme.shader3,
+            fontColor: palette.textSecondary,
           ),
           calloutBGColor: EditorSurfaceStyle.calloutBackgroundFor(
             brightness,
-            theme.hoverBG3,
+            palette.mutedSurface,
             isPaper: isPaper,
           ),
-          tableCellBGColor: theme.surface,
-          caption: fontStyle.copyWith(
+          tableCellBGColor: palette.surface,
+          caption: getFontStyle(
+            fontFamily: fontFamily,
             fontSize: FontSizes.s11,
             fontWeight: defaultFontWeight,
-            color: theme.hint,
+            fontColor: palette.textMuted,
           ),
-          onBackground: onBackground,
-          background: background,
-          borderColor: theme.borderColor,
-          scrollbarColor: theme.scrollbarColor,
-          scrollbarHoverColor: theme.scrollbarHoverColor,
-          lightIconColor: theme.lightIconColor,
-          toolbarHoverColor: theme.toolbarHoverColor,
+          onBackground: palette.textPrimary,
+          background: palette.canvas,
+          borderColor: palette.border,
+          scrollbarColor: brightness == Brightness.dark
+              ? theme.scrollbarColor
+              : palette.textMuted.withValues(alpha: 0.4),
+          scrollbarHoverColor: brightness == Brightness.dark
+              ? theme.scrollbarHoverColor
+              : palette.accent,
+          lightIconColor: palette.textMuted,
+          toolbarHoverColor: palette.hover,
         ),
-        ToolbarColorExtension.fromBrightness(brightness),
+        ToolbarColorExtension.fromPalette(palette, brightness),
       ],
     );
   }

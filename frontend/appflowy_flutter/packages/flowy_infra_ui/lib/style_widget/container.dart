@@ -28,16 +28,19 @@ class FlowyContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
-        width: width,
-        height: height,
-        margin: margin,
-        alignment: align,
-        duration: duration ?? FlowyDurations.medium,
-        decoration: BoxDecoration(
-            color: color,
-            borderRadius: borderRadius,
-            boxShadow: shadows,
-            border: border),
-        child: child);
+      width: width,
+      height: height,
+      margin: margin,
+      alignment: align,
+      duration: duration ?? FlowyDurations.medium,
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: borderRadius,
+        boxShadow: shadows,
+        border: border,
+      ),
+      child: child,
+    );
   }
 }

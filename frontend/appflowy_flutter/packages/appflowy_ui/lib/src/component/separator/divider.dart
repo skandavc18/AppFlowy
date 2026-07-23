@@ -6,7 +6,7 @@ class AFDivider extends StatelessWidget {
     super.key,
     this.axis = Axis.horizontal,
     this.color,
-    this.thickness = 1.0,
+    this.thickness = 0.5,
     this.spacing = 0.0,
     this.startIndent = 0.0,
     this.endIndent = 0.0,

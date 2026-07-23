@@ -6,7 +6,9 @@ import 'package:appflowy/shared/clipboard_state.dart';
 import 'package:appflowy/shared/easy_localiation_service.dart';
 import 'package:appflowy/shared/feature_flags.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
-import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/premium_theme_backdrop.dart';
+import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/user_settings_service.dart';
@@ -243,6 +245,9 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
                     theme: state.lightTheme,
                     darkTheme: state.darkTheme,
                     themeMode: state.themeMode,
+                    themeAnimationDuration:
+                        PremiumTheme.themeTransitionDuration,
+                    themeAnimationCurve: Curves.easeOutCubic,
                     localizationsDelegates: context.localizationDelegates,
                     supportedLocales: context.supportedLocales,
                     locale: state.locale,
@@ -257,29 +262,34 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
                           ? themeBuilder.light(fontFamily: fontFamily)
                           : themeBuilder.dark(fontFamily: fontFamily);
                       return AnimatedAppFlowyTheme(
-                        data: PaperTheme.appFlowyTheme(
+                        data: PremiumTheme.appFlowyTheme(
                           base: baseAppFlowyTheme,
-                          enabled: PaperTheme.isPaper(state.appTheme),
+                          palette: PremiumThemeExtension.of(context),
                           brightness: brightness,
                         ),
-                        child: DefaultTextStyle.merge(
-                          style: AppTextRendering.rootStyleFor(brightness),
-                          child: MediaQuery(
-                            // use the 1.0 as the textScaleFactor to avoid the text size
-                            //  affected by the system setting.
-                            data: MediaQuery.of(context).copyWith(
-                              textScaler:
-                                  TextScaler.linear(state.textScaleFactor),
-                            ),
-                            child: overlayManagerBuilder(
-                              context,
-                              !UniversalPlatform.isMobile &&
-                                      FeatureFlag.search.isOn
-                                  ? CommandPalette(
-                                      notifier: _commandPaletteNotifier,
-                                      child: child,
-                                    )
-                                  : child,
+                        child: PremiumThemeBackdrop(
+                          child: DefaultTextStyle.merge(
+                            style: AppTextRendering.rootStyleFor(brightness),
+                            child: MediaQuery(
+                              // Keep app typography independent from the host
+                              // OS scale while honoring AppFlowy's own setting.
+                              data: MediaQuery.of(context).copyWith(
+                                textScaler:
+                                    TextScaler.linear(state.textScaleFactor),
+                              ),
+                              child: PremiumScrollScope(
+                                enabled: state.enableKineticScrolling,
+                                child: overlayManagerBuilder(
+                                  context,
+                                  !UniversalPlatform.isMobile &&
+                                          FeatureFlag.search.isOn
+                                      ? CommandPalette(
+                                          notifier: _commandPaletteNotifier,
+                                          child: child,
+                                        )
+                                      : child,
+                                ),
+                              ),
                             ),
                           ),
                         ),

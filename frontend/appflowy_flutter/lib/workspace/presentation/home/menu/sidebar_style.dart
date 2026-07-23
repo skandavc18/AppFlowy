@@ -3,6 +3,7 @@ import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dar
 import 'package:flutter/material.dart';
 
 import '../../../../shared/paper_theme.dart';
+import '../../../../shared/premium_theme.dart';
 
 abstract final class SidebarStyle {
   static const defaultLightBackground = Color(0xFFFAF9F6);
@@ -47,6 +48,7 @@ abstract final class SidebarStyle {
       brightness == Brightness.light ? lightSearchIcon : darkSearchIcon;
 
   static Color searchIconColor(BuildContext context) =>
+      PremiumThemeExtension.maybeOf(context)?.textSecondary ??
       searchIconColorFor(Theme.of(context).brightness);
 
   static Color hoverBackgroundFor(Brightness brightness) =>
@@ -61,30 +63,38 @@ abstract final class SidebarStyle {
   static Color background(BuildContext context) => backgroundFor(
         Theme.of(context).brightness,
         isPaper: PaperTheme.isEnabled(context),
-        lightFallback: Theme.of(context).colorScheme.surfaceContainerHighest,
+        lightFallback: PremiumThemeExtension.maybeOf(context)?.sidebar ??
+            Theme.of(context).colorScheme.surfaceContainerHighest,
       );
 
   static Color selectedBackground(BuildContext context) =>
+      PremiumThemeExtension.maybeOf(context)?.selected ??
       selectedBackgroundFor(Theme.of(context).brightness);
+
+  static Color edgeBorder(BuildContext context) =>
+      PremiumThemeExtension.maybeOf(context)?.border ??
+      edgeBorderFor(Theme.of(context).brightness);
 
   static ThemeData themeData(BuildContext context) {
     final brightness = Theme.of(context).brightness;
     final base = SidebarTypography.themeData(context);
-    final primaryText = primaryTextFor(brightness);
-    final secondaryText = secondaryTextFor(brightness);
+    final palette = PremiumThemeExtension.maybeOf(context);
+    final primaryText = palette?.textPrimary ?? primaryTextFor(brightness);
+    final secondaryText =
+        palette?.textSecondary ?? secondaryTextFor(brightness);
 
     return base.copyWith(
       colorScheme: base.colorScheme.copyWith(
-        secondary: hoverBackgroundFor(brightness),
+        secondary: palette?.hoverOverlay ?? hoverBackgroundFor(brightness),
         onSecondary: primaryText,
         tertiary: primaryText,
         onSurface: primaryText,
-        surfaceContainerHighest: backgroundFor(brightness),
+        surfaceContainerHighest: palette?.sidebar ?? backgroundFor(brightness),
       ),
-      dividerColor: edgeBorderFor(brightness),
+      dividerColor: palette?.border ?? edgeBorderFor(brightness),
       hintColor: secondaryText,
       iconTheme: base.iconTheme.copyWith(
-        color: iconColorFor(brightness),
+        color: palette?.textSecondary ?? iconColorFor(brightness),
         size: HomeSizes.sidebarActionIconSize,
       ),
       textTheme: base.textTheme.copyWith(

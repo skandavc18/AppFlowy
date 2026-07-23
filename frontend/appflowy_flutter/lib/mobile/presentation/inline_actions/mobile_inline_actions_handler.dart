@@ -175,7 +175,6 @@ class _MobileInlineActionsHandlerState
                 ),
               )
             : SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
                 child: Material(
                   color: Colors.transparent,
                   child: Padding(

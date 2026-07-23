@@ -23,6 +23,43 @@ final fileSlashMenuItem = _buildFileSlashMenuItem(
   icon: FlowySvgs.slash_menu_icon_file_s,
 );
 
+final pdfSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'PDF',
+  keywords: const ['pdf', 'document', 'annotation'],
+);
+final htmlSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'HTML',
+  keywords: const ['html', 'web page', 'javascript', 'css'],
+);
+final markdownSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'Markdown / markup',
+  keywords: const ['markdown', 'markup', 'md'],
+);
+final zipSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'ZIP archive',
+  keywords: const ['zip', 'archive', 'compressed'],
+);
+final csvSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'CSV table',
+  keywords: const ['csv', 'tsv', 'table'],
+);
+final jsonSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'JSON',
+  keywords: const ['json', 'data'],
+);
+final codeFileSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'Code file',
+  keywords: const ['code', 'source', 'python', 'javascript', 'java', 'cpp'],
+);
+final textFileSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'Text file',
+  keywords: const ['text', 'txt', 'log', 'config'],
+);
+final notebookSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: 'Jupyter notebook',
+  keywords: const ['jupyter', 'notebook', 'ipynb', 'python'],
+);
+
 final audioSlashMenuItem = _buildFileSlashMenuItem(
   getName: () => LocaleKeys.document_slashMenu_name_audio.tr(),
   keywords: const ['audio', 'music', 'sound', 'voice', 'recording'],
@@ -52,10 +89,27 @@ SelectionMenuItem _buildFileSlashMenuItem({
       ),
     );
 
+SelectionMenuItem _buildPreviewFileSlashMenuItem({
+  required String name,
+  required List<String> keywords,
+}) =>
+    SelectionMenuItem(
+      getName: () => name,
+      keywords: keywords,
+      handler: (editorState, _, __) async =>
+          editorState.insertFileBlock(showPreview: true),
+      nameBuilder: slashMenuItemNameBuilder,
+      icon: (_, isSelected, style) => SelectableSvgWidget(
+        data: FlowySvgs.slash_menu_icon_file_s,
+        isSelected: isSelected,
+        style: style,
+      ),
+    );
+
 extension on EditorState {
-  Future<void> insertFileBlock() async {
+  Future<void> insertFileBlock({bool showPreview = false}) async {
     final fileGlobalKey = GlobalKey<FileBlockComponentState>();
-    await insertEmptyFileBlock(fileGlobalKey);
+    await insertEmptyFileBlock(fileGlobalKey, showPreview: showPreview);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       fileGlobalKey.currentState?.controller.show();

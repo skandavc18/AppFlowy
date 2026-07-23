@@ -255,16 +255,15 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
               isPaper: PaperTheme.isEnabled(context),
             ),
             width: dialogWidth,
-            elevation: 32,
-            shadowColor: Colors.black.withValues(
-              alpha: Theme.of(context).brightness == Brightness.light
-                  ? 0.34
-                  : 0.55,
-            ),
+            elevation: 1,
+            shadowColor: Theme.of(context).shadowColor,
             surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: BorderSide(color: theme.borderColorScheme.primary),
+              borderRadius: BorderRadius.circular(17),
+              side: BorderSide(
+                color: theme.borderColorScheme.primary,
+                width: 0.5,
+              ),
             ),
             alignment: Alignment.center,
             insetPadding: const EdgeInsets.symmetric(

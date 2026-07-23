@@ -4,8 +4,10 @@ import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/object_type_typography.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
+import 'package:appflowy/workspace/application/settings/appearance/mobile_appearance.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -30,7 +32,7 @@ void main() {
         darkFallback,
         isPaper: true,
       ),
-      const Color(0xFFFFF8EE),
+      PaperTheme.popupBackground,
     );
     expect(
       ContextMenuSurfaceStyle.lightBackground,
@@ -66,7 +68,7 @@ void main() {
         darkFallback,
         isPaper: true,
       ),
-      const Color(0xFFFFFCF5),
+      PaperTheme.editorBackground,
     );
     expect(
       EditorSurfaceStyle.canvasBackgroundFor(
@@ -83,6 +85,30 @@ void main() {
       ),
       darkFallback,
     );
+    expect(
+      EditorSurfaceStyle.codeBlockHeaderBackgroundFor(
+        Brightness.light,
+        darkFallback,
+        isPaper: true,
+      ),
+      PaperTheme.codeBlockHeaderBackground,
+    );
+    expect(
+      EditorSurfaceStyle.codeBlockBorderFor(
+        Brightness.light,
+        darkFallback,
+        isPaper: true,
+      ),
+      PaperTheme.codeBlockBorder,
+    );
+    expect(
+      EditorSurfaceStyle.codeBlockHeaderBackgroundFor(
+        Brightness.dark,
+        darkFallback,
+        isPaper: true,
+      ),
+      darkFallback,
+    );
   });
 
   test('Paper themes dialogs, settings sidebar, and AppFlowy surfaces', () {
@@ -92,9 +118,10 @@ void main() {
       defaultFontFamily,
       builtInCodeFontFamily,
     );
-    final appFlowyTheme = PaperTheme.appFlowyTheme(
+    final palette = materialTheme.extension<PremiumThemeExtension>()!;
+    final appFlowyTheme = PremiumTheme.appFlowyTheme(
       base: AppFlowyDefaultTheme().light(),
-      enabled: true,
+      palette: palette,
       brightness: Brightness.light,
     );
 
@@ -116,27 +143,82 @@ void main() {
     );
     expect(
       appFlowyTheme.backgroundColorScheme.primary,
-      ContextMenuSurfaceStyle.lightBackground,
+      PaperTheme.editorBackground,
     );
     expect(
       appFlowyTheme.surfaceContainerColorScheme.layer01,
       PaperTheme.sidebarBackground,
     );
+    expect(
+      appFlowyTheme.surfaceContainerColorScheme.layer03,
+      PaperTheme.controlSelected,
+    );
+    expect(
+      appFlowyTheme.fillColorScheme.primary,
+      PaperTheme.controlBackground,
+    );
+    expect(
+      appFlowyTheme.fillColorScheme.contentHover,
+      PaperTheme.hoverOverlay,
+    );
+    expect(
+      appFlowyTheme.fillColorScheme.themeSelect,
+      PaperTheme.selectedOverlay,
+    );
+    expect(appFlowyTheme.fillColorScheme.themeThick, PaperTheme.accent);
+    expect(
+      appFlowyTheme.borderColorScheme.primary,
+      PaperTheme.codeBlockBorder,
+    );
+    expect(materialTheme.colorScheme.primary, PaperTheme.accent);
+    expect(materialTheme.colorScheme.surface, PaperTheme.editorBackground);
+    expect(
+      materialTheme.colorScheme.surfaceContainerHighest,
+      PaperTheme.sidebarBackground,
+    );
+    expect(materialTheme.dividerColor, PaperTheme.codeBlockBorder);
+    expect(materialTheme.hoverColor, PaperTheme.hoverOverlay);
   });
 
-  test('Default theme retains untinted surfaces', () {
+  test('Paper warms mobile Material surfaces and interactions', () {
+    final materialTheme = MobileAppearance().getThemeData(
+      paperTheme,
+      Brightness.light,
+      defaultFontFamily,
+      builtInCodeFontFamily,
+    );
+
+    expect(materialTheme.scaffoldBackgroundColor, PaperTheme.editorBackground);
+    expect(materialTheme.colorScheme.surface, PaperTheme.editorBackground);
+    expect(
+      materialTheme.colorScheme.surfaceContainerLowest,
+      PaperTheme.popupBackground,
+    );
+    expect(
+      materialTheme.colorScheme.surfaceContainerHighest,
+      PaperTheme.sidebarBackground,
+    );
+    expect(materialTheme.colorScheme.primary, PaperTheme.accent);
+    expect(materialTheme.dividerColor, PaperTheme.codeBlockBorder);
+  });
+
+  test('Default Light uses warm premium surfaces without Paper tint', () {
     final materialTheme = DesktopAppearance().getThemeData(
       AppTheme.fallback,
       Brightness.light,
       defaultFontFamily,
       builtInCodeFontFamily,
     );
-    final appFlowyTheme = AppFlowyDefaultTheme().light();
-
-    expect(
-      materialTheme.dialogBackgroundColor,
-      AppTheme.fallback.lightTheme.surface,
+    final palette = materialTheme.extension<PremiumThemeExtension>()!;
+    final appFlowyTheme = PremiumTheme.appFlowyTheme(
+      base: AppFlowyDefaultTheme().light(),
+      palette: palette,
+      brightness: Brightness.light,
     );
+
+    expect(materialTheme.dialogBackgroundColor, palette.floatingSurface);
+    expect(materialTheme.dialogBackgroundColor, isNot(Colors.white));
+    expect(palette.isPaper, isFalse);
     expect(
       appFlowyTheme.surfaceColorScheme.primary,
       isNot(ContextMenuSurfaceStyle.lightBackground),
@@ -180,7 +262,10 @@ void main() {
     );
 
     final textStyle = codeBlockStyle.textStyle!;
-    expect(textStyle.fontFamily, builtInCodeFontFamily);
+    expect(
+      textStyle.fontFamily?.replaceAll(' ', ''),
+      contains('JetBrainsMono'),
+    );
     expect(textStyle.fontWeight, FontWeight.w500);
     expect(textStyle.fontVariations, flowyRegularFontVariations);
     expect(textStyle.fontFeatures, isNotEmpty);

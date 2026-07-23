@@ -81,7 +81,11 @@ class _AFDropDownMenuState<T extends AFDropDownMenuMixin>
           ),
           decoration: BoxDecoration(
             color: theme.surfaceColorScheme.layer01,
-            borderRadius: BorderRadius.circular(theme.borderRadius.m),
+            borderRadius: BorderRadius.circular(theme.borderRadius.l),
+            border: Border.all(
+              color: theme.borderColorScheme.primary,
+              width: 0.6,
+            ),
             boxShadow: theme.shadow.small,
           ),
           popover: (popoverContext) {
@@ -119,7 +123,9 @@ class _AFDropDownMenuState<T extends AFDropDownMenuMixin>
                   controller.show();
                 }
               },
-              child: Container(
+              child: AnimatedContainer(
+                duration: AppFlowyMotion.fast,
+                curve: AppFlowyMotion.standardCurve,
                 constraints: const BoxConstraints.tightFor(height: 32),
                 decoration: BoxDecoration(
                   border: Border.all(
@@ -130,10 +136,11 @@ class _AFDropDownMenuState<T extends AFDropDownMenuMixin>
                             : isHovering
                                 ? theme.borderColorScheme.primaryHover
                                 : theme.borderColorScheme.primary,
+                    width: isOpen ? 1 : 0.6,
                   ),
                   color: widget.isDisabled
                       ? theme.fillColorScheme.contentHover
-                      : null,
+                      : theme.surfaceColorScheme.layer01,
                   borderRadius: BorderRadius.circular(theme.borderRadius.m),
                 ),
                 padding: EdgeInsets.symmetric(
@@ -299,7 +306,6 @@ class _DropdownPopoverContents<T extends AFDropDownMenuMixin>
       autofocus: true,
       child: ListView.builder(
         itemCount: items.length,
-        physics: const ClampingScrollPhysics(),
         padding: EdgeInsets.all(theme.spacing.m),
         shrinkWrap: true,
         itemBuilder: itemBuilder,

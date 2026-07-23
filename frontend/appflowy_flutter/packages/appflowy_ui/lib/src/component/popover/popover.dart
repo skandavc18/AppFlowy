@@ -222,19 +222,35 @@ class _AFPopoverState extends State<AFPopover> {
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
 
-    final effectiveEffects = widget.effects ?? [];
+    final effectiveEffects = widget.effects ??
+        const [
+          FadeEffect(
+            duration: AppFlowyMotion.standard,
+            curve: AppFlowyMotion.enterCurve,
+          ),
+          MoveEffect(
+            begin: Offset(0, 2),
+            end: Offset.zero,
+            duration: AppFlowyMotion.standard,
+            curve: AppFlowyMotion.enterCurve,
+          ),
+        ];
     final effectivePadding = widget.padding ??
         EdgeInsets.symmetric(
           horizontal: theme.spacing.m,
-          vertical: theme.spacing.l,
+          vertical: theme.spacing.m,
         );
 
     final effectiveAnchor = widget.anchor ?? const ShadAnchorAuto();
     final effectiveDecoration = widget.decoration ??
         BoxDecoration(
           color: theme.surfaceColorScheme.layer01,
-          borderRadius: BorderRadius.circular(theme.borderRadius.m),
-          boxShadow: theme.shadow.medium,
+          borderRadius: BorderRadius.circular(theme.borderRadius.l),
+          border: Border.all(
+            color: theme.borderColorScheme.primary,
+            width: 0.6,
+          ),
+          boxShadow: theme.shadow.small,
         );
 
     final effectiveFilter = widget.filter;

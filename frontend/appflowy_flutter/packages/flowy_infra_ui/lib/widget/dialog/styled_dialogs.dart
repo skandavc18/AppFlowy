@@ -44,16 +44,16 @@ class StyledDialog extends StatelessWidget {
     this.padding,
     this.margin,
     this.bgColor,
-    this.borderRadius = const BorderRadius.all(Radius.circular(6)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(16)),
     this.shrinkWrap = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    Widget innerContent = Container(
-      padding: padding ??
-          EdgeInsets.symmetric(horizontal: Insets.xxl, vertical: Insets.xl),
-      color: bgColor ?? Theme.of(context).colorScheme.surface,
+    final theme = Theme.of(context);
+    Widget innerContent = Padding(
+      padding:
+          padding ?? const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
       child: child,
     );
 
@@ -74,14 +74,37 @@ class StyledDialog extends StatelessWidget {
             maxHeight: maxHeight ?? double.infinity,
             maxWidth: maxWidth ?? double.infinity,
           ),
-          child: ClipRRect(
-            borderRadius: borderRadius ?? BorderRadius.zero,
-            child: SingleChildScrollView(
-              physics: StyledScrollPhysics(),
-              //https://medium.com/saugo360/https-medium-com-saugo360-flutter-using-overlay-to-display-floating-widgets-2e6d0e8decb9
-              child: Material(
-                type: MaterialType.transparency,
-                child: innerContent,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: bgColor ?? theme.cardColor,
+              borderRadius: borderRadius,
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant,
+                width: 0.6,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: theme.shadowColor.withValues(alpha: 0.12),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                  spreadRadius: -8,
+                ),
+                BoxShadow(
+                  color: theme.shadowColor.withValues(alpha: 0.06),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                  spreadRadius: -2,
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: borderRadius ?? BorderRadius.zero,
+              child: SingleChildScrollView(
+                physics: StyledScrollPhysics(),
+                child: Material(
+                  type: MaterialType.transparency,
+                  child: innerContent,
+                ),
               ),
             ),
           ),
@@ -96,7 +119,7 @@ class Dialogs {
       {required Widget child}) async {
     return await Navigator.of(context).push(
       StyledDialogRoute(
-        barrier: DialogBarrier(color: Colors.black.withValues(alpha: 0.4)),
+        barrier: DialogBarrier(color: Colors.black.withValues(alpha: 0.28)),
         pageBuilder: (BuildContext buildContext, Animation<double> animation,
             Animation<double> secondaryAnimation) {
           return SafeArea(child: child);
@@ -127,7 +150,7 @@ class StyledDialogRoute<T> extends PopupRoute<T> {
   StyledDialogRoute({
     required RoutePageBuilder pageBuilder,
     required this.barrier,
-    Duration transitionDuration = const Duration(milliseconds: 300),
+    Duration transitionDuration = const Duration(milliseconds: 180),
     RouteTransitionsBuilder? transitionBuilder,
     super.settings,
   })  : _pageBuilder = pageBuilder,
@@ -167,8 +190,12 @@ class StyledDialogRoute<T> extends PopupRoute<T> {
       Animation<double> secondaryAnimation, Widget child) {
     if (_transitionBuilder == null) {
       return FadeTransition(
-          opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
-          child: child);
+        opacity: CurvedAnimation(
+          parent: animation,
+          curve: const Cubic(0.2, 0, 0, 1),
+        ),
+        child: child,
+      );
     } else {
       return _transitionBuilder!(context, animation, secondaryAnimation, child);
     } // Some default transition

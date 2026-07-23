@@ -117,7 +117,11 @@ class SettingsWorkspaceView extends StatelessWidget {
               ],
               SettingsCategory(
                 title: LocaleKeys.settings_workspacePage_appearance_title.tr(),
-                children: const [AppearanceSelector()],
+                children: const [
+                  AppearanceSelector(),
+                  VSpace(16),
+                  KineticScrollingSwitcher(),
+                ],
               ),
               const VSpace(16),
               // const SettingsCategorySpacer(),
@@ -460,6 +464,44 @@ class EnableRTLItemsSwitcher extends StatelessWidget {
           onChanged: (value) => context
               .read<AppearanceSettingsCubit>()
               .setEnableRTLToolbarItems(value),
+        ),
+      ],
+    );
+  }
+}
+
+@visibleForTesting
+class KineticScrollingSwitcher extends StatelessWidget {
+  const KineticScrollingSwitcher({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final appearance = context.watch<AppearanceSettingsCubit>().state;
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FlowyText.regular(
+                LocaleKeys.settings_appearance_kineticScrolling_label.tr(),
+                fontSize: 16,
+              ),
+              const VSpace(4),
+              FlowyText.regular(
+                LocaleKeys.settings_appearance_kineticScrolling_hint.tr(),
+                fontSize: 13,
+                color: AFThemeExtension.of(context).secondaryTextColor,
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+        const HSpace(16),
+        Toggle(
+          value: appearance.enableKineticScrolling,
+          onChanged:
+              context.read<AppearanceSettingsCubit>().setKineticScrolling,
         ),
       ],
     );

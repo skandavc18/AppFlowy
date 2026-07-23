@@ -444,7 +444,6 @@ class SecondaryContentArea extends StatelessWidget {
           const VSpace(4.0),
           Flexible(
             child: SingleChildScrollView(
-              physics: ClampingScrollPhysics(),
               padding: EdgeInsets.symmetric(horizontal: 14.0),
               child: AIMarkdownText(
                 markdown: markdownText,

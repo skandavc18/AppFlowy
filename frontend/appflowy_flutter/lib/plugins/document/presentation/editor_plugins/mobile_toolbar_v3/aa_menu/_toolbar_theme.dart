@@ -1,21 +1,22 @@
 // workaround for toolbar theme color.
 
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:flutter/material.dart';
 
 class ToolbarColorExtension extends ThemeExtension<ToolbarColorExtension> {
   factory ToolbarColorExtension.light() => const ToolbarColorExtension(
-        toolbarBackgroundColor: Color(0xFFFFFFFF),
-        toolbarItemIconColor: Color(0xFF1F2329),
-        toolbarItemIconDisabledColor: Color(0xFF999BA0),
-        toolbarItemIconSelectedColor: Color(0x1F232914),
-        toolbarItemSelectedBackgroundColor: Color(0xFFF2F2F2),
-        toolbarMenuBackgroundColor: Color(0xFFFFFFFF),
-        toolbarMenuItemBackgroundColor: Color(0xFFF2F2F7),
-        toolbarMenuItemSelectedBackgroundColor: Color(0xFF00BCF0),
-        toolbarMenuIconColor: Color(0xFF1F2329),
-        toolbarMenuIconDisabledColor: Color(0xFF999BA0),
-        toolbarMenuIconSelectedColor: Color(0xFFFFFFFF),
-        toolbarShadowColor: Color(0x2D000000),
+        toolbarBackgroundColor: Color(0xFFFFFEFA),
+        toolbarItemIconColor: Color(0xFF62625D),
+        toolbarItemIconDisabledColor: Color(0xFF8D8C84),
+        toolbarItemIconSelectedColor: Color(0xFF356B77),
+        toolbarItemSelectedBackgroundColor: Color(0xFFE8F0F0),
+        toolbarMenuBackgroundColor: Color(0xFFFFFEFA),
+        toolbarMenuItemBackgroundColor: Color(0xFFF3F3EF),
+        toolbarMenuItemSelectedBackgroundColor: Color(0xFF356B77),
+        toolbarMenuIconColor: Color(0xFF252522),
+        toolbarMenuIconDisabledColor: Color(0xFF8D8C84),
+        toolbarMenuIconSelectedColor: Color(0xFFFAFAF6),
+        toolbarShadowColor: Color(0x14211F1B),
       );
 
   factory ToolbarColorExtension.dark() => const ToolbarColorExtension(
@@ -37,6 +38,30 @@ class ToolbarColorExtension extends ThemeExtension<ToolbarColorExtension> {
       brightness == Brightness.light
           ? ToolbarColorExtension.light()
           : ToolbarColorExtension.dark();
+
+  factory ToolbarColorExtension.fromPalette(
+    PremiumThemeExtension palette,
+    Brightness brightness,
+  ) {
+    if (brightness == Brightness.dark) {
+      return ToolbarColorExtension.dark();
+    }
+
+    return ToolbarColorExtension(
+      toolbarBackgroundColor: palette.floatingSurface,
+      toolbarItemIconColor: palette.textSecondary,
+      toolbarItemIconDisabledColor: palette.textMuted.withValues(alpha: 0.58),
+      toolbarItemIconSelectedColor: palette.accent,
+      toolbarItemSelectedBackgroundColor: palette.selected,
+      toolbarMenuBackgroundColor: palette.floatingSurface,
+      toolbarMenuItemBackgroundColor: palette.mutedSurface,
+      toolbarMenuItemSelectedBackgroundColor: palette.accent,
+      toolbarMenuIconColor: palette.textPrimary,
+      toolbarMenuIconDisabledColor: palette.textMuted.withValues(alpha: 0.58),
+      toolbarMenuIconSelectedColor: palette.onAccent,
+      toolbarShadowColor: palette.shadow,
+    );
+  }
 
   const ToolbarColorExtension({
     required this.toolbarBackgroundColor,
