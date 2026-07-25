@@ -1023,6 +1023,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       sourceViews: [widget.view],
       rootId: rootId,
       rootName: rootName,
+      rootIcon: useCurrentSpace ? null : currentWorkspace.icon,
       operation: operation,
     );
     if (!mounted || destinationId == null) {

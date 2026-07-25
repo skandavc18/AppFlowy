@@ -2,6 +2,8 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/search_result_list_bloc.dart';
+import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_extension.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_ask_ai_entrance.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -22,12 +24,20 @@ class SearchResultList extends StatefulWidget {
     required this.cachedViews,
     required this.resultItems,
     required this.resultSummaries,
+    this.currentWorkspaceId,
+    this.currentWorkspaceName,
+    this.currentWorkspaceIcon,
+    this.currentWorkspaceCover,
     super.key,
   });
 
   final Map<String, ViewPB> cachedViews;
   final List<SearchResultItem> resultItems;
   final List<SearchSummaryPB> resultSummaries;
+  final String? currentWorkspaceId;
+  final String? currentWorkspaceName;
+  final String? currentWorkspaceIcon;
+  final PageStyleCover? currentWorkspaceCover;
 
   @override
   State<SearchResultList> createState() => _SearchResultListState();
@@ -35,18 +45,21 @@ class SearchResultList extends StatefulWidget {
 
 class _SearchResultListState extends State<SearchResultList> {
   late final SearchResultListBloc bloc;
+  late Map<String, ViewPB> cachedViews;
   ViewPB? narrowFolderView;
 
   @override
   void initState() {
     super.initState();
     bloc = SearchResultListBloc();
+    _syncCachedViews();
     _syncSelection();
   }
 
   @override
   void didUpdateWidget(covariant SearchResultList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _syncCachedViews();
     final folderId = narrowFolderView?.id;
     if (folderId != null &&
         !widget.resultItems.any((item) => item.id == folderId)) {
@@ -70,15 +83,15 @@ class _SearchResultListState extends State<SearchResultList> {
           final pageId = state.openPageId;
           if (pageId != null && pageId.isNotEmpty) {
             FlowyOverlay.pop(context);
-            pageId.navigateTo();
+            final view = cachedViews[pageId];
+            view == null ? pageId.navigateTo() : view.navigateTo();
           }
         },
         child: BlocBuilder<SearchResultListBloc, SearchResultListState>(
           builder: (context, state) {
             final selectedResult = _selectedResult(state);
-            final selectedView = selectedResult == null
-                ? null
-                : widget.cachedViews[selectedResult.id];
+            final selectedView =
+                selectedResult == null ? null : cachedViews[selectedResult.id];
             return LayoutBuilder(
               builder: (context, constrains) {
                 final maxWidth = constrains.maxWidth;
@@ -87,12 +100,11 @@ class _SearchResultListState extends State<SearchResultList> {
                     hidePreview ? maxWidth : commandPaletteListWidth(maxWidth);
                 final narrowFolder = narrowFolderView == null
                     ? null
-                    : widget.cachedViews[narrowFolderView!.id] ??
-                        narrowFolderView;
+                    : cachedViews[narrowFolderView!.id] ?? narrowFolderView;
                 if (hidePreview && narrowFolder != null) {
                   return PageInspectionPanel(
                     view: narrowFolder,
-                    cachedViews: widget.cachedViews,
+                    cachedViews: cachedViews,
                     currentUserId: context
                         .read<UserWorkspaceBloc?>()
                         ?.state
@@ -112,7 +124,7 @@ class _SearchResultListState extends State<SearchResultList> {
                       Expanded(
                         child: PageInspectionPanel(
                           view: selectedView,
-                          cachedViews: widget.cachedViews,
+                          cachedViews: cachedViews,
                           currentUserId: context
                               .read<UserWorkspaceBloc?>()
                               ?.state
@@ -201,7 +213,7 @@ class _SearchResultListState extends State<SearchResultList> {
                               key: ValueKey(item.id),
                               item: item,
                               isNarrowWindow: hidePreview,
-                              view: widget.cachedViews[item.id],
+                              view: cachedViews[item.id],
                               isHovered: hoveredId == item.id,
                               onFolderSelected: hidePreview
                                   ? (view) =>
@@ -228,12 +240,30 @@ class _SearchResultListState extends State<SearchResultList> {
   }
 
   List<SearchResultItem> get _visibleResultItems {
-    if (widget.cachedViews.isEmpty) {
+    if (cachedViews.isEmpty) {
       return widget.resultItems;
     }
     return widget.resultItems
-        .where((item) => widget.cachedViews.containsKey(item.id))
+        .where((item) => cachedViews.containsKey(item.id))
         .toList();
+  }
+
+  void _syncCachedViews() {
+    cachedViews = widget.cachedViews;
+    final workspaceId = widget.currentWorkspaceId;
+    final workspaceRoot = workspaceId == null ? null : cachedViews[workspaceId];
+    if (workspaceId == null || workspaceRoot == null) {
+      return;
+    }
+    cachedViews = {
+      ...cachedViews,
+      workspaceId: workspaceRoot.asWorkspaceRootFolder(
+        workspaceId: workspaceId,
+        name: widget.currentWorkspaceName ?? workspaceRoot.name,
+        icon: widget.currentWorkspaceIcon,
+        cover: widget.currentWorkspaceCover,
+      ),
+    };
   }
 
   SearchResultItem? _selectedResult(SearchResultListState state) {

@@ -15,6 +15,7 @@ import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/user/user_workspace_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/command_palette.dart';
 import 'package:appflowy/workspace/presentation/home/af_focus_manager.dart';
 import 'package:appflowy/workspace/presentation/home/errors/workspace_failed_screen.dart';
@@ -110,6 +111,9 @@ class DesktopHomeScreen extends StatelessWidget {
                 listener: (context, state) {
                   final view = state.latestView;
                   if (view != null) {
+                    final isWorkspaceRoot = view.isWorkspaceRootFor(
+                      state.workspaceSetting.workspaceId,
+                    );
                     // Only open the last opened view if the [TabsState.currentPageManager] current opened plugin is blank and the last opened view is not null.
                     // All opened widgets that display on the home screen are in the form of plugins. There is a list of built-in plugins defined in the [PluginType] enum, including board, grid and trash.
                     final currentPageManager =
@@ -117,13 +121,16 @@ class DesktopHomeScreen extends StatelessWidget {
 
                     if (currentPageManager.plugin.pluginType ==
                         PluginType.blank) {
-                      getIt<TabsBloc>().add(
-                        TabsEvent.openPlugin(plugin: view.plugin()),
-                      );
+                      context.read<TabsBloc>().openPlugin(
+                            view,
+                            setLatest: !isWorkspaceRoot,
+                          );
                     }
 
-                    // switch to the space that contains the last opened view
-                    _switchToSpace(view);
+                    if (!isWorkspaceRoot) {
+                      // switch to the space that contains the last opened view
+                      _switchToSpace(view);
+                    }
                   }
                 },
                 child: BlocBuilder<HomeSettingBloc, HomeSettingState>(

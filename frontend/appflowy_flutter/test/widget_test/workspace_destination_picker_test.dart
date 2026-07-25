@@ -1,6 +1,7 @@
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/move_to/workspace_destination_picker.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_result/appflowy_result.dart';
@@ -58,6 +59,7 @@ void main() {
           sourceViews: [source],
           rootId: 'root',
           rootName: 'Knowledge HQ',
+          rootIcon: '🚀',
           operation: WorkspaceDestinationOperation.move,
           repository: _DestinationRepository([
             source,
@@ -84,6 +86,10 @@ void main() {
     );
     expect(find.text('Database'), findsOneWidget);
     expect(find.byKey(const ValueKey('workspace-root-icon')), findsOneWidget);
+    expect(
+      tester.widget<WorkspaceIcon>(find.byType(WorkspaceIcon)).workspaceIcon,
+      '🚀',
+    );
 
     final tableTile = find.byKey(
       const ValueKey('workspace-destination-table'),

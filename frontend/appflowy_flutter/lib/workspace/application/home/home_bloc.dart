@@ -1,5 +1,7 @@
 import 'package:appflowy/user/application/user_listener.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart'
@@ -49,16 +51,38 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
           showLoading: (e) async {
             emit(state.copyWith(isLoading: e.isLoading));
           },
-          didReceiveWorkspaceSetting: (_DidReceiveWorkspaceSetting value) {
+          didReceiveWorkspaceSetting: (
+            _DidReceiveWorkspaceSetting value,
+          ) async {
             // the latest view is shared across all the members of the workspace.
 
-            final latestView = value.setting.hasLatestView()
-                ? value.setting.latestView
-                : state.latestView;
+            final hasLatestView = value.setting.hasLatestView();
+            var latestView =
+                hasLatestView ? value.setting.latestView : state.latestView;
+            var workspaceRootName = 'Workspace';
 
-            if (latestView != null && latestView.isSpace) {
-              // If the latest view is a space, we don't need to open it.
-              return;
+            if (hasLatestView &&
+                latestView?.isWorkspaceRootFor(value.setting.workspaceId) ==
+                    true) {
+              if (latestView!.name.isNotEmpty) {
+                workspaceRootName = latestView.name;
+              }
+              final result = await FolderEventSetLatestView(ViewIdPB()).send();
+              result.fold(
+                (_) {},
+                (error) => Log.error(
+                  'Failed to clear workspace root as latest view: $error',
+                ),
+              );
+              latestView = null;
+            }
+
+            if ((latestView == null || latestView.isSpace) &&
+                value.setting.workspaceId.isNotEmpty) {
+              latestView = workspaceRootFolderView(
+                workspaceId: value.setting.workspaceId,
+                name: workspaceRootName,
+              );
             }
 
             emit(

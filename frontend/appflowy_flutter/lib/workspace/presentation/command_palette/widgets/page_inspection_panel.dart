@@ -1,3 +1,4 @@
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -8,12 +9,14 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_item.dar
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'page_preview.dart';
 
@@ -54,7 +57,8 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
   @override
   void didUpdateWidget(covariant PageInspectionPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.view.id != widget.view.id) {
+    if (oldWidget.view.id != widget.view.id ||
+        oldWidget.view.isWorkspaceFolder != widget.view.isWorkspaceFolder) {
       isFavorite = widget.view.isFavorite;
       updatingFavorite = false;
       inspectedFolderId = widget.view.isWorkspaceFolder ? widget.view.id : null;
@@ -100,12 +104,15 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
     if (id == null) {
       return null;
     }
-    return widget.cachedViews[id] ??
-        (id == widget.view.id ? widget.view : null);
+    return id == widget.view.id ? widget.view : widget.cachedViews[id];
   }
 
   Widget _buildFolderInspection(BuildContext context, ViewPB folder) {
     final palette = FolderExplorerPalette.of(context);
+    final cover = folder.cover;
+    final collectionArtwork = FolderGalleryCollectionArtwork(
+      item: WorkspaceExplorerItem.fromView(folder),
+    );
     final children = widget.cachedViews.values
         .where((view) => view.parentViewId == folder.id)
         .toList(growable: false)
@@ -139,9 +146,18 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
             borderRadius: BorderRadius.circular(15),
             child: SizedBox(
               height: 142,
-              child: FolderGalleryCollectionArtwork(
-                item: WorkspaceExplorerItem.fromView(folder),
-              ),
+              width: double.infinity,
+              child: cover == null || cover.isNone
+                  ? collectionArtwork
+                  : ViewCoverImage(
+                      key: const ValueKey('command-palette-folder-cover'),
+                      cover: cover,
+                      userProfile:
+                          context.read<UserWorkspaceBloc?>()?.state.userProfile,
+                      width: double.infinity,
+                      height: 142,
+                      fallback: collectionArtwork,
+                    ),
             ),
           ),
         ),
@@ -293,24 +309,26 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
             onTap: () => widget.onOpen(view),
           ),
           const Spacer(),
-          FlowyTooltip(
-            message: LocaleKeys.disclosureAction_openNewTab.tr(),
-            child: FlowyIconButton(
-              key: const ValueKey('command-palette-open-new-tab-action'),
-              width: 32,
-              height: 32,
-              icon: Icon(
-                Icons.open_in_new_rounded,
-                size: 17,
-                color: theme.iconColorScheme.secondary,
+          if (!view.isWorkspaceRootFolder) ...[
+            FlowyTooltip(
+              message: LocaleKeys.disclosureAction_openNewTab.tr(),
+              child: FlowyIconButton(
+                key: const ValueKey('command-palette-open-new-tab-action'),
+                width: 32,
+                height: 32,
+                icon: Icon(
+                  Icons.open_in_new_rounded,
+                  size: 17,
+                  color: theme.iconColorScheme.secondary,
+                ),
+                onPressed: () {
+                  getIt<TabsBloc>().openTab(view);
+                  widget.onClose();
+                },
               ),
-              onPressed: () {
-                getIt<TabsBloc>().openTab(view);
-                widget.onClose();
-              },
             ),
-          ),
-          const HSpace(4),
+            const HSpace(4),
+          ],
           FlowyTooltip(
             message: isFavorite
                 ? LocaleKeys.disclosureAction_unfavorite.tr()

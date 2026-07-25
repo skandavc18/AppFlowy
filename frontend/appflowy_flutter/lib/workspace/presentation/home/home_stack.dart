@@ -651,7 +651,7 @@ class PageNotifier extends ChangeNotifier {
     required bool setLatest,
     bool disposeExisting = true,
   }) {
-    if (newPlugin.id != plugin.id && disposeExisting) {
+    if (!identical(newPlugin, plugin) && disposeExisting) {
       _plugin.dispose();
     }
 
@@ -669,10 +669,12 @@ class PageNotifier extends ChangeNotifier {
 
 // PageManager manages the view for one Tab
 class PageManager {
-  PageManager();
+  PageManager({Plugin? plugin})
+      : _notifier = PageNotifier(plugin: plugin),
+        _secondaryNotifier = PageNotifier(plugin: BlankPagePlugin());
 
-  final PageNotifier _notifier = PageNotifier();
-  final PageNotifier _secondaryNotifier = PageNotifier();
+  final PageNotifier _notifier;
+  final PageNotifier _secondaryNotifier;
 
   PageNotifier get notifier => _notifier;
   PageNotifier get secondaryNotifier => _secondaryNotifier;

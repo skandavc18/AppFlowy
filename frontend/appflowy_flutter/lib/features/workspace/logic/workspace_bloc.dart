@@ -436,18 +436,19 @@ class UserWorkspaceBloc extends Bloc<UserWorkspaceEvent, UserWorkspaceState> {
             : null);
     if (workspace == null) {
       Log.error('workspace not found: ${event.workspaceId}');
+      final result = FlowyResult<void, FlowyError>.failure(
+        FlowyError(
+          code: ErrorCode.Internal,
+          msg: LocaleKeys.workspaceFolderExplorer_workspaceUnavailable.tr(),
+        ),
+      );
+      event.completion?.complete(result);
       return emit(
         state.copyWith(
           actionResult: WorkspaceActionResult(
             actionType: WorkspaceActionType.updateCover,
             isLoading: false,
-            result: FlowyResult.failure(
-              FlowyError(
-                code: ErrorCode.Internal,
-                msg: LocaleKeys.workspaceFolderExplorer_workspaceUnavailable
-                    .tr(),
-              ),
-            ),
+            result: result,
           ),
         ),
       );
@@ -455,12 +456,14 @@ class UserWorkspaceBloc extends Bloc<UserWorkspaceEvent, UserWorkspaceState> {
 
     if (event.cover == workspace.cover) {
       Log.info('ignore same cover update');
+      final result = FlowyResult<void, FlowyError>.success(null);
+      event.completion?.complete(result);
       return emit(
         state.copyWith(
           actionResult: WorkspaceActionResult(
             actionType: WorkspaceActionType.updateCover,
             isLoading: false,
-            result: FlowyResult.success(null),
+            result: result,
           ),
         ),
       );
@@ -506,6 +509,7 @@ class UserWorkspaceBloc extends Bloc<UserWorkspaceEvent, UserWorkspaceState> {
         ),
       ),
     );
+    event.completion?.complete(result);
   }
 
   Future<void> _onLeaveWorkspace(

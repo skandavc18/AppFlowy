@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:appflowy/features/workspace/application/workspace_cover_codec.dart';
 import 'package:appflowy/features/workspace/data/repositories/workspace_repository.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/upload_image_menu/upload_image_menu.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
@@ -911,7 +913,8 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('workspace root generates and persists a missing cover', (
+  testWidgets('workspace root generates a missing cover without an eager write',
+      (
     tester,
   ) async {
     final root = ViewPB(
@@ -969,20 +972,127 @@ void main() {
         ),
       ),
     );
+    await tester.pumpAndSettle();
+
+    verifyNever(
+      () => workspaceRepository.updateWorkspaceCover(
+        workspaceId: root.id,
+        cover: any(named: 'cover'),
+      ),
+    );
+    expect(find.byType(ViewCoverImage), findsOneWidget);
+    expect(find.text('Change Cover'), findsOneWidget);
+    expect(workspaceBloc.state.currentWorkspace?.cover, isEmpty);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    searchController.dispose();
+    controller.dispose();
+  });
+
+  testWidgets('workspace cover actions persist changes and removal', (
+    tester,
+  ) async {
+    final root = ViewPB(
+      id: 'workspace',
+      name: 'My Workspace',
+      layout: ViewLayoutPB.Document,
+    );
+    final repository = _HeaderRepository(root);
+    final controller = WorkspaceExplorerController(
+      root: root,
+      repository: repository,
+      listenForUpdates: false,
+    );
+    final searchController = TextEditingController();
+    await controller.initialize();
+
+    final workspace = user.UserWorkspacePB(
+      workspaceId: root.id,
+      name: root.name,
+      cover: '{"cover":{"type":"color","value":"#D9C7A4"}}',
+      role: user.AFRolePB.Owner,
+      workspaceType: user.WorkspaceTypePB.LocalW,
+    );
+    var updateCount = 0;
+    final updatedCovers = <String>[];
+    final workspaceRepository = _MockWorkspaceRepository();
+    when(
+      () => workspaceRepository.updateWorkspaceCover(
+        workspaceId: root.id,
+        cover: any(named: 'cover'),
+      ),
+    ).thenAnswer((invocation) {
+      updateCount++;
+      updatedCovers.add(
+        invocation.namedArguments[#cover]! as String,
+      );
+      return Future.value(FlowyResult.success(null));
+    });
+    final workspaceBloc = UserWorkspaceBloc(
+      repository: workspaceRepository,
+      userProfile: user.UserProfilePB(),
+    );
+    workspaceBloc.emit(
+      workspaceBloc.state.copyWith(currentWorkspace: workspace),
+    );
+
+    await tester.pumpWidget(
+      WidgetTestApp(
+        child: BlocProvider<UserWorkspaceBloc>.value(
+          value: workspaceBloc,
+          child: SizedBox(
+            width: 900,
+            height: 520,
+            child: FolderGalleryHeader(
+              controller: controller,
+              workspace: workspace,
+              searchController: searchController,
+              onSearchChanged: (_) {},
+              onNavigate: (_) {},
+              onNewNote: () {},
+              onMore: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
-    final persistedCover = verify(
-      () => workspaceRepository.updateWorkspaceCover(
-        workspaceId: root.id,
-        cover: captureAny(named: 'cover'),
-      ),
-    ).captured.single as String;
-    expect(persistedCover, isNotEmpty);
+    expect(updateCount, 0);
     expect(find.byType(ViewCoverImage), findsOneWidget);
-    expect(find.text('Change Cover'), findsOneWidget);
-    expect(workspaceBloc.state.currentWorkspace?.cover, persistedCover);
-    expect(workspaceBloc.state.workspaces.single.cover, persistedCover);
+
+    await tester.tap(find.text('Change Cover'));
+    await tester.pumpAndSettle();
+    final uploadMenu = tester.widget<UploadImageMenu>(
+      find.byType(UploadImageMenu),
+    );
+    uploadMenu.onSelectedColor?.call('#B8D8D8');
+    await tester.pumpAndSettle();
+
+    expect(updateCount, 1);
+    await tester.tap(find.text('Remove cover'));
+    await tester.pumpAndSettle();
+
+    expect(updateCount, 2);
+    expect(find.byType(ViewCoverImage), findsNothing);
+    expect(
+      WorkspaceCoverCodec.decode(updatedCovers.first),
+      const PageStyleCover(
+        type: PageStyleCoverImageType.pureColor,
+        value: '#B8D8D8',
+      ),
+    );
+    expect(
+      WorkspaceCoverCodec.decode(updatedCovers.last),
+      const PageStyleCover.none(),
+    );
+    expect(
+      WorkspaceCoverCodec.decode(
+        workspaceBloc.state.currentWorkspace!.cover,
+      ),
+      const PageStyleCover.none(),
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     searchController.dispose();

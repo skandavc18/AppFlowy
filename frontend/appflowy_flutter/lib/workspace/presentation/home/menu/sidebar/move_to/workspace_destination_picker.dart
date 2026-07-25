@@ -9,6 +9,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_explorer
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_transfer_service.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_root_icon.dart';
@@ -28,6 +29,7 @@ Future<String?> showWorkspaceDestinationPicker({
   required List<ViewPB> sourceViews,
   required String rootId,
   required String rootName,
+  String? rootIcon,
   required WorkspaceDestinationOperation operation,
   WorkspaceItemRepository repository = const WorkspaceItemService(),
 }) {
@@ -38,6 +40,7 @@ Future<String?> showWorkspaceDestinationPicker({
       sourceViews: sourceViews,
       rootId: rootId,
       rootName: rootName,
+      rootIcon: rootIcon,
       operation: operation,
       repository: repository,
     ),
@@ -50,6 +53,7 @@ class WorkspaceDestinationPicker extends StatefulWidget {
     required this.sourceViews,
     required this.rootId,
     required this.rootName,
+    this.rootIcon,
     required this.operation,
     this.repository = const WorkspaceItemService(),
   });
@@ -57,6 +61,7 @@ class WorkspaceDestinationPicker extends StatefulWidget {
   final List<ViewPB> sourceViews;
   final String rootId;
   final String rootName;
+  final String? rootIcon;
   final WorkspaceDestinationOperation operation;
   final WorkspaceItemRepository repository;
 
@@ -265,6 +270,7 @@ class _WorkspaceDestinationPickerState
             currentFolderId: selectedFolderId,
             rootId: rootId,
             rootName: rootName,
+            rootIcon: rootId == widget.rootId ? widget.rootIcon : null,
             viewsById: viewsById,
             onSelected: (id) => setState(() {
               currentFolderId = id;
@@ -426,6 +432,7 @@ class _DestinationBreadcrumbs extends StatelessWidget {
     required this.currentFolderId,
     required this.rootId,
     required this.rootName,
+    required this.rootIcon,
     required this.viewsById,
     required this.onSelected,
   });
@@ -433,6 +440,7 @@ class _DestinationBreadcrumbs extends StatelessWidget {
   final String currentFolderId;
   final String rootId;
   final String rootName;
+  final String? rootIcon;
   final Map<String, ViewPB> viewsById;
   final ValueChanged<String> onSelected;
 
@@ -485,7 +493,22 @@ class _DestinationBreadcrumbs extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (index == 0) ...[
-                    const WorkspaceRootIcon(size: 19),
+                    if (rootIcon != null)
+                      WorkspaceIcon(
+                        key: const ValueKey('workspace-root-icon'),
+                        workspaceIcon: rootIcon!,
+                        workspaceName: rootName,
+                        iconSize: 19,
+                        isEditable: false,
+                        fontSize: 10,
+                        emojiSize: 16,
+                        borderRadius: 5.5,
+                        figmaLineHeight: 16,
+                        showBorder: false,
+                        onSelected: (_) {},
+                      )
+                    else
+                      const WorkspaceRootIcon(size: 19),
                     const SizedBox(width: 6),
                   ],
                   Text(

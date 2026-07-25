@@ -125,7 +125,14 @@ class _SectionFolderState extends State<SectionFolder> {
     context
         .read<FolderBloc>()
         .add(const FolderEvent.expandOrUnExpand(isExpanded: true));
-    context.read<TabsBloc>().openPlugin(workspaceRootFolderView(workspace));
+    context.read<TabsBloc>().openPlugin(
+          workspaceRootFolderView(
+            workspaceId: workspace.workspaceId,
+            name: workspace.name,
+            icon: workspace.icon,
+          ),
+          setLatest: false,
+        );
   }
 
   Future<bool> _renameWorkspace(String rawName) async {
@@ -232,15 +239,6 @@ class _SectionFolderState extends State<SectionFolder> {
       isPlaceholder: true,
     );
   }
-}
-
-ViewPB workspaceRootFolderView(UserWorkspacePB workspace) {
-  return ViewPB(
-    id: workspace.workspaceId,
-    name: workspace.name,
-    layout: ViewLayoutPB.Document,
-    extra: const WorkspaceItemMetadata.folder().mergeIntoExtra(''),
-  );
 }
 
 Future<ViewPB?> createSidebarRootItem(

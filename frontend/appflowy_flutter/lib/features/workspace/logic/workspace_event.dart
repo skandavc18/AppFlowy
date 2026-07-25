@@ -1,4 +1,8 @@
+import 'dart:async';
+
+import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
+import 'package:appflowy_result/appflowy_result.dart';
 
 sealed class UserWorkspaceEvent {
   UserWorkspaceEvent();
@@ -49,10 +53,12 @@ sealed class UserWorkspaceEvent {
   factory UserWorkspaceEvent.updateWorkspaceCover({
     required String workspaceId,
     required String cover,
+    Completer<FlowyResult<void, FlowyError>>? completion,
   }) =>
       WorkspaceEventUpdateWorkspaceCover(
         workspaceId: workspaceId,
         cover: cover,
+        completion: completion,
       );
 
   factory UserWorkspaceEvent.leaveWorkspace({
@@ -162,10 +168,12 @@ class WorkspaceEventUpdateWorkspaceCover extends UserWorkspaceEvent {
   WorkspaceEventUpdateWorkspaceCover({
     required this.workspaceId,
     required this.cover,
+    this.completion,
   });
 
   final String workspaceId;
   final String cover;
+  final Completer<FlowyResult<void, FlowyError>>? completion;
 }
 
 /// Leaves a workspace.

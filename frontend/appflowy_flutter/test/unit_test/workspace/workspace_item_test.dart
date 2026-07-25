@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -86,6 +88,91 @@ void main() {
       expect(folder.isWorkspaceFolder, isTrue);
       expect(folder.isWorkspaceFile, isFalse);
       expect(document.isWorkspaceItem, isFalse);
+    });
+
+    test('recognizes only the backing view for the active workspace as root',
+        () {
+      final root = ViewPB(id: 'workspace', parentViewId: '');
+      final child = ViewPB(id: 'workspace', parentViewId: 'parent');
+
+      expect(root.isWorkspaceRootFor('workspace'), isTrue);
+      expect(root.isWorkspaceRootFor('other-workspace'), isFalse);
+      expect(root.isWorkspaceRootFor(''), isFalse);
+      expect(child.isWorkspaceRootFor('workspace'), isFalse);
+    });
+
+    test('builds a synthetic workspace root folder view', () {
+      final root = workspaceRootFolderView(
+        workspaceId: 'workspace',
+        name: 'Knowledge HQ',
+        icon: '🚀',
+        cover: const PageStyleCover(
+          type: PageStyleCoverImageType.builtInImage,
+          value: '7',
+        ),
+      );
+
+      expect(root.id, 'workspace');
+      expect(root.name, 'Knowledge HQ');
+      expect(root.parentViewId, isEmpty);
+      expect(root.layout, ViewLayoutPB.Document);
+      expect(root.isWorkspaceFolder, isTrue);
+      expect(root.icon.value, '🚀');
+      expect(
+        ViewCoverCodec.decodeCover(root.extra),
+        const PageStyleCover(
+          type: PageStyleCoverImageType.builtInImage,
+          value: '7',
+        ),
+      );
+    });
+
+    test('normalizes a backend workspace root without losing its fields', () {
+      final root = ViewPB(
+        id: 'workspace',
+        parentViewId: '',
+        name: 'Backend root',
+        layout: ViewLayoutPB.Document,
+        extra: jsonEncode({
+          'cover': {'type': 1, 'value': 'cover'},
+        }),
+        lastEdited: Int64(1800000000),
+      );
+
+      final normalized = root.asWorkspaceRootFolder(
+        workspaceId: 'workspace',
+        name: 'Knowledge HQ',
+        icon: '🧠',
+      );
+      final extra = jsonDecode(normalized.extra) as Map<String, dynamic>;
+
+      expect(root.isWorkspaceFolder, isFalse);
+      expect(normalized.name, 'Knowledge HQ');
+      expect(normalized.isWorkspaceRootFolder, isTrue);
+      expect(normalized.icon.value, '🧠');
+      expect(normalized.lastEdited, root.lastEdited);
+      expect(extra['cover'], {'type': 1, 'value': 'cover'});
+    });
+
+    test('normalizes a workspace cover into the synthetic root', () {
+      final root = ViewPB(
+        id: 'workspace',
+        parentViewId: '',
+        name: 'Backend root',
+        layout: ViewLayoutPB.Document,
+      );
+      const cover = PageStyleCover(
+        type: PageStyleCoverImageType.pureColor,
+        value: '#C0D7B7',
+      );
+
+      final normalized = root.asWorkspaceRootFolder(
+        workspaceId: 'workspace',
+        cover: cover,
+      );
+
+      expect(normalized.isWorkspaceRootFolder, isTrue);
+      expect(ViewCoverCodec.decodeCover(normalized.extra), cover);
     });
 
     test('allows folders and ordinary documents to contain moved items', () {

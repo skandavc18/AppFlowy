@@ -1,8 +1,10 @@
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/workspace/application/home/home_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../util.dart';
@@ -57,5 +59,57 @@ void main() {
 
     final actual = homeBloc.state.workspaceSetting.latestView.id;
     assert(actual == latestView.id);
+  });
+
+  test('clears a workspace root saved as the latest document view', () async {
+    final original = await FolderEventGetCurrentWorkspaceSetting().send().then(
+          (result) => result.fold(
+            (setting) => setting,
+            (error) => throw Exception(error),
+          ),
+        );
+    final originalLatestId =
+        original.hasLatestView() ? original.latestView.id : null;
+    addTearDown(() async {
+      await FolderEventSetLatestView(
+        ViewIdPB(value: originalLatestId ?? ''),
+      ).send();
+    });
+
+    final poisoned = WorkspaceLatestPB(
+      workspaceId: 'workspace',
+      latestView: ViewPB(
+        id: 'workspace',
+        parentViewId: '',
+        layout: ViewLayoutPB.Document,
+      ),
+    );
+
+    final homeBloc = HomeBloc(poisoned)..add(const HomeEvent.initial());
+    addTearDown(homeBloc.close);
+    await blocResponseFuture(millisecond: 800);
+
+    expect(homeBloc.state.latestView?.id, 'workspace');
+    expect(homeBloc.state.latestView?.isWorkspaceFolder, isTrue);
+    final repaired = await FolderEventGetCurrentWorkspaceSetting().send().then(
+          (result) => result.fold(
+            (setting) => setting,
+            (error) => throw Exception(error),
+          ),
+        );
+    expect(repaired.hasLatestView(), isFalse);
+  });
+
+  test('opens the workspace folder when no latest view exists', () async {
+    final homeBloc = HomeBloc(
+      WorkspaceLatestPB(workspaceId: 'workspace'),
+    )..add(const HomeEvent.initial());
+    addTearDown(homeBloc.close);
+    await blocResponseFuture(millisecond: 500);
+
+    final latestView = homeBloc.state.latestView;
+    expect(latestView?.id, 'workspace');
+    expect(latestView?.parentViewId, isEmpty);
+    expect(latestView?.isWorkspaceFolder, isTrue);
   });
 }

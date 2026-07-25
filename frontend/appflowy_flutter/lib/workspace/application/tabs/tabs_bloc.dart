@@ -293,11 +293,13 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   void openPlugin(
     ViewPB view, {
     Map<String, dynamic> arguments = const {},
+    bool setLatest = true,
   }) {
     add(
       TabsEvent.openPlugin(
         plugin: view.plugin(arguments: arguments),
         view: view,
+        setLatest: setLatest,
       ),
     );
   }
@@ -364,6 +366,15 @@ class TabsState {
   /// then it selects that tab.
   ///
   TabsState openView(Plugin plugin) {
+    final existingIndex = _indexOfPlugin(plugin.id);
+    if (existingIndex != -1 &&
+        _pageManagers[existingIndex].plugin.runtimeType != plugin.runtimeType) {
+      _pageManagers[existingIndex].setPlugin(plugin, true);
+      return copyWith(
+        currentIndex: existingIndex,
+        pageManagers: [..._pageManagers],
+      );
+    }
     final selectExistingPlugin = _selectPluginIfOpen(plugin.id);
 
     if (selectExistingPlugin == null) {
@@ -408,6 +419,15 @@ class TabsState {
   /// will become selected.
   ///
   TabsState openPlugin({required Plugin plugin, bool setLatest = true}) {
+    final existingIndex = _indexOfPlugin(plugin.id);
+    if (existingIndex != -1 &&
+        _pageManagers[existingIndex].plugin.runtimeType != plugin.runtimeType) {
+      _pageManagers[existingIndex].setPlugin(plugin, setLatest);
+      return copyWith(
+        currentIndex: existingIndex,
+        pageManagers: [..._pageManagers],
+      );
+    }
     final selectExistingPlugin = _selectPluginIfOpen(plugin.id);
 
     if (selectExistingPlugin == null) {
@@ -426,7 +446,7 @@ class TabsState {
   /// If no match it returns null
   ///
   TabsState? _selectPluginIfOpen(String id) {
-    final index = _pageManagers.indexWhere((pm) => pm.plugin.id == id);
+    final index = _indexOfPlugin(id);
 
     if (index == -1) {
       return null;
@@ -438,6 +458,9 @@ class TabsState {
 
     return copyWith(currentIndex: index);
   }
+
+  int _indexOfPlugin(String id) =>
+      _pageManagers.indexWhere((pm) => pm.plugin.id == id);
 
   TabsState copyWith({
     int? currentIndex,

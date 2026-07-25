@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/icon.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
 
@@ -153,6 +156,34 @@ Map<String, dynamic> decodeViewExtra(String extra) {
   }
 }
 
+ViewPB workspaceRootFolderView({
+  required String workspaceId,
+  String name = 'Workspace',
+  String icon = '',
+  PageStyleCover? cover,
+}) {
+  var extra = const WorkspaceItemMetadata.folder().mergeIntoExtra('');
+  if (cover != null) {
+    extra = ViewCoverCodec.mergeCover(extra, cover);
+  }
+  return ViewPB(
+    id: workspaceId,
+    name: name,
+    layout: ViewLayoutPB.Document,
+    extra: extra,
+  )..icon = _workspaceRootViewIcon(icon);
+}
+
+ViewIconPB _workspaceRootViewIcon(String icon) {
+  final viewIcon = ViewIconPB();
+  if (icon.isNotEmpty) {
+    viewIcon
+      ..ty = ViewIconTypePB.Emoji
+      ..value = icon;
+  }
+  return viewIcon;
+}
+
 extension WorkspaceItemViewExtension on ViewPB {
   WorkspaceItemMetadata? get workspaceItem =>
       WorkspaceItemMetadata.fromExtra(extra);
@@ -160,6 +191,53 @@ extension WorkspaceItemViewExtension on ViewPB {
   bool get isWorkspaceFolder => workspaceItem?.isFolder ?? false;
   bool get isWorkspaceFile => workspaceItem?.isFile ?? false;
   bool get isWorkspaceItem => workspaceItem != null;
+  bool get isWorkspaceRootFolder => isWorkspaceFolder && parentViewId.isEmpty;
+  bool isWorkspaceRootFor(String workspaceId) =>
+      workspaceId.isNotEmpty && id == workspaceId && parentViewId.isEmpty;
   bool get canContainWorkspaceItems =>
       layout == ViewLayoutPB.Document && !isWorkspaceFile;
+
+  ViewPB asWorkspaceRootFolder({
+    required String workspaceId,
+    String name = 'Workspace',
+    String? icon,
+    PageStyleCover? cover,
+  }) {
+    if (!isWorkspaceRootFor(workspaceId)) {
+      return this;
+    }
+
+    final normalizedName = name.trim().isEmpty ? this.name : name;
+    final currentCover = _coverFromExtra(extra);
+    final iconMatches = icon == null ||
+        (icon.isEmpty && this.icon.value.isEmpty) ||
+        (this.icon.ty == ViewIconTypePB.Emoji && this.icon.value == icon);
+    if (isWorkspaceFolder &&
+        layout == ViewLayoutPB.Document &&
+        this.name == normalizedName &&
+        iconMatches &&
+        (cover == null || currentCover == cover)) {
+      return this;
+    }
+
+    final normalized = ViewPB.fromBuffer(writeToBuffer())
+      ..name = normalizedName
+      ..layout = ViewLayoutPB.Document
+      ..extra = const WorkspaceItemMetadata.folder().mergeIntoExtra(extra);
+    if (cover != null) {
+      normalized.extra = ViewCoverCodec.mergeCover(normalized.extra, cover);
+    }
+    if (icon != null) {
+      normalized.icon = _workspaceRootViewIcon(icon);
+    }
+    return normalized;
+  }
+}
+
+PageStyleCover? _coverFromExtra(String extra) {
+  try {
+    return ViewCoverCodec.decodeCover(extra);
+  } on FormatException {
+    return null;
+  }
 }

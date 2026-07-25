@@ -1,17 +1,17 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/workspace_folder/workspace_folder_plugin.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
+import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
+import 'package:appflowy/workspace/presentation/home/home_stack.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/folder/_folder_header.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar/folder/_section_folder.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_folder.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_root_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
-import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart' as user;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/gestures.dart';
@@ -214,12 +214,29 @@ void main() {
 
   test('workspace root view routes to the folder gallery plugin', () {
     final root = workspaceRootFolderView(
-      user.UserWorkspacePB(workspaceId: 'workspace', name: 'Knowledge HQ'),
+      workspaceId: 'workspace',
+      name: 'Knowledge HQ',
     );
 
     expect(root.parentViewId, isEmpty);
     expect(root.isWorkspaceFolder, isTrue);
     expect(root.plugin(), isA<WorkspaceFolderPlugin>());
+  });
+
+  testWidgets('workspace root replaces a stale same-id document plugin', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const WidgetTestApp(child: SizedBox.shrink()));
+
+    final staleDocument = _DocumentLikePlugin('workspace');
+    final manager = PageManager(plugin: staleDocument);
+    final state = TabsState(pageManagers: [manager]);
+    final workspaceFolder = _FolderLikePlugin('workspace');
+
+    final updated = state.openPlugin(plugin: workspaceFolder);
+
+    expect(updated.currentPageManager.plugin, same(workspaceFolder));
+    expect(staleDocument.disposed, isTrue);
   });
 }
 
@@ -244,4 +261,36 @@ class _TestPluginBuilder implements PluginBuilder {
 
   @override
   Plugin build(dynamic data) => throw UnimplementedError();
+}
+
+abstract class _TestPlugin implements Plugin {
+  _TestPlugin(this.id);
+
+  @override
+  final String id;
+
+  bool disposed = false;
+
+  @override
+  PluginType get pluginType => PluginType.document;
+
+  @override
+  PluginNotifier? get notifier => null;
+
+  @override
+  PluginWidgetBuilder get widgetBuilder => throw UnimplementedError();
+
+  @override
+  void init() {}
+
+  @override
+  void dispose() => disposed = true;
+}
+
+class _DocumentLikePlugin extends _TestPlugin {
+  _DocumentLikePlugin(super.id);
+}
+
+class _FolderLikePlugin extends _TestPlugin {
+  _FolderLikePlugin(super.id);
 }

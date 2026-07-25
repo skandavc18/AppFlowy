@@ -790,7 +790,8 @@ async fn get_user_workspace_info_compat(
     .http_client_with_auth(Method::GET, &url)
     .await?
     .send()
-    .await?;
+    .await
+    .map_err(reqwest_error)?;
   parse_cloud_response_data(response).await
 }
 
@@ -804,7 +805,8 @@ async fn patch_workspace_compat(
     .await?
     .json(&params)
     .send()
-    .await?;
+    .await
+    .map_err(reqwest_error)?;
   parse_cloud_response_error(response).await
 }
 
@@ -818,7 +820,8 @@ async fn get_workspaces_compat(
     .await?
     .query(&param)
     .send()
-    .await?;
+    .await
+    .map_err(reqwest_error)?;
   parse_cloud_response_data(response).await
 }
 
@@ -831,7 +834,8 @@ async fn open_workspace_compat(
     .http_client_with_auth(Method::PUT, &url)
     .await?
     .send()
-    .await?;
+    .await
+    .map_err(reqwest_error)?;
   parse_cloud_response_data(response).await
 }
 
@@ -839,7 +843,7 @@ async fn parse_cloud_response_data<T: DeserializeOwned>(
   response: reqwest::Response,
 ) -> Result<T, FlowyError> {
   let status = response.status();
-  let body = response.text().await?;
+  let body = response.text().await.map_err(reqwest_error)?;
   let payload: CloudResponse<T> = serde_json::from_str(&body).map_err(|err| {
     FlowyError::internal().with_context(format!(
       "failed to parse cloud response body with status {}: {} ({})",
@@ -859,7 +863,7 @@ async fn parse_cloud_response_data<T: DeserializeOwned>(
 
 async fn parse_cloud_response_error(response: reqwest::Response) -> Result<(), FlowyError> {
   let status = response.status();
-  let body = response.text().await?;
+  let body = response.text().await.map_err(reqwest_error)?;
   let payload: CloudResponse<serde_json::Value> = serde_json::from_str(&body).map_err(|err| {
     FlowyError::internal().with_context(format!(
       "failed to parse cloud response body with status {}: {} ({})",
@@ -875,6 +879,10 @@ async fn parse_cloud_response_error(response: reqwest::Response) -> Result<(), F
   }
 
   payload.into_error().map_err(FlowyError::from)
+}
+
+fn reqwest_error(error: reqwest::Error) -> FlowyError {
+  FlowyError::http().with_context(error)
 }
 
 #[cfg(test)]

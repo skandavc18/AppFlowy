@@ -10,7 +10,9 @@ import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/log.dart';
+import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
+import 'package:appflowy_result/appflowy_result.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flowy_infra_ui/style_widget/snap_bar.dart';
@@ -39,23 +41,25 @@ class _WorkspaceCoverActionsState extends State<WorkspaceCoverActions> {
   final coverPopoverController = PopoverController();
   PageStyleCover? cover;
   bool saving = false;
-  bool defaultPersistenceScheduled = false;
+  bool hasQueuedCover = false;
+  PageStyleCover? queuedCover;
 
   @override
   void initState() {
     super.initState();
     cover = _resolvedCover();
-    _scheduleDefaultPersistence();
   }
 
   @override
   void didUpdateWidget(covariant WorkspaceCoverActions oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.workspace.workspaceId != widget.workspace.workspaceId ||
-        oldWidget.workspace.cover != widget.workspace.cover) {
-      defaultPersistenceScheduled = false;
+    if (oldWidget.workspace.workspaceId != widget.workspace.workspaceId) {
+      saving = false;
+      hasQueuedCover = false;
+      queuedCover = null;
       cover = _resolvedCover();
-      _scheduleDefaultPersistence();
+    } else if (oldWidget.workspace.cover != widget.workspace.cover && !saving) {
+      cover = _resolvedCover();
     }
   }
 
@@ -170,73 +174,83 @@ class _WorkspaceCoverActionsState extends State<WorkspaceCoverActions> {
       widget.workspace.workspaceType == WorkspaceTypePB.LocalW ||
       widget.workspace.role == AFRolePB.Owner;
 
-  void _scheduleDefaultPersistence() {
-    if (!widget.generateDefaultWhenMissing ||
-        defaultPersistenceScheduled ||
-        widget.workspace.cover.trim().isNotEmpty ||
-        !_canEdit) {
-      return;
-    }
-
-    defaultPersistenceScheduled = true;
-    final workspaceId = widget.workspace.workspaceId;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          widget.workspace.workspaceId != workspaceId ||
-          widget.workspace.cover.trim().isNotEmpty) {
-        return;
-      }
-      unawaited(
-        _saveCover(
-          AutomaticViewCover.forWorkspace(name: widget.workspace.name),
-          force: true,
-        ),
-      );
-    });
-  }
-
-  Future<void> _saveCover(
-    PageStyleCover nextCover, {
-    bool force = false,
-  }) async {
+  Future<void> _saveCover(PageStyleCover nextCover) async {
     coverPopoverController.close();
-    if (saving || (!force && nextCover == cover)) {
+    if (nextCover == cover) {
       return;
     }
 
     final previousCover = cover;
-    final bloc = context.read<UserWorkspaceBloc>();
-    final completion = bloc.stream.firstWhere(
-      (state) =>
-          state.actionResult?.actionType == WorkspaceActionType.updateCover &&
-          state.actionResult?.isLoading == false,
-    );
-    setState(() {
-      saving = true;
-      cover = nextCover;
-    });
-    widget.onCoverChanged?.call(nextCover);
-    bloc.add(
-      UserWorkspaceEvent.updateWorkspaceCover(
-        workspaceId: widget.workspace.workspaceId,
-        cover: WorkspaceCoverCodec.encode(nextCover),
-      ),
-    );
+    if (saving) {
+      hasQueuedCover = true;
+      queuedCover = nextCover;
+      _applyCover(nextCover);
+      return;
+    }
 
-    final result = (await completion).actionResult?.result;
+    saving = true;
+    _applyCover(nextCover);
+    await _persistCoverQueue(
+      initialCover: nextCover,
+      persistedCover: previousCover,
+    );
+  }
+
+  Future<void> _persistCoverQueue({
+    required PageStyleCover initialCover,
+    required PageStyleCover? persistedCover,
+  }) async {
+    final workspaceId = widget.workspace.workspaceId;
+    var requestedCover = initialCover;
+    var lastPersistedCover = persistedCover;
+
+    while (mounted && widget.workspace.workspaceId == workspaceId) {
+      final result = await _persistCover(workspaceId, requestedCover);
+      if (!mounted || widget.workspace.workspaceId != workspaceId) {
+        return;
+      }
+
+      if (result.isSuccess) {
+        lastPersistedCover = requestedCover;
+      } else {
+        result.onFailure((error) => showSnapBar(context, error.msg));
+      }
+
+      if (hasQueuedCover) {
+        requestedCover = queuedCover!;
+        hasQueuedCover = false;
+        queuedCover = null;
+        continue;
+      }
+
+      saving = false;
+      if (result.isFailure) {
+        _applyCover(lastPersistedCover);
+      }
+      return;
+    }
+  }
+
+  Future<FlowyResult<void, FlowyError>> _persistCover(
+    String workspaceId,
+    PageStyleCover nextCover,
+  ) {
+    final completion = Completer<FlowyResult<void, FlowyError>>();
+    context.read<UserWorkspaceBloc>().add(
+          UserWorkspaceEvent.updateWorkspaceCover(
+            workspaceId: workspaceId,
+            cover: WorkspaceCoverCodec.encode(nextCover),
+            completion: completion,
+          ),
+        );
+    return completion.future;
+  }
+
+  void _applyCover(PageStyleCover? nextCover) {
     if (!mounted) {
       return;
     }
-    result?.onFailure((error) => showSnapBar(context, error.msg));
-    final shouldRestore = result == null || result.isFailure;
-    setState(() {
-      saving = false;
-      if (shouldRestore) {
-        cover = previousCover;
-      }
-    });
-    if (shouldRestore) {
-      widget.onCoverChanged?.call(previousCover);
-    }
+    setState(() => cover = nextCover);
+    widget.onCoverChanged?.call(nextCover);
   }
 }

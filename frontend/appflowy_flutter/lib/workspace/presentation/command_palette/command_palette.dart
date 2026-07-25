@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:appflowy/features/workspace/application/workspace_cover_codec.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
@@ -11,6 +12,9 @@ import 'package:appflowy/workspace/application/command_palette/command_palette_b
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/recent_views_list.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_field.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_filter_bar.dart';
@@ -219,24 +223,50 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
           final theme = AppFlowyTheme.of(context);
           final noQuery = state.query?.isEmpty ?? true, hasQuery = !noQuery;
           final currentUserId = workspaceState?.userProfile.id;
+          final currentWorkspace = workspaceState?.currentWorkspace;
+          PageStyleCover? currentWorkspaceCover;
+          if (currentWorkspace != null) {
+            currentWorkspaceCover =
+                WorkspaceCoverCodec.decode(currentWorkspace.cover);
+            if (currentWorkspaceCover == null &&
+                currentWorkspace.cover.trim().isEmpty) {
+              currentWorkspaceCover = AutomaticViewCover.forWorkspace(
+                name: currentWorkspace.name,
+              );
+            }
+          }
+          var cachedViews = state.cachedViews;
+          final workspaceRoot = currentWorkspace == null
+              ? null
+              : cachedViews[currentWorkspace.workspaceId];
+          if (currentWorkspace != null && workspaceRoot != null) {
+            cachedViews = {
+              ...cachedViews,
+              currentWorkspace.workspaceId: workspaceRoot.asWorkspaceRootFolder(
+                workspaceId: currentWorkspace.workspaceId,
+                name: currentWorkspace.name,
+                icon: currentWorkspace.icon,
+                cover: currentWorkspaceCover,
+              ),
+            };
+          }
           final searchableItems = includeWorkspaceFolderSearchResults(
             searchResults: state.combinedResponseItems.values,
-            cachedViews: state.cachedViews,
+            cachedViews: cachedViews,
             query: state.query ?? '',
             excludedViewIds: state.trash.map((trash) => trash.id),
           );
           final resultItems = searchableItems
               .where(
                 (item) =>
-                    state.cachedViews.isEmpty ||
-                    state.cachedViews.containsKey(item.id),
+                    cachedViews.isEmpty || cachedViews.containsKey(item.id),
               )
               .where(
                 (item) => filter.matchesSearchResult(
                   item: item,
-                  view: state.cachedViews[item.id],
+                  view: cachedViews[item.id],
                   query: state.query ?? '',
-                  cachedViews: state.cachedViews,
+                  cachedViews: cachedViews,
                   currentUserId: currentUserId,
                 ),
               )
@@ -298,16 +328,24 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                         child: RecentViewsList(
                           onSelected: () => FlowyOverlay.pop(context),
                           filter: filter,
-                          cachedViews: state.cachedViews,
+                          cachedViews: cachedViews,
                           currentUserId: currentUserId,
+                          currentWorkspaceId: currentWorkspace?.workspaceId,
+                          currentWorkspaceName: currentWorkspace?.name,
+                          currentWorkspaceIcon: currentWorkspace?.icon,
+                          currentWorkspaceCover: currentWorkspaceCover,
                         ),
                       ),
                     if (hasResult && hasQuery)
                       Flexible(
                         child: SearchResultList(
-                          cachedViews: state.cachedViews,
+                          cachedViews: cachedViews,
                           resultItems: resultItems,
                           resultSummaries: state.resultSummaries,
+                          currentWorkspaceId: currentWorkspace?.workspaceId,
+                          currentWorkspaceName: currentWorkspace?.name,
+                          currentWorkspaceIcon: currentWorkspace?.icon,
+                          currentWorkspaceCover: currentWorkspaceCover,
                         ),
                       )
                     // When there are no results and the query is not empty and not loading,

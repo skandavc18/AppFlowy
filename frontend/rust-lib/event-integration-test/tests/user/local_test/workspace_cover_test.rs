@@ -5,7 +5,9 @@ async fn workspace_cover_persists_and_clears_locally() {
   let test = EventIntegrationTest::new().await;
   let _profile = test.init_anon_user().await;
 
-  let workspace_id = test.get_all_workspaces().await.items[0].workspace_id;
+  let workspace_id = test.get_all_workspaces().await.items[0]
+    .workspace_id
+    .clone();
   let cover = r##"{"type":"color","value":"#f4d35e"}"##;
 
   test

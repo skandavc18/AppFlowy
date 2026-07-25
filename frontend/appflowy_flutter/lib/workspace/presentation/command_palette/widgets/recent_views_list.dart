@@ -2,6 +2,8 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
 import 'package:appflowy/workspace/application/recent/recent_views_bloc.dart';
+import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_extension.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_icon.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_recent_view_cell.dart';
@@ -24,6 +26,10 @@ class RecentViewsList extends StatelessWidget {
     required this.filter,
     required this.cachedViews,
     required this.currentUserId,
+    this.currentWorkspaceId,
+    this.currentWorkspaceName,
+    this.currentWorkspaceIcon,
+    this.currentWorkspaceCover,
     super.key,
   });
 
@@ -31,6 +37,10 @@ class RecentViewsList extends StatelessWidget {
   final CommandPaletteFilter filter;
   final Map<String, ViewPB> cachedViews;
   final Int64? currentUserId;
+  final String? currentWorkspaceId;
+  final String? currentWorkspaceName;
+  final String? currentWorkspaceIcon;
+  final PageStyleCover? currentWorkspaceCover;
 
   @override
   Widget build(BuildContext context) {
@@ -173,10 +183,13 @@ class RecentViewsList extends StatelessWidget {
   Widget buildPreview(BuildContext context, ViewPB selectedView) {
     return PageInspectionPanel(
       view: selectedView,
-      cachedViews: cachedViews,
+      cachedViews: {
+        ...cachedViews,
+        selectedView.id: selectedView,
+      },
       currentUserId: currentUserId,
       onOpen: (view) {
-        view.id.navigateTo();
+        view.navigateTo();
         onSelected();
       },
       onClose: () => FlowyOverlay.pop(context),
@@ -184,7 +197,10 @@ class RecentViewsList extends StatelessWidget {
   }
 
   List<ViewPB> _visibleViews(RecentViewsState state) {
-    final recentViews = state.views.map((entry) => entry.item).toSet().toList();
+    final recentViews = state.views
+        .map((entry) => _normalizedView(entry.item))
+        .toSet()
+        .toList();
     final viewsById = <String, ViewPB>{
       ...cachedViews,
       for (final view in recentViews) view.id: view,
@@ -198,6 +214,20 @@ class RecentViewsList extends StatelessWidget {
           ),
         )
         .toList();
+  }
+
+  ViewPB _normalizedView(ViewPB view) {
+    final cachedView = cachedViews[view.id] ?? view;
+    final workspaceId = currentWorkspaceId;
+    if (workspaceId == null) {
+      return cachedView;
+    }
+    return cachedView.asWorkspaceRootFolder(
+      workspaceId: workspaceId,
+      name: currentWorkspaceName ?? cachedView.name,
+      icon: currentWorkspaceIcon,
+      cover: currentWorkspaceCover,
+    );
   }
 
   ViewPB? _selectedView(

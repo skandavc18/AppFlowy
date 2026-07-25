@@ -48,17 +48,17 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
     final spaceL = theme.spacing.l;
     final bloc = context.read<RecentViewsBloc>(), state = bloc.state;
     final hoveredView = state.hoveredView;
-    final hovering = hoveredView == view;
+    final hovering = hoveredView?.id == view.id;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => _handleSelection(view.id),
+      onTap: () => _handleSelection(view),
       child: Focus(
         focusNode: focusNode,
         onKeyEvent: (node, event) {
           if (event is! KeyDownEvent) return KeyEventResult.ignored;
           if (event.logicalKey == LogicalKeyboardKey.enter) {
-            _handleSelection(view.id);
+            _handleSelection(view);
             return KeyEventResult.handled;
           }
           return KeyEventResult.ignored;
@@ -70,7 +70,7 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
         },
         child: FlowyHover(
           onHover: (value) {
-            if (hoveredView == view) return;
+            if (hoveredView?.id == view.id) return;
             bloc.add(RecentViewsEvent.hoverView(view));
           },
           style: HoverStyle(
@@ -121,8 +121,8 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
   }
 
   /// Helper to handle the selection action.
-  void _handleSelection(String id) {
+  void _handleSelection(ViewPB view) {
     widget.onSelected();
-    id.navigateTo();
+    view.navigateTo();
   }
 }
