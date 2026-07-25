@@ -285,7 +285,12 @@ impl UserManager {
     self
       .cloud_service()?
       .get_user_service()?
-      .patch_workspace(workspace_id, changeset.name.clone(), changeset.icon.clone())
+      .patch_workspace(
+        workspace_id,
+        changeset.name.clone(),
+        changeset.icon.clone(),
+        changeset.cover.clone(),
+      )
       .await?;
 
     // save the icon and name to sqlite db

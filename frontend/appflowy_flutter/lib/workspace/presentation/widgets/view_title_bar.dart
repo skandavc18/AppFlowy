@@ -34,9 +34,11 @@ class ViewTitleBar extends StatelessWidget {
   const ViewTitleBar({
     super.key,
     required this.view,
+    this.hideCurrentView = false,
   });
 
   final ViewPB view;
+  final bool hideCurrentView;
 
   @override
   Widget build(BuildContext context) {
@@ -142,17 +144,8 @@ class ViewTitleBar extends StatelessWidget {
       return _buildDeletedTitle(context, views.last);
     }
 
-    // if the level is too deep, only show the last two view, the first one view and the root view
-    // for example:
-    // if the views are [root, view1, view2, view3, view4, view5], only show [root, view1, ..., view4, view5]
-    // if the views are [root, view1, view2, view3], show [root, view1, view2, view3]
-    const lowerBound = 2;
-    final upperBound = views.length - 2;
-    bool hasAddedEllipsis = false;
-    final children = <Widget>[];
-
-    if (views.length <= 1) {
-      return [];
+    if (hideCurrentView && views.isNotEmpty) {
+      views = views.sublist(0, views.length - 1);
     }
 
     // remove the space from views if the current user role is a guest
@@ -161,6 +154,19 @@ class ViewTitleBar extends StatelessWidget {
     if (myRole == AFRolePB.Guest) {
       views = views.where((view) => !view.isSpace).toList();
     }
+
+    if (views.length <= 1) {
+      return [];
+    }
+
+    // if the level is too deep, only show the last two view, the first one view and the root view
+    // for example:
+    // if the views are [root, view1, view2, view3, view4, view5], only show [root, view1, ..., view4, view5]
+    // if the views are [root, view1, view2, view3], show [root, view1, view2, view3]
+    const lowerBound = 2;
+    final upperBound = views.length - 2;
+    bool hasAddedEllipsis = false;
+    final children = <Widget>[];
 
     // ignore the workspace name, use section name instead in the future
     // skip the workspace view
@@ -183,7 +189,10 @@ class ViewTitleBar extends StatelessWidget {
         message: view.name,
         child: ViewTitle(
           view: view,
-          behavior: i == views.length - 1 && !view.isLocked && isEditable
+          behavior: !hideCurrentView &&
+                  i == views.length - 1 &&
+                  !view.isLocked &&
+                  isEditable
               ? ViewTitleBehavior.editable // only the last one is editable
               : ViewTitleBehavior.uneditable, // others are not editable
           onUpdated: () {

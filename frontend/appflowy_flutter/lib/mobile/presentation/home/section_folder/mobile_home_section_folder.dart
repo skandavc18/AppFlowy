@@ -19,11 +19,13 @@ class MobileSectionFolder extends StatelessWidget {
     required this.title,
     required this.views,
     required this.spaceType,
+    this.isWorkspaceRoot = false,
   });
 
   final String title;
   final List<ViewPB> views;
   final FolderSpaceType spaceType;
+  final bool isWorkspaceRoot;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +47,7 @@ class MobileSectionFolder extends StatelessWidget {
                       .read<FolderBloc>()
                       .add(const FolderEvent.expandOrUnExpand()),
                   onAdded: () => _createNewPage(context),
+                  isWorkspaceRoot: isWorkspaceRoot,
                 ),
               ),
               if (state.isExpanded)

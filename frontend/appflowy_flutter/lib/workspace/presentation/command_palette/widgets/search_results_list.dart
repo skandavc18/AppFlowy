@@ -35,6 +35,7 @@ class SearchResultList extends StatefulWidget {
 
 class _SearchResultListState extends State<SearchResultList> {
   late final SearchResultListBloc bloc;
+  ViewPB? narrowFolderView;
 
   @override
   void initState() {
@@ -46,6 +47,11 @@ class _SearchResultListState extends State<SearchResultList> {
   @override
   void didUpdateWidget(covariant SearchResultList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final folderId = narrowFolderView?.id;
+    if (folderId != null &&
+        !widget.resultItems.any((item) => item.id == folderId)) {
+      narrowFolderView = null;
+    }
     _syncSelection();
   }
 
@@ -79,16 +85,29 @@ class _SearchResultListState extends State<SearchResultList> {
                 final hidePreview = maxWidth < commandPalettePreviewBreakpoint;
                 final listWidth =
                     hidePreview ? maxWidth : commandPaletteListWidth(maxWidth);
+                final narrowFolder = narrowFolderView == null
+                    ? null
+                    : widget.cachedViews[narrowFolderView!.id] ??
+                        narrowFolderView;
+                if (hidePreview && narrowFolder != null) {
+                  return PageInspectionPanel(
+                    view: narrowFolder,
+                    cachedViews: widget.cachedViews,
+                    currentUserId: context
+                        .read<UserWorkspaceBloc?>()
+                        ?.state
+                        .userProfile
+                        .id,
+                    onOpen: (view) => bloc.add(
+                      SearchResultListEvent.openPage(pageId: view.id),
+                    ),
+                    onClose: () => FlowyOverlay.pop(context),
+                    onBack: () => setState(() => narrowFolderView = null),
+                  );
+                }
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SizedBox(
-                      key: const ValueKey(
-                        'command-palette-search-results-panel',
-                      ),
-                      width: listWidth,
-                      child: _buildResultsSection(context, hidePreview),
-                    ),
                     if (!hidePreview && selectedView != null)
                       Expanded(
                         child: PageInspectionPanel(
@@ -99,14 +118,21 @@ class _SearchResultListState extends State<SearchResultList> {
                               ?.state
                               .userProfile
                               .id,
-                          onOpen: () => bloc.add(
+                          onOpen: (view) => bloc.add(
                             SearchResultListEvent.openPage(
-                              pageId: selectedView.id,
+                              pageId: view.id,
                             ),
                           ),
                           onClose: () => FlowyOverlay.pop(context),
                         ),
                       ),
+                    SizedBox(
+                      key: const ValueKey(
+                        'command-palette-search-results-panel',
+                      ),
+                      width: listWidth,
+                      child: _buildResultsSection(context, hidePreview),
+                    ),
                   ],
                 );
               },
@@ -177,6 +203,10 @@ class _SearchResultListState extends State<SearchResultList> {
                               isNarrowWindow: hidePreview,
                               view: widget.cachedViews[item.id],
                               isHovered: hoveredId == item.id,
+                              onFolderSelected: hidePreview
+                                  ? (view) =>
+                                      setState(() => narrowFolderView = view)
+                                  : null,
                               query: context
                                   .read<CommandPaletteBloc?>()
                                   ?.state

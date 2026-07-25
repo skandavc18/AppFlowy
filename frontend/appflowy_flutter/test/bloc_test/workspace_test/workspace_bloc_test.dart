@@ -88,6 +88,7 @@ void main() {
       required String id,
       required String name,
       String icon = '',
+      String cover = '',
       WorkspaceTypePB workspaceType = WorkspaceTypePB.LocalW,
       int createdAt = 1000,
     }) {
@@ -95,6 +96,7 @@ void main() {
         ..workspaceId = id
         ..name = name
         ..icon = icon
+        ..cover = cover
         ..workspaceType = workspaceType
         ..createdAtTimestamp = fixnum.Int64(createdAt);
     }
@@ -718,6 +720,99 @@ void main() {
           ),
         ),
         expect: () => [],
+      );
+    });
+
+    group('updateWorkspaceCover', () {
+      blocTest<UserWorkspaceBloc, UserWorkspaceState>(
+        'should persist and emit a workspace cover',
+        setUp: () {
+          when(
+            () => mockRepository.updateWorkspaceCover(
+              workspaceId: 'workspace-1',
+              cover: '{"cover":{"type":"built_in","value":"3"}}',
+            ),
+          ).thenAnswer(
+            (_) async => FlowyResult.success(null),
+          );
+        },
+        build: () {
+          final bloc = UserWorkspaceBloc(
+            repository: mockRepository,
+            userProfile: userProfile,
+          );
+          final workspace = createTestWorkspace(
+            id: 'workspace-1',
+            name: 'Workspace 1',
+          );
+          bloc.emit(
+            bloc.state.copyWith(
+              workspaces: [workspace],
+              currentWorkspace: workspace,
+            ),
+          );
+          return bloc;
+        },
+        act: (bloc) => bloc.add(
+          UserWorkspaceEvent.updateWorkspaceCover(
+            workspaceId: 'workspace-1',
+            cover: '{"cover":{"type":"built_in","value":"3"}}',
+          ),
+        ),
+        expect: () => [
+          predicate<UserWorkspaceState>(
+            (state) =>
+                state.actionResult?.actionType ==
+                    WorkspaceActionType.updateCover &&
+                state.actionResult?.isLoading == false &&
+                state.workspaces.first.cover ==
+                    '{"cover":{"type":"built_in","value":"3"}}' &&
+                state.currentWorkspace?.cover ==
+                    '{"cover":{"type":"built_in","value":"3"}}',
+          ),
+        ],
+      );
+
+      blocTest<UserWorkspaceBloc, UserWorkspaceState>(
+        'should complete an unchanged workspace cover update',
+        build: () {
+          final bloc = UserWorkspaceBloc(
+            repository: mockRepository,
+            userProfile: userProfile,
+          );
+          final workspace = createTestWorkspace(
+            id: 'workspace-1',
+            name: 'Workspace 1',
+            cover: '{"cover":{"type":"built_in","value":"3"}}',
+          );
+          bloc.emit(
+            bloc.state.copyWith(
+              workspaces: [workspace],
+              currentWorkspace: workspace,
+            ),
+          );
+          return bloc;
+        },
+        act: (bloc) => bloc.add(
+          UserWorkspaceEvent.updateWorkspaceCover(
+            workspaceId: 'workspace-1',
+            cover: '{"cover":{"type":"built_in","value":"3"}}',
+          ),
+        ),
+        expect: () => [
+          predicate<UserWorkspaceState>(
+            (state) =>
+                state.actionResult?.actionType ==
+                    WorkspaceActionType.updateCover &&
+                state.actionResult?.result?.isSuccess == true,
+          ),
+        ],
+        verify: (_) => verifyNever(
+          () => mockRepository.updateWorkspaceCover(
+            workspaceId: any(named: 'workspaceId'),
+            cover: any(named: 'cover'),
+          ),
+        ),
       );
     });
 

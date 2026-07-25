@@ -57,6 +57,8 @@ Future<String> customDocumentToMarkdown(
         const SimpleTableNodeParser(),
         const LinkPreviewNodeParser(),
         const FileBlockNodeParser(),
+        const FolderExplorerNodeParser(),
+        const PagePreviewNodeParser(),
       ],
     );
   } catch (e) {

@@ -43,6 +43,12 @@ abstract class WorkspaceRepository {
     required String icon,
   });
 
+  /// Updates workspace cover.
+  Future<FlowyResult<void, FlowyError>> updateWorkspaceCover({
+    required String workspaceId,
+    required String cover,
+  });
+
   /// Leaves a workspace.
   Future<FlowyResult<void, FlowyError>> leaveWorkspace({
     required String workspaceId,

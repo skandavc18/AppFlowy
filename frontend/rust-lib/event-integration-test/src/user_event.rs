@@ -19,10 +19,10 @@ use flowy_server::af_cloud::define::{USER_DEVICE_ID, USER_EMAIL, USER_SIGN_IN_UR
 use flowy_server_pub::af_cloud_config::AFCloudConfiguration;
 use flowy_server_pub::AuthenticatorType;
 use flowy_user::entities::{
-  AuthTypePB, ChangeWorkspaceIconPB, CloudSettingPB, CreateWorkspacePB, ImportAppFlowyDataPB,
-  OauthSignInPB, OpenUserWorkspacePB, RenameWorkspacePB, RepeatedUserWorkspacePB, SignInUrlPB,
-  SignInUrlPayloadPB, SignUpPayloadPB, UpdateCloudConfigPB, UpdateUserProfilePayloadPB,
-  UserProfilePB, UserWorkspaceIdPB, UserWorkspacePB, WorkspaceTypePB,
+  AuthTypePB, ChangeWorkspaceCoverPB, ChangeWorkspaceIconPB, CloudSettingPB, CreateWorkspacePB,
+  ImportAppFlowyDataPB, OauthSignInPB, OpenUserWorkspacePB, RenameWorkspacePB,
+  RepeatedUserWorkspacePB, SignInUrlPB, SignInUrlPayloadPB, SignUpPayloadPB, UpdateCloudConfigPB,
+  UpdateUserProfilePayloadPB, UserProfilePB, UserWorkspaceIdPB, UserWorkspacePB, WorkspaceTypePB,
 };
 use flowy_user::errors::{FlowyError, FlowyResult};
 use flowy_user::event_map::UserEvent;
@@ -238,6 +238,27 @@ impl EventIntegrationTest {
     };
     match EventBuilder::new(self.clone())
       .event(UserEvent::ChangeWorkspaceIcon)
+      .payload(payload)
+      .async_send()
+      .await
+      .error()
+    {
+      Some(err) => Err(err),
+      None => Ok(()),
+    }
+  }
+
+  pub async fn change_workspace_cover(
+    &self,
+    workspace_id: &str,
+    new_cover: &str,
+  ) -> Result<(), FlowyError> {
+    let payload = ChangeWorkspaceCoverPB {
+      workspace_id: workspace_id.to_owned(),
+      new_cover: new_cover.to_owned(),
+    };
+    match EventBuilder::new(self.clone())
+      .event(UserEvent::ChangeWorkspaceCover)
       .payload(payload)
       .async_send()
       .await

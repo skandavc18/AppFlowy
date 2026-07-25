@@ -2,7 +2,8 @@ import 'dart:convert';
 
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
+import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart'
+    show PageStyleFontLayout, PageStyleLineHeightLayout;
 import 'package:appflowy/plugins/ai_chat/chat.dart';
 import 'package:appflowy/plugins/database/board/presentation/board_page.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_page.dart';
@@ -10,9 +11,14 @@ import 'package:appflowy/plugins/database/grid/presentation/grid_page.dart';
 import 'package:appflowy/plugins/database/grid/presentation/mobile_grid_page.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/document.dart';
+import 'package:appflowy/plugins/workspace_folder/workspace_folder_plugin.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:collection/collection.dart';
@@ -36,9 +42,9 @@ class ViewExtKeys {
   static String lineHeightLayoutKey = 'line_height_layout';
 
   // cover keys
-  static String coverKey = 'cover';
-  static String coverTypeKey = 'type';
-  static String coverValueKey = 'value';
+  static String coverKey = ViewCoverCodec.coverKey;
+  static String coverTypeKey = ViewCoverCodec.coverTypeKey;
+  static String coverValueKey = ViewCoverCodec.coverValueKey;
 
   // is pinned
   static String isPinnedKey = 'is_pinned';
@@ -77,17 +83,25 @@ extension ViewExtension on ViewPB {
         PluginType.calendar,
       ].contains(pluginType);
 
-  Widget defaultIcon({Size? size}) => FlowySvg(
-        switch (layout) {
-          ViewLayoutPB.Board => FlowySvgs.icon_board_s,
-          ViewLayoutPB.Calendar => FlowySvgs.icon_calendar_s,
-          ViewLayoutPB.Grid => FlowySvgs.icon_grid_s,
-          ViewLayoutPB.Document => FlowySvgs.icon_document_s,
-          ViewLayoutPB.Chat => FlowySvgs.chat_ai_page_s,
-          _ => FlowySvgs.icon_document_s,
-        },
-        size: size,
+  Widget defaultIcon({Size? size}) {
+    if (isWorkspaceItem) {
+      return WorkspaceItemIcon.fromView(
+        view: this,
+        size: size?.width ?? 16,
       );
+    }
+    return FlowySvg(
+      switch (layout) {
+        ViewLayoutPB.Board => FlowySvgs.icon_board_s,
+        ViewLayoutPB.Calendar => FlowySvgs.icon_calendar_s,
+        ViewLayoutPB.Grid => FlowySvgs.icon_grid_s,
+        ViewLayoutPB.Document => FlowySvgs.icon_document_s,
+        ViewLayoutPB.Chat => FlowySvgs.chat_ai_page_s,
+        _ => FlowySvgs.icon_document_s,
+      },
+      size: size,
+    );
+  }
 
   PluginType get pluginType => switch (layout) {
         ViewLayoutPB.Board => PluginType.board,
@@ -101,6 +115,9 @@ extension ViewExtension on ViewPB {
   Plugin plugin({
     Map<String, dynamic> arguments = const {},
   }) {
+    if (isWorkspaceFolder) {
+      return WorkspaceFolderPlugin(view: this);
+    }
     switch (layout) {
       case ViewLayoutPB.Board:
       case ViewLayoutPB.Calendar:
@@ -250,25 +267,9 @@ extension ViewExtension on ViewPB {
   }
 
   PageStyleCover? get cover {
-    if (layout != ViewLayoutPB.Document) {
-      return null;
-    }
-
-    if (extra.isEmpty) {
-      return null;
-    }
-
     try {
-      final ext = jsonDecode(extra);
-      final cover = ext[ViewExtKeys.coverKey] ?? {};
-      final coverType = cover[ViewExtKeys.coverTypeKey] ??
-          PageStyleCoverImageType.none.toString();
-      final coverValue = cover[ViewExtKeys.coverValueKey] ?? '';
-      return PageStyleCover(
-        type: PageStyleCoverImageType.fromString(coverType),
-        value: coverValue,
-      );
-    } catch (e) {
+      return ViewCoverCodec.decodeCover(extra);
+    } on FormatException {
       return null;
     }
   }

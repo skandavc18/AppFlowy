@@ -1,5 +1,6 @@
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
 import 'package:fixnum/fixnum.dart';
@@ -143,6 +144,76 @@ void main() {
       expect(cleared.spaceId, isNull);
       expect(cleared.pageType, isNull);
       expect(cleared.isActive, isFalse);
+    });
+
+    test('adds title-matching workspace folders to search results', () {
+      final folder = ViewPB(
+        id: 'research-folder',
+        name: 'Product research',
+        extra: const WorkspaceItemMetadata.folder().mergeIntoExtra(''),
+      );
+      final otherFolder = ViewPB(
+        id: 'other-folder',
+        name: 'Meeting notes',
+        extra: const WorkspaceItemMetadata.folder().mergeIntoExtra(''),
+      );
+      final ordinaryPage = ViewPB(
+        id: 'ordinary-page',
+        name: 'Research page',
+      );
+
+      final results = includeWorkspaceFolderSearchResults(
+        searchResults: const [],
+        cachedViews: {
+          folder.id: folder,
+          otherFolder.id: otherFolder,
+          ordinaryPage.id: ordinaryPage,
+        },
+        query: 'research',
+      );
+
+      expect(results.map((item) => item.id), [folder.id]);
+      expect(results.single.displayName, folder.name);
+    });
+
+    test('does not duplicate a folder already returned by backend search', () {
+      final folder = ViewPB(
+        id: 'folder',
+        name: 'Research',
+        extra: const WorkspaceItemMetadata.folder().mergeIntoExtra(''),
+      );
+      final backendResult = item(id: folder.id, title: folder.name);
+
+      final results = includeWorkspaceFolderSearchResults(
+        searchResults: [backendResult],
+        cachedViews: {folder.id: folder},
+        query: 'research',
+      );
+
+      expect(results, [same(backendResult)]);
+    });
+
+    test('clearing search preserves cached folder views', () {
+      final folder = ViewPB(
+        id: 'folder',
+        name: 'Research',
+        extra: const WorkspaceItemMetadata.folder().mergeIntoExtra(''),
+      );
+      final state = CommandPaletteState.initial().copyWith(
+        query: 'research',
+        searching: true,
+        cachedViews: {folder.id: folder},
+        combinedResponseItems: {
+          folder.id: item(id: folder.id, title: folder.name),
+        },
+      );
+
+      final cleared = commandPaletteStateAfterClear(state);
+
+      expect(cleared.query, isNull);
+      expect(cleared.searching, isFalse);
+      expect(cleared.combinedResponseItems, isEmpty);
+      expect(cleared.cachedViews, {folder.id: same(folder)});
     });
   });
 }

@@ -448,14 +448,21 @@ class _SidebarState extends State<_Sidebar> {
               padding: const EdgeInsets.only(
                 left: HomeSpaceViewSizes.viewListLeftPadding,
               ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(
-                  right: HomeSpaceViewSizes.viewListRightPadding,
-                ),
-                controller: _scrollController,
-                child: SidebarFolder(
-                  userProfile: widget.userProfile,
-                  isHoverEnabled: !_isScrolling,
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  padding: const EdgeInsets.only(
+                    right: HomeSpaceViewSizes.viewListRightPadding,
+                  ),
+                  controller: _scrollController,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: SidebarFolder(
+                      userProfile: widget.userProfile,
+                      isHoverEnabled: !_isScrolling,
+                    ),
+                  ),
                 ),
               ),
             ),

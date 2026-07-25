@@ -9,6 +9,7 @@ enum WorkspaceActionType {
   open,
   rename,
   updateIcon,
+  updateCover,
   fetchWorkspaces,
   leave,
   fetchSubscriptionInfo,

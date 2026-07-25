@@ -219,7 +219,13 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
           final theme = AppFlowyTheme.of(context);
           final noQuery = state.query?.isEmpty ?? true, hasQuery = !noQuery;
           final currentUserId = workspaceState?.userProfile.id;
-          final resultItems = state.combinedResponseItems.values
+          final searchableItems = includeWorkspaceFolderSearchResults(
+            searchResults: state.combinedResponseItems.values,
+            cachedViews: state.cachedViews,
+            query: state.query ?? '',
+            excludedViewIds: state.trash.map((trash) => trash.id),
+          );
+          final resultItems = searchableItems
               .where(
                 (item) =>
                     state.cachedViews.isEmpty ||

@@ -272,20 +272,31 @@ class GridPageContent extends StatefulWidget {
 }
 
 class _GridPageContentState extends State<GridPageContent> {
-  final _scrollController = GridScrollController(
-    scrollGroupController: LinkedScrollControllerGroup(),
-  );
-  late final ScrollController headerScrollController;
+  GridScrollController? _scrollController;
+  ScrollController? headerScrollController;
 
   @override
-  void initState() {
-    super.initState();
-    headerScrollController = _scrollController.linkHorizontalController();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_scrollController != null) {
+      return;
+    }
+    final coordinateVerticalScroll = context
+            .read<DatabasePluginWidgetBuilderSize?>()
+            ?.coordinateVerticalScroll ??
+        false;
+    _scrollController = GridScrollController(
+      scrollGroupController: LinkedScrollControllerGroup(),
+      verticalController: coordinateVerticalScroll
+          ? PrimaryScrollController.maybeOf(context)
+          : null,
+    );
+    headerScrollController = _scrollController!.linkHorizontalController();
   }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _scrollController?.dispose();
     super.dispose();
   }
 
@@ -296,13 +307,13 @@ class _GridPageContentState extends State<GridPageContent> {
       mainAxisSize: MainAxisSize.min,
       children: [
         _GridHeader(
-          headerScrollController: headerScrollController,
+          headerScrollController: headerScrollController!,
           editable: context.read<PageAccessLevelBloc>().state.isEditable,
           shrinkWrap: widget.shrinkWrap,
         ),
         _GridRows(
           viewId: widget.view.id,
-          scrollController: _scrollController,
+          scrollController: _scrollController!,
           shrinkWrap: widget.shrinkWrap,
         ),
       ],

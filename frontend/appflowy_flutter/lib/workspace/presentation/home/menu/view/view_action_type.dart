@@ -8,6 +8,9 @@ enum ViewMoreActionType {
   favorite,
   unFavorite,
   duplicate,
+  copyTo,
+  cut,
+  pasteInto,
   copyLink, // not supported yet.
   rename,
   moveTo,
@@ -24,6 +27,8 @@ enum ViewMoreActionType {
     delete,
     rename,
     moveTo,
+    cut,
+    pasteInto,
     changeIcon,
   ];
 }
@@ -39,6 +44,12 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
         return LocaleKeys.disclosureAction_unfavorite.tr();
       case ViewMoreActionType.duplicate:
         return LocaleKeys.disclosureAction_duplicate.tr();
+      case ViewMoreActionType.copyTo:
+        return LocaleKeys.workspaceFolderExplorer_copyTo.tr();
+      case ViewMoreActionType.cut:
+        return LocaleKeys.workspaceFolderExplorer_cut.tr();
+      case ViewMoreActionType.pasteInto:
+        return LocaleKeys.workspaceFolderExplorer_pasteInto.tr();
       case ViewMoreActionType.copyLink:
         return LocaleKeys.disclosureAction_copyLink.tr();
       case ViewMoreActionType.rename:
@@ -72,6 +83,12 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
         return FlowySvgs.unfavorite_s;
       case ViewMoreActionType.duplicate:
         return FlowySvgs.duplicate_s;
+      case ViewMoreActionType.copyTo:
+        return FlowySvgs.copy_s;
+      case ViewMoreActionType.cut:
+        return FlowySvgs.m_table_quick_action_cut_s;
+      case ViewMoreActionType.pasteInto:
+        return FlowySvgs.m_table_quick_action_paste_s;
       case ViewMoreActionType.rename:
         return FlowySvgs.view_item_rename_s;
       case ViewMoreActionType.moveTo:
@@ -101,6 +118,9 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
       case ViewMoreActionType.favorite:
       case ViewMoreActionType.unFavorite:
       case ViewMoreActionType.duplicate:
+      case ViewMoreActionType.copyTo:
+      case ViewMoreActionType.cut:
+      case ViewMoreActionType.pasteInto:
       case ViewMoreActionType.copyLink:
       case ViewMoreActionType.rename:
       case ViewMoreActionType.openInNewTab:

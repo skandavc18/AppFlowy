@@ -24,6 +24,9 @@ pub struct WorkspacePB {
 
   #[pb(index = 4)]
   pub create_time: i64,
+
+  #[pb(index = 5)]
+  pub cover: String,
 }
 
 impl std::convert::From<(Workspace, Vec<ViewPB>)> for WorkspacePB {
@@ -34,6 +37,7 @@ impl std::convert::From<(Workspace, Vec<ViewPB>)> for WorkspacePB {
       name: workspace.name,
       views,
       create_time: workspace.created_at,
+      cover: String::new(),
     }
   }
 }

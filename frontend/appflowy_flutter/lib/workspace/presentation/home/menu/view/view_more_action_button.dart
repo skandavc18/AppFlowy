@@ -4,6 +4,8 @@ import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/move_to/move_page_menu.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
@@ -59,16 +61,20 @@ class ViewMoreActionPopover extends StatelessWidget {
     final actionTypes = _buildActionTypes();
     return actionTypes.map(
       (e) {
-        final actionWrapper =
-            ViewMoreActionTypeWrapper(e, view, (controller, data) {
-          onEditing(false);
-          onAction(e, data);
-          bool enableClose = true;
-          if (data is SelectedEmojiIconResult) {
-            if (data.keepOpen) enableClose = false;
-          }
-          if (enableClose) controller.close();
-        });
+        final actionWrapper = ViewMoreActionTypeWrapper(
+          e,
+          view,
+          (controller, data) {
+            onEditing(false);
+            onAction(e, data);
+            bool enableClose = true;
+            if (data is SelectedEmojiIconResult) {
+              if (data.keepOpen) enableClose = false;
+            }
+            if (enableClose) controller.close();
+          },
+          useInlineMoveMenu: false,
+        );
 
         return actionWrapper;
       },
@@ -83,6 +89,13 @@ class ViewMoreActionPopover extends StatelessWidget {
         ViewMoreActionType.unFavorite,
         ViewMoreActionType.divider,
         ViewMoreActionType.rename,
+        ViewMoreActionType.copyTo,
+        ViewMoreActionType.cut,
+        ViewMoreActionType.moveTo,
+        if (view.canContainWorkspaceItems &&
+            WorkspaceItemClipboard.instance.hasData)
+          ViewMoreActionType.pasteInto,
+        ViewMoreActionType.divider,
         ViewMoreActionType.openInNewTab,
       ]);
     } else {
@@ -106,7 +119,15 @@ class ViewMoreActionPopover extends StatelessWidget {
       }
 
       actionTypes.addAll([
+        ViewMoreActionType.copyTo,
+        ViewMoreActionType.cut,
         ViewMoreActionType.moveTo,
+      ]);
+      if (view.canContainWorkspaceItems &&
+          WorkspaceItemClipboard.instance.hasData) {
+        actionTypes.add(ViewMoreActionType.pasteInto);
+      }
+      actionTypes.addAll([
         ViewMoreActionType.delete,
         ViewMoreActionType.divider,
       ]);
@@ -134,6 +155,7 @@ class ViewMoreActionTypeWrapper extends CustomActionCell {
     this.onTap, {
     this.moveActionDirection,
     this.moveActionOffset,
+    this.useInlineMoveMenu = true,
   });
 
   final ViewMoreActionType inner;
@@ -143,6 +165,7 @@ class ViewMoreActionTypeWrapper extends CustomActionCell {
   // custom the move to action button
   final PopoverDirection? moveActionDirection;
   final Offset? moveActionOffset;
+  final bool useInlineMoveMenu;
 
   @override
   Widget buildWithContext(
@@ -160,7 +183,7 @@ class ViewMoreActionTypeWrapper extends CustomActionCell {
       child = _buildCreated(context);
     } else if (inner == ViewMoreActionType.changeIcon) {
       child = _buildEmojiActionButton(context, controller);
-    } else if (inner == ViewMoreActionType.moveTo) {
+    } else if (inner == ViewMoreActionType.moveTo && useInlineMoveMenu) {
       child = _buildMoveToActionButton(context, controller);
     } else {
       child = _buildNormalActionButton(context, controller);
@@ -212,7 +235,6 @@ class ViewMoreActionTypeWrapper extends CustomActionCell {
     PopoverController controller,
   ) {
     final userProfile = context.read<SpaceBloc>().userProfile;
-    // move to feature doesn't support in local mode
     if (userProfile.workspaceType != WorkspaceTypePB.ServerW) {
       return const SizedBox.shrink();
     }

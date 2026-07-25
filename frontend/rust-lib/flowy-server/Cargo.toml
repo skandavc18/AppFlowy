@@ -41,6 +41,7 @@ tokio-util = "0.7"
 tokio-stream = { workspace = true, features = ["sync"] }
 rand = "0.8.5"
 semver = "1.0.23"
+reqwest = { version = "0.11.27", features = ["json"] }
 flowy-sqlite = { workspace = true }
 flowy-ai = { workspace = true }
 chrono.workspace = true
@@ -59,4 +60,3 @@ features = [
 [dev-dependencies]
 uuid.workspace = true
 serde_json.workspace = true
-

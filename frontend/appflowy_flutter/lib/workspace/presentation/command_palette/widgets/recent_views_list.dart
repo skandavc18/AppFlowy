@@ -49,6 +49,8 @@ class RecentViewsList extends StatelessWidget {
                   hidePreview ? maxWidth : commandPaletteListWidth(maxWidth);
               return Row(
                 children: [
+                  if (!hidePreview && selectedView != null)
+                    Expanded(child: buildPreview(context, selectedView)),
                   buildLeftPanel(
                     visibleViews,
                     selectedView,
@@ -56,8 +58,6 @@ class RecentViewsList extends StatelessWidget {
                     hidePreview,
                     listWidth,
                   ),
-                  if (!hidePreview && selectedView != null)
-                    Expanded(child: buildPreview(context, selectedView)),
                 ],
               );
             },
@@ -175,8 +175,8 @@ class RecentViewsList extends StatelessWidget {
       view: selectedView,
       cachedViews: cachedViews,
       currentUserId: currentUserId,
-      onOpen: () {
-        selectedView.id.navigateTo();
+      onOpen: (view) {
+        view.id.navigateTo();
         onSelected();
       },
       onClose: () => FlowyOverlay.pop(context),

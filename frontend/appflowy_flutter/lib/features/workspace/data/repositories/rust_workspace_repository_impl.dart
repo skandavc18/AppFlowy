@@ -66,6 +66,14 @@ class RustWorkspaceRepositoryImpl implements WorkspaceRepository {
   }
 
   @override
+  Future<FlowyResult<void, FlowyError>> updateWorkspaceCover({
+    required String workspaceId,
+    required String cover,
+  }) async {
+    return _userService.updateWorkspaceCover(workspaceId, cover);
+  }
+
+  @override
   Future<FlowyResult<void, FlowyError>> leaveWorkspace({
     required String workspaceId,
   }) async {

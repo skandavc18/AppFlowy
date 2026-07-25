@@ -46,6 +46,15 @@ sealed class UserWorkspaceEvent {
         icon: icon,
       );
 
+  factory UserWorkspaceEvent.updateWorkspaceCover({
+    required String workspaceId,
+    required String cover,
+  }) =>
+      WorkspaceEventUpdateWorkspaceCover(
+        workspaceId: workspaceId,
+        cover: cover,
+      );
+
   factory UserWorkspaceEvent.leaveWorkspace({
     required String workspaceId,
   }) =>
@@ -146,6 +155,17 @@ class WorkspaceEventUpdateWorkspaceIcon extends UserWorkspaceEvent {
 
   final String workspaceId;
   final String icon;
+}
+
+/// Updates workspace cover.
+class WorkspaceEventUpdateWorkspaceCover extends UserWorkspaceEvent {
+  WorkspaceEventUpdateWorkspaceCover({
+    required this.workspaceId,
+    required this.cover,
+  });
+
+  final String workspaceId;
+  final String cover;
 }
 
 /// Leaves a workspace.

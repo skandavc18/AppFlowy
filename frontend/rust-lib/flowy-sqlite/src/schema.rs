@@ -120,6 +120,7 @@ diesel::table! {
         created_at -> BigInt,
         database_storage_id -> Text,
         icon -> Text,
+        cover -> Text,
         member_count -> BigInt,
         role -> Nullable<Integer>,
         workspace_type -> Integer,

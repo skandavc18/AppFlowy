@@ -651,6 +651,7 @@ pub async fn rename_workspace_handler(
     id: params.workspace_id,
     name: Some(params.new_name),
     icon: None,
+    cover: None,
     role: None,
     member_count: None,
   };
@@ -670,6 +671,27 @@ pub async fn change_workspace_icon_handler(
     id: workspace_id.to_string(),
     name: None,
     icon: Some(params.new_icon),
+    cover: None,
+    role: None,
+    member_count: None,
+  };
+  manager.patch_workspace(&workspace_id, changeset).await?;
+  Ok(())
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub async fn change_workspace_cover_handler(
+  change_workspace_cover_param: AFPluginData<ChangeWorkspaceCoverPB>,
+  manager: AFPluginState<Weak<UserManager>>,
+) -> Result<(), FlowyError> {
+  let params = change_workspace_cover_param.try_into_inner()?;
+  let manager = upgrade_manager(manager)?;
+  let workspace_id = Uuid::from_str(&params.workspace_id)?;
+  let changeset = UserWorkspaceChangeset {
+    id: workspace_id.to_string(),
+    name: None,
+    icon: None,
+    cover: Some(params.new_cover),
     role: None,
     member_count: None,
   };

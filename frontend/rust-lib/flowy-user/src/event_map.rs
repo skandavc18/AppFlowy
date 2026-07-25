@@ -64,6 +64,7 @@ pub fn init(user_manager: Weak<UserManager>) -> AFPlugin {
     .event(UserEvent::DeleteWorkspace, delete_workspace_handler)
     .event(UserEvent::RenameWorkspace, rename_workspace_handler)
     .event(UserEvent::ChangeWorkspaceIcon, change_workspace_icon_handler)
+    .event(UserEvent::ChangeWorkspaceCover, change_workspace_cover_handler)
     .event(UserEvent::LeaveWorkspace, leave_workspace_handler)
     .event(UserEvent::InviteWorkspaceMember, invite_workspace_member_handler)
     .event(UserEvent::ListWorkspaceInvitations, list_workspace_invitations_handler)
@@ -220,6 +221,9 @@ pub enum UserEvent {
 
   #[event(input = "ChangeWorkspaceIconPB")]
   ChangeWorkspaceIcon = 45,
+
+  #[event(input = "ChangeWorkspaceCoverPB")]
+  ChangeWorkspaceCover = 66,
 
   #[event(input = "UserWorkspaceIdPB")]
   LeaveWorkspace = 46,

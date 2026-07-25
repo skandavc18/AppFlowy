@@ -192,6 +192,16 @@ class UserBackendService implements IUserBackendService {
     return UserEventChangeWorkspaceIcon(request).send();
   }
 
+  Future<FlowyResult<void, FlowyError>> updateWorkspaceCover(
+    String workspaceId,
+    String cover,
+  ) {
+    final request = ChangeWorkspaceCoverPB()
+      ..workspaceId = workspaceId
+      ..newCover = cover;
+    return UserEventChangeWorkspaceCover(request).send();
+  }
+
   Future<FlowyResult<RepeatedWorkspaceMemberPB, FlowyError>>
       getWorkspaceMembers(
     String workspaceId,

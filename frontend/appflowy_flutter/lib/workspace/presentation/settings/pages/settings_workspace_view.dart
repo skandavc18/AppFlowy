@@ -15,6 +15,8 @@ import 'package:appflowy/workspace/application/settings/appearance/base_appearan
 import 'package:appflowy/workspace/application/settings/date_time/date_format_ext.dart';
 import 'package:appflowy/workspace/application/settings/date_time/time_format_ext.dart';
 import 'package:appflowy/workspace/application/settings/workspace/workspace_settings_bloc.dart';
+import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/shared_widget.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
@@ -33,6 +35,8 @@ import 'package:appflowy/workspace/presentation/settings/shared/single_setting_a
 import 'package:appflowy/workspace/presentation/settings/widgets/theme_upload/theme_upload_view.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/toggle/toggle.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart'
+    hide AFRolePB;
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/language.dart';
@@ -117,10 +121,16 @@ class SettingsWorkspaceView extends StatelessWidget {
               ],
               SettingsCategory(
                 title: LocaleKeys.settings_workspacePage_appearance_title.tr(),
-                children: const [
-                  AppearanceSelector(),
-                  VSpace(16),
-                  KineticScrollingSwitcher(),
+                children: [
+                  const AppearanceSelector(),
+                  const VSpace(16),
+                  const KineticScrollingSwitcher(),
+                  const VSpace(16),
+                  SettingsDashedDivider(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                  const VSpace(16),
+                  const AutomaticCoverSetting(),
                 ],
               ),
               const VSpace(16),
@@ -505,6 +515,283 @@ class KineticScrollingSwitcher extends StatelessWidget {
         ),
       ],
     );
+  }
+}
+
+@visibleForTesting
+class AutomaticCoverSetting extends StatefulWidget {
+  const AutomaticCoverSetting({super.key});
+
+  @override
+  State<AutomaticCoverSetting> createState() => _AutomaticCoverSettingState();
+}
+
+class _AutomaticCoverSettingState extends State<AutomaticCoverSetting> {
+  final themeController = TextEditingController();
+  AutomaticViewCoverSettings? settings;
+  Timer? saveDebounce;
+  bool isApplying = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadSettings());
+  }
+
+  @override
+  void dispose() {
+    saveDebounce?.cancel();
+    final current = settings;
+    if (current != null) {
+      unawaited(
+        AutomaticViewCoverPreferences.save(
+          current.copyWith(theme: themeController.text),
+        ),
+      );
+    }
+    themeController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final settings = this.settings;
+    if (settings == null) {
+      return const SizedBox(
+        height: 42,
+        child: Center(child: CircularProgressIndicator.adaptive()),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FlowyText.regular(
+                    LocaleKeys.settings_appearance_automaticCovers_label.tr(),
+                    fontSize: 16,
+                  ),
+                  const VSpace(4),
+                  FlowyText.regular(
+                    LocaleKeys.settings_appearance_automaticCovers_hint.tr(),
+                    fontSize: 13,
+                    color: AFThemeExtension.of(context).secondaryTextColor,
+                    maxLines: 3,
+                  ),
+                ],
+              ),
+            ),
+            const HSpace(16),
+            Toggle(
+              key: const ValueKey('automatic-cover-toggle'),
+              value: settings.enabled,
+              onChanged: _setEnabled,
+            ),
+          ],
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          child: settings.enabled
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Column(
+                    children: [
+                      SettingsInputField(
+                        label: LocaleKeys
+                            .settings_appearance_automaticCovers_themeLabel
+                            .tr(),
+                        placeholder: LocaleKeys
+                            .settings_appearance_automaticCovers_themeHint
+                            .tr(),
+                        textController: themeController,
+                        value: settings.theme,
+                        hideActions: true,
+                        onChanged: _scheduleThemeSave,
+                        onSave: _saveTheme,
+                      ),
+                      const VSpace(16),
+                      SingleSettingAction(
+                        key: const ValueKey('automatic-cover-apply'),
+                        label: LocaleKeys
+                            .settings_appearance_automaticCovers_applyExistingLabel
+                            .tr(),
+                        description: LocaleKeys
+                            .settings_appearance_automaticCovers_applyExistingHint
+                            .tr(),
+                        buttonLabel: isApplying
+                            ? LocaleKeys
+                                .settings_appearance_automaticCovers_applying
+                                .tr()
+                            : LocaleKeys
+                                .settings_appearance_automaticCovers_apply
+                                .tr(),
+                        onPressed: isApplying ? null : _applyToExistingViews,
+                      ),
+                    ],
+                  ),
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _setEnabled(bool enabled) async {
+    final current = settings;
+    if (current == null) {
+      return;
+    }
+    final updated = current.copyWith(enabled: enabled);
+    setState(() => settings = updated);
+    await AutomaticViewCoverPreferences.save(updated);
+  }
+
+  void _scheduleThemeSave(String theme) {
+    final current = settings;
+    if (current == null) {
+      return;
+    }
+    final updated = current.copyWith(theme: theme);
+    setState(() => settings = updated);
+    saveDebounce?.cancel();
+    saveDebounce = Timer(
+      const Duration(milliseconds: 400),
+      () => unawaited(_saveTheme(theme)),
+    );
+  }
+
+  Future<void> _loadSettings() async {
+    final value = await AutomaticViewCoverPreferences.load();
+    if (!mounted) {
+      return;
+    }
+    themeController.text = value.theme;
+    setState(() => settings = value);
+  }
+
+  Future<void> _saveTheme(String theme) async {
+    final current = settings;
+    if (current == null) {
+      return;
+    }
+    final updated = current.copyWith(theme: theme);
+    await AutomaticViewCoverPreferences.save(updated);
+    if (!mounted) {
+      return;
+    }
+    final saved = await AutomaticViewCoverPreferences.load();
+    if (!mounted) {
+      return;
+    }
+    if (themeController.text.trim().isEmpty) {
+      themeController.text = saved.theme;
+    }
+    setState(() => settings = saved);
+  }
+
+  Future<void> _applyToExistingViews() async {
+    final current = settings;
+    if (current == null || isApplying) {
+      return;
+    }
+
+    saveDebounce?.cancel();
+    final updated = current.copyWith(theme: themeController.text);
+    setState(() {
+      settings = updated;
+      isApplying = true;
+    });
+    await AutomaticViewCoverPreferences.save(updated);
+    final saved = await AutomaticViewCoverPreferences.load();
+    if (mounted && themeController.text.trim().isEmpty) {
+      themeController.text = saved.theme;
+    }
+
+    final result = await ViewBackendService.getAllViews();
+    final loaded = result.fold<(List<ViewPB>?, String?)>(
+      (views) => (views.items, null),
+      (error) => (null, error.msg),
+    );
+    if (loaded.$2 case final error?) {
+      if (mounted) {
+        showSnackBarMessage(
+          context,
+          LocaleKeys.settings_appearance_automaticCovers_loadFailed.tr(
+            args: [error],
+          ),
+        );
+        setState(() {
+          settings = saved;
+          isApplying = false;
+        });
+      }
+      return;
+    }
+
+    late final List<AutomaticViewCoverUpdate> updates;
+    try {
+      updates = AutomaticViewCover.updatesForExistingViews(
+        views: loaded.$1!,
+        theme: saved.theme,
+      );
+    } on FormatException catch (error) {
+      if (mounted) {
+        showSnackBarMessage(
+          context,
+          LocaleKeys.settings_appearance_automaticCovers_invalidMetadata.tr(
+            args: [error.message],
+          ),
+        );
+        setState(() {
+          settings = saved;
+          isApplying = false;
+        });
+      }
+      return;
+    }
+
+    var applied = 0;
+    final failures = <String>[];
+    for (final update in updates) {
+      final updateResult = await ViewBackendService.updateView(
+        viewId: update.viewId,
+        extra: update.extra,
+      );
+      updateResult.fold(
+        (_) => applied++,
+        (error) => failures.add(error.msg),
+      );
+    }
+
+    if (!mounted) {
+      return;
+    }
+    final message = switch ((updates.isEmpty, failures.isEmpty)) {
+      (true, _) => LocaleKeys.settings_appearance_automaticCovers_upToDate.tr(),
+      (false, true) =>
+        LocaleKeys.settings_appearance_automaticCovers_applied.tr(
+          args: [applied.toString()],
+        ),
+      (false, false) =>
+        LocaleKeys.settings_appearance_automaticCovers_applyFailed.tr(
+          args: [
+            applied.toString(),
+            failures.length.toString(),
+            failures.first,
+          ],
+        ),
+    };
+    showSnackBarMessage(context, message);
+    setState(() {
+      settings = saved;
+      isApplying = false;
+    });
   }
 }
 

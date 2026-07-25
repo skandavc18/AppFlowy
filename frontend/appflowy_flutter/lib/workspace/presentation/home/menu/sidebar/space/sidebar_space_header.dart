@@ -144,7 +144,10 @@ class _SidebarSpaceHeaderState extends State<SidebarSpaceHeader> {
               message: LocaleKeys.sideBar_addAPage.tr(),
               child: ViewAddButton(
                 parentViewId: widget.space.id,
+                sourceView: widget.space,
                 onEditing: (_) {},
+                onTransfer: (_) {},
+                showTransferActions: false,
                 onSelected: (
                   pluginBuilder,
                   name,

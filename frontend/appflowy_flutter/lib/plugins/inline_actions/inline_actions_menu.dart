@@ -23,6 +23,7 @@ class InlineActionsMenu extends InlineActionsMenuService {
     required this.style,
     this.startCharAmount = 1,
     this.cancelBySpaceHandler,
+    this.anchorRect,
   });
 
   final BuildContext context;
@@ -30,6 +31,7 @@ class InlineActionsMenu extends InlineActionsMenuService {
   final InlineActionsService service;
   final List<InlineActionsResult> initialResults;
   final bool Function()? cancelBySpaceHandler;
+  final Rect? anchorRect;
 
   @override
   final InlineActionsMenuStyle style;
@@ -76,7 +78,9 @@ class InlineActionsMenu extends InlineActionsMenuService {
 
     final selectionService = editorState.service.selectionService;
     final selectionRects = selectionService.selectionRects;
-    if (selectionRects.isEmpty) {
+    final firstRect =
+        anchorRect ?? (selectionRects.isEmpty ? null : selectionRects.first);
+    if (firstRect == null) {
       return;
     }
 
@@ -90,7 +94,6 @@ class InlineActionsMenu extends InlineActionsMenuService {
     // Default to opening the overlay below
     Alignment alignment = Alignment.topLeft;
 
-    final firstRect = selectionRects.first;
     Offset offset = firstRect.bottomRight + menuOffset;
 
     // Show above

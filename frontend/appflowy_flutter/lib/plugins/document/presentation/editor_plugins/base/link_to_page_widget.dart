@@ -12,13 +12,21 @@ InlineActionsMenuService? _actionsMenuService;
 
 Future<void> showLinkToPageMenu(
   EditorState editorState,
-  SelectionMenuService menuService, {
+  SelectionMenuService? menuService, {
   ViewLayoutPB? pageType,
   bool? insertPage,
+  String? customTitle,
+  InlinePageReferenceSelectionHandler? onSelected,
+  InlinePageReferenceViewFilter? viewFilter,
+  bool showAllViewsInitially = false,
+  Rect? anchorRect,
 }) async {
   keepEditorFocusNotifier.increase();
 
-  menuService.dismiss();
+  final selectionRects = editorState.service.selectionService.selectionRects;
+  final resolvedAnchorRect =
+      anchorRect ?? (selectionRects.isEmpty ? null : selectionRects.first);
+  menuService?.dismiss();
   _actionsMenuService?.dismiss();
 
   final rootContext = editorState.document.root.context;
@@ -32,9 +40,12 @@ Future<void> showLinkToPageMenu(
       InlinePageReferenceService(
         currentViewId: '',
         viewLayout: pageType,
-        customTitle: titleFromPageType(pageType),
+        customTitle: customTitle ?? titleFromPageType(pageType),
         insertPage: insertPage ?? pageType != ViewLayoutPB.Document,
         limitResults: 15,
+        onSelected: onSelected,
+        viewFilter: viewFilter,
+        showAllViewsInitially: showAllViewsInitially,
       ),
     ],
   );
@@ -59,6 +70,7 @@ Future<void> showLinkToPageMenu(
           ? const InlineActionsMenuStyle.light()
           : const InlineActionsMenuStyle.dark(),
       startCharAmount: 0,
+      anchorRect: resolvedAnchorRect,
     );
 
     await _actionsMenuService?.show();

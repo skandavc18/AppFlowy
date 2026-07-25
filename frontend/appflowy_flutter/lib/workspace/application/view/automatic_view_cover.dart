@@ -1,0 +1,185 @@
+import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+@immutable
+class AutomaticViewCoverSettings {
+  const AutomaticViewCoverSettings({
+    required this.enabled,
+    required this.theme,
+  });
+
+  static const defaultTheme = 'calm editorial';
+
+  final bool enabled;
+  final String theme;
+
+  AutomaticViewCoverSettings copyWith({
+    bool? enabled,
+    String? theme,
+  }) =>
+      AutomaticViewCoverSettings(
+        enabled: enabled ?? this.enabled,
+        theme: theme ?? this.theme,
+      );
+}
+
+abstract final class AutomaticViewCoverPreferences {
+  static const _enabledKey =
+      'io.appflowy.appflowy_flutter.automatic_view_cover_enabled';
+  static const _themeKey =
+      'io.appflowy.appflowy_flutter.automatic_view_cover_theme';
+
+  static AutomaticViewCoverSettings? _cached;
+
+  static Future<AutomaticViewCoverSettings> load() async {
+    final cached = _cached;
+    if (cached != null) {
+      return cached;
+    }
+
+    final preferences = await SharedPreferences.getInstance();
+    final settings = AutomaticViewCoverSettings(
+      enabled: preferences.getBool(_enabledKey) ?? false,
+      theme: _normalizeTheme(preferences.getString(_themeKey)),
+    );
+    _cached = settings;
+    return settings;
+  }
+
+  static Future<void> save(AutomaticViewCoverSettings settings) async {
+    final normalized =
+        settings.copyWith(theme: _normalizeTheme(settings.theme));
+    final preferences = await SharedPreferences.getInstance();
+    await Future.wait([
+      preferences.setBool(_enabledKey, normalized.enabled),
+      preferences.setString(_themeKey, normalized.theme),
+    ]);
+    _cached = normalized;
+  }
+
+  @visibleForTesting
+  static void resetCache() => _cached = null;
+
+  static String _normalizeTheme(String? theme) {
+    final normalized = theme?.trim() ?? '';
+    return normalized.isEmpty
+        ? AutomaticViewCoverSettings.defaultTheme
+        : normalized;
+  }
+}
+
+abstract final class AutomaticViewCover {
+  static const _builtInCoverCount = 6;
+
+  static PageStyleCover forWorkspace({required String name}) => forNewView(
+        theme: AutomaticViewCoverSettings.defaultTheme,
+        name: name,
+        layout: ViewLayoutPB.Document,
+      );
+
+  static bool supports({
+    required ViewLayoutPB layout,
+    required String extra,
+    required Map<String, String> creationMetadata,
+  }) {
+    if (creationMetadata.containsKey('database_id')) {
+      return false;
+    }
+    if (WorkspaceItemMetadata.fromExtra(extra)?.isFile == true) {
+      return false;
+    }
+    return switch (layout) {
+      ViewLayoutPB.Document ||
+      ViewLayoutPB.Grid ||
+      ViewLayoutPB.Board ||
+      ViewLayoutPB.Calendar =>
+        true,
+      _ => false,
+    };
+  }
+
+  static PageStyleCover forNewView({
+    required String theme,
+    required String name,
+    required ViewLayoutPB layout,
+  }) {
+    final seed = '${theme.trim().toLowerCase()}|'
+        '${name.trim().toLowerCase()}|${layout.value}';
+    final image = (_stableHash(seed) % _builtInCoverCount) + 1;
+    return PageStyleCover(
+      type: PageStyleCoverImageType.builtInImage,
+      value: image.toString(),
+    );
+  }
+
+  static List<AutomaticViewCoverUpdate> updatesForExistingViews({
+    required Iterable<ViewPB> views,
+    required String theme,
+  }) {
+    final updates = <AutomaticViewCoverUpdate>[];
+    for (final view in views) {
+      if (!_supportsExistingView(view)) {
+        continue;
+      }
+
+      final currentCover = ViewCoverCodec.decodeCover(view.extra);
+      if (currentCover != null && !currentCover.isNone) {
+        continue;
+      }
+
+      updates.add(
+        AutomaticViewCoverUpdate(
+          viewId: view.id,
+          extra: ViewCoverCodec.mergeCover(
+            view.extra,
+            forNewView(
+              theme: theme,
+              name: view.name,
+              layout: view.layout,
+            ),
+          ),
+        ),
+      );
+    }
+    return updates;
+  }
+
+  static bool _supportsExistingView(ViewPB view) {
+    if (view.parentViewId.isEmpty) {
+      return false;
+    }
+    final metadata = ViewCoverCodec.decodeExtra(view.extra);
+    if (metadata['is_space'] == true) {
+      return false;
+    }
+    return supports(
+      layout: view.layout,
+      extra: view.extra,
+      creationMetadata: const {},
+    );
+  }
+
+  static int _stableHash(String value) {
+    var hash = 0x811C9DC5;
+    for (final codeUnit in value.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 0x01000193) & 0x7FFFFFFF;
+    }
+    return hash;
+  }
+}
+
+@immutable
+class AutomaticViewCoverUpdate {
+  const AutomaticViewCoverUpdate({
+    required this.viewId,
+    required this.extra,
+  });
+
+  final String viewId;
+  final String extra;
+}

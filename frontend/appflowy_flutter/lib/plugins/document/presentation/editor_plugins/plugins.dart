@@ -24,6 +24,8 @@ export 'database/referenced_database_menu_item.dart';
 export 'error/error_block_component_builder.dart';
 export 'extensions/flowy_tint_extension.dart';
 export 'file/file_block.dart';
+export 'folder_explorer/folder_explorer_block_component.dart';
+export 'page_preview/page_preview_block_component.dart';
 export 'find_and_replace/find_and_replace_menu.dart';
 export 'font/customize_font_toolbar_item.dart';
 export 'header/cover_editor_bloc.dart';

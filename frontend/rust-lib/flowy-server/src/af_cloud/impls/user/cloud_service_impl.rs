@@ -4,21 +4,26 @@ use std::sync::{Arc, Weak};
 
 use anyhow::anyhow;
 use arc_swap::ArcSwapOption;
+use chrono::{DateTime, Utc};
 use client_api::entity::billing_dto::{
   RecurringInterval, SetSubscriptionRecurringInterval, SubscriptionCancelRequest, SubscriptionPlan,
   SubscriptionPlanDetail, WorkspaceSubscriptionStatus, WorkspaceUsageAndLimit,
 };
 use client_api::entity::workspace_dto::{
-  CreateWorkspaceParam, PatchWorkspaceParam, QueryWorkspaceParam, WorkspaceMemberChangeset,
-  WorkspaceMemberInvitation,
+  CreateWorkspaceParam, QueryWorkspaceParam, WorkspaceMemberChangeset, WorkspaceMemberInvitation,
 };
 use client_api::entity::{
-  AFWorkspace, AFWorkspaceInvitation, AFWorkspaceSettings, AFWorkspaceSettingsChange, AuthProvider,
-  CollabParams, CreateCollabParams, GotrueTokenResponse, QueryWorkspaceMember,
+  AFRole, AFUserProfile, AFWorkspace, AFWorkspaceInvitation, AFWorkspaceSettings,
+  AFWorkspaceSettingsChange, AuthProvider, CollabParams, CreateCollabParams, GotrueTokenResponse,
+  QueryWorkspaceMember,
 };
 use client_api::entity::{QueryCollab, QueryCollabParams};
+use client_api::error::{AppResponseError, ErrorCode as AppErrorCode};
 use client_api::{Client, ClientConfiguration};
 use collab_entity::{CollabObject, CollabType};
+use reqwest::Method;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use tracing::{instrument, trace};
 
 use crate::af_cloud::define::{LoggedUser, USER_SIGN_IN_URL};
@@ -208,19 +213,26 @@ where
   async fn open_workspace(&self, workspace_id: &Uuid) -> Result<UserWorkspace, FlowyError> {
     let try_get_client = self.server.try_get_client();
     let client = try_get_client?;
-    let af_workspace = client.open_workspace(workspace_id).await?;
-    Ok(to_user_workspace(af_workspace))
+    let af_workspace = open_workspace_compat(&client, workspace_id).await?;
+    Ok(to_user_workspace_with_cover(af_workspace))
   }
 
   async fn get_all_workspace(&self, _uid: i64) -> Result<Vec<UserWorkspace>, FlowyError> {
-    let try_get_client = self.server.try_get_client();
-    let workspaces = try_get_client?
-      .get_workspaces_opt(QueryWorkspaceParam {
+    let client = self.server.try_get_client()?;
+    let workspaces = get_workspaces_compat(
+      &client,
+      QueryWorkspaceParam {
         include_member_count: Some(true),
         include_role: Some(true),
-      })
-      .await?;
-    to_user_workspaces(workspaces)
+      },
+    )
+    .await?;
+    Ok(
+      workspaces
+        .into_iter()
+        .map(to_user_workspace_with_cover)
+        .collect(),
+    )
   }
 
   async fn create_workspace(&self, workspace_name: &str) -> Result<UserWorkspace, FlowyError> {
@@ -240,17 +252,20 @@ where
     workspace_id: &Uuid,
     new_workspace_name: Option<String>,
     new_workspace_icon: Option<String>,
+    new_workspace_cover: Option<String>,
   ) -> Result<(), FlowyError> {
     let workspace_id = workspace_id.to_owned();
-    self
-      .server
-      .try_get_client()?
-      .patch_workspace(PatchWorkspaceParam {
+    let client = self.server.try_get_client()?;
+    patch_workspace_compat(
+      &client,
+      PatchWorkspaceCompatParam {
         workspace_id,
         workspace_name: new_workspace_name,
         workspace_icon: new_workspace_icon,
-      })
-      .await?;
+        workspace_cover: new_workspace_cover,
+      },
+    )
+    .await?;
     Ok(())
   }
 
@@ -625,11 +640,15 @@ pub async fn user_sign_in_with_url(
 ) -> Result<AuthResponse, FlowyError> {
   let is_new_user = client.sign_in_with_url(&params.sign_in_url).await?;
 
-  let workspace_profile = client.get_user_workspace_info().await?;
+  let workspace_profile = get_user_workspace_info_compat(&client).await?;
   let user_profile = workspace_profile.user_profile;
 
-  let latest_workspace = to_user_workspace(workspace_profile.visiting_workspace);
-  let user_workspaces = to_user_workspaces(workspace_profile.workspaces)?;
+  let latest_workspace = to_user_workspace_with_cover(workspace_profile.visiting_workspace);
+  let user_workspaces = workspace_profile
+    .workspaces
+    .into_iter()
+    .map(to_user_workspace_with_cover)
+    .collect();
   let encryption_type = encryption_type_from_profile(&user_profile);
 
   Ok(AuthResponse {
@@ -654,18 +673,25 @@ fn to_user_workspace(af_workspace: AFWorkspace) -> UserWorkspace {
     created_at: af_workspace.created_at,
     workspace_database_id: af_workspace.database_storage_id.to_string(),
     icon: af_workspace.icon,
+    cover: String::new(),
     member_count: af_workspace.member_count.unwrap_or(0),
     role: af_workspace.role.map(|r| r.into()),
     workspace_type: WorkspaceType::Server,
   }
 }
 
-fn to_user_workspaces(workspaces: Vec<AFWorkspace>) -> Result<Vec<UserWorkspace>, FlowyError> {
-  let mut result = Vec::with_capacity(workspaces.len());
-  for item in workspaces.into_iter() {
-    result.push(to_user_workspace(item));
+fn to_user_workspace_with_cover(af_workspace: AFWorkspaceCompat) -> UserWorkspace {
+  UserWorkspace {
+    id: af_workspace.workspace_id.to_string(),
+    name: af_workspace.workspace_name,
+    created_at: af_workspace.created_at,
+    workspace_database_id: af_workspace.database_storage_id.to_string(),
+    icon: af_workspace.icon,
+    cover: af_workspace.cover,
+    member_count: af_workspace.member_count.unwrap_or(0),
+    role: af_workspace.role.map(|r| r.into()),
+    workspace_type: WorkspaceType::Server,
   }
-  Ok(result)
 }
 
 fn to_workspace_invitation(invi: AFWorkspaceInvitation) -> WorkspaceInvitation {
@@ -689,4 +715,186 @@ fn oauth_params_from_box_any(any: BoxAny) -> Result<AFCloudOAuthParams, FlowyErr
   Ok(AFCloudOAuthParams {
     sign_in_url: sign_in_url.to_string(),
   })
+}
+
+#[derive(Debug, Deserialize)]
+struct CloudResponse<T> {
+  data: Option<T>,
+  code: AppErrorCode,
+  #[serde(default)]
+  message: String,
+}
+
+impl<T> CloudResponse<T> {
+  fn into_data(self) -> Result<T, AppResponseError> {
+    match self.code {
+      AppErrorCode::Ok => self.data.ok_or_else(|| {
+        AppResponseError::new(AppErrorCode::MissingPayload, "missing response payload")
+      }),
+      _ => Err(AppResponseError::new(self.code, self.message)),
+    }
+  }
+
+  fn into_error(self) -> Result<(), AppResponseError> {
+    match self.code {
+      AppErrorCode::Ok => Ok(()),
+      _ => Err(AppResponseError::new(self.code, self.message)),
+    }
+  }
+}
+
+#[derive(Debug, Serialize, Default)]
+struct PatchWorkspaceCompatParam {
+  workspace_id: Uuid,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  workspace_name: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  workspace_icon: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  workspace_cover: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct AFWorkspaceCompat {
+  workspace_id: Uuid,
+  database_storage_id: Uuid,
+  owner_uid: i64,
+  owner_name: String,
+  #[serde(default)]
+  owner_email: String,
+  workspace_type: i32,
+  workspace_name: String,
+  created_at: DateTime<Utc>,
+  #[serde(default)]
+  icon: String,
+  #[serde(default)]
+  cover: String,
+  #[serde(default)]
+  member_count: Option<i64>,
+  #[serde(default)]
+  role: Option<AFRole>,
+}
+
+#[derive(Deserialize)]
+struct AFUserWorkspaceInfoCompat {
+  user_profile: AFUserProfile,
+  visiting_workspace: AFWorkspaceCompat,
+  workspaces: Vec<AFWorkspaceCompat>,
+}
+
+async fn get_user_workspace_info_compat(
+  client: &Arc<AFCloudClient>,
+) -> Result<AFUserWorkspaceInfoCompat, FlowyError> {
+  let url = format!("{}/api/user/workspace", client.base_url());
+  let response = client
+    .http_client_with_auth(Method::GET, &url)
+    .await?
+    .send()
+    .await?;
+  parse_cloud_response_data(response).await
+}
+
+async fn patch_workspace_compat(
+  client: &Arc<AFCloudClient>,
+  params: PatchWorkspaceCompatParam,
+) -> Result<(), FlowyError> {
+  let url = format!("{}/api/workspace", client.base_url());
+  let response = client
+    .http_client_with_auth(Method::PATCH, &url)
+    .await?
+    .json(&params)
+    .send()
+    .await?;
+  parse_cloud_response_error(response).await
+}
+
+async fn get_workspaces_compat(
+  client: &Arc<AFCloudClient>,
+  param: QueryWorkspaceParam,
+) -> Result<Vec<AFWorkspaceCompat>, FlowyError> {
+  let url = format!("{}/api/workspace", client.base_url());
+  let response = client
+    .http_client_with_auth(Method::GET, &url)
+    .await?
+    .query(&param)
+    .send()
+    .await?;
+  parse_cloud_response_data(response).await
+}
+
+async fn open_workspace_compat(
+  client: &Arc<AFCloudClient>,
+  workspace_id: &Uuid,
+) -> Result<AFWorkspaceCompat, FlowyError> {
+  let url = format!("{}/api/workspace/{}/open", client.base_url(), workspace_id);
+  let response = client
+    .http_client_with_auth(Method::PUT, &url)
+    .await?
+    .send()
+    .await?;
+  parse_cloud_response_data(response).await
+}
+
+async fn parse_cloud_response_data<T: DeserializeOwned>(
+  response: reqwest::Response,
+) -> Result<T, FlowyError> {
+  let status = response.status();
+  let body = response.text().await?;
+  let payload: CloudResponse<T> = serde_json::from_str(&body).map_err(|err| {
+    FlowyError::internal().with_context(format!(
+      "failed to parse cloud response body with status {}: {} ({})",
+      status, err, body
+    ))
+  })?;
+
+  if !status.is_success() {
+    return Err(FlowyError::from(AppResponseError::new(
+      payload.code,
+      payload.message,
+    )));
+  }
+
+  payload.into_data().map_err(FlowyError::from)
+}
+
+async fn parse_cloud_response_error(response: reqwest::Response) -> Result<(), FlowyError> {
+  let status = response.status();
+  let body = response.text().await?;
+  let payload: CloudResponse<serde_json::Value> = serde_json::from_str(&body).map_err(|err| {
+    FlowyError::internal().with_context(format!(
+      "failed to parse cloud response body with status {}: {} ({})",
+      status, err, body
+    ))
+  })?;
+
+  if !status.is_success() {
+    return Err(FlowyError::from(AppResponseError::new(
+      payload.code,
+      payload.message,
+    )));
+  }
+
+  payload.into_error().map_err(FlowyError::from)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::AFWorkspaceCompat;
+
+  #[test]
+  fn workspace_cover_defaults_when_missing() {
+    let workspace: AFWorkspaceCompat = serde_json::from_value(serde_json::json!({
+      "workspace_id": uuid::Uuid::new_v4(),
+      "database_storage_id": uuid::Uuid::new_v4(),
+      "owner_uid": 1,
+      "owner_name": "owner",
+      "workspace_type": 1,
+      "workspace_name": "Workspace",
+      "created_at": chrono::Utc::now(),
+      "icon": "🚀"
+    }))
+    .unwrap();
+
+    assert!(workspace.cover.is_empty());
+  }
 }

@@ -82,13 +82,14 @@ class _MobileFolderState extends State<_MobileFolder> {
     BuildContext context,
     SidebarSectionsState state,
   ) {
+    final workspaceState = context.watch<UserWorkspaceBloc>().state;
     if (context.watch<SpaceBloc>().state.spaces.isNotEmpty) {
       return [
         const MobileSpace(),
       ];
     }
 
-    if (context.read<UserWorkspaceBloc>().state.isCollabWorkspaceOn) {
+    if (workspaceState.isCollabWorkspaceOn) {
       return [
         MobileSectionFolder(
           title: LocaleKeys.sideBar_workspace.tr(),
@@ -104,11 +105,15 @@ class _MobileFolderState extends State<_MobileFolder> {
       ];
     }
 
+    final workspaceName = workspaceState.currentWorkspace?.name.trim();
     return [
       MobileSectionFolder(
-        title: LocaleKeys.sideBar_personal.tr(),
+        title: workspaceName == null || workspaceName.isEmpty
+            ? LocaleKeys.sideBar_personal.tr()
+            : workspaceName,
         spaceType: FolderSpaceType.public,
         views: state.section.publicViews,
+        isWorkspaceRoot: true,
       ),
     ];
   }

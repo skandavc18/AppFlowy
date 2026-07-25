@@ -1,24 +1,38 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/document.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/import/import_panel.dart';
+import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
+import 'package:appflowy/workspace/presentation/home/toast.dart';
+import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 class ViewAddButton extends StatelessWidget {
   const ViewAddButton({
     super.key,
     required this.parentViewId,
+    required this.sourceView,
     required this.onEditing,
     required this.onSelected,
+    required this.onTransfer,
     this.isHovered = false,
+    this.showTransferActions = true,
   });
 
   final String parentViewId;
+  final ViewPB sourceView;
   final void Function(bool value) onEditing;
   final Function(
     PluginBuilder,
@@ -27,23 +41,45 @@ class ViewAddButton extends StatelessWidget {
     bool openAfterCreated,
     bool createNewView,
   ) onSelected;
+  final ValueChanged<ViewMoreActionType> onTransfer;
   final bool isHovered;
+  final bool showTransferActions;
 
   List<PopoverAction> get _actions {
-    return [
-      // document, grid, kanban, calendar
-      ...pluginBuilders().map(
-        (pluginBuilder) => ViewAddButtonActionWrapper(
-          pluginBuilder: pluginBuilder,
-        ),
-      ),
-      // import from ...
-      ...getIt<PluginSandbox>().builders.whereType<DocumentPluginBuilder>().map(
-            (pluginBuilder) => ViewImportActionWrapper(
-              pluginBuilder: pluginBuilder,
-            ),
+    final actions = <PopoverAction>[];
+    if (!sourceView.isWorkspaceFile) {
+      actions.addAll([
+        WorkspaceItemAddAction(WorkspaceItemAddKind.folder),
+        WorkspaceItemAddAction(WorkspaceItemAddKind.file),
+        // document, grid, kanban, calendar
+        ...pluginBuilders().map(
+          (pluginBuilder) => ViewAddButtonActionWrapper(
+            pluginBuilder: pluginBuilder,
           ),
-    ];
+        ),
+        // import from ...
+        ...getIt<PluginSandbox>()
+            .builders
+            .whereType<DocumentPluginBuilder>()
+            .map(
+              (pluginBuilder) => ViewImportActionWrapper(
+                pluginBuilder: pluginBuilder,
+              ),
+            ),
+        if (showTransferActions) _ViewAddDivider(),
+      ]);
+    }
+    if (showTransferActions) {
+      actions.addAll([
+        ViewTransferAction(ViewMoreActionType.moveTo),
+        ViewTransferAction(ViewMoreActionType.copyTo),
+        ViewTransferAction(ViewMoreActionType.cut),
+        if (sourceView.canContainWorkspaceItems &&
+            WorkspaceItemClipboard.instance.hasData)
+          ViewTransferAction(ViewMoreActionType.pasteInto),
+      ]);
+    }
+    return actions;
   }
 
   @override
@@ -74,12 +110,41 @@ class ViewAddButton extends StatelessWidget {
           _showViewAddButtonActions(context, action);
         } else if (action is ViewImportActionWrapper) {
           _showViewImportAction(context, action);
+        } else if (action is WorkspaceItemAddAction) {
+          unawaited(_createWorkspaceItem(context, action.kind));
+        } else if (action is ViewTransferAction) {
+          onTransfer(action.type);
         }
         popover.close();
       },
       onClosed: () {
         onEditing(false);
       },
+    );
+  }
+
+  Future<void> _createWorkspaceItem(
+    BuildContext context,
+    WorkspaceItemAddKind kind,
+  ) async {
+    const service = WorkspaceItemService();
+    final result = switch (kind) {
+      WorkspaceItemAddKind.folder => service.createFolder(
+          parentViewId: parentViewId,
+          name: LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
+        ),
+      WorkspaceItemAddKind.file => service.createTextFile(
+          parentViewId: parentViewId,
+          name: LocaleKeys.workspaceFolderExplorer_untitledFile.tr(),
+        ),
+    };
+    final created = await result;
+    if (!context.mounted) {
+      return;
+    }
+    created.fold(
+      (view) => context.read<TabsBloc>().openPlugin(view),
+      (error) => showSnackBarMessage(context, error.msg),
     );
   }
 
@@ -118,7 +183,11 @@ class ViewAddButtonActionWrapper extends ActionCell {
       );
 
   @override
-  String get name => pluginBuilder.menuName;
+  String get name => switch (pluginBuilder.pluginType) {
+        PluginType.document => LocaleKeys.workspaceFolderExplorer_newPage.tr(),
+        PluginType.grid => LocaleKeys.workspaceFolderExplorer_newTable.tr(),
+        _ => pluginBuilder.menuName,
+      };
 
   PluginType get pluginType => pluginBuilder.pluginType;
 }
@@ -135,4 +204,59 @@ class ViewImportActionWrapper extends ActionCell {
 
   @override
   String get name => LocaleKeys.moreAction_import.tr();
+}
+
+enum WorkspaceItemAddKind {
+  folder,
+  file,
+}
+
+class WorkspaceItemAddAction extends ActionCell {
+  WorkspaceItemAddAction(this.kind);
+
+  final WorkspaceItemAddKind kind;
+
+  @override
+  Widget? leftIcon(Color iconColor) => Icon(
+        kind == WorkspaceItemAddKind.folder
+            ? Icons.create_new_folder_outlined
+            : Icons.note_add_outlined,
+        color: iconColor,
+        size: 17,
+      );
+
+  @override
+  String get name => kind == WorkspaceItemAddKind.folder
+      ? LocaleKeys.workspaceFolderExplorer_newFolder.tr()
+      : LocaleKeys.workspaceFolderExplorer_newFile.tr();
+}
+
+class ViewTransferAction extends ActionCell {
+  ViewTransferAction(this.type);
+
+  final ViewMoreActionType type;
+
+  @override
+  Widget? leftIcon(Color iconColor) => FlowySvg(
+        type.leftIconSvg,
+        color: iconColor,
+        size: const Size.square(16),
+      );
+
+  @override
+  String get name => type.name;
+}
+
+class _ViewAddDivider extends CustomActionCell {
+  @override
+  Widget buildWithContext(
+    BuildContext context,
+    PopoverController controller,
+    PopoverMutex? mutex,
+  ) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      child: FlowyDivider(),
+    );
+  }
 }

@@ -177,7 +177,11 @@ class DocumentPluginWidgetBuilder extends PluginWidgetBuilder
   Widget get leftBarItem {
     return BlocProvider.value(
       value: pageAccessLevelBloc,
-      child: ViewTitleBar(key: ValueKey(view.id), view: view),
+      child: ViewTitleBar(
+        key: ValueKey(view.id),
+        view: view,
+        hideCurrentView: true,
+      ),
     );
   }
 

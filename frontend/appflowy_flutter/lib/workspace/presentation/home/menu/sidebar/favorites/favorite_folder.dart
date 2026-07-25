@@ -6,7 +6,6 @@ import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_menu.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_more_actions.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_pin_action.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_item.dart';
@@ -127,14 +126,8 @@ class _FavoriteFolderState extends State<FavoriteFolder> {
       leftIconBuilder: (_, __) => const HSpace(HomeSpaceViewSizes.leftPadding),
       level: 0,
       isHovered: isHovered,
+      includeDefaultMoreAction: true,
       rightIconsBuilder: (context, view) => [
-        Listener(
-          child: FavoriteMoreActions(view: view),
-          onPointerDown: (e) {
-            context.read<ViewBloc>().add(const ViewEvent.setIsEditing(true));
-          },
-        ),
-        const HSpace(8.0),
         Listener(
           child: FavoritePinAction(view: view),
           onPointerDown: (e) {

@@ -64,6 +64,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
   final databaseItems = <SelectionMenuItem>[
     tableSlashMenuItem,
     linkToPageSlashMenuItem,
+    pagePreviewSlashMenuItem,
     if (documentBloc != null) gridSlashMenuItem(documentBloc),
     referencedGridSlashMenuItem,
     if (documentBloc != null) kanbanSlashMenuItem(documentBloc),
@@ -112,6 +113,8 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         photoGallerySlashMenuItem,
         audioSlashMenuItem,
         videoSlashMenuItem,
+        folderLinkSlashMenuItem,
+        folderExplorerSlashMenuItem,
         fileSlashMenuItem,
         pdfSlashMenuItem,
         htmlSlashMenuItem,

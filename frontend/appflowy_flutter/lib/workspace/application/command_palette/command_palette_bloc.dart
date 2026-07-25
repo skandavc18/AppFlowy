@@ -4,6 +4,7 @@ import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/plugins/trash/application/trash_service.dart';
 import 'package:appflowy/workspace/application/command_palette/search_service.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
 import 'package:bloc/bloc.dart';
@@ -24,6 +25,10 @@ class Debouncer {
   }
 
   void dispose() {
+    _timer?.cancel();
+  }
+
+  void cancel() {
     _timer?.cancel();
   }
 }
@@ -312,7 +317,10 @@ class CommandPaletteBloc
     _ClearSearch event,
     Emitter<CommandPaletteState> emit,
   ) {
-    emit(CommandPaletteState.initial().copyWith(trash: state.trash));
+    _searchDebouncer.cancel();
+    _activeQuery = null;
+    state.searchResponseStream?.dispose();
+    emit(commandPaletteStateAfterClear(state));
   }
 
   FutureOr<void> _onGoingToAskAI(
@@ -382,6 +390,47 @@ class SearchResultItem {
   final ResultIconPB icon;
   final String displayName;
   final String? workspaceId;
+}
+
+CommandPaletteState commandPaletteStateAfterClear(CommandPaletteState state) {
+  return CommandPaletteState.initial().copyWith(
+    cachedViews: state.cachedViews,
+    trash: state.trash,
+  );
+}
+
+List<SearchResultItem> includeWorkspaceFolderSearchResults({
+  required Iterable<SearchResultItem> searchResults,
+  required Map<String, ViewPB> cachedViews,
+  required String query,
+  Iterable<String> excludedViewIds = const [],
+}) {
+  final resultsById = {
+    for (final item in searchResults) item.id: item,
+  };
+  final normalizedQuery = query.trim().toLowerCase();
+  if (normalizedQuery.isEmpty) {
+    return resultsById.values.toList(growable: false);
+  }
+
+  final excluded = excludedViewIds.toSet();
+  for (final view in cachedViews.values) {
+    if (!view.isWorkspaceFolder ||
+        excluded.contains(view.id) ||
+        !view.name.toLowerCase().contains(normalizedQuery)) {
+      continue;
+    }
+    resultsById.putIfAbsent(
+      view.id,
+      () => SearchResultItem(
+        id: view.id,
+        icon: ResultIconPB(),
+        content: '',
+        displayName: view.name,
+      ),
+    );
+  }
+  return resultsById.values.toList(growable: false);
 }
 
 @freezed

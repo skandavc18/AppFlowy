@@ -187,6 +187,9 @@ pub struct UserWorkspacePB {
 
   #[pb(index = 7)]
   pub workspace_type: WorkspaceTypePB,
+
+  #[pb(index = 8)]
+  pub cover: String,
 }
 
 impl From<UserWorkspace> for UserWorkspacePB {
@@ -199,6 +202,7 @@ impl From<UserWorkspace> for UserWorkspacePB {
       member_count: workspace.member_count,
       role: workspace.role.map(AFRolePB::from),
       workspace_type: WorkspaceTypePB::from(workspace.workspace_type),
+      cover: workspace.cover,
     }
   }
 }
@@ -213,6 +217,7 @@ impl From<UserWorkspaceTable> for UserWorkspacePB {
       member_count: value.member_count,
       role: value.role.map(AFRolePB::from),
       workspace_type: WorkspaceTypePB::from(value.workspace_type),
+      cover: value.cover,
     }
   }
 }

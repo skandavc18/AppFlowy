@@ -415,6 +415,12 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
       context,
       configuration,
     ),
+    FolderExplorerBlockKeys.type: FolderExplorerBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    PagePreviewBlockKeys.type: PagePreviewBlockComponentBuilder(
+      configuration: configuration,
+    ),
     SubPageBlockKeys.type: _buildSubPageBlockComponentBuilder(
       context,
       configuration,

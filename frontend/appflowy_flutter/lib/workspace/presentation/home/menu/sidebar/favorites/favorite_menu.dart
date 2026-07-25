@@ -4,7 +4,6 @@ import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_menu_bloc.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_more_actions.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_pin_action.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/shared_widget.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_item.dart';
@@ -87,6 +86,7 @@ class _FavoriteGroupedViews extends StatelessWidget {
               isFeedback: false,
               isDraggable: false,
               shouldRenderChildren: false,
+              enableRightClickContext: true,
               extendBuilder: (view) => view.isPinned
                   ? [
                       const HSpace(4.0),
@@ -97,9 +97,8 @@ class _FavoriteGroupedViews extends StatelessWidget {
                     ]
                   : [],
               leftIconBuilder: (_, __) => const HSpace(4.0),
+              includeDefaultMoreAction: true,
               rightIconsBuilder: (_, view) => [
-                FavoriteMoreActions(view: view),
-                const HSpace(6.0),
                 FavoritePinAction(view: view),
                 const HSpace(4.0),
               ],

@@ -23,3 +23,6 @@ tracing.workspace = true
 base64 = "0.21"
 client-api = { workspace = true }
 flowy-sqlite.workspace = true
+
+[dev-dependencies]
+diesel_migrations = "2.2.0"

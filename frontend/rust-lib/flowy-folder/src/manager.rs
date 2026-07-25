@@ -54,7 +54,7 @@ use flowy_sqlite::DBConnection;
 use flowy_sqlite::kv::KVStorePreferences;
 use flowy_user_pub::entities::{Role, UserWorkspace};
 use futures::future;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
@@ -130,6 +130,7 @@ impl FolderManager {
   #[instrument(level = "debug", skip(self), err)]
   pub async fn get_current_workspace(&self) -> FlowyResult<WorkspacePB> {
     let workspace_id = self.user.workspace_id()?;
+    let active_workspace = self.user.get_active_user_workspace()?;
     match self.mutex_folder.load_full() {
       None => {
         let uid = self.user.user_id()?;
@@ -139,8 +140,13 @@ impl FolderManager {
         let folder = lock.read().await;
         let workspace_pb_from_workspace = |workspace: Workspace, folder: &Folder| {
           let views = get_workspace_public_view_pbs(&workspace_id, folder);
-          let workspace: WorkspacePB = (workspace, views).into();
-          Ok::<WorkspacePB, FlowyError>(workspace)
+          Ok::<WorkspacePB, FlowyError>(WorkspacePB {
+            id: workspace.id,
+            name: active_workspace.name.clone(),
+            views,
+            create_time: active_workspace.created_at.timestamp(),
+            cover: active_workspace.cover.clone(),
+          })
         };
 
         match folder.get_workspace_info(&workspace_id.to_string()) {
@@ -543,6 +549,7 @@ impl FolderManager {
     let workspace = folder
       .get_workspace_info(&workspace_id.to_string())
       .ok_or_else(|| FlowyError::record_not_found().with_context("Can not find the workspace"))?;
+    let active_workspace = self.user.get_active_user_workspace()?;
 
     let views = folder
       .get_views_belong_to(&workspace.id)
@@ -552,9 +559,10 @@ impl FolderManager {
 
     Ok(WorkspacePB {
       id: workspace.id,
-      name: workspace.name,
+      name: active_workspace.name,
       views,
-      create_time: workspace.created_at,
+      create_time: active_workspace.created_at.timestamp(),
+      cover: active_workspace.cover,
     })
   }
 
@@ -1150,32 +1158,104 @@ impl FolderManager {
       },
     };
 
+    let (source_views, source_children, source_sections) = {
+      let lock = self
+        .mutex_folder
+        .load_full()
+        .ok_or_else(|| FlowyError::record_not_found().with_context("Can't duplicate the view"))?;
+      let folder = lock.read().await;
+      if include_children {
+        let mut current_id = parent_view_id.to_string();
+        let mut visited_parent_ids = HashSet::new();
+        loop {
+          if !visited_parent_ids.insert(current_id.clone()) {
+            return Err(FlowyError::new(
+              ErrorCode::InvalidParams,
+              "Can't duplicate into a cyclic view hierarchy",
+            ));
+          }
+          if current_id == view_id {
+            return Err(FlowyError::new(
+              ErrorCode::InvalidParams,
+              format!(
+                "Can't duplicate the view({}) into one of its descendants",
+                view_id
+              ),
+            ));
+          }
+          let Some(current) = folder.get_view(&current_id) else {
+            break;
+          };
+          current_id.clone_from(&current.parent_view_id);
+        }
+      }
+
+      let mut views_by_id = HashMap::new();
+      let mut children_by_parent = HashMap::new();
+      let mut sections_by_id = HashMap::new();
+      let mut pending = vec![view_id.to_string()];
+      let mut visited_view_ids = HashSet::new();
+      while let Some(source_id) = pending.pop() {
+        if !visited_view_ids.insert(source_id.clone()) {
+          return Err(FlowyError::new(
+            ErrorCode::InvalidParams,
+            "Can't duplicate a cyclic view hierarchy",
+          ));
+        }
+        let source_view = folder.get_view(&source_id).ok_or_else(|| {
+          FlowyError::record_not_found()
+            .with_context(format!("Can't duplicate the view({})", source_id))
+        })?;
+        let section = if folder.is_view_in_section(Section::Private, &source_id) {
+          ViewSectionPB::Private
+        } else {
+          ViewSectionPB::Public
+        };
+        let child_ids = if include_children {
+          folder
+            .get_views_belong_to(&source_id)
+            .into_iter()
+            .filter(|view| !filtered_view_ids.contains(&view.id) && view.layout != ViewLayout::Chat)
+            .map(|view| view.id.clone())
+            .collect::<Vec<_>>()
+        } else {
+          Vec::new()
+        };
+        pending.extend(child_ids.iter().cloned());
+        views_by_id.insert(source_id.clone(), source_view);
+        children_by_parent.insert(source_id.clone(), child_ids);
+        sections_by_id.insert(source_id, section);
+      }
+      (views_by_id, children_by_parent, sections_by_id)
+    };
+
+    // Read all source collabs before creating anything so a concurrent deletion
+    // cannot leave a partially duplicated subtree.
+    let mut source_view_data = HashMap::new();
+    for (source_id, view) in &source_views {
+      let handler = self.get_handler(&view.layout)?;
+      let source_uuid = Uuid::from_str(source_id)?;
+      let view_data = handler.duplicate_view(&source_uuid).await?;
+      source_view_data.insert(source_id.clone(), view_data);
+    }
+
     // only apply the `open_after_duplicated` and the `include_children` to the first view
     let mut is_source_view = true;
     let mut new_view_id = String::default();
     // use a stack to duplicate the view and its children
     let mut stack = vec![(view_id.to_string(), parent_view_id.to_string())];
+    let mut visited_view_ids = HashSet::new();
     let mut objects = vec![];
     let suffix = suffix.unwrap_or(" (copy)".to_string());
 
-    let lock = match self.mutex_folder.load_full() {
-      None => {
-        return Err(
-          FlowyError::record_not_found()
-            .with_context(format!("Can't duplicate the view({})", view_id)),
-        );
-      },
-      Some(lock) => lock,
-    };
     while let Some((current_view_id, current_parent_id)) = stack.pop() {
-      let view = lock
-        .read()
-        .await
-        .get_view(&current_view_id)
-        .ok_or_else(|| {
-          FlowyError::record_not_found()
-            .with_context(format!("Can't duplicate the view({})", view_id))
-        })?;
+      if !visited_view_ids.insert(current_view_id.clone()) {
+        continue;
+      }
+      let view = source_views.get(&current_view_id).ok_or_else(|| {
+        FlowyError::record_not_found()
+          .with_context(format!("Can't duplicate the view({})", view_id))
+      })?;
 
       let handler = self.get_handler(&view.layout)?;
       info!(
@@ -1185,8 +1265,10 @@ impl FolderManager {
         view.name,
         view.layout
       );
-      let view_id = Uuid::from_str(&view.id)?;
-      let view_data = handler.duplicate_view(&view_id).await?;
+      let view_data = source_view_data.remove(&current_view_id).ok_or_else(|| {
+        FlowyError::record_not_found()
+          .with_context(format!("Can't duplicate the view({})", current_view_id))
+      })?;
 
       let index = self
         .get_view_relation(&current_parent_id)
@@ -1199,14 +1281,10 @@ impl FolderManager {
             .map(|i| i as u32)
         });
 
-      let section = {
-        let folder = lock.read().await;
-        if folder.is_view_in_section(Section::Private, &view.id) {
-          ViewSectionPB::Private
-        } else {
-          ViewSectionPB::Public
-        }
-      };
+      let section = source_sections
+        .get(&current_view_id)
+        .cloned()
+        .unwrap_or(ViewSectionPB::Public);
 
       let name = if is_source_view {
         format!(
@@ -1266,14 +1344,10 @@ impl FolderManager {
         }
       }
 
-      if include_children {
-        let child_views = self.get_views_belong_to(&current_view_id).await?;
+      if let Some(child_ids) = source_children.get(&current_view_id) {
         // reverse the child views to keep the order
-        for child_view in child_views.iter().rev() {
-          // skip the view_id should be filtered and the child_view is the duplicated view
-          if !filtered_view_ids.contains(&child_view.id) && child_view.layout != ViewLayout::Chat {
-            stack.push((child_view.id.clone(), duplicated_view.id.clone()));
-          }
+        for child_id in child_ids.iter().rev() {
+          stack.push((child_id.clone(), duplicated_view.id.clone()));
         }
       }
 
@@ -1292,6 +1366,10 @@ impl FolderManager {
     }
 
     // notify the update here
+    let lock = self
+      .mutex_folder
+      .load_full()
+      .ok_or_else(|| FlowyError::record_not_found().with_context("Can't notify duplicated view"))?;
     let folder = lock.read().await;
     notify_parent_view_did_change(workspace_id, &folder, vec![parent_view_id]);
     let duplicated_view = self.get_view_pb(&new_view_id).await?;

@@ -17,6 +17,7 @@ pub struct UserWorkspaceTable {
   pub created_at: i64,
   pub database_storage_id: String,
   pub icon: String,
+  pub cover: String,
   pub member_count: i64,
   pub role: Option<i32>,
   pub workspace_type: i32,
@@ -28,19 +29,25 @@ pub struct UserWorkspaceChangeset {
   pub id: String,
   pub name: Option<String>,
   pub icon: Option<String>,
+  pub cover: Option<String>,
   pub role: Option<i32>,
   pub member_count: Option<i64>,
 }
 
 impl UserWorkspaceChangeset {
   pub fn has_changes(&self) -> bool {
-    self.name.is_some() || self.icon.is_some() || self.role.is_some() || self.member_count.is_some()
+    self.name.is_some()
+      || self.icon.is_some()
+      || self.cover.is_some()
+      || self.role.is_some()
+      || self.member_count.is_some()
   }
   pub fn from_version(old: &UserWorkspace, new: &UserWorkspace) -> Self {
     let mut changeset = Self {
       id: new.id.clone(),
       name: None,
       icon: None,
+      cover: None,
       role: None,
       member_count: None,
     };
@@ -50,6 +57,9 @@ impl UserWorkspaceChangeset {
     }
     if old.icon != new.icon {
       changeset.icon = Some(new.icon.clone());
+    }
+    if old.cover != new.cover {
+      changeset.cover = Some(new.cover.clone());
     }
     if old.role != new.role {
       changeset.role = new.role.map(|v| v as i32);
@@ -82,6 +92,7 @@ impl UserWorkspaceTable {
       created_at: workspace.created_at.timestamp(),
       database_storage_id: workspace.workspace_database_id.clone(),
       icon: workspace.icon.clone(),
+      cover: workspace.cover.clone(),
       member_count: workspace.member_count,
       role: workspace.role.map(|v| v as i32),
       workspace_type: workspace_type as i32,
@@ -158,6 +169,7 @@ impl From<UserWorkspaceTable> for UserWorkspace {
         .unwrap_or_default(),
       workspace_database_id: value.database_storage_id,
       icon: value.icon,
+      cover: value.cover,
       member_count: value.member_count,
       role: value.role.map(|v| v.into()),
       workspace_type: WorkspaceType::from(value.workspace_type),
@@ -207,12 +219,100 @@ pub fn upsert_user_workspace(
       user_workspace_table::created_at.eq(row.created_at),
       user_workspace_table::database_storage_id.eq(row.database_storage_id),
       user_workspace_table::icon.eq(row.icon),
+      user_workspace_table::cover.eq(row.cover),
       user_workspace_table::member_count.eq(row.member_count),
       user_workspace_table::role.eq(row.role),
     ))
     .execute(conn)?;
 
   Ok(n)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use chrono::Utc;
+  use diesel_migrations::MigrationHarness;
+  use flowy_sqlite::{ConnectionPool, MIGRATIONS, PoolConfig};
+  use serde_json::json;
+  use uuid::Uuid;
+
+  fn new_test_pool() -> ConnectionPool {
+    let uri = format!(
+      "file:workspace_sql_cover_{}?mode=memory&cache=shared",
+      Uuid::new_v4()
+    );
+    let pool = ConnectionPool::new(PoolConfig::default(), uri).unwrap();
+    let mut conn = pool.get().unwrap();
+    conn.run_pending_migrations(MIGRATIONS).unwrap();
+    drop(conn);
+    pool
+  }
+
+  fn sample_workspace(cover: &str) -> UserWorkspace {
+    UserWorkspace {
+      id: Uuid::new_v4().to_string(),
+      name: "Workspace".to_owned(),
+      created_at: Utc::now(),
+      workspace_database_id: Uuid::new_v4().to_string(),
+      icon: "🚀".to_owned(),
+      cover: cover.to_owned(),
+      member_count: 1,
+      role: Some(crate::entities::Role::Owner),
+      workspace_type: WorkspaceType::Local,
+    }
+  }
+
+  #[test]
+  fn user_workspace_deserializes_missing_cover_as_empty() {
+    let workspace: UserWorkspace = serde_json::from_value(json!({
+      "id": Uuid::new_v4().to_string(),
+      "name": "Workspace",
+      "created_at": Utc::now(),
+      "database_storage_id": Uuid::new_v4().to_string(),
+      "icon": "🚀",
+      "member_count": 1,
+      "role": 0,
+      "workspace_type": 0
+    }))
+    .unwrap();
+
+    assert!(workspace.cover.is_empty());
+  }
+
+  #[test]
+  fn workspace_cover_persists_and_clears() {
+    let pool = new_test_pool();
+    let workspace = sample_workspace(r##"{"type":"color","value":"#fff"}"##);
+
+    {
+      let mut conn = pool.get().unwrap();
+      upsert_user_workspace(1, WorkspaceType::Local, workspace.clone(), &mut conn).unwrap();
+    }
+
+    let mut verify_conn = pool.get().unwrap();
+    let stored = select_user_workspace(&workspace.id, &mut verify_conn).unwrap();
+    assert_eq!(stored.cover, workspace.cover);
+    drop(verify_conn);
+
+    let cleared_cover = "".to_owned();
+    update_user_workspace(
+      pool.get().unwrap(),
+      UserWorkspaceChangeset {
+        id: workspace.id.clone(),
+        name: None,
+        icon: None,
+        cover: Some(cleared_cover.clone()),
+        role: None,
+        member_count: None,
+      },
+    )
+    .unwrap();
+
+    let mut verify_conn = pool.get().unwrap();
+    let stored = select_user_workspace(&workspace.id, &mut verify_conn).unwrap();
+    assert_eq!(stored.cover, cleared_cover);
+  }
 }
 
 pub fn sync_user_workspaces_with_diff(

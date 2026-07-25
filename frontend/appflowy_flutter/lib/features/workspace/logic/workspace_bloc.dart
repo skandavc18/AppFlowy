@@ -48,6 +48,7 @@ class UserWorkspaceBloc extends Bloc<UserWorkspaceEvent, UserWorkspaceState> {
     on<WorkspaceEventOpenWorkspace>(_onOpenWorkspace);
     on<WorkspaceEventRenameWorkspace>(_onRenameWorkspace);
     on<WorkspaceEventUpdateWorkspaceIcon>(_onUpdateWorkspaceIcon);
+    on<WorkspaceEventUpdateWorkspaceCover>(_onUpdateWorkspaceCover);
     on<WorkspaceEventLeaveWorkspace>(_onLeaveWorkspace);
     on<WorkspaceEventFetchWorkspaceSubscriptionInfo>(
       _onFetchWorkspaceSubscriptionInfo,
@@ -356,10 +357,27 @@ class UserWorkspaceBloc extends Bloc<UserWorkspaceEvent, UserWorkspaceState> {
     WorkspaceEventUpdateWorkspaceIcon event,
     Emitter<UserWorkspaceState> emit,
   ) async {
-    final workspace = _findWorkspaceById(event.workspaceId);
+    final workspace = _findWorkspaceById(event.workspaceId) ??
+        (state.currentWorkspace?.workspaceId == event.workspaceId
+            ? state.currentWorkspace
+            : null);
     if (workspace == null) {
       Log.error('workspace not found: ${event.workspaceId}');
-      return;
+      return emit(
+        state.copyWith(
+          actionResult: WorkspaceActionResult(
+            actionType: WorkspaceActionType.updateCover,
+            isLoading: false,
+            result: FlowyResult.failure(
+              FlowyError(
+                code: ErrorCode.Internal,
+                msg: LocaleKeys.workspaceFolderExplorer_workspaceUnavailable
+                    .tr(),
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     if (event.icon == workspace.icon) {
@@ -401,6 +419,88 @@ class UserWorkspaceBloc extends Bloc<UserWorkspaceEvent, UserWorkspaceState> {
         currentWorkspace: currentWorkspace,
         actionResult: WorkspaceActionResult(
           actionType: WorkspaceActionType.updateIcon,
+          isLoading: false,
+          result: result,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onUpdateWorkspaceCover(
+    WorkspaceEventUpdateWorkspaceCover event,
+    Emitter<UserWorkspaceState> emit,
+  ) async {
+    final workspace = _findWorkspaceById(event.workspaceId) ??
+        (state.currentWorkspace?.workspaceId == event.workspaceId
+            ? state.currentWorkspace
+            : null);
+    if (workspace == null) {
+      Log.error('workspace not found: ${event.workspaceId}');
+      return emit(
+        state.copyWith(
+          actionResult: WorkspaceActionResult(
+            actionType: WorkspaceActionType.updateCover,
+            isLoading: false,
+            result: FlowyResult.failure(
+              FlowyError(
+                code: ErrorCode.Internal,
+                msg: LocaleKeys.workspaceFolderExplorer_workspaceUnavailable
+                    .tr(),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (event.cover == workspace.cover) {
+      Log.info('ignore same cover update');
+      return emit(
+        state.copyWith(
+          actionResult: WorkspaceActionResult(
+            actionType: WorkspaceActionType.updateCover,
+            isLoading: false,
+            result: FlowyResult.success(null),
+          ),
+        ),
+      );
+    }
+
+    final result = await repository.updateWorkspaceCover(
+      workspaceId: event.workspaceId,
+      cover: event.cover,
+    );
+
+    final updatedWorkspace = result.fold<UserWorkspacePB?>(
+      (_) {
+        workspace.freeze();
+        return workspace.rebuild((updated) {
+          updated.cover = event.cover;
+        });
+      },
+      (_) => null,
+    );
+    final workspaces = updatedWorkspace == null
+        ? state.workspaces
+        : _upsertWorkspace(updatedWorkspace);
+    final currentWorkspace =
+        state.currentWorkspace?.workspaceId == event.workspaceId
+            ? updatedWorkspace ?? state.currentWorkspace
+            : _findWorkspaceById(
+                state.currentWorkspace?.workspaceId ?? '',
+                workspaces,
+              );
+
+    result.onFailure((error) {
+      Log.error('update workspace cover error: $error');
+    });
+
+    emit(
+      state.copyWith(
+        workspaces: workspaces,
+        currentWorkspace: currentWorkspace,
+        actionResult: WorkspaceActionResult(
+          actionType: WorkspaceActionType.updateCover,
           isLoading: false,
           result: result,
         ),
@@ -632,6 +732,18 @@ class UserWorkspaceBloc extends Bloc<UserWorkspaceEvent, UserWorkspaceState> {
     final index = workspaces.indexWhere((e) => e.workspaceId == workspaceId);
     if (index != -1) {
       workspaces[index] = updater(workspaces[index]);
+    }
+    return workspaces;
+  }
+
+  List<UserWorkspacePB> _upsertWorkspace(UserWorkspacePB workspace) {
+    final workspaces = [...state.workspaces];
+    final index = workspaces
+        .indexWhere((item) => item.workspaceId == workspace.workspaceId);
+    if (index == -1) {
+      workspaces.add(workspace);
+    } else {
+      workspaces[index] = workspace;
     }
     return workspaces;
   }

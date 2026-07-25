@@ -24,6 +24,16 @@ import 'package:flutter/material.dart';
 
 // const _channel = "InlinePageReference";
 
+typedef InlinePageReferenceSelectionHandler = FutureOr<void> Function(
+  ViewPB view,
+  BuildContext context,
+  EditorState editorState,
+  InlineActionsMenuService menu,
+  (int, int) replace,
+);
+
+typedef InlinePageReferenceViewFilter = bool Function(ViewPB view);
+
 // TODO(Mathias): Clean up and use folder search instead
 class InlinePageReferenceService extends InlineActionsDelegate {
   InlinePageReferenceService({
@@ -32,6 +42,9 @@ class InlinePageReferenceService extends InlineActionsDelegate {
     this.customTitle,
     this.insertPage = false,
     this.limitResults = 5,
+    this.onSelected,
+    this.viewFilter,
+    this.showAllViewsInitially = false,
   }) : assert(limitResults > 0, 'limitResults must be greater than 0') {
     init();
   }
@@ -53,6 +66,9 @@ class InlinePageReferenceService extends InlineActionsDelegate {
   /// to [limitResults].
   ///
   final int limitResults;
+  final InlinePageReferenceSelectionHandler? onSelected;
+  final InlinePageReferenceViewFilter? viewFilter;
+  final bool showAllViewsInitially;
 
   late final CachedRecentService _recentService;
 
@@ -70,12 +86,7 @@ class InlinePageReferenceService extends InlineActionsDelegate {
     final views =
         sectionViews.unique((e) => e.item.id).map((e) => e.item).toList();
 
-    // Filter by viewLayout
-    views.retainWhere(
-      (i) =>
-          currentViewId != i.id &&
-          (viewLayout == null || i.layout == viewLayout),
-    );
+    views.retainWhere(_isAvailable);
 
     // Map to InlineActionsMenuItem, then take 5 items
     return _recentViews = views.map(_fromView).take(5).toList();
@@ -92,12 +103,8 @@ class InlinePageReferenceService extends InlineActionsDelegate {
     _viewsInitialized = true;
 
     final viewResult = await ViewBackendService.getAllViews();
-    return _allViews = viewResult
-            .toNullable()
-            ?.items
-            .where((v) => viewLayout == null || v.layout == viewLayout)
-            .toList() ??
-        const [];
+    return _allViews =
+        viewResult.toNullable()?.items.where(_isAvailable).toList() ?? const [];
   }
 
   Future<void> init() async {
@@ -121,21 +128,11 @@ class InlinePageReferenceService extends InlineActionsDelegate {
     final isSearching = search != null && search.isNotEmpty;
 
     late List<InlineActionsMenuItem> items;
-    if (isSearching) {
+    if (isSearching || showAllViewsInitially) {
       final allViews = await _getViews();
 
       items = allViews
-          .where(
-            (view) =>
-                view.id != currentViewId &&
-                    view.name.toLowerCase().contains(search.toLowerCase()) ||
-                (view.name.isEmpty && search.isEmpty) ||
-                (view.name.isEmpty &&
-                    LocaleKeys.menuAppHeader_defaultNewPageName
-                        .tr()
-                        .toLowerCase()
-                        .contains(search.toLowerCase())),
-          )
+          .where((view) => !isSearching || _matchesSearch(view, search))
           .take(limitResults)
           .map((view) => _fromView(view))
           .toList();
@@ -151,6 +148,21 @@ class InlinePageReferenceService extends InlineActionsDelegate {
               : LocaleKeys.inlineActions_recentPages.tr(),
       results: items,
     );
+  }
+
+  bool _isAvailable(ViewPB view) =>
+      view.id != currentViewId &&
+      (viewLayout == null || view.layout == viewLayout) &&
+      (viewFilter?.call(view) ?? true);
+
+  bool _matchesSearch(ViewPB view, String? search) {
+    final query = search?.toLowerCase() ?? '';
+    return view.name.toLowerCase().contains(query) ||
+        (view.name.isEmpty &&
+            LocaleKeys.menuAppHeader_defaultNewPageName
+                .tr()
+                .toLowerCase()
+                .contains(query));
   }
 
   Future<void> _onInsertPageRef(
@@ -247,9 +259,28 @@ class InlinePageReferenceService extends InlineActionsDelegate {
             child: child,
           );
         },
-        onSelected: (context, editorState, menu, replace) => insertPage
-            ? _onInsertPageRef(view, context, editorState, replace)
-            : _onInsertLinkRef(view, context, editorState, menu, replace),
+        onSelected: (context, editorState, menu, replace) {
+          final handler = onSelected;
+          if (handler != null) {
+            unawaited(
+              Future.sync(
+                () => handler(view, context, editorState, menu, replace),
+              ),
+            );
+            return;
+          }
+          unawaited(
+            insertPage
+                ? _onInsertPageRef(view, context, editorState, replace)
+                : _onInsertLinkRef(
+                    view,
+                    context,
+                    editorState,
+                    menu,
+                    replace,
+                  ),
+          );
+        },
       );
 
 // Future<InlineActionsMenuItem?> _fromSearchResult(

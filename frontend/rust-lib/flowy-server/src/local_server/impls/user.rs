@@ -190,6 +190,7 @@ impl UserCloudService for LocalServerUserServiceImpl {
     workspace_id: &Uuid,
     new_workspace_name: Option<String>,
     new_workspace_icon: Option<String>,
+    new_workspace_cover: Option<String>,
   ) -> Result<(), FlowyError> {
     Ok(())
   }

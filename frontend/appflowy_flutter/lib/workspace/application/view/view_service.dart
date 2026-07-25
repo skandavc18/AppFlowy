@@ -3,9 +3,12 @@ import 'dart:async';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/mention/mention_page_bloc.dart';
 import 'package:appflowy/plugins/trash/application/trash_service.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-document/entities.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-error/code.pbenum.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_result/appflowy_result.dart';
@@ -38,13 +41,44 @@ class ViewBackendService {
     /// the database id. For example: "database_id": "xxx"
     ///
     Map<String, String> ext = const {},
+    String? extra,
 
     /// The [index] is the index of the view in the parent view.
     /// If the index is null, the view will be added to the end of the list.
     int? index,
     ViewSectionPB? section,
     final String? viewId,
-  }) {
+  }) async {
+    var resolvedExtra = extra;
+    final automaticCoverSettings = await AutomaticViewCoverPreferences.load();
+    if (automaticCoverSettings.enabled &&
+        AutomaticViewCover.supports(
+          layout: layoutType,
+          extra: extra ?? '',
+          creationMetadata: ext,
+        )) {
+      try {
+        final currentCover = ViewCoverCodec.decodeCover(extra ?? '');
+        if (currentCover == null || currentCover.isNone) {
+          resolvedExtra = ViewCoverCodec.mergeCover(
+            extra ?? '',
+            AutomaticViewCover.forNewView(
+              theme: automaticCoverSettings.theme,
+              name: name,
+              layout: layoutType,
+            ),
+          );
+        }
+      } on FormatException catch (error) {
+        return FlowyResult.failure(
+          FlowyError(
+            code: ErrorCode.ViewDataInvalid,
+            msg: 'Unable to add an automatic cover: ${error.message}',
+          ),
+        );
+      }
+    }
+
     final payload = CreateViewPayloadPB.create()
       ..parentViewId = parentViewId
       ..name = name
@@ -54,6 +88,10 @@ class ViewBackendService {
 
     if (ext.isNotEmpty) {
       payload.meta.addAll(ext);
+    }
+
+    if (resolvedExtra != null) {
+      payload.extra = resolvedExtra;
     }
 
     if (index != null) {

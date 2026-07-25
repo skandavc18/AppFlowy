@@ -1,6 +1,7 @@
 import 'package:appflowy_popover/appflowy_popover.dart';
 import 'package:bloc/bloc.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:flutter/foundation.dart';
 
 part 'rename_view_bloc.freezed.dart';
 
@@ -10,16 +11,18 @@ class RenameViewBloc extends Bloc<RenameViewEvent, RenameViewState> {
         super(RenameViewState(controller: controller)) {
     on<RenameViewEvent>((event, emit) {
       event.when(
-        open: () => _controller.show(),
+        open: () => inlineRenameRequests.value++,
       );
     });
   }
 
   final PopoverController _controller;
+  final ValueNotifier<int> inlineRenameRequests = ValueNotifier(0);
 
   @override
   Future<void> close() async {
     _controller.close();
+    inlineRenameRequests.dispose();
     await super.close();
   }
 }

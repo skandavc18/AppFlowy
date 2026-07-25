@@ -187,6 +187,12 @@ class _SidebarWorkspaceState extends State<SidebarWorkspace> {
           (e) => '${LocaleKeys.workspace_updateIconFailed.tr()}: ${e.msg}',
         );
         break;
+      case WorkspaceActionType.updateCover:
+        message = result.fold(
+          (s) => LocaleKeys.workspace_updateCoverSuccess.tr(),
+          (e) => '${LocaleKeys.workspace_updateCoverFailed.tr()}: ${e.msg}',
+        );
+        break;
       case WorkspaceActionType.rename:
         message = result.fold(
           (s) => LocaleKeys.workspace_renameSuccess.tr(),
@@ -399,7 +405,7 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
               ),
               const HSpace(6),
               Flexible(
-                child: SidebarText(
+                child: SidebarText.page(
                   currentWorkspace.name,
                   color:
                       isHover ? Theme.of(context).colorScheme.onSurface : null,

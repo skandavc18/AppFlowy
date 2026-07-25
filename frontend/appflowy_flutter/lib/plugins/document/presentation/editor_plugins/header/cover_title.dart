@@ -82,10 +82,12 @@ class _InnerCoverTitleState extends State<_InnerCoverTitle> {
 
   @override
   Widget build(BuildContext context) {
-    final fontStyle = Theme.of(context)
-        .textTheme
-        .bodyMedium!
-        .copyWith(fontSize: 40.0, fontWeight: FontWeight.w700);
+    final fontStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
+          fontSize: 40.0,
+          height: 1.08,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -1.1,
+        );
     final width = context.read<DocumentAppearanceCubit>().state.width;
     return BlocConsumer<ViewBloc, ViewState>(
       listenWhen: (previous, current) =>
@@ -111,6 +113,8 @@ class _InnerCoverTitleState extends State<_InnerCoverTitle> {
               onLineCountChange: (count) => lineCount = count,
               decoration: InputDecoration(
                 border: InputBorder.none,
+                isCollapsed: true,
+                contentPadding: EdgeInsets.zero,
                 hintText: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
                 hintStyle: fontStyle.copyWith(
                   color: Theme.of(context).hintColor,

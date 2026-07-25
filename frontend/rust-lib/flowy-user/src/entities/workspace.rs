@@ -340,6 +340,16 @@ pub struct ChangeWorkspaceIconPB {
   pub new_icon: String,
 }
 
+#[derive(ProtoBuf, Default, Clone, Validate)]
+pub struct ChangeWorkspaceCoverPB {
+  #[pb(index = 1)]
+  #[validate(custom(function = "required_not_empty_str"))]
+  pub workspace_id: String,
+
+  #[pb(index = 2)]
+  pub new_cover: String,
+}
+
 #[derive(ProtoBuf, Default, Clone, Validate, Debug)]
 pub struct SubscribeWorkspacePB {
   #[pb(index = 1)]

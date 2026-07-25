@@ -3,12 +3,15 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:collection/collection.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
+
+export 'package:appflowy/workspace/application/view/view_cover.dart';
 
 part 'document_page_style_bloc.freezed.dart';
 
@@ -365,92 +368,3 @@ enum PageStyleLineHeightLayout {
 }
 
 // for the version above 0.5.5
-enum PageStyleCoverImageType {
-  none,
-  // normal color
-  pureColor,
-  // gradient color
-  gradientColor,
-  // built in images
-  builtInImage,
-  // custom images, uploaded by the user
-  customImage,
-  // local image
-  localImage,
-  // unsplash images
-  unsplashImage;
-
-  @override
-  String toString() {
-    switch (this) {
-      case PageStyleCoverImageType.none:
-        return 'none';
-      case PageStyleCoverImageType.pureColor:
-        return 'color';
-      case PageStyleCoverImageType.gradientColor:
-        return 'gradient';
-      case PageStyleCoverImageType.builtInImage:
-        return 'built_in';
-      case PageStyleCoverImageType.customImage:
-        return 'custom';
-      case PageStyleCoverImageType.localImage:
-        return 'local';
-      case PageStyleCoverImageType.unsplashImage:
-        return 'unsplash';
-    }
-  }
-
-  static PageStyleCoverImageType fromString(String value) {
-    return PageStyleCoverImageType.values.firstWhereOrNull(
-          (e) => e.toString() == value,
-        ) ??
-        PageStyleCoverImageType.none;
-  }
-
-  static String builtInImagePath(String value) {
-    return 'assets/images/built_in_cover_images/m_cover_image_$value.png';
-  }
-}
-
-class PageStyleCover {
-  const PageStyleCover({
-    required this.type,
-    required this.value,
-  });
-
-  factory PageStyleCover.none() => const PageStyleCover(
-        type: PageStyleCoverImageType.none,
-        value: '',
-      );
-
-  final PageStyleCoverImageType type;
-
-  // there're 4 types of values:
-  // 1. pure color: enum value
-  // 2. gradient color: enum value
-  // 3. built-in image: the image name, read from the assets
-  // 4. custom image or unsplash image: the image url
-  final String value;
-
-  bool get isPresets => isPureColor || isGradient || isBuiltInImage;
-  bool get isPhoto => isCustomImage || isLocalImage;
-
-  bool get isNone => type == PageStyleCoverImageType.none;
-  bool get isPureColor => type == PageStyleCoverImageType.pureColor;
-  bool get isGradient => type == PageStyleCoverImageType.gradientColor;
-  bool get isBuiltInImage => type == PageStyleCoverImageType.builtInImage;
-  bool get isCustomImage => type == PageStyleCoverImageType.customImage;
-  bool get isUnsplashImage => type == PageStyleCoverImageType.unsplashImage;
-  bool get isLocalImage => type == PageStyleCoverImageType.localImage;
-
-  @override
-  bool operator ==(Object other) {
-    if (other is! PageStyleCover) {
-      return false;
-    }
-    return type == other.type && value == other.value;
-  }
-
-  @override
-  int get hashCode => Object.hash(type, value);
-}

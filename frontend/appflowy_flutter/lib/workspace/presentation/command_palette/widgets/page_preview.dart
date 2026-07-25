@@ -18,6 +18,7 @@ import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -120,9 +121,19 @@ class PagePreview extends StatelessWidget {
   }
 
   Widget? buildCover(DocumentImmersiveCoverState state, BuildContext context) {
+    final viewCover = view.cover;
+    const height = 96.0;
+    if (viewCover != null && !viewCover.isNone) {
+      return ViewCoverImage(
+        cover: viewCover,
+        userProfile: context.read<UserWorkspaceBloc?>()?.state.userProfile,
+        width: double.infinity,
+        height: height,
+      );
+    }
+
     final cover = state.cover;
     final type = state.cover.type;
-    const height = 96.0;
     if (type == PageStyleCoverImageType.customImage ||
         type == PageStyleCoverImageType.unsplashImage) {
       final userProfile = context.read<UserWorkspaceBloc?>()?.state.userProfile;

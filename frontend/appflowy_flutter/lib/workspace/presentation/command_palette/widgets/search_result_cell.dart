@@ -4,6 +4,7 @@ import 'package:appflowy/mobile/presentation/search/mobile_view_ancestors.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/search_result_list_bloc.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -25,6 +26,7 @@ class SearchResultCell extends StatefulWidget {
     this.view,
     this.query,
     this.isHovered = false,
+    this.onFolderSelected,
   });
 
   final SearchResultItem item;
@@ -32,6 +34,7 @@ class SearchResultCell extends StatefulWidget {
   final String? query;
   final bool isHovered;
   final bool isNarrowWindow;
+  final ValueChanged<ViewPB>? onFolderSelected;
 
   @override
   State<SearchResultCell> createState() => _SearchResultCellState();
@@ -52,6 +55,21 @@ class _SearchResultCellState extends State<SearchResultCell> {
 
   /// Helper to handle the selection action.
   void _handleSelection() {
+    final view = widget.view;
+    if (view?.isWorkspaceFolder ?? false) {
+      if (widget.isNarrowWindow && widget.onFolderSelected != null) {
+        widget.onFolderSelected!(view!);
+        return;
+      }
+      focusNode.requestFocus();
+      context.read<SearchResultListBloc>().add(
+            SearchResultListEvent.onHoverResult(
+              item: item,
+              userHovered: true,
+            ),
+          );
+      return;
+    }
     context.read<SearchResultListBloc>().add(
           SearchResultListEvent.openPage(pageId: viewId),
         );

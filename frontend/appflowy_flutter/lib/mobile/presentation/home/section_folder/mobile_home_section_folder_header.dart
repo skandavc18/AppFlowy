@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_root_icon.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -13,12 +14,14 @@ class MobileSectionFolderHeader extends StatefulWidget {
     required this.onPressed,
     required this.onAdded,
     required this.isExpanded,
+    this.isWorkspaceRoot = false,
   });
 
   final String title;
   final VoidCallback onPressed;
   final VoidCallback onAdded;
   final bool isExpanded;
+  final bool isWorkspaceRoot;
 
   @override
   State<MobileSectionFolderHeader> createState() =>
@@ -40,6 +43,10 @@ class _MobileSectionFolderHeaderState extends State<MobileSectionFolderHeader> {
               fontSize: 16.0,
             ),
             margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 2.0),
+            leftIcon: widget.isWorkspaceRoot
+                ? const WorkspaceRootIcon(size: 24)
+                : null,
+            leftIconSize: const Size.square(24),
             expandText: false,
             iconPadding: 2,
             mainAxisAlignment: MainAxisAlignment.start,

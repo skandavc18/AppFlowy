@@ -62,7 +62,7 @@ class _DesktopCoverState extends State<DesktopCover> {
         builder: (context, state) {
           final cover = state.cover;
           final type = state.cover.type;
-          const height = kCoverHeight;
+          const height = kDesktopCoverHeight;
 
           if (type == PageStyleCoverImageType.customImage ||
               type == PageStyleCoverImageType.unsplashImage) {

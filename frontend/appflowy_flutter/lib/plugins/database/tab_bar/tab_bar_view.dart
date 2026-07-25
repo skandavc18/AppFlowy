@@ -5,27 +5,36 @@ import 'dart:math';
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/core/config/kv_keys.dart';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/tab_bar_bloc.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/document/presentation/compact_mode_event.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/database/database_view_block_component.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/shared/share/share_button.dart';
 import 'package:appflowy/plugins/util.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_stack.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/favorite_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/more_view_actions.dart';
 import 'package:appflowy/workspace/presentation/widgets/tab_bar_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_title_bar.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flowy_infra_ui/style_widget/snap_bar.dart';
 import 'package:flowy_infra_ui/widget/spacing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -76,6 +85,7 @@ class DatabaseTabBarView extends StatefulWidget {
     this.initialRowId,
     this.actionBuilder,
     this.node,
+    this.showPageDecoration = false,
   });
 
   final ViewPB view;
@@ -83,6 +93,7 @@ class DatabaseTabBarView extends StatefulWidget {
   final BlockComponentActionBuilder? actionBuilder;
   final bool showActions;
   final Node? node;
+  final bool showPageDecoration;
 
   /// Used to open a Row on plugin load
   ///
@@ -166,10 +177,24 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
               final showActionWrapper = widget.showActions &&
                   widget.actionBuilder != null &&
                   widget.node != null;
+              final coordinateVerticalScroll = widget.showPageDecoration &&
+                  !widget.shrinkWrap &&
+                  layout == ViewLayoutPB.Grid;
               final Widget child = Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  if (widget.showPageDecoration && !coordinateVerticalScroll)
+                    BlocBuilder<ViewBloc, ViewState>(
+                      builder: (context, viewState) => DatabasePageDecoration(
+                        view: viewState.view,
+                        userProfile: context
+                            .read<UserWorkspaceBloc?>()
+                            ?.state
+                            .userProfile,
+                        horizontalPadding: horizontalPadding + paddingLeft,
+                      ),
+                    ),
                   if (UniversalPlatform.isMobile) const VSpace(12),
                   ValueListenableBuilder<bool>(
                     valueListenable: state
@@ -230,6 +255,7 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
                           horizontalPadding: horizontalPadding,
                           paddingLeftWithMaxDocumentWidth: paddingLeft,
                           verticalPadding: databseBuilderSize.verticalPadding,
+                          coordinateVerticalScroll: coordinateVerticalScroll,
                         ),
                         child: pageContentFromState(context, state),
                       ),
@@ -237,6 +263,27 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
                   ),
                 ],
               );
+
+              if (coordinateVerticalScroll) {
+                return NestedScrollView(
+                  key: const ValueKey('database-page-scroll-view'),
+                  headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                    SliverToBoxAdapter(
+                      child: BlocBuilder<ViewBloc, ViewState>(
+                        builder: (context, viewState) => DatabasePageDecoration(
+                          view: viewState.view,
+                          userProfile: context
+                              .read<UserWorkspaceBloc?>()
+                              ?.state
+                              .userProfile,
+                          horizontalPadding: horizontalPadding + paddingLeft,
+                        ),
+                      ),
+                    ),
+                  ],
+                  body: child,
+                );
+              }
 
               return child;
             },
@@ -333,6 +380,188 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
   }
 }
 
+@visibleForTesting
+class DatabasePageDecoration extends StatefulWidget {
+  const DatabasePageDecoration({
+    super.key,
+    required this.view,
+    required this.userProfile,
+    required this.horizontalPadding,
+  });
+
+  final ViewPB view;
+  final UserProfilePB? userProfile;
+  final double horizontalPadding;
+
+  @override
+  State<DatabasePageDecoration> createState() => _DatabasePageDecorationState();
+}
+
+class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
+  bool decorationRegionHovered = false;
+  bool editingTitle = false;
+  ViewPB? locallyUpdatedView;
+
+  @override
+  void didUpdateWidget(covariant DatabasePageDecoration oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.view != widget.view) {
+      locallyUpdatedView = null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final view = locallyUpdatedView ?? widget.view;
+    final cover = view.cover;
+    final icon = view.icon.toEmojiIconData();
+    final padding = max(20.0, widget.horizontalPadding);
+    final titleStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
+          fontSize: 40,
+          height: 1.08,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -1.1,
+        );
+    return MouseRegion(
+      onEnter: (_) => _setDecorationRegionHovered(true),
+      onExit: (_) => _setDecorationRegionHovered(false),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (cover != null && !cover.isNone)
+            Padding(
+              padding: EdgeInsets.fromLTRB(padding, 0, padding, 18),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: SizedBox(
+                  height: 218,
+                  child: ViewCoverImage(
+                    cover: cover,
+                    userProfile: widget.userProfile,
+                    width: double.infinity,
+                    height: 218,
+                  ),
+                ),
+              ),
+            ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: padding),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ViewDecorationActions(
+                  view: view,
+                  userProfile: widget.userProfile,
+                  onViewChanged: _updateView,
+                  visible: !UniversalPlatform.isDesktopOrWeb ||
+                      decorationRegionHovered,
+                ),
+                const VSpace(16),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 900),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ViewIconPicker(
+                        view: view,
+                        onViewChanged: _updateView,
+                        child: SizedBox.square(
+                          key: const ValueKey('database-page-title-icon'),
+                          dimension: 52,
+                          child: Center(
+                            child: icon.isNotEmpty
+                                ? RawEmojiIconWidget(
+                                    emoji: icon,
+                                    emojiSize: 46,
+                                    lineHeight: 1,
+                                  )
+                                : view.defaultIcon(
+                                    size: const Size.square(43),
+                                  ),
+                          ),
+                        ),
+                      ),
+                      const HSpace(14),
+                      Expanded(
+                        child: WorkspaceInlineEditableText(
+                          key: const ValueKey('database-page-title'),
+                          text: view.nameOrDefault,
+                          editingValue: view.name,
+                          editing: editingTitle,
+                          onSubmitted: _rename,
+                          onCancelled: _cancelRename,
+                          onTap: view.isLocked ? null : _beginRename,
+                          maxLines: 2,
+                          style: titleStyle,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const VSpace(24),
+        ],
+      ),
+    );
+  }
+
+  void _setDecorationRegionHovered(bool value) {
+    if (decorationRegionHovered == value) {
+      return;
+    }
+    setState(() => decorationRegionHovered = value);
+  }
+
+  void _updateView(ViewPB view) {
+    if (mounted) {
+      setState(() => locallyUpdatedView = view);
+    }
+  }
+
+  void _beginRename() {
+    if (!editingTitle) {
+      setState(() => editingTitle = true);
+    }
+  }
+
+  void _cancelRename() {
+    if (editingTitle) {
+      setState(() => editingTitle = false);
+    }
+  }
+
+  Future<bool> _rename(String name) async {
+    if (name == widget.view.name) {
+      _cancelRename();
+      return true;
+    }
+    final result = await ViewBackendService.updateView(
+      viewId: widget.view.id,
+      name: name,
+    );
+    if (!mounted) {
+      return false;
+    }
+    return result.fold(
+      (updated) {
+        _updateView(updated);
+        context.read<ViewBloc?>()?.add(ViewEvent.viewDidUpdate(result));
+        context
+            .read<ViewInfoBloc?>()
+            ?.add(ViewInfoEvent.titleChanged(updated.name));
+        _cancelRename();
+        return true;
+      },
+      (error) {
+        showSnapBar(context, error.msg);
+        return false;
+      },
+    );
+  }
+}
+
 class DatabaseTabBarViewPlugin extends Plugin {
   DatabaseTabBarViewPlugin({
     required ViewPB view,
@@ -392,11 +621,13 @@ class DatabasePluginWidgetBuilderSize {
     required this.horizontalPadding,
     this.verticalPadding = 16.0,
     this.paddingLeftWithMaxDocumentWidth = 0.0,
+    this.coordinateVerticalScroll = false,
   });
 
   final double horizontalPadding;
   final double verticalPadding;
   final double paddingLeftWithMaxDocumentWidth;
+  final bool coordinateVerticalScroll;
 
   double get paddingLeft => paddingLeftWithMaxDocumentWidth + horizontalPadding;
 }
@@ -424,7 +655,11 @@ class DatabasePluginWidgetBuilder extends PluginWidgetBuilder {
   Widget get leftBarItem {
     return BlocProvider.value(
       value: pageAccessLevelBloc,
-      child: ViewTitleBar(key: ValueKey(notifier.view.id), view: notifier.view),
+      child: ViewTitleBar(
+        key: ValueKey(notifier.view.id),
+        view: notifier.view,
+        hideCurrentView: true,
+      ),
     );
   }
 
@@ -466,6 +701,7 @@ class DatabasePluginWidgetBuilder extends PluginWidgetBuilder {
         actionBuilder: actionBuilder,
         showActions: showActions,
         node: node,
+        showPageDecoration: node == null,
       ),
     );
   }

@@ -184,12 +184,13 @@ pub trait UserCloudService: Send + Sync + 'static {
   /// Returns the new workspace if successful
   async fn create_workspace(&self, workspace_name: &str) -> Result<UserWorkspace, FlowyError>;
 
-  // Updates the workspace name and icon
+  // Updates the workspace name, icon and cover
   async fn patch_workspace(
     &self,
     workspace_id: &Uuid,
     new_workspace_name: Option<String>,
     new_workspace_icon: Option<String>,
+    new_workspace_cover: Option<String>,
   ) -> Result<(), FlowyError>;
 
   /// Deletes a workspace owned by the user.

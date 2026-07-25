@@ -104,6 +104,7 @@ impl<'de> Visitor<'de> for SessionVisitor {
           created_at: Utc::now(),
           workspace_database_id: Uuid::new_v4().to_string(),
           icon: "".to_owned(),
+          cover: "".to_owned(),
           member_count: 1,
           role: Some(Role::Owner),
           workspace_type: WorkspaceType::Local,

@@ -111,6 +111,8 @@ pub struct UserWorkspace {
   #[serde(default)]
   pub icon: String,
   #[serde(default)]
+  pub cover: String,
+  #[serde(default)]
   pub member_count: i64,
   #[serde(default)]
   pub role: Option<Role>,
@@ -135,6 +137,7 @@ impl UserWorkspace {
       created_at: Utc::now(),
       workspace_database_id: Uuid::new_v4().to_string(),
       icon: "".to_string(),
+      cover: "".to_string(),
       member_count: 1,
       role: Some(Role::Owner),
       workspace_type: WorkspaceType::Local,

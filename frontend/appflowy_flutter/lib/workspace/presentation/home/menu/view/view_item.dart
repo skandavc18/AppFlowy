@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
@@ -14,19 +15,23 @@ import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/prelude.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item_transfer_service.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/move_to/workspace_destination_picker.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/draggable_view_item.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_more_action_button.dart';
-import 'package:appflowy/workspace/presentation/widgets/dialog_v2.dart';
+import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
-import 'package:appflowy/workspace/presentation/widgets/rename_view_popover.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -36,6 +41,7 @@ import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 typedef ViewItemOnSelected = void Function(BuildContext context, ViewPB view);
@@ -70,6 +76,7 @@ class ViewItem extends StatelessWidget {
     this.shouldRenderChildren = true,
     this.leftIconBuilder,
     this.rightIconsBuilder,
+    this.includeDefaultMoreAction = false,
     this.shouldLoadChildViews = true,
     this.isExpandedNotifier,
     this.extendBuilder,
@@ -127,6 +134,9 @@ class ViewItem extends StatelessWidget {
 
   // custom the right icon widget, if it's null, the default ... and + button will be used
   final ViewItemRightIconsBuilder? rightIconsBuilder;
+
+  // keep the standard action menu when adding custom right-side actions
+  final bool includeDefaultMoreAction;
 
   final bool shouldLoadChildViews;
   final PropertyValueNotifier<bool>? isExpandedNotifier;
@@ -192,6 +202,7 @@ class ViewItem extends StatelessWidget {
             shouldRenderChildren: shouldRenderChildren,
             leftIconBuilder: leftIconBuilder,
             rightIconsBuilder: rightIconsBuilder,
+            includeDefaultMoreAction: includeDefaultMoreAction,
             isExpandedNotifier: isExpandedNotifier,
             extendBuilder: extendBuilder,
             shouldIgnoreView: shouldIgnoreView,
@@ -245,6 +256,7 @@ class InnerViewItem extends StatefulWidget {
     this.shouldRenderChildren = true,
     required this.leftIconBuilder,
     required this.rightIconsBuilder,
+    required this.includeDefaultMoreAction,
     this.isExpandedNotifier,
     required this.extendBuilder,
     this.disableSelectedStatus,
@@ -280,6 +292,7 @@ class InnerViewItem extends StatefulWidget {
   final bool shouldRenderChildren;
   final ViewItemLeftIconBuilder? leftIconBuilder;
   final ViewItemRightIconsBuilder? rightIconsBuilder;
+  final bool includeDefaultMoreAction;
 
   final PropertyValueNotifier<bool>? isExpandedNotifier;
   final List<Widget> Function(ViewPB view)? extendBuilder;
@@ -327,6 +340,7 @@ class _InnerViewItemState extends State<InnerViewItem> {
           isHovered: widget.isHovered,
           leftIconBuilder: widget.leftIconBuilder,
           rightIconsBuilder: widget.rightIconsBuilder,
+          includeDefaultMoreAction: widget.includeDefaultMoreAction,
           extendBuilder: widget.extendBuilder,
           disableSelectedStatus: widget.disableSelectedStatus,
           shouldIgnoreView: widget.shouldIgnoreView,
@@ -358,6 +372,7 @@ class _InnerViewItemState extends State<InnerViewItem> {
           isHovered: widget.isHovered,
           leftIconBuilder: widget.leftIconBuilder,
           rightIconsBuilder: widget.rightIconsBuilder,
+          includeDefaultMoreAction: widget.includeDefaultMoreAction,
           extendBuilder: widget.extendBuilder,
           shouldIgnoreView: widget.shouldIgnoreView,
           engagedInExpanding: widget.engagedInExpanding,
@@ -409,6 +424,7 @@ class _InnerViewItemState extends State<InnerViewItem> {
             enableRightClickContext: widget.enableRightClickContext,
             leftIconBuilder: widget.leftIconBuilder,
             rightIconsBuilder: widget.rightIconsBuilder,
+            includeDefaultMoreAction: widget.includeDefaultMoreAction,
             extendBuilder: widget.extendBuilder,
             shouldIgnoreView: widget.shouldIgnoreView,
           ),
@@ -454,6 +470,7 @@ class SingleInnerViewItem extends StatefulWidget {
     this.isHovered,
     required this.leftIconBuilder,
     required this.rightIconsBuilder,
+    required this.includeDefaultMoreAction,
     required this.extendBuilder,
     required this.disableSelectedStatus,
     required this.shouldIgnoreView,
@@ -484,6 +501,7 @@ class SingleInnerViewItem extends StatefulWidget {
   final ValueNotifier<bool>? isHovered;
   final ViewItemLeftIconBuilder? leftIconBuilder;
   final ViewItemRightIconsBuilder? rightIconsBuilder;
+  final bool includeDefaultMoreAction;
 
   final List<Widget> Function(ViewPB view)? extendBuilder;
   final IgnoreViewType Function(ViewPB view)? shouldIgnoreView;
@@ -496,13 +514,45 @@ class SingleInnerViewItem extends StatefulWidget {
 class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
   final controller = PopoverController();
   final viewMoreActionController = PopoverController();
+  final rowFocusNode = FocusNode(debugLabel: 'sidebar-view-item');
 
   bool isIconPickerOpened = false;
+  bool isRenaming = false;
+  RenameViewBloc? renameViewBloc;
+  int lastInlineRenameRequest = 0;
 
   DateTime? _lastClickTime;
   static const _clickThrottleDuration = Duration(milliseconds: 200);
 
+  @override
+  void initState() {
+    super.initState();
+    if (getIt.isRegistered<RenameViewBloc>()) {
+      final bloc = getIt<RenameViewBloc>();
+      renameViewBloc = bloc;
+      lastInlineRenameRequest = bloc.inlineRenameRequests.value;
+      bloc.inlineRenameRequests.addListener(_handleInlineRenameRequest);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SingleInnerViewItem oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.view.id != widget.view.id && isRenaming) {
+      isRenaming = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    renameViewBloc?.inlineRenameRequests
+        .removeListener(_handleInlineRenameRequest);
+    rowFocusNode.dispose();
+    super.dispose();
+  }
+
   void _handleViewTap() {
+    rowFocusNode.requestFocus();
     final now = DateTime.now();
 
     if (_lastClickTime != null) {
@@ -514,6 +564,57 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
 
     _lastClickTime = now;
     widget.onSelected(context, widget.view);
+  }
+
+  void _handleInlineRenameRequest() {
+    final request = renameViewBloc?.inlineRenameRequests.value ?? 0;
+    if (request == lastInlineRenameRequest) {
+      return;
+    }
+    lastInlineRenameRequest = request;
+    if (widget.isSelected) {
+      _beginInlineRename();
+    }
+  }
+
+  void _beginInlineRename() {
+    if (!isRenaming && mounted) {
+      setState(() => isRenaming = true);
+    }
+  }
+
+  void _cancelInlineRename() {
+    if (isRenaming && mounted) {
+      setState(() => isRenaming = false);
+    }
+  }
+
+  Future<bool> _submitInlineRename(String rawName) async {
+    final name = rawName.trim();
+    if (name.isEmpty) {
+      return false;
+    }
+    if (name == widget.view.name) {
+      _cancelInlineRename();
+      return true;
+    }
+    final result = await ViewBackendService.updateView(
+      viewId: widget.view.id,
+      name: name,
+    );
+    return result.fold(
+      (_) {
+        _cancelInlineRename();
+        return true;
+      },
+      (error) {
+        Log.error(error.msg);
+        if (mounted) {
+          showSnackBarMessage(context, error.msg);
+        }
+        return false;
+      },
+    );
   }
 
   @override
@@ -529,10 +630,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     }
 
     if (widget.isFeedback || !widget.isHoverEnabled) {
-      return _buildViewItem(
-        false,
-        !widget.isHoverEnabled ? isSelected : false,
-      );
+      return _buildViewItem(false);
     }
 
     return FlowyHover(
@@ -545,14 +643,25 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       buildWhenOnHover: () =>
           !widget.showActions && !_isDragging && !isIconPickerOpened,
       isSelected: () => widget.showActions || isSelected,
-      builder: (_, onHover) => _buildViewItem(onHover, isSelected),
+      builder: (_, onHover) => _buildViewItem(onHover),
     );
   }
 
-  Widget _buildViewItem(bool onHover, [bool isSelected = false]) {
-    final name = SidebarText.page(
-      widget.view.nameOrDefault,
-      overflow: TextOverflow.ellipsis,
+  Widget _buildViewItem(bool onHover) {
+    final nameStyle = SidebarTypography.textStyle(
+      context,
+      color: Theme.of(context).colorScheme.onSecondary,
+      role: SidebarTextRole.page,
+    );
+    final name = WorkspaceInlineEditableText(
+      text: widget.view.nameOrDefault,
+      editingValue: widget.view.name,
+      editing: isRenaming,
+      onSubmitted: _submitInlineRename,
+      onCancelled: _cancelInlineRename,
+      onDoubleTap: _beginInlineRename,
+      selectFileStem: widget.view.isWorkspaceFile,
+      style: nameStyle,
     );
     final children = [
       const HSpace(HomeSpaceViewSizes.viewLeadingSpacing),
@@ -564,7 +673,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       const HSpace(HomeSpaceViewSizes.viewIconTextSpacing),
       // title
       Expanded(
-        child: widget.extendBuilder != null
+        child: widget.extendBuilder != null && !isRenaming
             ? Row(
                 children: [
                   Flexible(child: name),
@@ -578,6 +687,23 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     // hover action
     if (widget.showActions || onHover) {
       if (widget.rightIconsBuilder != null) {
+        if (widget.includeDefaultMoreAction) {
+          children.add(
+            _buildViewMoreActionButton(
+              context,
+              viewMoreActionController,
+              (_) => FlowyTooltip(
+                message: LocaleKeys.menuAppHeader_moreButtonToolTip.tr(),
+                child: FlowyIconButton(
+                  width: 24,
+                  icon: const FlowySvg(FlowySvgs.workspace_three_dots_s),
+                  onPressed: viewMoreActionController.show,
+                ),
+              ),
+            ),
+          );
+          children.add(const HSpace(8.0));
+        }
         children.addAll(widget.rightIconsBuilder!(context, widget.view));
       } else {
         // ··· more action button
@@ -595,19 +721,15 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
             ),
           ),
         );
-        // only support add button for document layout
-        if (widget.view.layout == ViewLayoutPB.Document) {
-          // + button
-          children.add(const HSpace(8.0));
-          children.add(_buildViewAddButton(context));
-        }
+        children.add(const HSpace(8.0));
+        children.add(_buildViewAddButton(context));
         children.add(const HSpace(4.0));
       }
     }
 
     final child = GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onTap: _handleViewTap,
+      onTap: isRenaming ? null : _handleViewTap,
       onTertiaryTapDown: (_) =>
           widget.onTertiarySelected?.call(context, widget.view),
       child: SizedBox(
@@ -631,25 +753,23 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       ),
     );
 
-    if (isSelected) {
-      final popoverController = getIt<RenameViewBloc>().state.controller;
-      return AppFlowyPopover(
-        controller: popoverController,
-        triggerActions: PopoverTriggerFlags.none,
-        offset: const Offset(0, 5),
-        direction: PopoverDirection.bottomWithLeftAligned,
-        popupBuilder: (_) => RenameViewPopover(
-          view: widget.view,
-          name: widget.view.name,
-          emoji: widget.view.icon.toEmojiIconData(),
-          popoverController: popoverController,
-          showIconChanger: false,
-        ),
-        child: child,
-      );
-    }
-
-    return child;
+    return Focus(
+      focusNode: rowFocusNode,
+      onKeyEvent: (_, event) {
+        if (event is KeyDownEvent &&
+            !isRenaming &&
+            widget.isSelected &&
+            isWorkspaceRenameShortcut(
+              Theme.of(context).platform,
+              event.logicalKey,
+            )) {
+          _beginInlineRename();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: child,
+    );
   }
 
   Widget _buildViewIconButton() {
@@ -735,9 +855,11 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       message: LocaleKeys.menuAppHeader_addPageTooltip.tr(),
       child: ViewAddButton(
         parentViewId: widget.view.id,
+        sourceView: widget.view,
         onEditing: (value) =>
             context.read<ViewBloc>().add(ViewEvent.setIsEditing(value)),
         onSelected: _onSelected,
+        onTransfer: (action) => unawaited(_handleTransferAction(action)),
       ),
     );
   }
@@ -774,95 +896,161 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     PopoverController controller,
     Widget Function(PopoverController) buildChild,
   ) {
-    return BlocProvider(
-      create: (context) => SpaceBloc(
-        userProfile: context.read<SpaceBloc>().userProfile,
-        workspaceId: context.read<SpaceBloc>().workspaceId,
-      )..add(const SpaceEvent.initial(openFirstPage: false)),
-      child: ViewMoreActionPopover(
-        view: widget.view,
-        controller: controller,
-        isExpanded: widget.isExpanded,
-        spaceType: widget.spaceType,
-        onEditing: (value) =>
-            context.read<ViewBloc>().add(ViewEvent.setIsEditing(value)),
-        buildChild: buildChild,
-        onAction: (action, data) async {
-          switch (action) {
-            case ViewMoreActionType.favorite:
-            case ViewMoreActionType.unFavorite:
-              context
-                  .read<FavoriteBloc>()
-                  .add(FavoriteEvent.toggle(widget.view));
-              break;
-            case ViewMoreActionType.rename:
-              unawaited(
-                showAFTextFieldDialog(
-                  context: context,
-                  title: LocaleKeys.disclosureAction_rename.tr(),
-                  initialValue: widget.view.nameOrDefault,
-                  onConfirm: (newValue) {
-                    context.read<ViewBloc>().add(ViewEvent.rename(newValue));
-                  },
-                  maxLength: 256,
-                ),
+    return ViewMoreActionPopover(
+      view: widget.view,
+      controller: controller,
+      isExpanded: widget.isExpanded,
+      spaceType: widget.spaceType,
+      onEditing: (value) =>
+          context.read<ViewBloc>().add(ViewEvent.setIsEditing(value)),
+      buildChild: buildChild,
+      onAction: (action, data) async {
+        switch (action) {
+          case ViewMoreActionType.favorite:
+          case ViewMoreActionType.unFavorite:
+            context.read<FavoriteBloc>().add(FavoriteEvent.toggle(widget.view));
+            break;
+          case ViewMoreActionType.rename:
+            _beginInlineRename();
+            break;
+          case ViewMoreActionType.delete:
+            // get if current page contains published child views
+            final (containPublishedPage, _) =
+                await ViewBackendService.containPublishedPage(widget.view);
+            if (containPublishedPage && context.mounted) {
+              await showConfirmDeletionDialog(
+                context: context,
+                name: widget.view.name,
+                description: LocaleKeys.publish_containsPublishedPage.tr(),
+                onConfirm: () =>
+                    context.read<ViewBloc>().add(const ViewEvent.delete()),
               );
-              break;
-            case ViewMoreActionType.delete:
-              // get if current page contains published child views
-              final (containPublishedPage, _) =
-                  await ViewBackendService.containPublishedPage(widget.view);
-              if (containPublishedPage && context.mounted) {
-                await showConfirmDeletionDialog(
-                  context: context,
-                  name: widget.view.name,
-                  description: LocaleKeys.publish_containsPublishedPage.tr(),
-                  onConfirm: () =>
-                      context.read<ViewBloc>().add(const ViewEvent.delete()),
-                );
-              } else if (context.mounted) {
-                context.read<ViewBloc>().add(const ViewEvent.delete());
-              }
-              break;
-            case ViewMoreActionType.duplicate:
-              context.read<ViewBloc>().add(const ViewEvent.duplicate());
-              break;
-            case ViewMoreActionType.openInNewTab:
-              context.read<TabsBloc>().openTab(widget.view);
-              break;
-            case ViewMoreActionType.collapseAllPages:
-              context.read<ViewBloc>().add(const ViewEvent.collapseAllPages());
-              break;
-            case ViewMoreActionType.changeIcon:
-              if (data is! SelectedEmojiIconResult) {
-                return;
-              }
-              await ViewBackendService.updateViewIcon(
-                view: widget.view,
-                viewIcon: data.data,
-              );
-              break;
-            case ViewMoreActionType.moveTo:
-              final value = data;
-              if (value is! (ViewPB, ViewPB)) {
-                return;
-              }
-              final space = value.$1;
-              final target = value.$2;
-              moveViewCrossSpace(
-                context,
-                space,
-                widget.view,
-                widget.parentView,
-                widget.spaceType,
-                widget.view,
-                target.id,
-              );
-            default:
-              throw UnsupportedError('$action is not supported');
-          }
-        },
+            } else if (context.mounted) {
+              context.read<ViewBloc>().add(const ViewEvent.delete());
+            }
+            break;
+          case ViewMoreActionType.duplicate:
+            context.read<ViewBloc>().add(const ViewEvent.duplicate());
+            break;
+          case ViewMoreActionType.openInNewTab:
+            context.read<TabsBloc>().openTab(widget.view);
+            break;
+          case ViewMoreActionType.collapseAllPages:
+            context.read<ViewBloc>().add(const ViewEvent.collapseAllPages());
+            break;
+          case ViewMoreActionType.changeIcon:
+            if (data is! SelectedEmojiIconResult) {
+              return;
+            }
+            await ViewBackendService.updateViewIcon(
+              view: widget.view,
+              viewIcon: data.data,
+            );
+            break;
+          case ViewMoreActionType.moveTo:
+          case ViewMoreActionType.copyTo:
+          case ViewMoreActionType.cut:
+          case ViewMoreActionType.pasteInto:
+            await _handleTransferAction(action);
+            break;
+          default:
+            throw UnsupportedError('$action is not supported');
+        }
+      },
+    );
+  }
+
+  Future<void> _handleTransferAction(ViewMoreActionType action) async {
+    final clipboard = WorkspaceItemClipboard.instance;
+    if (action == ViewMoreActionType.cut) {
+      clipboard.cut([widget.view]);
+      showSnackBarMessage(
+        context,
+        LocaleKeys.workspaceFolderExplorer_cutReady.tr(),
+      );
+      return;
+    }
+
+    final transferService = WorkspaceItemTransferService(clipboard: clipboard);
+    if (action == ViewMoreActionType.pasteInto) {
+      final result = await transferService.pasteTo(
+        destinationId: widget.view.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      result.fold(
+        (_) => showSnackBarMessage(
+          context,
+          LocaleKeys.workspaceFolderExplorer_pastedSuccessfully.tr(),
+        ),
+        (error) => showSnackBarMessage(context, error.msg),
+      );
+      return;
+    }
+
+    final workspaceState = context.read<UserWorkspaceBloc>().state;
+    final currentWorkspace = workspaceState.currentWorkspace;
+    if (currentWorkspace == null || currentWorkspace.workspaceId.isEmpty) {
+      showSnackBarMessage(
+        context,
+        LocaleKeys.workspaceFolderExplorer_workspaceUnavailable.tr(),
+      );
+      return;
+    }
+    final workspaceId = currentWorkspace.workspaceId;
+    final currentSpace = context.read<SpaceBloc>().state.currentSpace;
+    final useCurrentSpace =
+        widget.spaceType == FolderSpaceType.unknown && currentSpace != null;
+    final rootId = useCurrentSpace ? currentSpace.id : workspaceId;
+    final rootName = useCurrentSpace
+        ? currentSpace.name
+        : workspaceState.isCollabWorkspaceOn
+            ? widget.spaceType == FolderSpaceType.private
+                ? LocaleKeys.sideBar_private.tr()
+                : LocaleKeys.sideBar_workspace.tr()
+            : currentWorkspace.name;
+
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) {
+      return;
+    }
+    final operation = action == ViewMoreActionType.moveTo
+        ? WorkspaceDestinationOperation.move
+        : WorkspaceDestinationOperation.copy;
+    final destinationId = await showWorkspaceDestinationPicker(
+      context: context,
+      sourceViews: [widget.view],
+      rootId: rootId,
+      rootName: rootName,
+      operation: operation,
+    );
+    if (!mounted || destinationId == null) {
+      return;
+    }
+
+    final result = switch (operation) {
+      WorkspaceDestinationOperation.move => transferService.moveTo(
+          views: [widget.view],
+          destinationId: destinationId,
+        ),
+      WorkspaceDestinationOperation.copy => transferService.copyTo(
+          views: [widget.view],
+          destinationId: destinationId,
+        ),
+    };
+    final transferred = await result;
+    if (!mounted) {
+      return;
+    }
+    transferred.fold(
+      (_) => showSnackBarMessage(
+        context,
+        operation == WorkspaceDestinationOperation.move
+            ? LocaleKeys.workspaceFolderExplorer_movedSuccessfully.tr()
+            : LocaleKeys.workspaceFolderExplorer_copiedSuccessfully.tr(),
       ),
+      (error) => showSnackBarMessage(context, error.msg),
     );
   }
 }
