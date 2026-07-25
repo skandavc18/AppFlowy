@@ -10,6 +10,8 @@ void main() {
       '<h1 align="center"><b>AppFlowy</b><br></h1>\n\n'
       '- First item\n\n'
       '<script>alert("blocked")</script>',
+      brightness: Brightness.light,
+      backgroundColor: const Color(0xFFFBFAF7),
       textColor: const Color(0xFF111111),
       linkColor: const Color(0xFF0000EE),
       borderColor: const Color(0xFFCCCCCC),
@@ -21,6 +23,88 @@ void main() {
     expect(html, contains('<li>First item</li>'));
     expect(html, isNot(contains('&lt;h1 align=')));
     expect(html, contains('&lt;script>'));
+  });
+
+  test('paints the Markdown preview with the AppFlowy appearance', () {
+    String render(Brightness brightness, Color background) =>
+        buildMarkdownPreviewHtml(
+          '# Heading',
+          brightness: brightness,
+          backgroundColor: background,
+          textColor: const Color(0xFF111111),
+          linkColor: const Color(0xFF0000EE),
+          borderColor: const Color(0xFFCCCCCC),
+          codeBackground: const Color(0xFFF5F5F5),
+        );
+
+    final light = render(Brightness.light, const Color(0xFFFBFAF7));
+    expect(light, contains('color-scheme: light;'));
+    expect(light, isNot(contains('color-scheme: light dark')));
+    expect(light, contains('html { background: #fbfaf7; }'));
+    expect(light, contains('background: #fbfaf7;\n'));
+
+    final dark = render(Brightness.dark, const Color(0xFF17181B));
+    expect(dark, contains('color-scheme: dark;'));
+    expect(dark, contains('html { background: #17181b; }'));
+  });
+
+  test('matches the renderer appearance to the requested brightness', () {
+    String stabilityCss(String prepared) => html_parser
+        .parse(prepared)
+        .querySelector('style[data-appflowy-preview-stability]')!
+        .text;
+
+    expect(
+      stabilityCss(
+        prepareHtmlPreviewDocument('<p>Preview</p>'),
+      ),
+      contains('color-scheme: light;'),
+    );
+    expect(
+      stabilityCss(
+        prepareHtmlPreviewDocument(
+          '<p>Preview</p>',
+          brightness: Brightness.dark,
+        ),
+      ),
+      contains('color-scheme: dark;'),
+    );
+  });
+
+  test('reveals renderer scrollbars only while the preview scrolls', () {
+    final css = buildHtmlPreviewStabilityCss(
+      brightness: Brightness.light,
+      scrollbarThumbColor: const Color(0x5C1A1A1A),
+      autoHideScrollbars: true,
+    );
+
+    expect(css, contains('::-webkit-scrollbar-thumb {'));
+    expect(
+      css,
+      contains(
+        'html.$htmlPreviewScrollingClassName::-webkit-scrollbar-thumb',
+      ),
+    );
+    expect(css, contains('rgba(26, 26, 26, 0.361)'));
+    expect(
+      buildHtmlPreviewStabilityCss(
+        brightness: Brightness.light,
+        scrollbarThumbColor: const Color(0x5C1A1A1A),
+        autoHideScrollbars: false,
+      ),
+      isNot(contains('::-webkit-scrollbar')),
+    );
+
+    final script = buildHtmlPreviewScrollbarAutoHideScript();
+    expect(script, contains("classList.add('$htmlPreviewScrollingClassName')"));
+    expect(
+      script,
+      contains("classList.remove('$htmlPreviewScrollingClassName')"),
+    );
+    expect(
+      script,
+      contains('${htmlPreviewScrollbarIdleDelay.inMilliseconds}'),
+    );
   });
 
   test('sanitizes active HTML before enabling the host scroll runtime', () {

@@ -5,8 +5,10 @@ import 'dart:math' as math;
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:printing/printing.dart';
@@ -15,6 +17,10 @@ import 'pdf_preview_sidebar.dart';
 import 'pdf_preview_scroll_physics.dart';
 import 'pdf_preview_theme.dart';
 import 'pdf_preview_toolbar.dart';
+
+/// Keeps the PDF scroll thumb on screen only while the document is moving.
+const _scrollThumbIdleDelay = Duration(milliseconds: 700);
+const _scrollThumbFadeDuration = Duration(milliseconds: 160);
 
 typedef PdfPreviewMenuBuilder = Widget Function(
   BuildContext menuContext,
@@ -119,6 +125,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   int quarterTurns = 0;
   double trackpadScale = 1;
   PdfSidebarMode sidebarMode = PdfSidebarMode.none;
+  final scrollThumbVisible = ValueNotifier<bool>(false);
+  Timer? scrollThumbHideTimer;
 
   bool get canPrint =>
       viewerReady && document?.permissions?.allowsPrinting != false;
@@ -128,6 +136,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     super.initState();
     wheelScrollPhysics = PdfPreviewScrollPhysics(vsync: this)
       ..attach(viewerController);
+    viewerController.addListener(_handleViewerMoved);
     _attachScrollController(widget.scrollController);
   }
 
@@ -160,12 +169,40 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   @override
   void dispose() {
     widget.scrollController?.detach(_handleResolvedPointerSignal);
+    scrollThumbHideTimer?.cancel();
+    viewerController.removeListener(_handleViewerMoved);
+    scrollThumbVisible.dispose();
     wheelScrollPhysics.dispose();
     textSearcher.dispose();
     searchController.dispose();
     searchFocusNode.dispose();
     viewerFocusNode.dispose();
     super.dispose();
+  }
+
+  /// Reveals the scroll thumb while the viewer transform changes and hides it
+  /// again once the document settles.
+  void _handleViewerMoved() {
+    scrollThumbHideTimer?.cancel();
+    scrollThumbHideTimer = Timer(_scrollThumbIdleDelay, () {
+      if (mounted) {
+        scrollThumbVisible.value = false;
+      }
+    });
+    if (scrollThumbVisible.value) {
+      return;
+    }
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks ||
+        phase == SchedulerPhase.midFrameMicrotasks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          scrollThumbVisible.value = true;
+        }
+      });
+      return;
+    }
+    scrollThumbVisible.value = true;
   }
 
   @override
@@ -436,8 +473,11 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
                 controller: viewerController,
                 thumbSize: const Size(34, 46),
                 margin: 8,
-                thumbBuilder: (_, size, page, __) =>
-                    _PdfScrollThumb(size: size, page: page ?? currentPage),
+                thumbBuilder: (_, size, page, __) => _PdfScrollThumb(
+                  size: size,
+                  page: page ?? currentPage,
+                  visible: scrollThumbVisible,
+                ),
               ),
             ]
           : const [],
@@ -1080,40 +1120,65 @@ class _PdfMenuSectionState<T> extends State<PdfPreviewMenuSection<T>> {
   }
 }
 
-class _PdfScrollThumb extends StatelessWidget {
-  const _PdfScrollThumb({required this.size, required this.page});
+class _PdfScrollThumb extends StatefulWidget {
+  const _PdfScrollThumb({
+    required this.size,
+    required this.page,
+    required this.visible,
+  });
 
   final Size size;
   final int page;
+  final ValueListenable<bool> visible;
+
+  @override
+  State<_PdfScrollThumb> createState() => _PdfScrollThumbState();
+}
+
+class _PdfScrollThumbState extends State<_PdfScrollThumb> {
+  bool hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final palette = PdfPreviewPalette.of(context);
-    return Container(
-      width: size.width,
-      height: size.height,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: palette.chrome,
-        border: Border.all(color: palette.border),
-        borderRadius: BorderRadius.circular(9),
-        boxShadow: [
-          BoxShadow(
-            color: palette.chromeShadow,
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+    return MouseRegion(
+      onEnter: (_) => setState(() => hovered = true),
+      onExit: (_) => setState(() => hovered = false),
+      child: ValueListenableBuilder<bool>(
+        valueListenable: widget.visible,
+        builder: (context, visible, child) => AnimatedOpacity(
+          opacity: visible || hovered ? 1 : 0,
+          duration: _scrollThumbFadeDuration,
+          curve: Curves.easeOutCubic,
+          child: child,
+        ),
+        child: Container(
+          width: widget.size.width,
+          height: widget.size.height,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: palette.chrome,
+            border: Border.all(color: palette.border),
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: [
+              BoxShadow(
+                color: palette.chromeShadow,
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-        ],
-      ),
-      child: Text(
-        '$page',
-        style: TextStyle(
-          color: palette.textSecondary,
-          fontFamily: 'Geist Mono',
-          fontFamilyFallback: const ['RobotoMono', 'monospace'],
-          fontSize: 10.5,
-          fontWeight: FontWeight.w600,
-          fontFeatures: const [FontFeature.tabularFigures()],
+          child: Text(
+            '${widget.page}',
+            style: TextStyle(
+              color: palette.textSecondary,
+              fontFamily: 'Geist Mono',
+              fontFamilyFallback: const ['RobotoMono', 'monospace'],
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
         ),
       ),
     );

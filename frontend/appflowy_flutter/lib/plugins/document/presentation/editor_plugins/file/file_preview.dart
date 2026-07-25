@@ -300,13 +300,20 @@ class _MarkdownPreviewState extends State<_MarkdownPreview> {
   void _renderMarkdown() {
     final materialTheme = Theme.of(context);
     final appFlowyTheme = AppFlowyTheme.of(context);
+    final isPaper = PaperTheme.isEnabled(context);
     final codeBackground = EditorSurfaceStyle.codeBlockBackgroundFor(
       materialTheme.brightness,
       materialTheme.colorScheme.surfaceContainer,
-      isPaper: PaperTheme.isEnabled(context),
+      isPaper: isPaper,
     );
     renderedHtml = buildMarkdownPreviewHtml(
       widget.markdown,
+      brightness: materialTheme.brightness,
+      backgroundColor: EditorSurfaceStyle.previewBackgroundFor(
+        materialTheme.brightness,
+        appFlowyTheme.fillColorScheme.content,
+        isPaper: isPaper,
+      ),
       textColor: appFlowyTheme.textColorScheme.primary,
       linkColor: materialTheme.colorScheme.primary,
       borderColor: appFlowyTheme.borderColorScheme.primary,
@@ -317,6 +324,8 @@ class _MarkdownPreviewState extends State<_MarkdownPreview> {
 
 String buildMarkdownPreviewHtml(
   String source, {
+  required Brightness brightness,
+  required Color backgroundColor,
   required Color textColor,
   required Color linkColor,
   required Color borderColor,
@@ -335,13 +344,14 @@ String buildMarkdownPreviewHtml(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { color-scheme: light dark; }
+  :root { color-scheme: ${_cssColorScheme(brightness)}; }
   * { box-sizing: border-box; }
+  html { background: ${_cssColor(backgroundColor)}; }
   body {
     margin: 0;
     padding: 16px;
     color: ${_cssColor(textColor)};
-    background: transparent;
+    background: ${_cssColor(backgroundColor)};
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     font-size: 15px;
     line-height: 1.6;
@@ -380,6 +390,16 @@ String _cssColor(Color color) =>
 String _cssChannel(double value) =>
     (value * 255).round().toRadixString(16).padLeft(2, '0');
 
+String _cssRgba(Color color) => 'rgba(${(color.r * 255).round()}, '
+    '${(color.g * 255).round()}, '
+    '${(color.b * 255).round()}, '
+    '${color.a.toStringAsFixed(3)})';
+
+/// Keeps the renderer's user-agent surfaces aligned with the AppFlowy theme
+/// instead of the operating system appearance.
+String _cssColorScheme(Brightness brightness) =>
+    brightness == Brightness.dark ? 'dark' : 'light';
+
 const _htmlPreviewContentSecurityPolicy = "script-src 'none'; "
     "connect-src 'none'; "
     "object-src 'none'; "
@@ -388,8 +408,25 @@ const _htmlPreviewContentSecurityPolicy = "script-src 'none'; "
     "base-uri 'none'; "
     "form-action 'none'";
 
-const _htmlPreviewStabilityCss = '''
+/// Applied to the document element while the preview is scrolling so the
+/// renderer only reveals its scrollbar thumbs during movement.
+@visibleForTesting
+const htmlPreviewScrollingClassName = 'appflowy-preview-scrolling';
+
+@visibleForTesting
+const htmlPreviewScrollbarIdleDelay = Duration(milliseconds: 700);
+
+const _defaultPreviewScrollbarThumbColor = Color(0x5C000000);
+
+@visibleForTesting
+String buildHtmlPreviewStabilityCss({
+  required Brightness brightness,
+  required Color scrollbarThumbColor,
+  required bool autoHideScrollbars,
+}) =>
+    '''
 :root {
+  color-scheme: ${_cssColorScheme(brightness)};
   overflow-anchor: none !important;
   scroll-behavior: auto !important;
   scrollbar-gutter: stable;
@@ -402,6 +439,63 @@ pre {
   max-width: 100%;
   overscroll-behavior-x: contain;
 }
+${autoHideScrollbars ? _autoHidingScrollbarCss(scrollbarThumbColor) : ''}''';
+
+/// Overlay-style scrollbars that stay transparent until
+/// [buildHtmlPreviewScrollbarAutoHideScript] marks the document as scrolling.
+String _autoHidingScrollbarCss(Color thumbColor) => '''
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+  background: transparent;
+}
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  background-clip: padding-box;
+  border: 4px solid transparent;
+  border-radius: 999px;
+  transition: background-color 160ms ease;
+}
+html.$htmlPreviewScrollingClassName::-webkit-scrollbar-thumb,
+html.$htmlPreviewScrollingClassName ::-webkit-scrollbar-thumb {
+  background-color: ${_cssRgba(thumbColor)};
+}
+''';
+
+/// Reveals the preview scrollbars while the document scrolls and hides them
+/// again once movement stops.
+@visibleForTesting
+String buildHtmlPreviewScrollbarAutoHideScript() => '''
+(function () {
+  const root = document.documentElement;
+  if (!root) {
+    return;
+  }
+  const installed = globalThis.__appflowyPreviewScrollbarRoot;
+  if (installed === root) {
+    return;
+  }
+  globalThis.__appflowyPreviewScrollbarRoot = root;
+  let timer = 0;
+  const reveal = function () {
+    root.classList.add('$htmlPreviewScrollingClassName');
+    if (timer) {
+      clearTimeout(timer);
+    }
+    timer = setTimeout(function () {
+      timer = 0;
+      root.classList.remove('$htmlPreviewScrollingClassName');
+    }, ${htmlPreviewScrollbarIdleDelay.inMilliseconds});
+  };
+  document.addEventListener(
+    'scroll',
+    reveal,
+    { capture: true, passive: true },
+  );
+})();
 ''';
 
 const _blockedPreviewElements = {
@@ -435,7 +529,12 @@ const _previewUrlAttributes = {
 /// Produces a static, scriptless document before JavaScript is enabled for the
 /// isolated host scrolling runtime.
 @visibleForTesting
-String prepareHtmlPreviewDocument(String source) {
+String prepareHtmlPreviewDocument(
+  String source, {
+  Brightness brightness = Brightness.light,
+  Color scrollbarThumbColor = _defaultPreviewScrollbarThumbColor,
+  bool autoHideScrollbars = true,
+}) {
   final document = html_parser.parse(source);
   for (final element in document.querySelectorAll('*').toList()) {
     final tag = element.localName;
@@ -511,7 +610,11 @@ String prepareHtmlPreviewDocument(String source) {
   head.append(
     html_dom.Element.tag('style')
       ..attributes['data-appflowy-preview-stability'] = ''
-      ..text = _htmlPreviewStabilityCss,
+      ..text = buildHtmlPreviewStabilityCss(
+        brightness: brightness,
+        scrollbarThumbColor: scrollbarThumbColor,
+        autoHideScrollbars: autoHideScrollbars,
+      ),
   );
   return '<!doctype html>\n${document.documentElement!.outerHtml}';
 }
@@ -952,6 +1055,8 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   final List<_PendingWebViewScrollCommand> pendingScrollCommands = [];
   final webViewViewportKey = GlobalKey();
   late String preparedHtml;
+  Brightness? documentBrightness;
+  Color? documentScrollbarThumbColor;
   PremiumScrollPhysicsConfig physicsConfig = const PremiumScrollPhysicsConfig();
   bool smoothScrollingEnabled = true;
   bool scrollReady = false;
@@ -960,12 +1065,6 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   Future<void>? rendererScrollInitialization;
   int documentRevision = 0;
   VelocityTracker? trackpadVelocityTracker;
-
-  @override
-  void initState() {
-    super.initState();
-    preparedHtml = prepareHtmlPreviewDocument(widget.html);
-  }
 
   @override
   void didChangeDependencies() {
@@ -992,6 +1091,7 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
             : buildPremiumKineticStopCommand(),
       );
     }
+    _syncDocumentWithTheme();
   }
 
   @override
@@ -999,15 +1099,49 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.html != widget.html ||
         oldWidget.baseDirectory != widget.baseDirectory) {
-      preparedHtml = prepareHtmlPreviewDocument(widget.html);
-      pendingScrollCommands.clear();
-      scrollReady = false;
-      rendererScrollAvailable = false;
-      rendererScrollInitialization = null;
-      webViewController = null;
-      documentRevision++;
+      _reloadDocument();
     }
   }
+
+  /// Keeps the renderer aligned with the AppFlowy appearance so previews never
+  /// fall back to the operating system light/dark surfaces.
+  void _syncDocumentWithTheme() {
+    final materialTheme = Theme.of(context);
+    final brightness = materialTheme.brightness;
+    final scrollbarThumbColor =
+        materialTheme.scrollbarTheme.thumbColor?.resolve(const {}) ??
+            materialTheme.colorScheme.onSurface.withValues(alpha: 0.36);
+    if (documentBrightness == brightness &&
+        documentScrollbarThumbColor == scrollbarThumbColor) {
+      return;
+    }
+    final isInitialDocument = documentBrightness == null;
+    documentBrightness = brightness;
+    documentScrollbarThumbColor = scrollbarThumbColor;
+    if (isInitialDocument) {
+      preparedHtml = _prepareDocument();
+      return;
+    }
+    _reloadDocument();
+  }
+
+  void _reloadDocument() {
+    preparedHtml = _prepareDocument();
+    pendingScrollCommands.clear();
+    scrollReady = false;
+    rendererScrollAvailable = false;
+    rendererScrollInitialization = null;
+    webViewController = null;
+    documentRevision++;
+  }
+
+  String _prepareDocument() => prepareHtmlPreviewDocument(
+        widget.html,
+        brightness: documentBrightness ?? Brightness.light,
+        scrollbarThumbColor:
+            documentScrollbarThumbColor ?? _defaultPreviewScrollbarThumbColor,
+        autoHideScrollbars: Platform.isWindows,
+      );
 
   @override
   void dispose() {
@@ -1105,6 +1239,7 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
       final installed = await controller.evaluateJavascript(
         source: '''
 ${buildPremiumKineticScrollEngineScript(config: physicsConfig)}
+${buildHtmlPreviewScrollbarAutoHideScript()}
 typeof globalThis.$premiumKineticJavaScriptObjectName === 'object';
 ''',
         contentWorld: htmlPreviewScrollContentWorld,
