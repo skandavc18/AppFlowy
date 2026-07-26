@@ -950,7 +950,8 @@ void main() {
 
     test('no two presets offer the same combination', () {
       final pairs = PdfViewPreset.values
-          .map((preset) => '${preset.layoutMode.name}/${preset.transition.name}')
+          .map(
+              (preset) => '${preset.layoutMode.name}/${preset.transition.name}')
           .toList();
       expect(pairs.toSet().length, pairs.length);
     });
@@ -989,7 +990,6 @@ void main() {
   });
 
   group('layout behaviour', () {
-
     test('only page break mode turns pages on a wheel notch', () {
       expect(
         PdfPageLayoutMode.values.where((mode) => mode.turnsPages),

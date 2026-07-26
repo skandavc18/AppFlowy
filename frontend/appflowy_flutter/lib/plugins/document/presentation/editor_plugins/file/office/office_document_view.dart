@@ -232,7 +232,8 @@ String buildOfficeEditorHtml({
   required String secret,
 }) {
   final extension = p.extension(fileName).replaceFirst('.', '').toLowerCase();
-  final documentType = officeDocumentTypeFor(fileName) ?? OfficeDocumentType.word;
+  final documentType =
+      officeDocumentTypeFor(fileName) ?? OfficeDocumentType.word;
   final config = <String, Object?>{
     'document': {
       'fileType': extension,

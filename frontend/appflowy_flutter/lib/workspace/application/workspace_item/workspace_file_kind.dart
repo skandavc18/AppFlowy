@@ -267,4 +267,3 @@ const List<WorkspaceFileMenuAction> workspaceFileMenuActions = [
     WorkspaceFileSource.upload,
   ),
 ];
-

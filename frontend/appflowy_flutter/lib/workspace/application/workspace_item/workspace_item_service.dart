@@ -97,7 +97,8 @@ class WorkspaceItemService implements WorkspaceItemRepository {
       kind: WorkspaceFileKind.fromName(name) ?? WorkspaceFileKind.text,
       name: name,
       section: section,
-      content: content.isEmpty ? null : Uint8List.fromList(utf8.encode(content)),
+      content:
+          content.isEmpty ? null : Uint8List.fromList(utf8.encode(content)),
     );
   }
 
@@ -182,9 +183,8 @@ class WorkspaceItemService implements WorkspaceItemRepository {
     final profile = userProfile ??
         (await UserBackendService.getCurrentUserProfile())
             .fold((profile) => profile, (_) => null);
-    final isLocalMode =
-        (profile?.workspaceType ?? WorkspaceTypePB.LocalW) ==
-            WorkspaceTypePB.LocalW;
+    final isLocalMode = (profile?.workspaceType ?? WorkspaceTypePB.LocalW) ==
+        WorkspaceTypePB.LocalW;
     String? url;
     String? error;
     if (isLocalMode) {
@@ -257,6 +257,7 @@ class WorkspaceItemService implements WorkspaceItemRepository {
     }
     return trimmed;
   }
+
   @override
   Future<FlowyResult<List<ViewPB>, FlowyError>> getChildren(
     String parentViewId,

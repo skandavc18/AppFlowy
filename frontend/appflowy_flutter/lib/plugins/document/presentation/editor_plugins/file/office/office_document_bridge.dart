@@ -10,14 +10,13 @@ import 'package:path/path.dart' as p;
 
 /// Signs [payload] the way ONLYOFFICE expects (HS256, no extra headers).
 String officeJwt(Map<String, Object?> payload, String secret) {
-  String encode(Object value) => base64Url
-      .encode(utf8.encode(jsonEncode(value)))
-      .replaceAll('=', '');
+  String encode(Object value) =>
+      base64Url.encode(utf8.encode(jsonEncode(value))).replaceAll('=', '');
 
   final header = encode(const {'alg': 'HS256', 'typ': 'JWT'});
   final body = encode(payload);
-  final signature = Hmac(sha256, utf8.encode(secret))
-      .convert(utf8.encode('$header.$body'));
+  final signature =
+      Hmac(sha256, utf8.encode(secret)).convert(utf8.encode('$header.$body'));
   return '$header.$body.${base64Url.encode(signature.bytes).replaceAll('=', '')}';
 }
 

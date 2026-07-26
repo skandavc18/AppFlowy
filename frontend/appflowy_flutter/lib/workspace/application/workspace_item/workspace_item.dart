@@ -167,7 +167,9 @@ class WorkspaceFilePreviewCodec {
 
   static Map<String, dynamic> decode(String extra) {
     final value = decodeViewExtra(extra)[key];
-    return value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+    return value is Map
+        ? Map<String, dynamic>.from(value)
+        : <String, dynamic>{};
   }
 
   static String merge(String extra, Map<String, dynamic> metadata) {

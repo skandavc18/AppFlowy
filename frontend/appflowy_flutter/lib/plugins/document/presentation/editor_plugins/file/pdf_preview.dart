@@ -1823,7 +1823,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     _setLayoutMode(preset.layoutMode);
   }
 
-  void _setLayoutMode(PdfPageLayoutMode mode) {    if (mode == layoutMode) {
+  void _setLayoutMode(PdfPageLayoutMode mode) {
+    if (mode == layoutMode) {
       return;
     }
     wheelScrollPhysics.stop();

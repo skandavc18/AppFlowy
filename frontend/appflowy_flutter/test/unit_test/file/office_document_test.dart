@@ -57,7 +57,8 @@ void main() {
       final parts = token.split('.');
       expect(parts, hasLength(3));
       expect(
-        jsonDecode(utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))),
+        jsonDecode(
+            utf8.decode(base64Url.decode(base64Url.normalize(parts[1])))),
         {'a': 1},
       );
       expect(officeJwt(const {'a': 1}, 'other'), isNot(token));

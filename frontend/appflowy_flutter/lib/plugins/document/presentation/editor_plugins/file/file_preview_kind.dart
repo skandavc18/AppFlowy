@@ -140,9 +140,21 @@ IconData fileIconForName(String? name) {
     'tiff' ||
     'svg' =>
       Icons.image_outlined,
-    'mp4' || 'mov' || 'mkv' || 'webm' || 'avi' || 'm4v' || 'mpeg' =>
+    'mp4' ||
+    'mov' ||
+    'mkv' ||
+    'webm' ||
+    'avi' ||
+    'm4v' ||
+    'mpeg' =>
       Icons.movie_outlined,
-    'mp3' || 'wav' || 'm4a' || 'aac' || 'flac' || 'ogg' || 'wma' =>
+    'mp3' ||
+    'wav' ||
+    'm4a' ||
+    'aac' ||
+    'flac' ||
+    'ogg' ||
+    'wma' =>
       Icons.audiotrack_outlined,
     _ => Icons.insert_drive_file_outlined,
   };

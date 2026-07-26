@@ -272,7 +272,8 @@ class WorkspaceExplorerController extends ChangeNotifier {
     if (_draft == null && _editingId == null) {
       return;
     }
-    _draft = null;    _editingId = null;
+    _draft = null;
+    _editingId = null;
     notifyListeners();
   }
 
