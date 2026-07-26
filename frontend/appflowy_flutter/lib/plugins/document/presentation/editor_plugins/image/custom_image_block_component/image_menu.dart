@@ -83,16 +83,9 @@ class _ImageMenuState extends State<ImageMenu> {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: theme.cardColor,
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 14,
-            spreadRadius: -6,
-            offset: const Offset(0, 4),
-            color: Colors.black.withValues(alpha: 0.16),
-          ),
-        ],
+        // Floating chrome over a photograph: depth, never an outline.
+        boxShadow: EditorSurfaceStyle.embedShadow(context, raised: true),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: EditorSurfaceStyle.embedBorder(context)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

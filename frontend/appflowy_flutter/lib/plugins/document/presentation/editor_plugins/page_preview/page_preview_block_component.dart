@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/mention/me
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -480,31 +481,12 @@ class _PagePreviewCardState extends State<PagePreviewCard> {
           duration: const Duration(milliseconds: 190),
           curve: Curves.easeOutCubic,
           transform: Matrix4.translationValues(0, hovered ? -2 : 0, 0),
-          decoration: BoxDecoration(
+          child: ViewerCard(
             color: surface,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: palette.border.withValues(alpha: 0.38),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: palette.shadow.withValues(
-                  alpha: hovered
-                      ? theme.brightness == Brightness.dark
-                          ? 0.24
-                          : 0.11
-                      : theme.brightness == Brightness.dark
-                          ? 0.16
-                          : 0.065,
-                ),
-                blurRadius: hovered ? 32 : 23,
-                offset: Offset(0, hovered ? 13 : 9),
-                spreadRadius: -11,
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(20),
+            reactsToPointer: false,
+            elevation: hovered
+                ? ViewerCardElevation.raised
+                : ViewerCardElevation.resting,
             child: Stack(
               children: [
                 Column(
@@ -778,56 +760,54 @@ class _PagePreviewSelectionSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return Material(
+    return ViewerCard(
       color: palette.surface,
       borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        onTap: onSelect,
-        borderRadius: BorderRadius.circular(14),
-        hoverColor: palette.hover,
-        child: Container(
-          height: 88,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: palette.border),
-          ),
-          child: Row(
-            children: [
-              Icon(icon, size: 21, color: palette.textSecondary),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: palette.textPrimary,
-                        fontFamily: 'Inter',
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onSelect,
+          hoverColor: palette.hover,
+          child: Container(
+            height: 88,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Row(
+              children: [
+                Icon(icon, size: 21, color: palette.textSecondary),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontFamily: 'Inter',
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: palette.textMuted,
-                        fontFamily: 'Inter',
-                        fontSize: 11,
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: TextStyle(
+                          color: palette.textMuted,
+                          fontFamily: 'Inter',
+                          fontSize: 11,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 18,
-                color: palette.textMuted,
-              ),
-            ],
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 18,
+                  color: palette.textMuted,
+                ),
+              ],
+            ),
           ),
         ),
       ),

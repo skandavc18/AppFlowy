@@ -266,8 +266,9 @@ void main() {
     final shell = shells.single.decoration! as BoxDecoration;
 
     expect(shell.color, const Color(0xFF18191D));
-    expect(shell.border, isA<Border>());
-    expect(shell.boxShadow, hasLength(1));
+    // No outline: the card is defined by its layered depth alone.
+    expect(shell.border, isNull);
+    expect(shell.boxShadow, hasLength(2));
     expect(tester.takeException(), isNull);
   });
 
@@ -372,7 +373,8 @@ void main() {
         );
 
     expect(shell.color, PaperTheme.codeBlockBackground);
-    expect(shell.boxShadow, hasLength(1));
+    expect(shell.border, isNull);
+    expect(shell.boxShadow, hasLength(2));
     // The header paints on the very same surface as the card: one uniform
     // block rather than a toolbar stacked on a page.
     expect(warmHeaders, isNotEmpty);

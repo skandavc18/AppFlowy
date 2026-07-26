@@ -1,5 +1,6 @@
 import 'dart:ui' as ui;
 
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -133,15 +134,9 @@ class _DocumentViewportState extends State<DocumentViewport>
     );
 
     final framed = widget.framed
-        ? DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: DocumentViewportStyle.borderRadius,
-              boxShadow: style.shellShadow,
-            ),
-            child: ClipRRect(
-              borderRadius: DocumentViewportStyle.borderRadius,
-              child: surface,
-            ),
+        ? ViewerCard(
+            borderRadius: DocumentViewportStyle.borderRadius,
+            child: surface,
           )
         : surface;
 

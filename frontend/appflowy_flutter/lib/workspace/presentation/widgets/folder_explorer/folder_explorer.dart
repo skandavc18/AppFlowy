@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_service.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
@@ -179,42 +180,33 @@ class _FolderExplorerState extends State<FolderExplorer> {
     BuildContext context,
     FolderExplorerPalette palette,
   ) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.background,
-        borderRadius: BorderRadius.circular(widget.embedded ? 13 : 0),
-        border: widget.embedded ? Border.all(color: palette.border) : null,
-        boxShadow: widget.embedded
-            ? [
-                BoxShadow(
-                  color: palette.shadow.withValues(alpha: 0.45),
-                  blurRadius: 18,
-                  offset: const Offset(0, 7),
-                ),
-              ]
-            : null,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(widget.embedded ? 13 : 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.showHeader) _buildHeader(context),
-            _buildControls(context),
-            if (controller.errorMessage case final message?)
-              _ExplorerErrorBanner(
-                message: message,
-                onDismiss: controller.clearError,
-              ),
-            Expanded(
-              child: PremiumScrollScope(
-                enabled: true,
-                child: _buildPresentation(context),
-              ),
+    return ViewerCard(
+      color: palette.background,
+      borderRadius: BorderRadius.circular(widget.embedded ? 13 : 0),
+      // Only an embed floats above a page; the full-window explorer already
+      // owns its background.
+      elevation: widget.embedded
+          ? ViewerCardElevation.resting
+          : ViewerCardElevation.flush,
+      clipBehavior: widget.embedded ? Clip.antiAlias : Clip.none,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.showHeader) _buildHeader(context),
+          _buildControls(context),
+          if (controller.errorMessage case final message?)
+            _ExplorerErrorBanner(
+              message: message,
+              onDismiss: controller.clearError,
             ),
-            if (widget.showFooter) _buildFooter(context),
-          ],
-        ),
+          Expanded(
+            child: PremiumScrollScope(
+              enabled: true,
+              child: _buildPresentation(context),
+            ),
+          ),
+          if (widget.showFooter) _buildFooter(context),
+        ],
       ),
     );
   }

@@ -8,6 +8,7 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:archive/archive.dart';
@@ -94,40 +95,29 @@ class _FilePreviewState extends State<FilePreview> {
     final appFlowyTheme = AppFlowyTheme.of(context);
     final isPremiumPreview = widget.kind == FilePreviewKind.pdf;
     final pdfPalette = isPremiumPreview ? PdfPreviewPalette.of(context) : null;
-    final radius = EditorSurfaceStyle.embedBorderRadius;
     final backgroundColor = pdfPalette?.canvas ??
         EditorSurfaceStyle.previewBackgroundFor(
           materialTheme.brightness,
           appFlowyTheme.fillColorScheme.content,
           isPaper: PaperTheme.isEnabled(context),
         );
-    return AnimatedContainer(
-      duration: codeBlockAnimationDuration,
-      curve: Curves.easeOutCubic,
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        border: Border.all(color: EditorSurfaceStyle.embedBorder(context)),
-        borderRadius: radius,
-        boxShadow: EditorSurfaceStyle.embedShadow(context),
-      ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: SizedBox(
-          height: widget.height ??
-              (widget.kind == FilePreviewKind.code ? 560 : 420),
-          child: FutureBuilder<Widget>(
-            future: preview,
-            builder: (context, snapshot) {
-              if (snapshot.hasError) {
-                return _PreviewError(
-                  message: snapshot.error.toString(),
-                  onRetry: () => setState(() => preview = _buildPreview()),
-                );
-              }
-              return snapshot.data ??
-                  const Center(child: CircularProgressIndicator());
-            },
-          ),
+    return ViewerCard(
+      color: backgroundColor,
+      child: SizedBox(
+        height:
+            widget.height ?? (widget.kind == FilePreviewKind.code ? 560 : 420),
+        child: FutureBuilder<Widget>(
+          future: preview,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _PreviewError(
+                message: snapshot.error.toString(),
+                onRetry: () => setState(() => preview = _buildPreview()),
+              );
+            }
+            return snapshot.data ??
+                const Center(child: CircularProgressIndicator());
+          },
         ),
       ),
     );

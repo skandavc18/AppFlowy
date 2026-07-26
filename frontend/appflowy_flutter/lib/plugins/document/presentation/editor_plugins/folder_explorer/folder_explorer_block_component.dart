@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/plugins/trash/application/trash_listener.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
@@ -236,58 +237,57 @@ class FolderExplorerBlockComponentState
 
   Widget _buildEmpty() {
     final palette = FolderExplorerPalette.of(context);
-    return Material(
+    return ViewerCard(
       color: palette.surface,
       borderRadius: BorderRadius.circular(11),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(11),
-        onTap: showFolderPicker,
-        child: Container(
-          height: 72,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(11),
-            border: Border.all(color: palette.border),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              Icon(
-                Icons.create_new_folder_outlined,
-                size: 22,
-                color: palette.accent,
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      LocaleKeys.workspaceFolderExplorer_chooseFolder.tr(),
-                      style: TextStyle(
-                        color: palette.textPrimary,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      LocaleKeys.workspaceFolderExplorer_chooseFolderDescription
-                          .tr(),
-                      style: TextStyle(
-                        color: palette.textMuted,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: showFolderPicker,
+          child: Container(
+            height: 72,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.create_new_folder_outlined,
+                  size: 22,
+                  color: palette.accent,
                 ),
-              ),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: palette.textMuted,
-                size: 19,
-              ),
-            ],
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        LocaleKeys.workspaceFolderExplorer_chooseFolder.tr(),
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        LocaleKeys
+                            .workspaceFolderExplorer_chooseFolderDescription
+                            .tr(),
+                        style: TextStyle(
+                          color: palette.textMuted,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: palette.textMuted,
+                  size: 19,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -296,31 +296,30 @@ class FolderExplorerBlockComponentState
 
   Widget _buildUnavailable() {
     final palette = FolderExplorerPalette.of(context);
-    return Container(
-      height: 64,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: palette.border),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.folder_off_outlined, color: palette.textMuted, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              LocaleKeys.workspaceFolderExplorer_folderUnavailable.tr(),
-              style: TextStyle(color: palette.textSecondary, fontSize: 12),
+    return ViewerCard(
+      color: palette.surface,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Row(
+          children: [
+            Icon(Icons.folder_off_outlined, color: palette.textMuted, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                LocaleKeys.workspaceFolderExplorer_folderUnavailable.tr(),
+                style: TextStyle(color: palette.textSecondary, fontSize: 12),
+              ),
             ),
-          ),
-          TextButton(
-            onPressed: showFolderPicker,
-            child: Text(
-              LocaleKeys.workspaceFolderExplorer_chooseAnother.tr(),
+            TextButton(
+              onPressed: showFolderPicker,
+              child: Text(
+                LocaleKeys.workspaceFolderExplorer_chooseAnother.tr(),
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -338,58 +337,58 @@ class FolderExplorerBlockComponentState
     final palette = FolderExplorerPalette.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: Material(
+      child: ViewerCard(
         color: palette.surface,
         borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          hoverColor: palette.hover,
-          onTap: () => context.read<TabsBloc>().openPlugin(folder),
-          child: Container(
-            height: 54,
-            padding: const EdgeInsets.only(left: 13, right: 4),
-            decoration: BoxDecoration(
-              border: Border.all(color: palette.border),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                WorkspaceItemIcon.fromView(
-                  view: folder,
-                  size: 21,
-                  color: palette.accent,
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        folder.name.isEmpty
-                            ? LocaleKeys.workspaceFolderExplorer_untitledFolder
-                                .tr()
-                            : folder.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: palette.textPrimary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
-                        ),
-                      ),
-                      Text(
-                        LocaleKeys.workspaceFolderExplorer_workspaceFolder.tr(),
-                        style: TextStyle(
-                          color: palette.textMuted,
-                          fontSize: 10.5,
-                        ),
-                      ),
-                    ],
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            hoverColor: palette.hover,
+            onTap: () => context.read<TabsBloc>().openPlugin(folder),
+            child: Container(
+              height: 54,
+              padding: const EdgeInsets.only(left: 13, right: 4),
+              child: Row(
+                children: [
+                  WorkspaceItemIcon.fromView(
+                    view: folder,
+                    size: 21,
+                    color: palette.accent,
                   ),
-                ),
-                _buildMenu(folder),
-              ],
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          folder.name.isEmpty
+                              ? LocaleKeys
+                                  .workspaceFolderExplorer_untitledFolder
+                                  .tr()
+                              : folder.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.textPrimary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                        Text(
+                          LocaleKeys.workspaceFolderExplorer_workspaceFolder
+                              .tr(),
+                          style: TextStyle(
+                            color: palette.textMuted,
+                            fontSize: 10.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _buildMenu(folder),
+                ],
+              ),
             ),
           ),
         ),

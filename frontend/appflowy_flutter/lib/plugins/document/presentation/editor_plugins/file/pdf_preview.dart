@@ -6,6 +6,7 @@ import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -463,9 +464,9 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       activeMatchTextColor: palette.activeSearchMatch,
       pageDropShadow: BoxShadow(
         color: palette.pageShadow,
-        blurRadius: 14,
-        spreadRadius: 1,
-        offset: const Offset(0, 5),
+        blurRadius: 18,
+        spreadRadius: -2,
+        offset: const Offset(0, 6),
       ),
       onPageChanged: (page) {
         if (page != null && page != currentPage && mounted) {
@@ -496,18 +497,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
               ),
             ]
           : const [],
-      pageOverlaysBuilder: (_, __, ___) => [
-        IgnorePointer(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(
-                color: palette.border.withValues(alpha: 0.62),
-              ),
-            ),
-          ),
-        ),
-      ],
+      // A page is defined by its own drop shadow, never by an outline drawn
+      // over the document.
       pagePaintCallbacks: [
         textSearcher.pageTextMatchPaintCallback,
         _paintHighlights,
@@ -1173,7 +1164,6 @@ class _PdfScrollThumbState extends State<_PdfScrollThumb> {
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: palette.chrome,
-            border: Border.all(color: palette.border),
             borderRadius: BorderRadius.circular(9),
             boxShadow: [
               BoxShadow(
@@ -1242,7 +1232,6 @@ class _PdfLoadingSkeletonState extends State<_PdfLoadingSkeleton>
                     decoration: BoxDecoration(
                       color: palette.control,
                       borderRadius: BorderRadius.circular(7),
-                      border: Border.all(color: palette.border),
                       boxShadow: [
                         BoxShadow(
                           color: palette.pageShadow,
@@ -1375,31 +1364,18 @@ class _PdfFullscreenView extends StatelessWidget {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(10),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: palette.canvas,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: palette.border),
-              boxShadow: [
-                BoxShadow(
-                  color: palette.chromeShadow,
-                  blurRadius: 26,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(18),
-              child: PdfPreview(
-                key: ValueKey('fullscreen-${file.path}'),
-                file: file,
-                name: name,
-                metadata: metadata,
-                editable: editable,
-                fullscreen: true,
-                sourceDocumentRef: sourceDocumentRef,
-                onMetadataChanged: onMetadataChanged,
-              ),
+          child: ViewerCard(
+            color: palette.canvas,
+            elevation: ViewerCardElevation.raised,
+            child: PdfPreview(
+              key: ValueKey('fullscreen-${file.path}'),
+              file: file,
+              name: name,
+              metadata: metadata,
+              editable: editable,
+              fullscreen: true,
+              sourceDocumentRef: sourceDocumentRef,
+              onMetadataChanged: onMetadataChanged,
             ),
           ),
         ),

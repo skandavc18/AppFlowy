@@ -8,7 +8,7 @@ import 'package:appflowy/plugins/document/application/prelude.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -142,10 +142,7 @@ class _ResizableImageState extends State<ResizableImage> {
               ),
       child: GestureDetector(
         onDoubleTap: widget.onDoubleTap,
-        child: ClipRRect(
-          borderRadius: EditorSurfaceStyle.embedBorderRadius,
-          child: _buildResizableImage(context),
-        ),
+        child: ViewerCard(child: _buildResizableImage(context)),
       ),
     );
   }
@@ -249,46 +246,45 @@ class _ImageLoadFailedWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final error = _getErrorMessage();
-    return Container(
-      height: 160,
-      width: width,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      decoration: BoxDecoration(
-        borderRadius: const BorderRadius.all(Radius.circular(4.0)),
-        border: Border.all(color: Colors.grey.withValues(alpha: 0.6)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const FlowySvg(
-            FlowySvgs.broken_image_xl,
-            size: Size.square(36),
-          ),
-          FlowyText(
-            AppFlowyEditorL10n.current.imageLoadFailed,
-            fontSize: 14,
-          ),
-          const VSpace(4),
-          if (error != null)
+    return ViewerCard(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      child: Container(
+        height: 160,
+        width: width,
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const FlowySvg(
+              FlowySvgs.broken_image_xl,
+              size: Size.square(36),
+            ),
             FlowyText(
-              error,
-              textAlign: TextAlign.center,
-              color: Theme.of(context).hintColor.withValues(alpha: 0.6),
-              fontSize: 10,
-              maxLines: 2,
+              AppFlowyEditorL10n.current.imageLoadFailed,
+              fontSize: 14,
             ),
-          const VSpace(12),
-          Listener(
-            onPointerDown: (event) {
-              onRetry();
-            },
-            child: OutlinedRoundedButton(
-              text: LocaleKeys.chat_retry.tr(),
-              onTap: () {},
+            const VSpace(4),
+            if (error != null)
+              FlowyText(
+                error,
+                textAlign: TextAlign.center,
+                color: Theme.of(context).hintColor.withValues(alpha: 0.6),
+                fontSize: 10,
+                maxLines: 2,
+              ),
+            const VSpace(12),
+            Listener(
+              onPointerDown: (event) {
+                onRetry();
+              },
+              child: OutlinedRoundedButton(
+                text: LocaleKeys.chat_retry.tr(),
+                onTap: () {},
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

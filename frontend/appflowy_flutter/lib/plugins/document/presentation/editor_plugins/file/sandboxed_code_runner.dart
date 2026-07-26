@@ -8,6 +8,7 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -257,19 +258,9 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       ],
     );
     if (widget.framed) {
-      runner = AnimatedContainer(
-        duration: codeBlockAnimationDuration,
-        curve: Curves.easeOutCubic,
-        decoration: BoxDecoration(
-          color: palette.surface,
-          borderRadius: EditorSurfaceStyle.embedBorderRadius,
-          border: Border.all(color: EditorSurfaceStyle.embedBorder(context)),
-          boxShadow: EditorSurfaceStyle.embedShadow(context),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(codeBlockCornerRadius - 1),
-          child: runner,
-        ),
+      runner = ViewerCard(
+        color: palette.surface,
+        child: runner,
       );
     } else {
       runner = ColoredBox(color: palette.surface, child: runner);

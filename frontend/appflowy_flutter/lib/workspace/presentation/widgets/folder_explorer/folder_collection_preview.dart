@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
@@ -108,33 +109,13 @@ class _FolderCollectionPreviewState extends State<FolderCollectionPreview> {
         duration: const Duration(milliseconds: 190),
         curve: Curves.easeOutCubic,
         transform: Matrix4.translationValues(0, hovered ? -2 : 0, 0),
-        decoration: BoxDecoration(
+        child: ViewerCard(
           color: surface,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: palette.border.withValues(
-              alpha: theme.brightness == Brightness.dark ? 0.45 : 0.32,
-            ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: palette.shadow.withValues(
-                alpha: hovered
-                    ? theme.brightness == Brightness.dark
-                        ? 0.24
-                        : 0.12
-                    : theme.brightness == Brightness.dark
-                        ? 0.16
-                        : 0.07,
-              ),
-              blurRadius: hovered ? 34 : 25,
-              offset: Offset(0, hovered ? 14 : 10),
-              spreadRadius: -12,
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
+          reactsToPointer: false,
+          elevation: hovered
+              ? ViewerCardElevation.raised
+              : ViewerCardElevation.resting,
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: widget.onOpen,
@@ -491,8 +472,7 @@ class _MiniKnowledgeCardState extends State<_MiniKnowledgeCard> {
         duration: const Duration(milliseconds: 170),
         curve: Curves.easeOutCubic,
         transform: Matrix4.translationValues(0, hovered ? -2 : 0, 0),
-        padding: const EdgeInsets.all(7),
-        decoration: BoxDecoration(
+        child: ViewerCard(
           color: hovered
               ? Color.alphaBlend(
                   palette.accent.withValues(alpha: 0.035),
@@ -500,59 +480,53 @@ class _MiniKnowledgeCardState extends State<_MiniKnowledgeCard> {
                 )
               : base,
           borderRadius: BorderRadius.circular(15),
-          border: Border.all(
-            color: palette.border.withValues(alpha: hovered ? 0.52 : 0.30),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: palette.shadow.withValues(
-                alpha: hovered ? 0.10 : 0.045,
-              ),
-              blurRadius: hovered ? 16 : 9,
-              offset: Offset(0, hovered ? 7 : 4),
-              spreadRadius: -5,
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            FolderGalleryPreviewThumbnail(
-              item: item,
-              view: widget.view,
-              preview: widget.previewCache.previewFor(
-                view: widget.view,
-                item: item,
-              ),
-              userProfile: widget.userProfile,
-              height: 102,
-              compact: true,
-              borderRadius: BorderRadius.circular(10),
-              previewMode: widget.previewMode,
-            ),
-            const SizedBox(height: 9),
-            Row(
+          reactsToPointer: false,
+          elevation: hovered
+              ? ViewerCardElevation.raised
+              : ViewerCardElevation.resting,
+          child: Padding(
+            padding: const EdgeInsets.all(7),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _ViewIdentityIcon(view: widget.view, size: 15),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    widget.view.nameOrDefault,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.textPrimary,
-                      fontFamily: 'Inter',
-                      fontSize: 12,
-                      height: 1.25,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.12,
-                    ),
+                FolderGalleryPreviewThumbnail(
+                  item: item,
+                  view: widget.view,
+                  preview: widget.previewCache.previewFor(
+                    view: widget.view,
+                    item: item,
                   ),
+                  userProfile: widget.userProfile,
+                  height: 102,
+                  compact: true,
+                  borderRadius: BorderRadius.circular(10),
+                  previewMode: widget.previewMode,
+                ),
+                const SizedBox(height: 9),
+                Row(
+                  children: [
+                    _ViewIdentityIcon(view: widget.view, size: 15),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        widget.view.nameOrDefault,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontFamily: 'Inter',
+                          fontSize: 12,
+                          height: 1.25,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.12,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );

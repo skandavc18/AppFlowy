@@ -1,5 +1,5 @@
-import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -81,20 +81,11 @@ class _FileMediaPlayerState extends State<FileMediaPlayer> {
   @override
   Widget build(BuildContext context) {
     if (widget.kind == FileMediaKind.video) {
-      return DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: EditorSurfaceStyle.embedBorderRadius,
-          boxShadow: EditorSurfaceStyle.embedShadow(context),
-        ),
-        child: ClipRRect(
-          borderRadius: EditorSurfaceStyle.embedBorderRadius,
-          child: ColoredBox(
-            color: Colors.black,
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Video(controller: videoController!),
-            ),
-          ),
+      return ViewerCard(
+        color: Colors.black,
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Video(controller: videoController!),
         ),
       );
     }
@@ -115,69 +106,67 @@ class _AudioPlayer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
-    return Container(
-      height: 72,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: theme.fillColorScheme.content,
-        border: Border.all(color: EditorSurfaceStyle.embedBorder(context)),
-        borderRadius: EditorSurfaceStyle.embedBorderRadius,
-        boxShadow: EditorSurfaceStyle.embedShadow(context),
-      ),
-      child: Row(
-        children: [
-          StreamBuilder<bool>(
-            stream: player.stream.playing,
-            initialData: player.state.playing,
-            builder: (context, snapshot) => IconButton(
-              onPressed: player.playOrPause,
-              icon: Icon(
-                snapshot.data == true ? Icons.pause : Icons.play_arrow,
+    return ViewerCard(
+      color: theme.fillColorScheme.content,
+      child: Container(
+        height: 72,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            StreamBuilder<bool>(
+              stream: player.stream.playing,
+              initialData: player.state.playing,
+              builder: (context, snapshot) => IconButton(
+                onPressed: player.playOrPause,
+                icon: Icon(
+                  snapshot.data == true ? Icons.pause : Icons.play_arrow,
+                ),
               ),
             ),
-          ),
-          const HSpace(8),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                FlowyText(
-                  name,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                StreamBuilder<Duration>(
-                  stream: player.stream.duration,
-                  initialData: player.state.duration,
-                  builder: (context, durationSnapshot) {
-                    final duration = durationSnapshot.data ?? Duration.zero;
-                    return StreamBuilder<Duration>(
-                      stream: player.stream.position,
-                      initialData: player.state.position,
-                      builder: (context, positionSnapshot) {
-                        final position = positionSnapshot.data ?? Duration.zero;
-                        final maximum = duration.inMilliseconds
-                            .toDouble()
-                            .clamp(1.0, double.infinity)
-                            .toDouble();
-                        return Slider(
-                          max: maximum,
-                          value: position.inMilliseconds
+            const HSpace(8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  FlowyText(
+                    name,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  StreamBuilder<Duration>(
+                    stream: player.stream.duration,
+                    initialData: player.state.duration,
+                    builder: (context, durationSnapshot) {
+                      final duration = durationSnapshot.data ?? Duration.zero;
+                      return StreamBuilder<Duration>(
+                        stream: player.stream.position,
+                        initialData: player.state.position,
+                        builder: (context, positionSnapshot) {
+                          final position =
+                              positionSnapshot.data ?? Duration.zero;
+                          final maximum = duration.inMilliseconds
                               .toDouble()
-                              .clamp(0.0, maximum)
-                              .toDouble(),
-                          onChanged: (value) => player.seek(
-                            Duration(milliseconds: value.round()),
-                          ),
-                        );
-                      },
-                    );
-                  },
-                ),
-              ],
+                              .clamp(1.0, double.infinity)
+                              .toDouble();
+                          return Slider(
+                            max: maximum,
+                            value: position.inMilliseconds
+                                .toDouble()
+                                .clamp(0.0, maximum)
+                                .toDouble(),
+                            onChanged: (value) => player.seek(
+                              Duration(milliseconds: value.round()),
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

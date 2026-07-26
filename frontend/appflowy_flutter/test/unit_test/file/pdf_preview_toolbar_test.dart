@@ -724,8 +724,8 @@ void main() {
     expect(palette.border, PaperTheme.codeBlockBorder);
     expect(palette.accent, PaperTheme.accent);
     // The PDF shell now carries the same soft depth as every other embed.
-    expect(palette.shellShadows, hasLength(1));
-    expect(palette.shellShadows.single.color.r, greaterThan(0));
+    expect(palette.shellShadows, hasLength(2));
+    expect(palette.shellShadows.first.color.r, greaterThan(0));
 
     await tester.pumpWidget(
       _themedApp(
@@ -743,8 +743,8 @@ void main() {
     expect(palette.canvas, const Color(0xFF17181B));
     expect(palette.sidebar, const Color(0xFF1D1E22));
     expect(palette.canvas, isNot(Colors.black));
-    expect(palette.shellShadows, hasLength(1));
-    expect(palette.shellShadows.single.spreadRadius, lessThan(0));
+    expect(palette.shellShadows, hasLength(2));
+    expect(palette.shellShadows.first.spreadRadius, lessThan(0));
   });
 
   testWidgets('light palette keeps PDF controls light and readable', (

@@ -10,6 +10,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/mult
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/multi_image_block_component.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
+import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
@@ -96,60 +97,51 @@ class _ImageBrowserLayoutState extends State<ImageBrowserLayout> {
                               context,
                               maxItems - 1,
                             ),
-                            child: Container(
-                              width: _thumbnailItemSize,
-                              height: _thumbnailItemSize,
+                            child: Padding(
                               padding: const EdgeInsets.all(2),
-                              margin: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
+                              child: ViewerCard(
                                 borderRadius: Corners.s8Border,
-                                border: Border.all(
-                                  width: 2,
-                                  color: Theme.of(context).dividerColor,
-                                ),
-                              ),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  borderRadius: Corners.s6Border,
-                                  image: image.type == CustomImageType.local
-                                      ? DecorationImage(
-                                          image: FileImage(File(image.url)),
-                                          fit: BoxFit.cover,
-                                          opacity: 0.5,
-                                        )
-                                      : null,
-                                ),
-                                child: Stack(
-                                  children: [
-                                    if (image.type != CustomImageType.local)
-                                      Positioned.fill(
-                                        child: Container(
-                                          clipBehavior: Clip.antiAlias,
-                                          decoration: const BoxDecoration(
-                                            borderRadius: Corners.s6Border,
-                                          ),
-                                          child: FlowyNetworkImage(
-                                            url: image.url,
-                                            userProfilePB: _userProfile,
-                                          ),
-                                        ),
-                                      ),
-                                    DecoratedBox(
-                                      decoration: BoxDecoration(
-                                        color:
-                                            Colors.white.withValues(alpha: 0.5),
-                                      ),
-                                      child: Center(
-                                        child: FlowyText(
-                                          '+$amountLeft',
-                                          color: AFThemeExtension.of(context)
-                                              .strongText,
-                                          fontSize: 24,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
+                                child: SizedBox(
+                                  width: _thumbnailItemSize,
+                                  height: _thumbnailItemSize,
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      image: image.type == CustomImageType.local
+                                          ? DecorationImage(
+                                              image: FileImage(File(image.url)),
+                                              fit: BoxFit.cover,
+                                              opacity: 0.5,
+                                            )
+                                          : null,
                                     ),
-                                  ],
+                                    child: Stack(
+                                      children: [
+                                        if (image.type != CustomImageType.local)
+                                          Positioned.fill(
+                                            child: FlowyNetworkImage(
+                                              url: image.url,
+                                              userProfilePB: _userProfile,
+                                            ),
+                                          ),
+                                        DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: Colors.white
+                                                .withValues(alpha: 0.5),
+                                          ),
+                                          child: Center(
+                                            child: FlowyText(
+                                              '+$amountLeft',
+                                              color:
+                                                  AFThemeExtension.of(context)
+                                                      .strongText,
+                                              fontSize: 24,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
@@ -353,61 +345,69 @@ class _ThumbnailItemState extends State<ThumbnailItem> {
 
   @override
   Widget build(BuildContext context) {
+    final isSelected = widget.index == widget.selectedIndex;
     return MouseRegion(
       onEnter: (_) => setState(() => isHovering = true),
       onExit: (_) => setState(() => isHovering = false),
-      child: Container(
-        width: _thumbnailItemSize,
-        height: _thumbnailItemSize,
+      child: Padding(
         padding: const EdgeInsets.all(2),
-        margin: const EdgeInsets.all(2),
-        decoration: BoxDecoration(
+        child: ViewerCard(
           borderRadius: Corners.s8Border,
-          border: Border.all(
-            width: 2,
-            color: widget.index == widget.selectedIndex
-                ? Theme.of(context).colorScheme.primary
-                : Theme.of(context).dividerColor,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: ImageRender(
-                image: widget.images[widget.index],
-                userProfile: widget.userProfile,
-              ),
-            ),
-            Positioned(
-              top: 4,
-              right: 4,
-              child: AnimatedOpacity(
-                opacity: isHovering ? 1 : 0,
-                duration: const Duration(milliseconds: 100),
-                child: FlowyTooltip(
-                  message: LocaleKeys.button_delete.tr(),
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: widget.onDeleted,
-                    child: FlowyHover(
-                      resetHoverOnRebuild: false,
-                      style: HoverStyle(
-                        backgroundColor: Colors.black.withValues(alpha: 0.6),
-                        hoverColor: Colors.black.withValues(alpha: 0.9),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.all(4),
-                        child: FlowySvg(
-                          FlowySvgs.delete_s,
-                          color: Colors.white,
+          // Selection is the only ring a picture gets: every other thumbnail
+          // is separated from the sheet by its own soft shadow.
+          color: isSelected ? Theme.of(context).colorScheme.primary : null,
+          elevation: isHovering
+              ? ViewerCardElevation.raised
+              : ViewerCardElevation.resting,
+          reactsToPointer: false,
+          child: Container(
+            width: _thumbnailItemSize,
+            height: _thumbnailItemSize,
+            padding: EdgeInsets.all(isSelected ? 2 : 0),
+            child: ClipRRect(
+              borderRadius: Corners.s6Border,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ImageRender(
+                      image: widget.images[widget.index],
+                      userProfile: widget.userProfile,
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: AnimatedOpacity(
+                      opacity: isHovering ? 1 : 0,
+                      duration: const Duration(milliseconds: 100),
+                      child: FlowyTooltip(
+                        message: LocaleKeys.button_delete.tr(),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: widget.onDeleted,
+                          child: FlowyHover(
+                            resetHoverOnRebuild: false,
+                            style: HoverStyle(
+                              backgroundColor:
+                                  Colors.black.withValues(alpha: 0.6),
+                              hoverColor: Colors.black.withValues(alpha: 0.9),
+                            ),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4),
+                              child: FlowySvg(
+                                FlowySvgs.delete_s,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );

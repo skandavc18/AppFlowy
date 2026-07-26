@@ -88,7 +88,10 @@ abstract final class EditorSurfaceStyle {
   static BorderRadius get embedBorderRadius =>
       BorderRadius.circular(embedCornerRadius);
 
-  /// A hairline edge. Depth comes from [embedShadow], not from the border.
+  /// A hairline edge for floating chrome — menus, chips, toolbars.
+  ///
+  /// Document cards do not use this: their depth comes from [embedShadow]
+  /// alone, so nothing in a page is drawn inside an outline.
   static Color embedBorder(BuildContext context) {
     final theme = Theme.of(context);
     final premium = PremiumThemeExtension.maybeOf(context);
@@ -99,9 +102,17 @@ abstract final class EditorSurfaceStyle {
     return base.withValues(alpha: 0.38);
   }
 
-  /// Soft, single-source depth that lifts an embed off the page.
+  /// Soft, layered depth that lifts an embed off the page — the only thing
+  /// that separates a document card from the canvas behind it.
   ///
-  /// [raised] deepens the shadow while the pointer rests on the card.
+  /// Two shadows do the work an outline used to. A wide ambient one gives the
+  /// card height; a tight contact one keeps its edge legible where it meets
+  /// the page. In dark themes a luminous hairline replaces the contact
+  /// shadow, because black on near-black reads as nothing at all.
+  ///
+  /// [raised] deepens the whole set while the pointer rests on the card or
+  /// something inside it holds focus. The character never changes, only the
+  /// height.
   static List<BoxShadow> embedShadow(
     BuildContext context, {
     bool raised = false,
@@ -115,12 +126,24 @@ abstract final class EditorSurfaceStyle {
     return [
       BoxShadow(
         color: color.withValues(
-          alpha: raised ? (isDark ? 0.24 : 0.11) : (isDark ? 0.16 : 0.065),
+          alpha: raised ? (isDark ? 0.28 : 0.11) : (isDark ? 0.2 : 0.065),
         ),
         blurRadius: raised ? 32 : 23,
         offset: Offset(0, raised ? 13 : 9),
         spreadRadius: -11,
       ),
+      if (isDark)
+        BoxShadow(
+          color: Colors.white.withValues(alpha: raised ? 0.1 : 0.07),
+          spreadRadius: 0.6,
+        )
+      else
+        BoxShadow(
+          color: color.withValues(alpha: raised ? 0.06 : 0.045),
+          blurRadius: raised ? 5 : 3,
+          offset: Offset(0, raised ? 2 : 1),
+          spreadRadius: -2,
+        ),
     ];
   }
 }

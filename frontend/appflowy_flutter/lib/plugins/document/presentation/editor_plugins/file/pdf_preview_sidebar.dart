@@ -196,12 +196,20 @@ class _ThumbnailTile extends StatelessWidget {
                               decoration: BoxDecoration(
                                 color: Colors.white,
                                 borderRadius: BorderRadius.circular(3),
-                                border: Border.all(
-                                  color: selected
-                                      ? palette.accent
-                                      : palette.border,
-                                  width: selected ? 1 : 0.5,
-                                ),
+                                // Selection is the only ring a thumbnail
+                                // gets; every other page is separated by
+                                // its own soft shadow.
+                                border: selected
+                                    ? Border.all(color: palette.accent)
+                                    : null,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: palette.pageShadow,
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                    spreadRadius: -2,
+                                  ),
+                                ],
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(2.5),
@@ -459,7 +467,6 @@ class _SidebarSkeletonState extends State<_SidebarSkeleton>
                 decoration: BoxDecoration(
                   color: palette.control,
                   borderRadius: BorderRadius.circular(5),
-                  border: Border.all(color: palette.border),
                 ),
               ),
             ),
