@@ -37,6 +37,8 @@ class MobileSignInScreen extends StatelessWidget {
                 isLocalAuthEnabled
                     ? const SignInAnonymousButtonV3()
                     : const ContinueWithEmailAndPassword(),
+                VSpace(theme.spacing.l),
+                const SignUpPrompt(),
                 VSpace(theme.spacing.xxl),
                 if (isAuthEnabled) ...[
                   _buildThirdPartySignInButtons(context),

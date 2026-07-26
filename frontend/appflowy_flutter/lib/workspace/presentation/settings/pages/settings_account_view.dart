@@ -111,6 +111,17 @@ class _SettingsAccountViewState extends State<SettingsAccountView> {
                 ),
               ],
 
+              // In local mode there is no server to log in to, but an account
+              // can still be created on this device.
+              if (!isAuthEnabled) ...[
+                SettingsCategory(
+                  title: LocaleKeys.settings_accountPage_login_title.tr(),
+                  children: const [
+                    AccountSignUpSection(),
+                  ],
+                ),
+              ],
+
               // App version
               SettingsCategory(
                 title: LocaleKeys.newSettings_myAccount_aboutAppFlowy.tr(),

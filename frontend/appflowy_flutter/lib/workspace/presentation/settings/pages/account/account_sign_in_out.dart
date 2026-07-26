@@ -6,6 +6,8 @@ import 'package:appflowy/user/application/auth/auth_service.dart';
 import 'package:appflowy/user/application/password/password_bloc.dart';
 import 'package:appflowy/user/application/prelude.dart';
 import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/continue_with/continue_with_email_and_password.dart';
+import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/sign_up/sign_up_page.dart';
+import 'package:appflowy/user/presentation/screens/sign_in_screen/widgets/sign_up/sign_up_prompt.dart';
 import 'package:appflowy/util/navigator_context_extension.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/account/password/change_password.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/account/password/setup_password.dart';
@@ -42,6 +44,10 @@ class AccountSignInOutSection extends StatelessWidget {
           ),
         ),
         const Spacer(),
+        if (signIn) ...[
+          const AccountSignUpButton(),
+          const HSpace(8),
+        ],
         AccountSignInOutButton(
           userProfile: userProfile,
           onAction: onAction,
@@ -50,6 +56,63 @@ class AccountSignInOutSection extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Creates a new account from the settings dialog.
+///
+/// It is only offered when the user isn't signed in yet, next to the log in
+/// button.
+class AccountSignUpButton extends StatelessWidget {
+  const AccountSignUpButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AFOutlinedTextButton.normal(
+      text: LocaleKeys.settings_accountPage_login_signUpLabel.tr(),
+      onTap: () => showSignUpDialog(context),
+    );
+  }
+}
+
+/// The sign up row used in local mode, where there is no server to log in to.
+class AccountSignUpSection extends StatelessWidget {
+  const AccountSignUpSection({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppFlowyTheme.of(context);
+    return Row(
+      children: [
+        Text(
+          LocaleKeys.settings_accountPage_login_title.tr(),
+          style: theme.textStyle.body.enhanced(
+            color: theme.textColorScheme.primary,
+          ),
+        ),
+        const Spacer(),
+        const AccountSignUpButton(),
+      ],
+    );
+  }
+}
+
+Future<void> showSignUpDialog(BuildContext context) async {
+  await showDialog(
+    context: context,
+    builder: (_) => BlocProvider<SignInBloc>(
+      create: (context) => getIt<SignInBloc>(),
+      child: Builder(
+        builder: (dialogContext) => FlowyDialog(
+          constraints: const BoxConstraints(maxHeight: 620, maxWidth: 375),
+          child: ScaffoldMessenger(
+            child: SignUpPage(
+              backToLogin: () => Navigator.of(dialogContext).pop(),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class AccountSignInOutButton extends StatelessWidget {
@@ -94,7 +157,7 @@ class AccountSignInOutButton extends StatelessWidget {
       builder: (context) => BlocProvider<SignInBloc>(
         create: (context) => getIt<SignInBloc>(),
         child: const FlowyDialog(
-          constraints: BoxConstraints(maxHeight: 485, maxWidth: 375),
+          constraints: BoxConstraints(maxHeight: 525, maxWidth: 375),
           child: _SignInDialogContent(),
         ),
       ),
@@ -212,6 +275,8 @@ class _SignInDialogContent extends StatelessWidget {
                 const _DialogTitle(),
                 const VSpace(16),
                 const ContinueWithEmailAndPassword(),
+                const VSpace(12),
+                const SignUpPrompt(),
                 if (isAuthEnabled) ...[
                   const VSpace(20),
                   const _OrDivider(),

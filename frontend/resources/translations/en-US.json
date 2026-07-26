@@ -29,7 +29,16 @@
     "emailHint": "Email",
     "passwordHint": "Password",
     "repeatPasswordHint": "Repeat password",
-    "signUpWith": "Sign up with:"
+    "signUpWith": "Sign up with:",
+    "createAccountTitle": "Create your account",
+    "createAccountDescription": "Sign up with your email address and a password.",
+    "createLocalAccountTitle": "Create a local account",
+    "createLocalAccountDescription": "Your account and its data stay on this device.",
+    "nameHint": "Name",
+    "emptyNameError": "Name can't be empty",
+    "emailConfirmationTitle": "Confirm your email",
+    "emailConfirmationDescription": "We sent a confirmation link to your email address. Open the link to activate your account, then log in.",
+    "accountCreatedFailed": "Failed to create the account. Please try again later"
   },
   "signIn": {
     "loginTitle": "Login to @:appName",
@@ -632,7 +641,8 @@
       "login": {
         "title": "Account login",
         "loginLabel": "Log in",
-        "logoutLabel": "Log out"
+        "logoutLabel": "Log out",
+        "signUpLabel": "Sign up"
       },
       "isUpToDate": "@:appName is up to date!",
       "officialVersion": "Version {version} (Official build)"

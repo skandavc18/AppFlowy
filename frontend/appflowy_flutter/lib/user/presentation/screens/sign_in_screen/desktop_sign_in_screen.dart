@@ -53,6 +53,11 @@ class _DesktopSignInScreenState extends State<DesktopSignInScreen>
                     ? const SignInAnonymousButtonV3()
                     : const ContinueWithEmailAndPassword(),
 
+                VSpace(theme.spacing.l),
+
+                // sign up
+                const SignUpPrompt(),
+
                 VSpace(theme.spacing.xxl),
 
                 // third-party sign in.
