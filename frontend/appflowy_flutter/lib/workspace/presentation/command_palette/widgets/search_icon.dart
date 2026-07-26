@@ -3,6 +3,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/command_palette/search_result_ext.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -11,20 +13,26 @@ import 'package:flutter/material.dart';
 extension SearchIconExtension on ViewPB {
   Widget buildIcon(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
-    return icon.value.isNotEmpty
-        ? SizedBox(
-            width: 16,
-            child: RawEmojiIconWidget(
-              emoji: icon.toEmojiIconData(),
-              emojiSize: 16,
-              lineHeight: 20 / 16,
-            ),
-          )
-        : FlowySvg(
-            iconData,
-            size: const Size.square(18),
-            color: theme.iconColorScheme.secondary,
-          );
+    if (icon.value.isNotEmpty) {
+      return SizedBox(
+        width: 16,
+        child: RawEmojiIconWidget(
+          emoji: icon.toEmojiIconData(),
+          emojiSize: 16,
+          lineHeight: 20 / 16,
+        ),
+      );
+    }
+    // Files and folders carry their own glyph — and a picture previews itself
+    // — so the layout icon would say nothing but "document".
+    if (isWorkspaceItem) {
+      return WorkspaceItemIcon.fromView(view: this);
+    }
+    return FlowySvg(
+      iconData,
+      size: const Size.square(18),
+      color: theme.iconColorScheme.secondary,
+    );
   }
 }
 

@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/application/document_data_pb_extension
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_block.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/video_thumbnail_cache.dart';
 import 'package:appflowy/user/application/user_service.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/blank_file_content.dart';
@@ -243,6 +244,10 @@ class WorkspaceItemService implements WorkspaceItemRepository {
     );
     if (result.isFailure) {
       await _deleteStoredFile(url);
+    } else if (isLocalMode) {
+      // Decode the poster now so the sidebar has a still the first time the
+      // clip is drawn instead of a placeholder.
+      VideoThumbnailCache.instance.warmUp(url);
     }
     return result;
   }

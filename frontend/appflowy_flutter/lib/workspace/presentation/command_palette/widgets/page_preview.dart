@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
@@ -10,14 +11,19 @@ import 'package:appflowy/plugins/document/application/document_data_pb_extension
 import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/document_immersive_cover_bloc.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/video_thumbnail_cache.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -28,6 +34,7 @@ import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
 class PagePreview extends StatelessWidget {
@@ -105,6 +112,14 @@ class PagePreview extends StatelessWidget {
   }
 
   Widget _buildPageContent() {
+    // A workspace file is stored as a document holding one attachment, so the
+    // document renderer would only ever show that block's chip.
+    if (view.isWorkspaceFile) {
+      return _WorkspaceFilePreview(
+        key: ValueKey('file-preview-${view.id}'),
+        view: view,
+      );
+    }
     if (view.layout.isDocumentView) {
       return _DocumentPagePreview(
         key: ValueKey('document-preview-${view.id}'),
@@ -197,17 +212,21 @@ class PagePreview extends StatelessWidget {
   Widget buildIcon(AppFlowyThemeData theme, ViewPB view, bool hasCover) {
     final hasIcon = view.icon.value.isNotEmpty;
     if (!hasIcon && hasCover) return const SizedBox.shrink();
-    return hasIcon
-        ? RawEmojiIconWidget(
-            emoji: view.icon.toEmojiIconData(),
-            emojiSize: 16.0,
-            lineHeight: 20 / 16,
-          )
-        : FlowySvg(
-            view.iconData,
-            size: const Size.square(20),
-            color: theme.iconColorScheme.secondary,
-          );
+    if (hasIcon) {
+      return RawEmojiIconWidget(
+        emoji: view.icon.toEmojiIconData(),
+        emojiSize: 16.0,
+        lineHeight: 20 / 16,
+      );
+    }
+    if (view.isWorkspaceItem) {
+      return WorkspaceItemIcon.fromView(view: view, size: 20);
+    }
+    return FlowySvg(
+      view.iconData,
+      size: const Size.square(20),
+      color: theme.iconColorScheme.secondary,
+    );
   }
 
   Widget buildTitle(BuildContext context, ViewPB view) {
@@ -481,6 +500,331 @@ class _DatabasePagePreview extends StatelessWidget {
       },
     );
   }
+}
+
+/// The preview of a standalone file: a picture, the first page of a PDF, the
+/// head of a text file, or a card naming what the attachment is.
+class _WorkspaceFilePreview extends StatelessWidget {
+  const _WorkspaceFilePreview({super.key, required this.view});
+
+  final ViewPB view;
+
+  String get _name => view.name.isEmpty ? 'Untitled' : view.name;
+
+  /// Only files inside AppFlowy's own storage can be read straight away; a
+  /// cloud object would need an authenticated download.
+  String? get _localPath {
+    final source = view.workspaceItem?.storageUrl;
+    if (source == null || source.isEmpty) {
+      return null;
+    }
+    final scheme = Uri.tryParse(source)?.scheme.toLowerCase() ?? '';
+    return scheme == 'http' || scheme == 'https' ? null : source;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final path = _localPath;
+    if (path == null) {
+      return _WorkspaceFileCard(name: _name, view: view);
+    }
+
+    final lower = _name.toLowerCase();
+    if (imgExtensionRegex.hasMatch(lower)) {
+      return _FilePreviewImage(path: path, fallback: _fallback);
+    }
+    if (videoExtensionRegex.hasMatch(lower)) {
+      return _FilePreviewVideo(path: path, fallback: _fallback);
+    }
+
+    final kind = filePreviewKindFromName(_name);
+    if (kind == FilePreviewKind.pdf) {
+      return _FilePreviewPdfPage(path: path, fallback: _fallback);
+    }
+    if (kind != null && kind != FilePreviewKind.archive) {
+      return _FilePreviewText(path: path, fallback: _fallback);
+    }
+    return _fallback;
+  }
+
+  Widget get _fallback => _WorkspaceFileCard(name: _name, view: view);
+}
+
+class _FilePreviewImage extends StatelessWidget {
+  const _FilePreviewImage({required this.path, required this.fallback});
+
+  final String path;
+  final Widget fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.file(
+      File(path),
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      // The card is roughly 300pt wide, so a full size decode is pure waste.
+      cacheWidth: (304 * MediaQuery.devicePixelRatioOf(context)).round(),
+      errorBuilder: (_, __, ___) => fallback,
+    );
+  }
+}
+
+/// A clip's poster frame with a play badge, so a video reads as a video.
+class _FilePreviewVideo extends StatefulWidget {
+  const _FilePreviewVideo({required this.path, required this.fallback});
+
+  final String path;
+  final Widget fallback;
+
+  @override
+  State<_FilePreviewVideo> createState() => _FilePreviewVideoState();
+}
+
+class _FilePreviewVideoState extends State<_FilePreviewVideo> {
+  late Future<File?> poster;
+
+  @override
+  void initState() {
+    super.initState();
+    poster = VideoThumbnailCache.instance.thumbnailFor(widget.path);
+  }
+
+  @override
+  void didUpdateWidget(covariant _FilePreviewVideo oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      poster = VideoThumbnailCache.instance.thumbnailFor(widget.path);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<File?>(
+      future: poster,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Center(
+            child: SizedBox.square(
+              dimension: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          );
+        }
+        final file = snapshot.data;
+        if (file == null) {
+          return widget.fallback;
+        }
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(
+              file,
+              fit: BoxFit.cover,
+              cacheWidth:
+                  (304 * MediaQuery.devicePixelRatioOf(context)).round(),
+              errorBuilder: (_, __, ___) => widget.fallback,
+            ),
+            Center(
+              child: DecoratedBox(
+                decoration: const BoxDecoration(
+                  color: Color(0x73000000),
+                  shape: BoxShape.circle,
+                ),
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(
+                    Icons.play_arrow_rounded,
+                    size: 26,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _FilePreviewPdfPage extends StatelessWidget {
+  const _FilePreviewPdfPage({required this.path, required this.fallback});
+
+  final String path;
+  final Widget fallback;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      child: PdfDocumentViewBuilder(
+        documentRef: PdfDocumentRefFile(path),
+        builder: (context, document) {
+          if (document == null) {
+            return const Center(
+              child: SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+          if (document.pages.isEmpty) {
+            return fallback;
+          }
+          final page = document.pages.first;
+          return Align(
+            alignment: Alignment.topCenter,
+            child: AspectRatio(
+              aspectRatio: page.width / page.height,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: ColoredBox(
+                  color: Colors.white,
+                  child: PdfPageView(
+                    document: document,
+                    pageNumber: 1,
+                    maximumDpi: 144,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FilePreviewText extends StatefulWidget {
+  const _FilePreviewText({required this.path, required this.fallback});
+
+  final String path;
+  final Widget fallback;
+
+  @override
+  State<_FilePreviewText> createState() => _FilePreviewTextState();
+}
+
+class _FilePreviewTextState extends State<_FilePreviewText> {
+  static const _maxPreviewBytes = 8 * 1024;
+
+  late Future<String> head;
+
+  @override
+  void initState() {
+    super.initState();
+    head = _readHead();
+  }
+
+  @override
+  void didUpdateWidget(covariant _FilePreviewText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      head = _readHead();
+    }
+  }
+
+  /// Reads only the opening of the file — a search preview never scrolls.
+  Future<String> _readHead() async {
+    final handle = await File(widget.path).open();
+    try {
+      final bytes = await handle.read(_maxPreviewBytes);
+      return const Utf8Decoder(allowMalformed: true).convert(bytes);
+    } finally {
+      await handle.close();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppFlowyTheme.of(context);
+    return FutureBuilder<String>(
+      future: head,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return widget.fallback;
+        }
+        final text = snapshot.data;
+        if (text == null) {
+          return const SizedBox.shrink();
+        }
+        if (text.trim().isEmpty) {
+          return widget.fallback;
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+          child: Text(
+            text,
+            maxLines: 24,
+            overflow: TextOverflow.fade,
+            style: TextStyle(
+              fontFamily: 'Geist Mono',
+              fontFamilyFallback: const ['RobotoMono', 'monospace'],
+              fontSize: 10,
+              height: 15 / 10,
+              color: theme.textColorScheme.secondary,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Named the way the file manager would: a big glyph, the type and the size.
+class _WorkspaceFileCard extends StatelessWidget {
+  const _WorkspaceFileCard({required this.name, required this.view});
+
+  final String name;
+  final ViewPB view;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppFlowyTheme.of(context);
+    final metadata = view.workspaceItem;
+    final extension = name.contains('.')
+        ? name.split('.').last.toUpperCase()
+        : LocaleKeys.document_menuName.tr();
+    final size = metadata?.size;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              fileIconForName(name),
+              size: 30,
+              color: theme.iconColorScheme.secondary,
+            ),
+            const VSpace(10),
+            Text(
+              size == null ? extension : '$extension · ${_readableSize(size)}',
+              textAlign: TextAlign.center,
+              style: theme.textStyle.caption.standard(
+                color: theme.textColorScheme.secondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _readableSize(int bytes) {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  var value = bytes.toDouble();
+  var unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  final rounded = value >= 10 || unit == 0
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(1);
+  return '$rounded ${units[unit]}';
 }
 
 class _PreviewError extends StatelessWidget {
