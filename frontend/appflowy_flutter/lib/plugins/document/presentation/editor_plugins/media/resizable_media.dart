@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 
 const defaultVisualMediaWidth = 640.0;
 const defaultAudioMediaWidth = 520.0;
-const defaultImageWidth = 640.0;
+
+/// A newly inserted picture lands as a thumbnail rather than a full-bleed
+/// banner; the drag handles are there for anyone who wants it bigger.
+const defaultImageWidth = 360.0;
 
 typedef ResizableMediaFrameBuilder = Widget Function(Widget frame);
 
@@ -18,19 +21,28 @@ class ResizableMedia extends StatefulWidget {
     this.minWidth = 240,
     this.height,
     this.minHeight = 180,
+    this.maxHeight = 1200,
     this.onResizeHeight,
     this.editable = true,
+    this.alignment = Alignment.center,
     this.frameBuilder,
+    this.footer,
   });
 
   final double width;
   final double minWidth;
   final double? height;
   final double minHeight;
+  final double maxHeight;
   final bool editable;
+  final Alignment alignment;
   final ValueChanged<double> onResize;
   final ValueChanged<double>? onResizeHeight;
   final ResizableMediaFrameBuilder? frameBuilder;
+
+  /// Rendered under the frame at the same width. It stays outside the measured
+  /// frame so intrinsic-height resizing is not thrown off by it.
+  final Widget? footer;
   final Widget child;
 
   @override
@@ -96,7 +108,8 @@ class _ResizableMediaState extends State<ResizableMedia> {
                   color: gripColor,
                   borderColor: gripBorderColor,
                   visible: isHovering || dragWidth != null,
-                  onDrag: (delta) => _resize(width - delta * 2, maxWidth),
+                  onDrag: (delta) =>
+                      _resize(width - delta * _resizeFactor, maxWidth),
                   onEnd: _finishResize,
                 ),
                 _ResizeHandle(
@@ -104,7 +117,8 @@ class _ResizableMediaState extends State<ResizableMedia> {
                   color: gripColor,
                   borderColor: gripBorderColor,
                   visible: isHovering || dragWidth != null,
-                  onDrag: (delta) => _resize(width + delta * 2, maxWidth),
+                  onDrag: (delta) =>
+                      _resize(width + delta * _resizeFactor, maxWidth),
                   onEnd: _finishResize,
                 ),
                 if (widget.onResizeHeight != null) ...[
@@ -154,18 +168,31 @@ class _ResizableMediaState extends State<ResizableMedia> {
         );
 
         return Align(
+          alignment: widget.alignment,
           child: MouseRegion(
             onEnter: (_) => setState(() => isHovering = true),
             onExit: (_) => setState(() => isHovering = false),
-            child: SizedBox(
-              key: mediaSizeKey,
-              child: widget.frameBuilder?.call(frame) ?? frame,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  key: mediaSizeKey,
+                  child: widget.frameBuilder?.call(frame) ?? frame,
+                ),
+                if (widget.footer != null)
+                  SizedBox(width: width, child: widget.footer),
+              ],
             ),
           ),
         );
       },
     );
   }
+
+  /// A centred frame grows from both edges at once, so a drag has to move the
+  /// edge twice as far. Edge-anchored frames follow the pointer one to one.
+  double get _resizeFactor => widget.alignment.x == 0 ? 2.0 : 1.0;
 
   void _resize(double width, double maxWidth) {
     setState(
@@ -184,7 +211,9 @@ class _ResizableMediaState extends State<ResizableMedia> {
   }
 
   void _resizeHeight(double height) {
-    setState(() => dragHeight = height.clamp(widget.minHeight, 1200));
+    setState(
+      () => dragHeight = height.clamp(widget.minHeight, widget.maxHeight),
+    );
   }
 
   double? get _renderedHeight {
@@ -234,7 +263,7 @@ class _ResizableMediaState extends State<ResizableMedia> {
     }
     final offset = position - startPosition;
     _resize(
-      startWidth + (fromLeft ? -offset.dx : offset.dx) * 2,
+      startWidth + (fromLeft ? -offset.dx : offset.dx) * _resizeFactor,
       maxWidth,
     );
     _resizeHeight(startHeight + offset.dy);

@@ -6,7 +6,9 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/prelude.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -32,8 +34,11 @@ class ResizableImage extends StatefulWidget {
     required this.width,
     required this.src,
     this.height,
+    this.onResizeHeight,
     this.onDoubleTap,
     this.onStateChange,
+    this.overlay,
+    this.caption,
   });
 
   final String src;
@@ -45,25 +50,28 @@ class ResizableImage extends StatefulWidget {
   final VoidCallback? onDoubleTap;
   final ValueChanged<ResizableImageState>? onStateChange;
 
+  /// Chrome pinned to the picture's top-right corner, inside the resized frame.
+  final Widget? overlay;
+
+  /// Rendered under the picture at the same width.
+  final Widget? caption;
+
   final void Function(double width) onResize;
+
+  /// Set when the block is allowed to be framed to an explicit height.
+  final void Function(double height)? onResizeHeight;
 
   @override
   State<ResizableImage> createState() => _ResizableImageState();
 }
 
 const _kImageBlockComponentMinWidth = 30.0;
+const _kImageBlockComponentMinHeight = 60.0;
 
 class _ResizableImageState extends State<ResizableImage> {
   final documentService = DocumentService();
 
-  double initialOffset = 0;
-  double moveDistance = 0;
   Widget? _cacheImage;
-
-  late double imageWidth;
-
-  @visibleForTesting
-  bool onFocus = false;
 
   UserProfilePB? _userProfilePB;
 
@@ -71,38 +79,90 @@ class _ResizableImageState extends State<ResizableImage> {
   void initState() {
     super.initState();
 
-    imageWidth = widget.width;
-
     _userProfilePB = context.read<UserWorkspaceBloc?>()?.state.userProfile ??
         context.read<DocumentBloc>().state.userProfilePB;
+
+    _reportLocalFileState();
+  }
+
+  @override
+  void didUpdateWidget(covariant ResizableImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // The cached child bakes in the source and how it fills its box.
+    if (oldWidget.src != widget.src ||
+        (oldWidget.height == null) != (widget.height == null)) {
+      _cacheImage = null;
+    }
+    if (oldWidget.src != widget.src) {
+      _reportLocalFileState();
+    }
+  }
+
+  /// A local file has no download to listen to, so nothing would ever move the
+  /// block out of its loading state — and the hover menu stays hidden while it
+  /// thinks the picture is still arriving.
+  void _reportLocalFileState() {
+    if (isURL(widget.src)) {
+      return;
+    }
+    final exists = widget.src.isNotEmpty && File(widget.src).existsSync();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      widget.onStateChange?.call(
+        exists ? ResizableImageState.loaded : ResizableImageState.failed,
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Align(
+    final overlay = widget.overlay;
+    return ResizableMedia(
+      width: max(_kImageBlockComponentMinWidth, widget.width),
+      minWidth: _kImageBlockComponentMinWidth,
+      height: widget.height,
+      minHeight: _kImageBlockComponentMinHeight,
+      maxHeight: 2400,
       alignment: widget.alignment,
-      child: SizedBox(
-        width: max(_kImageBlockComponentMinWidth, imageWidth - moveDistance),
-        height: widget.height,
-        child: MouseRegion(
-          onEnter: (_) => setState(() => onFocus = true),
-          onExit: (_) => setState(() => onFocus = false),
-          child: GestureDetector(
-            onDoubleTap: widget.onDoubleTap,
-            child: _buildResizableImage(context),
-          ),
+      editable: widget.editable,
+      onResize: widget.onResize,
+      onResizeHeight: widget.onResizeHeight,
+      footer: widget.caption,
+      frameBuilder: overlay == null
+          ? null
+          : (frame) => Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  frame,
+                  Positioned(top: 8, right: 8, child: overlay),
+                ],
+              ),
+      child: GestureDetector(
+        onDoubleTap: widget.onDoubleTap,
+        child: ClipRRect(
+          borderRadius: EditorSurfaceStyle.embedBorderRadius,
+          child: _buildResizableImage(context),
         ),
       ),
     );
   }
 
   Widget _buildResizableImage(BuildContext context) {
+    final hasFixedHeight = widget.height != null;
+    // A framed picture stretches to the box the handles define: the aspect
+    // ratio follows the frame and none of the photo is cropped away.
+    final fit = hasFixedHeight ? BoxFit.fill : BoxFit.contain;
     Widget child;
     final src = widget.src;
     if (isURL(src)) {
-      _cacheImage = FlowyNetworkImage(
+      // No explicit size: the resizable frame owns the box, and the picture
+      // scales to whatever the drag handles leave it.
+      _cacheImage ??= FlowyNetworkImage(
         url: widget.src,
-        width: imageWidth - moveDistance,
+        fit: fit,
         userProfilePB: _userProfilePB,
         onImageLoaded: (isImageInCache) {
           if (isImageInCache) {
@@ -123,10 +183,11 @@ class _ResizableImageState extends State<ResizableImage> {
         errorWidgetBuilder: (_, __, error) {
           widget.onStateChange?.call(ResizableImageState.failed);
           return _ImageLoadFailedWidget(
-            width: imageWidth,
+            width: widget.width,
             error: error,
             onRetry: () {
               setState(() {
+                _cacheImage = null;
                 final retryCounter = FlowyNetworkRetryCounter();
                 retryCounter.clear(tag: src, url: src);
               });
@@ -138,32 +199,22 @@ class _ResizableImageState extends State<ResizableImage> {
       child = _cacheImage!;
     } else {
       // load local file
-      _cacheImage ??= Image.file(File(src));
+      _cacheImage ??= Image.file(
+        File(src),
+        fit: fit,
+        errorBuilder: (_, error, __) {
+          widget.onStateChange?.call(ResizableImageState.failed);
+          return _ImageLoadFailedWidget(
+            width: widget.width,
+            error: error,
+            onRetry: () => setState(() => _cacheImage = null),
+          );
+        },
+      );
       child = _cacheImage!;
     }
-    return Stack(
-      children: [
-        child,
-        if (widget.editable) ...[
-          _buildEdgeGesture(
-            context,
-            top: 0,
-            left: 5,
-            bottom: 0,
-            width: 5,
-            onUpdate: (distance) => setState(() => moveDistance = distance),
-          ),
-          _buildEdgeGesture(
-            context,
-            top: 0,
-            right: 5,
-            bottom: 0,
-            width: 5,
-            onUpdate: (distance) => setState(() => moveDistance = -distance),
-          ),
-        ],
-      ],
-    );
+
+    return hasFixedHeight ? SizedBox.expand(child: child) : child;
   }
 
   Widget _buildLoading(BuildContext context) {
@@ -179,63 +230,6 @@ class _ResizableImageState extends State<ResizableImage> {
           SizedBox.fromSize(size: const Size(10, 10)),
           Text(AppFlowyEditorL10n.current.loading),
         ],
-      ),
-    );
-  }
-
-  Widget _buildEdgeGesture(
-    BuildContext context, {
-    double? top,
-    double? left,
-    double? right,
-    double? bottom,
-    double? width,
-    void Function(double distance)? onUpdate,
-  }) {
-    return Positioned(
-      top: top,
-      left: left,
-      right: right,
-      bottom: bottom,
-      width: width,
-      child: GestureDetector(
-        onHorizontalDragStart: (details) {
-          initialOffset = details.globalPosition.dx;
-        },
-        onHorizontalDragUpdate: (details) {
-          if (onUpdate != null) {
-            double offset = details.globalPosition.dx - initialOffset;
-            if (widget.alignment == Alignment.center) {
-              offset *= 2.0;
-            }
-            onUpdate(offset);
-          }
-        },
-        onHorizontalDragEnd: (details) {
-          imageWidth =
-              max(_kImageBlockComponentMinWidth, imageWidth - moveDistance);
-          initialOffset = 0;
-          moveDistance = 0;
-
-          widget.onResize(imageWidth);
-        },
-        child: MouseRegion(
-          cursor: SystemMouseCursors.resizeLeftRight,
-          child: onFocus
-              ? Center(
-                  child: Container(
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.5),
-                      borderRadius: const BorderRadius.all(
-                        Radius.circular(5.0),
-                      ),
-                      border: Border.all(color: Colors.white),
-                    ),
-                  ),
-                )
-              : null,
-        ),
       ),
     );
   }

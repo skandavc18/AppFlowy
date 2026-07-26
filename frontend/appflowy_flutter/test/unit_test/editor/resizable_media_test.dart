@@ -208,4 +208,89 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('docks a frame overlay to the corner of the media itself', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: SizedBox(
+            width: 900,
+            height: 400,
+            child: ResizableMedia(
+              width: 300,
+              onResize: (_) {},
+              frameBuilder: (frame) => Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  frame,
+                  const Positioned(
+                    top: 8,
+                    right: 8,
+                    child: SizedBox(
+                      key: ValueKey('overlay'),
+                      width: 60,
+                      height: 32,
+                    ),
+                  ),
+                ],
+              ),
+              child: const SizedBox(height: 200),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final frame = tester.getRect(find.byKey(const ValueKey('resizable_media')));
+    final overlay = tester.getRect(find.byKey(const ValueKey('overlay')));
+
+    expect(frame.width, 300);
+    // The overlay must ride the picture, not the far edge of the row.
+    expect(overlay.right, closeTo(frame.right - 8, 0.01));
+    expect(overlay.top, closeTo(frame.top + 8, 0.01));
+  });
+
+  testWidgets('an edge aligned frame resizes one to one with the pointer', (
+    tester,
+  ) async {
+    Future<double> dragRightHandle(Alignment alignment) async {
+      double resizedWidth = 300;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 900,
+              height: 400,
+              child: ResizableMedia(
+                key: ValueKey(alignment),
+                width: 300,
+                alignment: alignment,
+                onResize: (width) => resizedWidth = width,
+                child: const SizedBox(height: 200),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.drag(
+        find.byKey(const ValueKey('resizable_media_right_handle')),
+        const Offset(100, 0),
+      );
+      await tester.pump();
+
+      return resizedWidth - 300;
+    }
+
+    final centered = await dragRightHandle(Alignment.center);
+    final edgeAligned = await dragRightHandle(Alignment.centerLeft);
+
+    expect(edgeAligned, greaterThan(0));
+    // A centred frame grows from both edges at once, so the same pointer
+    // travel has to move its edge twice as far.
+    expect(centered, closeTo(edgeAligned * 2, 0.01));
+  });
 }

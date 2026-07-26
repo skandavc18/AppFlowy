@@ -6,6 +6,7 @@ import 'package:appflowy/mobile/presentation/widgets/flowy_option_tile.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/custom_image_block_component/unsupport_image_widget.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_caption.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_placeholder.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/resizeable_image.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
@@ -59,6 +60,11 @@ class CustomImageBlockKeys {
   ///
   /// The value is a CustomImageType enum.
   static const String imageType = 'image_type';
+
+  /// The caption shown under the image.
+  ///
+  /// The value is a String. The attribute is absent when there is no caption.
+  static const String caption = 'caption';
 }
 
 Node customImageNode({
@@ -156,7 +162,20 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
   final imageStateNotifier =
       ValueNotifier<ResizableImageState>(ResizableImageState.loading);
 
+  /// Bumped by the block menu to move the caret into the caption field.
+  final captionFocusRequest = ValueNotifier<int>(0);
+
   bool alwaysShowMenu = false;
+
+  void requestCaptionFocus() => captionFocusRequest.value++;
+
+  @override
+  void dispose() {
+    showActionsNotifier.dispose();
+    imageStateNotifier.dispose();
+    captionFocusRequest.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -174,7 +193,14 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
     final imageType = CustomImageType.fromIntValue(rawImageType);
 
     final imagePlaceholderKey = node.extraInfos?[kImagePlaceholderKey];
+    final hasHoverMenu = UniversalPlatform.isDesktopOrWeb &&
+        widget.showMenu &&
+        widget.menuBuilder != null;
+
     Widget child;
+    // Only a real picture can dock the menu to its own corner; the placeholder
+    // and the unsupported card fall back to the block's top right.
+    var menuIsDocked = false;
     if (src.isEmpty) {
       child = ImagePlaceholder(
         key: imagePlaceholderKey is GlobalKey ? imagePlaceholderKey : null,
@@ -184,6 +210,7 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
         !_checkIfURLIsValid(src)) {
       child = const UnsupportedImageWidget();
     } else {
+      menuIsDocked = hasHoverMenu;
       child = ResizableImage(
         src: src,
         width: width,
@@ -191,6 +218,14 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
         editable: editorState.editable,
         alignment: alignment,
         type: imageType,
+        overlay: menuIsDocked ? _buildHoverMenu() : null,
+        caption: ImageCaption(
+          node: node,
+          editorState: editorState,
+          editable: editorState.editable,
+          isHovering: showActionsNotifier,
+          focusRequest: captionFocusRequest,
+        ),
         onStateChange: (state) => imageStateNotifier.value = state,
         onDoubleTap: () => showDialog(
           context: context,
@@ -208,6 +243,11 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
         onResize: (width) {
           final transaction = editorState.transaction
             ..updateNode(node, {CustomImageBlockKeys.width: width});
+          editorState.apply(transaction);
+        },
+        onResizeHeight: (height) {
+          final transaction = editorState.transaction
+            ..updateNode(node, {CustomImageBlockKeys.height: height});
           editorState.apply(transaction);
         },
       );
@@ -244,7 +284,7 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
 
     // show a hover menu on desktop or web
     if (UniversalPlatform.isDesktopOrWeb) {
-      if (widget.showMenu && widget.menuBuilder != null) {
+      if (hasHoverMenu) {
         child = MouseRegion(
           onEnter: (_) => showActionsNotifier.value = true,
           onExit: (_) {
@@ -270,8 +310,16 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
                           child: child!,
                         )
                       : child!,
-                  if (value)
-                    widget.menuBuilder!(widget.node, this, imageStateNotifier),
+                  if (value && !menuIsDocked)
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: widget.menuBuilder!(
+                        widget.node,
+                        this,
+                        imageStateNotifier,
+                      ),
+                    ),
                 ],
               );
             },
@@ -293,9 +341,21 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
     return child;
   }
 
+  /// The hover chrome that rides in the picture's own top-right corner.
+  Widget _buildHoverMenu() {
+    return ValueListenableBuilder<bool>(
+      valueListenable: showActionsNotifier,
+      builder: (_, showActions, __) {
+        if (!showActions) {
+          return const SizedBox.shrink();
+        }
+        return widget.menuBuilder!(widget.node, this, imageStateNotifier);
+      },
+    );
+  }
+
   @override
   Position start() => Position(path: widget.node.path);
-
   @override
   Position end() => Position(path: widget.node.path, offset: 1);
 
