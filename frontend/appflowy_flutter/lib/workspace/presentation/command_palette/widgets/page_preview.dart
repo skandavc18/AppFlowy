@@ -509,7 +509,8 @@ const _maxFilePreviewBytes = 8 * 1024;
 
 /// The preview of a standalone file: a picture, the first page of a PDF, the
 /// head of a text file, or a card naming what the attachment is.
-class _WorkspaceFilePreview extends StatelessWidget {  const _WorkspaceFilePreview({super.key, required this.view});
+class _WorkspaceFilePreview extends StatelessWidget {
+  const _WorkspaceFilePreview({super.key, required this.view});
 
   final ViewPB view;
 

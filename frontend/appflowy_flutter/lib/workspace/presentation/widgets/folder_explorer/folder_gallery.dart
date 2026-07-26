@@ -320,8 +320,7 @@ class _FolderGalleryState extends State<FolderGallery> {
                     84,
                   ),
                   sliver: SliverGrid(
-                    gridDelegate:
-                        SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossAxisCount,
                       mainAxisSpacing: KnowledgeGalleryLayout.cardSpacing,
                       crossAxisSpacing: KnowledgeGalleryLayout.cardSpacing,
