@@ -117,8 +117,8 @@ class UserAvatar extends StatelessWidget {
       return false;
     }
 
-    final baseUrl = getIt<AppFlowyCloudSharedEnv>().appflowyCloudConfig.base_url;
+    final baseUrl =
+        getIt<AppFlowyCloudSharedEnv>().appflowyCloudConfig.base_url;
     return baseUrl.isNotEmpty && url.startsWith(baseUrl);
   }
 }
-

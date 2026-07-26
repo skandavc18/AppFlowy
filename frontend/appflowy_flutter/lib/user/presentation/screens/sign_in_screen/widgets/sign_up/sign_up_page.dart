@@ -47,8 +47,7 @@ class _SignUpPageState extends State<SignUpPage> {
   late final TextEditingController nameController = TextEditingController();
   late final TextEditingController emailController =
       TextEditingController(text: widget.initialEmail ?? '');
-  late final TextEditingController passwordController =
-      TextEditingController();
+  late final TextEditingController passwordController = TextEditingController();
   late final TextEditingController confirmPasswordController =
       TextEditingController();
 
@@ -125,7 +124,6 @@ class _SignUpPageState extends State<SignUpPage> {
               ? LocaleKeys.signUp_createLocalAccountDescription.tr()
               : LocaleKeys.signUp_createAccountDescription.tr(),
         ),
-
         if (isLocalMode) ...[
           AFTextField(
             key: nameKey,
@@ -135,7 +133,6 @@ class _SignUpPageState extends State<SignUpPage> {
           ),
           VSpace(theme.spacing.l),
         ],
-
         AFTextField(
           key: emailKey,
           controller: emailController,
@@ -145,7 +142,6 @@ class _SignUpPageState extends State<SignUpPage> {
           autofillHints: const [AutofillHints.email],
         ),
         VSpace(theme.spacing.l),
-
         AFTextField(
           key: passwordKey,
           controller: passwordController,
@@ -163,7 +159,6 @@ class _SignUpPageState extends State<SignUpPage> {
           ),
         ),
         VSpace(theme.spacing.l),
-
         AFTextField(
           key: confirmPasswordKey,
           controller: confirmPasswordController,
@@ -183,7 +178,6 @@ class _SignUpPageState extends State<SignUpPage> {
           onSubmitted: (_) => _submit(),
         ),
         VSpace(theme.spacing.xxl),
-
         isSubmitting
             ? const VerifyingButton()
             : ContinueWithButton(
@@ -191,7 +185,6 @@ class _SignUpPageState extends State<SignUpPage> {
                 onTap: _submit,
               ),
         VSpace(theme.spacing.l),
-
         BackToLoginButton(onTap: widget.backToLogin),
       ],
     );
