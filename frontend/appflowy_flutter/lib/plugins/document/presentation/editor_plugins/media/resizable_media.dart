@@ -6,6 +6,10 @@ import 'package:flutter/material.dart';
 const defaultVisualMediaWidth = 640.0;
 const defaultAudioMediaWidth = 520.0;
 
+/// Portrait clips, such as YouTube Shorts, are framed like a phone screen so a
+/// widescreen width does not make them tower over the document.
+const defaultPortraitMediaWidth = 340.0;
+
 /// A newly inserted picture lands as a thumbnail rather than a full-bleed
 /// banner; the drag handles are there for anyone who wants it bigger.
 const defaultImageWidth = 360.0;

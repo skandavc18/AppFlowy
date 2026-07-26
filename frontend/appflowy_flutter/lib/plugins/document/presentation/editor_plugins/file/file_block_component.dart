@@ -16,7 +16,6 @@ import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
-import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/file_entities.pbenum.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -143,6 +142,42 @@ Node fileNode({
   );
 }
 
+/// Points [node] at the video that was downloaded for offline viewing.
+///
+/// This runs after a background download, so the block that started it may
+/// already be gone and the document may already be closed.
+Future<void> _saveOfflineYoutubeVideo({
+  required EditorState editorState,
+  required Node node,
+  required InternalYoutubeVideo video,
+  required bool? showPreview,
+}) async {
+  // A detached node has an empty path, so updating it would target the root.
+  if (editorState.isDisposed || node.parent == null) {
+    // Nothing can reference the file any more, don't leave it on disk.
+    final file = File(video.path);
+    if (await file.exists()) {
+      await file.delete();
+    }
+    return;
+  }
+
+  final transaction = editorState.transaction
+    ..updateNode(node, {
+      FileBlockKeys.url: video.path,
+      FileBlockKeys.urlType: FileUrlType.local.toIntValue(),
+      FileBlockKeys.name: video.name,
+      FileBlockKeys.uploadedAt: DateTime.now().millisecondsSinceEpoch,
+      if (showPreview != null)
+        FileBlockKeys.displayMode: showPreview ? 'preview' : 'file',
+    });
+  await editorState.apply(transaction);
+
+  showToastNotification(
+    message: LocaleKeys.grid_media_downloadSuccess.tr(),
+  );
+}
+
 class FileBlockComponentBuilder extends BlockComponentBuilder {
   FileBlockComponentBuilder({super.configuration});
 
@@ -206,6 +241,23 @@ class FileBlockComponentState extends State<FileBlockComponent>
   bool alwaysShowMenu = false;
   bool isDragging = false;
   bool isHovering = false;
+
+  /// The real ratio of the playing video, once the decoder has reported it.
+  double? videoAspectRatio;
+
+  /// Portrait clips get a phone-sized frame instead of a widescreen one, so
+  /// they fill it end to end rather than sitting between black bars.
+  double _defaultVideoWidth(double? aspectRatio) =>
+      aspectRatio != null && aspectRatio < 1
+          ? defaultPortraitMediaWidth
+          : defaultVisualMediaWidth;
+
+  void _handleVideoAspectRatio(double aspectRatio) {
+    if (!mounted || videoAspectRatio == aspectRatio) {
+      return;
+    }
+    setState(() => videoAspectRatio = aspectRatio);
+  }
 
   @override
   void didChangeDependencies() {
@@ -396,7 +448,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
     final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
         (kind == FileMediaKind.audio
             ? defaultAudioMediaWidth
-            : defaultVisualMediaWidth);
+            : _defaultVideoWidth(videoAspectRatio));
     return ResizableMedia(
       width: width,
       minWidth: kind == FileMediaKind.audio ? 320 : 240,
@@ -415,7 +467,12 @@ class FileBlockComponentState extends State<FileBlockComponent>
         },
         child: Stack(
           children: [
-            FileMediaPlayer(url: url, name: name, kind: kind),
+            FileMediaPlayer(
+              url: url,
+              name: name,
+              kind: kind,
+              onAspectRatioChanged: _handleVideoAspectRatio,
+            ),
             if (UniversalPlatform.isDesktopOrWeb)
               Positioned(
                 top: 8,
@@ -469,7 +526,9 @@ class FileBlockComponentState extends State<FileBlockComponent>
   Widget _buildYoutubePlayer(String url) {
     final menuSurface = AppFlowyTheme.of(context).surfaceColorScheme.primary;
     final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
-        defaultVisualMediaWidth;
+        _defaultVideoWidth(
+          videoAspectRatio ?? initialYoutubeAspectRatio(url),
+        );
     return ResizableMedia(
       width: width,
       editable: editorState.editable,
@@ -487,10 +546,11 @@ class FileBlockComponentState extends State<FileBlockComponent>
         },
         child: Stack(
           children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: YoutubeEmbedPlayer(url: url),
+            YoutubeEmbedPlayer(
+              url: url,
+              onAspectRatioChanged: _handleVideoAspectRatio,
             ),
+            _buildOfflineDownloadIndicator(),
             if (UniversalPlatform.isDesktopOrWeb)
               Positioned(
                 top: 8,
@@ -537,6 +597,57 @@ class FileBlockComponentState extends State<FileBlockComponent>
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Shows how far the background "save for offline viewing" download got,
+  /// without ever holding up the embed itself.
+  Widget _buildOfflineDownloadIndicator() {
+    final download = YoutubeOfflineDownloadManager.instance.progressOf(node.id);
+    if (download == null) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = AppFlowyTheme.of(context);
+    final label = LocaleKeys.document_plugins_file_savingForOfflineViewing.tr();
+    return Positioned(
+      left: 8,
+      top: 8,
+      child: ValueListenableBuilder<YoutubeOfflineDownloadState>(
+        valueListenable: download,
+        builder: (_, state, __) {
+          final progress = state.progress;
+          return DecoratedBox(
+            decoration: BoxDecoration(
+              color: theme.surfaceColorScheme.primary,
+              borderRadius: const BorderRadius.all(Radius.circular(8)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox.square(
+                    dimension: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      value: progress,
+                    ),
+                  ),
+                  const HSpace(6),
+                  FlowyText(
+                    progress == null
+                        ? label
+                        : '$label · ${(progress * 100).round()}%',
+                    fontSize: 12,
+                    color: theme.textColorScheme.primary,
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -975,38 +1086,28 @@ class FileBlockComponentState extends State<FileBlockComponent>
     }
 
     if (saveOffline && isYoutubeVideoUrl(url)) {
-      try {
-        final video = await downloadYoutubeVideoToInternalStorage(url);
-        if (!mounted) {
-          return;
-        }
-        dropManagerState?.remove(FileBlockKeys.type);
-        final transaction = editorState.transaction
-          ..updateNode(widget.node, {
-            FileBlockKeys.url: video.path,
-            FileBlockKeys.urlType: FileUrlType.local.toIntValue(),
-            FileBlockKeys.name: video.name,
-            FileBlockKeys.uploadedAt: DateTime.now().millisecondsSinceEpoch,
-            if (showPreview != null)
-              FileBlockKeys.displayMode: showPreview ? 'preview' : 'file',
-          });
-        await editorState.apply(transaction);
-      } on Exception catch (error, stackTrace) {
-        Log.error(
-          'Failed to save YouTube video for offline viewing',
-          error,
-          stackTrace,
-        );
-        if (mounted) {
-          showToastNotification(
-            type: ToastificationType.error,
-            message: LocaleKeys
-                .document_plugins_linkPreview_linkPreviewMenu_downloadFailed
-                .tr(),
-          );
-        }
-      }
-      return;
+      // Show the embed right away and keep fetching the file in the
+      // background, so the editor is never blocked by the download.
+      // The callbacks only capture the editor state and the node, never this
+      // widget state, because editor blocks are recycled while scrolling.
+      final editorState = this.editorState;
+      final node = widget.node;
+      YoutubeOfflineDownloadManager.instance.start(
+        key: node.id,
+        url: url,
+        onCompleted: (video) => _saveOfflineYoutubeVideo(
+          editorState: editorState,
+          node: node,
+          video: video,
+          showPreview: showPreview,
+        ),
+        onFailed: () => showToastNotification(
+          type: ToastificationType.error,
+          message: LocaleKeys
+              .document_plugins_linkPreview_linkPreviewMenu_downloadFailed
+              .tr(),
+        ),
+      );
     }
 
     String name = uri.pathSegments.isNotEmpty ? uri.pathSegments.last : "";

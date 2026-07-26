@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/video_player_controls.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -5,6 +8,25 @@ import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+
+/// Videos are framed as widescreen until the decoder reports their real size.
+const defaultVideoAspectRatio = 16 / 9;
+
+/// The ratio portrait clips are shot in, YouTube Shorts included.
+const portraitVideoAspectRatio = 9 / 16;
+
+/// The display aspect ratio of the open video, or null while it is unknown.
+///
+/// The display size already accounts for rotation and non-square pixels, so it
+/// is preferred over the raw frame size.
+double? videoAspectRatioOf(VideoParams params) {
+  final width = params.dw ?? params.w;
+  final height = params.dh ?? params.h;
+  if (width == null || height == null || width <= 0 || height <= 0) {
+    return null;
+  }
+  return width / height;
+}
 
 enum FileMediaKind {
   audio,
@@ -33,11 +55,16 @@ class FileMediaPlayer extends StatefulWidget {
     required this.url,
     required this.name,
     required this.kind,
+    this.onAspectRatioChanged,
   });
 
   final String url;
   final String name;
   final FileMediaKind kind;
+
+  /// Called with the real aspect ratio once the video has been probed, so the
+  /// host can give portrait clips a frame that fits them.
+  final ValueChanged<double>? onAspectRatioChanged;
 
   @override
   State<FileMediaPlayer> createState() => _FileMediaPlayerState();
@@ -46,6 +73,8 @@ class FileMediaPlayer extends StatefulWidget {
 class _FileMediaPlayerState extends State<FileMediaPlayer> {
   late final Player player;
   VideoController? videoController;
+  StreamSubscription<VideoParams>? videoParamsSubscription;
+  double? aspectRatio;
 
   @override
   void initState() {
@@ -59,6 +88,8 @@ class _FileMediaPlayerState extends State<FileMediaPlayer> {
     if (oldWidget.url != widget.url || oldWidget.kind != widget.kind) {
       if (widget.kind == FileMediaKind.video && videoController == null) {
         videoController = VideoController(player);
+        videoParamsSubscription ??=
+            player.stream.videoParams.listen(_handleVideoParams);
       }
       player.open(Media(widget.url), play: false);
     }
@@ -68,12 +99,24 @@ class _FileMediaPlayerState extends State<FileMediaPlayer> {
     player = Player();
     if (widget.kind == FileMediaKind.video) {
       videoController = VideoController(player);
+      videoParamsSubscription =
+          player.stream.videoParams.listen(_handleVideoParams);
     }
     player.open(Media(widget.url), play: false);
   }
 
+  void _handleVideoParams(VideoParams params) {
+    final ratio = videoAspectRatioOf(params);
+    if (ratio == null || ratio == aspectRatio || !mounted) {
+      return;
+    }
+    setState(() => aspectRatio = ratio);
+    widget.onAspectRatioChanged?.call(ratio);
+  }
+
   @override
   void dispose() {
+    videoParamsSubscription?.cancel();
     player.dispose();
     super.dispose();
   }
@@ -84,8 +127,17 @@ class _FileMediaPlayerState extends State<FileMediaPlayer> {
       return ViewerCard(
         color: Colors.black,
         child: AspectRatio(
-          aspectRatio: 16 / 9,
-          child: Video(controller: videoController!),
+          aspectRatio: aspectRatio ?? defaultVideoAspectRatio,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Video(
+                controller: videoController!,
+                controls: NoVideoControls,
+              ),
+              VideoPlayerControls(player: player),
+            ],
+          ),
         ),
       );
     }

@@ -2054,7 +2054,15 @@
         "insertVideo": "Add video",
         "invalidVideoUrl": "The source URL is not supported yet.",
         "invalidVideoUrlYouTube": "YouTube is not supported yet.",
-        "supportedFormats": "Supported formats: MP4, WebM, MOV, AVI, FLV, MPEG/M4V, H.264"
+        "supportedFormats": "Supported formats: MP4, WebM, MOV, AVI, FLV, MPEG/M4V, H.264",
+        "play": "Play",
+        "pause": "Pause",
+        "rewind": "Rewind 5 seconds",
+        "fastForward": "Forward 5 seconds",
+        "settings": "Settings",
+        "playbackSpeed": "Playback speed",
+        "normalSpeed": "Normal",
+        "quality": "Quality"
       },
       "file": {
         "name": "File",
@@ -2070,6 +2078,7 @@
         "networkHint": "Paste a file link",
         "networkUrlInvalid": "Invalid URL. Check the URL and try again.",
         "saveForOfflineViewing": "Save for offline viewing",
+        "savingForOfflineViewing": "Saving for offline viewing",
         "networkAction": "Embed",
         "fileTooBigError": "File size is too big, please upload a file with size less than 10MB",
         "renameFile": {

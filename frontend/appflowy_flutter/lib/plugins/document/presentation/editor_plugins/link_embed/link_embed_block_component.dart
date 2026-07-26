@@ -67,6 +67,16 @@ class LinkEmbedBlockComponentState
   final showActionsNotifier = ValueNotifier<bool>(false);
   bool isMenuShowing = false, isHovering = false;
 
+  /// The real ratio of the embedded video, once the decoder has reported it.
+  double? videoAspectRatio;
+
+  void _handleVideoAspectRatio(double aspectRatio) {
+    if (!mounted || videoAspectRatio == aspectRatio) {
+      return;
+    }
+    setState(() => videoAspectRatio = aspectRatio);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -134,7 +144,10 @@ class LinkEmbedBlockComponentState
     final isYoutubeVideo = isYoutubeVideoUrl(url);
     final isIdle = status == LinkLoadingStatus.idle;
     if (isYoutubeVideo) {
-      child = YoutubeEmbedPlayer(url: url);
+      child = YoutubeEmbedPlayer(
+        url: url,
+        onAspectRatioChanged: _handleVideoAspectRatio,
+      );
     } else if (isIdle) {
       child = buildContent(context);
     } else {
@@ -159,8 +172,11 @@ class LinkEmbedBlockComponentState
       return container;
     }
 
+    // Portrait clips, Shorts above all, get a phone-sized frame so they fill
+    // it end to end instead of sitting between black bars.
+    final aspectRatio = videoAspectRatio ?? initialYoutubeAspectRatio(url);
     final width = node.attributes[LinkEmbedKeys.width]?.toDouble() ??
-        defaultVisualMediaWidth;
+        (aspectRatio < 1 ? defaultPortraitMediaWidth : defaultVisualMediaWidth);
     return ResizableMedia(
       width: width,
       editable: context.read<EditorState>().editable,
@@ -170,10 +186,7 @@ class LinkEmbedBlockComponentState
           ..updateNode(node, {LinkEmbedKeys.width: width});
         editorState.apply(transaction);
       },
-      child: AspectRatio(
-        aspectRatio: 16 / 9,
-        child: container,
-      ),
+      child: container,
     );
   }
 
