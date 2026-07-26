@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
-import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -24,7 +24,6 @@ import 'package:markdown_widget/markdown_widget.dart';
 import 'package:path/path.dart' as p;
 
 import 'file_preview_kind.dart';
-import 'file_preview_toolbar.dart';
 import 'pdf_preview.dart';
 import 'pdf_preview_scroll_physics.dart';
 import 'pdf_preview_theme.dart';
@@ -77,10 +76,17 @@ class _FilePreviewState extends State<FilePreview> {
   void didUpdateWidget(covariant FilePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.file.path != widget.file.path ||
-        oldWidget.kind != widget.kind) {
+        oldWidget.kind != widget.kind ||
+        oldWidget.metadata[filePreviewEditModeKey] !=
+            widget.metadata[filePreviewEditModeKey]) {
       preview = _buildPreview();
     }
   }
+
+  /// Whether this preview is currently showing its source for editing.
+  bool get isEditingSource =>
+      widget.metadata[filePreviewEditModeKey] == true &&
+      widget.kind.supportsSourceEditing;
 
   @override
   Widget build(BuildContext context) {
@@ -88,9 +94,7 @@ class _FilePreviewState extends State<FilePreview> {
     final appFlowyTheme = AppFlowyTheme.of(context);
     final isPremiumPreview = widget.kind == FilePreviewKind.pdf;
     final pdfPalette = isPremiumPreview ? PdfPreviewPalette.of(context) : null;
-    final radius = BorderRadius.circular(
-      isPremiumPreview ? codeBlockCornerRadius : 10,
-    );
+    final radius = EditorSurfaceStyle.embedBorderRadius;
     final backgroundColor = pdfPalette?.canvas ??
         EditorSurfaceStyle.previewBackgroundFor(
           materialTheme.brightness,
@@ -102,11 +106,9 @@ class _FilePreviewState extends State<FilePreview> {
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
         color: backgroundColor,
-        border: Border.all(
-          color: pdfPalette?.border ?? appFlowyTheme.borderColorScheme.primary,
-        ),
+        border: Border.all(color: EditorSurfaceStyle.embedBorder(context)),
         borderRadius: radius,
-        boxShadow: pdfPalette?.shellShadows,
+        boxShadow: EditorSurfaceStyle.embedShadow(context),
       ),
       child: ClipRRect(
         borderRadius: radius,
@@ -134,6 +136,20 @@ class _FilePreviewState extends State<FilePreview> {
   Future<Widget> _buildPreview() async {
     if (!await widget.file.exists()) {
       throw const FileSystemException('The preview file is unavailable.');
+    }
+    // Editing shows the file exactly as authored, with the same editor the
+    // code viewer uses, so nothing is reinterpreted on the way in or out.
+    if (isEditingSource) {
+      return _buildPreviewScaffold(
+        _EditableCodeFile(
+          file: widget.file,
+          initialCode: await _readText(maxTextPreviewBytes),
+          editable: widget.editable,
+          language: widget.kind.sourceLanguage,
+          showLineNumbers: true,
+          onChanged: (_) {},
+        ),
+      );
     }
     return switch (widget.kind) {
       FilePreviewKind.pdf => PdfPreview(
@@ -203,16 +219,47 @@ class _FilePreviewState extends State<FilePreview> {
   }
 
   Widget _buildPreviewScaffold(Widget child) {
-    return Column(
-      children: [
-        FilePreviewToolbar(
-          leading: _FilePreviewTitle(name: widget.name),
-          actions: [
-            if (widget.toolbarTrailing != null) widget.toolbarTrailing!,
-          ],
-        ),
-        Expanded(child: child),
+    return DocumentViewport(
+      framed: false,
+      revealKey: widget.file.path,
+      identity: _documentIdentity(),
+      actions: [
+        if (widget.toolbarTrailing != null) widget.toolbarTrailing!,
       ],
+      child: DocumentScrollScope(child: child),
+    );
+  }
+
+  /// What the floating header says about this file.
+  DocumentIdentity _documentIdentity() {
+    final extension =
+        p.extension(widget.name).replaceFirst('.', '').toUpperCase();
+    final label = switch (widget.kind) {
+      FilePreviewKind.pdf => 'PDF',
+      FilePreviewKind.html => 'HTML',
+      FilePreviewKind.markdown => 'Markdown',
+      FilePreviewKind.archive => 'Archive',
+      FilePreviewKind.notebook => 'Notebook',
+      FilePreviewKind.json => 'JSON',
+      _ => extension.isEmpty ? 'Document' : extension,
+    };
+    int? size;
+    try {
+      final stat = widget.file.statSync();
+      if (stat.type != FileSystemEntityType.notFound) {
+        size = stat.size;
+      }
+    } on FileSystemException {
+      size = null;
+    }
+    return DocumentIdentity(
+      title: widget.name,
+      icon: fileIconForName(widget.name),
+      subtitle: [
+        label,
+        if (size != null) _formatBytes(size),
+        if (isEditingSource) 'Editing',
+      ].join('  ·  '),
     );
   }
 
@@ -224,38 +271,6 @@ class _FilePreviewState extends State<FilePreview> {
       );
     }
     return widget.file.readAsString();
-  }
-}
-
-class _FilePreviewTitle extends StatelessWidget {
-  const _FilePreviewTitle({required this.name});
-
-  final String name;
-
-  @override
-  Widget build(BuildContext context) {
-    final materialTheme = Theme.of(context);
-    final appFlowyTheme = AppFlowyTheme.of(context);
-    return Row(
-      children: [
-        Icon(
-          fileIconForName(name),
-          size: 17,
-          color: appFlowyTheme.iconColorScheme.secondary,
-        ),
-        const SizedBox(width: 7),
-        Expanded(
-          child: Text(
-            name,
-            overflow: TextOverflow.ellipsis,
-            style: materialTheme.textTheme.labelMedium?.copyWith(
-              color: appFlowyTheme.textColorScheme.primary,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-      ],
-    );
   }
 }
 
@@ -769,25 +784,42 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
 
   @override
   void dispose() {
-    saveTimer?.cancel();
+    _flushPendingSave();
     codeScrollController.dispose();
     lineNumberScrollController.dispose();
     controller.dispose();
     super.dispose();
   }
 
+  /// Commits the debounced edit before the editor goes away.
+  ///
+  /// Leaving edit mode rebuilds the preview from disk, so an in-flight save
+  /// would otherwise be dropped and the last keystrokes lost.
+  void _flushPendingSave() {
+    if (saveTimer?.isActive ?? false) {
+      saveTimer!.cancel();
+      try {
+        widget.file.writeAsStringSync(controller.text, flush: true);
+      } on FileSystemException catch (error, stackTrace) {
+        Log.error('Failed to save the edited file', error, stackTrace);
+      }
+    }
+    saveTimer = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final lineCount = '\n'.allMatches(controller.text).length + 1;
-    final materialTheme = Theme.of(context);
     final appFlowyTheme = AppFlowyTheme.of(context);
-    final surfaceColor = EditorSurfaceStyle.codeBlockBackgroundFor(
-      materialTheme.brightness,
-      materialTheme.brightness == Brightness.light
-          ? PremiumThemeExtension.maybeOf(context)?.mutedSurface ??
-              materialTheme.colorScheme.surfaceContainer
-          : materialTheme.colorScheme.surfaceContainerHighest,
-      isPaper: PaperTheme.isEnabled(context),
+    // The same surface the code chrome uses, so the card stays uniform.
+    final surfaceColor = codeBlockSurfaceColor(context);
+    // The gutter and the code must share one metric, otherwise the numbers
+    // drift away from their lines as the file grows.
+    final codeStyle = _codeFileTextStyle(
+      appFlowyTheme.textColorScheme.primary,
+    );
+    final gutterStyle = _codeFileTextStyle(
+      appFlowyTheme.textColorScheme.tertiary,
     );
     return ColoredBox(
       color: surfaceColor,
@@ -796,7 +828,7 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
         children: [
           if (widget.showLineNumbers)
             Container(
-              width: 40,
+              width: 26 + '$lineCount'.length * 9,
               decoration: BoxDecoration(
                 color: surfaceColor,
                 border: Border(
@@ -813,18 +845,7 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
                   List.generate(lineCount, (index) => '${index + 1}')
                       .join('\n'),
                   textAlign: TextAlign.right,
-                  style: getGoogleFontSafely(
-                    'JetBrains Mono',
-                    fontSize: 13,
-                    fontColor: appFlowyTheme.textColorScheme.tertiary,
-                    lineHeight: 1.6,
-                  ).copyWith(
-                    fontFamilyFallback: const [
-                      'Geist Mono',
-                      'RobotoMono',
-                      'monospace',
-                    ],
-                  ),
+                  style: gutterStyle,
                 ),
               ),
             ),
@@ -836,19 +857,7 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
               expands: true,
               maxLines: null,
               keyboardType: TextInputType.multiline,
-              style: getGoogleFontSafely(
-                'JetBrains Mono',
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                fontColor: appFlowyTheme.textColorScheme.primary,
-                lineHeight: 1.6,
-              ).copyWith(
-                fontFamilyFallback: const [
-                  'Geist Mono',
-                  'RobotoMono',
-                  'monospace',
-                ],
-              ),
+              style: codeStyle,
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.all(12),
                 border: InputBorder.none,
@@ -871,6 +880,24 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
     );
   }
 }
+
+/// One metric for the code column and its line numbers.
+///
+/// Both must use the same size and line height or the gutter slowly slips out
+/// of step with the code it is numbering.
+TextStyle _codeFileTextStyle(Color color) => getGoogleFontSafely(
+      'JetBrains Mono',
+      fontSize: 15,
+      fontWeight: FontWeight.w500,
+      fontColor: color,
+      lineHeight: 1.6,
+    ).copyWith(
+      fontFamilyFallback: const [
+        'Geist Mono',
+        'RobotoMono',
+        'monospace',
+      ],
+    );
 
 class _CodeFileEditingController extends TextEditingController {
   _CodeFileEditingController({

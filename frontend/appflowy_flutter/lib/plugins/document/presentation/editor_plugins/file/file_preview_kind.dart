@@ -17,6 +17,30 @@ extension FilePreviewKindScrolling on FilePreviewKind {
   bool get usesFrameScrollGuard => this == FilePreviewKind.pdf;
 }
 
+/// Metadata flag that puts a rendered preview into source editing mode.
+const String filePreviewEditModeKey = 'edit_mode';
+
+extension FilePreviewKindEditing on FilePreviewKind {
+  /// Whether this kind can be edited as plain source inside the viewer.
+  ///
+  /// Code files are editable the moment they open. These kinds render a
+  /// preview instead, so editing is an explicit mode rather than the default.
+  bool get supportsSourceEditing => switch (this) {
+        FilePreviewKind.markdown ||
+        FilePreviewKind.html ||
+        FilePreviewKind.text =>
+          true,
+        _ => false,
+      };
+
+  /// The highlight grammar used while editing the source.
+  String get sourceLanguage => switch (this) {
+        FilePreviewKind.markdown => 'markdown',
+        FilePreviewKind.html => 'html',
+        _ => 'text',
+      };
+}
+
 FilePreviewKind? filePreviewKindFromName(String name) {
   final extension = name.split('.').last.toLowerCase();
   return switch (extension) {

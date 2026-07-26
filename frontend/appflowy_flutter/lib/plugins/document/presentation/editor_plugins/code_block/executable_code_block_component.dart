@@ -174,6 +174,14 @@ class _ExecutableCodeBlockComponentWidgetState
               onHeaderInteractionChanged: (interacting) {
                 canPanStart = !interacting;
               },
+              // While the prompt has focus the document must not: the editor
+              // reads Backspace before the field does and would edit the code
+              // instead of the answer being typed.
+              onTerminalFocusChanged: (hasFocus) {
+                if (hasFocus && keepEditorFocusNotifier.value == 0) {
+                  editorState.selection = null;
+                }
+              },
               onLanguageChanged: _updateLanguage,
               onToggleLineNumbers: _toggleLineNumbers,
               child: _buildCodeEditor(

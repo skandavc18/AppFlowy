@@ -1,0 +1,36 @@
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:flutter/material.dart';
+
+/// A deterministic light palette for tests that do not need the real theme.
+const sampleDocumentViewerTheme = DocumentViewerTheme(
+  mode: DocumentViewerMode.light,
+  canvas: Color(0xFFF4F4F6),
+  canvasEdge: Color(0xFFEDEDF0),
+  page: Color(0xFFFDFDFE),
+  pageBorder: Color(0x0F0F172A),
+  chrome: Color(0xF5FCFCFD),
+  chromeBorder: Color(0x140F172A),
+  control: Color(0x080F172A),
+  controlHover: Color(0x0F0F172A),
+  controlPressed: Color(0x1A0F172A),
+  controlSelected: Color(0x1F0F172A),
+  hairline: Color(0x0F0F172A),
+  divider: Color(0x160F172A),
+  textPrimary: Color(0xFF15181D),
+  textSecondary: Color(0xFF585F6B),
+  textMuted: Color(0xFF8A919C),
+  icon: Color(0xFF4E5561),
+  iconMuted: Color(0xFF9AA0AA),
+  accent: Color(0xFF2C6BD6),
+  accentSoft: Color(0x1F2C6BD6),
+  onAccent: Color(0xFFFFFFFF),
+  codeSurface: Color(0xFFF6F6F8),
+  codeBorder: Color(0x120F172A),
+  quoteBar: Color(0x1F0F172A),
+  selection: Color(0x332C6BD6),
+  scrollThumb: Color(0x520F172A),
+  pageShadow: [],
+  floatShadow: [],
+  shellShadow: [],
+  scrim: Color(0x8A1D2230),
+);

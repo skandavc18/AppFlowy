@@ -56,11 +56,21 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
     final fileUploadType = urlType.toFileUploadTypePB();
     final fileName =
         widget.node.attributes[FileBlockKeys.name] as String? ?? '';
+    final previewKind = filePreviewKindFromName(fileName);
+    final showingPreview =
+        widget.node.attributes[FileBlockKeys.displayMode] == 'preview';
+    // Source editing writes straight back to the file, so it is offered only
+    // for local copies the editor is allowed to change.
+    final canEditSource = previewKind?.supportsSourceEditing == true &&
+        showingPreview &&
+        urlType == FileUrlType.local &&
+        widget.editorState.editable;
+    final editingSource = _previewMetadata[filePreviewEditModeKey] == true;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (filePreviewKindFromName(fileName) != null) ...[
+        if (previewKind != null) ...[
           HoverButton(
             itemHeight: 20,
             leftIcon: const Icon(Icons.preview_outlined, size: 18),
@@ -79,6 +89,23 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
                   {FileBlockKeys.displayMode: mode},
                 );
               widget.editorState.apply(transaction);
+            },
+          ),
+          const VSpace(4),
+        ],
+        if (canEditSource) ...[
+          HoverButton(
+            itemHeight: 20,
+            leftIcon: Icon(
+              editingSource
+                  ? Icons.visibility_outlined
+                  : Icons.edit_note_outlined,
+              size: 18,
+            ),
+            name: editingSource ? 'Done editing' : 'Edit source',
+            onTap: () {
+              _closeMenu();
+              _toggleSourceEditing();
             },
           ),
           const VSpace(4),
@@ -148,6 +175,23 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
   }
 
   BuildContext get _actionContext => widget.actionContext ?? context;
+
+  Map<String, dynamic> get _previewMetadata => Map<String, dynamic>.from(
+        widget.node.attributes[FileBlockKeys.previewMetadata] as Map? ??
+            const <String, dynamic>{},
+      );
+
+  /// Swaps the rendered preview for an editor over the file's own source.
+  void _toggleSourceEditing() {
+    final metadata = _previewMetadata;
+    metadata[filePreviewEditModeKey] = metadata[filePreviewEditModeKey] != true;
+    final transaction = widget.editorState.transaction
+      ..updateNode(
+        widget.node,
+        {FileBlockKeys.previewMetadata: metadata},
+      );
+    widget.editorState.apply(transaction);
+  }
 
   void _closeMenu() {
     if (widget.onClose != null) {

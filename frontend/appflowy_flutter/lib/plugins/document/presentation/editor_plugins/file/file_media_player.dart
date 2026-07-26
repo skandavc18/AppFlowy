@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -80,13 +81,19 @@ class _FileMediaPlayerState extends State<FileMediaPlayer> {
   @override
   Widget build(BuildContext context) {
     if (widget.kind == FileMediaKind.video) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: ColoredBox(
-          color: Colors.black,
-          child: AspectRatio(
-            aspectRatio: 16 / 9,
-            child: Video(controller: videoController!),
+      return DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: EditorSurfaceStyle.embedBorderRadius,
+          boxShadow: EditorSurfaceStyle.embedShadow(context),
+        ),
+        child: ClipRRect(
+          borderRadius: EditorSurfaceStyle.embedBorderRadius,
+          child: ColoredBox(
+            color: Colors.black,
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
+              child: Video(controller: videoController!),
+            ),
           ),
         ),
       );
@@ -113,8 +120,9 @@ class _AudioPlayer extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: theme.fillColorScheme.content,
-        border: Border.all(color: theme.borderColorScheme.primary),
-        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: EditorSurfaceStyle.embedBorder(context)),
+        borderRadius: EditorSurfaceStyle.embedBorderRadius,
+        boxShadow: EditorSurfaceStyle.embedShadow(context),
       ),
       child: Row(
         children: [

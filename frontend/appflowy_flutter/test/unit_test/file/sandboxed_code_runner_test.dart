@@ -1,5 +1,6 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandboxed_code_runner.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -9,16 +10,85 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('code block geometry stays compact and editor-like', () {
-    expect(codeBlockCornerRadius, 12);
+  test('a code block is framed exactly like an embedded document', () {
+    // The block in the editor and a code file in the viewer share one shell.
+    expect(codeBlockCornerRadius, EditorSurfaceStyle.embedCornerRadius);
     expect(codeBlockAnimationDuration, AppFlowyMotion.standard);
+  });
+
+  testWidgets('header and body share one uniform code surface', (tester) async {
+    for (final brightness in Brightness.values) {
+      for (final paper in [false, true]) {
+        Color? surface;
+        await tester.pumpWidget(
+          _codeApp(
+            brightness: brightness,
+            paper: paper,
+            child: Builder(
+              builder: (context) {
+                surface = codeBlockSurfaceColor(context);
+                return SandboxedCodeRunner(
+                  code: 'print(1)',
+                  fileName: 'main.py',
+                  language: 'python',
+                  showLineNumbers: true,
+                  onLanguageChanged: (_) {},
+                  onToggleLineNumbers: () {},
+                  child: const SizedBox(height: 60),
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        Iterable<Color> colorsOf<T extends Widget>(
+          Color? Function(T) read,
+        ) =>
+            tester
+                .widgetList<T>(
+                  find.descendant(
+                    of: find.byType(SandboxedCodeRunner),
+                    matching: find.byType(T),
+                  ),
+                )
+                .map(read)
+                .whereType<Color>();
+
+        final layers = [
+          ...colorsOf<AnimatedContainer>(
+            (container) => (container.decoration as BoxDecoration?)?.color,
+          ),
+          ...colorsOf<ColoredBox>((box) => box.color),
+          ...colorsOf<DecoratedBox>(
+            (box) => (box.decoration as BoxDecoration?)?.color,
+          ),
+        ];
+        final reason = 'brightness=$brightness paper=$paper';
+
+        // The card and the header paint the very same surface.
+        expect(layers, contains(surface), reason: reason);
+
+        // And the old second tone is gone: no band sits behind the header.
+        final legacyHeaderTone = paper && brightness == Brightness.light
+            ? PaperTheme.codeBlockHeaderBackground
+            : brightness == Brightness.dark
+                ? const Color(0xFF1E1F24)
+                : null;
+        if (legacyHeaderTone != null) {
+          expect(layers, isNot(contains(legacyHeaderTone)), reason: reason);
+        }
+      }
+    }
   });
 
   test('selects isolated local runtime only for JavaScript', () {
     expect(codeRuntimeForName('script.js'), CodeRuntime.javascript);
     expect(codeRuntimeForName('module.mjs'), CodeRuntime.javascript);
-    expect(codeRuntimeForName('program.py'), CodeRuntime.serverRequired);
-    expect(codeRuntimeForName('main.cpp'), CodeRuntime.serverRequired);
+    // Everything else runs through a toolchain installed on this computer;
+    // there is no execution service to fall back on.
+    expect(codeRuntimeForName('program.py'), CodeRuntime.local);
+    expect(codeRuntimeForName('main.cpp'), CodeRuntime.local);
     expect(codeRuntimeForName('styles.css'), CodeRuntime.unsupported);
   });
 
@@ -197,7 +267,7 @@ void main() {
 
     expect(shell.color, const Color(0xFF18191D));
     expect(shell.border, isA<Border>());
-    expect(shell.boxShadow, hasLength(2));
+    expect(shell.boxShadow, hasLength(1));
     expect(tester.takeException(), isNull);
   });
 
@@ -298,15 +368,57 @@ void main() {
         .map((box) => box.decoration)
         .whereType<BoxDecoration>()
         .where(
-          (decoration) =>
-              decoration.color == PaperTheme.codeBlockHeaderBackground,
+          (decoration) => decoration.color == PaperTheme.codeBlockBackground,
         );
 
     expect(shell.color, PaperTheme.codeBlockBackground);
-    expect(shell.boxShadow, hasLength(2));
+    expect(shell.boxShadow, hasLength(1));
+    // The header paints on the very same surface as the card: one uniform
+    // block rather than a toolbar stacked on a page.
     expect(warmHeaders, isNotEmpty);
     expect(tester.takeException(), isNull);
   });
+}
+
+/// A minimal host that supplies the theme surfaces the code chrome reads.
+Widget _codeApp({
+  required Widget child,
+  required Brightness brightness,
+  required bool paper,
+}) {
+  final appTheme = paper
+      ? AppTheme.builtins.firstWhere(
+          (theme) => theme.themeName == BuiltInTheme.paper,
+        )
+      : AppTheme.fallback;
+  final palette = PremiumTheme.resolve(
+    appTheme: appTheme,
+    legacy: brightness == Brightness.dark
+        ? appTheme.darkTheme
+        : appTheme.lightTheme,
+    brightness: brightness,
+  );
+  final base = brightness == Brightness.dark
+      ? AppFlowyDefaultTheme().dark(fontFamily: preferredFontFamily)
+      : AppFlowyDefaultTheme().light(fontFamily: preferredFontFamily);
+  return MaterialApp(
+    themeAnimationDuration: Duration.zero,
+    theme:
+        (brightness == Brightness.dark ? ThemeData.dark() : ThemeData.light())
+            .copyWith(
+      extensions: [palette, PaperThemeExtension(enabled: paper)],
+    ),
+    home: AppFlowyTheme(
+      data: PremiumTheme.appFlowyTheme(
+        base: base,
+        palette: palette,
+        brightness: brightness,
+      ),
+      child: Scaffold(
+        body: Center(child: SizedBox(width: 640, child: child)),
+      ),
+    ),
+  );
 }
 
 bool _containsColoredSpan(InlineSpan span) {

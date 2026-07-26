@@ -621,7 +621,19 @@ class FileBlockComponentState extends State<FileBlockComponent>
         },
       ),
     );
-    return preview;
+    // A preview can own the keyboard — the code editor, the source editor, a
+    // PDF's page field. While it does, the document must not: the editor's
+    // backspace command runs before the app's text shortcuts, and a collapsed
+    // selection on this deltaless block would delete the whole embed.
+    return FocusScope(
+      skipTraversal: true,
+      onFocusChange: (hasFocus) {
+        if (hasFocus && keepEditorFocusNotifier.value == 0) {
+          editorState.selection = null;
+        }
+      },
+      child: preview,
+    );
   }
 
   Widget _buildPreviewMenu() {

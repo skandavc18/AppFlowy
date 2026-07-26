@@ -42,6 +42,7 @@ class PdfPreviewToolbar extends StatelessWidget {
     required this.onPrint,
     required this.onFullscreen,
     required this.overflow,
+    this.showDocumentTitle = true,
   });
 
   final String title;
@@ -69,12 +70,15 @@ class PdfPreviewToolbar extends StatelessWidget {
   final VoidCallback onFullscreen;
   final Widget overflow;
 
+  /// Hidden when the shared document header already names the file.
+  final bool showDocumentTitle;
+
   @override
   Widget build(BuildContext context) {
     final palette = PdfPreviewPalette.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final showTitle = constraints.maxWidth >= 900;
+        final showTitle = showDocumentTitle && constraints.maxWidth >= 900;
         final showOutlineButton = constraints.maxWidth >= 520;
         final showZoom = constraints.maxWidth >= 650;
         final showDocumentActions = constraints.maxWidth >= 860;

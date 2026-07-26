@@ -103,35 +103,7 @@ class PdfPreviewPalette {
           : isLightPaper
               ? const Color(0x184C3F30)
               : const Color(0x140F172A),
-      shellShadows: isDark
-          ? const [
-              BoxShadow(
-                color: Color(0x3D000000),
-                blurRadius: 20,
-                offset: Offset(0, 8),
-                spreadRadius: -8,
-              ),
-              BoxShadow(
-                color: Color(0x24000000),
-                blurRadius: 5,
-                offset: Offset(0, 2),
-                spreadRadius: -2,
-              ),
-            ]
-          : const [
-              BoxShadow(
-                color: Color(0x123F352A),
-                blurRadius: 16,
-                offset: Offset(0, 6),
-                spreadRadius: -7,
-              ),
-              BoxShadow(
-                color: Color(0x0A3F352A),
-                blurRadius: 4,
-                offset: Offset(0, 1),
-                spreadRadius: -1,
-              ),
-            ],
+      shellShadows: EditorSurfaceStyle.embedShadow(context),
     );
   }
 

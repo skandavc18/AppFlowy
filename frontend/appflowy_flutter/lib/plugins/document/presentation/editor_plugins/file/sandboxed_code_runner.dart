@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/local_code_runner.dart';
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
@@ -14,27 +16,28 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
 
 const codeBlockAnimationDuration = AppFlowyMotion.standard;
-const codeBlockCornerRadius = 12.0;
+
+/// A code block is framed exactly like every other embedded document, so a
+/// block in the editor and a code file opened in the viewer are the same
+/// object seen in two places.
+const codeBlockCornerRadius = EditorSurfaceStyle.embedCornerRadius;
 
 enum CodeRuntime {
+  /// Runs inside the WebView sandbox, with no toolchain of any kind.
   javascript,
-  serverRequired,
+
+  /// Runs through a compiler or interpreter installed on this computer.
+  local,
+
   unsupported;
 }
 
 CodeRuntime codeRuntimeForName(String name) {
   return switch (p.extension(name).toLowerCase()) {
     '.js' || '.mjs' || '.cjs' => CodeRuntime.javascript,
-    '.py' ||
-    '.c' ||
-    '.cc' ||
-    '.cpp' ||
-    '.cxx' ||
-    '.java' ||
-    '.kt' ||
-    '.rs' =>
-      CodeRuntime.serverRequired,
-    _ => CodeRuntime.unsupported,
+    _ => localToolchainForName(name) == null
+        ? CodeRuntime.unsupported
+        : CodeRuntime.local,
   };
 }
 
@@ -56,6 +59,7 @@ class SandboxedCodeRunner extends StatefulWidget {
     this.framed = true,
     this.initiallyCollapsed = false,
     this.onHeaderInteractionChanged,
+    this.onTerminalFocusChanged,
   });
 
   final String code;
@@ -74,13 +78,23 @@ class SandboxedCodeRunner extends StatefulWidget {
   final bool initiallyCollapsed;
   final ValueChanged<bool>? onHeaderInteractionChanged;
 
+  /// Fires when the terminal's input takes or loses focus.
+  ///
+  /// A host embedded in the document editor uses this to drop the document
+  /// selection, so keys typed at the prompt are not also read as editing
+  /// commands.
+  final ValueChanged<bool>? onTerminalFocusChanged;
+
   @override
   State<SandboxedCodeRunner> createState() => _SandboxedCodeRunnerState();
 }
 
 class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   final inputController = TextEditingController();
+  final inputFocusNode = FocusNode();
+  final terminalScrollController = ScrollController();
   InAppWebViewController? webViewController;
+  LocalCodeRunner? localRunner;
   Timer? copyFeedbackTimer;
   String output = '';
   String errorOutput = '';
@@ -90,6 +104,12 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   late bool collapsed;
 
   CodeRuntime get runtime => codeRuntimeForName(widget.fileName);
+
+  LocalToolchain? get toolchain => localToolchainForName(widget.fileName);
+
+  /// Local programs read their input as they go, so the terminal takes one
+  /// line at a time instead of a block of text handed over up front.
+  bool get isInteractive => runtime == CodeRuntime.local;
 
   @override
   void initState() {
@@ -109,9 +129,46 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
 
   @override
   void dispose() {
+    localRunner?.cancel();
     copyFeedbackTimer?.cancel();
+    terminalScrollController.dispose();
+    inputFocusNode.dispose();
     inputController.dispose();
     super.dispose();
+  }
+
+  /// Shows text the moment the program prints it, and keeps the newest line in
+  /// view the way a terminal does.
+  void _appendOutput(String chunk, {required bool isError}) {
+    if (!mounted || chunk.isEmpty) {
+      return;
+    }
+    setState(() {
+      if (isError) {
+        errorOutput += chunk;
+      } else {
+        output += chunk;
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (terminalScrollController.hasClients) {
+        terminalScrollController
+            .jumpTo(terminalScrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  /// Answers the prompt the program is waiting on.
+  void _submitInput(String value) {
+    final runner = localRunner;
+    if (runner == null || !runner.acceptsInput) {
+      return;
+    }
+    runner.sendLine(value);
+    inputController.clear();
+    // A pipe does not echo, so the transcript would otherwise lose the answer.
+    _appendOutput('$value\n', isError: false);
+    inputFocusNode.requestFocus();
   }
 
   @override
@@ -186,6 +243,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
             copied: copied,
             collapsed: collapsed,
             runtime: runtime,
+            toolchain: toolchain,
             onLanguageChanged: widget.onLanguageChanged,
             onToggleLineNumbers: widget.onToggleLineNumbers,
             onRun: running ? _stop : _run,
@@ -204,9 +262,9 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           color: palette.surface,
-          borderRadius: BorderRadius.circular(codeBlockCornerRadius),
-          border: Border.all(color: palette.border, width: 0.5),
-          boxShadow: palette.shadows,
+          borderRadius: EditorSurfaceStyle.embedBorderRadius,
+          border: Border.all(color: EditorSurfaceStyle.embedBorder(context)),
+          boxShadow: EditorSurfaceStyle.embedShadow(context),
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(codeBlockCornerRadius - 1),
@@ -267,118 +325,185 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     BuildContext context,
     _CodeBlockPalette palette,
   ) {
-    final materialTheme = Theme.of(context);
-    final appFlowyTheme = AppFlowyTheme.of(context);
-    return Container(
-      height: 190,
-      decoration: BoxDecoration(
-        color: palette.terminal,
-        border: Border(
-          top: BorderSide(color: palette.divider),
+    // One mono face for the transcript and the prompt, matching the code.
+    final mono = _codeUiTextStyle(
+      color: palette.textPrimary,
+      fontSize: 12.5,
+      fontWeight: FontWeight.w400,
+    ).copyWith(height: 1.5);
+    final acceptingInput =
+        isInteractive ? (localRunner?.acceptsInput ?? false) : true;
+    final status = !running
+        ? ''
+        : acceptingInput
+            ? 'waiting for input'
+            : 'running';
+    final hint = isInteractive
+        ? (acceptingInput ? '' : 'run the code to use the terminal')
+        : 'one value per line';
+    return FocusScope(
+      skipTraversal: true,
+      onFocusChange: widget.onTerminalFocusChanged,
+      child: Container(
+        height: 190,
+        decoration: BoxDecoration(
+          color: palette.terminal,
+          border: Border(
+            top: BorderSide(color: palette.divider),
+          ),
         ),
-      ),
-      child: Column(
-        children: [
-          SizedBox(
-            height: 34,
-            child: Row(
-              children: [
-                const SizedBox(width: 10),
-                Icon(
-                  Icons.terminal,
-                  color: appFlowyTheme.iconColorScheme.secondary,
-                  size: 16,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  running ? 'Terminal - running' : 'Terminal',
-                  style: materialTheme.textTheme.labelMedium?.copyWith(
-                    color: appFlowyTheme.textColorScheme.primary,
-                    fontWeight: FontWeight.w600,
+        // Stretch, or the transcript shrink-wraps and floats in the middle
+        // instead of starting at the left edge like a terminal.
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              height: 32,
+              child: Row(
+                children: [
+                  const SizedBox(width: 12),
+                  Icon(
+                    Icons.terminal_rounded,
+                    color: palette.textMuted,
+                    size: 14,
                   ),
-                ),
-                const Spacer(),
-                Text(
-                  'LOCAL',
-                  style: materialTheme.textTheme.labelSmall?.copyWith(
-                    color: appFlowyTheme.textColorScheme.tertiary,
-                    fontSize: 9,
-                    letterSpacing: 0.8,
-                    fontWeight: FontWeight.w600,
+                  const SizedBox(width: 7),
+                  Text(
+                    'Terminal',
+                    style: _codeUiTextStyle(
+                      color: palette.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  tooltip: running ? 'Stop execution first' : 'Close terminal',
-                  onPressed: running
-                      ? null
-                      : () => setState(() => terminalVisible = false),
-                  icon: const Icon(Icons.close, size: 16),
-                  color: appFlowyTheme.iconColorScheme.secondary,
-                  disabledColor: appFlowyTheme.iconColorScheme.quaternary,
-                  visualDensity: VisualDensity.compact,
-                ),
-                const SizedBox(width: 2),
-              ],
-            ),
-          ),
-          Divider(
-            height: 1,
-            color: appFlowyTheme.borderColorScheme.primary,
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(10),
-              child: SelectableText.rich(
-                TextSpan(
-                  style: TextStyle(
-                    color: appFlowyTheme.textColorScheme.primary,
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                  ),
-                  children: [
-                    TextSpan(text: output),
-                    TextSpan(
-                      text: errorOutput,
-                      style: TextStyle(
-                        color: appFlowyTheme.textColorScheme.error,
+                  const Spacer(),
+                  if (status.isNotEmpty) ...[
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color:
+                            acceptingInput ? palette.accent : palette.success,
+                        shape: BoxShape.circle,
                       ),
                     ),
+                    const SizedBox(width: 6),
+                    Text(
+                      status,
+                      style: _codeUiTextStyle(
+                        color: palette.textMuted,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                   ],
+                  if (isInteractive && running) ...[
+                    _CodeToolbarButton(
+                      palette: palette,
+                      tooltip: 'Close the input stream (Ctrl+D)',
+                      icon: Icons.block_rounded,
+                      label: 'EOF',
+                      onPressed: acceptingInput
+                          ? () => setState(() => localRunner?.endInput())
+                          : null,
+                    ),
+                    const SizedBox(width: 3),
+                  ],
+                  _CodeToolbarButton(
+                    palette: palette,
+                    tooltip:
+                        running ? 'Stop execution first' : 'Close terminal',
+                    icon: Icons.close_rounded,
+                    onPressed: running
+                        ? null
+                        : () => setState(() => terminalVisible = false),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: palette.divider),
+            Expanded(
+              // Clicking anywhere in the pane puts the caret back on the
+              // prompt, the way clicking a terminal window does.
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: inputFocusNode.requestFocus,
+                child: SingleChildScrollView(
+                  controller: terminalScrollController,
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (output.isNotEmpty || errorOutput.isNotEmpty)
+                        SelectableText.rich(
+                          TextSpan(
+                            style: mono,
+                            children: [
+                              TextSpan(text: output),
+                              if (errorOutput.isNotEmpty)
+                                TextSpan(
+                                  text: errorOutput,
+                                  style: TextStyle(color: palette.error),
+                                ),
+                            ],
+                          ),
+                        ),
+                      // The prompt lives at the end of the transcript rather
+                      // than in a form pinned to the bottom.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            r'$',
+                            style: mono.copyWith(
+                              color: palette.accent,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: inputController,
+                              focusNode: inputFocusNode,
+                              maxLines: isInteractive ? 1 : 3,
+                              minLines: 1,
+                              textInputAction: TextInputAction.send,
+                              onSubmitted: isInteractive ? _submitInput : null,
+                              style: mono,
+                              cursorColor: palette.accent,
+                              cursorWidth: 7,
+                              cursorRadius: Radius.zero,
+                              decoration: InputDecoration(
+                                isCollapsed: true,
+                                contentPadding: EdgeInsets.zero,
+                                border: InputBorder.none,
+                                hintText: hint,
+                                hintStyle: mono.copyWith(
+                                  color: palette.textMuted,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
-          TextField(
-            controller: inputController,
-            maxLines: 2,
-            minLines: 1,
-            style: TextStyle(
-              color: appFlowyTheme.textColorScheme.primary,
-              fontFamily: 'monospace',
-              fontSize: 12,
-            ),
-            decoration: InputDecoration(
-              prefixIcon: Icon(
-                Icons.keyboard_alt_outlined,
-                color: appFlowyTheme.iconColorScheme.tertiary,
-                size: 18,
-              ),
-              hintText: 'stdin (one value per line)',
-              hintStyle: TextStyle(
-                color: appFlowyTheme.textColorScheme.tertiary,
-              ),
-              border: InputBorder.none,
-              filled: true,
-              fillColor: palette.input,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Future<void> _run() async {
+    if (runtime == CodeRuntime.local) {
+      return _runLocally();
+    }
     final controller = webViewController;
     if (controller == null) {
       setState(() {
@@ -431,7 +556,53 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     }
   }
 
+  /// Compiles and runs the code with the toolchain installed on this computer.
+  ///
+  /// Nothing is sent anywhere: there is no execution service to reach.
+  Future<void> _runLocally() async {
+    final toolchain = this.toolchain;
+    if (toolchain == null) {
+      return;
+    }
+    // A toolchain installed since the last attempt should be picked up.
+    clearExecutableCache();
+    final runner = LocalCodeRunner();
+    localRunner = runner;
+    setState(() {
+      running = true;
+      terminalVisible = true;
+      output = '';
+      errorOutput = '';
+    });
+    inputFocusNode.requestFocus();
+    try {
+      final result = await runner.run(
+        toolchain: toolchain,
+        code: widget.code,
+        onStdout: (chunk) => _appendOutput(chunk, isError: false),
+        onStderr: (chunk) => _appendOutput(chunk, isError: true),
+      );
+      if (!mounted) {
+        return;
+      }
+      _appendOutput(result.notice, isError: true);
+    } on Exception catch (error) {
+      if (mounted) {
+        _appendOutput('$error\n', isError: true);
+      }
+    } finally {
+      localRunner = null;
+      if (mounted) {
+        setState(() => running = false);
+      }
+    }
+  }
+
   Future<void> _stop() async {
+    if (runtime == CodeRuntime.local) {
+      localRunner?.cancel();
+      return;
+    }
     await webViewController?.reload();
     if (mounted) {
       setState(() {
@@ -453,6 +624,7 @@ class _CodeBlockHeader extends StatelessWidget {
     required this.copied,
     required this.collapsed,
     required this.runtime,
+    required this.toolchain,
     required this.onLanguageChanged,
     required this.onToggleLineNumbers,
     required this.onRun,
@@ -471,6 +643,7 @@ class _CodeBlockHeader extends StatelessWidget {
   final bool copied;
   final bool collapsed;
   final CodeRuntime runtime;
+  final LocalToolchain? toolchain;
   final ValueChanged<String> onLanguageChanged;
   final VoidCallback onToggleLineNumbers;
   final VoidCallback onRun;
@@ -486,17 +659,22 @@ class _CodeBlockHeader extends StatelessWidget {
         final compact = constraints.maxWidth < 520;
         final veryCompact = constraints.maxWidth < 380;
         final filename = displayName?.trim();
-        final canRun = runtime == CodeRuntime.javascript;
-        final disabledRunTooltip = switch (runtime) {
-          CodeRuntime.serverRequired => 'Execution server required',
+        final canRun = runtime != CodeRuntime.unsupported;
+        final runTooltip = switch (runtime) {
           CodeRuntime.unsupported => 'Preview only',
-          CodeRuntime.javascript => '',
+          _ when running => 'Stop',
+          CodeRuntime.local when toolchain?.isInstalled == false =>
+            'Run with ${toolchain!.label} (not found on PATH)',
+          CodeRuntime.local => 'Run with ${toolchain!.label}',
+          CodeRuntime.javascript => 'Run',
         };
 
         return DecoratedBox(
           decoration: BoxDecoration(
             color: palette.header,
-            border: Border(bottom: BorderSide(color: palette.divider)),
+            // Depth instead of an outline, matching the shared document
+            // header so a code block reads as the same kind of surface.
+            boxShadow: DocumentViewportStyle.of(context).chromeShadow,
           ),
           child: SizedBox(
             height: 42,
@@ -568,9 +746,7 @@ class _CodeBlockHeader extends StatelessWidget {
                   ],
                   _CodeToolbarButton(
                     palette: palette,
-                    tooltip: canRun
-                        ? (running ? 'Stop' : 'Run')
-                        : disabledRunTooltip,
+                    tooltip: runTooltip,
                     icon:
                         running ? Icons.stop_rounded : Icons.play_arrow_rounded,
                     label: compact ? null : (running ? 'Stop' : 'Run'),
@@ -912,6 +1088,22 @@ class _HeaderDivider extends StatelessWidget {
       );
 }
 
+/// The single surface every code layer paints on.
+///
+/// The header, the body and the code file editor all share it, so a code block
+/// reads as one uniform card instead of a toolbar stacked on a page — and a
+/// block in the editor matches a code file opened in the viewer exactly.
+Color codeBlockSurfaceColor(BuildContext context) {
+  if (Theme.of(context).brightness == Brightness.dark) {
+    return const Color(0xFF18191D);
+  }
+  if (PaperTheme.isEnabled(context)) {
+    return PaperTheme.codeBlockBackground;
+  }
+  return PremiumThemeExtension.maybeOf(context)?.surface ??
+      const Color(0xFFFAF9F6);
+}
+
 class _CodeBlockPalette {
   const _CodeBlockPalette({
     required this.surface,
@@ -938,11 +1130,12 @@ class _CodeBlockPalette {
     final brightness = materialTheme.brightness;
     final isPaper = PaperTheme.isEnabled(context);
     final premiumPalette = PremiumThemeExtension.maybeOf(context);
+    final surface = codeBlockSurfaceColor(context);
 
     if (brightness == Brightness.dark) {
       return _CodeBlockPalette(
-        surface: const Color(0xFF18191D),
-        header: const Color(0xFF1E1F24),
+        surface: surface,
+        header: surface,
         terminal: const Color(0xFF141519),
         menu: const Color(0xFF202126),
         input: const Color(0xFF1E1F24),
@@ -975,8 +1168,8 @@ class _CodeBlockPalette {
 
     if (isPaper) {
       return _CodeBlockPalette(
-        surface: PaperTheme.codeBlockBackground,
-        header: PaperTheme.codeBlockHeaderBackground,
+        surface: surface,
+        header: surface,
         terminal: PaperTheme.editorPreviewBackground,
         menu: PaperTheme.popupBackground,
         input: PaperTheme.controlBackground,
@@ -1007,14 +1200,12 @@ class _CodeBlockPalette {
       );
     }
 
-    final surface = premiumPalette?.surface ?? const Color(0xFFFAF9F6);
-    final header = premiumPalette?.mutedSurface ?? const Color(0xFFF4F2EC);
     final border =
         premiumPalette?.border ?? appFlowyTheme.borderColorScheme.primary;
 
     return _CodeBlockPalette(
       surface: surface,
-      header: header,
+      header: surface,
       terminal: EditorSurfaceStyle.previewBackgroundFor(
         brightness,
         premiumPalette?.canvas ?? const Color(0xFFF1F0EC),

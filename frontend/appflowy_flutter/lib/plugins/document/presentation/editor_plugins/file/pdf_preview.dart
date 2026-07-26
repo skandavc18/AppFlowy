@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -232,6 +233,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
               color: palette.canvas,
               child: Column(
                 children: [
+                  DocumentViewportHeader(identity: _documentIdentity()),
                   _buildToolbar(),
                   AnimatedSize(
                     duration: const Duration(milliseconds: 200),
@@ -287,6 +289,18 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
         : child;
   }
 
+  /// The same identity every other document type shows in its header.
+  DocumentIdentity _documentIdentity() {
+    final pages = pageCount > 0
+        ? 'PDF  ·  $pageCount ${pageCount == 1 ? 'page' : 'pages'}'
+        : 'PDF';
+    return DocumentIdentity(
+      title: widget.name,
+      icon: Icons.picture_as_pdf_outlined,
+      subtitle: pages,
+    );
+  }
+
   Map<ShortcutActivator, VoidCallback> get _shortcutBindings => {
         const SingleActivator(LogicalKeyboardKey.keyF, control: true):
             _openSearch,
@@ -311,6 +325,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   Widget _buildToolbar() {
     Widget toolbar(double zoom) => PdfPreviewToolbar(
           title: widget.name,
+          showDocumentTitle: false,
           currentPage: currentPage,
           pageCount: pageCount,
           zoom: zoom,
