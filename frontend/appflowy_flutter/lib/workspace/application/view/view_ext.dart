@@ -12,6 +12,7 @@ import 'package:appflowy/plugins/database/grid/presentation/mobile_grid_page.dar
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/document.dart';
 import 'package:appflowy/plugins/workspace_folder/workspace_folder_plugin.dart';
+import 'package:appflowy/plugins/workspace_file/workspace_file_plugin.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
@@ -117,6 +118,11 @@ extension ViewExtension on ViewPB {
   }) {
     if (isWorkspaceFolder) {
       return WorkspaceFolderPlugin(view: this);
+    }
+    // Workspace files open in their own viewer instead of a document page that
+    // just embeds them. Older files without stored bytes migrate on open.
+    if (isWorkspaceFile) {
+      return WorkspaceFilePlugin(view: this);
     }
     switch (layout) {
       case ViewLayoutPB.Board:

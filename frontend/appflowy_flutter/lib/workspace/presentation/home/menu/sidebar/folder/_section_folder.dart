@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
@@ -84,6 +88,7 @@ class _SectionFolderState extends State<SectionFolder> {
       addButtonTooltip: widget.addButtonTooltip,
       onPressed: () => _handleHeaderPressed(context, workspace),
       onCreate: (kind) => _createRootItem(context, kind),
+      onCreateFile: (action) => unawaited(_createRootFile(context, action)),
       leading: widget.isWorkspaceRoot && workspace != null
           ? WorkspaceIcon(
               workspaceIcon: workspace.icon,
@@ -187,6 +192,24 @@ class _SectionFolderState extends State<SectionFolder> {
     context.read<TabsBloc>().openPlugin(view);
   }
 
+  Future<void> _createRootFile(
+    BuildContext context,
+    WorkspaceFileMenuAction action,
+  ) async {
+    final view = await createSidebarRootFile(
+      context,
+      spaceType: widget.spaceType,
+      action: action,
+    );
+    if (view == null || !context.mounted) {
+      return;
+    }
+    context
+        .read<FolderBloc>()
+        .add(const FolderEvent.expandOrUnExpand(isExpanded: true));
+    context.read<TabsBloc>().openPlugin(view);
+  }
+
   Iterable<Widget> _buildViews(
     BuildContext context,
     FolderState state,
@@ -275,9 +298,60 @@ Future<ViewPB?> createSidebarRootItem(
         name: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
         section: section,
       ),
+    SidebarRootCreateKind.board => ViewBackendService.createView(
+        layoutType: ViewLayoutPB.Board,
+        parentViewId: workspaceId,
+        name: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
+        section: section,
+      ),
+    SidebarRootCreateKind.calendar => ViewBackendService.createView(
+        layoutType: ViewLayoutPB.Calendar,
+        parentViewId: workspaceId,
+        name: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
+        section: section,
+      ),
+    SidebarRootCreateKind.chat => ViewBackendService.createView(
+        layoutType: ViewLayoutPB.Chat,
+        parentViewId: workspaceId,
+        name: '',
+        section: section,
+      ),
   };
   final created = await result;
   if (!context.mounted) {
+    return null;
+  }
+  return created.fold(
+    (view) => view,
+    (error) {
+      showSnackBarMessage(context, error.msg);
+      return null;
+    },
+  );
+}
+
+/// Adds a file straight to the top level of [spaceType].
+Future<ViewPB?> createSidebarRootFile(
+  BuildContext context, {
+  required FolderSpaceType spaceType,
+  required WorkspaceFileMenuAction action,
+}) async {
+  final workspaceId =
+      context.read<UserWorkspaceBloc>().state.currentWorkspace?.workspaceId;
+  if (workspaceId == null || workspaceId.isEmpty) {
+    showSnackBarMessage(
+      context,
+      LocaleKeys.workspaceFolderExplorer_workspaceUnavailable.tr(),
+    );
+    return null;
+  }
+
+  final created = await createWorkspaceFile(
+    parentViewId: workspaceId,
+    action: action,
+    section: spaceType.toViewSectionPB,
+  );
+  if (created == null || !context.mounted) {
     return null;
   }
   return created.fold(

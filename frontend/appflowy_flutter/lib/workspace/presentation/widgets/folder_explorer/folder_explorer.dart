@@ -11,6 +11,7 @@ import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/breadcrumb_bar.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/explorer_context_menu.dart';
@@ -21,6 +22,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/explorer
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -355,11 +357,13 @@ class _FolderExplorerState extends State<FolderExplorer> {
           children: [
             ExplorerToolbar(
               searchController: searchController,
-              onNewFile: () => controller.beginCreate(
-                WorkspaceExplorerDraftKind.file,
-                parentId: presentation == FolderExplorerPresentation.gallery
-                    ? controller.currentFolder.id
-                    : null,
+              onNewFile: (action) => unawaited(
+                _createFileOfKind(
+                  action,
+                  parentId: presentation == FolderExplorerPresentation.gallery
+                      ? controller.currentFolder.id
+                      : null,
+                ),
               ),
               onNewFolder: () => controller.beginCreate(
                 WorkspaceExplorerDraftKind.folder,
@@ -497,7 +501,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
       case ExplorerContextAction.delete:
         await _confirmDelete();
       case ExplorerContextAction.newFile:
-        await _beginCreateInside(item, WorkspaceExplorerDraftKind.file);
+        await _createFileInside(item, position);
       case ExplorerContextAction.newFolder:
         await _beginCreateInside(item, WorkspaceExplorerDraftKind.folder);
       case ExplorerContextAction.copyPath:
@@ -546,6 +550,33 @@ class _FolderExplorerState extends State<FolderExplorer> {
       return;
     }
     controller.beginCreate(kind, parentId: item.id);
+  }
+
+  Future<void> _createFileInside(
+    WorkspaceExplorerItem item,
+    Offset position,
+  ) async {
+    final action = await showWorkspaceFileKindMenu(
+      context: context,
+      globalPosition: position,
+    );
+    if (action == null || !mounted) {
+      return;
+    }
+    if (presentation == FolderExplorerPresentation.gallery && item.isFolder) {
+      await _navigateTo(item.id);
+    }
+    await _createFileOfKind(action, parentId: item.id);
+  }
+
+  Future<void> _createFileOfKind(
+    WorkspaceFileMenuAction action, {
+    String? parentId,
+  }) async {
+    final view = await controller.createFileOfKind(action, parentId: parentId);
+    if (view != null && mounted) {
+      _openView(view);
+    }
   }
 
   void _beginGalleryCreate(

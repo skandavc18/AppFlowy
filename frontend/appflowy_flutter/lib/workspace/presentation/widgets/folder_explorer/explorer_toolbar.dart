@@ -1,5 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -19,7 +21,7 @@ class ExplorerToolbar extends StatelessWidget {
   });
 
   final TextEditingController searchController;
-  final VoidCallback onNewFile;
+  final ValueChanged<WorkspaceFileMenuAction> onNewFile;
   final VoidCallback onNewFolder;
   final VoidCallback? onPaste;
   final VoidCallback onRefresh;
@@ -34,11 +36,7 @@ class ExplorerToolbar extends StatelessWidget {
     final palette = FolderExplorerPalette.of(context);
     return Row(
       children: [
-        _ToolbarButton(
-          icon: Icons.note_add_outlined,
-          tooltip: LocaleKeys.workspaceFolderExplorer_newFile.tr(),
-          onPressed: onNewFile,
-        ),
+        _NewFileButton(onSelected: onNewFile),
         _ToolbarButton(
           icon: Icons.create_new_folder_outlined,
           tooltip: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
@@ -129,6 +127,35 @@ class ExplorerToolbar extends StatelessWidget {
           onPressed: onMore,
         ),
       ],
+    );
+  }
+}
+
+class _NewFileButton extends StatelessWidget {
+  const _NewFileButton({required this.onSelected});
+
+  final ValueChanged<WorkspaceFileMenuAction> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Builder(
+      builder: (buttonContext) => _ToolbarButton(
+        icon: Icons.note_add_outlined,
+        tooltip: LocaleKeys.workspaceFolderExplorer_newFile.tr(),
+        onPressed: () async {
+          final box = buttonContext.findRenderObject() as RenderBox?;
+          if (box == null) {
+            return;
+          }
+          final action = await showWorkspaceFileKindMenu(
+            context: buttonContext,
+            globalPosition: box.localToGlobal(Offset(0, box.size.height)),
+          );
+          if (action != null) {
+            onSelected(action);
+          }
+        },
+      ),
     );
   }
 }

@@ -423,12 +423,10 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           onPrint: canPrint ? _print : null,
           onFullscreen: _toggleFullscreen,
           viewMenu: PdfViewOptionsMenu(
-            layoutMode: layoutMode,
-            transition: pageTransition,
+            preset: PdfViewPreset.resolve(layoutMode, pageTransition),
             autoHideToolbar: autoHideToolbar,
             enabled: viewerReady,
-            onLayoutModeChanged: _setLayoutMode,
-            onTransitionChanged: _setPageTransition,
+            onPresetChanged: _setViewPreset,
             onAutoHideToolbarChanged: _setAutoHideToolbar,
           ),
           overflow: _buildOverflowMenu(),
@@ -531,9 +529,9 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           child: AnimatedPadding(
             duration: _chromeFadeDuration,
             curve: Curves.easeOutCubic,
-            // A pinned toolbar owns the top of the canvas; an auto-hiding one
-            // floats over it and gets out of the way on its own.
-            padding: EdgeInsets.only(top: autoHideToolbar ? 0 : _chromeHeight),
+            // The chrome always sits above the pages. Letting it float over
+            // them hid whatever was at the top of the document.
+            padding: EdgeInsets.only(top: _chromeHeight),
             child: Stack(
               children: [
                 Positioned.fill(child: _wrapPageTransition(viewer)),
@@ -1819,8 +1817,13 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     }
   }
 
-  void _setLayoutMode(PdfPageLayoutMode mode) {
-    if (mode == layoutMode) {
+  /// Applies a reading mode: the layout and the animation that goes with it.
+  void _setViewPreset(PdfViewPreset preset) {
+    _setPageTransition(preset.transition);
+    _setLayoutMode(preset.layoutMode);
+  }
+
+  void _setLayoutMode(PdfPageLayoutMode mode) {    if (mode == layoutMode) {
       return;
     }
     wheelScrollPhysics.stop();

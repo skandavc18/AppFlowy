@@ -112,16 +112,38 @@ IconData fileIconForName(String? name) {
   if (name == null) {
     return Icons.insert_drive_file_outlined;
   }
-  return switch (filePreviewKindFromName(name)) {
-    FilePreviewKind.pdf => Icons.picture_as_pdf_outlined,
-    FilePreviewKind.html => Icons.language_outlined,
-    FilePreviewKind.markdown => Icons.article_outlined,
-    FilePreviewKind.archive => Icons.folder_zip_outlined,
-    FilePreviewKind.csv => Icons.table_chart_outlined,
-    FilePreviewKind.json => Icons.data_object,
-    FilePreviewKind.notebook => Icons.menu_book_outlined,
-    FilePreviewKind.code => Icons.code,
-    FilePreviewKind.text => Icons.description_outlined,
-    null => Icons.insert_drive_file_outlined,
+  final kind = filePreviewKindFromName(name);
+  if (kind != null) {
+    return switch (kind) {
+      FilePreviewKind.pdf => Icons.picture_as_pdf_outlined,
+      FilePreviewKind.html => Icons.language_outlined,
+      FilePreviewKind.markdown => Icons.article_outlined,
+      FilePreviewKind.archive => Icons.folder_zip_outlined,
+      FilePreviewKind.csv => Icons.table_chart_outlined,
+      FilePreviewKind.json => Icons.data_object,
+      FilePreviewKind.notebook => Icons.menu_book_outlined,
+      FilePreviewKind.code => Icons.code,
+      FilePreviewKind.text => Icons.description_outlined,
+    };
+  }
+  return switch (name.split('.').last.toLowerCase()) {
+    'doc' || 'docx' || 'odt' || 'rtf' => Icons.text_snippet_outlined,
+    'xls' || 'xlsx' || 'ods' => Icons.table_chart_outlined,
+    'ppt' || 'pptx' || 'odp' => Icons.slideshow_outlined,
+    'png' ||
+    'jpg' ||
+    'jpeg' ||
+    'gif' ||
+    'webp' ||
+    'bmp' ||
+    'tif' ||
+    'tiff' ||
+    'svg' =>
+      Icons.image_outlined,
+    'mp4' || 'mov' || 'mkv' || 'webm' || 'avi' || 'm4v' || 'mpeg' =>
+      Icons.movie_outlined,
+    'mp3' || 'wav' || 'm4a' || 'aac' || 'flac' || 'ogg' || 'wma' =>
+      Icons.audiotrack_outlined,
+    _ => Icons.insert_drive_file_outlined,
   };
 }

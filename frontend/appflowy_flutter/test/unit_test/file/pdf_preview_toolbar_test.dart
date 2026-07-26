@@ -839,7 +839,7 @@ void main() {
       }
     });
 
-    test('side by side keeps the cover alone and faces the rest', () {
+    test('side by side pairs from the first page', () {
       final layout = buildPdfPageLayoutForSizes(
         pages,
         margin,
@@ -847,14 +847,14 @@ void main() {
       );
 
       expect(layout.pageLayouts, hasLength(3));
-      // The cover is alone on the first row; pages 2 and 3 face each other on
-      // the second and are centred against one another.
-      expect(layout.pageLayouts[0].top, lessThan(layout.pageLayouts[1].top));
-      expect(layout.pageLayouts[1].center.dy, layout.pageLayouts[2].center.dy);
+      // Pages 1 and 2 face each other on the first row and are centred against
+      // one another; page 3 has no partner left, so it drops to a second row.
+      expect(layout.pageLayouts[0].center.dy, layout.pageLayouts[1].center.dy);
       expect(
-        layout.pageLayouts[1].right,
-        lessThanOrEqualTo(layout.pageLayouts[2].left),
+        layout.pageLayouts[0].right,
+        lessThanOrEqualTo(layout.pageLayouts[1].left),
       );
+      expect(layout.pageLayouts[0].top, lessThan(layout.pageLayouts[2].top));
       expect(layout.documentSize.width, greaterThan(200 * 2));
     });
 
@@ -869,24 +869,34 @@ void main() {
   });
 
   group('side by side navigation', () {
-    test('the cover and a trailing odd page stand alone', () {
-      expect(facingPartnerPage(1, 8), isNull);
-      expect(facingPartnerPage(2, 8), 3);
-      expect(facingPartnerPage(3, 8), 2);
-      expect(facingPartnerPage(8, 8), isNull);
-      expect(facingPartnerPage(7, 8), 6);
+    test('odd pages face the page after them', () {
+      expect(facingPartnerPage(1, 8), 2);
+      expect(facingPartnerPage(2, 8), 1);
+      expect(facingPartnerPage(3, 8), 4);
+      expect(facingPartnerPage(7, 8), 8);
+      expect(facingPartnerPage(8, 8), 7);
+    });
+
+    test('a trailing page with no partner stands alone', () {
+      expect(facingPartnerPage(7, 7), isNull);
       expect(facingPartnerPage(1, 1), isNull);
+      expect(facingPartnerPage(0, 8), isNull);
+      expect(facingPartnerPage(9, 8), isNull);
     });
 
     test('page turns move one whole spread', () {
-      expect(nextFacingPage(1, 8), 2);
-      expect(nextFacingPage(2, 8), 4);
-      expect(nextFacingPage(3, 8), 4);
-      expect(nextFacingPage(6, 8), 8);
-      expect(nextFacingPage(8, 8), 8);
+      expect(nextFacingPage(1, 8), 3);
+      expect(nextFacingPage(2, 8), 3);
+      expect(nextFacingPage(3, 8), 5);
+      expect(nextFacingPage(6, 8), 7);
+      // The last spread has nowhere to go, so it does not creep forward.
+      expect(nextFacingPage(7, 8), 7);
+      expect(nextFacingPage(8, 8), 7);
+      expect(nextFacingPage(7, 9), 9);
 
-      expect(previousFacingPage(8), 6);
-      expect(previousFacingPage(4), 2);
+      expect(previousFacingPage(8), 5);
+      expect(previousFacingPage(7), 5);
+      expect(previousFacingPage(4), 1);
       expect(previousFacingPage(3), 1);
       expect(previousFacingPage(2), 1);
       expect(previousFacingPage(1), 1);
@@ -915,6 +925,70 @@ void main() {
         expect(PdfPageTransition.fromName(transition.name), transition);
       }
     });
+  });
+
+  group('reading mode presets', () {
+    test('every preset pairs an animation the layout can actually play', () {
+      for (final preset in PdfViewPreset.values) {
+        final paged = preset.layoutMode.turnsPages ||
+            preset.layoutMode == PdfPageLayoutMode.facing;
+        if (!paged) {
+          expect(
+            preset.transition,
+            PdfPageTransition.none,
+            reason: '${preset.name} never changes page',
+          );
+        } else {
+          expect(
+            preset.transition,
+            isNot(PdfPageTransition.none),
+            reason: '${preset.name} turns pages',
+          );
+        }
+      }
+    });
+
+    test('no two presets offer the same combination', () {
+      final pairs = PdfViewPreset.values
+          .map((preset) => '${preset.layoutMode.name}/${preset.transition.name}')
+          .toList();
+      expect(pairs.toSet().length, pairs.length);
+    });
+
+    test('covers every layout at least once', () {
+      final layouts =
+          PdfViewPreset.values.map((preset) => preset.layoutMode).toSet();
+      expect(layouts, containsAll(PdfPageLayoutMode.values));
+    });
+
+    test('resolve finds the exact pair', () {
+      for (final preset in PdfViewPreset.values) {
+        expect(
+          PdfViewPreset.resolve(preset.layoutMode, preset.transition),
+          preset,
+        );
+      }
+    });
+
+    test('resolve falls back to the layout for combinations we dropped', () {
+      expect(
+        PdfViewPreset.resolve(
+          PdfPageLayoutMode.continuous,
+          PdfPageTransition.flip,
+        ),
+        PdfViewPreset.continuous,
+      );
+      expect(
+        PdfViewPreset.resolve(
+          PdfPageLayoutMode.facing,
+          PdfPageTransition.fade,
+        ).layoutMode,
+        PdfPageLayoutMode.facing,
+      );
+    });
+  });
+
+  group('layout behaviour', () {
 
     test('only page break mode turns pages on a wheel notch', () {
       expect(

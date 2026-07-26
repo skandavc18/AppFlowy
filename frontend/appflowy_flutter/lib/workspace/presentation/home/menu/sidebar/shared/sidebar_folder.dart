@@ -7,6 +7,7 @@ import 'package:appflowy/workspace/application/favorite/favorite_bloc.dart';
 import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_transfer_service.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
@@ -125,14 +126,13 @@ class SidebarBackgroundContextMenu extends StatelessWidget {
     return AnimatedBuilder(
       animation: clipboard,
       builder: (context, _) {
-        final actions = <SidebarRootAction>[
-          ...SidebarRootCreateKind.values.map(SidebarRootCreateAction.new),
-          if (clipboard.hasData) SidebarRootPasteAction(),
-        ];
-        return PopoverActionList<SidebarRootAction>(
-          actions: actions,
+        return PopoverActionList<PopoverAction>(
+          actions: sidebarRootCreateActions(
+            onCreateFile: (action) => unawaited(_createFile(context, action)),
+            trailing: [if (clipboard.hasData) SidebarRootPasteAction()],
+          ),
           direction: PopoverDirection.bottomWithLeftAligned,
-          constraints: const BoxConstraints(minWidth: 190),
+          constraints: const BoxConstraints(minWidth: 200),
           showAtCursor: true,
           onSelected: (action, popover) {
             popover.close();
@@ -160,9 +160,23 @@ class SidebarBackgroundContextMenu extends StatelessWidget {
     );
   }
 
+  Future<void> _createFile(
+    BuildContext context,
+    WorkspaceFileMenuAction action,
+  ) async {
+    final view = await createSidebarRootFile(
+      context,
+      spaceType: FolderSpaceType.public,
+      action: action,
+    );
+    if (view != null && context.mounted) {
+      context.read<TabsBloc>().openPlugin(view);
+    }
+  }
+
   Future<void> _handleAction(
     BuildContext context,
-    SidebarRootAction action,
+    PopoverAction action,
     WorkspaceItemClipboard clipboard,
   ) async {
     if (action is SidebarRootCreateAction) {

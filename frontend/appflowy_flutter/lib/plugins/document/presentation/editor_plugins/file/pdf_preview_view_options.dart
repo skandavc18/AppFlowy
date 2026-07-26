@@ -62,6 +62,97 @@ enum PdfPageTransition {
       );
 }
 
+/// A reading mode: a page layout together with the animation that suits it.
+///
+/// The two are not independent. A page turn needs a layout that moves one page
+/// (or one spread) at a time, and a continuously scrolling document never
+/// changes page, so it has nothing to animate. Offering both lists separately
+/// let the reader pick pairs that quietly did nothing, so they are chosen
+/// together.
+enum PdfViewPreset {
+  continuous(
+    'Continuous scroll',
+    'Pages flow into each other',
+    Icons.view_day_outlined,
+    PdfPageLayoutMode.continuous,
+    PdfPageTransition.none,
+  ),
+  horizontal(
+    'Horizontal scroll',
+    'Pages run left to right',
+    Icons.view_carousel_outlined,
+    PdfPageLayoutMode.horizontal,
+    PdfPageTransition.none,
+  ),
+  singlePage(
+    'Single page',
+    'One page at a time, sliding',
+    Icons.crop_portrait_rounded,
+    PdfPageLayoutMode.pageBreak,
+    PdfPageTransition.slide,
+  ),
+  singlePageFade(
+    'Single page, fading',
+    'One page at a time, crossfading',
+    Icons.gradient_outlined,
+    PdfPageLayoutMode.pageBreak,
+    PdfPageTransition.fade,
+  ),
+  singlePageTurn(
+    'Single page, page turn',
+    'One page at a time, peeling like paper',
+    Icons.auto_stories_outlined,
+    PdfPageLayoutMode.pageBreak,
+    PdfPageTransition.flip,
+  ),
+  spread(
+    'Two pages',
+    'Facing pages, a spread at a time',
+    Icons.import_contacts_outlined,
+    PdfPageLayoutMode.facing,
+    PdfPageTransition.slide,
+  ),
+  book(
+    'Book',
+    'Facing pages with a real page turn',
+    Icons.menu_book_outlined,
+    PdfPageLayoutMode.facing,
+    PdfPageTransition.flip,
+  );
+
+  const PdfViewPreset(
+    this.label,
+    this.description,
+    this.icon,
+    this.layoutMode,
+    this.transition,
+  );
+
+  final String label;
+  final String description;
+  final IconData icon;
+  final PdfPageLayoutMode layoutMode;
+  final PdfPageTransition transition;
+
+  /// The preset matching a stored layout and animation pair.
+  ///
+  /// Falls back to the first preset that uses the same layout, so documents
+  /// saved before presets existed still open as something sensible.
+  static PdfViewPreset resolve(
+    PdfPageLayoutMode layoutMode,
+    PdfPageTransition transition,
+  ) {
+    return values.firstWhere(
+      (preset) =>
+          preset.layoutMode == layoutMode && preset.transition == transition,
+      orElse: () => values.firstWhere(
+        (preset) => preset.layoutMode == layoutMode,
+        orElse: () => PdfViewPreset.continuous,
+      ),
+    );
+  }
+}
+
 /// Lays the pages out for [mode], mirroring pdfrx's own vertical layout for
 /// [PdfPageLayoutMode.continuous].
 PdfPageLayout buildPdfPageLayout(
@@ -135,17 +226,14 @@ PdfPageLayout _horizontalLayout(List<Size> pages, double margin) {
 }
 
 PdfPageLayout _facingLayout(List<Size> pages, double margin) {
-  // The cover stands on its own so every later spread reads like an open
-  // book: 2 facing 3, 4 facing 5, and so on.
+  // Pages pair from the very first one: 1 facing 2, 3 facing 4, and so on. A
+  // trailing page with no partner left stands on its own.
   final rows = <List<int>>[];
-  if (pages.isNotEmpty) {
-    rows.add([0]);
-    for (var index = 1; index < pages.length; index += 2) {
-      rows.add([
-        index,
-        if (index + 1 < pages.length) index + 1,
-      ]);
-    }
+  for (var index = 0; index < pages.length; index += 2) {
+    rows.add([
+      index,
+      if (index + 1 < pages.length) index + 1,
+    ]);
   }
 
   final spreadGap = margin / 2;
@@ -184,57 +272,56 @@ PdfPageLayout _facingLayout(List<Size> pages, double margin) {
   );
 }
 
-/// The page facing [pageNumber] in [PdfPageLayoutMode.facing], or null when it
-/// stands alone: the cover always does, and so does a trailing page with no
-/// partner left.
+/// The page facing [pageNumber] in [PdfPageLayoutMode.facing], or null when a
+/// trailing page has no partner left.
 int? facingPartnerPage(int pageNumber, int pageCount) {
-  if (pageNumber <= 1 || pageCount <= 1) {
+  if (pageNumber < 1 || pageNumber > pageCount) {
     return null;
   }
-  final partner = pageNumber.isEven ? pageNumber + 1 : pageNumber - 1;
+  final partner = pageNumber.isOdd ? pageNumber + 1 : pageNumber - 1;
   return partner >= 1 && partner <= pageCount ? partner : null;
 }
 
+/// The first page of the spread [pageNumber] belongs to.
+int facingSpreadStart(int pageNumber) {
+  if (pageNumber <= 1) {
+    return 1;
+  }
+  return pageNumber.isOdd ? pageNumber : pageNumber - 1;
+}
+
 /// The first page of the next spread, so page turns move a whole spread.
+///
+/// Stays on the current spread when there is no next one, so the last pair
+/// does not creep forward one page at a time.
 int nextFacingPage(int pageNumber, int pageCount) {
   if (pageCount <= 0) {
     return 1;
   }
-  if (pageNumber <= 1) {
-    return math.min(2, pageCount);
-  }
-  final spreadStart = pageNumber.isEven ? pageNumber : pageNumber - 1;
-  return math.min(spreadStart + 2, pageCount);
+  final start = facingSpreadStart(pageNumber);
+  final next = start + 2;
+  return next <= pageCount ? next : start;
 }
 
-/// The first page of the previous spread, falling back to the lone cover.
-int previousFacingPage(int pageNumber) {
-  if (pageNumber <= 2) {
-    return 1;
-  }
-  final spreadStart = pageNumber.isEven ? pageNumber : pageNumber - 1;
-  return spreadStart - 2 < 2 ? 1 : spreadStart - 2;
-}
+/// The first page of the previous spread.
+int previousFacingPage(int pageNumber) =>
+    math.max(facingSpreadStart(pageNumber) - 2, 1);
 
-/// The toolbar control that owns layout, page animation and toolbar auto-hide.
+/// The toolbar control that owns the reading mode and toolbar auto-hide.
 class PdfViewOptionsMenu extends StatelessWidget {
   const PdfViewOptionsMenu({
     super.key,
-    required this.layoutMode,
-    required this.transition,
+    required this.preset,
     required this.autoHideToolbar,
     required this.enabled,
-    required this.onLayoutModeChanged,
-    required this.onTransitionChanged,
+    required this.onPresetChanged,
     required this.onAutoHideToolbarChanged,
   });
 
-  final PdfPageLayoutMode layoutMode;
-  final PdfPageTransition transition;
+  final PdfViewPreset preset;
   final bool autoHideToolbar;
   final bool enabled;
-  final ValueChanged<PdfPageLayoutMode> onLayoutModeChanged;
-  final ValueChanged<PdfPageTransition> onTransitionChanged;
+  final ValueChanged<PdfViewPreset> onPresetChanged;
   final ValueChanged<bool> onAutoHideToolbarChanged;
 
   @override
@@ -244,12 +331,12 @@ class PdfViewOptionsMenu extends StatelessWidget {
       dimension: 30,
       child: PopupMenuButton<_PdfViewOption>(
         key: const ValueKey('pdf-view-options-menu'),
-        tooltip: 'Page layout and animation',
+        tooltip: 'Reading mode',
         enabled: enabled,
         onSelected: _handle,
         color: palette.chrome,
         surfaceTintColor: Colors.transparent,
-        constraints: const BoxConstraints(minWidth: 226),
+        constraints: const BoxConstraints(minWidth: 262),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
           side: BorderSide(color: palette.border),
@@ -274,33 +361,24 @@ class PdfViewOptionsMenu extends StatelessWidget {
         padding: EdgeInsets.zero,
         iconSize: 18,
         iconColor: palette.icon,
-        icon: Icon(layoutMode.icon),
+        icon: Icon(preset.icon),
         itemBuilder: (_) => [
-          _label(context, 'PAGE LAYOUT'),
-          for (final mode in PdfPageLayoutMode.values)
+          _label(context, 'READING MODE'),
+          for (final value in PdfViewPreset.values)
             _choice(
               context,
-              _PdfViewOption.layout(mode),
-              mode.icon,
-              mode.label,
-              selected: mode == layoutMode,
-            ),
-          const PopupMenuDivider(height: 9),
-          _label(context, 'PAGE TURN ANIMATION'),
-          for (final style in PdfPageTransition.values)
-            _choice(
-              context,
-              _PdfViewOption.transition(style),
-              style.icon,
-              style.label,
-              selected: style == transition,
+              _PdfViewOption.preset(value),
+              value.icon,
+              value.label,
+              description: value.description,
+              selected: value == preset,
             ),
           const PopupMenuDivider(height: 9),
           _choice(
             context,
             const _PdfViewOption.autoHide(),
             Icons.visibility_off_outlined,
-            'Auto-hide toolbar',
+            'Hide toolbar when idle',
             selected: autoHideToolbar,
           ),
         ],
@@ -309,14 +387,9 @@ class PdfViewOptionsMenu extends StatelessWidget {
   }
 
   void _handle(_PdfViewOption option) {
-    final mode = option.layoutMode;
-    if (mode != null) {
-      onLayoutModeChanged(mode);
-      return;
-    }
-    final style = option.transition;
-    if (style != null) {
-      onTransitionChanged(style);
+    final value = option.preset;
+    if (value != null) {
+      onPresetChanged(value);
       return;
     }
     onAutoHideToolbarChanged(!autoHideToolbar);
@@ -347,11 +420,12 @@ class PdfViewOptionsMenu extends StatelessWidget {
     IconData icon,
     String label, {
     required bool selected,
+    String? description,
   }) {
     final palette = PdfPreviewPalette.of(context);
     return PopupMenuItem<_PdfViewOption>(
       value: value,
-      height: 38,
+      height: description == null ? 38 : 46,
       child: Row(
         children: [
           Icon(
@@ -361,14 +435,32 @@ class PdfViewOptionsMenu extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: palette.textPrimary,
-                fontFamily: 'Inter',
-                fontSize: 12,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: palette.textPrimary,
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  ),
+                ),
+                if (description != null)
+                  Text(
+                    description,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.textSecondary,
+                      fontFamily: 'Inter',
+                      fontSize: 10.5,
+                      height: 15 / 10.5,
+                    ),
+                  ),
+              ],
             ),
           ),
           if (selected)
@@ -381,27 +473,16 @@ class PdfViewOptionsMenu extends StatelessWidget {
 
 @immutable
 class _PdfViewOption {
-  const _PdfViewOption.layout(PdfPageLayoutMode mode)
-      : layoutMode = mode,
-        transition = null;
+  const _PdfViewOption.preset(PdfViewPreset value) : preset = value;
 
-  const _PdfViewOption.transition(PdfPageTransition style)
-      : layoutMode = null,
-        transition = style;
+  const _PdfViewOption.autoHide() : preset = null;
 
-  const _PdfViewOption.autoHide()
-      : layoutMode = null,
-        transition = null;
-
-  final PdfPageLayoutMode? layoutMode;
-  final PdfPageTransition? transition;
+  final PdfViewPreset? preset;
 
   @override
   bool operator ==(Object other) =>
-      other is _PdfViewOption &&
-      other.layoutMode == layoutMode &&
-      other.transition == transition;
+      other is _PdfViewOption && other.preset == preset;
 
   @override
-  int get hashCode => Object.hash(layoutMode, transition);
+  int get hashCode => preset.hashCode;
 }

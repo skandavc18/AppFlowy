@@ -5,6 +5,8 @@ import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_selection.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
@@ -225,12 +227,52 @@ class WorkspaceExplorerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Runs one entry of the "New file" menu inside [parentId].
+  ///
+  /// Blank documents open an inline name field, uploads go straight through
+  /// the picker. Returns the created view, if any.
+  Future<ViewPB?> createFileOfKind(
+    WorkspaceFileMenuAction action, {
+    String? parentId,
+  }) async {
+    if (action.source == WorkspaceFileSource.create) {
+      beginCreate(
+        WorkspaceExplorerDraftKind.file,
+        parentId: parentId,
+        suggestedName: action.kind.defaultFileName,
+      );
+      return null;
+    }
+
+    final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    final result = await createWorkspaceFile(
+      parentViewId: resolvedParent,
+      action: action,
+    );
+    if (result == null) {
+      return null;
+    }
+    return result.fold(
+      (view) async {
+        _cacheView(view);
+        _insertChild(resolvedParent, view.id);
+        selection.selectOnly(view.id);
+        _refreshRows();
+        await _refreshActiveSearch();
+        return view;
+      },
+      (error) {
+        _setError(error.msg);
+        return null;
+      },
+    );
+  }
+
   void cancelEditing() {
     if (_draft == null && _editingId == null) {
       return;
     }
-    _draft = null;
-    _editingId = null;
+    _draft = null;    _editingId = null;
     notifyListeners();
   }
 

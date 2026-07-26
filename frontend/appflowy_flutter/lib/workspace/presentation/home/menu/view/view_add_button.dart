@@ -7,6 +7,8 @@ import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/import/import_panel.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
@@ -45,12 +47,14 @@ class ViewAddButton extends StatelessWidget {
   final bool isHovered;
   final bool showTransferActions;
 
-  List<PopoverAction> get _actions {
+  List<PopoverAction> _actionsFor(BuildContext hostContext) {
     final actions = <PopoverAction>[];
     if (!sourceView.isWorkspaceFile) {
       actions.addAll([
         WorkspaceItemAddAction(WorkspaceItemAddKind.folder),
-        WorkspaceItemAddAction(WorkspaceItemAddKind.file),
+        WorkspaceFileAddAction(
+          onCreate: (action) => _createWorkspaceFile(hostContext, action),
+        ),
         // document, grid, kanban, calendar
         ...pluginBuilders().map(
           (pluginBuilder) => ViewAddButtonActionWrapper(
@@ -86,7 +90,7 @@ class ViewAddButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return PopoverActionList<PopoverAction>(
       direction: PopoverDirection.bottomWithLeftAligned,
-      actions: _actions,
+      actions: _actionsFor(context),
       offset: const Offset(0, 8),
       constraints: const BoxConstraints(
         minWidth: 200,
@@ -140,6 +144,23 @@ class ViewAddButton extends StatelessWidget {
     };
     final created = await result;
     if (!context.mounted) {
+      return;
+    }
+    created.fold(
+      (view) => context.read<TabsBloc>().openPlugin(view),
+      (error) => showSnackBarMessage(context, error.msg),
+    );
+  }
+
+  Future<void> _createWorkspaceFile(
+    BuildContext context,
+    WorkspaceFileMenuAction action,
+  ) async {
+    final created = await createWorkspaceFile(
+      parentViewId: parentViewId,
+      action: action,
+    );
+    if (created == null || !context.mounted) {
       return;
     }
     created.fold(
@@ -209,6 +230,101 @@ class ViewImportActionWrapper extends ActionCell {
 enum WorkspaceItemAddKind {
   folder,
   file,
+}
+
+/// The "New file" entry, which opens a submenu with every supported file type.
+class WorkspaceFileAddAction extends PopoverActionCell {
+  WorkspaceFileAddAction({required this.onCreate});
+
+  final void Function(WorkspaceFileMenuAction action) onCreate;
+
+  @override
+  Widget? leftIcon(Color iconColor) => Icon(
+        Icons.note_add_outlined,
+        color: iconColor,
+        size: 17,
+      );
+
+  @override
+  Widget? rightIcon(Color iconColor) => Icon(
+        Icons.chevron_right_rounded,
+        color: iconColor,
+        size: 16,
+      );
+
+  @override
+  String get name => LocaleKeys.workspaceFolderExplorer_newFile.tr();
+
+  @override
+  PopoverActionCellBuilder get builder =>
+      (context, parentController, controller) => WorkspaceFileKindMenu(
+            onSelected: (action) {
+              controller.close();
+              parentController.close();
+              onCreate(action);
+            },
+          );
+}
+
+/// The list of creatable and uploadable file types.
+class WorkspaceFileKindMenu extends StatelessWidget {
+  const WorkspaceFileKindMenu({super.key, required this.onSelected});
+
+  final ValueChanged<WorkspaceFileMenuAction> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final iconColor = theme.colorScheme.onSurface;
+    final children = <Widget>[];
+    WorkspaceFileSource? section;
+    for (final action in workspaceFileMenuActions) {
+      if (action.source != section) {
+        if (section != null) {
+          children.add(
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: FlowyDivider(),
+            ),
+          );
+        }
+        section = action.source;
+        children.add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
+            child: Text(
+              action.source.heading.toUpperCase(),
+              style: TextStyle(
+                fontSize: 10.5,
+                letterSpacing: 0.6,
+                fontWeight: FontWeight.w600,
+                color: theme.hintColor,
+              ),
+            ),
+          ),
+        );
+      }
+      children.add(
+        HoverButton(
+          itemHeight: ActionListSizes.itemHeight,
+          leftIcon: Icon(action.icon, color: iconColor, size: 17),
+          name: action.label,
+          onTap: () => onSelected(action),
+        ),
+      );
+    }
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 210),
+      child: IntrinsicWidth(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: children,
+        ),
+      ),
+    );
+  }
 }
 
 class WorkspaceItemAddAction extends ActionCell {

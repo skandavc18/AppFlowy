@@ -1,9 +1,16 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_block.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandboxed_code_runner.dart';
+import 'package:appflowy/user/application/user_service.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
+import 'package:appflowy/workspace/application/workspace_item/blank_file_content.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/protobuf/flowy-document/entities.pb.dart';
@@ -12,10 +19,10 @@ import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/workspace.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:appflowy_result/appflowy_result.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:flowy_infra/uuid.dart';
+import 'package:path/path.dart' as p;
 
 abstract interface class WorkspaceItemRepository {
   Future<FlowyResult<ViewPB, FlowyError>> createFolder({
@@ -85,43 +92,19 @@ class WorkspaceItemService implements WorkspaceItemRepository {
     String content = '',
     ViewSectionPB? section,
   }) {
-    final document = Document.blank()
-      ..insert(
-        [0],
-        [
-          codeBlockNode(
-            language: codeLanguageForName(name),
-            delta: Delta()..insert(content),
-          ),
-        ],
-      );
-    final data = DocumentDataPBFromTo.fromDocument(document)?.writeToBuffer();
-    if (data == null) {
-      return Future.value(
-        FlowyResult.failure(
-          FlowyError(msg: 'Unable to create file document data.'),
-        ),
-      );
-    }
-
-    final metadata = WorkspaceItemMetadata.file(
-      contentKind: WorkspaceFileContentKind.collaborativeText,
-      mimeType: _textMimeType(name),
-    );
-    return ViewBackendService.createView(
-      layoutType: ViewLayoutPB.Document,
+    return createBlankFile(
       parentViewId: parentViewId,
+      kind: WorkspaceFileKind.fromName(name) ?? WorkspaceFileKind.text,
       name: name,
       section: section,
-      initialDataBytes: data,
-      extra: metadata.mergeIntoExtra(''),
+      content: content.isEmpty ? null : Uint8List.fromList(utf8.encode(content)),
     );
   }
 
   Future<FlowyResult<ViewPB, FlowyError>> importBinaryFile({
     required String parentViewId,
     required XFile file,
-    required UserProfilePB? userProfile,
+    UserProfilePB? userProfile,
     ViewSectionPB? section,
   }) async {
     if (file.path.isEmpty) {
@@ -130,19 +113,87 @@ class WorkspaceItemService implements WorkspaceItemRepository {
       );
     }
 
+    return _createStoredFileView(
+      parentViewId: parentViewId,
+      localPath: file.path,
+      name: file.name,
+      mimeType: file.mimeType,
+      userProfile: userProfile,
+      section: section,
+    );
+  }
+
+  /// Creates a blank document of [kind] and stores it as a workspace file.
+  ///
+  /// The bytes live in AppFlowy storage exactly like an imported file, so the
+  /// same viewers and editors open it.
+  Future<FlowyResult<ViewPB, FlowyError>> createBlankFile({
+    required String parentViewId,
+    required WorkspaceFileKind kind,
+    UserProfilePB? userProfile,
+    String? name,
+    ViewSectionPB? section,
+    Uint8List? content,
+  }) async {
+    final fileName = _normalizeFileName(
+      name ?? kind.defaultFileName,
+      kind.fileExtension,
+    );
+
+    final Directory stagingDirectory;
+    try {
+      stagingDirectory = await Directory.systemTemp.createTemp('appflowy_new_');
+    } on FileSystemException catch (error) {
+      return FlowyResult.failure(FlowyError(msg: error.message));
+    }
+
+    try {
+      final staged = File(p.join(stagingDirectory.path, fileName));
+      await staged.writeAsBytes(
+        content ?? blankFileContent(kind),
+        flush: true,
+      );
+      return await _createStoredFileView(
+        parentViewId: parentViewId,
+        localPath: staged.path,
+        name: fileName,
+        mimeType: _mimeTypeFor(fileName) ?? kind.mimeType,
+        userProfile: userProfile,
+        section: section,
+      );
+    } finally {
+      unawaited(
+        stagingDirectory
+            .delete(recursive: true)
+            .catchError((_) => stagingDirectory),
+      );
+    }
+  }
+
+  Future<FlowyResult<ViewPB, FlowyError>> _createStoredFileView({
+    required String parentViewId,
+    required String localPath,
+    required String name,
+    required String? mimeType,
+    required UserProfilePB? userProfile,
+    ViewSectionPB? section,
+  }) async {
     final viewId = uuid();
+    final profile = userProfile ??
+        (await UserBackendService.getCurrentUserProfile())
+            .fold((profile) => profile, (_) => null);
     final isLocalMode =
-        (userProfile?.workspaceType ?? WorkspaceTypePB.LocalW) ==
+        (profile?.workspaceType ?? WorkspaceTypePB.LocalW) ==
             WorkspaceTypePB.LocalW;
     String? url;
     String? error;
     if (isLocalMode) {
-      url = await saveFileToLocalStorage(file.path);
+      url = await saveFileToLocalStorage(localPath);
       if (url == null) {
         error = 'Unable to save the file to AppFlowy storage.';
       }
     } else {
-      final result = await saveFileToCloudStorage(file.path, viewId);
+      final result = await saveFileToCloudStorage(localPath, viewId);
       url = result.$1;
       error = result.$2;
     }
@@ -152,15 +203,15 @@ class WorkspaceItemService implements WorkspaceItemRepository {
       );
     }
 
-    final length = await file.length();
+    final length = await File(localPath).length();
     final metadata = WorkspaceItemMetadata.file(
       contentKind: WorkspaceFileContentKind.binary,
-      mimeType: file.mimeType ?? 'application/octet-stream',
+      mimeType: mimeType ?? 'application/octet-stream',
       storageUrl: url,
       size: length,
       modifiedAt: DateTime.now(),
     );
-    final previewKind = filePreviewKindFromName(file.name);
+    final previewKind = filePreviewKindFromName(name);
     final document = Document.blank()
       ..insert(
         [0],
@@ -168,7 +219,7 @@ class WorkspaceItemService implements WorkspaceItemRepository {
           fileNode(
             url: url,
             type: isLocalMode ? FileUrlType.local : FileUrlType.cloud,
-            name: file.name,
+            name: name,
           )..attributes[FileBlockKeys.displayMode] =
               previewKind == null ? 'file' : 'preview',
         ],
@@ -185,7 +236,7 @@ class WorkspaceItemService implements WorkspaceItemRepository {
       viewId: viewId,
       layoutType: ViewLayoutPB.Document,
       parentViewId: parentViewId,
-      name: file.name,
+      name: name,
       section: section,
       initialDataBytes: data,
       extra: metadata.mergeIntoExtra(''),
@@ -196,6 +247,16 @@ class WorkspaceItemService implements WorkspaceItemRepository {
     return result;
   }
 
+  String _normalizeFileName(String name, String extension) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return 'Untitled.$extension';
+    }
+    if (p.extension(trimmed).isEmpty) {
+      return '$trimmed.$extension';
+    }
+    return trimmed;
+  }
   @override
   Future<FlowyResult<List<ViewPB>, FlowyError>> getChildren(
     String parentViewId,
@@ -272,7 +333,7 @@ class WorkspaceItemService implements WorkspaceItemRepository {
     await DocumentEventDeleteFile(DeleteFilePB(url: url)).send();
   }
 
-  String _textMimeType(String name) {
+  String? _mimeTypeFor(String name) {
     final extension = name.split('.').last.toLowerCase();
     return switch (extension) {
       'md' || 'markdown' => 'text/markdown',
@@ -281,7 +342,8 @@ class WorkspaceItemService implements WorkspaceItemRepository {
       'css' => 'text/css',
       'js' => 'text/javascript',
       'yaml' || 'yml' => 'application/yaml',
-      _ => 'text/plain',
+      'txt' || 'log' || 'ini' || 'cfg' || 'conf' => 'text/plain',
+      _ => null,
     };
   }
 }

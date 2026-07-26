@@ -31,6 +31,7 @@ import 'package:appflowy/workspace/presentation/home/menu/view/view_more_action_
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
@@ -774,6 +775,12 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
 
   Widget _buildViewIconButton() {
     final iconData = widget.view.icon.toEmojiIconData();
+    // A picture or a clip previews itself; dimming a thumbnail the way an icon
+    // is dimmed would only make it muddy.
+    final showsThumbnail = WorkspaceItemIcon.showsThumbnail(widget.view);
+    final defaultIcon = widget.view.defaultIcon(
+      size: const Size.square(HomeSpaceViewSizes.viewIconSize),
+    );
     final icon = iconData.isNotEmpty
         ? RawEmojiIconWidget(
             emoji: iconData,
@@ -781,12 +788,12 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
             lineHeight: HomeSpaceViewSizes.viewIconLineHeight /
                 HomeSpaceViewSizes.viewIconSize,
           )
-        : Opacity(
-            opacity: HomeSpaceViewSizes.viewIconOpacity,
-            child: widget.view.defaultIcon(
-              size: const Size.square(HomeSpaceViewSizes.viewIconSize),
-            ),
-          );
+        : showsThumbnail
+            ? defaultIcon
+            : Opacity(
+                opacity: HomeSpaceViewSizes.viewIconOpacity,
+                child: defaultIcon,
+              );
 
     final Widget child = AppFlowyPopover(
       offset: const Offset(20, 0),

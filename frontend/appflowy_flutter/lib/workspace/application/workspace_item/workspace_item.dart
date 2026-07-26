@@ -156,6 +156,27 @@ Map<String, dynamic> decodeViewExtra(String extra) {
   }
 }
 
+/// Stores the viewer state of a workspace file (zoom, page, edit mode, …).
+///
+/// The embedded file block keeps the same map in its block attributes, so both
+/// surfaces share one shape and one set of viewers.
+class WorkspaceFilePreviewCodec {
+  const WorkspaceFilePreviewCodec._();
+
+  static const key = 'file_preview_metadata';
+
+  static Map<String, dynamic> decode(String extra) {
+    final value = decodeViewExtra(extra)[key];
+    return value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+  }
+
+  static String merge(String extra, Map<String, dynamic> metadata) {
+    final values = decodeViewExtra(extra);
+    values[key] = metadata;
+    return jsonEncode(values);
+  }
+}
+
 ViewPB workspaceRootFolderView({
   required String workspaceId,
   String name = 'Workspace',
