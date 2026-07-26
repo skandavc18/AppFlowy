@@ -1,7 +1,9 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_scroll_physics.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_sidebar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_theme.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_toolbar.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_view_options.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/paper_theme.dart';
@@ -778,6 +780,193 @@ void main() {
       _contrastRatio(palette.icon, palette.control),
       greaterThanOrEqualTo(3),
     );
+  });
+
+  group('page layout modes', () {
+    const pages = [Size(200, 300), Size(200, 300), Size(180, 260)];
+    const margin = 20.0;
+
+    test('continuous stacks pages in one column with an even gap', () {
+      final layout = buildPdfPageLayoutForSizes(
+        pages,
+        margin,
+        PdfPageLayoutMode.continuous,
+      );
+
+      expect(layout.pageLayouts, hasLength(3));
+      expect(layout.pageLayouts[0].top, margin);
+      expect(layout.pageLayouts[1].top, margin + 300 + margin);
+      expect(layout.documentSize.width, 200 + margin * 2);
+      // Every page is centred on the same column.
+      expect(layout.pageLayouts[2].center.dx, layout.documentSize.width / 2);
+    });
+
+    test('page break keeps the column but opens a real gutter', () {
+      final continuous = buildPdfPageLayoutForSizes(
+        pages,
+        margin,
+        PdfPageLayoutMode.continuous,
+      );
+      final broken = buildPdfPageLayoutForSizes(
+        pages,
+        margin,
+        PdfPageLayoutMode.pageBreak,
+      );
+
+      expect(broken.pageLayouts.first.top, continuous.pageLayouts.first.top);
+      expect(
+        broken.pageLayouts[1].top,
+        greaterThan(continuous.pageLayouts[1].top),
+      );
+      expect(
+        broken.documentSize.height,
+        greaterThan(continuous.documentSize.height),
+      );
+    });
+
+    test('horizontal lays pages out in one row', () {
+      final layout = buildPdfPageLayoutForSizes(
+        pages,
+        margin,
+        PdfPageLayoutMode.horizontal,
+      );
+
+      expect(layout.pageLayouts[0].left, margin);
+      expect(layout.pageLayouts[1].left, margin + 200 + margin);
+      expect(layout.documentSize.height, 300 + margin * 2);
+      for (final rect in layout.pageLayouts) {
+        expect(rect.center.dy, closeTo(layout.documentSize.height / 2, 0.001));
+      }
+    });
+
+    test('side by side keeps the cover alone and faces the rest', () {
+      final layout = buildPdfPageLayoutForSizes(
+        pages,
+        margin,
+        PdfPageLayoutMode.facing,
+      );
+
+      expect(layout.pageLayouts, hasLength(3));
+      // The cover is alone on the first row; pages 2 and 3 face each other on
+      // the second and are centred against one another.
+      expect(layout.pageLayouts[0].top, lessThan(layout.pageLayouts[1].top));
+      expect(layout.pageLayouts[1].center.dy, layout.pageLayouts[2].center.dy);
+      expect(
+        layout.pageLayouts[1].right,
+        lessThanOrEqualTo(layout.pageLayouts[2].left),
+      );
+      expect(layout.documentSize.width, greaterThan(200 * 2));
+    });
+
+    test('an empty document still produces a usable layout', () {
+      for (final mode in PdfPageLayoutMode.values) {
+        final layout = buildPdfPageLayoutForSizes(const [], margin, mode);
+        expect(layout.pageLayouts, isEmpty);
+        expect(layout.documentSize.width, greaterThanOrEqualTo(0));
+        expect(layout.documentSize.height, greaterThanOrEqualTo(0));
+      }
+    });
+  });
+
+  group('side by side navigation', () {
+    test('the cover and a trailing odd page stand alone', () {
+      expect(facingPartnerPage(1, 8), isNull);
+      expect(facingPartnerPage(2, 8), 3);
+      expect(facingPartnerPage(3, 8), 2);
+      expect(facingPartnerPage(8, 8), isNull);
+      expect(facingPartnerPage(7, 8), 6);
+      expect(facingPartnerPage(1, 1), isNull);
+    });
+
+    test('page turns move one whole spread', () {
+      expect(nextFacingPage(1, 8), 2);
+      expect(nextFacingPage(2, 8), 4);
+      expect(nextFacingPage(3, 8), 4);
+      expect(nextFacingPage(6, 8), 8);
+      expect(nextFacingPage(8, 8), 8);
+
+      expect(previousFacingPage(8), 6);
+      expect(previousFacingPage(4), 2);
+      expect(previousFacingPage(3), 1);
+      expect(previousFacingPage(2), 1);
+      expect(previousFacingPage(1), 1);
+    });
+  });
+
+  group('persisted view options', () {
+    test('unknown or missing values fall back to the defaults', () {
+      expect(
+        PdfPageLayoutMode.fromName(null),
+        PdfPageLayoutMode.continuous,
+      );
+      expect(
+        PdfPageLayoutMode.fromName('nonsense'),
+        PdfPageLayoutMode.continuous,
+      );
+      expect(PdfPageTransition.fromName(null), PdfPageTransition.slide);
+      expect(PdfPageTransition.fromName(7), PdfPageTransition.slide);
+    });
+
+    test('every option round trips through its stored name', () {
+      for (final mode in PdfPageLayoutMode.values) {
+        expect(PdfPageLayoutMode.fromName(mode.name), mode);
+      }
+      for (final transition in PdfPageTransition.values) {
+        expect(PdfPageTransition.fromName(transition.name), transition);
+      }
+    });
+
+    test('only page break mode turns pages on a wheel notch', () {
+      expect(
+        PdfPageLayoutMode.values.where((mode) => mode.turnsPages),
+        [PdfPageLayoutMode.pageBreak],
+      );
+      expect(
+        PdfPageLayoutMode.values.where((mode) => mode.isHorizontal),
+        [PdfPageLayoutMode.horizontal],
+      );
+    });
+
+    test('only the page turn curls paper, only the fade hides the canvas', () {
+      expect(
+        PdfPageTransition.values.where((style) => style.curlsPaper),
+        [PdfPageTransition.flip],
+      );
+      expect(
+        PdfPageTransition.values.where((style) => style.swapsAtMidpoint),
+        [PdfPageTransition.fade],
+      );
+    });
+  });
+
+  testWidgets('the PDF side panel scrolls on its own controller', (
+    tester,
+  ) async {
+    final outlineScrollController = ScrollController();
+    addTearDown(outlineScrollController.dispose);
+
+    await tester.pumpWidget(
+      _themedApp(
+        child: SizedBox(
+          width: 224,
+          height: 400,
+          child: PdfPreviewSidebar(
+            mode: PdfSidebarMode.outline,
+            document: null,
+            currentPage: 1,
+            outline: const [],
+            outlineLoading: false,
+            outlineScrollController: outlineScrollController,
+            onPageSelected: (_) {},
+            onDestinationSelected: (_) {},
+            onClose: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(outlineScrollController.hasClients, isTrue);
   });
 }
 

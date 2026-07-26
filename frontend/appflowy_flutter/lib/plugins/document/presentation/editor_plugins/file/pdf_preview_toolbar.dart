@@ -42,6 +42,7 @@ class PdfPreviewToolbar extends StatelessWidget {
     required this.onPrint,
     required this.onFullscreen,
     required this.overflow,
+    this.viewMenu,
     this.showDocumentTitle = true,
   });
 
@@ -69,6 +70,9 @@ class PdfPreviewToolbar extends StatelessWidget {
   final VoidCallback? onPrint;
   final VoidCallback onFullscreen;
   final Widget overflow;
+
+  /// Page layout, page animation and toolbar auto-hide live here.
+  final Widget? viewMenu;
 
   /// Hidden when the shared document header already names the file.
   final bool showDocumentTitle;
@@ -245,6 +249,7 @@ class PdfPreviewToolbar extends StatelessWidget {
                                 ? Icons.close_fullscreen_rounded
                                 : Icons.open_in_full_rounded,
                           ),
+                          if (viewMenu != null) viewMenu!,
                           overflow,
                         ],
                       ),

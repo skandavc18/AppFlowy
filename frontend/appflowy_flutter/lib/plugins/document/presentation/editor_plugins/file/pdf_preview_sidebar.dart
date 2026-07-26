@@ -17,6 +17,8 @@ class PdfPreviewSidebar extends StatelessWidget {
     required this.onPageSelected,
     required this.onDestinationSelected,
     required this.onClose,
+    this.thumbnailScrollController,
+    this.outlineScrollController,
   });
 
   final PdfSidebarMode mode;
@@ -27,6 +29,11 @@ class PdfPreviewSidebar extends StatelessWidget {
   final ValueChanged<int> onPageSelected;
   final ValueChanged<PdfDest> onDestinationSelected;
   final VoidCallback onClose;
+
+  /// Owned by the preview so wheel and trackpad input can be routed here
+  /// instead of to the document canvas.
+  final ScrollController? thumbnailScrollController;
+  final ScrollController? outlineScrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -86,6 +93,7 @@ class PdfPreviewSidebar extends StatelessWidget {
                         document: document,
                         currentPage: currentPage,
                         onPageSelected: onPageSelected,
+                        scrollController: thumbnailScrollController,
                       )
                     : _OutlineList(
                         key: const ValueKey('pdf-outline'),
@@ -93,6 +101,7 @@ class PdfPreviewSidebar extends StatelessWidget {
                         loading: outlineLoading,
                         onPageSelected: onPageSelected,
                         onDestinationSelected: onDestinationSelected,
+                        scrollController: outlineScrollController,
                       ),
               ),
             ),
@@ -109,11 +118,13 @@ class _ThumbnailList extends StatelessWidget {
     required this.document,
     required this.currentPage,
     required this.onPageSelected,
+    required this.scrollController,
   });
 
   final PdfDocument? document;
   final int currentPage;
   final ValueChanged<int> onPageSelected;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +135,7 @@ class _ThumbnailList extends StatelessWidget {
     return Semantics(
       label: 'PDF page thumbnails',
       child: ListView.builder(
+        controller: scrollController,
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
         cacheExtent: 520,
         itemCount: document.pages.length,
@@ -255,12 +267,14 @@ class _OutlineList extends StatelessWidget {
     required this.loading,
     required this.onPageSelected,
     required this.onDestinationSelected,
+    required this.scrollController,
   });
 
   final List<PdfOutlineNode>? outline;
   final bool loading;
   final ValueChanged<int> onPageSelected;
   final ValueChanged<PdfDest> onDestinationSelected;
+  final ScrollController? scrollController;
 
   @override
   Widget build(BuildContext context) {
@@ -278,6 +292,7 @@ class _OutlineList extends StatelessWidget {
     flatten(outline ?? const [], 0);
     return CustomScrollView(
       key: const PageStorageKey('pdf-outline-scroll'),
+      controller: scrollController,
       slivers: [
         const SliverToBoxAdapter(
           child: _SidebarSectionLabel(label: 'DOCUMENT'),
