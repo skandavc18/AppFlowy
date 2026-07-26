@@ -1,5 +1,6 @@
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:appflowy/plugins/database/application/cell/cell_controller.dart';
 import 'package:appflowy/plugins/database/application/cell/cell_data_loader.dart';
@@ -14,7 +15,10 @@ import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-document/entities.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
+import 'package:html/dom.dart' as html_dom;
+import 'package:html/parser.dart' as html_parser;
 import 'package:intl/intl.dart';
+import 'package:markdown/markdown.dart' as markdown;
 
 enum FolderGalleryPreviewKind {
   document,
@@ -138,7 +142,7 @@ class FolderGalleryPreviewLoader {
       item: item,
     );
     if (immediate != null) {
-      return immediate;
+      return _withFileContent(immediate, item);
     }
 
     final result = await _documentService.getDocument(documentId: view.id);
@@ -157,6 +161,365 @@ class FolderGalleryPreviewLoader {
       },
     );
   }
+
+  /// Fills a text file's card with what the file actually says.
+  ///
+  /// A stored file has no collab document to parse, so the opening of the file
+  /// itself becomes the preview — markdown keeps its structure, everything
+  /// else reads as plain paragraphs.
+  Future<FolderGalleryPreview> _withFileContent(
+    FolderGalleryPreview preview,
+    WorkspaceExplorerItem item,
+  ) async {
+    if (preview.kind != FolderGalleryPreviewKind.document &&
+        preview.kind != FolderGalleryPreviewKind.code) {
+      return preview;
+    }
+    final path = item.metadata?.storageUrl;
+    if (path == null || path.isEmpty) {
+      return preview;
+    }
+    final scheme = Uri.tryParse(path)?.scheme.toLowerCase() ?? '';
+    if (scheme == 'http' || scheme == 'https') {
+      return preview;
+    }
+
+    final source = await _readHead(File(path));
+    if (source == null || source.trim().isEmpty) {
+      return preview;
+    }
+
+    final blocks = preview.kind == FolderGalleryPreviewKind.code
+        ? [
+            FolderGalleryPreviewBlock(
+              kind: FolderGalleryPreviewBlockKind.code,
+              runs: [FolderGalleryTextRun(text: source.trimRight())],
+              language: preview.language,
+            ),
+          ]
+        : isMarkdownFileName(item.name)
+            ? parseMarkdownPreviewBlocks(source)
+            : parsePlainTextPreviewBlocks(source);
+    if (blocks.isEmpty) {
+      return preview;
+    }
+
+    final words = blocks.map((block) => block.plainText).join(' ');
+    return FolderGalleryPreview(
+      kind: preview.kind,
+      blocks: blocks,
+      wordCount: FolderGalleryPreviewParser._wordCount(words),
+      readingMinutes: words.trim().isEmpty ? 0 : 1,
+      tags: preview.tags,
+      fileTypeLabel: preview.fileTypeLabel,
+      heroUrl: preview.heroUrl,
+      language: preview.language,
+      database: preview.database,
+      unavailable: preview.unavailable,
+    );
+  }
+
+  static const _maxPreviewBytes = 8 * 1024;
+
+  Future<String?> _readHead(File file) async {
+    try {
+      final handle = await file.open();
+      try {
+        final bytes = await handle.read(_maxPreviewBytes);
+        return const Utf8Decoder(allowMalformed: true).convert(bytes);
+      } finally {
+        await handle.close();
+      }
+    } on FileSystemException catch (error) {
+      Log.info('Unable to read the preview of ${file.path}: $error');
+      return null;
+    }
+  }
+}
+
+bool isMarkdownFileName(String name) {
+  final extension = name.split('.').last.toLowerCase();
+  return extension == 'md' || extension == 'markdown';
+}
+
+/// Turns the opening of a plain file into paragraphs.
+List<FolderGalleryPreviewBlock> parsePlainTextPreviewBlocks(
+  String source, {
+  int maximumBlocks = 12,
+}) {
+  final blocks = <FolderGalleryPreviewBlock>[];
+  for (final line in const LineSplitter().convert(source)) {
+    if (blocks.length >= maximumBlocks) {
+      break;
+    }
+    if (line.trim().isEmpty) {
+      continue;
+    }
+    blocks.add(
+      FolderGalleryPreviewBlock(
+        kind: FolderGalleryPreviewBlockKind.paragraph,
+        runs: [FolderGalleryTextRun(text: line.trimRight())],
+      ),
+    );
+  }
+  return List.unmodifiable(blocks);
+}
+
+/// Lowers markdown source into the blocks the gallery card already renders,
+/// so a `.md` file previews with its headings, lists and quotes intact.
+///
+/// The source goes through the markdown parser and then through the HTML
+/// parser rather than being read line by line: a README is usually part
+/// markdown and part raw HTML, and reading it as lines showed the tags.
+List<FolderGalleryPreviewBlock> parseMarkdownPreviewBlocks(
+  String source, {
+  int maximumBlocks = 12,
+}) {
+  final String rendered;
+  try {
+    rendered = markdown.markdownToHtml(
+      source,
+      extensionSet: markdown.ExtensionSet.gitHubFlavored,
+    );
+  } on Object catch (error) {
+    Log.info('Unable to render the markdown preview: $error');
+    return parsePlainTextPreviewBlocks(source, maximumBlocks: maximumBlocks);
+  }
+
+  final blocks = <FolderGalleryPreviewBlock>[];
+  final body = html_parser.parse(rendered).body;
+  if (body != null) {
+    _collectHtmlBlocks(body.nodes, blocks, maximumBlocks);
+  }
+  // An empty result means the file genuinely has nothing to read — a page of
+  // badges, say. Only a renderer that produced nothing at all falls back to
+  // the raw source, which would otherwise put the markup back on screen.
+  if (blocks.isEmpty && rendered.trim().isEmpty) {
+    return parsePlainTextPreviewBlocks(source, maximumBlocks: maximumBlocks);
+  }
+  return List.unmodifiable(blocks);
+}
+
+void _collectHtmlBlocks(
+  List<html_dom.Node> nodes,
+  List<FolderGalleryPreviewBlock> out,
+  int maximumBlocks, {
+  bool insideQuote = false,
+}) {
+  for (final node in nodes) {
+    if (out.length >= maximumBlocks) {
+      return;
+    }
+    if (node is html_dom.Text) {
+      final text = node.text.trim();
+      if (text.isNotEmpty) {
+        _addBlock(
+          out,
+          FolderGalleryPreviewBlockKind.paragraph,
+          [FolderGalleryTextRun(text: text)],
+        );
+      }
+      continue;
+    }
+    if (node is! html_dom.Element) {
+      continue;
+    }
+
+    switch (node.localName) {
+      case 'h1':
+      case 'h2':
+      case 'h3':
+      case 'h4':
+      case 'h5':
+      case 'h6':
+        _addBlock(
+          out,
+          FolderGalleryPreviewBlockKind.heading,
+          _htmlInlineRuns(node),
+          level: int.parse(node.localName!.substring(1)).clamp(1, 3),
+        );
+      case 'p':
+        _addBlock(
+          out,
+          insideQuote
+              ? FolderGalleryPreviewBlockKind.quote
+              : FolderGalleryPreviewBlockKind.paragraph,
+          _htmlInlineRuns(node),
+        );
+      case 'ul':
+      case 'ol':
+        final numbered = node.localName == 'ol';
+        for (final item in node.children) {
+          if (out.length >= maximumBlocks) {
+            return;
+          }
+          if (item.localName != 'li') {
+            continue;
+          }
+          final checkbox = item.querySelector('input[type="checkbox"]');
+          if (checkbox != null) {
+            _addBlock(
+              out,
+              FolderGalleryPreviewBlockKind.todo,
+              _htmlInlineRuns(item),
+              checked: checkbox.attributes.containsKey('checked'),
+            );
+            continue;
+          }
+          _addBlock(
+            out,
+            numbered
+                ? FolderGalleryPreviewBlockKind.numberedList
+                : FolderGalleryPreviewBlockKind.bulletedList,
+            _htmlInlineRuns(item),
+          );
+        }
+      case 'blockquote':
+        _collectHtmlBlocks(
+          node.nodes,
+          out,
+          maximumBlocks,
+          insideQuote: true,
+        );
+      case 'pre':
+        final code = node.text.trimRight();
+        if (code.trim().isNotEmpty) {
+          final language = node
+              .querySelector('code')
+              ?.className
+              .split(RegExp(r'\s+'))
+              .firstWhere(
+                (name) => name.startsWith('language-'),
+                orElse: () => '',
+              )
+              .replaceFirst('language-', '');
+          out.add(
+            FolderGalleryPreviewBlock(
+              kind: FolderGalleryPreviewBlockKind.code,
+              runs: [FolderGalleryTextRun(text: code)],
+              language: language == null || language.isEmpty ? null : language,
+            ),
+          );
+        }
+      case 'hr':
+      case 'script':
+      case 'style':
+      case 'table':
+        break;
+      default:
+        // Containers a README wraps its banner in — div, center, section.
+        _collectHtmlBlocks(
+          node.nodes,
+          out,
+          maximumBlocks,
+          insideQuote: insideQuote,
+        );
+    }
+  }
+}
+
+void _addBlock(
+  List<FolderGalleryPreviewBlock> out,
+  FolderGalleryPreviewBlockKind kind,
+  List<FolderGalleryTextRun> runs, {
+  int level = 1,
+  bool checked = false,
+}) {
+  // Image-only paragraphs — badge strips, banners — leave nothing to read.
+  if (runs.every((run) => run.text.trim().isEmpty)) {
+    return;
+  }
+  out.add(
+    FolderGalleryPreviewBlock(
+      kind: kind,
+      runs: List.unmodifiable(runs),
+      level: level,
+      checked: checked,
+    ),
+  );
+}
+
+/// Flattens one HTML element into bold, italic and inline code runs.
+List<FolderGalleryTextRun> _htmlInlineRuns(html_dom.Element element) {
+  final runs = <FolderGalleryTextRun>[];
+
+  void walk(
+    List<html_dom.Node> nodes, {
+    required bool bold,
+    required bool italic,
+    required bool inlineCode,
+  }) {
+    for (final node in nodes) {
+      if (node is html_dom.Text) {
+        final text = node.text.replaceAll(RegExp(r'\s+'), ' ');
+        if (text.isNotEmpty) {
+          runs.add(
+            FolderGalleryTextRun(
+              text: text,
+              bold: bold,
+              italic: italic,
+              inlineCode: inlineCode,
+            ),
+          );
+        }
+        continue;
+      }
+      if (node is! html_dom.Element) {
+        continue;
+      }
+      switch (node.localName) {
+        case 'br':
+          runs.add(const FolderGalleryTextRun(text: ' '));
+        case 'img':
+        case 'input':
+        case 'script':
+        case 'style':
+          break;
+        case 'strong':
+        case 'b':
+          walk(node.nodes, bold: true, italic: italic, inlineCode: inlineCode);
+        case 'em':
+        case 'i':
+          walk(node.nodes, bold: bold, italic: true, inlineCode: inlineCode);
+        case 'code':
+          walk(node.nodes, bold: bold, italic: italic, inlineCode: true);
+        default:
+          walk(
+            node.nodes,
+            bold: bold,
+            italic: italic,
+            inlineCode: inlineCode,
+          );
+      }
+    }
+  }
+
+  walk(element.nodes, bold: false, italic: false, inlineCode: false);
+  final collapsed = runs
+      .map(
+        (run) => FolderGalleryTextRun(
+          text: run.text,
+          bold: run.bold,
+          italic: run.italic,
+          inlineCode: run.inlineCode,
+        ),
+      )
+      .toList();
+  if (collapsed.isNotEmpty) {
+    collapsed[0] = FolderGalleryTextRun(
+      text: collapsed.first.text.trimLeft(),
+      bold: collapsed.first.bold,
+      italic: collapsed.first.italic,
+      inlineCode: collapsed.first.inlineCode,
+    );
+    collapsed[collapsed.length - 1] = FolderGalleryTextRun(
+      text: collapsed.last.text.trimRight(),
+      bold: collapsed.last.bold,
+      italic: collapsed.last.italic,
+      inlineCode: collapsed.last.inlineCode,
+    );
+  }
+  return collapsed;
 }
 
 class FolderGalleryDatabasePreviewLoader {
@@ -489,7 +852,15 @@ class FolderGalleryPreviewParser {
       readingMinutes: 0,
       tags: _tagsFromExtra(view.extra),
       fileTypeLabel: _fileTypeLabel(item.name, metadata?.mimeType),
-      heroUrl: metadata?.storageUrl,
+      // Only the kinds that paint an actual picture carry a hero. Handing a
+      // text file's path to the image loader is what drew a broken thumbnail.
+      heroUrl: switch (kind) {
+        FolderGalleryPreviewKind.image ||
+        FolderGalleryPreviewKind.pdf ||
+        FolderGalleryPreviewKind.video =>
+          metadata?.storageUrl,
+        _ => null,
+      },
       language:
           kind == FolderGalleryPreviewKind.code ? _extension(item.name) : null,
       unavailable: metadata?.storageUrl?.isEmpty ?? true,

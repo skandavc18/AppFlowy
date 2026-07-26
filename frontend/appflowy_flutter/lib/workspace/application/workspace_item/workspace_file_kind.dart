@@ -16,6 +16,7 @@ enum WorkspaceFileCreation {
 enum WorkspaceFileKind {
   file,
   text,
+  code,
   markdown,
   html,
   pdf,
@@ -47,6 +48,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
   String get label => switch (this) {
         WorkspaceFileKind.file => 'File',
         WorkspaceFileKind.text => 'Text file',
+        WorkspaceFileKind.code => 'Code file',
         WorkspaceFileKind.markdown => 'Markdown',
         WorkspaceFileKind.html => 'HTML',
         WorkspaceFileKind.pdf => 'PDF',
@@ -61,6 +63,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
   IconData get icon => switch (this) {
         WorkspaceFileKind.file => Icons.note_add_outlined,
         WorkspaceFileKind.text => Icons.description_outlined,
+        WorkspaceFileKind.code => Icons.code,
         WorkspaceFileKind.markdown => Icons.article_outlined,
         WorkspaceFileKind.html => Icons.language_outlined,
         WorkspaceFileKind.pdf => Icons.picture_as_pdf_outlined,
@@ -74,6 +77,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
 
   WorkspaceFileCreation get creation => switch (this) {
         WorkspaceFileKind.text ||
+        WorkspaceFileKind.code ||
         WorkspaceFileKind.markdown ||
         WorkspaceFileKind.html ||
         WorkspaceFileKind.word ||
@@ -94,6 +98,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
   String get fileExtension => switch (this) {
         WorkspaceFileKind.file => 'txt',
         WorkspaceFileKind.text => 'txt',
+        WorkspaceFileKind.code => 'py',
         WorkspaceFileKind.markdown => 'md',
         WorkspaceFileKind.html => 'html',
         WorkspaceFileKind.pdf => 'pdf',
@@ -107,6 +112,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
 
   String get defaultFileName => switch (this) {
         WorkspaceFileKind.text => 'Untitled.txt',
+        WorkspaceFileKind.code => 'Untitled.py',
         WorkspaceFileKind.markdown => 'Untitled.md',
         WorkspaceFileKind.html => 'Untitled.html',
         WorkspaceFileKind.word => 'Untitled.docx',
@@ -118,6 +124,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
   String get mimeType => switch (this) {
         WorkspaceFileKind.file => 'application/octet-stream',
         WorkspaceFileKind.text => 'text/plain',
+        WorkspaceFileKind.code => 'text/plain',
         WorkspaceFileKind.markdown => 'text/markdown',
         WorkspaceFileKind.html => 'text/html',
         WorkspaceFileKind.pdf => 'application/pdf',
@@ -148,6 +155,33 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
             'csv',
             'tsv',
             'json',
+          ],
+        WorkspaceFileKind.code => const [
+            'py',
+            'js',
+            'jsx',
+            'ts',
+            'tsx',
+            'dart',
+            'rs',
+            'go',
+            'java',
+            'kt',
+            'c',
+            'h',
+            'cc',
+            'cpp',
+            'hpp',
+            'cs',
+            'rb',
+            'php',
+            'swift',
+            'sh',
+            'ps1',
+            'sql',
+            'css',
+            'scss',
+            'less',
           ],
         WorkspaceFileKind.markdown => const ['md', 'markdown'],
         WorkspaceFileKind.html => const ['html', 'htm'],
@@ -183,21 +217,6 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
       };
 }
 
-/// The order the kinds appear in the "New file" menu.
-const List<WorkspaceFileKind> workspaceFileMenuKinds = [
-  WorkspaceFileKind.file,
-  WorkspaceFileKind.text,
-  WorkspaceFileKind.markdown,
-  WorkspaceFileKind.html,
-  WorkspaceFileKind.pdf,
-  WorkspaceFileKind.image,
-  WorkspaceFileKind.video,
-  WorkspaceFileKind.audio,
-  WorkspaceFileKind.word,
-  WorkspaceFileKind.excel,
-  WorkspaceFileKind.powerpoint,
-];
-
 /// Whether the menu entry authors a blank document or takes one from disk.
 enum WorkspaceFileSource {
   create,
@@ -221,7 +240,6 @@ class WorkspaceFileMenuAction {
       kind == WorkspaceFileKind.text && source == WorkspaceFileSource.create
           ? 'Blank text file'
           : kind.label;
-
   IconData get icon => kind.icon;
 
   @override
@@ -240,6 +258,7 @@ class WorkspaceFileMenuAction {
 /// types can be taken from disk instead.
 const List<WorkspaceFileMenuAction> workspaceFileMenuActions = [
   WorkspaceFileMenuAction(WorkspaceFileKind.text, WorkspaceFileSource.create),
+  WorkspaceFileMenuAction(WorkspaceFileKind.code, WorkspaceFileSource.create),
   WorkspaceFileMenuAction(
     WorkspaceFileKind.markdown,
     WorkspaceFileSource.create,
@@ -252,6 +271,7 @@ const List<WorkspaceFileMenuAction> workspaceFileMenuActions = [
     WorkspaceFileSource.create,
   ),
   WorkspaceFileMenuAction(WorkspaceFileKind.file, WorkspaceFileSource.upload),
+  WorkspaceFileMenuAction(WorkspaceFileKind.code, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.pdf, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.image, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.video, WorkspaceFileSource.upload),

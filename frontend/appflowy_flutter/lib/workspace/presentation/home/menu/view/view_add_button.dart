@@ -315,12 +315,19 @@ class WorkspaceFileKindMenu extends StatelessWidget {
     }
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 210),
+      constraints: BoxConstraints(
+        minWidth: 210,
+        // The list is long enough to run past a short window, so it scrolls
+        // instead of overflowing the popover.
+        maxHeight: MediaQuery.sizeOf(context).height * 0.62,
+      ),
       child: IntrinsicWidth(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: children,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: children,
+          ),
         ),
       ),
     );

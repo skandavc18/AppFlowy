@@ -27,12 +27,10 @@ void main() {
       expect(WorkspaceFileKind.fromName(''), isNull);
     });
 
-    test('offers every advertised type in the menu exactly once', () {
-      expect(
-        workspaceFileMenuKinds.toSet().length,
-        workspaceFileMenuKinds.length,
-      );
-      expect(workspaceFileMenuKinds, containsAll(WorkspaceFileKind.values));
+    test('offers every type somewhere in the menu', () {
+      final offered =
+          workspaceFileMenuActions.map((action) => action.kind).toSet();
+      expect(offered, containsAll(WorkspaceFileKind.values));
     });
   });
 

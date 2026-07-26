@@ -22,7 +22,9 @@ import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/log.dart';
@@ -502,10 +504,12 @@ class _DatabasePagePreview extends StatelessWidget {
   }
 }
 
+/// A search preview never scrolls, so only the opening of a file is read.
+const _maxFilePreviewBytes = 8 * 1024;
+
 /// The preview of a standalone file: a picture, the first page of a PDF, the
 /// head of a text file, or a card naming what the attachment is.
-class _WorkspaceFilePreview extends StatelessWidget {
-  const _WorkspaceFilePreview({super.key, required this.view});
+class _WorkspaceFilePreview extends StatelessWidget {  const _WorkspaceFilePreview({super.key, required this.view});
 
   final ViewPB view;
 
@@ -540,6 +544,9 @@ class _WorkspaceFilePreview extends StatelessWidget {
     final kind = filePreviewKindFromName(_name);
     if (kind == FilePreviewKind.pdf) {
       return _FilePreviewPdfPage(path: path, fallback: _fallback);
+    }
+    if (kind == FilePreviewKind.markdown) {
+      return _FilePreviewMarkdown(path: path, fallback: _fallback);
     }
     if (kind != null && kind != FilePreviewKind.archive) {
       return _FilePreviewText(path: path, fallback: _fallback);
@@ -696,6 +703,66 @@ class _FilePreviewPdfPage extends StatelessWidget {
   }
 }
 
+/// Markdown reads as markdown, not as its source.
+class _FilePreviewMarkdown extends StatefulWidget {
+  const _FilePreviewMarkdown({required this.path, required this.fallback});
+
+  final String path;
+  final Widget fallback;
+
+  @override
+  State<_FilePreviewMarkdown> createState() => _FilePreviewMarkdownState();
+}
+
+class _FilePreviewMarkdownState extends State<_FilePreviewMarkdown> {
+  late Future<String> source = _read();
+
+  @override
+  void didUpdateWidget(covariant _FilePreviewMarkdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      source = _read();
+    }
+  }
+
+  Future<String> _read() async {
+    final handle = await File(widget.path).open();
+    try {
+      final bytes = await handle.read(_maxFilePreviewBytes);
+      return const Utf8Decoder(allowMalformed: true).convert(bytes);
+    } finally {
+      await handle.close();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<String>(
+      future: source,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return widget.fallback;
+        }
+        final text = snapshot.data;
+        if (text == null) {
+          return const SizedBox.shrink();
+        }
+        if (text.trim().isEmpty) {
+          return widget.fallback;
+        }
+        final blocks = parseMarkdownPreviewBlocks(text, maximumBlocks: 24);
+        if (blocks.isEmpty) {
+          return widget.fallback;
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
+          child: FolderGalleryRichTextPreview(blocks: blocks),
+        );
+      },
+    );
+  }
+}
+
 class _FilePreviewText extends StatefulWidget {
   const _FilePreviewText({required this.path, required this.fallback});
 
@@ -707,8 +774,6 @@ class _FilePreviewText extends StatefulWidget {
 }
 
 class _FilePreviewTextState extends State<_FilePreviewText> {
-  static const _maxPreviewBytes = 8 * 1024;
-
   late Future<String> head;
 
   @override
@@ -729,7 +794,7 @@ class _FilePreviewTextState extends State<_FilePreviewText> {
   Future<String> _readHead() async {
     final handle = await File(widget.path).open();
     try {
-      final bytes = await handle.read(_maxPreviewBytes);
+      final bytes = await handle.read(_maxFilePreviewBytes);
       return const Utf8Decoder(allowMalformed: true).convert(bytes);
     } finally {
       await handle.close();

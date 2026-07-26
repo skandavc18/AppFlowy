@@ -94,6 +94,10 @@ abstract final class KnowledgeGalleryLayout {
   static const cardSpacing = 30.0;
   static const minimumCardWidth = 285.0;
 
+  /// Every card is the same height, so the grid reads as rows and columns
+  /// rather than a staggered wall with holes in it.
+  static const cardHeight = 376.0;
+
   static double horizontalPadding(double width) {
     if (!width.isFinite || width <= 0) {
       return minimumHorizontalPadding;

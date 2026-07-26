@@ -134,11 +134,11 @@ class _FolderExplorerState extends State<FolderExplorer> {
             searchController: searchController,
             onSearchChanged: _scheduleSearch,
             onNavigate: (id) => unawaited(_navigateTo(id)),
-            onNewNote: () => controller.beginCreate(
-              WorkspaceExplorerDraftKind.file,
-              parentId: controller.currentFolder.id,
-              suggestedName:
-                  LocaleKeys.workspaceFolderExplorer_untitledNote.tr(),
+            onNewNote: (action) => unawaited(
+              _createFileOfKind(
+                action,
+                parentId: controller.currentFolder.id,
+              ),
             ),
             onMore: (position) => unawaited(_showGalleryMenu(position)),
           )

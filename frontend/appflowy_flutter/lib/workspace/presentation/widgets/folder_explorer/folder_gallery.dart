@@ -25,7 +25,6 @@ import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:pdfrx/pdfrx.dart';
@@ -320,13 +319,14 @@ class _FolderGalleryState extends State<FolderGallery> {
                     horizontal,
                     84,
                   ),
-                  sliver: SliverMasonryGrid(
+                  sliver: SliverGrid(
                     gridDelegate:
-                        SliverSimpleGridDelegateWithFixedCrossAxisCount(
+                        SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossAxisCount,
+                      mainAxisSpacing: KnowledgeGalleryLayout.cardSpacing,
+                      crossAxisSpacing: KnowledgeGalleryLayout.cardSpacing,
+                      mainAxisExtent: KnowledgeGalleryLayout.cardHeight,
                     ),
-                    mainAxisSpacing: KnowledgeGalleryLayout.cardSpacing,
-                    crossAxisSpacing: KnowledgeGalleryLayout.cardSpacing,
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
                         if (showDraft && index == 0) {
@@ -693,6 +693,9 @@ class _FolderGalleryCardState extends State<FolderGalleryCard> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(22),
               child: Stack(
+                // The grid hands every card the same height; the content
+                // stretches to fill it so no card is left short.
+                fit: StackFit.expand,
                 children: [
                   if (isPaper)
                     const Positioned.fill(
@@ -790,31 +793,31 @@ class _GalleryCardContent extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SizedBox(
-          key: const ValueKey('folder-gallery-preview-stage'),
-          height: _galleryPreviewHeight,
-          child: previewMode == ViewPreviewMode.cover && cover != null
-              ? ViewCoverImage(
-                  cover: cover,
-                  userProfile: userProfile,
-                  width: double.infinity,
-                  height: _galleryPreviewHeight,
-                )
-              : previewMode == ViewPreviewMode.content && item.isFolder
-                  ? FolderContentPreviewThumbnail(
-                      folder: view,
-                      userProfile: userProfile,
-                    )
-                  : hasMediaPreview
-                      ? _GalleryMediaPreview(
-                          preview: preview,
-                          userProfile: userProfile,
-                        )
-                      : _GalleryPreviewStage(
-                          item: item,
-                          preview: preview,
-                          userProfile: userProfile,
-                        ),
+        Expanded(
+          child: KeyedSubtree(
+            key: const ValueKey('folder-gallery-preview-stage'),
+            child: previewMode == ViewPreviewMode.cover && cover != null
+                ? ViewCoverImage(
+                    cover: cover,
+                    userProfile: userProfile,
+                    width: double.infinity,
+                  )
+                : previewMode == ViewPreviewMode.content && item.isFolder
+                    ? FolderContentPreviewThumbnail(
+                        folder: view,
+                        userProfile: userProfile,
+                      )
+                    : hasMediaPreview
+                        ? _GalleryMediaPreview(
+                            preview: preview,
+                            userProfile: userProfile,
+                          )
+                        : _GalleryPreviewStage(
+                            item: item,
+                            preview: preview,
+                            userProfile: userProfile,
+                          ),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(21, 19, 21, 20),
@@ -1022,7 +1025,7 @@ class _GalleryPreviewBody extends StatelessWidget {
         ),
       FolderGalleryPreviewKind.document => preview.blocks.isEmpty
           ? _GalleryBlankDocumentPreview(item: item)
-          : _GalleryRichDocumentPreview(blocks: preview.blocks),
+          : FolderGalleryRichTextPreview(blocks: preview.blocks),
       FolderGalleryPreviewKind.image ||
       FolderGalleryPreviewKind.pdf ||
       FolderGalleryPreviewKind.video =>
@@ -1034,8 +1037,11 @@ class _GalleryPreviewBody extends StatelessWidget {
   }
 }
 
-class _GalleryRichDocumentPreview extends StatelessWidget {
-  const _GalleryRichDocumentPreview({required this.blocks});
+/// Renders preview blocks — headings, lists, quotes, code — as a compact
+/// card of text. Shared by the gallery card and the search preview so a file
+/// reads the same wherever it is previewed.
+class FolderGalleryRichTextPreview extends StatelessWidget {
+  const FolderGalleryRichTextPreview({super.key, required this.blocks});
 
   final List<FolderGalleryPreviewBlock> blocks;
 
@@ -2643,37 +2649,38 @@ class _GalleryCardSkeleton extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          height: _galleryPreviewHeight,
-          padding: const EdgeInsets.fromLTRB(27, 32, 27, 24),
-          color: palette.floatingSurface.withValues(alpha: 0.56),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 92,
-                height: 11,
-                decoration: BoxDecoration(
-                  color: palette.textMuted.withValues(alpha: 0.11),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              const SizedBox(height: 24),
-              for (final width in [0.94, 0.76, 0.88, 0.61, 0.82, 0.49]) ...[
-                FractionallySizedBox(
-                  widthFactor: width,
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    height: 6,
-                    decoration: BoxDecoration(
-                      color: palette.textMuted.withValues(alpha: 0.085),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(27, 32, 27, 24),
+            color: palette.floatingSurface.withValues(alpha: 0.56),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 92,
+                  height: 11,
+                  decoration: BoxDecoration(
+                    color: palette.textMuted.withValues(alpha: 0.11),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                 ),
-                const SizedBox(height: 13),
+                const SizedBox(height: 24),
+                for (final width in [0.94, 0.76, 0.88, 0.61, 0.82, 0.49]) ...[
+                  FractionallySizedBox(
+                    widthFactor: width,
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: palette.textMuted.withValues(alpha: 0.085),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 13),
+                ],
               ],
-            ],
+            ),
           ),
         ),
         Padding(

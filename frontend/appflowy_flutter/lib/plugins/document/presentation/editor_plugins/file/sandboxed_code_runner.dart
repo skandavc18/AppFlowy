@@ -722,7 +722,11 @@ class _CodeBlockHeader extends StatelessWidget {
                       ),
                     ),
                   ],
-                  const Spacer(),
+                  // The controls stay with the identity they belong to. Pushed
+                  // to the far edge they drift half a window away from the
+                  // language picker on a wide editor. Flexible so the gap
+                  // collapses first when the block is narrow.
+                  const Flexible(child: SizedBox(width: 14)),
                   if (!veryCompact) ...[
                     _CodeToolbarButton(
                       palette: palette,
@@ -1309,7 +1313,8 @@ String codeLanguageForName(String name) {
     '.json' => 'json',
     '.html' || '.htm' => 'html',
     '.css' || '.scss' || '.sass' || '.less' => 'css',
-    '.sh' || '.ps1' => 'shell',
+    '.sh' => 'shell',
+    '.ps1' => 'powershell',
     '.sql' => 'sql',
     _ => 'text',
   };
@@ -1326,6 +1331,7 @@ String fileNameForCodeLanguage(String language) {
     'kotlin' => 'kt',
     'rust' => 'rs',
     'shell' => 'sh',
+    'powershell' => 'ps1',
     'text' => 'txt',
     _ => normalizedLanguage,
   };

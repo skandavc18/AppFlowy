@@ -10,8 +10,10 @@ import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
@@ -41,7 +43,7 @@ class FolderGalleryHeader extends StatefulWidget {
   final TextEditingController searchController;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onNavigate;
-  final VoidCallback onNewNote;
+  final ValueChanged<WorkspaceFileMenuAction> onNewNote;
   final ValueChanged<Offset> onMore;
   final UserProfilePB? userProfile;
   final UserWorkspacePB? workspace;
@@ -376,12 +378,27 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
             ),
           ),
         ),
-        _GalleryControl(
-          icon: Icons.add_rounded,
-          label: LocaleKeys.workspaceFolderExplorer_newNote.tr(),
-          semanticLabel: LocaleKeys.workspaceFolderExplorer_newNote.tr(),
-          primary: true,
-          onPressed: widget.onNewNote,
+        Builder(
+          builder: (buttonContext) => _GalleryControl(
+            icon: Icons.add_rounded,
+            label: LocaleKeys.workspaceFolderExplorer_newNote.tr(),
+            semanticLabel: LocaleKeys.workspaceFolderExplorer_newNote.tr(),
+            primary: true,
+            onPressed: () async {
+              final box = buttonContext.findRenderObject() as RenderBox?;
+              if (box == null) {
+                return;
+              }
+              final action = await showWorkspaceFileKindMenu(
+                context: buttonContext,
+                globalPosition:
+                    box.localToGlobal(Offset(0, box.size.height + 4)),
+              );
+              if (action != null) {
+                widget.onNewNote(action);
+              }
+            },
+          ),
         ),
         Builder(
           builder: (buttonContext) => _GalleryControl(

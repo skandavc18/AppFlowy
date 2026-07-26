@@ -148,6 +148,9 @@ String normalizeCodeLanguage(String language) {
 String _grammarForLanguage(String language) => switch (language) {
       'c' => 'cpp',
       'html' => 'xml',
+      // highlight.js's `shell` grammar only marks up a console session's
+      // prompt. Script files want the bash grammar.
+      'shell' => 'bash',
       _ => language,
     };
 

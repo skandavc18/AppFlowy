@@ -137,8 +137,12 @@ class _FilePreviewState extends State<FilePreview> {
           editable: widget.editable,
           language: widget.kind.sourceLanguage,
           showLineNumbers: true,
+          // The viewport already paints the sheet; a second surface here
+          // would read as a grey band under the header.
+          surfaceColor: Colors.transparent,
           onChanged: (_) {},
         ),
+        writingSurface: true,
       );
     }
     return switch (widget.kind) {
@@ -208,15 +212,23 @@ class _FilePreviewState extends State<FilePreview> {
     };
   }
 
-  Widget _buildPreviewScaffold(Widget child) {
-    return DocumentViewport(
-      framed: false,
-      revealKey: widget.file.path,
-      identity: _documentIdentity(),
-      actions: [
-        if (widget.toolbarTrailing != null) widget.toolbarTrailing!,
-      ],
-      child: DocumentScrollScope(child: child),
+  Widget _buildPreviewScaffold(Widget child, {bool writingSurface = false}) {
+    return Builder(
+      builder: (context) => DocumentViewport(
+        framed: false,
+        // Typing happens on the same sheet the header sits on. The viewport's
+        // usual canvas is a shade darker, which read as a grey band the
+        // moment the editor appeared.
+        background: writingSurface
+            ? DocumentViewportStyle.of(context).chrome.withValues(alpha: 1)
+            : null,
+        revealKey: widget.file.path,
+        identity: _documentIdentity(),
+        actions: [
+          if (widget.toolbarTrailing != null) widget.toolbarTrailing!,
+        ],
+        child: DocumentScrollScope(child: child),
+      ),
     );
   }
 
@@ -741,6 +753,7 @@ class _EditableCodeFile extends StatefulWidget {
     required this.language,
     required this.showLineNumbers,
     required this.onChanged,
+    this.surfaceColor,
   });
 
   final File file;
@@ -749,6 +762,10 @@ class _EditableCodeFile extends StatefulWidget {
   final String language;
   final bool showLineNumbers;
   final ValueChanged<String> onChanged;
+
+  /// What to paint behind the code. Defaults to the code shell's own surface;
+  /// pass a transparent colour to let the host's page show through.
+  final Color? surfaceColor;
 
   @override
   State<_EditableCodeFile> createState() => _EditableCodeFileState();
@@ -802,7 +819,7 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
     final lineCount = '\n'.allMatches(controller.text).length + 1;
     final appFlowyTheme = AppFlowyTheme.of(context);
     // The same surface the code chrome uses, so the card stays uniform.
-    final surfaceColor = codeBlockSurfaceColor(context);
+    final surfaceColor = widget.surfaceColor ?? codeBlockSurfaceColor(context);
     // The gutter and the code must share one metric, otherwise the numbers
     // drift away from their lines as the file grows.
     final codeStyle = _codeFileTextStyle(
@@ -851,8 +868,11 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
               decoration: InputDecoration(
                 contentPadding: const EdgeInsets.all(12),
                 border: InputBorder.none,
-                filled: true,
-                fillColor: surfaceColor,
+                // The surrounding box already paints the sheet. A filled
+                // field would blend Material's hover colour over it and grey
+                // the whole editor out under the pointer.
+                filled: false,
+                hoverColor: Colors.transparent,
               ),
               onChanged: (value) {
                 setState(() {});
