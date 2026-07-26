@@ -52,8 +52,7 @@ class _ImageEditorIconButtonState extends State<ImageEditorIconButton> {
       message: widget.tooltip,
       waitDuration: const Duration(milliseconds: 400),
       child: MouseRegion(
-        cursor:
-            enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
         onEnter: (_) => setState(() => _hovering = true),
         onExit: (_) => setState(() => _hovering = false),
         child: GestureDetector(
@@ -123,7 +122,8 @@ class _ImageEditorTextButtonState extends State<ImageEditorTextButton> {
           : palette.control;
       foreground = enabled ? palette.onAccent : palette.textMuted;
     } else {
-      background = _hovering && enabled ? palette.controlHover : Colors.transparent;
+      background =
+          _hovering && enabled ? palette.controlHover : Colors.transparent;
       foreground = enabled ? palette.textSecondary : palette.textMuted;
     }
 
@@ -214,7 +214,8 @@ class _ImageEditorChipState extends State<ImageEditorChip> {
           duration: ImageEditorMotion.instant,
           curve: ImageEditorMotion.curve,
           height: 30,
-          padding: EdgeInsets.symmetric(horizontal: widget.icon != null ? 10 : 12),
+          padding:
+              EdgeInsets.symmetric(horizontal: widget.icon != null ? 10 : 12),
           decoration: BoxDecoration(
             color: widget.selected
                 ? palette.controlActive

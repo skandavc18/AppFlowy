@@ -44,9 +44,7 @@ void main() {
 
     test('drops empty lines and reports nothing for an empty frame', () {
       expect(
-        engine
-            .parseWindowsOutput('{"width":0,"height":0,"lines":[]}')
-            .isEmpty,
+        engine.parseWindowsOutput('{"width":0,"height":0,"lines":[]}').isEmpty,
         isTrue,
       );
       expect(

@@ -421,8 +421,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
             palette: palette,
             filled: true,
             busy: _saving,
-            onPressed:
-                _image == null || _current.isPristine ? null : _save,
+            onPressed: _image == null || _current.isPristine ? null : _save,
           ),
           const SizedBox(width: 6),
           ImageEditorIconButton(
@@ -1152,8 +1151,7 @@ class _FilterTile extends StatelessWidget {
   }
 
   static Rect _squareCrop(ui.Image image, ImageTransform transform) {
-    final oriented =
-        ImageEditGeometry.forImage(image, transform).orientedSize;
+    final oriented = ImageEditGeometry.forImage(image, transform).orientedSize;
     return ImageEditorViewportState.centeredCropForRatio(oriented, 1);
   }
 }

@@ -188,9 +188,8 @@ class ImageEditGeometry {
   bool get _isQuarterTurned => transform.quarterTurns.isOdd;
 
   /// Size of the image after rotation, before cropping.
-  Size get orientedSize => _isQuarterTurned
-      ? Size(imageSize.height, imageSize.width)
-      : imageSize;
+  Size get orientedSize =>
+      _isQuarterTurned ? Size(imageSize.height, imageSize.width) : imageSize;
 
   Rect get cropRect {
     final oriented = orientedSize;
@@ -405,8 +404,8 @@ void _paintTonePass(
     return;
   }
   final paint = ui.Paint()
-    ..colorFilter =
-        ui.ColorFilter.matrix(_toneMaskMatrix(baseMatrix, highlights: highlights))
+    ..colorFilter = ui.ColorFilter.matrix(
+        _toneMaskMatrix(baseMatrix, highlights: highlights))
     ..color = ui.Color.fromRGBO(255, 255, 255, strength)
     // Adding white lifts the masked range; multiplying by the mask's inverse
     // pulls it down. Both keep untouched tones exactly where they were.
@@ -451,7 +450,8 @@ void _paintSharpenPass(
   canvas.drawImage(
     image,
     Offset.zero,
-    ui.Paint()..colorFilter = ui.ColorFilter.matrix(_compose(halve, baseMatrix)),
+    ui.Paint()
+      ..colorFilter = ui.ColorFilter.matrix(_compose(halve, baseMatrix)),
   );
   canvas.drawImage(
     image,
@@ -549,7 +549,8 @@ void paintAnnotations(
             ..blendMode = ui.BlendMode.srcOver,
         );
       case ImageAnnotationTool.freehand:
-        final path = Path()..moveTo(
+        final path = Path()
+          ..moveTo(
             toLocal(annotation.points.first).dx,
             toLocal(annotation.points.first).dy,
           );
@@ -561,7 +562,8 @@ void paintAnnotations(
       case ImageAnnotationTool.text:
         _paintText(canvas, toLocal(annotation.points.first), annotation, area);
       case ImageAnnotationTool.marker:
-        _paintMarker(canvas, toLocal(annotation.points.first), annotation, area);
+        _paintMarker(
+            canvas, toLocal(annotation.points.first), annotation, area);
     }
   }
   canvas.restore();

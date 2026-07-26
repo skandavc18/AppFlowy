@@ -217,7 +217,8 @@ class ImageEditorViewportState extends State<ImageEditorViewport>
     );
   }
 
-  void _zoomAround(Offset focalPoint, double targetZoom, {bool animate = true}) {
+  void _zoomAround(Offset focalPoint, double targetZoom,
+      {bool animate = true}) {
     final clamped = targetZoom.clamp(_minZoom, _maxZoom);
     final center = Offset(_viewportSize.width / 2, _viewportSize.height / 2);
     // Keep whatever sits under the pointer pinned in place.
@@ -612,8 +613,8 @@ class ImageEditorViewportState extends State<ImageEditorViewport>
       return;
     }
     final tool = widget.annotationTool;
-    final isPlacement = tool == ImageAnnotationTool.text ||
-        tool == ImageAnnotationTool.marker;
+    final isPlacement =
+        tool == ImageAnnotationTool.text || tool == ImageAnnotationTool.marker;
     if (!isPlacement &&
         (points.first - points.last).distance < 0.008 &&
         tool != ImageAnnotationTool.freehand) {
@@ -722,8 +723,10 @@ class _ViewportPainter extends CustomPainter {
     for (var i = 1; i < 3; i++) {
       final dx = frame.left + frame.width * i / 3;
       final dy = frame.top + frame.height * i / 3;
-      canvas.drawLine(Offset(dx, frame.top), Offset(dx, frame.bottom), gridPaint);
-      canvas.drawLine(Offset(frame.left, dy), Offset(frame.right, dy), gridPaint);
+      canvas.drawLine(
+          Offset(dx, frame.top), Offset(dx, frame.bottom), gridPaint);
+      canvas.drawLine(
+          Offset(frame.left, dy), Offset(frame.right, dy), gridPaint);
     }
 
     canvas.drawRect(

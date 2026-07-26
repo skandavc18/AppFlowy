@@ -339,8 +339,7 @@ class _ImageMenuState extends State<ImageMenu> {
   /// Puts the whole block on the clipboard — as a pasteable AppFlowy node and
   /// as a bitmap for other apps — and then removes it from the document.
   Future<void> cutBlock() async {
-    final document = Document.blank()
-      ..insert([0], [widget.node.deepCopy()]);
+    final document = Document.blank()..insert([0], [widget.node.deepCopy()]);
 
     try {
       await getIt<ClipboardService>().setData(
@@ -387,7 +386,8 @@ class _ImageMenuState extends State<ImageMenu> {
   }
 
   /// Opens the fullscreen editor and writes the result back into the block.
-  Future<void> editImage() async {    final source = url;
+  Future<void> editImage() async {
+    final source = url;
     if (source == null || source.isEmpty) {
       return;
     }

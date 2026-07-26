@@ -129,7 +129,7 @@ class _ImageOcrOverlayState extends State<ImageOcrOverlay>
           p.join(
             directory.path,
             'appflowy-ocr-${DateTime.now().microsecondsSinceEpoch}'
-                '.${imageExtensionFor(sniffImageFormat(bytes))}',
+            '.${imageExtensionFor(sniffImageFormat(bytes))}',
           ),
         );
         await temporary.writeAsBytes(bytes, flush: true);
@@ -209,7 +209,8 @@ class _ImageOcrOverlayState extends State<ImageOcrOverlay>
     unawaited(_copyPulse.forward(from: 0));
   }
 
-  Future<bool> _copy(String text, {String? toast, bool showToast = true}) async {
+  Future<bool> _copy(String text,
+      {String? toast, bool showToast = true}) async {
     if (text.isEmpty) {
       return false;
     }
@@ -349,7 +350,8 @@ class _ImageOcrOverlayState extends State<ImageOcrOverlay>
               label: 'Copy selected',
               palette: palette,
               icon: Icons.content_copy_rounded,
-              onPressed: _selected.isEmpty ? null : () => unawaited(_copySelected()),
+              onPressed:
+                  _selected.isEmpty ? null : () => unawaited(_copySelected()),
             ),
             const SizedBox(width: 6),
             ImageEditorTextButton(
@@ -401,7 +403,8 @@ class _ImageOcrOverlayState extends State<ImageOcrOverlay>
               left: 0,
               right: 0,
               bottom: 26,
-              child: Center(child: _CopiedPill(pulse: _copyPulse, palette: palette)),
+              child: Center(
+                  child: _CopiedPill(pulse: _copyPulse, palette: palette)),
             ),
           if (_scanning)
             Positioned.fill(
@@ -464,9 +467,7 @@ class _ImageOcrOverlayState extends State<ImageOcrOverlay>
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Icon(
-              isError
-                  ? Icons.error_outline_rounded
-                  : Icons.text_fields_rounded,
+              isError ? Icons.error_outline_rounded : Icons.text_fields_rounded,
               size: 22,
               color: isError ? palette.accent : palette.textMuted,
             ),
@@ -868,7 +869,8 @@ class _OcrPainter extends CustomPainter {
         ..strokeWidth = 2.2 * (1 - eased) + 0.8,
     );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(boxes[index].inflate(2), const Radius.circular(3)),
+      RRect.fromRectAndRadius(
+          boxes[index].inflate(2), const Radius.circular(3)),
       Paint()..color = accent.withValues(alpha: 0.3 * (1 - eased)),
     );
   }
@@ -1002,9 +1004,7 @@ class _OcrLineRow extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 1),
                 child: Icon(
-                  selected
-                      ? Icons.check_circle_rounded
-                      : Icons.circle_outlined,
+                  selected ? Icons.check_circle_rounded : Icons.circle_outlined,
                   size: 14,
                   color: selected ? palette.accent : palette.textMuted,
                 ),
@@ -1014,9 +1014,8 @@ class _OcrLineRow extends StatelessWidget {
                 child: Text(
                   text,
                   style: TextStyle(
-                    color: selected
-                        ? palette.textPrimary
-                        : palette.textSecondary,
+                    color:
+                        selected ? palette.textPrimary : palette.textSecondary,
                     fontSize: 12.5,
                     height: 1.4,
                   ),
