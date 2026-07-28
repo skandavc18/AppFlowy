@@ -109,8 +109,7 @@ void main() {
     expect(find.widgetWithText(TextButton, 'bundle.zip'), findsOneWidget);
   });
 
-  testWidgets('a read only archive offers no editing controls',
-      (tester) async {
+  testWidgets('a read only archive offers no editing controls', (tester) async {
     await pumpArchive(tester, editable: false);
 
     expect(find.byTooltip('Add files to this archive'), findsNothing);

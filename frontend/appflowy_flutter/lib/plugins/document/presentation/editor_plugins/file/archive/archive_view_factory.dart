@@ -49,7 +49,8 @@ class ArchiveViewFactory {
   final Map<String, String> _extracted = {};
   int _extractedBytes = 0;
 
-  String viewIdFor(String path) => path.isEmpty ? archiveId : '$archiveId::$path';
+  String viewIdFor(String path) =>
+      path.isEmpty ? archiveId : '$archiveId::$path';
 
   /// The view that stands for the archive itself, or a folder inside it.
   ViewPB folderView({
@@ -123,7 +124,8 @@ class ArchiveViewFactory {
         p.join(workingDirectory.path, p.joinAll(entry.path.split('/'))),
       );
       await destination.parent.create(recursive: true);
-      await destination.writeAsBytes(document.readBytes(entry.path), flush: true);
+      await destination.writeAsBytes(document.readBytes(entry.path),
+          flush: true);
       _extractedBytes += entry.size;
       _extracted[entry.path] = destination.path;
       return destination.path;

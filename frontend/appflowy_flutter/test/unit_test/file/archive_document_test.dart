@@ -5,7 +5,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archi
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Uint8List _zip(Map<String, String> files, {List<String> directories = const []}) {
+Uint8List _zip(Map<String, String> files,
+    {List<String> directories = const []}) {
   final archive = Archive();
   for (final directory in directories) {
     archive.addFile(ArchiveFile('$directory/', 0, <int>[])..isFile = false);

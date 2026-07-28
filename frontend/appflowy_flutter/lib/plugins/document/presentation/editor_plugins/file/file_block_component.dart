@@ -747,9 +747,8 @@ class FileBlockComponentState extends State<FileBlockComponent>
               file: file,
               name: name,
               editable: editorState.editable && urlType == FileUrlType.local,
-              toolbarTrailing: UniversalPlatform.isDesktopOrWeb
-                  ? _buildPreviewMenu()
-                  : null,
+              toolbarTrailing:
+                  UniversalPlatform.isDesktopOrWeb ? _buildPreviewMenu() : null,
             );
           },
         ),

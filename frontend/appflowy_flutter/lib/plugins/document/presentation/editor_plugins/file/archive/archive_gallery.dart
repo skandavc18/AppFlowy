@@ -56,11 +56,9 @@ class ArchiveGallery extends StatelessWidget {
 
   final String emptyMessage;
 
-  double get _cardHeight =>
-      compact ? 292 : KnowledgeGalleryLayout.cardHeight;
+  double get _cardHeight => compact ? 292 : KnowledgeGalleryLayout.cardHeight;
 
-  double get _spacing =>
-      compact ? 16 : KnowledgeGalleryLayout.cardSpacing;
+  double get _spacing => compact ? 16 : KnowledgeGalleryLayout.cardSpacing;
 
   double get _minimumCardWidth =>
       compact ? 218 : KnowledgeGalleryLayout.minimumCardWidth;

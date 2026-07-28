@@ -907,7 +907,8 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
                 compact: widget.embedded,
                 selectedPath: selectedPath,
                 renamingPath: renamingPath,
-                editable: widget.editable && (value?.supportsMultipleEntries ?? false),
+                editable: widget.editable &&
+                    (value?.supportsMultipleEntries ?? false),
                 onSelect: (entry) =>
                     setState(() => selectedPath = entry.entry.path),
                 onOpen: _open,

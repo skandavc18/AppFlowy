@@ -217,7 +217,12 @@ IconData fileIconForExtension(String extension) {
     'wma' =>
       Icons.audiotrack_rounded,
     'ttf' || 'otf' || 'woff' || 'woff2' => Icons.font_download_rounded,
-    'exe' || 'msi' || 'apk' || 'dmg' || 'deb' || 'rpm' =>
+    'exe' ||
+    'msi' ||
+    'apk' ||
+    'dmg' ||
+    'deb' ||
+    'rpm' =>
       Icons.terminal_rounded,
     _ => Icons.insert_drive_file_rounded,
   };

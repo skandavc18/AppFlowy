@@ -78,7 +78,8 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
             actions: [
               WorkspaceItemAddAction(WorkspaceItemAddKind.folder),
               WorkspaceFileAddAction(
-                onCreate: (action) => unawaited(_createWorkspaceRootFile(action)),
+                onCreate: (action) =>
+                    unawaited(_createWorkspaceRootFile(action)),
               ),
             ],
             buildChild: (popover) => FlowyIconButton(

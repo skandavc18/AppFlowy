@@ -36,7 +36,8 @@ enum ArchiveFormat {
 
   /// Whether new folders can be stored. A single-file stream has nowhere to
   /// put them, and neither does a plain tar member list.
-  bool get supportsFolders => this != ArchiveFormat.gzip &&
+  bool get supportsFolders =>
+      this != ArchiveFormat.gzip &&
       this != ArchiveFormat.bzip2 &&
       this != ArchiveFormat.xz;
 
@@ -534,9 +535,8 @@ class ArchiveDocument {
   /// The bytes for the current contents, in the format it was read from.
   Uint8List encode() {
     if (!format.isContainer) {
-      final only = _files.values.isEmpty
-          ? Uint8List(0)
-          : _bytesOf(_files.values.first);
+      final only =
+          _files.values.isEmpty ? Uint8List(0) : _bytesOf(_files.values.first);
       return Uint8List.fromList(_compress(only, format));
     }
     final archive = Archive();

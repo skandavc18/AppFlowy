@@ -131,8 +131,7 @@ List<String> _readCells(String row, List<String> shared) {
 String? _firstWorksheet(ArchiveDocument document) {
   final sheets = document.paths
       .where(
-        (path) =>
-            path.startsWith('xl/worksheets/') && path.endsWith('.xml'),
+        (path) => path.startsWith('xl/worksheets/') && path.endsWith('.xml'),
       )
       .toList()
     ..sort((a, b) => _trailingNumber(a).compareTo(_trailingNumber(b)));
@@ -148,8 +147,7 @@ int _trailingNumber(String path) {
 List<String> _readSlides(ArchiveDocument document) {
   final slides = document.paths
       .where(
-        (path) =>
-            path.startsWith('ppt/slides/slide') && path.endsWith('.xml'),
+        (path) => path.startsWith('ppt/slides/slide') && path.endsWith('.xml'),
       )
       .toList()
     ..sort((a, b) => _slideNumber(a).compareTo(_slideNumber(b)));
