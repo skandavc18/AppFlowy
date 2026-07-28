@@ -22,6 +22,7 @@ import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/cover_image_download.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide UploadImageMenu;
@@ -205,6 +206,12 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
   }
 
   Widget _buildAlignedTitle(BuildContext context) {
+    // keep the icon centered on the *first* line of the title, so a title that
+    // wraps onto a second line does not drag the icon down with it.
+    final titleLineHeight = coverTitleLineHeight(context);
+    final iconTopInset = max(0.0, (titleLineHeight - kTitleIconSize) / 2);
+    final titleTopInset = max(0.0, (kTitleIconSize - titleLineHeight) / 2);
+
     return Center(
       child: Container(
         constraints: BoxConstraints(
@@ -216,24 +223,31 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
           onEnter: (event) => isCoverTitleHovered.value = true,
           onExit: (event) => isCoverTitleHovered.value = false,
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (hasIcon) ...[
-                SizedBox.square(
-                  dimension: kTitleIconSize,
-                  child: DocumentIcon(
-                    editorState: widget.editorState,
-                    node: widget.node,
-                    icon: viewIcon,
-                    documentId: view.id,
-                    emojiSize: kTitleIconSize,
-                    onChangeIcon: (icon) => _saveIconOrCover(icon: icon),
+                Padding(
+                  padding: EdgeInsets.only(top: iconTopInset),
+                  child: SizedBox.square(
+                    dimension: kTitleIconSize,
+                    child: DocumentIcon(
+                      editorState: widget.editorState,
+                      node: widget.node,
+                      icon: viewIcon,
+                      documentId: view.id,
+                      emojiSize: kTitleIconSize,
+                      onChangeIcon: (icon) => _saveIconOrCover(icon: icon),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 14),
               ],
               Expanded(
-                child: CoverTitle(
-                  view: widget.view,
+                child: Padding(
+                  padding: EdgeInsets.only(top: hasIcon ? titleTopInset : 0.0),
+                  child: CoverTitle(
+                    view: widget.view,
+                  ),
                 ),
               ),
             ],
@@ -657,6 +671,13 @@ class DocumentCoverState extends State<DocumentCover> {
                   ),
                 ),
                 const HSpace(8.0),
+                if (_downloadableCover != null) ...[
+                  SizedBox.square(
+                    dimension: 32.0,
+                    child: DownloadCoverButton(onTap: _downloadCover),
+                  ),
+                  const HSpace(8.0),
+                ],
                 SizedBox.square(
                   dimension: 32.0,
                   child: DeleteCoverButton(
@@ -786,6 +807,14 @@ class DocumentCoverState extends State<DocumentCover> {
               },
             ),
             const HSpace(6),
+            if (_downloadableCover != null) ...[
+              DecorationActionButton(
+                icon: FlowySvgs.download_s,
+                label: LocaleKeys.document_plugins_cover_downloadCover.tr(),
+                onTap: _downloadCover,
+              ),
+              const HSpace(6),
+            ],
             DecorationActionButton(
               icon: FlowySvgs.delete_s,
               label: LocaleKeys.document_plugins_cover_removeCover.tr(),
@@ -794,6 +823,35 @@ class DocumentCoverState extends State<DocumentCover> {
           ],
         ),
       ),
+    );
+  }
+
+  /// The picture currently painted behind the page title, when there is one to
+  /// save. Covers written after 0.5.5 live on the view, older ones on the node.
+  DownloadableCoverImage? get _downloadableCover {
+    if (widget.view.extra.isNotEmpty) {
+      return DownloadableCoverImage.fromPageStyleCover(widget.view.cover);
+    }
+
+    final details = widget.coverDetails;
+    if (details == null || details.isEmpty) {
+      return null;
+    }
+    return switch (widget.coverType) {
+      CoverType.asset => DownloadableCoverImage.asset(details),
+      CoverType.file => DownloadableCoverImage.resolve(details),
+      CoverType.color || CoverType.none => null,
+    };
+  }
+
+  Future<void> _downloadCover() async {
+    final cover = _downloadableCover;
+    if (cover == null) {
+      return;
+    }
+    await downloadCoverImage(
+      cover,
+      userProfile: context.read<DocumentBloc>().state.userProfilePB,
     );
   }
 
@@ -856,6 +914,35 @@ class DeleteCoverButton extends StatelessWidget {
       width: 28,
       icon: FlowySvg(
         FlowySvgs.delete_s,
+        color: svgColor,
+      ),
+      onPressed: onTap,
+    );
+  }
+}
+
+@visibleForTesting
+class DownloadCoverButton extends StatelessWidget {
+  const DownloadCoverButton({required this.onTap, super.key});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final fillColor = UniversalPlatform.isDesktopOrWeb
+        ? Theme.of(context).colorScheme.surface.withValues(alpha: 0.5)
+        : Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.5);
+    final svgColor = UniversalPlatform.isDesktopOrWeb
+        ? Theme.of(context).colorScheme.tertiary
+        : Theme.of(context).colorScheme.onPrimary;
+    return FlowyIconButton(
+      hoverColor: Theme.of(context).colorScheme.surface,
+      fillColor: fillColor,
+      iconPadding: const EdgeInsets.all(5),
+      width: 28,
+      tooltipText: LocaleKeys.document_plugins_cover_downloadCover.tr(),
+      icon: FlowySvg(
+        FlowySvgs.download_s,
         color: svgColor,
       ),
       onPressed: onTap,

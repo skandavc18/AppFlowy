@@ -6,6 +6,7 @@ extension InsertFile on EditorState {
   Future<void> insertEmptyFileBlock(
     GlobalKey key, {
     bool showPreview = false,
+    List<String>? allowedExtensions,
   }) async {
     final selection = this.selection;
     if (selection == null || !selection.isCollapsed) {
@@ -19,9 +20,14 @@ extension InsertFile on EditorState {
     }
     final file = fileNode(url: '');
     if (showPreview) {
-      file.attributes[FileBlockKeys.displayMode] = 'preview';
+      file.updateAttributes({FileBlockKeys.displayMode: 'preview'});
     }
-    file.extraInfos = {'global_key': key};
+    file.extraInfos = {
+      FileBlockKeys.globalKey: key,
+      if (allowedExtensions?.isNotEmpty == true)
+        FileBlockKeys.pickerAllowedExtensions:
+            List<String>.unmodifiable(allowedExtensions!),
+    };
 
     final transaction = this.transaction;
 

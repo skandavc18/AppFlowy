@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
@@ -25,6 +26,7 @@ class ExplorerTree extends StatefulWidget {
     required this.onNavigate,
     required this.onContextMenu,
     required this.onRequestDelete,
+    this.onBackgroundContextMenu,
   });
 
   final WorkspaceExplorerController controller;
@@ -33,6 +35,10 @@ class ExplorerTree extends StatefulWidget {
   final void Function(WorkspaceExplorerItem item, Offset position)
       onContextMenu;
   final VoidCallback onRequestDelete;
+
+  /// Raised by a right click on empty space, so a folder can be filled
+  /// without hunting for the toolbar.
+  final ValueChanged<Offset>? onBackgroundContextMenu;
 
   @override
   State<ExplorerTree> createState() => _ExplorerTreeState();
@@ -66,6 +72,13 @@ class _ExplorerTreeState extends State<ExplorerTree> {
           focusNode.requestFocus();
           controller.selection.clear();
         },
+        onSecondaryTapDown: widget.onBackgroundContextMenu == null
+            ? null
+            : (details) {
+                focusNode.requestFocus();
+                controller.selection.clear();
+                widget.onBackgroundContextMenu!(details.globalPosition);
+              },
         child: itemCount == 0
             ? Center(
                 child: Text(
@@ -605,8 +618,8 @@ class _ExplorerDraftRow extends StatelessWidget {
         children: [
           Icon(
             draft.kind == WorkspaceExplorerDraftKind.folder
-                ? Icons.create_new_folder_outlined
-                : Icons.note_add_outlined,
+                ? workspaceAddFolderIcon
+                : workspaceAddFileIcon,
             size: 18,
             color: palette.accent,
           ),

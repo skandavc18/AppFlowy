@@ -62,11 +62,19 @@ class _PopoverActionListState<T extends PopoverAction>
   late PopoverController popoverController =
       widget.controller ?? PopoverController();
 
+  /// Keeps the nested submenus exclusive when the host did not supply a mutex,
+  /// so hovering from one submenu row to another swaps them instead of
+  /// stacking them.
+  final PopoverMutex ownedNestedMutex = PopoverMutex();
+
+  PopoverMutex get nestedMutex => widget.popoverMutex ?? ownedNestedMutex;
+
   @override
   void dispose() {
     if (widget.controller == null) {
       popoverController.close();
     }
+    ownedNestedMutex.dispose();
     super.dispose();
   }
 
@@ -105,13 +113,14 @@ class _PopoverActionListState<T extends PopoverAction>
             return ActionCellWidget<T>(
               action: action,
               itemHeight: ActionListSizes.itemHeight,
+              onHover: nestedMutex.close,
               onSelected: (action) {
                 widget.onSelected(action, popoverController);
               },
             );
           } else if (action is PopoverActionCell) {
             return PopoverActionCellWidget<T>(
-              popoverMutex: widget.popoverMutex,
+              popoverMutex: nestedMutex,
               popoverController: popoverController,
               action: action,
               itemHeight: ActionListSizes.itemHeight,
@@ -163,6 +172,17 @@ abstract class PopoverActionCell extends PopoverAction {
   Widget? rightIcon(Color iconColor) => null;
   String get name;
 
+  /// Whether pointing at the row is enough to reveal the submenu, the way a
+  /// desktop menu bar behaves. Otherwise the row has to be clicked.
+  bool get openOnHover => false;
+
+  /// Chrome for the submenu container. A cell that draws its own card returns
+  /// a blank decoration and no margin so the popover does not stack a second
+  /// card behind it.
+  Decoration? get popoverDecoration => null;
+  EdgeInsets? get popoverMargin => null;
+  BoxConstraints? get popoverConstraints => null;
+
   PopoverActionCellBuilder get builder;
 }
 
@@ -189,11 +209,16 @@ class ActionCellWidget<T extends PopoverAction> extends StatelessWidget {
     required this.action,
     required this.onSelected,
     required this.itemHeight,
+    this.onHover,
   });
 
   final T action;
   final Function(T) onSelected;
   final double itemHeight;
+
+  /// Called when the pointer arrives, so the list can dismiss a submenu that a
+  /// neighbouring row left open.
+  final VoidCallback? onHover;
 
   @override
   Widget build(BuildContext context) {
@@ -204,13 +229,21 @@ class ActionCellWidget<T extends PopoverAction> extends StatelessWidget {
     final rightIcon =
         actionCell.rightIcon(Theme.of(context).colorScheme.onSurface);
 
-    return HoverButton(
+    final Widget child = HoverButton(
       itemHeight: itemHeight,
       leftIcon: leftIcon,
       rightIcon: rightIcon,
       name: actionCell.name,
       textColor: actionCell.textColor(context),
       onTap: () => onSelected(action),
+    );
+
+    if (onHover == null) {
+      return child;
+    }
+    return MouseRegion(
+      onEnter: (_) => onHover!(),
+      child: child,
     );
   }
 }
@@ -249,6 +282,13 @@ class _PopoverActionCellWidgetState<T extends PopoverAction>
       mutex: widget.popoverMutex,
       controller: popoverController,
       asBarrier: true,
+      triggerActions: actionCell.openOnHover
+          ? PopoverTriggerFlags.hover
+          : PopoverTriggerFlags.none,
+      popoverDecoration: actionCell.popoverDecoration,
+      margin: actionCell.popoverMargin ?? const EdgeInsets.all(6),
+      constraints: actionCell.popoverConstraints ??
+          const BoxConstraints(maxWidth: 240, maxHeight: 600),
       popupBuilder: (context) => actionCell.builder(
         context,
         widget.popoverController,

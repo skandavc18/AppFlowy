@@ -41,6 +41,52 @@ void main() {
 
     expect(selected?.id, 'folder-id');
   });
+
+  testWidgets('file picker lists only stored workspace files', (tester) async {
+    final file = ViewPB()
+      ..id = 'file-id'
+      ..name = 'report.pdf'
+      ..layout = ViewLayoutPB.Document
+      ..extra = const WorkspaceItemMetadata.file(
+        contentKind: WorkspaceFileContentKind.binary,
+        mimeType: 'application/pdf',
+        storageUrl: 'C:\\AppFlowy\\files\\report.pdf',
+      ).mergeIntoExtra('');
+    final legacyFile = ViewPB()
+      ..id = 'legacy-file-id'
+      ..name = 'legacy.txt'
+      ..layout = ViewLayoutPB.Document
+      ..extra = const WorkspaceItemMetadata.file(
+        contentKind: WorkspaceFileContentKind.collaborativeText,
+      ).mergeIntoExtra('');
+    final folder = ViewPB()
+      ..id = 'folder-id'
+      ..name = 'Projects'
+      ..layout = ViewLayoutPB.Document
+      ..extra = const WorkspaceItemMetadata.folder().mergeIntoExtra('');
+    ViewPB? selected;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: WorkspaceFilePickerMenu(
+            repository: _PickerRepository([file, legacyFile, folder]),
+            onSelected: (file) => selected = file,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('report.pdf'), findsOneWidget);
+    expect(find.text('legacy.txt'), findsNothing);
+    expect(find.text('Projects'), findsNothing);
+
+    await tester.tap(find.text('report.pdf'));
+    await tester.pump();
+
+    expect(selected?.id, 'file-id');
+  });
 }
 
 class _PickerRepository implements WorkspaceItemRepository {

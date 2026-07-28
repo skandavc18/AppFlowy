@@ -24,6 +24,7 @@ enum SettingsPage {
   // OLD
   notifications,
   cloud,
+  documentEditing,
   member,
   featureFlags,
 }

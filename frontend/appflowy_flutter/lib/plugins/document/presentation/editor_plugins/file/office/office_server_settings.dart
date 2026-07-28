@@ -50,19 +50,26 @@ class OfficeServerSettings {
   /// `host.docker.internal` whenever the server itself runs on this machine.
   final String bridgeHost;
 
-  bool get isConfigured => serverUrl.trim().isNotEmpty;
+  bool get isConfigured => baseUri != null;
 
   Uri? get baseUri {
     final trimmed = serverUrl.trim();
-    if (trimmed.isEmpty) {
+    if (trimmed.isEmpty || trimmed.contains(RegExp(r'\s'))) {
       return null;
     }
-    final normalized = trimmed.startsWith('http') ? trimmed : 'http://$trimmed';
-    return Uri.tryParse(
+    final normalized = trimmed.contains('://') ? trimmed : 'http://$trimmed';
+    final uri = Uri.tryParse(
       normalized.endsWith('/')
           ? normalized.substring(0, normalized.length - 1)
           : normalized,
     );
+    if (uri == null ||
+        !uri.hasAuthority ||
+        uri.host.isEmpty ||
+        (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return null;
+    }
+    return uri;
   }
 
   /// The host AppFlowy advertises to the document server.
@@ -113,6 +120,17 @@ class OfficeServerSettings {
   int get hashCode => Object.hash(serverUrl, jwtSecret, bridgeHost);
 }
 
+String? validateOfficeServerUrl(String? value) {
+  final trimmed = value?.trim() ?? '';
+  if (trimmed.isEmpty) {
+    return 'Enter the address of your document server.';
+  }
+  if (OfficeServerSettings(serverUrl: trimmed).baseUri == null) {
+    return 'Enter a valid HTTP or HTTPS server address.';
+  }
+  return null;
+}
+
 /// The address the bridge binds to when the document server is not local.
 ///
 /// Anything other than a loopback needs a routable address; the caller can
@@ -156,6 +174,10 @@ enum OfficeServerStatus {
   connected,
   unreachable,
 }
+
+typedef OfficeServerProbe = Future<bool> Function(
+  OfficeServerSettings settings,
+);
 
 /// Asks the document server whether it is alive.
 ///

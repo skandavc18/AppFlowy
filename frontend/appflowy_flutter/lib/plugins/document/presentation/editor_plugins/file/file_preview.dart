@@ -11,8 +11,6 @@ import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
-import 'package:archive/archive.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +22,7 @@ import 'package:markdown/markdown.dart' as markdown;
 import 'package:markdown_widget/markdown_widget.dart';
 import 'package:path/path.dart' as p;
 
+import 'archive/archive_explorer.dart';
 import 'file_preview_kind.dart';
 import 'pdf_preview.dart';
 import 'pdf_preview_scroll_physics.dart';
@@ -31,8 +30,16 @@ import 'pdf_preview_theme.dart';
 import 'sandboxed_code_runner.dart';
 
 const maxTextPreviewBytes = 10 * 1024 * 1024;
-const maxArchivePreviewBytes = 50 * 1024 * 1024;
-const maxArchiveEntries = 5000;
+
+/// How tall an embedded preview is before the reader resizes it.
+///
+/// Code brings its own toolbar and terminal, and an archive brings the folder
+/// chrome, so both need more than a plain document preview.
+double defaultFilePreviewHeight(FilePreviewKind kind) => switch (kind) {
+      FilePreviewKind.code => 560,
+      FilePreviewKind.archive => 560,
+      _ => 420,
+    };
 
 class FilePreview extends StatefulWidget {
   const FilePreview({
@@ -98,14 +105,13 @@ class _FilePreviewState extends State<FilePreview> {
     final backgroundColor = pdfPalette?.canvas ??
         EditorSurfaceStyle.previewBackgroundFor(
           materialTheme.brightness,
-          appFlowyTheme.fillColorScheme.content,
+          appFlowyTheme.surfaceColorScheme.layer01,
           isPaper: PaperTheme.isEnabled(context),
         );
     return ViewerCard(
       color: backgroundColor,
       child: SizedBox(
-        height:
-            widget.height ?? (widget.kind == FilePreviewKind.code ? 560 : 420),
+        height: widget.height ?? defaultFilePreviewHeight(widget.kind),
         child: FutureBuilder<Widget>(
           future: preview,
           builder: (context, snapshot) {
@@ -168,11 +174,13 @@ class _FilePreviewState extends State<FilePreview> {
             baseDirectory: widget.file.parent.path,
           ),
         ),
-      FilePreviewKind.archive => _buildPreviewScaffold(
-          _ArchivePreview(
-            file: widget.file,
-            editable: widget.editable,
-          ),
+      FilePreviewKind.archive => ArchiveExplorer(
+          key: ValueKey('${widget.file.path}_archive'),
+          file: widget.file,
+          name: widget.name,
+          editable: widget.editable,
+          embedded: false,
+          toolbarTrailing: widget.toolbarTrailing,
         ),
       FilePreviewKind.csv => _buildPreviewScaffold(
           _CsvPreview(
@@ -315,28 +323,35 @@ class _MarkdownPreviewState extends State<_MarkdownPreview> {
   }
 
   void _renderMarkdown() {
-    final materialTheme = Theme.of(context);
-    final appFlowyTheme = AppFlowyTheme.of(context);
-    final isPaper = PaperTheme.isEnabled(context);
-    final codeBackground = EditorSurfaceStyle.codeBlockBackgroundFor(
+    renderedHtml = buildThemedMarkdownPreviewHtml(context, widget.markdown);
+  }
+}
+
+@visibleForTesting
+String buildThemedMarkdownPreviewHtml(
+  BuildContext context,
+  String source,
+) {
+  final materialTheme = Theme.of(context);
+  final appFlowyTheme = AppFlowyTheme.of(context);
+  final isPaper = PaperTheme.isEnabled(context);
+  return buildMarkdownPreviewHtml(
+    source,
+    brightness: materialTheme.brightness,
+    backgroundColor: EditorSurfaceStyle.previewBackgroundFor(
+      materialTheme.brightness,
+      appFlowyTheme.surfaceColorScheme.layer01,
+      isPaper: isPaper,
+    ),
+    textColor: appFlowyTheme.textColorScheme.primary,
+    linkColor: materialTheme.colorScheme.primary,
+    borderColor: appFlowyTheme.borderColorScheme.primary,
+    codeBackground: EditorSurfaceStyle.codeBlockBackgroundFor(
       materialTheme.brightness,
       materialTheme.colorScheme.surfaceContainer,
       isPaper: isPaper,
-    );
-    renderedHtml = buildMarkdownPreviewHtml(
-      widget.markdown,
-      brightness: materialTheme.brightness,
-      backgroundColor: EditorSurfaceStyle.previewBackgroundFor(
-        materialTheme.brightness,
-        appFlowyTheme.fillColorScheme.content,
-        isPaper: isPaper,
-      ),
-      textColor: appFlowyTheme.textColorScheme.primary,
-      linkColor: materialTheme.colorScheme.primary,
-      borderColor: appFlowyTheme.borderColorScheme.primary,
-      codeBackground: codeBackground,
-    );
-  }
+    ),
+  );
 }
 
 String buildMarkdownPreviewHtml(
@@ -706,6 +721,8 @@ class _CodeFilePreviewState extends State<_CodeFilePreview> {
   );
   late bool showLineNumbers =
       widget.metadata['show_code_line_numbers'] as bool? ?? true;
+  late List<CodeTestCase> testCases =
+      decodeCodeTestCases(widget.metadata['code_test_cases']);
 
   @override
   Widget build(BuildContext context) {
@@ -728,6 +745,15 @@ class _CodeFilePreviewState extends State<_CodeFilePreview> {
         widget.onMetadataChanged({
           ...widget.metadata,
           'show_code_line_numbers': showLineNumbers,
+        });
+      },
+      editable: widget.editable,
+      testCases: testCases,
+      onTestCasesChanged: (cases) {
+        setState(() => testCases = cases);
+        widget.onMetadataChanged({
+          ...widget.metadata,
+          'code_test_cases': encodeCodeTestCases(cases),
         });
       },
       toolbarTrailing: widget.toolbarTrailing,
@@ -1479,118 +1505,6 @@ class _PendingWebViewScrollCommand {
 @visibleForTesting
 String buildWebViewDirectScrollScript(Offset delta) =>
     'window.scrollBy(${delta.dx}, ${delta.dy});';
-
-class _ArchivePreview extends StatefulWidget {
-  const _ArchivePreview({required this.file, required this.editable});
-
-  final File file;
-  final bool editable;
-
-  @override
-  State<_ArchivePreview> createState() => _ArchivePreviewState();
-}
-
-class _ArchivePreviewState extends State<_ArchivePreview> {
-  late Future<Archive> archive = _load();
-
-  Future<Archive> _load() async {
-    final length = await widget.file.length();
-    if (length > maxArchivePreviewBytes) {
-      throw FileSystemException(
-        'This archive is too large to preview (${_formatBytes(length)}).',
-      );
-    }
-    final decoded = ZipDecoder().decodeBytes(await widget.file.readAsBytes());
-    if (decoded.length > maxArchiveEntries) {
-      throw const FormatException('The archive contains too many entries.');
-    }
-    return decoded;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<Archive>(
-      future: archive,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(child: Text(snapshot.error.toString()));
-        }
-        final value = snapshot.data;
-        if (value == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return Column(
-          children: [
-            if (widget.editable)
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: OutlinedButton.icon(
-                    onPressed: () => _addFile(value),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Add file'),
-                  ),
-                ),
-              ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: value.length,
-                itemBuilder: (context, index) {
-                  final entry = value[index];
-                  return ListTile(
-                    dense: true,
-                    leading: Icon(
-                      entry.isFile ? Icons.insert_drive_file : Icons.folder,
-                    ),
-                    title: Text(entry.name),
-                    subtitle:
-                        entry.isFile ? Text(_formatBytes(entry.size)) : null,
-                    trailing: widget.editable && entry.isFile
-                        ? IconButton(
-                            tooltip: 'Remove from archive',
-                            icon: const Icon(Icons.delete_outline),
-                            onPressed: () => _removeFile(value, entry),
-                          )
-                        : null,
-                  );
-                },
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Future<void> _addFile(Archive value) async {
-    final result = await FilePicker.platform.pickFiles();
-    final path = result?.files.single.path;
-    if (path == null) {
-      return;
-    }
-    final file = File(path);
-    final bytes = await file.readAsBytes();
-    value.addFile(ArchiveFile(p.basename(path), bytes.length, bytes));
-    await _write(value);
-  }
-
-  Future<void> _removeFile(Archive value, ArchiveFile file) async {
-    value.removeFile(file);
-    await _write(value);
-  }
-
-  Future<void> _write(Archive value) async {
-    final encoded = ZipEncoder().encode(value);
-    if (encoded == null) {
-      throw const FileSystemException('Unable to encode the archive.');
-    }
-    final temporary = File('${widget.file.path}.appflowy.tmp');
-    await temporary.writeAsBytes(encoded, flush: true);
-    await temporary.rename(widget.file.path);
-    setState(() => archive = _load());
-  }
-}
 
 class _PreviewError extends StatelessWidget {
   const _PreviewError({required this.message, required this.onRetry});

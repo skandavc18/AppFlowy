@@ -7,6 +7,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/string_extension.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon.dart';
+import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_search_bar.dart';
 import 'package:appflowy/shared/icon_emoji_picker/recent_icons.dart';
 import 'package:appflowy/util/debounce.dart';
@@ -17,7 +18,6 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Icon;
-import 'package:flutter/services.dart';
 
 import 'colors.dart';
 import 'icon_color_picker.dart';
@@ -26,24 +26,22 @@ import 'icon_color_picker.dart';
 List<IconGroup>? kIconGroups;
 const _kRecentIconGroupName = 'Recent';
 
+/// Every group of every pack that has been loaded so far.
+Iterable<IconGroup> get allLoadedIconGroups =>
+    kIconPacks.expand(loadedIconGroupsOf);
+
+Icon? findLoadedIcon(String groupName, String iconName) => allLoadedIconGroups
+    .firstWhereOrNull((group) => group.name == groupName)
+    ?.icons
+    .firstWhereOrNull((icon) => icon.name == iconName);
+
 extension IconGroupFilter on List<IconGroup> {
   String? findSvgContent(String key) {
     final values = key.split('/');
     if (values.length != 2) {
       return null;
     }
-    final groupName = values[0];
-    final iconName = values[1];
-    final svgString = kIconGroups
-        ?.firstWhereOrNull(
-          (group) => group.name == groupName,
-        )
-        ?.icons
-        .firstWhereOrNull(
-          (icon) => icon.name == iconName,
-        )
-        ?.content;
-    return svgString;
+    return findLoadedIcon(values[0], values[1])?.content;
   }
 
   (IconGroup, Icon) randomIcon() {
@@ -58,21 +56,9 @@ Future<List<IconGroup>> loadIconGroups() async {
   if (kIconGroups != null) {
     return kIconGroups!;
   }
-
-  final stopwatch = Stopwatch()..start();
-  final jsonString = await rootBundle.loadString('assets/icons/icons.json');
-  try {
-    final json = jsonDecode(jsonString) as Map<String, dynamic>;
-    final iconGroups = json.entries.map(IconGroup.fromMapEntry).toList();
-    kIconGroups = iconGroups;
-    return iconGroups;
-  } catch (e) {
-    Log.error('Failed to decode icons.json', e);
-    return [];
-  } finally {
-    stopwatch.stop();
-    Log.info('Loaded icon groups in ${stopwatch.elapsedMilliseconds}ms');
-  }
+  final groups = await loadIconPack(kDefaultIconPack);
+  kIconGroups = groups;
+  return groups;
 }
 
 class IconPickerResult {
@@ -108,36 +94,63 @@ class FlowyIconPicker extends StatefulWidget {
 class _FlowyIconPickerState extends State<FlowyIconPicker> {
   final List<IconGroup> iconGroups = [];
   bool loaded = false;
+  IconPack selectedPack = kDefaultIconPack;
   final ValueNotifier<String> keyword = ValueNotifier('');
   final debounce = Debounce(duration: const Duration(milliseconds: 150));
 
   Future<void> loadIcons() async {
-    final localIcons = await loadIconGroups();
-    final recentIcons = await RecentIcons.getIcons();
-    if (recentIcons.isNotEmpty) {
-      final filterRecentIcons = recentIcons
-          .sublist(
-            0,
-            min(recentIcons.length, widget.iconPerLine),
-          )
-          .skipWhile((e) => e.groupName.isEmpty)
-          .map((e) => e.icon)
-          .toList();
-      if (filterRecentIcons.isNotEmpty) {
-        iconGroups.add(
-          IconGroup(
-            name: _kRecentIconGroupName,
-            icons: filterRecentIcons,
-          ),
-        );
+    final pack = selectedPack;
+    final packIcons = await loadIconPack(pack);
+    if (!mounted || pack != selectedPack) {
+      return;
+    }
+
+    final groups = <IconGroup>[];
+    // recent icons are only meaningful next to the pack they belong to
+    if (pack == kDefaultIconPack) {
+      final recentIcons = await RecentIcons.getIcons();
+      if (!mounted || pack != selectedPack) {
+        return;
+      }
+      if (recentIcons.isNotEmpty) {
+        final filterRecentIcons = recentIcons
+            .sublist(
+              0,
+              min(recentIcons.length, widget.iconPerLine),
+            )
+            .skipWhile((e) => e.groupName.isEmpty)
+            .map((e) => e.icon)
+            .toList();
+        if (filterRecentIcons.isNotEmpty) {
+          groups.add(
+            IconGroup(
+              name: _kRecentIconGroupName,
+              icons: filterRecentIcons,
+            ),
+          );
+        }
       }
     }
-    iconGroups.addAll(localIcons);
-    if (mounted) {
-      setState(() {
-        loaded = true;
-      });
+    groups.addAll(packIcons);
+
+    setState(() {
+      iconGroups
+        ..clear()
+        ..addAll(groups);
+      loaded = true;
+    });
+  }
+
+  void _selectPack(IconPack pack) {
+    if (pack == selectedPack) {
+      return;
     }
+    setState(() {
+      selectedPack = pack;
+      loaded = isIconPackLoaded(pack);
+      iconGroups.clear();
+    });
+    loadIcons();
   }
 
   @override
@@ -165,7 +178,7 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
           child: IconSearchBar(
             ensureFocus: widget.ensureFocus,
             onRandomTap: () {
-              final value = kIconGroups?.randomIcon();
+              final value = iconGroups.isEmpty ? null : iconGroups.randomIcon();
               if (value == null) {
                 return;
               }
@@ -188,6 +201,7 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
             },
           ),
         ),
+        _buildStyleSelector(context),
         Expanded(
           child: loaded
               ? _buildIcons(iconGroups)
@@ -201,6 +215,25 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
                 ),
         ),
       ],
+    );
+  }
+
+  Widget _buildStyleSelector(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 10.0),
+      child: Wrap(
+        spacing: 6.0,
+        runSpacing: 6.0,
+        children: kIconPacks
+            .map(
+              (pack) => _IconStyleChip(
+                label: pack.displayName,
+                isSelected: pack == selectedPack,
+                onTap: () => _selectPack(pack),
+              ),
+            )
+            .toList(),
+      ),
     );
   }
 
@@ -219,6 +252,7 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
                 widget.enableBackgroundColorSelection,
             onSelectedIcon: (r) => widget.onSelectedIcon.call(r.toResult()),
             iconPerLine: widget.iconPerLine,
+            pack: selectedPack,
           );
         }
         return IconPicker(
@@ -226,8 +260,55 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
           enableBackgroundColorSelection: widget.enableBackgroundColorSelection,
           onSelectedIcon: (r) => widget.onSelectedIcon.call(r.toResult()),
           iconPerLine: widget.iconPerLine,
+          pack: selectedPack,
         );
       },
+    );
+  }
+}
+
+class _IconStyleChip extends StatelessWidget {
+  const _IconStyleChip({
+    required this.label,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final selectedColor = Theme.of(context).colorScheme.primary;
+    return GestureDetector(
+      onTap: onTap,
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          // no `alignment`: a Container that aligns its child expands to fill
+          // the constraints, which makes every chip claim a whole row
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 3.0),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? selectedColor.withValues(alpha: 0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8.0),
+            border: Border.all(
+              color: isSelected
+                  ? selectedColor.withValues(alpha: 0.5)
+                  : context.pickerButtonBoarderColor,
+            ),
+          ),
+          child: FlowyText(
+            label,
+            fontSize: 12,
+            figmaLineHeight: 18.0,
+            color: isSelected ? selectedColor : context.pickerTextColor,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -257,11 +338,7 @@ class IconsData {
     );
   }
 
-  String? get svgString => kIconGroups
-      ?.firstWhereOrNull((group) => group.name == groupName)
-      ?.icons
-      .firstWhereOrNull((icon) => icon.name == iconName)
-      ?.content;
+  String? get svgString => findLoadedIcon(groupName, iconName)?.content;
 }
 
 class IconPicker extends StatefulWidget {
@@ -271,11 +348,13 @@ class IconPicker extends StatefulWidget {
     required this.enableBackgroundColorSelection,
     required this.iconGroups,
     required this.iconPerLine,
+    this.pack = kDefaultIconPack,
   });
 
   final List<IconGroup> iconGroups;
   final int iconPerLine;
   final bool enableBackgroundColorSelection;
+  final IconPack pack;
   final ValueChanged<IconsData> onSelectedIcon;
 
   @override
@@ -327,7 +406,10 @@ class _IconPickerState extends State<IconPicker> {
                   shrinkWrap: true,
                   itemBuilder: (context, index) {
                     final icon = iconGroup.icons[index];
-                    return widget.enableBackgroundColorSelection
+                    // a multi-color icon brings its own palette, so there is
+                    // nothing to tint
+                    return widget.enableBackgroundColorSelection &&
+                            !icon.isColorful
                         ? _Icon(
                             icon: icon,
                             mutex: mutex,
@@ -372,7 +454,7 @@ class _IconPickerState extends State<IconPicker> {
                 ),
                 const VSpace(12.0),
                 if (index == widget.iconGroups.length - 1) ...[
-                  const StreamlinePermit(),
+                  StreamlinePermit(pack: widget.pack),
                   const VSpace(12.0),
                 ],
               ],
@@ -424,8 +506,10 @@ class _IconNoBackground extends StatelessWidget {
           child: FlowySvg.string(
             icon.content,
             size: const Size.square(20),
-            color: context.pickerIconColor,
-            opacity: 0.7,
+            // a null blend mode keeps the artwork's own colors
+            blendMode: icon.isColorful ? null : BlendMode.srcIn,
+            color: icon.isColorful ? null : context.pickerIconColor,
+            opacity: icon.isColorful ? null : 0.7,
           ),
         ),
       ),
@@ -501,11 +585,14 @@ class _IconState extends State<_Icon> {
 class StreamlinePermit extends StatelessWidget {
   const StreamlinePermit({
     super.key,
+    this.pack = kDefaultIconPack,
   });
+
+  final IconPack pack;
 
   @override
   Widget build(BuildContext context) {
-    // Open source icons from Streamline
+    // Open source icons from <the library the current style comes from>
     final textStyle = TextStyle(
       fontSize: 12.0,
       height: 18.0 / 12.0,
@@ -520,14 +607,14 @@ class StreamlinePermit extends StatelessWidget {
             style: textStyle,
           ),
           TextSpan(
-            text: 'Streamline',
+            text: pack.attribution,
             style: textStyle.copyWith(
               decoration: TextDecoration.underline,
               color: Theme.of(context).colorScheme.primary,
             ),
             recognizer: TapGestureRecognizer()
               ..onTap = () {
-                afLaunchUrlString('https://www.streamlinehq.com/');
+                afLaunchUrlString(pack.attributionUrl);
               },
           ),
         ],

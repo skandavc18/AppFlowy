@@ -33,7 +33,7 @@ class FolderGalleryHeader extends StatefulWidget {
     required this.searchController,
     required this.onSearchChanged,
     required this.onNavigate,
-    required this.onNewNote,
+    required this.onAddFile,
     required this.onMore,
     this.userProfile,
     this.workspace,
@@ -43,7 +43,7 @@ class FolderGalleryHeader extends StatefulWidget {
   final TextEditingController searchController;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onNavigate;
-  final ValueChanged<WorkspaceFileMenuAction> onNewNote;
+  final ValueChanged<WorkspaceFileMenuAction> onAddFile;
   final ValueChanged<Offset> onMore;
   final UserProfilePB? userProfile;
   final UserWorkspacePB? workspace;
@@ -381,8 +381,8 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
         Builder(
           builder: (buttonContext) => _GalleryControl(
             icon: Icons.add_rounded,
-            label: LocaleKeys.workspaceFolderExplorer_newNote.tr(),
-            semanticLabel: LocaleKeys.workspaceFolderExplorer_newNote.tr(),
+            label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
+            semanticLabel: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
             primary: true,
             onPressed: () async {
               final box = buttonContext.findRenderObject() as RenderBox?;
@@ -395,7 +395,7 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
                     box.localToGlobal(Offset(0, box.size.height + 4)),
               );
               if (action != null) {
-                widget.onNewNote(action);
+                widget.onAddFile(action);
               }
             },
           ),

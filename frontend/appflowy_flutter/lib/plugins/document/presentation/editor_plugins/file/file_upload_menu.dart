@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
 import 'package:appflowy/shared/patterns/common_patterns.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:cross_file/cross_file.dart';
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:dotted_border/dotted_border.dart';
@@ -24,8 +30,10 @@ class FileUploadMenu extends StatefulWidget {
     this.onInsertNetworkFile,
     this.onInsertNetworkFileWithOptions,
     this.onInsertNetworkFileWithPreviewOptions,
+    this.onInsertWorkspaceFile,
     this.allowMultipleFiles = false,
     this.defaultShowPreview = false,
+    this.allowedExtensions,
   }) : assert(
           onInsertNetworkFile != null || onInsertNetworkFileWithOptions != null,
         );
@@ -41,8 +49,11 @@ class FileUploadMenu extends StatefulWidget {
     bool saveOffline,
     bool showPreview,
   )? onInsertNetworkFileWithPreviewOptions;
+  final FutureOr<void> Function(ViewPB file, bool showPreview)?
+      onInsertWorkspaceFile;
   final bool allowMultipleFiles;
   final bool defaultShowPreview;
+  final List<String>? allowedExtensions;
 
   @override
   State<FileUploadMenu> createState() => _FileUploadMenuState();
@@ -54,10 +65,11 @@ class _FileUploadMenuState extends State<FileUploadMenu> {
 
   @override
   Widget build(BuildContext context) {
+    final hasWorkspaceSource = widget.onInsertWorkspaceFile != null;
     // ClipRRect is used to clip the tab indicator, so the animation doesn't overflow the dialog
     return ClipRRect(
       child: DefaultTabController(
-        length: 2,
+        length: hasWorkspaceSource ? 3 : 2,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -84,12 +96,18 @@ class _FileUploadMenuState extends State<FileUploadMenu> {
                   title: LocaleKeys.document_plugins_file_networkTab.tr(),
                   isSelected: currentTab == 1,
                 ),
+                if (hasWorkspaceSource)
+                  _Tab(
+                    title: LocaleKeys.sideBar_workspace.tr(),
+                    isSelected: currentTab == 2,
+                  ),
               ],
             ),
             const Divider(height: 0),
             if (currentTab == 0) ...[
               _FileUploadLocal(
                 allowMultipleFiles: widget.allowMultipleFiles,
+                allowedExtensions: widget.allowedExtensions,
                 onFilesPicked: (files) {
                   if (files.isNotEmpty) {
                     final callback = widget.onInsertLocalFileWithOptions;
@@ -99,7 +117,7 @@ class _FileUploadMenuState extends State<FileUploadMenu> {
                   }
                 },
               ),
-            ] else ...[
+            ] else if (currentTab == 1) ...[
               _FileUploadNetwork(
                 onSubmit: (url, saveOffline) async {
                   final previewCallback =
@@ -115,6 +133,17 @@ class _FileUploadMenuState extends State<FileUploadMenu> {
                     widget.onInsertNetworkFile!(url);
                   }
                 },
+              ),
+            ] else ...[
+              WorkspaceFilePickerMenu(
+                fileFilter: widget.allowedExtensions == null
+                    ? null
+                    : (view) => fileNameMatchesExtensions(
+                          view.workspaceFileReference?.name ?? view.name,
+                          widget.allowedExtensions,
+                        ),
+                onSelected: (file) =>
+                    widget.onInsertWorkspaceFile!(file, showPreview),
               ),
             ],
             CheckboxListTile(
@@ -162,10 +191,12 @@ class _FileUploadLocal extends StatefulWidget {
   const _FileUploadLocal({
     required this.onFilesPicked,
     this.allowMultipleFiles = false,
+    this.allowedExtensions,
   });
 
   final void Function(List<XFile>) onFilesPicked;
   final bool allowMultipleFiles;
+  final List<String>? allowedExtensions;
 
   @override
   State<_FileUploadLocal> createState() => _FileUploadLocalState();
@@ -286,6 +317,10 @@ class _FileUploadLocalState extends State<_FileUploadLocal> {
   Future<void> _uploadFile(BuildContext context) async {
     final result = await getIt<FilePickerService>().pickFiles(
       dialogTitle: '',
+      type: widget.allowedExtensions?.isNotEmpty == true
+          ? FileType.custom
+          : FileType.any,
+      allowedExtensions: widget.allowedExtensions,
       allowMultiple: widget.allowMultipleFiles,
     );
 

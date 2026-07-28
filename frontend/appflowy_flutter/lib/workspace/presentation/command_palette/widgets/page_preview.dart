@@ -11,7 +11,9 @@ import 'package:appflowy/plugins/document/application/document_data_pb_extension
 import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/document_immersive_cover_bloc.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_document.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_text_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/video_thumbnail_cache.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
@@ -549,13 +551,250 @@ class _WorkspaceFilePreview extends StatelessWidget {
     if (kind == FilePreviewKind.markdown) {
       return _FilePreviewMarkdown(path: path, fallback: _fallback);
     }
-    if (kind != null && kind != FilePreviewKind.archive) {
+    if (kind == FilePreviewKind.archive) {
+      return _FilePreviewArchive(
+        path: path,
+        name: _name,
+        fallback: _fallback,
+        empty: _emptyCard('This archive is empty'),
+      );
+    }
+    if (isOfficeFile(_name)) {
+      return _FilePreviewOfficeDocument(
+        path: path,
+        name: _name,
+        fallback: _fallback,
+        empty: _emptyCard('This document is empty'),
+      );
+    }
+    if (kind != null) {
       return _FilePreviewText(path: path, fallback: _fallback);
     }
     return _fallback;
   }
 
   Widget get _fallback => _WorkspaceFileCard(name: _name, view: view);
+
+  Widget _emptyCard(String note) =>
+      _WorkspaceFileCard(name: _name, view: view, note: note);
+}
+
+/// The largest package a search preview will unpack.
+///
+/// The popup has to answer while the pointer is still moving, so a big
+/// archive shows its card rather than holding the list up.
+const int _maxPreviewArchiveBytes = 24 * 1024 * 1024;
+
+/// Opens a package for a preview, or returns null when it is too big.
+///
+/// [format] is passed for the containers whose extension does not name one:
+/// every Office document is a zip called `.docx`, `.xlsx` or `.pptx`.
+Future<ArchiveDocument?> _readPreviewArchive(
+  String path,
+  String name, {
+  ArchiveFormat? format,
+}) async {
+  final file = File(path);
+  if (await file.length() > _maxPreviewArchiveBytes) {
+    return null;
+  }
+  return ArchiveDocument.read(file, name: name, format: format);
+}
+
+/// What an archive holds, listed the way a file manager would.
+class _FilePreviewArchive extends StatefulWidget {
+  const _FilePreviewArchive({
+    required this.path,
+    required this.name,
+    required this.fallback,
+    required this.empty,
+  });
+
+  final String path;
+  final String name;
+  final Widget fallback;
+  final Widget empty;
+
+  @override
+  State<_FilePreviewArchive> createState() => _FilePreviewArchiveState();
+}
+
+class _FilePreviewArchiveState extends State<_FilePreviewArchive> {
+  static const _maxRows = 12;
+
+  late Future<List<ArchiveEntry>?> entries = _read();
+
+  @override
+  void didUpdateWidget(covariant _FilePreviewArchive oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      entries = _read();
+    }
+  }
+
+  Future<List<ArchiveEntry>?> _read() async {
+    final document = await _readPreviewArchive(widget.path, widget.name);
+    return document?.childrenOf('');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppFlowyTheme.of(context);
+    return FutureBuilder<List<ArchiveEntry>?>(
+      future: entries,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return widget.fallback;
+        }
+        final rows = snapshot.data;
+        if (rows == null) {
+          return snapshot.connectionState == ConnectionState.done
+              ? widget.fallback
+              : const SizedBox.shrink();
+        }
+        if (rows.isEmpty) {
+          return widget.empty;
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final entry in rows.take(_maxRows))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Icon(
+                        entry.isDirectory
+                            ? Icons.folder_rounded
+                            : fileIconForName(entry.name),
+                        size: 15,
+                        color: theme.iconColorScheme.secondary,
+                      ),
+                      const HSpace(8),
+                      Expanded(
+                        child: Text(
+                          entry.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textStyle.caption.standard(
+                            color: theme.textColorScheme.primary,
+                          ),
+                        ),
+                      ),
+                      if (!entry.isDirectory) ...[
+                        const HSpace(8),
+                        Text(
+                          _readableSize(entry.size),
+                          style: theme.textStyle.caption.standard(
+                            color: theme.textColorScheme.tertiary,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              if (rows.length > _maxRows)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '+${rows.length - _maxRows} more',
+                    style: theme.textStyle.caption.standard(
+                      color: theme.textColorScheme.tertiary,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The words inside an Office package, read straight out of its XML.
+class _FilePreviewOfficeDocument extends StatefulWidget {
+  const _FilePreviewOfficeDocument({
+    required this.path,
+    required this.name,
+    required this.fallback,
+    required this.empty,
+  });
+
+  final String path;
+  final String name;
+  final Widget fallback;
+  final Widget empty;
+
+  @override
+  State<_FilePreviewOfficeDocument> createState() =>
+      _FilePreviewOfficeDocumentState();
+}
+
+class _FilePreviewOfficeDocumentState
+    extends State<_FilePreviewOfficeDocument> {
+  late Future<String?> text = _read();
+
+  @override
+  void didUpdateWidget(covariant _FilePreviewOfficeDocument oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.path != widget.path) {
+      text = _read();
+    }
+  }
+
+  /// The text of the document, an empty string when it holds none, and null
+  /// when the package could not be unpacked at all.
+  Future<String?> _read() async {
+    final document = await _readPreviewArchive(
+      widget.path,
+      widget.name,
+      // Office packages are zips; their extension never says so.
+      format: ArchiveFormat.zip,
+    );
+    if (document == null) {
+      return null;
+    }
+    return extractOfficeDocumentText(document, widget.name) ?? '';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppFlowyTheme.of(context);
+    return FutureBuilder<String?>(
+      future: text,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return widget.fallback;
+        }
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const SizedBox.shrink();
+        }
+        final value = snapshot.data;
+        if (value == null) {
+          return widget.fallback;
+        }
+        if (value.trim().isEmpty) {
+          return widget.empty;
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+          child: Text(
+            value,
+            maxLines: 18,
+            overflow: TextOverflow.fade,
+            style: TextStyle(
+              fontFamily: 'Inter',
+              fontSize: 11.5,
+              height: 17 / 11.5,
+              color: theme.textColorScheme.secondary,
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _FilePreviewImage extends StatelessWidget {
@@ -840,10 +1079,18 @@ class _FilePreviewTextState extends State<_FilePreviewText> {
 
 /// Named the way the file manager would: a big glyph, the type and the size.
 class _WorkspaceFileCard extends StatelessWidget {
-  const _WorkspaceFileCard({required this.name, required this.view});
+  const _WorkspaceFileCard({
+    required this.name,
+    required this.view,
+    this.note,
+  });
 
   final String name;
   final ViewPB view;
+
+  /// An extra line under the type, for a file that turned out to hold
+  /// nothing worth previewing.
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
@@ -872,6 +1119,16 @@ class _WorkspaceFileCard extends StatelessWidget {
                 color: theme.textColorScheme.secondary,
               ),
             ),
+            if (note case final note?) ...[
+              const VSpace(6),
+              Text(
+                note,
+                textAlign: TextAlign.center,
+                style: theme.textStyle.caption.standard(
+                  color: theme.textColorScheme.tertiary,
+                ),
+              ),
+            ],
           ],
         ),
       ),

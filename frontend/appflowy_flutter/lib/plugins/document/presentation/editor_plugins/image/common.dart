@@ -37,19 +37,29 @@ class ImageBlockData {
     return ImageBlockData(
       url: json['url'] as String? ?? '',
       type: CustomImageType.fromIntValue(json['type'] as int),
+      workspaceFileId: json['workspace_file_id'] as String?,
     );
   }
 
-  ImageBlockData({required this.url, required this.type});
+  ImageBlockData({
+    required this.url,
+    required this.type,
+    this.workspaceFileId,
+  });
 
   final String url;
   final CustomImageType type;
+  final String? workspaceFileId;
 
   bool get isLocal => type == CustomImageType.local;
   bool get isNotInternal => type != CustomImageType.internal;
 
   Map<String, dynamic> toJson() {
-    return {'url': url, 'type': type.toIntValue()};
+    return {
+      'url': url,
+      'type': type.toIntValue(),
+      if (workspaceFileId != null) 'workspace_file_id': workspaceFileId,
+    };
   }
 
   ImageProvider toImageProvider() {

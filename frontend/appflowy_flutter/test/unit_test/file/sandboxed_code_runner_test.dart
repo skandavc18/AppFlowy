@@ -380,6 +380,74 @@ void main() {
     expect(warmHeaders, isNotEmpty);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('the tests tray stays hidden when cases cannot be stored', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _codeApp(
+        brightness: Brightness.light,
+        paper: false,
+        child: SandboxedCodeRunner(
+          code: 'print(1)',
+          fileName: 'main.py',
+          language: 'python',
+          showLineNumbers: true,
+          onLanguageChanged: (_) {},
+          onToggleLineNumbers: () {},
+          child: const SizedBox(height: 60),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.checklist_rounded), findsNothing);
+  });
+
+  testWidgets('opening the tests tray writes and edits the first case', (
+    tester,
+  ) async {
+    var cases = <CodeTestCase>[];
+    await tester.pumpWidget(
+      _codeApp(
+        brightness: Brightness.light,
+        paper: false,
+        child: StatefulBuilder(
+          builder: (context, setState) => SandboxedCodeRunner(
+            code: 'print(1)',
+            fileName: 'main.py',
+            language: 'python',
+            showLineNumbers: true,
+            onLanguageChanged: (_) {},
+            onToggleLineNumbers: () {},
+            testCases: cases,
+            onTestCasesChanged: (next) => setState(() => cases = next),
+            child: const SizedBox(height: 60),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.checklist_rounded));
+    await tester.pumpAndSettle();
+
+    // An empty tray is a dead end, so opening it starts the first case.
+    expect(cases, hasLength(1));
+    expect(find.text('Test cases'), findsOneWidget);
+    expect(find.text('INPUT'), findsOneWidget);
+    expect(find.text('EXPECTED OUTPUT'), findsOneWidget);
+    expect(find.text('Case 1'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).first, '2 3');
+    await tester.enterText(find.byType(TextFormField).last, '5');
+    // Typing is reported once it settles, not on every keystroke.
+    await tester.pump(const Duration(milliseconds: 600));
+
+    expect(cases.single.input, '2 3');
+    expect(cases.single.expectedOutput, '5');
+    expect(tester.takeException(), isNull);
+  });
 }
 
 /// A minimal host that supplies the theme surfaces the code chrome reads.

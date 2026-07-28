@@ -33,6 +33,28 @@ class CoverTitle extends StatelessWidget {
   }
 }
 
+/// The text style of the page title shown next to the page icon.
+TextStyle coverTitleTextStyle(BuildContext context) =>
+    Theme.of(context).textTheme.bodyMedium!.copyWith(
+          fontSize: 40.0,
+          height: 1.08,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -1.1,
+        );
+
+/// The height of a single line of the page title, used to keep the page icon
+/// optically centered on the first line of a title that wraps.
+double coverTitleLineHeight(BuildContext context) {
+  final painter = TextPainter(
+    text: TextSpan(text: 'A', style: coverTitleTextStyle(context)),
+    textDirection: Directionality.of(context),
+    maxLines: 1,
+  )..layout();
+  final height = painter.height;
+  painter.dispose();
+  return height;
+}
+
 class _InnerCoverTitle extends StatefulWidget {
   const _InnerCoverTitle({
     required this.view,
@@ -82,12 +104,7 @@ class _InnerCoverTitleState extends State<_InnerCoverTitle> {
 
   @override
   Widget build(BuildContext context) {
-    final fontStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
-          fontSize: 40.0,
-          height: 1.08,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -1.1,
-        );
+    final fontStyle = coverTitleTextStyle(context);
     final width = context.read<DocumentAppearanceCubit>().state.width;
     return BlocConsumer<ViewBloc, ViewState>(
       listenWhen: (previous, current) =>

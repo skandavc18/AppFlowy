@@ -11,11 +11,13 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/uplo
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy_backend/log.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide UploadImageMenu;
 import 'package:cross_file/cross_file.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -133,6 +135,7 @@ class _MultiImageMenuState extends State<MultiImageMenu> {
                 onSelectedLocalImages: insertLocalImages,
                 onSelectedAIImage: insertAIImage,
                 onSelectedNetworkImage: insertNetworkImage,
+                onSelectedWorkspaceImage: insertWorkspaceImage,
               );
             },
             child: MenuBlockButton(
@@ -341,6 +344,37 @@ class _MultiImageMenuState extends State<MultiImageMenu> {
     } catch (e) {
       Log.error('cannot save image file', e);
     }
+  }
+
+  Future<void> insertWorkspaceImage(ViewPB view) async {
+    controller.close();
+    final reference = view.workspaceFileReference;
+    if (reference == null) {
+      return showSnackBarMessage(
+        context,
+        'This workspace image is no longer available.',
+      );
+    }
+
+    final newImages = [
+      ...images,
+      ImageBlockData(
+        url: reference.url,
+        type: reference.isLocal
+            ? CustomImageType.local
+            : CustomImageType.internal,
+        workspaceFileId: reference.viewId,
+      ),
+    ];
+    final transaction = editorState.transaction
+      ..updateNode(widget.node, {
+        MultiImageBlockKeys.images:
+            newImages.map((image) => image.toJson()).toList(),
+        MultiImageBlockKeys.layout:
+            widget.node.attributes[MultiImageBlockKeys.layout],
+      });
+    await editorState.apply(transaction);
+    setState(() => images = newImages);
   }
 
   Future<void> insertNetworkImage(String url) async {

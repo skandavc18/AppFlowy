@@ -8,10 +8,14 @@ import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
+import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_collection_preview.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
@@ -250,7 +254,7 @@ class FolderExplorerBlockComponentState
             child: Row(
               children: [
                 Icon(
-                  Icons.create_new_folder_outlined,
+                  workspaceAddFolderIcon,
                   size: 22,
                   color: palette.accent,
                 ),
@@ -337,57 +341,63 @@ class FolderExplorerBlockComponentState
     final palette = FolderExplorerPalette.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
-      child: ViewerCard(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(10),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            hoverColor: palette.hover,
-            onTap: () => context.read<TabsBloc>().openPlugin(folder),
-            child: Container(
-              height: 54,
-              padding: const EdgeInsets.only(left: 13, right: 4),
-              child: Row(
-                children: [
-                  WorkspaceItemIcon.fromView(
-                    view: folder,
-                    size: 21,
-                    color: palette.accent,
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Text(
-                          folder.name.isEmpty
-                              ? LocaleKeys
-                                  .workspaceFolderExplorer_untitledFolder
-                                  .tr()
-                              : folder.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                        ),
-                        Text(
-                          LocaleKeys.workspaceFolderExplorer_workspaceFolder
-                              .tr(),
-                          style: TextStyle(
-                            color: palette.textMuted,
-                            fontSize: 10.5,
-                          ),
-                        ),
-                      ],
+      child: GestureDetector(
+        behavior: HitTestBehavior.deferToChild,
+        onSecondaryTapDown: (details) => unawaited(
+          _showBlockContextMenu(folder, details.globalPosition),
+        ),
+        child: ViewerCard(
+          color: palette.surface,
+          borderRadius: BorderRadius.circular(10),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              hoverColor: palette.hover,
+              onTap: () => context.read<TabsBloc>().openPlugin(folder),
+              child: Container(
+                height: 54,
+                padding: const EdgeInsets.only(left: 13, right: 4),
+                child: Row(
+                  children: [
+                    WorkspaceItemIcon.fromView(
+                      view: folder,
+                      size: 21,
+                      color: palette.accent,
                     ),
-                  ),
-                  _buildMenu(folder),
-                ],
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            folder.name.isEmpty
+                                ? LocaleKeys
+                                    .workspaceFolderExplorer_untitledFolder
+                                    .tr()
+                                : folder.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.textPrimary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            LocaleKeys.workspaceFolderExplorer_workspaceFolder
+                                .tr(),
+                            style: TextStyle(
+                              color: palette.textMuted,
+                              fontSize: 10.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _buildMenu(folder),
+                  ],
+                ),
               ),
             ),
           ),
@@ -411,6 +421,8 @@ class FolderExplorerBlockComponentState
         folder: folder,
         userProfile: context.read<DocumentBloc>().state.userProfilePB,
         onOpen: () => context.read<TabsBloc>().openPlugin(folder),
+        onContextMenu: (position) =>
+            unawaited(_showBlockContextMenu(folder, position)),
         hoverControl: _buildMenu(folder),
         previewMode: ViewPreviewMode.fromValue(
           node.attributes[FolderExplorerBlockKeys.previewMode],
@@ -430,93 +442,193 @@ class FolderExplorerBlockComponentState
         side: BorderSide(color: palette.border),
       ),
       icon: Icon(Icons.more_horiz_rounded, size: 18, color: palette.textMuted),
-      itemBuilder: (_) => [
-        PopupMenuItem(
-          value: _FolderBlockAction.open,
-          child: _FolderBlockMenuLabel(
-            icon: Icons.open_in_new_rounded,
-            label: LocaleKeys.workspaceFolderExplorer_openFolder.tr(),
-          ),
-        ),
-        PopupMenuItem(
-          value: _FolderBlockAction.toggleMode,
-          child: _FolderBlockMenuLabel(
-            icon: FolderExplorerBlockDisplayMode.fromValue(
-                      node.attributes[FolderExplorerBlockKeys.displayMode],
-                    ) ==
-                    FolderExplorerBlockDisplayMode.icon
-                ? Icons.view_agenda_outlined
-                : Icons.folder_outlined,
-            label: FolderExplorerBlockDisplayMode.fromValue(
-                      node.attributes[FolderExplorerBlockKeys.displayMode],
-                    ) ==
-                    FolderExplorerBlockDisplayMode.icon
-                ? LocaleKeys.workspaceFolderExplorer_showEmbeddedExplorer.tr()
-                : LocaleKeys.workspaceFolderExplorer_showAsFolderIcon.tr(),
-          ),
-        ),
-        if (FolderExplorerBlockDisplayMode.fromValue(
-              node.attributes[FolderExplorerBlockKeys.displayMode],
-            ) ==
-            FolderExplorerBlockDisplayMode.explorer)
-          PopupMenuItem(
-            value: _FolderBlockAction.togglePreview,
-            child: _FolderBlockMenuLabel(
-              icon: ViewPreviewMode.fromValue(
-                        node.attributes[FolderExplorerBlockKeys.previewMode],
-                      ) ==
-                      ViewPreviewMode.cover
-                  ? Icons.article_outlined
-                  : Icons.photo_outlined,
-              label: ViewPreviewMode.fromValue(
-                        node.attributes[FolderExplorerBlockKeys.previewMode],
-                      ) ==
-                      ViewPreviewMode.cover
-                  ? LocaleKeys.workspaceFolderExplorer_showContentPreview.tr()
-                  : LocaleKeys.workspaceFolderExplorer_showCoverPreview.tr(),
-            ),
-          ),
-        PopupMenuItem(
-          value: _FolderBlockAction.changeFolder,
-          child: _FolderBlockMenuLabel(
-            icon: Icons.swap_horiz_rounded,
-            label: LocaleKeys.workspaceFolderExplorer_changeFolder.tr(),
-          ),
-        ),
-      ],
-      onSelected: (action) {
-        switch (action) {
-          case _FolderBlockAction.open:
-            context.read<TabsBloc>().openPlugin(folder);
-          case _FolderBlockAction.toggleMode:
-            final current = FolderExplorerBlockDisplayMode.fromValue(
-              node.attributes[FolderExplorerBlockKeys.displayMode],
-            );
-            unawaited(
-              _updateAttributes({
-                FolderExplorerBlockKeys.displayMode:
-                    current == FolderExplorerBlockDisplayMode.icon
-                        ? FolderExplorerBlockDisplayMode.explorer.name
-                        : FolderExplorerBlockDisplayMode.icon.name,
-              }),
-            );
-          case _FolderBlockAction.togglePreview:
-            final current = ViewPreviewMode.fromValue(
-              node.attributes[FolderExplorerBlockKeys.previewMode],
-            );
-            unawaited(
-              _updateAttributes({
-                FolderExplorerBlockKeys.previewMode:
-                    current == ViewPreviewMode.cover
-                        ? ViewPreviewMode.content.name
-                        : ViewPreviewMode.cover.name,
-              }),
-            );
-          case _FolderBlockAction.changeFolder:
-            unawaited(showFolderPicker());
-        }
-      },
+      itemBuilder: (_) => _menuItems(),
+      onSelected: (action) => unawaited(_handleMenuAction(folder, action)),
     );
+  }
+
+  /// The same list behind the "⋯" button and behind a right click on the
+  /// preview, so the block offers one set of options however it is asked.
+  List<PopupMenuEntry<_FolderBlockAction>> _menuItems() {
+    final displayMode = FolderExplorerBlockDisplayMode.fromValue(
+      node.attributes[FolderExplorerBlockKeys.displayMode],
+    );
+    final previewMode = ViewPreviewMode.fromValue(
+      node.attributes[FolderExplorerBlockKeys.previewMode],
+    );
+    return [
+      if (editorState.editable) ...[
+        PopupMenuItem(
+          value: _FolderBlockAction.addFile,
+          child: _FolderBlockMenuLabel(
+            icon: workspaceAddFileIcon,
+            label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
+            trailing: Icons.chevron_right_rounded,
+          ),
+        ),
+        PopupMenuItem(
+          value: _FolderBlockAction.newFolder,
+          child: _FolderBlockMenuLabel(
+            icon: workspaceAddFolderIcon,
+            label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
+          ),
+        ),
+        const PopupMenuDivider(height: 9),
+      ],
+      PopupMenuItem(
+        value: _FolderBlockAction.open,
+        child: _FolderBlockMenuLabel(
+          icon: Icons.open_in_new_rounded,
+          label: LocaleKeys.workspaceFolderExplorer_openFolder.tr(),
+        ),
+      ),
+      PopupMenuItem(
+        value: _FolderBlockAction.toggleMode,
+        child: _FolderBlockMenuLabel(
+          icon: displayMode == FolderExplorerBlockDisplayMode.icon
+              ? Icons.view_agenda_outlined
+              : Icons.folder_outlined,
+          label: displayMode == FolderExplorerBlockDisplayMode.icon
+              ? LocaleKeys.workspaceFolderExplorer_showEmbeddedExplorer.tr()
+              : LocaleKeys.workspaceFolderExplorer_showAsFolderIcon.tr(),
+        ),
+      ),
+      if (displayMode == FolderExplorerBlockDisplayMode.explorer)
+        PopupMenuItem(
+          value: _FolderBlockAction.togglePreview,
+          child: _FolderBlockMenuLabel(
+            icon: previewMode == ViewPreviewMode.cover
+                ? Icons.article_outlined
+                : Icons.photo_outlined,
+            label: previewMode == ViewPreviewMode.cover
+                ? LocaleKeys.workspaceFolderExplorer_showContentPreview.tr()
+                : LocaleKeys.workspaceFolderExplorer_showCoverPreview.tr(),
+          ),
+        ),
+      PopupMenuItem(
+        value: _FolderBlockAction.changeFolder,
+        child: _FolderBlockMenuLabel(
+          icon: Icons.swap_horiz_rounded,
+          label: LocaleKeys.workspaceFolderExplorer_changeFolder.tr(),
+        ),
+      ),
+    ];
+  }
+
+  Future<void> _showBlockContextMenu(ViewPB folder, Offset position) async {
+    final palette = FolderExplorerPalette.of(context);
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final action = await showMenu<_FolderBlockAction>(
+      context: context,
+      color: palette.floatingSurface,
+      surfaceTintColor: Colors.transparent,
+      elevation: 14,
+      shadowColor: palette.shadow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: palette.border),
+      ),
+      constraints: const BoxConstraints(minWidth: 208, maxWidth: 260),
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(position.dx, position.dy, 1, 1),
+        Offset.zero & overlay.size,
+      ),
+      popUpAnimationStyle: AnimationStyle(
+        duration: const Duration(milliseconds: 140),
+        reverseDuration: const Duration(milliseconds: 100),
+        curve: Curves.easeOutCubic,
+      ),
+      items: _menuItems(),
+    );
+    if (action == null || !mounted) {
+      return;
+    }
+    await _handleMenuAction(folder, action, position: position);
+  }
+
+  Future<void> _handleMenuAction(
+    ViewPB folder,
+    _FolderBlockAction action, {
+    Offset? position,
+  }) async {
+    switch (action) {
+      case _FolderBlockAction.addFile:
+        await _addFileToFolder(folder, position);
+      case _FolderBlockAction.newFolder:
+        await _createSubfolder(folder);
+      case _FolderBlockAction.open:
+        context.read<TabsBloc>().openPlugin(folder);
+      case _FolderBlockAction.toggleMode:
+        final current = FolderExplorerBlockDisplayMode.fromValue(
+          node.attributes[FolderExplorerBlockKeys.displayMode],
+        );
+        await _updateAttributes({
+          FolderExplorerBlockKeys.displayMode:
+              current == FolderExplorerBlockDisplayMode.icon
+                  ? FolderExplorerBlockDisplayMode.explorer.name
+                  : FolderExplorerBlockDisplayMode.icon.name,
+        });
+      case _FolderBlockAction.togglePreview:
+        final current = ViewPreviewMode.fromValue(
+          node.attributes[FolderExplorerBlockKeys.previewMode],
+        );
+        await _updateAttributes({
+          FolderExplorerBlockKeys.previewMode: current == ViewPreviewMode.cover
+              ? ViewPreviewMode.content.name
+              : ViewPreviewMode.cover.name,
+        });
+      case _FolderBlockAction.changeFolder:
+        await showFolderPicker();
+    }
+  }
+
+  /// Adds a file straight into the folder this block shows.
+  ///
+  /// The preview listens to its own child views, so the new card appears
+  /// without the page being reloaded.
+  Future<void> _addFileToFolder(ViewPB folder, Offset? position) async {
+    final anchor = position ?? _blockAnchor();
+    final kind = await showWorkspaceFileKindMenu(
+      context: context,
+      globalPosition: anchor,
+    );
+    if (kind == null || !mounted) {
+      return;
+    }
+    final created = await createWorkspaceFile(
+      parentViewId: folder.id,
+      action: kind,
+    );
+    if (created == null || !mounted) {
+      return;
+    }
+    created.fold(
+      (view) => context.read<TabsBloc>().openPlugin(view),
+      (error) => showSnackBarMessage(context, error.msg),
+    );
+  }
+
+  Future<void> _createSubfolder(ViewPB folder) async {
+    const service = WorkspaceItemService();
+    final created = await service.createFolder(
+      parentViewId: folder.id,
+      name: LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
+    );
+    if (!mounted) {
+      return;
+    }
+    created.fold(
+      (_) {},
+      (error) => showSnackBarMessage(context, error.msg),
+    );
+  }
+
+  Offset _blockAnchor() {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null) {
+      return Offset.zero;
+    }
+    return box.localToGlobal(Offset(0, box.size.height));
   }
 
   void _loadFolder() {
@@ -674,6 +786,8 @@ class FolderExplorerBlockComponentState
 }
 
 enum _FolderBlockAction {
+  addFile,
+  newFolder,
   open,
   toggleMode,
   togglePreview,
@@ -681,10 +795,17 @@ enum _FolderBlockAction {
 }
 
 class _FolderBlockMenuLabel extends StatelessWidget {
-  const _FolderBlockMenuLabel({required this.icon, required this.label});
+  const _FolderBlockMenuLabel({
+    required this.icon,
+    required this.label,
+    this.trailing,
+  });
 
   final IconData icon;
   final String label;
+
+  /// A chevron marks a row that opens a menu of its own.
+  final IconData? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -700,6 +821,7 @@ class _FolderBlockMenuLabel extends StatelessWidget {
             style: const TextStyle(fontSize: 13),
           ),
         ),
+        if (trailing != null) Icon(trailing, size: 16),
       ],
     );
   }

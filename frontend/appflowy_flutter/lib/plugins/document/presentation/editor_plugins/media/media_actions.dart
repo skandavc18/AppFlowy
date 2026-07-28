@@ -12,6 +12,7 @@ import 'package:universal_platform/universal_platform.dart';
 Future<File> materializeMediaFile({
   required String source,
   required String name,
+  Map<String, String> httpHeaders = const {},
 }) async {
   final localFile = File(source);
   if (await localFile.exists()) {
@@ -26,7 +27,7 @@ Future<File> materializeMediaFile({
     }
   }
 
-  final response = await http.get(uri);
+  final response = await http.get(uri, headers: httpHeaders);
   if (response.statusCode < 200 || response.statusCode >= 300) {
     throw HttpException(
       'Unable to download media (${response.statusCode})',
@@ -53,6 +54,7 @@ Future<void> copyMedia({
   required String source,
   required String name,
   bool shareAsLink = false,
+  Map<String, String> httpHeaders = const {},
 }) async {
   if (shareAsLink) {
     await SystemClipboard.instance?.write([
@@ -61,7 +63,11 @@ Future<void> copyMedia({
     return;
   }
 
-  final file = await materializeMediaFile(source: source, name: name);
+  final file = await materializeMediaFile(
+    source: source,
+    name: name,
+    httpHeaders: httpHeaders,
+  );
   await SystemClipboard.instance?.write([
     DataWriterItem()
       ..add(Formats.fileUri(file.uri))
@@ -73,13 +79,18 @@ Future<void> shareMedia({
   required String source,
   required String name,
   bool shareAsLink = false,
+  Map<String, String> httpHeaders = const {},
 }) async {
   if (shareAsLink) {
     await Share.share(source);
     return;
   }
 
-  final file = await materializeMediaFile(source: source, name: name);
+  final file = await materializeMediaFile(
+    source: source,
+    name: name,
+    httpHeaders: httpHeaders,
+  );
   await Share.shareXFiles(
     [XFile(file.path)],
     fileNameOverrides: [name],
@@ -89,8 +100,13 @@ Future<void> shareMedia({
 Future<bool> downloadMedia({
   required String source,
   required String name,
+  Map<String, String> httpHeaders = const {},
 }) async {
-  final file = await materializeMediaFile(source: source, name: name);
+  final file = await materializeMediaFile(
+    source: source,
+    name: name,
+    httpHeaders: httpHeaders,
+  );
   return saveMediaBytes(bytes: await file.readAsBytes(), name: name);
 }
 

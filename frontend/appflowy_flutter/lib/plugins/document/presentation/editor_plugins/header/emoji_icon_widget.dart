@@ -114,11 +114,15 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
     try {
       switch (widget.emoji.type) {
         case FlowyIconType.emoji:
+          // `lineHeight: 1` + `optimizeEmojiAlign` make the glyph box exactly
+          // `emojiSize` tall with the leading split evenly, so an emoji fills
+          // and centers in the box it was asked for instead of sitting on the
+          // baseline of a taller line.
           return FlowyText.emoji(
             widget.emoji.emoji,
             fontSize: widget.emojiSize,
-            textAlign: TextAlign.justify,
-            lineHeight: widget.lineHeight,
+            lineHeight: widget.lineHeight ?? 1.0,
+            optimizeEmojiAlign: true,
           );
         case FlowyIconType.icon:
           IconsData iconData = IconsData.fromJson(

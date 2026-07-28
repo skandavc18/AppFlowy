@@ -12,11 +12,15 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_embed_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/appflowy_cloud_auth.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/file_entities.pbenum.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:cross_file/cross_file.dart';
@@ -31,10 +35,12 @@ import 'package:string_validator/string_validator.dart';
 import 'package:universal_platform/universal_platform.dart';
 
 import 'file_block_menu.dart';
+import 'archive/archive_explorer.dart';
 import 'file_media_player.dart';
 import 'file_preview.dart';
 import 'file_preview_kind.dart';
 import 'file_upload_menu.dart';
+import 'office/office_document_view.dart';
 import 'pdf_preview.dart';
 import 'pdf_preview_scroll_physics.dart';
 
@@ -78,11 +84,13 @@ class FileBlockKeys {
   static const String height = 'height';
   static const String displayMode = 'display_mode';
   static const String previewMetadata = 'preview_metadata';
+  static const String workspaceFileId = 'workspace_file_id';
 
   /// The GlobalKey of the FileBlockComponentState.
   ///
   /// **Note: This value is used in extraInfos of the Node, not in the attributes.**
   static const String globalKey = 'global_key';
+  static const String pickerAllowedExtensions = 'picker_allowed_extensions';
 }
 
 enum FileUrlType {
@@ -140,6 +148,24 @@ Node fileNode({
       FileBlockKeys.uploadedAt: DateTime.now().millisecondsSinceEpoch,
     },
   );
+}
+
+Map<String, dynamic> workspaceFileBlockAttributes({
+  required WorkspaceFileReference reference,
+  required bool showPreview,
+  int? embeddedAt,
+}) {
+  return {
+    FileBlockKeys.url: reference.url,
+    FileBlockKeys.urlType:
+        (reference.isLocal ? FileUrlType.local : FileUrlType.cloud)
+            .toIntValue(),
+    FileBlockKeys.name: reference.name,
+    FileBlockKeys.uploadedAt:
+        embeddedAt ?? DateTime.now().millisecondsSinceEpoch,
+    FileBlockKeys.displayMode: showPreview ? 'preview' : 'file',
+    FileBlockKeys.workspaceFileId: reference.viewId,
+  };
 }
 
 /// Points [node] at the video that was downloaded for offline viewing.
@@ -276,67 +302,23 @@ class FileBlockComponentState extends State<FileBlockComponent>
     final mediaKind = fileMediaKind(name, url);
     final isYoutubeVideo = url != null && isYoutubeVideoUrl(url);
     final previewKind = name == null ? null : filePreviewKindFromName(name);
+    final officePreview = name != null && isOfficeFile(name);
     final showPreview =
         node.attributes[FileBlockKeys.displayMode] == 'preview' &&
-            previewKind != null;
+            name != null &&
+            supportsEmbeddedFilePreview(name);
 
     Widget child = isYoutubeVideo
         ? _buildYoutubePlayer(url)
         : mediaKind != null && url?.isNotEmpty == true
-            ? _buildMediaPlayer(url!, name ?? '', mediaKind)
+            ? _buildMediaPlayer(url!, name ?? '', mediaKind, urlType)
             : showPreview && url?.isNotEmpty == true
-                ? _buildFilePreview(url!, name!, previewKind)
-                : MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    onEnter: (_) {
-                      setState(() => isHovering = true);
-                      showActionsNotifier.value = true;
-                    },
-                    onExit: (_) {
-                      setState(() => isHovering = false);
-                      if (!alwaysShowMenu) {
-                        showActionsNotifier.value = false;
-                      }
-                    },
-                    opaque: false,
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: url != null && url.isNotEmpty
-                          ? () async => _openFile(context, urlType, url)
-                          : _openMenu,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: isHovering
-                              ? Theme.of(context).colorScheme.secondary
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(4),
-                          border: isDragging
-                              ? Border.all(
-                                  color: Theme.of(context).colorScheme.primary,
-                                  width: 2,
-                                )
-                              : null,
-                        ),
-                        child: SizedBox(
-                          height: 52,
-                          child: Row(
-                            children: [
-                              const HSpace(10),
-                              Icon(
-                                fileIconForName(name),
-                                color: Theme.of(context).hintColor,
-                                size: 24,
-                              ),
-                              const HSpace(10),
-                              ..._buildTrailing(context),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
+                ? officePreview
+                    ? _buildOfficePreview(url!, name, urlType)
+                    : previewKind == FilePreviewKind.archive
+                        ? _buildArchivePreview(url!, name, urlType)
+                        : _buildFilePreview(url!, name, previewKind!, urlType)
+                : _buildFileChip(context, url, name, urlType);
 
     if (UniversalPlatform.isDesktopOrWeb) {
       if (url == null || url.isEmpty) {
@@ -382,8 +364,13 @@ class FileBlockComponentState extends State<FileBlockComponent>
               onInsertNetworkFileWithPreviewOptions:
                   (url, saveOffline, showPreview) =>
                       insertNetworkFile(url, saveOffline, showPreview),
+              onInsertWorkspaceFile: (file, showPreview) {
+                controller.close();
+                return insertFileFromWorkspace(file, showPreview);
+              },
               defaultShowPreview:
                   node.attributes[FileBlockKeys.displayMode] == 'preview',
+              allowedExtensions: _pickerAllowedExtensions,
             ),
             child: child,
           ),
@@ -443,8 +430,8 @@ class FileBlockComponentState extends State<FileBlockComponent>
     String url,
     String name,
     FileMediaKind kind,
+    FileUrlType urlType,
   ) {
-    final menuSurface = AppFlowyTheme.of(context).surfaceColorScheme.primary;
     final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
         (kind == FileMediaKind.audio
             ? defaultAudioMediaWidth
@@ -471,52 +458,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
               url: url,
               name: name,
               kind: kind,
+              httpHeaders: _httpHeadersFor(urlType),
               onAspectRatioChanged: _handleVideoAspectRatio,
             ),
-            if (UniversalPlatform.isDesktopOrWeb)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: showActionsNotifier,
-                  builder: (_, showActions, __) {
-                    if (!showActions) {
-                      return const SizedBox.shrink();
-                    }
-                    return AppFlowyPopover(
-                      controller: menuController,
-                      triggerActions: PopoverTriggerFlags.none,
-                      direction: PopoverDirection.bottomWithRightAligned,
-                      onOpen: () {
-                        alwaysShowMenu = true;
-                        showActionsNotifier.value = true;
-                      },
-                      onClose: () {
-                        alwaysShowMenu = false;
-                        if (!isHovering) {
-                          showActionsNotifier.value = false;
-                        }
-                      },
-                      popupBuilder: (_) => FileBlockMenu(
-                        controller: menuController,
-                        node: node,
-                        editorState: editorState,
-                      ),
-                      child: GestureDetector(
-                        onTap: _showMediaMenu,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: menuSurface,
-                            borderRadius:
-                                const BorderRadius.all(Radius.circular(4)),
-                          ),
-                          child: const FileMenuTrigger(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+            if (UniversalPlatform.isDesktopOrWeb) _buildFileMenuOverlay(),
           ],
         ),
       ),
@@ -524,7 +469,6 @@ class FileBlockComponentState extends State<FileBlockComponent>
   }
 
   Widget _buildYoutubePlayer(String url) {
-    final menuSurface = AppFlowyTheme.of(context).surfaceColorScheme.primary;
     final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
         _defaultVideoWidth(
           videoAspectRatio ?? initialYoutubeAspectRatio(url),
@@ -551,52 +495,55 @@ class FileBlockComponentState extends State<FileBlockComponent>
               onAspectRatioChanged: _handleVideoAspectRatio,
             ),
             _buildOfflineDownloadIndicator(),
-            if (UniversalPlatform.isDesktopOrWeb)
-              Positioned(
-                top: 8,
-                right: 8,
-                child: ValueListenableBuilder<bool>(
-                  valueListenable: showActionsNotifier,
-                  builder: (_, showActions, __) {
-                    if (!showActions) {
-                      return const SizedBox.shrink();
-                    }
-                    return AppFlowyPopover(
-                      controller: menuController,
-                      triggerActions: PopoverTriggerFlags.none,
-                      direction: PopoverDirection.bottomWithRightAligned,
-                      onOpen: () {
-                        alwaysShowMenu = true;
-                        showActionsNotifier.value = true;
-                      },
-                      onClose: () {
-                        alwaysShowMenu = false;
-                        if (!isHovering) {
-                          showActionsNotifier.value = false;
-                        }
-                      },
-                      popupBuilder: (_) => FileBlockMenu(
-                        controller: menuController,
-                        node: node,
-                        editorState: editorState,
-                      ),
-                      child: GestureDetector(
-                        onTap: _showMediaMenu,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: menuSurface,
-                            borderRadius:
-                                const BorderRadius.all(Radius.circular(4)),
-                          ),
-                          child: const FileMenuTrigger(),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+            if (UniversalPlatform.isDesktopOrWeb) _buildFileMenuOverlay(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFileMenuOverlay() {
+    final menuSurface = AppFlowyTheme.of(context).surfaceColorScheme.primary;
+    return Positioned(
+      top: 8,
+      right: 8,
+      child: ValueListenableBuilder<bool>(
+        valueListenable: showActionsNotifier,
+        builder: (_, showActions, __) {
+          if (!showActions) {
+            return const SizedBox.shrink();
+          }
+          return AppFlowyPopover(
+            controller: menuController,
+            triggerActions: PopoverTriggerFlags.none,
+            direction: PopoverDirection.bottomWithRightAligned,
+            onOpen: () {
+              alwaysShowMenu = true;
+              showActionsNotifier.value = true;
+            },
+            onClose: () {
+              alwaysShowMenu = false;
+              if (!isHovering) {
+                showActionsNotifier.value = false;
+              }
+            },
+            popupBuilder: (_) => FileBlockMenu(
+              controller: menuController,
+              node: node,
+              editorState: editorState,
+            ),
+            child: GestureDetector(
+              onTap: _showMediaMenu,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: menuSurface,
+                  borderRadius: const BorderRadius.all(Radius.circular(4)),
+                ),
+                child: const FileMenuTrigger(),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -656,18 +603,23 @@ class FileBlockComponentState extends State<FileBlockComponent>
     String url,
     String name,
     FilePreviewKind kind,
+    FileUrlType urlType,
   ) {
     final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
         defaultVisualMediaWidth;
     final height = node.attributes[FileBlockKeys.height]?.toDouble() ??
-        (kind == FilePreviewKind.code ? 560.0 : 420.0);
+        defaultFilePreviewHeight(kind);
     final preview = ResizableMedia(
       width: width,
       minWidth: kind == FilePreviewKind.code || kind == FilePreviewKind.pdf
           ? 420
           : 320,
       height: height,
-      minHeight: kind == FilePreviewKind.code ? 260 : 240,
+      minHeight: switch (kind) {
+        FilePreviewKind.code => 260,
+        FilePreviewKind.archive => 300,
+        _ => 240,
+      },
       editable: editorState.editable,
       onResize: _saveMediaWidth,
       onResizeHeight: _saveMediaHeight,
@@ -686,7 +638,11 @@ class FileBlockComponentState extends State<FileBlockComponent>
               )
           : null,
       child: FutureBuilder<File>(
-        future: materializeMediaFile(source: url, name: name),
+        future: materializeMediaFile(
+          source: url,
+          name: name,
+          httpHeaders: _httpHeadersFor(urlType),
+        ),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(
@@ -736,6 +692,189 @@ class FileBlockComponentState extends State<FileBlockComponent>
     // PDF's page field. While it does, the document must not: the editor's
     // backspace command runs before the app's text shortcuts, and a collapsed
     // selection on this deltaless block would delete the whole embed.
+    return _wrapInteractivePreview(preview);
+  }
+
+  /// An archive embeds as the same wall of cards it fills a window with, in a
+  /// frame the reader can size.
+  Widget _buildArchivePreview(
+    String url,
+    String name,
+    FileUrlType urlType,
+  ) {
+    final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
+        defaultVisualMediaWidth;
+    final height = node.attributes[FileBlockKeys.height]?.toDouble() ??
+        defaultFilePreviewHeight(FilePreviewKind.archive);
+    return _wrapInteractivePreview(
+      ResizableMedia(
+        width: width,
+        minWidth: 320,
+        height: height,
+        minHeight: 300,
+        editable: editorState.editable,
+        onResize: _saveMediaWidth,
+        onResizeHeight: _saveMediaHeight,
+        child: FutureBuilder<File>(
+          future: materializeMediaFile(
+            source: url,
+            name: name,
+            httpHeaders: _httpHeadersFor(urlType),
+          ),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    snapshot.error.toString(),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+            final file = snapshot.data;
+            if (file == null) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(28),
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              );
+            }
+            return ArchiveExplorer(
+              key: ValueKey('archive_${node.id}_$url'),
+              file: file,
+              name: name,
+              editable: editorState.editable && urlType == FileUrlType.local,
+              toolbarTrailing: UniversalPlatform.isDesktopOrWeb
+                  ? _buildPreviewMenu()
+                  : null,
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOfficePreview(
+    String url,
+    String name,
+    FileUrlType urlType,
+  ) {
+    final width = node.attributes[FileBlockKeys.width]?.toDouble() ??
+        defaultVisualMediaWidth;
+    final height = node.attributes[FileBlockKeys.height]?.toDouble() ?? 520.0;
+    final preview = ResizableMedia(
+      width: width,
+      minWidth: 420,
+      height: height,
+      minHeight: 320,
+      editable: editorState.editable,
+      onResize: _saveMediaWidth,
+      onResizeHeight: _saveMediaHeight,
+      footer: UniversalPlatform.isDesktopOrWeb
+          ? _buildOfficePreviewFooter(name)
+          : null,
+      child: MouseRegion(
+        onEnter: (_) {
+          isHovering = true;
+          showActionsNotifier.value = true;
+        },
+        onExit: (_) {
+          isHovering = false;
+          if (!alwaysShowMenu) {
+            showActionsNotifier.value = false;
+          }
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            FutureBuilder<File>(
+              future: materializeMediaFile(
+                source: url,
+                name: name,
+                httpHeaders: _httpHeadersFor(urlType),
+              ),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        snapshot.error.toString(),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+                final file = snapshot.data;
+                if (file == null) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                return OfficeDocumentView(
+                  key: ValueKey('office_${node.id}_${name}_$url'),
+                  file: file,
+                  name: name,
+                  source: url,
+                  editable:
+                      editorState.editable && urlType != FileUrlType.network,
+                  // A CSV can still be read without an Office server.
+                  fallbackBuilder: filePreviewKindFromName(name) == null
+                      ? null
+                      : (context) => FilePreview(
+                            file: file,
+                            name: name,
+                            kind: filePreviewKindFromName(name)!,
+                            metadata: Map<String, dynamic>.from(
+                              node.attributes[FileBlockKeys.previewMetadata]
+                                      as Map? ??
+                                  const {},
+                            ),
+                            onMetadataChanged: _savePreviewMetadata,
+                            editable: editorState.editable &&
+                                urlType == FileUrlType.local,
+                            height: height,
+                          ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+    return _wrapInteractivePreview(preview);
+  }
+
+  Widget _buildOfficePreviewFooter(String name) {
+    final theme = AppFlowyTheme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, left: 8),
+      child: SizedBox(
+        height: 32,
+        child: Row(
+          children: [
+            Icon(
+              fileIconForName(name),
+              size: 17,
+              color: theme.iconColorScheme.secondary,
+            ),
+            const HSpace(6),
+            Expanded(
+              child: FlowyText(
+                name,
+                overflow: TextOverflow.ellipsis,
+                color: theme.textColorScheme.secondary,
+              ),
+            ),
+            _buildPreviewMenu(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _wrapInteractivePreview(Widget preview) {
     return FocusScope(
       skipTraversal: true,
       onFocusChange: (hasFocus) {
@@ -754,27 +893,31 @@ class FileBlockComponentState extends State<FileBlockComponent>
         : const Color(0x0F302D28);
     return AppFlowyPopover(
       controller: menuController,
-      clickHandler: PopoverClickHandler.gestureDetector,
+      triggerActions: PopoverTriggerFlags.none,
       direction: PopoverDirection.bottomWithRightAligned,
       popupBuilder: (_) => FileBlockMenu(
         controller: menuController,
         node: node,
         editorState: editorState,
       ),
-      child: Tooltip(
-        message: 'More actions',
-        child: SizedBox.square(
-          dimension: 30,
-          child: FlowyHover(
-            resetHoverOnRebuild: false,
-            style: HoverStyle(
-              hoverColor: hoverColor,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Icon(
-              Icons.more_horiz_rounded,
-              size: 19,
-              color: theme.iconColorScheme.secondary,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: menuController.show,
+        child: Tooltip(
+          message: 'More actions',
+          child: SizedBox.square(
+            dimension: 30,
+            child: FlowyHover(
+              resetHoverOnRebuild: false,
+              style: HoverStyle(
+                hoverColor: hoverColor,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(
+                Icons.more_horiz_rounded,
+                size: 19,
+                color: theme.iconColorScheme.secondary,
+              ),
             ),
           ),
         ),
@@ -826,8 +969,43 @@ class FileBlockComponentState extends State<FileBlockComponent>
     FileUrlType urlType,
     String url,
   ) async {
-    await afLaunchUrlString(url, context: context);
+    var launchTarget = url;
+    if (urlType == FileUrlType.cloud) {
+      try {
+        final file = await materializeMediaFile(
+          source: url,
+          name: node.attributes[FileBlockKeys.name] as String? ?? 'file',
+          httpHeaders: _httpHeadersFor(urlType),
+        );
+        launchTarget = file.path;
+      } on HttpException catch (error) {
+        if (context.mounted) {
+          showSnackBarMessage(context, error.message);
+        }
+        return;
+      } on FileSystemException catch (error) {
+        if (context.mounted) {
+          showSnackBarMessage(context, error.message);
+        }
+        return;
+      } on FormatException catch (error) {
+        if (context.mounted) {
+          showSnackBarMessage(context, error.message);
+        }
+        return;
+      }
+    }
+    if (context.mounted) {
+      await afLaunchUrlString(launchTarget, context: context);
+    }
   }
+
+  Map<String, String> _httpHeadersFor(FileUrlType urlType) =>
+      urlType == FileUrlType.cloud
+          ? appFlowyCloudAuthHeaders(
+              context.read<DocumentBloc>().state.userProfilePB,
+            )
+          : const {};
 
   void _openMenu() {
     if (UniversalPlatform.isDesktopOrWeb) {
@@ -839,73 +1017,147 @@ class FileBlockComponentState extends State<FileBlockComponent>
     }
   }
 
-  List<Widget> _buildTrailing(BuildContext context) {
-    if (node.attributes[FileBlockKeys.url]?.isNotEmpty == true) {
-      final name = node.attributes[FileBlockKeys.name] as String;
-      return [
-        Expanded(
-          child: FlowyText(
-            name,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        const HSpace(8),
-        if (UniversalPlatform.isDesktopOrWeb) ...[
-          ValueListenableBuilder<bool>(
-            valueListenable: showActionsNotifier,
-            builder: (_, value, __) {
-              final url = node.attributes[FileBlockKeys.url];
-              if (!value || url == null || url.isEmpty) {
-                return const SizedBox.shrink();
-              }
+  /// The card a file wears when it is not previewed inline.
+  ///
+  /// An attachment is one small object in the text, not a band across it: the
+  /// card hugs its contents, and the glyph in front of the name says what kind
+  /// of file it is. The placeholder keeps its full width, because that is the
+  /// target files are dropped onto.
+  Widget _buildFileChip(
+    BuildContext context,
+    String? url,
+    String? name,
+    FileUrlType urlType,
+  ) {
+    final palette = FolderExplorerPalette.of(context);
+    final hasFile = url != null && url.isNotEmpty;
+    final label = hasFile
+        ? (name?.isNotEmpty == true ? name! : url)
+        : isDragging
+            ? LocaleKeys.document_plugins_file_placeholderDragging.tr()
+            : LocaleKeys.document_plugins_file_placeholderText.tr();
 
-              return GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: menuController.show,
-                child: AppFlowyPopover(
-                  controller: menuController,
-                  triggerActions: PopoverTriggerFlags.none,
-                  direction: PopoverDirection.bottomWithRightAligned,
-                  onClose: () {
-                    setState(
-                      () {
-                        alwaysShowMenu = false;
-                        showActionsNotifier.value = false;
-                      },
-                    );
-                  },
-                  popupBuilder: (_) {
-                    alwaysShowMenu = true;
-                    return FileBlockMenu(
-                      controller: menuController,
-                      node: node,
-                      editorState: editorState,
-                    );
-                  },
-                  child: const FileMenuTrigger(),
-                ),
-              );
-            },
-          ),
-          const HSpace(8),
-        ],
-        if (UniversalPlatform.isMobile) ...[
-          const HSpace(36),
-        ],
-      ];
-    } else {
-      return [
-        Flexible(
-          child: FlowyText(
-            isDragging
-                ? LocaleKeys.document_plugins_file_placeholderDragging.tr()
-                : LocaleKeys.document_plugins_file_placeholderText.tr(),
-            overflow: TextOverflow.ellipsis,
-            color: Theme.of(context).hintColor,
-          ),
+    Widget card = AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+      height: hasFile ? 52 : 56,
+      padding: EdgeInsets.only(left: 9, right: hasFile ? 9 : 14),
+      decoration: BoxDecoration(
+        color: isHovering
+            ? Color.alphaBlend(palette.hover, palette.surface)
+            : palette.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDragging ? palette.accent : palette.border,
+          width: isDragging ? 1.4 : 0.8,
         ),
-      ];
+      ),
+      child: Row(
+        mainAxisSize: hasFile ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: palette.accent.withValues(alpha: 0.11),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              fileIconForName(name),
+              size: 19,
+              color: palette.accent,
+            ),
+          ),
+          const HSpace(11),
+          Flexible(
+            child: FlowyText(
+              label,
+              fontSize: 14,
+              fontWeight: hasFile ? FontWeight.w500 : FontWeight.w400,
+              overflow: TextOverflow.ellipsis,
+              color: hasFile ? palette.textPrimary : palette.textMuted,
+            ),
+          ),
+          if (hasFile && UniversalPlatform.isDesktopOrWeb) ...[
+            const HSpace(6),
+            _buildFileChipMenu(),
+          ],
+        ],
+      ),
+    );
+
+    card = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) {
+        setState(() => isHovering = true);
+        showActionsNotifier.value = true;
+      },
+      onExit: (_) {
+        setState(() => isHovering = false);
+        if (!alwaysShowMenu) {
+          showActionsNotifier.value = false;
+        }
+      },
+      opaque: false,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap:
+            hasFile ? () async => _openFile(context, urlType, url) : _openMenu,
+        child: card,
+      ),
+    );
+
+    if (!hasFile) {
+      return card;
     }
+    // Long names ellipsize rather than dragging the card across the page.
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: card,
+      ),
+    );
+  }
+
+  /// The three dot menu inside the compact card.
+  ///
+  /// It always occupies its place and only fades in, so the card does not
+  /// change width the moment the pointer arrives.
+  Widget _buildFileChipMenu() {
+    return ValueListenableBuilder<bool>(
+      valueListenable: showActionsNotifier,
+      builder: (_, value, child) => AnimatedOpacity(
+        duration: const Duration(milliseconds: 120),
+        opacity: value ? 1 : 0,
+        child: IgnorePointer(ignoring: !value, child: child),
+      ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: menuController.show,
+        child: AppFlowyPopover(
+          controller: menuController,
+          triggerActions: PopoverTriggerFlags.none,
+          direction: PopoverDirection.bottomWithRightAligned,
+          onClose: () {
+            setState(() {
+              alwaysShowMenu = false;
+              showActionsNotifier.value = false;
+            });
+          },
+          popupBuilder: (_) {
+            alwaysShowMenu = true;
+            return FileBlockMenu(
+              controller: menuController,
+              node: node,
+              editorState: editorState,
+            );
+          },
+          child: const FileMenuTrigger(),
+        ),
+      ),
+    );
   }
 
   // only used on mobile platform
@@ -923,9 +1175,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
         widget.node.attributes[FileBlockKeys.name] as String? ?? 'media';
     final shareAsLink =
         urlType == FileUrlType.network && isYoutubeVideoUrl(url);
+    final httpHeaders = _httpHeadersFor(urlType);
 
     return [
-      if (filePreviewKindFromName(name) != null)
+      if (supportsEmbeddedFilePreview(name))
         FlowyOptionTile.text(
           showTopBorder: false,
           text: node.attributes[FileBlockKeys.displayMode] == 'preview'
@@ -948,7 +1201,11 @@ class FileBlockComponentState extends State<FileBlockComponent>
         leftIcon: const FlowySvg(FlowySvgs.download_s),
         onTap: () async {
           context.pop();
-          await downloadMedia(source: url, name: name);
+          await downloadMedia(
+            source: url,
+            name: name,
+            httpHeaders: httpHeaders,
+          );
         },
       ),
       FlowyOptionTile.text(
@@ -963,6 +1220,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
             source: url,
             name: name,
             shareAsLink: shareAsLink,
+            httpHeaders: httpHeaders,
           );
         },
       ),
@@ -976,6 +1234,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
             source: url,
             name: name,
             shareAsLink: shareAsLink,
+            httpHeaders: httpHeaders,
           );
         },
       ),
@@ -1014,8 +1273,13 @@ class FileBlockComponentState extends State<FileBlockComponent>
               context.pop();
               await insertNetworkFile(url, saveOffline, showPreview);
             },
+            onInsertWorkspaceFile: (file, showPreview) async {
+              context.pop();
+              await insertFileFromWorkspace(file, showPreview);
+            },
             defaultShowPreview:
                 node.attributes[FileBlockKeys.displayMode] == 'preview',
+            allowedExtensions: _pickerAllowedExtensions,
           ),
         );
       },
@@ -1029,6 +1293,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
     if (files.isEmpty) return;
 
     final file = files.first;
+    if (!fileNameMatchesExtensions(file.name, _pickerAllowedExtensions)) {
+      _showUnsupportedFileType(file.name);
+      return;
+    }
     final path = file.path;
     final documentBloc = context.read<DocumentBloc>();
     final isLocalMode = documentBloc.isLocalMode;
@@ -1048,6 +1316,15 @@ class FileBlockComponentState extends State<FileBlockComponent>
     if (errorMsg != null && mounted) {
       return showSnackBarMessage(context, errorMsg);
     }
+    if (url == null) {
+      if (mounted) {
+        showSnackBarMessage(
+          context,
+          'AppFlowy could not save ${file.name}.',
+        );
+      }
+      return;
+    }
 
     // Remove the file block from the drop state manager
     dropManagerState?.remove(FileBlockKeys.type);
@@ -1064,6 +1341,38 @@ class FileBlockComponentState extends State<FileBlockComponent>
     await editorState.apply(transaction);
   }
 
+  Future<void> insertFileFromWorkspace(
+    ViewPB view,
+    bool showPreview,
+  ) async {
+    final reference = view.workspaceFileReference;
+    if (reference == null) {
+      return showSnackBarMessage(
+        context,
+        'This workspace file is no longer available.',
+      );
+    }
+    if (!fileNameMatchesExtensions(
+      reference.name,
+      _pickerAllowedExtensions,
+    )) {
+      _showUnsupportedFileType(reference.name);
+      return;
+    }
+
+    dropManagerState?.remove(FileBlockKeys.type);
+
+    final transaction = editorState.transaction
+      ..updateNode(
+        widget.node,
+        workspaceFileBlockAttributes(
+          reference: reference,
+          showPreview: showPreview,
+        ),
+      );
+    await editorState.apply(transaction);
+  }
+
   Future<void> insertNetworkFile(
     String url, [
     bool saveOffline = false,
@@ -1077,12 +1386,12 @@ class FileBlockComponentState extends State<FileBlockComponent>
       );
     }
 
-    // Remove the file block from the drop state manager
-    dropManagerState?.remove(FileBlockKeys.type);
-
     final uri = Uri.tryParse(url);
     if (uri == null) {
-      return;
+      return showSnackBarMessage(
+        context,
+        LocaleKeys.document_plugins_file_networkUrlInvalid.tr(),
+      );
     }
 
     if (saveOffline && isYoutubeVideoUrl(url)) {
@@ -1116,6 +1425,13 @@ class FileBlockComponentState extends State<FileBlockComponent>
     } else if (name.isEmpty) {
       name = uri.host;
     }
+    if (!fileNameMatchesExtensions(name, _pickerAllowedExtensions)) {
+      _showUnsupportedFileType(name);
+      return;
+    }
+
+    // Remove the file block from the drop state manager
+    dropManagerState?.remove(FileBlockKeys.type);
 
     final transaction = editorState.transaction;
     transaction.updateNode(widget.node, {
@@ -1127,6 +1443,26 @@ class FileBlockComponentState extends State<FileBlockComponent>
         FileBlockKeys.displayMode: showPreview ? 'preview' : 'file',
     });
     await editorState.apply(transaction);
+  }
+
+  List<String>? get _pickerAllowedExtensions {
+    final value = node.extraInfos?[FileBlockKeys.pickerAllowedExtensions];
+    if (value is! List) {
+      return null;
+    }
+    final extensions = value.whereType<String>().toList(growable: false);
+    return extensions.isEmpty ? null : extensions;
+  }
+
+  void _showUnsupportedFileType(String name) {
+    final supported = _pickerAllowedExtensions
+            ?.map((extension) => '.${extension.toLowerCase()}')
+            .join(', ') ??
+        '';
+    showSnackBarMessage(
+      context,
+      '$name cannot be used here. Choose a supported file: $supported.',
+    );
   }
 
   @override

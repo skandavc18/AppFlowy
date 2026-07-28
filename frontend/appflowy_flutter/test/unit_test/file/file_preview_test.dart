@@ -1,4 +1,6 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
+import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:html/parser.dart' as html_parser;
@@ -46,6 +48,73 @@ void main() {
     final dark = render(Brightness.dark, const Color(0xFF17181B));
     expect(dark, contains('color-scheme: dark;'));
     expect(dark, contains('html { background: #17181b; }'));
+  });
+
+  testWidgets('follows global light, dark, and paper themes', (tester) async {
+    final brightness = ValueNotifier(Brightness.light);
+    addTearDown(brightness.dispose);
+    var renderedHtml = '';
+
+    await tester.pumpWidget(
+      ValueListenableBuilder<Brightness>(
+        valueListenable: brightness,
+        builder: (_, value, __) => _markdownThemeApp(
+          brightness: value,
+          onRendered: (html) => renderedHtml = html,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final lightTheme = AppFlowyDefaultTheme().light();
+    expect(
+      renderedHtml,
+      contains(
+        'html { background: '
+        '${_cssTestColor(lightTheme.surfaceColorScheme.layer01)}; }',
+      ),
+    );
+
+    brightness.value = Brightness.dark;
+    await tester.pumpAndSettle();
+
+    final darkTheme = AppFlowyDefaultTheme().dark();
+    expect(renderedHtml, contains('color-scheme: dark;'));
+    expect(
+      renderedHtml,
+      contains(
+        'html { background: '
+        '${_cssTestColor(darkTheme.surfaceColorScheme.layer01)}; }',
+      ),
+    );
+    expect(renderedHtml, isNot(contains('html { background: #ffffff; }')));
+    expect(
+      renderedHtml,
+      contains('color: ${_cssTestColor(darkTheme.textColorScheme.primary)};'),
+    );
+
+    await tester.pumpWidget(
+      _markdownThemeApp(
+        brightness: Brightness.light,
+        paper: true,
+        onRendered: (html) => renderedHtml = html,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      renderedHtml,
+      contains(
+        'html { background: '
+        '${_cssTestColor(PaperTheme.editorPreviewBackground)}; }',
+      ),
+    );
+    expect(
+      renderedHtml,
+      contains(
+        'background: ${_cssTestColor(PaperTheme.codeBlockBackground)};',
+      ),
+    );
   });
 
   test('matches the renderer appearance to the requested brightness', () {
@@ -235,3 +304,35 @@ void main() {
     );
   });
 }
+
+Widget _markdownThemeApp({
+  required Brightness brightness,
+  required ValueChanged<String> onRendered,
+  bool paper = false,
+}) {
+  final appFlowyTheme = brightness == Brightness.light
+      ? AppFlowyDefaultTheme().light()
+      : AppFlowyDefaultTheme().dark();
+  return MaterialApp(
+    theme: ThemeData(
+      brightness: brightness,
+      extensions: [PaperThemeExtension(enabled: paper)],
+    ),
+    home: AppFlowyTheme(
+      data: appFlowyTheme,
+      child: Builder(
+        builder: (context) {
+          onRendered(buildThemedMarkdownPreviewHtml(context, '# Heading'));
+          return const SizedBox.shrink();
+        },
+      ),
+    ),
+  );
+}
+
+String _cssTestColor(Color color) =>
+    '#${_cssTestChannel(color.r)}${_cssTestChannel(color.g)}'
+    '${_cssTestChannel(color.b)}';
+
+String _cssTestChannel(double value) =>
+    (value * 255).round().toRadixString(16).padLeft(2, '0');

@@ -69,9 +69,10 @@ extension IconExtension on String {
     final iconGroup = IconGroup(name: values.first, icons: []);
     if (kDebugMode) {
       // Ensure the icon group and icon exist
-      assert(kIconGroups!.any((group) => group.name == values.first));
+      final groups = allLoadedIconGroups.toList();
+      assert(groups.any((group) => group.name == values.first));
       assert(
-        kIconGroups!
+        groups
             .firstWhere((group) => group.name == values.first)
             .icons
             .any((icon) => icon.name == values.last),

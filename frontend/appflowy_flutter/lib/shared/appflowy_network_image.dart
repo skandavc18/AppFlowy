@@ -1,6 +1,5 @@
-import 'dart:convert';
-
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/appflowy_cloud_auth.dart';
 import 'package:appflowy/shared/custom_image_cache_manager.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy_backend/log.dart';
@@ -134,7 +133,7 @@ class FlowyNetworkImageState extends State<FlowyNetworkImage> {
         return CachedNetworkImage(
           key: ValueKey('${widget.url}_$retryCount'),
           cacheManager: manager,
-          httpHeaders: _buildRequestHeader(),
+          httpHeaders: appFlowyCloudAuthHeaders(widget.userProfilePB),
           imageUrl: widget.url,
           fit: widget.fit,
           width: widget.width,
@@ -181,20 +180,6 @@ class FlowyNetworkImageState extends State<FlowyNetworkImage> {
 
     return widget.errorWidgetBuilder?.call(context, url, error) ??
         const SizedBox.shrink();
-  }
-
-  Map<String, String> _buildRequestHeader() {
-    final header = <String, String>{};
-    final token = widget.userProfilePB?.token;
-    if (token != null) {
-      try {
-        final decodedToken = jsonDecode(token);
-        header['Authorization'] = 'Bearer ${decodedToken['access_token']}';
-      } catch (e) {
-        Log.error('Unable to decode token: $e');
-      }
-    }
-    return header;
   }
 
   void _retryLoadImage() {

@@ -1,8 +1,7 @@
 # ONLYOFFICE Docs (DocumentServer) - Word, Excel and PowerPoint editing.
 #
-# AppFlowy opens .docx/.xlsx/.pptx attachments in an embedded ONLYOFFICE editor
-# and saves the result back through a short lived local bridge, see
-# lib/plugins/document/presentation/editor_plugins/file/office/.
+# Cloud users edit through AppFlowy Cloud. Local users save through the
+# short-lived bridge in lib/plugins/document/presentation/editor_plugins/file/office/.
 
 @{
     Name        = 'onlyoffice'
@@ -117,7 +116,8 @@
                 'Welcome page'    = "$url/welcome/"
             }
             Notes     = @(
-                'In AppFlowy open a .docx / .xlsx / .pptx file, then fill the server panel with:',
+                'When signed in to AppFlowy Cloud, office editing connects automatically.',
+                'In local-only mode, open a .docx / .xlsx / .pptx file and use:',
                 "  Server URL   $url",
                 "  JWT secret   $(if ($ctx.Config.JwtEnabled) { $ctx.Config.JwtSecret } else { '(leave empty)' })",
                 "  Bridge host  $($ctx.Config.BridgeHost)",

@@ -12,6 +12,7 @@ import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/view/view_cover_service.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/cover_image_download.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-document/entities.pb.dart';
@@ -129,6 +130,12 @@ class _ViewDecorationActionsState extends State<ViewDecorationActions> {
                   },
                 ),
               ),
+            if (widget.showCoverAction && _downloadableCover != null)
+              DecorationActionButton(
+                icon: FlowySvgs.download_s,
+                label: LocaleKeys.document_plugins_cover_downloadCover.tr(),
+                onTap: _downloadCover,
+              ),
             if (widget.showCoverAction &&
                 widget.view.cover != null &&
                 !widget.view.cover!.isNone)
@@ -141,6 +148,17 @@ class _ViewDecorationActionsState extends State<ViewDecorationActions> {
         ),
       ),
     );
+  }
+
+  DownloadableCoverImage? get _downloadableCover =>
+      DownloadableCoverImage.fromPageStyleCover(widget.view.cover);
+
+  Future<void> _downloadCover() async {
+    final cover = _downloadableCover;
+    if (cover == null) {
+      return;
+    }
+    await downloadCoverImage(cover, userProfile: widget.userProfile);
   }
 
   void _setCoverPopoverOpen(bool value) {

@@ -29,6 +29,7 @@ class FolderCollectionPreview extends StatefulWidget {
     required this.folder,
     required this.userProfile,
     required this.onOpen,
+    this.onContextMenu,
     this.repository = const WorkspaceItemService(),
     this.hoverControl,
     this.previewMode = ViewPreviewMode.cover,
@@ -37,6 +38,10 @@ class FolderCollectionPreview extends StatefulWidget {
   final ViewPB folder;
   final UserProfilePB? userProfile;
   final VoidCallback onOpen;
+
+  /// Raised by a right click anywhere on the card, so the folder can be
+  /// filled without opening it first.
+  final ValueChanged<Offset>? onContextMenu;
   final WorkspaceItemRepository repository;
   final Widget? hoverControl;
   final ViewPreviewMode previewMode;
@@ -119,6 +124,9 @@ class _FolderCollectionPreviewState extends State<FolderCollectionPreview> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: widget.onOpen,
+            onSecondaryTapDown: widget.onContextMenu == null
+                ? null
+                : (details) => widget.onContextMenu!(details.globalPosition),
             child: FutureBuilder<List<ViewPB>>(
               future: children,
               builder: (context, snapshot) {

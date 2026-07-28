@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
@@ -48,6 +50,19 @@ final Set<String> supportSlashMenuNodeTypes = {
   // Columns
   SimpleColumnsBlockKeys.type,
   SimpleColumnBlockKeys.type,
+};
+
+/// The node types whose block action buttons (`+` and the drag handle) are
+/// centered on the first line of the block's text instead of pinned near the
+/// top of the block.
+final Set<String> _textLineAlignedTypes = {
+  ParagraphBlockKeys.type,
+  HeadingBlockKeys.type,
+  TodoListBlockKeys.type,
+  BulletedListBlockKeys.type,
+  NumberedListBlockKeys.type,
+  QuoteBlockKeys.type,
+  ToggleListBlockKeys.type,
 };
 
 /// Build the block component builders.
@@ -246,11 +261,16 @@ void _customBlockOptionActions(
         double top = builder.configuration.padding(context.node).top;
         final type = context.node.type;
         final level = context.node.attributes[HeadingBlockKeys.level] ?? 0;
-        if ((type == HeadingBlockKeys.type ||
-                type == ToggleListBlockKeys.type) &&
-            level > 0) {
-          final offset = [13.0, 11.0, 8.0, 6.0, 4.0, 2.0];
-          top += offset[level - 1];
+        if (_textLineAlignedTypes.contains(type)) {
+          // center the buttons on the first line of the block's text
+          top += BlockActionList.topOffsetForFirstLine(
+            editorState: editorState,
+            textStyle: (type == HeadingBlockKeys.type ||
+                        type == ToggleListBlockKeys.type) &&
+                    level > 0
+                ? styleCustomizer.headingStyleBuilder(level)
+                : editorState.editorStyle.textStyleConfiguration.text,
+          );
         } else if (type == SimpleTableBlockKeys.type) {
           top += 8.0;
         } else {
@@ -259,6 +279,7 @@ void _customBlockOptionActions(
         if (overflowTypes.contains(type)) {
           top = top / 2;
         }
+        top = math.max(0.0, top);
         return ValueListenableBuilder(
           valueListenable: EditorGlobalConfiguration.enableDragMenu,
           builder: (_, enableDragMenu, child) {

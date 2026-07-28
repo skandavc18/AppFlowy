@@ -3,6 +3,9 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/cov
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/unsplash_image_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/upload_image_menu/widgets/upload_image_file_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/shared/patterns/file_type_patterns.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide ColorOption;
 import 'package:cross_file/cross_file.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -18,6 +21,7 @@ enum UploadImageType {
   local,
   url,
   unsplash,
+  workspace,
   color;
 
   String get description => switch (this) {
@@ -27,6 +31,7 @@ enum UploadImageType {
           LocaleKeys.document_imageBlock_embedLink_label.tr(),
         UploadImageType.unsplash =>
           LocaleKeys.document_imageBlock_unsplash_label.tr(),
+        UploadImageType.workspace => LocaleKeys.sideBar_workspace.tr(),
         UploadImageType.color => LocaleKeys.document_plugins_cover_colors.tr(),
       };
 }
@@ -37,6 +42,7 @@ class UploadImageMenu extends StatefulWidget {
     required this.onSelectedLocalImages,
     required this.onSelectedAIImage,
     required this.onSelectedNetworkImage,
+    this.onSelectedWorkspaceImage,
     this.onSelectedColor,
     this.supportTypes = UploadImageType.values,
     this.limitMaximumImageSize = false,
@@ -46,6 +52,7 @@ class UploadImageMenu extends StatefulWidget {
   final void Function(List<XFile>) onSelectedLocalImages;
   final void Function(String url) onSelectedAIImage;
   final void Function(String url) onSelectedNetworkImage;
+  final WorkspaceViewSelected? onSelectedWorkspaceImage;
   final void Function(String color)? onSelectedColor;
   final List<UploadImageType> supportTypes;
   final bool limitMaximumImageSize;
@@ -62,7 +69,17 @@ class _UploadImageMenuState extends State<UploadImageMenu> {
   @override
   void initState() {
     super.initState();
-    values = widget.supportTypes;
+    values = widget.supportTypes
+        .where(
+          (type) =>
+              type != UploadImageType.workspace ||
+              widget.onSelectedWorkspaceImage != null,
+        )
+        .toList();
+    if (widget.onSelectedWorkspaceImage != null &&
+        !values.contains(UploadImageType.workspace)) {
+      values.add(UploadImageType.workspace);
+    }
   }
 
   @override
@@ -164,6 +181,16 @@ class _UploadImageMenuState extends State<UploadImageMenu> {
               onSelectUnsplashImage: widget.onSelectedNetworkImage,
             ),
           ),
+        );
+      case UploadImageType.workspace:
+        return WorkspaceFilePickerMenu(
+          fileFilter: (view) {
+            final reference = view.workspaceFileReference;
+            return reference != null &&
+                (reference.mimeType?.startsWith('image/') == true ||
+                    imgExtensionRegex.hasMatch(reference.name.toLowerCase()));
+          },
+          onSelected: widget.onSelectedWorkspaceImage!,
         );
       case UploadImageType.color:
         final theme = Theme.of(context);

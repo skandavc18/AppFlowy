@@ -5,6 +5,7 @@ import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
@@ -55,12 +56,14 @@ class FileMediaPlayer extends StatefulWidget {
     required this.url,
     required this.name,
     required this.kind,
+    this.httpHeaders = const {},
     this.onAspectRatioChanged,
   });
 
   final String url;
   final String name;
   final FileMediaKind kind;
+  final Map<String, String> httpHeaders;
 
   /// Called with the real aspect ratio once the video has been probed, so the
   /// host can give portrait clips a frame that fits them.
@@ -85,13 +88,18 @@ class _FileMediaPlayerState extends State<FileMediaPlayer> {
   @override
   void didUpdateWidget(covariant FileMediaPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.url != widget.url || oldWidget.kind != widget.kind) {
+    if (oldWidget.url != widget.url ||
+        oldWidget.kind != widget.kind ||
+        !mapEquals(oldWidget.httpHeaders, widget.httpHeaders)) {
       if (widget.kind == FileMediaKind.video && videoController == null) {
         videoController = VideoController(player);
         videoParamsSubscription ??=
             player.stream.videoParams.listen(_handleVideoParams);
       }
-      player.open(Media(widget.url), play: false);
+      player.open(
+        Media(widget.url, httpHeaders: widget.httpHeaders),
+        play: false,
+      );
     }
   }
 
@@ -102,7 +110,10 @@ class _FileMediaPlayerState extends State<FileMediaPlayer> {
       videoParamsSubscription =
           player.stream.videoParams.listen(_handleVideoParams);
     }
-    player.open(Media(widget.url), play: false);
+    player.open(
+      Media(widget.url, httpHeaders: widget.httpHeaders),
+      play: false,
+    );
   }
 
   void _handleVideoParams(VideoParams params) {

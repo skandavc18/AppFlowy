@@ -17,6 +17,9 @@ class BlockActionButton extends StatefulWidget {
     this.onPointerDown,
   });
 
+  /// The size of the square hit target of every block action button.
+  static const double size = 28.0;
+
   final FlowySvgData svg;
   final bool showTooltip;
   final InlineSpan richMessage;
@@ -66,7 +69,7 @@ class _BlockActionButtonState extends State<BlockActionButton> {
               behavior: HitTestBehavior.opaque,
               onSecondaryTap: widget.onSecondaryTap ?? widget.onTap,
               child: FlowyIconButton(
-                width: 28.0,
+                width: BlockActionButton.size,
                 radius: BorderRadius.circular(4.0),
                 hoverColor: Colors.transparent,
                 iconColorOnHover: Theme.of(context).iconTheme.color,

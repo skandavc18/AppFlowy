@@ -1,5 +1,8 @@
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <nlohmann/json.hpp>
 #include <Shlwapi.h>
 #include <wil/wrl.h>
@@ -207,7 +210,8 @@ namespace flutter_inappwebview_plugin
 
     wil::com_ptr<ICoreWebView2Controller2> webViewController2;
     if (succeededOrLog(webViewController->QueryInterface(IID_PPV_ARGS(&webViewController2)))) {
-      if (!settings->transparentBackground) {
+      // WebView2 starts with an opaque white surface before its first page.
+      if (settings->transparentBackground) {
         webViewController2->put_DefaultBackgroundColor({ 0, 255, 255, 255 });
       }
     }
@@ -1788,19 +1792,37 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
-    // delta * 6 gives me a multiple of WHEEL_DELTA (120)
-    constexpr auto kScrollMultiplier = 6;
-
-    auto offset = static_cast<short>(delta * kScrollMultiplier);
+    constexpr auto kScrollMultiplier = 6.0;
+    auto& remainder = horizontal
+      ? horizontalScrollRemainder_
+      : verticalScrollRemainder_;
+    const auto scaledDelta = delta * kScrollMultiplier;
+    if ((scaledDelta > 0.0 && remainder < 0.0) ||
+      (scaledDelta < 0.0 && remainder > 0.0)) {
+      remainder = 0.0;
+    }
+    const auto accumulatedDelta = scaledDelta + remainder;
+    const auto boundedDelta = std::clamp(
+      accumulatedDelta,
+      static_cast<double>((std::numeric_limits<short>::min)()),
+      static_cast<double>((std::numeric_limits<short>::max)()));
+    const auto offset = static_cast<short>(std::trunc(boundedDelta));
+    remainder = boundedDelta == accumulatedDelta
+      ? accumulatedDelta - offset
+      : 0.0;
+    if (offset == 0) {
+      return;
+    }
+    const auto mouseData = static_cast<UINT32>(static_cast<int32_t>(offset));
 
     if (horizontal) {
       webViewCompositionController->SendMouseInput(
         COREWEBVIEW2_MOUSE_EVENT_KIND_HORIZONTAL_WHEEL, virtualKeys_.state(),
-        offset, lastCursorPos_);
+        mouseData, lastCursorPos_);
     }
     else {
       webViewCompositionController->SendMouseInput(COREWEBVIEW2_MOUSE_EVENT_KIND_WHEEL,
-        virtualKeys_.state(), offset,
+        virtualKeys_.state(), mouseData,
         lastCursorPos_);
     }
   }

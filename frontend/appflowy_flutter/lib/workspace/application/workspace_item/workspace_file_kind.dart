@@ -1,3 +1,4 @@
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:flutter/material.dart';
 
 /// How a new workspace file gets its initial content.
@@ -8,6 +9,12 @@ enum WorkspaceFileCreation {
   /// The person picks an existing file from disk.
   imported,
 }
+
+/// The glyph on every affordance that opens the file kind menu.
+const IconData workspaceAddFileIcon = Icons.note_add_rounded;
+
+/// The glyph on every affordance that makes a folder.
+const IconData workspaceAddFolderIcon = Icons.create_new_folder_rounded;
 
 /// The file types that can be added from the sidebar and the folder explorer.
 ///
@@ -23,6 +30,7 @@ enum WorkspaceFileKind {
   image,
   video,
   audio,
+  archive,
   word,
   excel,
   powerpoint;
@@ -32,6 +40,9 @@ enum WorkspaceFileKind {
       return null;
     }
     final extension = name.split('.').last.toLowerCase();
+    if (archiveExtensions.contains(extension)) {
+      return WorkspaceFileKind.archive;
+    }
     return switch (extension) {
       'md' || 'markdown' => WorkspaceFileKind.markdown,
       'html' || 'htm' => WorkspaceFileKind.html,
@@ -55,31 +66,24 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.image => 'Image',
         WorkspaceFileKind.video => 'Video',
         WorkspaceFileKind.audio => 'Audio',
+        WorkspaceFileKind.archive => 'Archive',
         WorkspaceFileKind.word => 'Word document',
         WorkspaceFileKind.excel => 'Excel spreadsheet',
         WorkspaceFileKind.powerpoint => 'PowerPoint presentation',
       };
 
-  IconData get icon => switch (this) {
-        WorkspaceFileKind.file => Icons.note_add_outlined,
-        WorkspaceFileKind.text => Icons.description_outlined,
-        WorkspaceFileKind.code => Icons.code,
-        WorkspaceFileKind.markdown => Icons.article_outlined,
-        WorkspaceFileKind.html => Icons.language_outlined,
-        WorkspaceFileKind.pdf => Icons.picture_as_pdf_outlined,
-        WorkspaceFileKind.image => Icons.image_outlined,
-        WorkspaceFileKind.video => Icons.movie_outlined,
-        WorkspaceFileKind.audio => Icons.audiotrack_outlined,
-        WorkspaceFileKind.word => Icons.text_snippet_outlined,
-        WorkspaceFileKind.excel => Icons.table_chart_outlined,
-        WorkspaceFileKind.powerpoint => Icons.slideshow_outlined,
-      };
+  /// The glyph for the type, taken from the same table that names a file in
+  /// the sidebar, in a menu and on an attachment chip.
+  IconData get icon => this == WorkspaceFileKind.file
+      ? Icons.insert_drive_file_rounded
+      : fileIconForExtension(fileExtension);
 
   WorkspaceFileCreation get creation => switch (this) {
         WorkspaceFileKind.text ||
         WorkspaceFileKind.code ||
         WorkspaceFileKind.markdown ||
         WorkspaceFileKind.html ||
+        WorkspaceFileKind.archive ||
         WorkspaceFileKind.word ||
         WorkspaceFileKind.excel ||
         WorkspaceFileKind.powerpoint =>
@@ -105,6 +109,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.image => 'png',
         WorkspaceFileKind.video => 'mp4',
         WorkspaceFileKind.audio => 'mp3',
+        WorkspaceFileKind.archive => 'zip',
         WorkspaceFileKind.word => 'docx',
         WorkspaceFileKind.excel => 'xlsx',
         WorkspaceFileKind.powerpoint => 'pptx',
@@ -115,6 +120,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.code => 'Untitled.py',
         WorkspaceFileKind.markdown => 'Untitled.md',
         WorkspaceFileKind.html => 'Untitled.html',
+        WorkspaceFileKind.archive => 'Untitled.zip',
         WorkspaceFileKind.word => 'Untitled.docx',
         WorkspaceFileKind.excel => 'Untitled.xlsx',
         WorkspaceFileKind.powerpoint => 'Untitled.pptx',
@@ -131,6 +137,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.image => 'image/png',
         WorkspaceFileKind.video => 'video/mp4',
         WorkspaceFileKind.audio => 'audio/mpeg',
+        WorkspaceFileKind.archive => 'application/zip',
         WorkspaceFileKind.word =>
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         WorkspaceFileKind.excel =>
@@ -214,6 +221,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.word => const ['doc', 'docx', 'odt', 'rtf'],
         WorkspaceFileKind.excel => const ['xls', 'xlsx', 'ods'],
         WorkspaceFileKind.powerpoint => const ['ppt', 'pptx', 'odp'],
+        WorkspaceFileKind.archive => archiveExtensions.toList(),
       };
 }
 
@@ -270,6 +278,10 @@ const List<WorkspaceFileMenuAction> workspaceFileMenuActions = [
     WorkspaceFileKind.powerpoint,
     WorkspaceFileSource.create,
   ),
+  WorkspaceFileMenuAction(
+    WorkspaceFileKind.archive,
+    WorkspaceFileSource.create,
+  ),
   WorkspaceFileMenuAction(WorkspaceFileKind.file, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.code, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.pdf, WorkspaceFileSource.upload),
@@ -284,6 +296,10 @@ const List<WorkspaceFileMenuAction> workspaceFileMenuActions = [
   WorkspaceFileMenuAction(WorkspaceFileKind.excel, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(
     WorkspaceFileKind.powerpoint,
+    WorkspaceFileSource.upload,
+  ),
+  WorkspaceFileMenuAction(
+    WorkspaceFileKind.archive,
     WorkspaceFileSource.upload,
   ),
 ];

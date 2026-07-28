@@ -190,6 +190,8 @@ namespace flutter_inappwebview_plugin
     CursorChangedCallback cursorChangedCallback_;
     float scaleFactor_ = 1.0;
     POINT lastCursorPos_ = { 0, 0 };
+    double horizontalScrollRemainder_ = 0.0;
+    double verticalScrollRemainder_ = 0.0;
     VirtualKeyState virtualKeys_;
 
     std::map<UINT64, std::shared_ptr<NavigationAction>> navigationActions_ = {};

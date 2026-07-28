@@ -1,3 +1,4 @@
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/blank_file_content.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -31,6 +32,23 @@ void main() {
       final offered =
           workspaceFileMenuActions.map((action) => action.kind).toSet();
       expect(offered, containsAll(WorkspaceFileKind.values));
+    });
+
+    test('wears the same glyph as the file it creates', () {
+      for (final kind in WorkspaceFileKind.values) {
+        if (kind == WorkspaceFileKind.file) {
+          continue;
+        }
+        expect(
+          kind.icon,
+          fileIconForName(kind.defaultFileName),
+          reason: '$kind',
+        );
+      }
+      expect(
+        WorkspaceFileKind.file.icon,
+        fileIconForName('attachment.bin'),
+      );
     });
   });
 

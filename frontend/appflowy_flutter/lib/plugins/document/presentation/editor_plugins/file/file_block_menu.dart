@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
+import 'package:appflowy/shared/appflowy_cloud_auth.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/date_time/date_format_ext.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -57,6 +58,7 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
     final fileName =
         widget.node.attributes[FileBlockKeys.name] as String? ?? '';
     final previewKind = filePreviewKindFromName(fileName);
+    final canPreview = supportsEmbeddedFilePreview(fileName);
     final showingPreview =
         widget.node.attributes[FileBlockKeys.displayMode] == 'preview';
     // Source editing writes straight back to the file, so it is offered only
@@ -70,7 +72,7 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (previewKind != null) ...[
+        if (canPreview) ...[
           HoverButton(
             itemHeight: 20,
             leftIcon: const Icon(Icons.preview_outlined, size: 18),
@@ -323,11 +325,29 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
     );
     final shareAsLink =
         urlType == FileUrlType.network && isYoutubeVideoUrl(url);
+    final httpHeaders = urlType == FileUrlType.cloud
+        ? appFlowyCloudAuthHeaders(
+            widget.editorState.document.root.context
+                ?.read<DocumentBloc>()
+                .state
+                .userProfilePB,
+          )
+        : const <String, String>{};
     try {
       if (copy) {
-        await copyMedia(source: url, name: name, shareAsLink: shareAsLink);
+        await copyMedia(
+          source: url,
+          name: name,
+          shareAsLink: shareAsLink,
+          httpHeaders: httpHeaders,
+        );
       } else {
-        await shareMedia(source: url, name: name, shareAsLink: shareAsLink);
+        await shareMedia(
+          source: url,
+          name: name,
+          shareAsLink: shareAsLink,
+          httpHeaders: httpHeaders,
+        );
       }
       if (copy && actionContext.mounted) {
         showToastNotification(message: LocaleKeys.message_copy_success.tr());

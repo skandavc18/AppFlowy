@@ -25,6 +25,23 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:universal_platform/universal_platform.dart';
 
+bool fileNameMatchesExtensions(
+  String name,
+  Iterable<String>? allowedExtensions,
+) {
+  if (allowedExtensions == null || allowedExtensions.isEmpty) {
+    return true;
+  }
+  final extension = p.extension(name).replaceFirst('.', '').toLowerCase();
+  if (extension.isEmpty) {
+    return false;
+  }
+  return allowedExtensions.any(
+    (allowed) =>
+        allowed.replaceFirst('.', '').toLowerCase().trim() == extension,
+  );
+}
+
 Future<String?> saveFileToLocalStorage(String localFilePath) async {
   final path = await getIt<ApplicationDataStorage>().getPath();
   final filePath = p.join(path, 'files');

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_explorer.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_media_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
@@ -167,15 +168,30 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
       return _WorkspaceImageStage(file: file, name: _name);
     }
 
+    final kind = _previewKind;
+
     if (isOfficeFile(_name)) {
       return OfficeDocumentView(
         file: file,
         name: _name,
+        source: _source ?? file.path,
         editable: _isEditable,
+        fallbackBuilder: kind == null
+            ? null
+            : (context) => LayoutBuilder(
+                  builder: (context, constraints) => FilePreview(
+                    file: file,
+                    name: _name,
+                    kind: kind,
+                    metadata: metadata,
+                    onMetadataChanged: _saveMetadata,
+                    editable: _isEditable,
+                    height: constraints.maxHeight,
+                  ),
+                ),
       );
     }
 
-    final kind = _previewKind;
     if (kind == null) {
       return _WorkspaceFileMessage(
         icon: fileIconForName(_name),
@@ -196,6 +212,16 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
         metadata: metadata,
         onMetadataChanged: _saveMetadata,
         editable: _isEditable,
+      );
+    }
+
+    if (kind == FilePreviewKind.archive) {
+      return ArchiveExplorer(
+        key: ValueKey('${widget.view.id}_archive'),
+        file: file,
+        name: _name,
+        editable: _isEditable,
+        embedded: false,
       );
     }
 

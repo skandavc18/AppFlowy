@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_block_chrome.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_test_case.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_test_case_panel.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/local_code_runner.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
-import 'package:appflowy/shared/google_fonts_extension.dart';
-import 'package:appflowy/shared/paper_theme.dart';
-import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -16,7 +16,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:path/path.dart' as p;
 
-const codeBlockAnimationDuration = AppFlowyMotion.standard;
+export 'code_block_chrome.dart';
+export 'code_test_case.dart';
 
 /// A code block is framed exactly like every other embedded document, so a
 /// block in the editor and a code file opened in the viewer are the same
@@ -59,6 +60,9 @@ class SandboxedCodeRunner extends StatefulWidget {
     this.contentPadding = EdgeInsets.zero,
     this.framed = true,
     this.initiallyCollapsed = false,
+    this.editable = true,
+    this.testCases = const [],
+    this.onTestCasesChanged,
     this.onHeaderInteractionChanged,
     this.onTerminalFocusChanged,
   });
@@ -77,13 +81,23 @@ class SandboxedCodeRunner extends StatefulWidget {
   final EdgeInsets contentPadding;
   final bool framed;
   final bool initiallyCollapsed;
+
+  /// Whether test cases may be written here, or only read and run.
+  final bool editable;
+
+  /// Saved inputs and expected answers, kept by whoever owns the code.
+  final List<CodeTestCase> testCases;
+
+  /// Null when the host has nowhere to store cases, which hides the feature.
+  final ValueChanged<List<CodeTestCase>>? onTestCasesChanged;
+
   final ValueChanged<bool>? onHeaderInteractionChanged;
 
-  /// Fires when the terminal's input takes or loses focus.
+  /// Fires when the terminal's input, or a test case field, takes or loses
+  /// focus.
   ///
   /// A host embedded in the document editor uses this to drop the document
-  /// selection, so keys typed at the prompt are not also read as editing
-  /// commands.
+  /// selection, so keys typed here are not also read as editing commands.
   final ValueChanged<bool>? onTerminalFocusChanged;
 
   @override
@@ -104,6 +118,12 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   bool copied = false;
   late bool collapsed;
 
+  /// What the last run made of each saved case, keyed by case id.
+  final Map<String, CodeTestOutcome> testOutcomes = {};
+  bool testsVisible = false;
+  bool testsRunning = false;
+  bool testRunCancelled = false;
+
   CodeRuntime get runtime => codeRuntimeForName(widget.fileName);
 
   LocalToolchain? get toolchain => localToolchainForName(widget.fileName);
@@ -111,6 +131,9 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   /// Local programs read their input as they go, so the terminal takes one
   /// line at a time instead of a block of text handed over up front.
   bool get isInteractive => runtime == CodeRuntime.local;
+
+  bool get supportsTests =>
+      widget.onTestCasesChanged != null && runtime != CodeRuntime.unsupported;
 
   @override
   void initState() {
@@ -193,18 +216,28 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     }.toList();
     final materialTheme = Theme.of(context);
     final appFlowyTheme = AppFlowyTheme.of(context);
-    final palette = _CodeBlockPalette.resolve(context);
+    final palette = CodeBlockPalette.resolve(context);
     final editor = Padding(
       padding: widget.contentPadding,
       child: widget.child,
     );
+    final testPanel = testsVisible && supportsTests
+        ? _buildTestPanel(context, palette)
+        : null;
     final body = ColoredBox(
       color: palette.surface,
       child: Column(
         mainAxisSize: expandEditor ? MainAxisSize.max : MainAxisSize.min,
         children: [
-          if (expandEditor) Expanded(child: editor) else editor,
+          if (expandEditor) Expanded(flex: 3, child: editor) else editor,
           if (runtime == CodeRuntime.javascript) buildSandbox(),
+          if (testPanel != null)
+            // Given a bounded box the panel fills it, so the tray shares the
+            // height with the code instead of pushing it off the block.
+            if (expandEditor)
+              Expanded(flex: 2, child: testPanel)
+            else
+              SizedBox(height: 280, child: testPanel),
           if (terminalVisible) _buildTerminal(context, palette),
         ],
       ),
@@ -245,6 +278,11 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
             collapsed: collapsed,
             runtime: runtime,
             toolchain: toolchain,
+            testsVisible: testsVisible,
+            testSummary: supportsTests
+                ? summarizeCodeTests(widget.testCases, testOutcomes)
+                : null,
+            onToggleTests: supportsTests ? _toggleTests : null,
             onLanguageChanged: widget.onLanguageChanged,
             onToggleLineNumbers: widget.onToggleLineNumbers,
             onRun: running ? _stop : _run,
@@ -314,10 +352,10 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
 
   Widget _buildTerminal(
     BuildContext context,
-    _CodeBlockPalette palette,
+    CodeBlockPalette palette,
   ) {
     // One mono face for the transcript and the prompt, matching the code.
-    final mono = _codeUiTextStyle(
+    final mono = codeUiTextStyle(
       color: palette.textPrimary,
       fontSize: 12.5,
       fontWeight: FontWeight.w400,
@@ -361,7 +399,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
                   const SizedBox(width: 7),
                   Text(
                     'Terminal',
-                    style: _codeUiTextStyle(
+                    style: codeUiTextStyle(
                       color: palette.textSecondary,
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -381,7 +419,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
                     const SizedBox(width: 6),
                     Text(
                       status,
-                      style: _codeUiTextStyle(
+                      style: codeUiTextStyle(
                         color: palette.textMuted,
                         fontSize: 10.5,
                         fontWeight: FontWeight.w500,
@@ -390,7 +428,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
                     const SizedBox(width: 8),
                   ],
                   if (isInteractive && running) ...[
-                    _CodeToolbarButton(
+                    CodeToolbarButton(
                       palette: palette,
                       tooltip: 'Close the input stream (Ctrl+D)',
                       icon: Icons.block_rounded,
@@ -401,7 +439,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
                     ),
                     const SizedBox(width: 3),
                   ],
-                  _CodeToolbarButton(
+                  CodeToolbarButton(
                     palette: palette,
                     tooltip:
                         running ? 'Stop execution first' : 'Close terminal',
@@ -489,6 +527,214 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
         ),
       ),
     );
+  }
+
+  Widget _buildTestPanel(BuildContext context, CodeBlockPalette palette) {
+    return FocusScope(
+      skipTraversal: true,
+      // Typing a case must not also reach the document: the editor reads
+      // Backspace before the field does and would delete the block.
+      onFocusChange: widget.onTerminalFocusChanged,
+      child: CodeTestCasePanel(
+        palette: palette,
+        testCases: widget.testCases,
+        outcomes: testOutcomes,
+        running: testsRunning,
+        canRun: runtime != CodeRuntime.unsupported,
+        editable: widget.editable,
+        onChanged: (cases) => widget.onTestCasesChanged?.call(cases),
+        onRun: () => unawaited(_runTests()),
+        onStop: () => unawaited(_stopTests()),
+        onClose: () => setState(() => testsVisible = false),
+      ),
+    );
+  }
+
+  void _toggleTests() {
+    final next = !testsVisible;
+    setState(() => testsVisible = next);
+    // An empty tray is a dead end, so opening it writes the first case.
+    if (next && widget.testCases.isEmpty && widget.editable) {
+      widget.onTestCasesChanged?.call([createCodeTestCase(0)]);
+    }
+  }
+
+  /// Runs the code once per saved case and judges what comes back.
+  Future<void> _runTests() async {
+    final cases = widget.testCases;
+    if (cases.isEmpty || running) {
+      return;
+    }
+    testRunCancelled = false;
+    setState(() {
+      testsRunning = true;
+      running = true;
+      testsVisible = true;
+      for (final testCase in cases) {
+        testOutcomes[testCase.id] =
+            const CodeTestOutcome(status: CodeTestStatus.running);
+      }
+    });
+    try {
+      if (runtime == CodeRuntime.local) {
+        await _runTestsLocally(cases);
+      } else {
+        await _runTestsInSandbox(cases);
+      }
+    } on Exception catch (error) {
+      _recordTestOutcomes(
+        cases,
+        CodeTestOutcome(
+          status: CodeTestStatus.errored,
+          notice: '$error\n',
+        ),
+      );
+    } finally {
+      localRunner = null;
+      if (mounted) {
+        setState(() {
+          testsRunning = false;
+          running = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _runTestsLocally(List<CodeTestCase> cases) async {
+    final toolchain = this.toolchain;
+    if (toolchain == null) {
+      return;
+    }
+    // A toolchain installed since the last attempt should be picked up.
+    clearExecutableCache();
+    final runner = LocalCodeRunner();
+    localRunner = runner;
+    await runner.runCases(
+      toolchain: toolchain,
+      code: widget.code,
+      inputs: [for (final testCase in cases) testCase.input],
+      onCaseFinished: (index, result) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          testOutcomes[cases[index].id] = _judge(
+            cases[index],
+            stdout: result.stdout,
+            stderr: result.stderr,
+            notice: result.notice,
+            exitCode: result.exitCode,
+            duration: result.duration,
+          );
+        });
+      },
+    );
+  }
+
+  Future<void> _runTestsInSandbox(List<CodeTestCase> cases) async {
+    final controller = webViewController;
+    if (controller == null) {
+      _recordTestOutcomes(
+        cases,
+        const CodeTestOutcome(
+          status: CodeTestStatus.errored,
+          notice: 'The sandbox is still starting. Try again.\n',
+        ),
+      );
+      return;
+    }
+    for (final testCase in cases) {
+      if (testRunCancelled || !mounted) {
+        return;
+      }
+      final startedAt = DateTime.now();
+      var stdout = '';
+      var stderr = '';
+      var notice = '';
+      try {
+        final result = await controller.callAsyncJavaScript(
+          functionBody: _javascriptWorkerFunction,
+          arguments: {'code': widget.code, 'input': testCase.input},
+        ).timeout(const Duration(seconds: 8));
+        final value = result?.value;
+        if (result?.error != null) {
+          notice = '${result!.error}\n';
+        } else if (value is Map) {
+          stdout = value['stdout']?.toString() ?? '';
+          stderr = value['stderr']?.toString() ?? '';
+        } else {
+          notice = 'The sandbox returned no result.\n';
+        }
+      } on TimeoutException {
+        notice = 'Execution timed out after 8 seconds.\n';
+      } on Exception catch (error) {
+        notice = '$error\n';
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        testOutcomes[testCase.id] = _judge(
+          testCase,
+          stdout: stdout,
+          stderr: stderr,
+          notice: notice,
+          // The worker reports a thrown error on stderr; it has no exit code
+          // of its own to fail with.
+          exitCode: stderr.isEmpty ? 0 : 1,
+          duration: DateTime.now().difference(startedAt),
+        );
+      });
+    }
+  }
+
+  void _recordTestOutcomes(List<CodeTestCase> cases, CodeTestOutcome outcome) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      for (final testCase in cases) {
+        testOutcomes[testCase.id] = outcome;
+      }
+    });
+  }
+
+  /// A case passes only when the program finished and printed the expected
+  /// answer; anything else is a wrong answer or an error, never both.
+  CodeTestOutcome _judge(
+    CodeTestCase testCase, {
+    required String stdout,
+    required String stderr,
+    required String notice,
+    required int exitCode,
+    required Duration duration,
+  }) {
+    final crashed = exitCode != 0 || notice.isNotEmpty;
+    final matches = codeTestOutputMatches(
+      actual: stdout,
+      expected: testCase.expectedOutput,
+    );
+    return CodeTestOutcome(
+      status: crashed
+          ? CodeTestStatus.errored
+          : matches
+              ? CodeTestStatus.passed
+              : CodeTestStatus.failed,
+      output: stdout,
+      errorOutput: stderr,
+      notice: notice,
+      exitCode: exitCode,
+      duration: duration,
+    );
+  }
+
+  Future<void> _stopTests() async {
+    testRunCancelled = true;
+    if (runtime == CodeRuntime.local) {
+      localRunner?.cancel();
+      return;
+    }
+    await webViewController?.reload();
   }
 
   Future<void> _run() async {
@@ -590,6 +836,9 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   }
 
   Future<void> _stop() async {
+    if (testsRunning) {
+      return _stopTests();
+    }
     if (runtime == CodeRuntime.local) {
       localRunner?.cancel();
       return;
@@ -616,6 +865,9 @@ class _CodeBlockHeader extends StatelessWidget {
     required this.collapsed,
     required this.runtime,
     required this.toolchain,
+    required this.testsVisible,
+    required this.testSummary,
+    required this.onToggleTests,
     required this.onLanguageChanged,
     required this.onToggleLineNumbers,
     required this.onRun,
@@ -625,7 +877,7 @@ class _CodeBlockHeader extends StatelessWidget {
     required this.trailing,
   });
 
-  final _CodeBlockPalette palette;
+  final CodeBlockPalette palette;
   final String selectedLanguage;
   final List<String> languages;
   final String? displayName;
@@ -635,6 +887,13 @@ class _CodeBlockHeader extends StatelessWidget {
   final bool collapsed;
   final CodeRuntime runtime;
   final LocalToolchain? toolchain;
+  final bool testsVisible;
+
+  /// How the last run went, e.g. `2/3`. Null before anything has been run.
+  final CodeTestSummary? testSummary;
+
+  /// Null when the host does not keep test cases for this code.
+  final VoidCallback? onToggleTests;
   final ValueChanged<String> onLanguageChanged;
   final VoidCallback onToggleLineNumbers;
   final VoidCallback onRun;
@@ -683,7 +942,7 @@ class _CodeBlockHeader extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Text(
                               'Copied ✓',
-                              style: _codeUiTextStyle(
+                              style: codeUiTextStyle(
                                 color: palette.success,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
@@ -701,7 +960,7 @@ class _CodeBlockHeader extends StatelessWidget {
                   ),
                   if (!compact && filename != null && filename.isNotEmpty) ...[
                     const SizedBox(width: 10),
-                    _HeaderDivider(palette: palette),
+                    CodeHeaderDivider(palette: palette),
                     const SizedBox(width: 10),
                     Icon(
                       Icons.code_rounded,
@@ -714,7 +973,7 @@ class _CodeBlockHeader extends StatelessWidget {
                         filename,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: _codeUiTextStyle(
+                        style: codeUiTextStyle(
                           color: palette.textSecondary,
                           fontSize: 11.5,
                           fontWeight: FontWeight.w500,
@@ -728,7 +987,7 @@ class _CodeBlockHeader extends StatelessWidget {
                   // collapses first when the block is narrow.
                   const Flexible(child: SizedBox(width: 14)),
                   if (!veryCompact) ...[
-                    _CodeToolbarButton(
+                    CodeToolbarButton(
                       palette: palette,
                       tooltip: showLineNumbers
                           ? 'Hide line numbers'
@@ -739,7 +998,31 @@ class _CodeBlockHeader extends StatelessWidget {
                     ),
                     const SizedBox(width: 3),
                   ],
-                  _CodeToolbarButton(
+                  if (onToggleTests != null) ...[
+                    CodeToolbarButton(
+                      palette: palette,
+                      tooltip: testsVisible
+                          ? 'Hide test cases'
+                          : 'Run the code against saved inputs',
+                      icon: Icons.checklist_rounded,
+                      // The score replaces the word once there is one, the
+                      // way a submission result does.
+                      label: testSummary != null
+                          ? testSummary!.label
+                          : compact
+                              ? null
+                              : 'Tests',
+                      selected: testsVisible,
+                      foregroundColor: testSummary == null
+                          ? null
+                          : testSummary!.allPassed
+                              ? palette.success
+                              : palette.error,
+                      onPressed: onToggleTests,
+                    ),
+                    const SizedBox(width: 3),
+                  ],
+                  CodeToolbarButton(
                     palette: palette,
                     tooltip: runTooltip,
                     icon:
@@ -749,7 +1032,7 @@ class _CodeBlockHeader extends StatelessWidget {
                     onPressed: canRun ? onRun : null,
                   ),
                   const SizedBox(width: 3),
-                  _CodeToolbarButton(
+                  CodeToolbarButton(
                     palette: palette,
                     tooltip: copied
                         ? 'Copied ✓'
@@ -770,7 +1053,7 @@ class _CodeBlockHeader extends StatelessWidget {
                   ),
                   if (onDownload != null) ...[
                     const SizedBox(width: 3),
-                    _CodeToolbarButton(
+                    CodeToolbarButton(
                       palette: palette,
                       tooltip: 'Download code',
                       icon: Icons.download_outlined,
@@ -782,7 +1065,7 @@ class _CodeBlockHeader extends StatelessWidget {
                     trailing!,
                   ],
                   const SizedBox(width: 3),
-                  _CodeToolbarButton(
+                  CodeToolbarButton(
                     palette: palette,
                     tooltip: collapsed ? 'Expand code' : 'Collapse code',
                     icon: collapsed
@@ -810,7 +1093,7 @@ class _CodeLanguageMenu extends StatelessWidget {
     required this.onSelected,
   });
 
-  final _CodeBlockPalette palette;
+  final CodeBlockPalette palette;
   final String selectedLanguage;
   final List<String> languages;
   final double maxLabelWidth;
@@ -871,7 +1154,7 @@ class _CodeLanguageMenu extends StatelessWidget {
                     language == 'auto'
                         ? LocaleKeys.document_codeBlock_language_auto.tr()
                         : _languageLabel(language),
-                    style: _codeUiTextStyle(
+                    style: codeUiTextStyle(
                       color: language == selectedLanguage
                           ? palette.textPrimary
                           : palette.textSecondary,
@@ -885,7 +1168,7 @@ class _CodeLanguageMenu extends StatelessWidget {
               ),
             ),
         ],
-        child: _HoverSurface(
+        child: CodeHoverSurface(
           palette: palette,
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -898,7 +1181,7 @@ class _CodeLanguageMenu extends StatelessWidget {
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _codeUiTextStyle(
+                  style: codeUiTextStyle(
                     color: palette.textSecondary,
                     fontSize: 11.5,
                     fontWeight: FontWeight.w600,
@@ -918,361 +1201,6 @@ class _CodeLanguageMenu extends StatelessWidget {
     );
   }
 }
-
-class _HoverSurface extends StatefulWidget {
-  const _HoverSurface({required this.palette, required this.child});
-
-  final _CodeBlockPalette palette;
-  final Widget child;
-
-  @override
-  State<_HoverSurface> createState() => _HoverSurfaceState();
-}
-
-class _HoverSurfaceState extends State<_HoverSurface> {
-  bool hovering = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => setState(() => hovering = true),
-      onExit: (_) => setState(() => hovering = false),
-      child: AnimatedContainer(
-        duration: codeBlockAnimationDuration,
-        curve: AppFlowyMotion.standardCurve,
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: hovering ? widget.palette.hover : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
-        ),
-        child: widget.child,
-      ),
-    );
-  }
-}
-
-class _CodeToolbarButton extends StatefulWidget {
-  const _CodeToolbarButton({
-    required this.palette,
-    required this.tooltip,
-    required this.icon,
-    required this.onPressed,
-    this.label,
-    this.selected = false,
-    this.foregroundColor,
-  });
-
-  final _CodeBlockPalette palette;
-  final String tooltip;
-  final IconData icon;
-  final VoidCallback? onPressed;
-  final String? label;
-  final bool selected;
-  final Color? foregroundColor;
-
-  @override
-  State<_CodeToolbarButton> createState() => _CodeToolbarButtonState();
-}
-
-class _CodeToolbarButtonState extends State<_CodeToolbarButton> {
-  bool hovering = false;
-  bool focused = false;
-  bool pressing = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final enabled = widget.onPressed != null;
-    final foreground = widget.foregroundColor ?? widget.palette.textSecondary;
-    final background = pressing
-        ? Color.alphaBlend(
-            widget.palette.textPrimary.withValues(alpha: 0.06),
-            widget.palette.hover,
-          )
-        : widget.selected
-            ? widget.palette.selected
-            : hovering || focused
-                ? widget.palette.hover
-                : Colors.transparent;
-
-    return Tooltip(
-      message: widget.tooltip,
-      child: Semantics(
-        button: true,
-        enabled: enabled,
-        label: widget.tooltip,
-        child: AnimatedOpacity(
-          duration: codeBlockAnimationDuration,
-          opacity: enabled ? 1 : 0.42,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: widget.onPressed,
-              onHover:
-                  enabled ? (value) => setState(() => hovering = value) : null,
-              onFocusChange:
-                  enabled ? (value) => setState(() => focused = value) : null,
-              onHighlightChanged:
-                  enabled ? (value) => setState(() => pressing = value) : null,
-              hoverColor: Colors.transparent,
-              focusColor: Colors.transparent,
-              highlightColor: Colors.transparent,
-              splashColor: Colors.transparent,
-              splashFactory: NoSplash.splashFactory,
-              borderRadius: BorderRadius.circular(7),
-              child: AnimatedContainer(
-                duration: codeBlockAnimationDuration,
-                curve: AppFlowyMotion.standardCurve,
-                height: 28,
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.label == null ? 7 : 8,
-                ),
-                decoration: BoxDecoration(
-                  color: background,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: AnimatedSwitcher(
-                  duration: codeBlockAnimationDuration,
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: child,
-                  ),
-                  child: Row(
-                    key: ValueKey((widget.icon, widget.label)),
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(widget.icon, size: 15, color: foreground),
-                      if (widget.label != null) ...[
-                        const SizedBox(width: 5),
-                        Text(
-                          widget.label!,
-                          style: _codeUiTextStyle(
-                            color: foreground,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HeaderDivider extends StatelessWidget {
-  const _HeaderDivider({required this.palette});
-
-  final _CodeBlockPalette palette;
-
-  @override
-  Widget build(BuildContext context) => SizedBox(
-        height: 14,
-        child: VerticalDivider(
-          width: 0.5,
-          thickness: 0.5,
-          color: palette.divider,
-        ),
-      );
-}
-
-/// The single surface every code layer paints on.
-///
-/// The header, the body and the code file editor all share it, so a code block
-/// reads as one uniform card instead of a toolbar stacked on a page — and a
-/// block in the editor matches a code file opened in the viewer exactly.
-Color codeBlockSurfaceColor(BuildContext context) {
-  if (Theme.of(context).brightness == Brightness.dark) {
-    return const Color(0xFF18191D);
-  }
-  if (PaperTheme.isEnabled(context)) {
-    return PaperTheme.codeBlockBackground;
-  }
-  return PremiumThemeExtension.maybeOf(context)?.surface ??
-      const Color(0xFFFAF9F6);
-}
-
-class _CodeBlockPalette {
-  const _CodeBlockPalette({
-    required this.surface,
-    required this.header,
-    required this.terminal,
-    required this.menu,
-    required this.input,
-    required this.border,
-    required this.divider,
-    required this.textPrimary,
-    required this.textSecondary,
-    required this.textMuted,
-    required this.hover,
-    required this.selected,
-    required this.accent,
-    required this.success,
-    required this.error,
-    required this.shadows,
-  });
-
-  factory _CodeBlockPalette.resolve(BuildContext context) {
-    final materialTheme = Theme.of(context);
-    final appFlowyTheme = AppFlowyTheme.of(context);
-    final brightness = materialTheme.brightness;
-    final isPaper = PaperTheme.isEnabled(context);
-    final premiumPalette = PremiumThemeExtension.maybeOf(context);
-    final surface = codeBlockSurfaceColor(context);
-
-    if (brightness == Brightness.dark) {
-      return _CodeBlockPalette(
-        surface: surface,
-        header: surface,
-        terminal: const Color(0xFF141519),
-        menu: const Color(0xFF202126),
-        input: const Color(0xFF1E1F24),
-        border: const Color(0x24FFFFFF),
-        divider: const Color(0x14FFFFFF),
-        textPrimary: const Color(0xFFE7E8EC),
-        textSecondary: const Color(0xFFB0B3BC),
-        textMuted: const Color(0xFF737780),
-        hover: const Color(0x12FFFFFF),
-        selected: const Color(0x267AA2F7),
-        accent: const Color(0xFF8AB4F8),
-        success: const Color(0xFF86D9A2),
-        error: appFlowyTheme.textColorScheme.error,
-        shadows: const [
-          BoxShadow(
-            color: Color(0x3D000000),
-            blurRadius: 18,
-            offset: Offset(0, 7),
-            spreadRadius: -8,
-          ),
-          BoxShadow(
-            color: Color(0x24000000),
-            blurRadius: 5,
-            offset: Offset(0, 2),
-            spreadRadius: -2,
-          ),
-        ],
-      );
-    }
-
-    if (isPaper) {
-      return _CodeBlockPalette(
-        surface: surface,
-        header: surface,
-        terminal: PaperTheme.editorPreviewBackground,
-        menu: PaperTheme.popupBackground,
-        input: PaperTheme.controlBackground,
-        border: PaperTheme.codeBlockBorder,
-        divider: PaperTheme.codeBlockBorder.withValues(alpha: 0.7),
-        textPrimary: appFlowyTheme.textColorScheme.primary,
-        textSecondary: appFlowyTheme.textColorScheme.secondary,
-        textMuted: appFlowyTheme.textColorScheme.tertiary,
-        hover: PaperTheme.hoverOverlay,
-        selected: PaperTheme.selectedOverlay,
-        accent: PaperTheme.accent,
-        success: const Color(0xFF53734F),
-        error: appFlowyTheme.textColorScheme.error,
-        shadows: const [
-          BoxShadow(
-            color: Color(0x123F352A),
-            blurRadius: 14,
-            offset: Offset(0, 5),
-            spreadRadius: -6,
-          ),
-          BoxShadow(
-            color: Color(0x0A3F352A),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-            spreadRadius: -1,
-          ),
-        ],
-      );
-    }
-
-    final border =
-        premiumPalette?.border ?? appFlowyTheme.borderColorScheme.primary;
-
-    return _CodeBlockPalette(
-      surface: surface,
-      header: surface,
-      terminal: EditorSurfaceStyle.previewBackgroundFor(
-        brightness,
-        premiumPalette?.canvas ?? const Color(0xFFF1F0EC),
-        isPaper: isPaper,
-      ),
-      menu: premiumPalette?.floatingSurface ??
-          appFlowyTheme.surfaceColorScheme.primary,
-      input: premiumPalette?.mutedSurface ??
-          appFlowyTheme.fillColorScheme.contentHover,
-      border: border,
-      divider: border.withValues(alpha: 0.7),
-      textPrimary: appFlowyTheme.textColorScheme.primary,
-      textSecondary: appFlowyTheme.textColorScheme.secondary,
-      textMuted: appFlowyTheme.textColorScheme.tertiary,
-      hover:
-          premiumPalette?.hover ?? appFlowyTheme.fillColorScheme.contentHover,
-      selected:
-          premiumPalette?.selected ?? appFlowyTheme.fillColorScheme.themeSelect,
-      accent:
-          premiumPalette?.accent ?? appFlowyTheme.fillColorScheme.themeThick,
-      success: appFlowyTheme.textColorScheme.success,
-      error: appFlowyTheme.textColorScheme.error,
-      shadows: [
-        BoxShadow(
-          color: premiumPalette?.shadow ?? const Color(0x123F352A),
-          blurRadius: 12,
-          offset: const Offset(0, 4),
-          spreadRadius: -5,
-        ),
-        BoxShadow(
-          color: (premiumPalette?.shadow ?? const Color(0x123F352A))
-              .withValues(alpha: 0.04),
-          blurRadius: 7,
-          offset: const Offset(0, 1),
-          spreadRadius: -1,
-        ),
-      ],
-    );
-  }
-
-  final Color surface;
-  final Color header;
-  final Color terminal;
-  final Color menu;
-  final Color input;
-  final Color border;
-  final Color divider;
-  final Color textPrimary;
-  final Color textSecondary;
-  final Color textMuted;
-  final Color hover;
-  final Color selected;
-  final Color accent;
-  final Color success;
-  final Color error;
-  final List<BoxShadow> shadows;
-}
-
-TextStyle _codeUiTextStyle({
-  required Color color,
-  required double fontSize,
-  required FontWeight fontWeight,
-}) =>
-    getGoogleFontSafely(
-      'JetBrains Mono',
-      fontSize: fontSize,
-      fontWeight: fontWeight,
-      fontColor: color,
-      letterSpacing: -0.1,
-    ).copyWith(
-      fontFamilyFallback: const ['Geist Mono', 'RobotoMono', 'monospace'],
-    );
 
 const codeBlockSupportedLanguages = [
   'auto',

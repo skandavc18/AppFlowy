@@ -59,8 +59,9 @@ it wipes every workspace stored on that instance.
 Serves the editor AppFlowy embeds for `.docx`, `.xlsx`, `.pptx` and friends.
 Started as `appflowy-onlyoffice` on port 8080 with JWT enabled.
 
-After `up`, open any office file in AppFlowy and fill the server panel with the
-values the script prints:
+When AppFlowy is signed in to the local AppFlowy Cloud service, office files
+connect to this container automatically and saves flow back through Cloud.
+Local-only AppFlowy users can still enter the values printed by the script:
 
 | Field | Value |
 | --- | --- |
@@ -68,9 +69,9 @@ values the script prints:
 | JWT secret | `appflowy-office-dev-secret` |
 | Bridge host | `host.docker.internal` |
 
-AppFlowy serves the file to the container from a short lived local HTTP bridge,
-so if the editor loads but the document never appears, allow AppFlowy through
-the Windows firewall.
+Local-only mode serves the file from a short-lived HTTP bridge, so if that mode
+loads the editor but not the document, allow AppFlowy through Windows Firewall.
+Cloud mode keeps the JWT secret and save callback inside the Docker network.
 
 ### `appflowy-cloud` — self hosted backend
 

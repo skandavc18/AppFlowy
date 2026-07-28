@@ -14,6 +14,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_item_cli
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -232,108 +233,6 @@ enum WorkspaceItemAddKind {
   file,
 }
 
-/// The "New file" entry, which opens a submenu with every supported file type.
-class WorkspaceFileAddAction extends PopoverActionCell {
-  WorkspaceFileAddAction({required this.onCreate});
-
-  final void Function(WorkspaceFileMenuAction action) onCreate;
-
-  @override
-  Widget? leftIcon(Color iconColor) => Icon(
-        Icons.note_add_outlined,
-        color: iconColor,
-        size: 17,
-      );
-
-  @override
-  Widget? rightIcon(Color iconColor) => Icon(
-        Icons.chevron_right_rounded,
-        color: iconColor,
-        size: 16,
-      );
-
-  @override
-  String get name => LocaleKeys.workspaceFolderExplorer_newFile.tr();
-
-  @override
-  PopoverActionCellBuilder get builder =>
-      (context, parentController, controller) => WorkspaceFileKindMenu(
-            onSelected: (action) {
-              controller.close();
-              parentController.close();
-              onCreate(action);
-            },
-          );
-}
-
-/// The list of creatable and uploadable file types.
-class WorkspaceFileKindMenu extends StatelessWidget {
-  const WorkspaceFileKindMenu({super.key, required this.onSelected});
-
-  final ValueChanged<WorkspaceFileMenuAction> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final iconColor = theme.colorScheme.onSurface;
-    final children = <Widget>[];
-    WorkspaceFileSource? section;
-    for (final action in workspaceFileMenuActions) {
-      if (action.source != section) {
-        if (section != null) {
-          children.add(
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              child: FlowyDivider(),
-            ),
-          );
-        }
-        section = action.source;
-        children.add(
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 6, 10, 4),
-            child: Text(
-              action.source.heading.toUpperCase(),
-              style: TextStyle(
-                fontSize: 10.5,
-                letterSpacing: 0.6,
-                fontWeight: FontWeight.w600,
-                color: theme.hintColor,
-              ),
-            ),
-          ),
-        );
-      }
-      children.add(
-        HoverButton(
-          itemHeight: ActionListSizes.itemHeight,
-          leftIcon: Icon(action.icon, color: iconColor, size: 17),
-          name: action.label,
-          onTap: () => onSelected(action),
-        ),
-      );
-    }
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        minWidth: 210,
-        // The list is long enough to run past a short window, so it scrolls
-        // instead of overflowing the popover.
-        maxHeight: MediaQuery.sizeOf(context).height * 0.62,
-      ),
-      child: IntrinsicWidth(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: children,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class WorkspaceItemAddAction extends ActionCell {
   WorkspaceItemAddAction(this.kind);
 
@@ -342,8 +241,8 @@ class WorkspaceItemAddAction extends ActionCell {
   @override
   Widget? leftIcon(Color iconColor) => Icon(
         kind == WorkspaceItemAddKind.folder
-            ? Icons.create_new_folder_outlined
-            : Icons.note_add_outlined,
+            ? workspaceAddFolderIcon
+            : workspaceAddFileIcon,
         color: iconColor,
         size: 17,
       );

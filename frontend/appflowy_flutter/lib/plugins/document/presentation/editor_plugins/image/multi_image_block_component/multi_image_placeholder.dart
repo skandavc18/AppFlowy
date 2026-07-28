@@ -13,8 +13,10 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/uplo
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy_backend/log.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide UploadImageMenu;
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -126,6 +128,12 @@ class MultiImagePlaceholderState extends State<MultiImagePlaceholder> {
                 await insertNetworkImage(url);
               });
             },
+            onSelectedWorkspaceImage: (view) {
+              controller.close();
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                await insertWorkspaceImage(view);
+              });
+            },
           );
         },
         child: DropTarget(
@@ -204,6 +212,10 @@ class MultiImagePlaceholderState extends State<MultiImagePlaceholder> {
                 context.pop();
                 await insertNetworkImage(url);
               },
+              onSelectedWorkspaceImage: (view) async {
+                context.pop();
+                await insertWorkspaceImage(view);
+              },
             ),
           );
         },
@@ -233,6 +245,32 @@ class MultiImagePlaceholderState extends State<MultiImagePlaceholder> {
               MultiImageLayout.browser.toIntValue(),
     });
 
+    await editorState.apply(transaction);
+  }
+
+  Future<void> insertWorkspaceImage(ViewPB view) async {
+    controller.close();
+    final reference = view.workspaceFileReference;
+    if (reference == null) {
+      return showSnackBarMessage(
+        context,
+        'This workspace image is no longer available.',
+      );
+    }
+
+    final image = ImageBlockData(
+      url: reference.url,
+      type:
+          reference.isLocal ? CustomImageType.local : CustomImageType.internal,
+      workspaceFileId: reference.viewId,
+    );
+    final transaction = editorState.transaction
+      ..updateNode(widget.node, {
+        MultiImageBlockKeys.images: [image.toJson()],
+        MultiImageBlockKeys.layout:
+            widget.node.attributes[MultiImageBlockKeys.layout] ??
+                MultiImageLayout.browser.toIntValue(),
+      });
     await editorState.apply(transaction);
   }
 

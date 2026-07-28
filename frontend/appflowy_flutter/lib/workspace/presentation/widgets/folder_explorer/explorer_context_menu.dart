@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -154,16 +155,14 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
         gap(),
         action(
           ExplorerContextAction.newFile,
-          Icons.note_add_outlined,
-          knowledgeMode
-              ? LocaleKeys.workspaceFolderExplorer_newNote.tr()
-              : LocaleKeys.workspaceFolderExplorer_newFile.tr(),
+          workspaceAddFileIcon,
+          LocaleKeys.workspaceFolderExplorer_addFile.tr(),
         ),
         action(
           ExplorerContextAction.newFolder,
           knowledgeMode
               ? Icons.auto_awesome_mosaic_outlined
-              : Icons.create_new_folder_outlined,
+              : workspaceAddFolderIcon,
           knowledgeMode
               ? LocaleKeys.workspaceFolderExplorer_newCollection.tr()
               : LocaleKeys.workspaceFolderExplorer_newFolder.tr(),

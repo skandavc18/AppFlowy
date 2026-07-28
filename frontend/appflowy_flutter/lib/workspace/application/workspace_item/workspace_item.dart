@@ -144,6 +144,50 @@ class WorkspaceItemMetadata {
   }
 }
 
+@immutable
+class WorkspaceFileReference {
+  const WorkspaceFileReference({
+    required this.viewId,
+    required this.name,
+    required this.url,
+    required this.mimeType,
+  });
+
+  factory WorkspaceFileReference.fromView(ViewPB view) {
+    final metadata = view.workspaceItem;
+    final storageUrl = metadata?.storageUrl;
+    if (metadata == null ||
+        !metadata.isFile ||
+        storageUrl == null ||
+        storageUrl.isEmpty) {
+      throw ArgumentError.value(
+        view,
+        'view',
+        'The view does not contain a stored workspace file.',
+      );
+    }
+    return WorkspaceFileReference(
+      viewId: view.id,
+      name: view.name.trim().isEmpty ? 'Untitled' : view.name,
+      url: storageUrl,
+      mimeType: metadata.mimeType,
+    );
+  }
+
+  final String viewId;
+  final String name;
+  final String url;
+  final String? mimeType;
+
+  bool get isLocal {
+    final scheme = Uri.tryParse(url)?.scheme.toLowerCase();
+    return scheme == null ||
+        scheme.isEmpty ||
+        scheme == 'file' ||
+        (scheme.length == 1 && url.length > 1 && url[1] == ':');
+  }
+}
+
 Map<String, dynamic> decodeViewExtra(String extra) {
   if (extra.isEmpty) {
     return <String, dynamic>{};
@@ -214,6 +258,18 @@ extension WorkspaceItemViewExtension on ViewPB {
   bool get isWorkspaceFolder => workspaceItem?.isFolder ?? false;
   bool get isWorkspaceFile => workspaceItem?.isFile ?? false;
   bool get isWorkspaceItem => workspaceItem != null;
+  WorkspaceFileReference? get workspaceFileReference {
+    final metadata = workspaceItem;
+    final storageUrl = metadata?.storageUrl;
+    if (metadata == null ||
+        !metadata.isFile ||
+        storageUrl == null ||
+        storageUrl.isEmpty) {
+      return null;
+    }
+    return WorkspaceFileReference.fromView(this);
+  }
+
   bool get isWorkspaceRootFolder => isWorkspaceFolder && parentViewId.isEmpty;
   bool isWorkspaceRootFor(String workspaceId) =>
       workspaceId.isNotEmpty && id == workspaceId && parentViewId.isEmpty;

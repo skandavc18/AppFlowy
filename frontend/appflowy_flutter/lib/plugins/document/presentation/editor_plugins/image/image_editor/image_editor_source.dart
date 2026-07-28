@@ -1,11 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/shared/appflowy_cloud_auth.dart';
 import 'package:appflowy/shared/custom_image_cache_manager.dart';
-import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:string_validator/string_validator.dart';
 
@@ -31,23 +30,9 @@ class ImageEditorSource {
     // workspace host and reuses whatever the block just displayed.
     final file = await CustomImageCacheManager().getSingleFile(
       url,
-      headers: _authHeaders(),
+      headers: appFlowyCloudAuthHeaders(userProfile),
     );
     return file.readAsBytes();
-  }
-
-  Map<String, String> _authHeaders() {
-    final token = userProfile?.token;
-    if (token == null || token.isEmpty) {
-      return const {};
-    }
-    try {
-      final decoded = jsonDecode(token);
-      return {'Authorization': 'Bearer ${decoded['access_token']}'};
-    } catch (e) {
-      Log.error('Unable to decode token for the image editor: $e');
-      return const {};
-    }
   }
 }
 

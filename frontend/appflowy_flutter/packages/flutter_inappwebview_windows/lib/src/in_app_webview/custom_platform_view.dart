@@ -87,6 +87,34 @@ Offset filterScrollDeltaForSettings(Offset delta, dynamic creationParams) {
   );
 }
 
+const _trackpadDirectManipulationScale = 0.55;
+const _trackpadMaximumDirectDelta = 48.0;
+const _trackpadPointerId = 0x3ffffffe;
+
+@visibleForTesting
+Offset webViewTrackpadDirectDelta(Offset delta) {
+  return Offset(
+        delta.dx.clamp(
+          -_trackpadMaximumDirectDelta,
+          _trackpadMaximumDirectDelta,
+        ),
+        delta.dy.clamp(
+          -_trackpadMaximumDirectDelta,
+          _trackpadMaximumDirectDelta,
+        ),
+      ) *
+      _trackpadDirectManipulationScale;
+}
+
+@visibleForTesting
+bool hasEnabledWebViewScrollAxis(dynamic creationParams) {
+  final initialSettings =
+      creationParams is Map ? creationParams['initialSettings'] : null;
+  return initialSettings is! Map ||
+      initialSettings['disableHorizontalScroll'] != true ||
+      initialSettings['disableVerticalScroll'] != true;
+}
+
 class CustomFlutterViewControllerValue {
   const CustomFlutterViewControllerValue({
     required this.isInitialized,
@@ -114,6 +142,7 @@ class CustomPlatformViewController
   Completer<void> _creatingCompleter = Completer<void>();
   int _textureId = 0;
   bool _isDisposed = false;
+  bool _hasPlatformView = false;
 
   Future<void> get ready => _creatingCompleter.future;
 
@@ -134,10 +163,16 @@ class CustomPlatformViewController
   Future<void> initialize(
       {Function(int id)? onPlatformViewCreated, dynamic arguments}) async {
     if (_isDisposed) {
+      _creatingCompleter.complete();
       return;
     }
     _textureId = (await _pluginChannel.invokeMethod<int>(
         'createInAppWebView', arguments))!;
+    _hasPlatformView = true;
+    if (_isDisposed) {
+      _creatingCompleter.complete();
+      return;
+    }
 
     _methodChannel =
         MethodChannel('com.pichillilorenzo/custom_platform_view_$_textureId');
@@ -166,13 +201,17 @@ class CustomPlatformViewController
 
   @override
   Future<void> dispose() async {
+    if (_isDisposed) {
+      return;
+    }
+    _isDisposed = true;
+    super.dispose();
     await _creatingCompleter.future;
-    if (!_isDisposed) {
-      _isDisposed = true;
-      await _eventStreamSubscription?.cancel();
+    await _eventStreamSubscription?.cancel();
+    if (_hasPlatformView) {
       await _pluginChannel.invokeMethod('dispose', {"id": _textureId});
     }
-    super.dispose();
+    await _cursorStreamController.close();
   }
 
   /// Limits the number of frames per second to the given value.
@@ -282,6 +321,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
   final _controller = CustomPlatformViewController();
   final _focusNode = FocusNode();
+  Offset? _trackpadPointerPosition;
 
   StreamSubscription? _cursorSubscription;
 
@@ -291,6 +331,9 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
     _controller.initialize(
         onPlatformViewCreated: (id) {
+          if (!mounted) {
+            return;
+          }
           widget.onPlatformViewCreated?.call(id);
           setState(() {});
         },
@@ -298,11 +341,17 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
     // Report initial surface size and widget position
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
       _reportSurfaceSize();
       _reportWidgetPosition();
     });
 
     _cursorSubscription = _controller._cursor.listen((cursor) {
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _cursor = cursor;
       });
@@ -330,133 +379,257 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
         },
         child: SizeChangedLayoutNotifier(
             child: _controller.value.isInitialized
-                ? Listener(
-                    onPointerHover: (ev) {
-                      // ev.kind is for whatever reason not set to touch
-                      // even on touch input
-                      if (_pointerKind == PointerDeviceKind.touch) {
-                        // Ignoring hover events on touch for now
-                        return;
-                      }
-                      _controller._setCursorPos(ev.localPosition);
-                    },
-                    onPointerDown: (ev) {
-                      _reportSurfaceSize();
-                      _reportWidgetPosition();
-
-                      if (!_focusNode.hasFocus) {
-                        _focusNode.requestFocus();
-                        Future.delayed(const Duration(milliseconds: 50), () {
-                          if (!_focusNode.hasFocus) {
-                            _focusNode.requestFocus();
-                          }
-                        });
-                      }
-
-                      _pointerKind = ev.kind;
-                      if (ev.kind == PointerDeviceKind.touch) {
-                        _controller._setPointerUpdate(
-                            InAppWebViewPointerEventKind.down,
-                            ev.pointer,
-                            ev.localPosition,
-                            ev.size,
-                            ev.pressure);
-                        return;
-                      }
-                      final button = _getButton(ev.buttons);
-                      _downButtons[ev.pointer] = button;
-                      _controller._setPointerButtonState(button, true);
-                    },
-                    onPointerUp: (ev) {
-                      _pointerKind = ev.kind;
-                      if (ev.kind == PointerDeviceKind.touch) {
-                        _controller._setPointerUpdate(
-                            InAppWebViewPointerEventKind.up,
-                            ev.pointer,
-                            ev.localPosition,
-                            ev.size,
-                            ev.pressure);
-                        return;
-                      }
-                      final button = _downButtons.remove(ev.pointer);
-                      if (button != null) {
-                        _controller._setPointerButtonState(button, false);
-                      }
-                    },
-                    onPointerCancel: (ev) {
-                      _pointerKind = ev.kind;
-                      final button = _downButtons.remove(ev.pointer);
-                      if (button != null) {
-                        _controller._setPointerButtonState(button, false);
-                      }
-                    },
-                    onPointerMove: (ev) {
-                      _pointerKind = ev.kind;
-                      if (ev.kind == PointerDeviceKind.touch) {
-                        _controller._setPointerUpdate(
-                            InAppWebViewPointerEventKind.update,
-                            ev.pointer,
-                            ev.localPosition,
-                            ev.size,
-                            ev.pressure);
-                      } else {
-                        _controller._setCursorPos(ev.localPosition);
-                      }
-                    },
-                    onPointerSignal: (signal) {
-                      if (signal is PointerScrollEvent) {
-                        final delta = filterScrollDeltaForSettings(
-                          -signal.scrollDelta,
-                          widget.creationParams,
-                        );
-                        if (delta != Offset.zero) {
-                          _controller._setScrollDelta(delta.dx, delta.dy);
-                        }
-                      }
-                    },
-                    onPointerPanZoomUpdate: (ev) {
-                      final delta = filterScrollDeltaForSettings(
-                        ev.panDelta,
-                        widget.creationParams,
-                      );
-                      if (delta != Offset.zero) {
-                        _controller._setScrollDelta(delta.dx, delta.dy);
-                      }
-                    },
-                    child: MouseRegion(
-                        cursor: _cursor,
-                        child: Texture(
-                          textureId: _controller._textureId,
-                          filterQuality: widget.filterQuality,
-                        )),
-                  )
+                ? _buildInputSurface()
                 : const SizedBox()));
   }
 
-  void _reportSurfaceSize() async {
-    final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null) {
-      await _controller.ready;
-      unawaited(_controller._setSize(
-          box.size, widget.scaleFactor ?? window.devicePixelRatio));
+  Widget _buildInputSurface() {
+    final listener = Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerHover: (ev) {
+        // ev.kind is for whatever reason not set to touch even on touch input.
+        if (_pointerKind != PointerDeviceKind.touch) {
+          _controller._setCursorPos(ev.localPosition);
+        }
+      },
+      onPointerDown: (ev) {
+        _endTrackpadPointer();
+        _reportSurfaceSize();
+        _reportWidgetPosition();
+
+        if (!_focusNode.hasFocus) {
+          _focusNode.requestFocus();
+          Future.delayed(const Duration(milliseconds: 50), () {
+            if (mounted && !_focusNode.hasFocus) {
+              _focusNode.requestFocus();
+            }
+          });
+        }
+
+        _pointerKind = ev.kind;
+        if (ev.kind == PointerDeviceKind.touch) {
+          _controller._setPointerUpdate(InAppWebViewPointerEventKind.down,
+              ev.pointer, ev.localPosition, ev.size, ev.pressure);
+          return;
+        }
+        final button = _getButton(ev.buttons);
+        _downButtons[ev.pointer] = button;
+        _controller._setPointerButtonState(button, true);
+      },
+      onPointerUp: (ev) {
+        _pointerKind = ev.kind;
+        if (ev.kind == PointerDeviceKind.touch) {
+          _controller._setPointerUpdate(InAppWebViewPointerEventKind.up,
+              ev.pointer, ev.localPosition, ev.size, ev.pressure);
+          return;
+        }
+        final button = _downButtons.remove(ev.pointer);
+        if (button != null) {
+          _controller._setPointerButtonState(button, false);
+        }
+      },
+      onPointerCancel: (ev) {
+        _pointerKind = ev.kind;
+        final button = _downButtons.remove(ev.pointer);
+        if (button != null) {
+          _controller._setPointerButtonState(button, false);
+        }
+      },
+      onPointerMove: (ev) {
+        _pointerKind = ev.kind;
+        if (ev.kind == PointerDeviceKind.touch) {
+          _controller._setPointerUpdate(InAppWebViewPointerEventKind.update,
+              ev.pointer, ev.localPosition, ev.size, ev.pressure);
+        } else {
+          _controller._setCursorPos(ev.localPosition);
+        }
+      },
+      onPointerSignal: (signal) {
+        if (signal is PointerScrollEvent) {
+          _endTrackpadPointer();
+          _sendScrollDelta(
+            filterScrollDeltaForSettings(
+              -signal.scrollDelta,
+              widget.creationParams,
+            ),
+          );
+        }
+      },
+      child: MouseRegion(
+          cursor: _cursor,
+          child: Texture(
+            textureId: _controller._textureId,
+            filterQuality: widget.filterQuality,
+          )),
+    );
+    if (!hasEnabledWebViewScrollAxis(widget.creationParams)) {
+      return listener;
+    }
+    return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      excludeFromSemantics: true,
+      gestures: <Type, GestureRecognizerFactory>{
+        _WebViewTrackpadGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+            _WebViewTrackpadGestureRecognizer>(
+          _WebViewTrackpadGestureRecognizer.new,
+          (recognizer) => recognizer
+            ..onStart = _handleTrackpadStart
+            ..onUpdate = _handleTrackpadUpdate
+            ..onEnd = _handleTrackpadEnd,
+        ),
+      },
+      child: listener,
+    );
+  }
+
+  void _sendScrollDelta(Offset delta) {
+    if (delta != Offset.zero) {
+      _controller._setScrollDelta(delta.dx, delta.dy);
     }
   }
 
-  void _reportWidgetPosition() async {
-    final box = _key.currentContext?.findRenderObject() as RenderBox?;
-    if (box != null) {
-      await _controller.ready;
-      final position = box.localToGlobal(Offset.zero);
-      unawaited(_controller._setPosition(
-          position, widget.scaleFactor ?? window.devicePixelRatio));
+  void _handleTrackpadStart(PointerPanZoomStartEvent event) {
+    _endTrackpadPointer();
+    _controller._setCursorPos(event.localPosition);
+    final position = _boundTrackpadPosition(event.localPosition);
+    _trackpadPointerPosition = position;
+    _controller._setPointerUpdate(
+      InAppWebViewPointerEventKind.down,
+      _trackpadPointerId,
+      position,
+      1,
+      1,
+    );
+  }
+
+  void _handleTrackpadUpdate(PointerPanZoomUpdateEvent event) {
+    final delta = webViewTrackpadDirectDelta(
+      filterScrollDeltaForSettings(
+        event.localPanDelta,
+        widget.creationParams,
+      ),
+    );
+    final currentPosition = _trackpadPointerPosition;
+    if (currentPosition == null || delta == Offset.zero) {
+      return;
     }
+    final position = _boundTrackpadPosition(currentPosition + delta);
+    _trackpadPointerPosition = position;
+    _controller._setPointerUpdate(
+      InAppWebViewPointerEventKind.update,
+      _trackpadPointerId,
+      position,
+      1,
+      1,
+    );
+  }
+
+  void _handleTrackpadEnd(PointerPanZoomEndEvent event) {
+    _endTrackpadPointer();
+  }
+
+  Offset _boundTrackpadPosition(Offset position) {
+    final box = _key.currentContext?.findRenderObject() as RenderBox?;
+    final size = box?.size;
+    if (size == null) {
+      return position;
+    }
+    return Offset(
+      position.dx.clamp(0, size.width).toDouble(),
+      position.dy.clamp(0, size.height).toDouble(),
+    );
+  }
+
+  void _endTrackpadPointer() {
+    final position = _trackpadPointerPosition;
+    if (position == null) {
+      return;
+    }
+    _trackpadPointerPosition = null;
+    _controller._setPointerUpdate(
+      InAppWebViewPointerEventKind.up,
+      _trackpadPointerId,
+      position,
+      1,
+      0,
+    );
+  }
+
+  void _reportSurfaceSize() async {
+    await _controller.ready;
+    if (!mounted) {
+      return;
+    }
+    final box = _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) {
+      return;
+    }
+    unawaited(_controller._setSize(
+        box.size, widget.scaleFactor ?? window.devicePixelRatio));
+  }
+
+  void _reportWidgetPosition() async {
+    await _controller.ready;
+    if (!mounted) {
+      return;
+    }
+    final box = _key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.attached) {
+      return;
+    }
+    final position = box.localToGlobal(Offset.zero);
+    unawaited(_controller._setPosition(
+        position, widget.scaleFactor ?? window.devicePixelRatio));
   }
 
   @override
   void dispose() {
-    super.dispose();
+    _endTrackpadPointer();
     _cursorSubscription?.cancel();
     _controller.dispose();
     _focusNode.dispose();
+    super.dispose();
   }
+}
+
+class _WebViewTrackpadGestureRecognizer extends OneSequenceGestureRecognizer {
+  _WebViewTrackpadGestureRecognizer()
+      : super(supportedDevices: const {PointerDeviceKind.trackpad});
+
+  void Function(PointerPanZoomStartEvent event)? onStart;
+  void Function(PointerPanZoomUpdateEvent event)? onUpdate;
+  void Function(PointerPanZoomEndEvent event)? onEnd;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {
+    resolve(GestureDisposition.rejected);
+  }
+
+  @override
+  void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {
+    startTrackingPointer(event.pointer, event.transform);
+    resolve(GestureDisposition.accepted);
+    onStart?.call(event);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerPanZoomUpdateEvent) {
+      onUpdate?.call(event);
+    } else if (event is PointerPanZoomEndEvent) {
+      onEnd?.call(event);
+      stopTrackingPointer(event.pointer);
+    }
+  }
+
+  @override
+  void rejectGesture(int pointer) {
+    stopTrackingPointer(pointer);
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {}
+
+  @override
+  String get debugDescription => 'Windows WebView trackpad pan/zoom';
 }

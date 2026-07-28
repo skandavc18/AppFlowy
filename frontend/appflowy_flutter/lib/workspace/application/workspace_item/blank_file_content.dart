@@ -14,6 +14,7 @@ Uint8List blankFileContent(WorkspaceFileKind kind) {
   return switch (kind) {
     WorkspaceFileKind.markdown => _utf8('# Untitled\n\n'),
     WorkspaceFileKind.html => _utf8(_blankHtml),
+    WorkspaceFileKind.archive => _zip(const {}),
     WorkspaceFileKind.word => _zip(_wordParts),
     WorkspaceFileKind.excel => _zip(_excelParts),
     WorkspaceFileKind.powerpoint => _zip(_powerpointParts),

@@ -3,7 +3,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
-import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -187,7 +187,7 @@ List<PopoverAction> sidebarRootCreateActions({
 }) {
   return [
     SidebarRootCreateAction(SidebarRootCreateKind.folder),
-    SidebarRootFileAction(onCreate: onCreateFile),
+    WorkspaceFileAddAction(onCreate: onCreateFile),
     for (final kind in SidebarRootCreateKind.values)
       if (kind != SidebarRootCreateKind.folder) SidebarRootCreateAction(kind),
     ...trailing,
@@ -202,7 +202,7 @@ class SidebarRootCreateAction extends SidebarRootAction {
   @override
   Widget? leftIcon(Color iconColor) => Icon(
         switch (kind) {
-          SidebarRootCreateKind.folder => Icons.create_new_folder_outlined,
+          SidebarRootCreateKind.folder => workspaceAddFolderIcon,
           SidebarRootCreateKind.page => Icons.description_outlined,
           SidebarRootCreateKind.table => Icons.table_chart_outlined,
           SidebarRootCreateKind.board => Icons.view_kanban_outlined,
@@ -225,41 +225,6 @@ class SidebarRootCreateAction extends SidebarRootAction {
         SidebarRootCreateKind.calendar => LocaleKeys.calendar_menuName.tr(),
         SidebarRootCreateKind.chat => LocaleKeys.chat_newChat.tr(),
       };
-}
-
-/// The nested "New file" entry, so a right click anywhere in the sidebar
-/// offers the same file types as the + button next to a folder.
-class SidebarRootFileAction extends PopoverActionCell {
-  SidebarRootFileAction({required this.onCreate});
-
-  final void Function(WorkspaceFileMenuAction action) onCreate;
-
-  @override
-  Widget? leftIcon(Color iconColor) => Icon(
-        Icons.note_add_outlined,
-        color: iconColor,
-        size: 17,
-      );
-
-  @override
-  Widget? rightIcon(Color iconColor) => Icon(
-        Icons.chevron_right_rounded,
-        color: iconColor,
-        size: 16,
-      );
-
-  @override
-  String get name => LocaleKeys.workspaceFolderExplorer_newFile.tr();
-
-  @override
-  PopoverActionCellBuilder get builder =>
-      (context, parentController, controller) => WorkspaceFileKindMenu(
-            onSelected: (action) {
-              controller.close();
-              parentController.close();
-              onCreate(action);
-            },
-          );
 }
 
 class SidebarRootPasteAction extends SidebarRootAction {

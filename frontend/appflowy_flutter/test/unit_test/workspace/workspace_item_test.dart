@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
@@ -49,6 +50,55 @@ void main() {
       expect(parsed?.storageUrl, 'https://example.test/file');
       expect(parsed?.size, 4096);
       expect(parsed?.modifiedAt, modifiedAt);
+    });
+
+    test('exposes an existing stored file as an embeddable reference', () {
+      final view = ViewPB(
+        id: 'file-id',
+        name: 'report.pdf',
+        extra: const WorkspaceItemMetadata.file(
+          contentKind: WorkspaceFileContentKind.binary,
+          mimeType: 'application/pdf',
+          storageUrl: 'C:\\AppFlowy\\files\\report.pdf',
+        ).mergeIntoExtra(''),
+      );
+
+      final reference = view.workspaceFileReference;
+
+      expect(reference?.viewId, 'file-id');
+      expect(reference?.name, 'report.pdf');
+      expect(reference?.url, 'C:\\AppFlowy\\files\\report.pdf');
+      expect(reference?.mimeType, 'application/pdf');
+      expect(reference?.isLocal, isTrue);
+    });
+
+    test('derives reference locality from its storage URL', () {
+      const remote = WorkspaceFileReference(
+        viewId: 'remote-file',
+        name: 'report.pdf',
+        url: 'https://cloud.appflowy.test/report.pdf',
+        mimeType: 'application/pdf',
+      );
+      const localUri = WorkspaceFileReference(
+        viewId: 'local-file',
+        name: 'report.pdf',
+        url: 'file:///C:/AppFlowy/files/report.pdf',
+        mimeType: 'application/pdf',
+      );
+
+      expect(remote.isLocal, isFalse);
+      expect(localUri.isLocal, isTrue);
+    });
+
+    test('does not expose workspace files without stored content', () {
+      final legacyFile = ViewPB(
+        id: 'legacy-file',
+        extra: const WorkspaceItemMetadata.file(
+          contentKind: WorkspaceFileContentKind.collaborativeText,
+        ).mergeIntoExtra(''),
+      );
+
+      expect(legacyFile.workspaceFileReference, isNull);
     });
 
     test('ignores malformed and unsupported metadata', () {
@@ -212,5 +262,19 @@ void main() {
       item.lastEdited,
       DateTime.fromMillisecondsSinceEpoch(1800000000 * 1000),
     );
+  });
+
+  test('image data preserves its workspace file reference', () {
+    final encoded = ImageBlockData(
+      url: 'C:\\AppFlowy\\files\\photo.png',
+      type: CustomImageType.local,
+      workspaceFileId: 'workspace-image-id',
+    ).toJson();
+
+    final decoded = ImageBlockData.fromJson(encoded);
+
+    expect(decoded.url, 'C:\\AppFlowy\\files\\photo.png');
+    expect(decoded.type, CustomImageType.local);
+    expect(decoded.workspaceFileId, 'workspace-image-id');
   });
 }

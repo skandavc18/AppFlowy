@@ -65,6 +65,8 @@ class CustomImageBlockKeys {
   ///
   /// The value is a String. The attribute is absent when there is no caption.
   static const String caption = 'caption';
+
+  static const String workspaceFileId = 'workspace_file_id';
 }
 
 Node customImageNode({

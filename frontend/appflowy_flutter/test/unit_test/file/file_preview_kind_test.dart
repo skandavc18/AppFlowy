@@ -17,22 +17,46 @@ void main() {
       expect(filePreviewKindFromName('bundle.zip'), FilePreviewKind.archive);
     });
 
-    test('keeps Office documents as regular file blocks', () {
-      for (final name in ['file.docx', 'file.xlsx', 'file.pptx']) {
+    test('routes Office documents to embedded Office previews', () {
+      for (final name in [
+        'file.docx',
+        'file.xlsx',
+        'file.pptx',
+        'file.rtf',
+      ]) {
         expect(filePreviewKindFromName(name), isNull);
         expect(isOfficeFile(name), isTrue);
+        expect(supportsEmbeddedFilePreview(name), isTrue);
       }
     });
 
     test('does not preview unsupported binary files', () {
       expect(filePreviewKindFromName('binary.exe'), isNull);
+      expect(supportsEmbeddedFilePreview('binary.exe'), isFalse);
+    });
+
+    test('recognises every archive container it can browse', () {
+      for (final name in [
+        'bundle.tar',
+        'bundle.tar.gz',
+        'bundle.tgz',
+        'bundle.tar.bz2',
+        'bundle.tar.xz',
+        'notes.txt.gz',
+      ]) {
+        expect(filePreviewKindFromName(name), FilePreviewKind.archive);
+      }
+      // Nothing bundled can unpack these, so they stay plain attachments.
+      expect(filePreviewKindFromName('bundle.7z'), isNull);
+      expect(filePreviewKindFromName('bundle.rar'), isNull);
+      expect(fileIconForName('bundle.7z'), Icons.folder_zip_rounded);
     });
 
     test('uses extension-specific icons for generic file blocks', () {
-      expect(fileIconForName('paper.pdf'), Icons.picture_as_pdf_outlined);
-      expect(fileIconForName('source.py'), Icons.code);
-      expect(fileIconForName('data.csv'), Icons.table_chart_outlined);
-      expect(fileIconForName('unknown.bin'), Icons.insert_drive_file_outlined);
+      expect(fileIconForName('paper.pdf'), Icons.picture_as_pdf_rounded);
+      expect(fileIconForName('source.py'), Icons.code_rounded);
+      expect(fileIconForName('data.csv'), Icons.table_chart_rounded);
+      expect(fileIconForName('unknown.bin'), Icons.insert_drive_file_rounded);
     });
 
     test('keeps WebView trackpad ownership inside the preview', () {

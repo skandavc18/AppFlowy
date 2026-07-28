@@ -12,6 +12,7 @@ import 'package:appflowy/workspace/presentation/settings/pages/setting_ai_view/s
 import 'package:appflowy/workspace/presentation/settings/pages/settings_account_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_billing_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_manage_data_view.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/settings_office_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_plan_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_shortcuts_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_workspace_view.dart';
@@ -145,6 +146,8 @@ class SettingsDialog extends StatelessWidget {
         return const SettingsNotificationsView();
       case SettingsPage.cloud:
         return SettingCloud(restartAppFlowy: () => restartApp());
+      case SettingsPage.documentEditing:
+        return SettingsOfficeView(userProfile: user);
       case SettingsPage.shortcuts:
         return const SettingsShortcutsView();
       case SettingsPage.ai:

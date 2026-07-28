@@ -33,6 +33,17 @@ class BridgedOfficeDocument {
   final String token;
 }
 
+/// An editor bootstrap page hosted on a real HTTP origin.
+class HostedOfficeEditor {
+  const HostedOfficeEditor({
+    required this.url,
+    required this.token,
+  });
+
+  final String url;
+  final String token;
+}
+
 class _BridgeEntry {
   _BridgeEntry({
     required this.file,
@@ -59,7 +70,10 @@ class OfficeDocumentBridge {
 
   HttpServer? _server;
   Future<HttpServer>? _starting;
+  HttpServer? _editorServer;
+  Future<HttpServer>? _editorStarting;
   final Map<String, _BridgeEntry> _entries = {};
+  final Map<String, String> _editorPages = {};
   final Random _random = Random.secure();
 
   int? get port => _server?.port;
@@ -86,14 +100,33 @@ class OfficeDocumentBridge {
     );
   }
 
-  void revoke(String token) => _entries.remove(token);
+  /// Hosts [html] over localhost so WebView storage has a non-opaque origin.
+  Future<HostedOfficeEditor> publishEditorPage(String html) async {
+    final server = await _ensureEditorServer();
+    final token = _newToken();
+    _editorPages[token] = html;
+    return HostedOfficeEditor(
+      url: 'http://localhost:${server.port}/editors/$token',
+      token: token,
+    );
+  }
+
+  void revoke(String token) {
+    _entries.remove(token);
+    _editorPages.remove(token);
+  }
 
   Future<void> shutdown() async {
     _entries.clear();
+    _editorPages.clear();
     final server = _server;
+    final editorServer = _editorServer;
     _server = null;
     _starting = null;
+    _editorServer = null;
+    _editorStarting = null;
     await server?.close(force: true);
+    await editorServer?.close(force: true);
   }
 
   String _safeName(File file) =>
@@ -129,6 +162,34 @@ class OfficeDocumentBridge {
     return server;
   }
 
+  Future<HttpServer> _ensureEditorServer() {
+    final running = _editorServer;
+    if (running != null) {
+      return Future.value(running);
+    }
+    return _editorStarting ??= _startEditorServer();
+  }
+
+  Future<HttpServer> _startEditorServer() async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen(
+      _handleEditorRequest,
+      onError: (Object error) =>
+          Log.error('Office editor page host failed: $error'),
+    );
+    _editorServer = server;
+    return server;
+  }
+
+  Future<void> _handleEditorRequest(HttpRequest request) async {
+    final segments = request.uri.pathSegments;
+    if (segments.length != 2 || segments.first != 'editors') {
+      await _reject(request, HttpStatus.notFound);
+      return;
+    }
+    await _serveEditorPage(request, segments[1]);
+  }
+
   Future<void> _handle(HttpRequest request) async {
     final segments = request.uri.pathSegments;
     if (segments.length < 3 || segments.first != 'documents') {
@@ -150,6 +211,25 @@ class OfficeDocumentBridge {
       return;
     }
     await _serveDocument(request, entry);
+  }
+
+  Future<void> _serveEditorPage(HttpRequest request, String token) async {
+    final html = _editorPages[token];
+    if (html == null) {
+      await _reject(request, HttpStatus.notFound);
+      return;
+    }
+    if (request.method != 'GET') {
+      await _reject(request, HttpStatus.methodNotAllowed);
+      return;
+    }
+    request.response
+      ..statusCode = HttpStatus.ok
+      ..headers.contentType = ContentType.html
+      ..headers.set(HttpHeaders.cacheControlHeader, 'no-store')
+      ..headers.set('X-Content-Type-Options', 'nosniff')
+      ..write(html);
+    await request.response.close();
   }
 
   Future<void> _serveDocument(HttpRequest request, _BridgeEntry entry) async {

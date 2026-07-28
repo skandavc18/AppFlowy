@@ -57,8 +57,8 @@ class WorkspaceItemIcon extends StatelessWidget {
         WorkspaceExplorerItemKind.folder =>
           expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
         WorkspaceExplorerItemKind.file => fileIconForName(item.name),
-        WorkspaceExplorerItemKind.document => Icons.description_outlined,
-        WorkspaceExplorerItemKind.database => Icons.table_chart_outlined,
+        WorkspaceExplorerItemKind.document => Icons.description_rounded,
+        WorkspaceExplorerItemKind.database => Icons.table_chart_rounded,
       },
       size: size,
       color: resolvedColor,

@@ -13,6 +13,7 @@ import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/document.dart';
 import 'package:appflowy/plugins/workspace_folder/workspace_folder_plugin.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_plugin.dart';
+import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
@@ -22,7 +23,6 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_item.dar
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -218,19 +218,13 @@ extension ViewExtension on ViewPB {
       if (values.length != 2) {
         return null;
       }
-      final groupName = values[0];
-      final iconName = values[1];
-      final svgString = kIconGroups
-          ?.firstWhereOrNull(
-            (group) => group.name == groupName,
-          )
-          ?.icons
-          .firstWhereOrNull(
-            (icon) => icon.name == iconName,
-          )
-          ?.content;
+      final svgString = findLoadedIcon(values[0], values[1])?.content;
       if (svgString == null) {
         return null;
+      }
+      if (iconPackForGroup(values[0]).isColorful) {
+        // multi-color artwork brings its own palette
+        return FlowySvg.string(svgString, size: size, blendMode: null);
       }
       return FlowySvg.string(
         svgString,

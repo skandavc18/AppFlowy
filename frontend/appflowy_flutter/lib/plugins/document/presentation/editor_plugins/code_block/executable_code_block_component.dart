@@ -14,6 +14,7 @@ import 'package:universal_platform/universal_platform.dart';
 const codeBlockShowLineNumbers = 'show_line_numbers';
 const codeBlockWidth = 'width';
 const codeBlockHeight = 'height';
+const codeBlockTestCases = 'test_cases';
 const codeBlockMinHeight = 140.0;
 
 class ExecutableCodeBlockComponentBuilder extends CodeBlockComponentBuilder {
@@ -106,6 +107,9 @@ class _ExecutableCodeBlockComponentWidgetState
   bool get showLineNumbers =>
       node.attributes[codeBlockShowLineNumbers] as bool? ?? true;
 
+  List<CodeTestCase> get testCases =>
+      decodeCodeTestCases(node.attributes[codeBlockTestCases]);
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -184,6 +188,9 @@ class _ExecutableCodeBlockComponentWidgetState
               },
               onLanguageChanged: _updateLanguage,
               onToggleLineNumbers: _toggleLineNumbers,
+              editable: editorState.editable,
+              testCases: testCases,
+              onTestCasesChanged: _updateTestCases,
               child: _buildCodeEditor(
                 context,
                 code: code,
@@ -311,6 +318,15 @@ class _ExecutableCodeBlockComponentWidgetState
     final transaction = editorState.transaction
       ..updateNode(node, {
         codeBlockShowLineNumbers: !showLineNumbers,
+      });
+    unawaited(editorState.apply(transaction));
+  }
+
+  void _updateTestCases(List<CodeTestCase> cases) {
+    final transaction = editorState.transaction
+      ..updateNode(node, {
+        // A null attribute is dropped, so an emptied tray leaves no trace.
+        codeBlockTestCases: cases.isEmpty ? null : encodeCodeTestCases(cases),
       });
     unawaited(editorState.apply(transaction));
   }

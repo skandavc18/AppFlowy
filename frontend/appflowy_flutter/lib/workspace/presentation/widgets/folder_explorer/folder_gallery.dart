@@ -237,6 +237,7 @@ class FolderGallery extends StatefulWidget {
     required this.onContextMenu,
     required this.onRequestDelete,
     required this.onRename,
+    this.onBackgroundContextMenu,
     this.header,
     this.errorBanner,
   });
@@ -250,6 +251,10 @@ class FolderGallery extends StatefulWidget {
       onContextMenu;
   final VoidCallback onRequestDelete;
   final ValueChanged<String> onRename;
+
+  /// Raised by a right click on empty space, so a collection can be filled
+  /// without hunting for the toolbar.
+  final ValueChanged<Offset>? onBackgroundContextMenu;
   final Widget? header;
   final Widget? errorBanner;
 
@@ -286,6 +291,13 @@ class _FolderGalleryState extends State<FolderGallery> {
           focusNode.requestFocus();
           controller.selection.clear();
         },
+        onSecondaryTapDown: widget.onBackgroundContextMenu == null
+            ? null
+            : (details) {
+                focusNode.requestFocus();
+                controller.selection.clear();
+                widget.onBackgroundContextMenu!(details.globalPosition);
+              },
         child: CustomScrollView(
           key: const ValueKey('folder-gallery-scroll-view'),
           cacheExtent: 900,
@@ -2308,80 +2320,86 @@ class _GalleryGenericFilePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Container(
-          width: 126,
-          height: 158,
-          padding: const EdgeInsets.fromLTRB(17, 20, 17, 16),
-          decoration: BoxDecoration(
-            color: palette.surface.withValues(alpha: 0.92),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: palette.shadow.withValues(alpha: 0.10),
-                blurRadius: 24,
-                offset: const Offset(0, 11),
-                spreadRadius: -8,
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                preview.fileTypeLabel,
-                style: TextStyle(
-                  color: palette.accent.withValues(alpha: 0.84),
-                  fontFamily: 'Inter',
-                  fontSize: 12,
-                  height: 1,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.15,
+    // The sheet is drawn at one size and scaled to whatever box it lands in,
+    // so the same artwork serves a full card and a thumbnail without
+    // overflowing the smaller one.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 126,
+            height: 158,
+            padding: const EdgeInsets.fromLTRB(17, 20, 17, 16),
+            decoration: BoxDecoration(
+              color: palette.surface.withValues(alpha: 0.92),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: palette.shadow.withValues(alpha: 0.10),
+                  blurRadius: 24,
+                  offset: const Offset(0, 11),
+                  spreadRadius: -8,
                 ),
-              ),
-              const Spacer(),
-              for (final width in [0.92, 0.74, 0.86, 0.55]) ...[
-                FractionallySizedBox(
-                  widthFactor: width,
-                  child: Container(
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: palette.textMuted.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  preview.fileTypeLabel,
+                  style: TextStyle(
+                    color: palette.accent.withValues(alpha: 0.84),
+                    fontFamily: 'Inter',
+                    fontSize: 12,
+                    height: 1,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.15,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const Spacer(),
+                for (final width in [0.92, 0.74, 0.86, 0.55]) ...[
+                  FractionallySizedBox(
+                    widthFactor: width,
+                    child: Container(
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: palette.textMuted.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
               ],
-            ],
-          ),
-        ),
-        Positioned(
-          top: 29,
-          right: 54,
-          child: Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: palette.accent.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(8),
             ),
-            child: Center(
-              child: Text(
-                item.name.isEmpty ? '?' : item.name.characters.first,
-                style: TextStyle(
-                  color: palette.accent,
-                  fontFamily: 'Inter',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+          ),
+          Positioned(
+            top: 29,
+            right: 54,
+            child: Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: palette.accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Text(
+                  item.name.isEmpty ? '?' : item.name.characters.first,
+                  style: TextStyle(
+                    color: palette.accent,
+                    fontFamily: 'Inter',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -2394,34 +2412,44 @@ class _GalleryBlankDocumentPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 5),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 74,
-            height: 7,
-            decoration: BoxDecoration(
-              color: palette.textPrimary.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          const SizedBox(height: 15),
-          for (final width in [0.92, 0.78, 0.86, 0.56, 0.72, 0.43]) ...[
-            FractionallySizedBox(
-              widthFactor: width,
-              child: Container(
-                height: 5,
+    // Drawn at one width and scaled to fit, so a thumbnail sized box gets the
+    // same page of ruled lines without running past its bottom edge.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.topLeft,
+      child: SizedBox(
+        width: 196,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 5),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 74,
+                height: 7,
                 decoration: BoxDecoration(
-                  color: palette.textMuted.withValues(alpha: 0.13),
-                  borderRadius: BorderRadius.circular(3),
+                  color: palette.textPrimary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
-            ),
-            const SizedBox(height: 9),
-          ],
-        ],
+              const SizedBox(height: 15),
+              for (final width in [0.92, 0.78, 0.86, 0.56, 0.72, 0.43]) ...[
+                FractionallySizedBox(
+                  widthFactor: width,
+                  child: Container(
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: palette.textMuted.withValues(alpha: 0.13),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 9),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -15,7 +15,9 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/uplo
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide UploadImageMenu;
 import 'package:desktop_drop/desktop_drop.dart';
@@ -145,6 +147,12 @@ class ImagePlaceholderState extends State<ImagePlaceholder> {
                 await insertNetworkImage(url);
               });
             },
+            onSelectedWorkspaceImage: (view) {
+              controller.close();
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                await insertWorkspaceImage(view);
+              });
+            },
           );
         },
         child: DropTarget(
@@ -268,6 +276,10 @@ class ImagePlaceholderState extends State<ImagePlaceholder> {
                 context.pop();
                 await insertNetworkImage(url);
               },
+              onSelectedWorkspaceImage: (view) async {
+                context.pop();
+                await insertWorkspaceImage(view);
+              },
             ),
           );
         },
@@ -362,6 +374,28 @@ class ImagePlaceholderState extends State<ImagePlaceholder> {
         LocaleKeys.document_imageBlock_error_multipleImagesFailed.tr(),
       );
     }
+  }
+
+  Future<void> insertWorkspaceImage(ViewPB view) async {
+    controller.close();
+    final reference = view.workspaceFileReference;
+    if (reference == null) {
+      return showSnackBarMessage(
+        context,
+        'This workspace image is no longer available.',
+      );
+    }
+
+    final transaction = editorState.transaction
+      ..updateNode(widget.node, {
+        CustomImageBlockKeys.url: reference.url,
+        CustomImageBlockKeys.imageType: (reference.isLocal
+                ? CustomImageType.local
+                : CustomImageType.internal)
+            .toIntValue(),
+        CustomImageBlockKeys.workspaceFileId: reference.viewId,
+      });
+    await editorState.apply(transaction);
   }
 
   Future<void> insertAIImage(String url) async {

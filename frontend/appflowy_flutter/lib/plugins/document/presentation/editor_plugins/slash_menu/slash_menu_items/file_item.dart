@@ -2,6 +2,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/selectable_svg_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +27,31 @@ final fileSlashMenuItem = _buildFileSlashMenuItem(
 final pdfSlashMenuItem = _buildPreviewFileSlashMenuItem(
   name: 'PDF',
   keywords: const ['pdf', 'document', 'annotation'],
+);
+final wordSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: WorkspaceFileKind.word.label,
+  keywords: const ['word', 'doc', 'docx', 'odt', 'rtf', 'document'],
+  allowedExtensions: WorkspaceFileKind.word.pickerExtensions,
+  materialIcon: WorkspaceFileKind.word.icon,
+);
+final excelSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: WorkspaceFileKind.excel.label,
+  keywords: const ['excel', 'xls', 'xlsx', 'ods', 'spreadsheet', 'workbook'],
+  allowedExtensions: WorkspaceFileKind.excel.pickerExtensions,
+  materialIcon: WorkspaceFileKind.excel.icon,
+);
+final powerpointSlashMenuItem = _buildPreviewFileSlashMenuItem(
+  name: WorkspaceFileKind.powerpoint.label,
+  keywords: const [
+    'powerpoint',
+    'ppt',
+    'pptx',
+    'odp',
+    'presentation',
+    'slides',
+  ],
+  allowedExtensions: WorkspaceFileKind.powerpoint.pickerExtensions,
+  materialIcon: WorkspaceFileKind.powerpoint.icon,
 );
 final htmlSlashMenuItem = _buildPreviewFileSlashMenuItem(
   name: 'HTML',
@@ -92,24 +118,41 @@ SelectionMenuItem _buildFileSlashMenuItem({
 SelectionMenuItem _buildPreviewFileSlashMenuItem({
   required String name,
   required List<String> keywords,
+  List<String>? allowedExtensions,
+  IconData? materialIcon,
 }) =>
     SelectionMenuItem(
       getName: () => name,
       keywords: keywords,
-      handler: (editorState, _, __) async =>
-          editorState.insertFileBlock(showPreview: true),
-      nameBuilder: slashMenuItemNameBuilder,
-      icon: (_, isSelected, style) => SelectableSvgWidget(
-        data: FlowySvgs.slash_menu_icon_file_s,
-        isSelected: isSelected,
-        style: style,
+      handler: (editorState, _, __) async => editorState.insertFileBlock(
+        showPreview: true,
+        allowedExtensions: allowedExtensions,
       ),
+      nameBuilder: slashMenuItemNameBuilder,
+      icon: (_, isSelected, style) => materialIcon == null
+          ? SelectableSvgWidget(
+              data: FlowySvgs.slash_menu_icon_file_s,
+              isSelected: isSelected,
+              style: style,
+            )
+          : SelectableIconWidget(
+              icon: materialIcon,
+              isSelected: isSelected,
+              style: style,
+            ),
     );
 
 extension on EditorState {
-  Future<void> insertFileBlock({bool showPreview = false}) async {
+  Future<void> insertFileBlock({
+    bool showPreview = false,
+    List<String>? allowedExtensions,
+  }) async {
     final fileGlobalKey = GlobalKey<FileBlockComponentState>();
-    await insertEmptyFileBlock(fileGlobalKey, showPreview: showPreview);
+    await insertEmptyFileBlock(
+      fileGlobalKey,
+      showPreview: showPreview,
+      allowedExtensions: allowedExtensions,
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       fileGlobalKey.currentState?.controller.show();

@@ -32,7 +32,21 @@ class IconGroup {
   final String name;
   final List<Icon> icons;
 
-  String get displayName => name.replaceAll('_', ' ');
+  /// The pack this group was loaded from, assigned by the loader.
+  String? packId;
+
+  /// The namespace [name] is prefixed with, stripped from [displayName].
+  String groupPrefix = '';
+
+  /// Whether this group's artwork carries its own colors.
+  bool isColorful = false;
+
+  String get displayName {
+    final withoutPrefix = groupPrefix.isNotEmpty && name.startsWith(groupPrefix)
+        ? name.substring(groupPrefix.length)
+        : name;
+    return withoutPrefix.replaceAll('_', ' ');
+  }
 
   IconGroup filter(String keyword) {
     final lowercaseKey = keyword.toLowerCase();
@@ -44,7 +58,10 @@ class IconGroup {
               icon.name.toLowerCase().contains(lowercaseKey),
         )
         .toList();
-    return IconGroup(name: name, icons: filteredIcons);
+    return IconGroup(name: name, icons: filteredIcons)
+      ..packId = packId
+      ..groupPrefix = groupPrefix
+      ..isColorful = isColorful;
   }
 
   String? getSvgContent(String iconName) {
@@ -73,6 +90,9 @@ class Icon {
 
   // Add reference to parent IconGroup
   IconGroup? iconGroup;
+
+  /// Whether this icon carries its own colors and must be painted untinted.
+  bool get isColorful => iconGroup?.isColorful ?? false;
 
   String get displayName => name.replaceAll('-', ' ');
 

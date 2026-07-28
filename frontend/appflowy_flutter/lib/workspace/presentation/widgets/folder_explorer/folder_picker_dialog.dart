@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -8,6 +9,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspac
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:universal_platform/universal_platform.dart';
 
 typedef WorkspaceFolderSelected = FutureOr<void> Function(ViewPB folder);
 typedef WorkspaceViewSelected = FutureOr<void> Function(ViewPB view);
@@ -17,6 +19,43 @@ typedef WorkspaceViewLeadingBuilder = Widget Function(
   ViewPB view,
   FolderExplorerPalette palette,
 );
+
+class WorkspaceFilePickerMenu extends StatelessWidget {
+  const WorkspaceFilePickerMenu({
+    super.key,
+    required this.onSelected,
+    this.fileFilter,
+    this.maxListHeight = 164,
+    this.repository = const WorkspaceItemService(),
+  });
+
+  final WorkspaceViewSelected onSelected;
+  final WorkspaceViewFilter? fileFilter;
+  final double maxListHeight;
+  final WorkspaceItemRepository repository;
+
+  @override
+  Widget build(BuildContext context) {
+    return WorkspaceViewPickerMenu(
+      contentKey: const ValueKey('workspace-file-picker-menu'),
+      title: 'Select from workspace',
+      searchHint: 'Search workspace files',
+      emptyMessage: 'No workspace files found',
+      errorMessage: LocaleKeys.workspaceFolderExplorer_operationFailed.tr(),
+      maxListHeight: maxListHeight,
+      repository: repository,
+      viewFilter: (view) =>
+          view.workspaceFileReference != null &&
+          (fileFilter == null || fileFilter!(view)),
+      leadingBuilder: (context, view, palette) => WorkspaceItemIcon.fromView(
+        view: view,
+        size: 17,
+        color: palette.textSecondary,
+      ),
+      onSelected: onSelected,
+    );
+  }
+}
 
 class WorkspaceFolderPickerMenu extends StatelessWidget {
   const WorkspaceFolderPickerMenu({
@@ -63,6 +102,7 @@ class WorkspaceViewPickerMenu extends StatefulWidget {
     required this.onSelected,
     this.contentKey,
     this.selectedViewId,
+    this.maxListHeight = 242,
     this.repository = const WorkspaceItemService(),
   });
 
@@ -75,6 +115,7 @@ class WorkspaceViewPickerMenu extends StatefulWidget {
   final WorkspaceViewLeadingBuilder leadingBuilder;
   final WorkspaceViewSelected onSelected;
   final String? selectedViewId;
+  final double maxListHeight;
   final WorkspaceItemRepository repository;
 
   @override
@@ -112,7 +153,7 @@ class _WorkspaceViewPickerMenuState extends State<WorkspaceViewPickerMenu> {
 
     return SizedBox(
       key: widget.contentKey,
-      width: 400,
+      width: math.min(400, MediaQuery.sizeOf(context).width - 32),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -149,7 +190,7 @@ class _WorkspaceViewPickerMenuState extends State<WorkspaceViewPickerMenu> {
                   Expanded(
                     child: TextField(
                       controller: searchController,
-                      autofocus: true,
+                      autofocus: UniversalPlatform.isDesktopOrWeb,
                       onChanged: (_) => setState(() {}),
                       style: TextStyle(
                         color: palette.textPrimary,
@@ -171,7 +212,7 @@ class _WorkspaceViewPickerMenuState extends State<WorkspaceViewPickerMenu> {
             ),
           ),
           ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 242),
+            constraints: BoxConstraints(maxHeight: widget.maxListHeight),
             child: _buildViewList(
               context,
               palette,

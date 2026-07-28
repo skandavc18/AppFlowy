@@ -211,6 +211,72 @@ void main() {
       timeout: const Timeout(Duration(seconds: 60)),
     );
   });
+
+  group('running a batch of cases', () {
+    test(
+      'each case gets its own input and its own result',
+      () async {
+        final finished = <int, String>{};
+        final results = await LocalCodeRunner().runCases(
+          toolchain: _shellToolchain(),
+          code: Platform.isWindows
+              ? '@echo off\r\nset /p name=\r\necho hello %name%'
+              : 'read name\necho "hello \$name"',
+          inputs: const ['world', 'again'],
+          onCaseFinished: (index, result) =>
+              finished[index] = result.stdout.trim(),
+        );
+
+        expect(results, hasLength(2));
+        expect(results[0].stdout, contains('hello world'));
+        expect(results[1].stdout, contains('hello again'));
+        expect(results.every((result) => result.exitCode == 0), isTrue);
+        // Results are reported as they land, not only at the end.
+        expect(finished[0], contains('hello world'));
+        expect(finished[1], contains('hello again'));
+        // The runner times the program so a case can report how long it took.
+        expect(results.first.duration, greaterThan(Duration.zero));
+      },
+      timeout: const Timeout(Duration(seconds: 60)),
+    );
+
+    test(
+      'a case that waits for input nobody will type is stopped',
+      () async {
+        // Nothing answers a prompt during a batch, so a program that keeps
+        // reading must not hold the whole run open.
+        final results = await LocalCodeRunner().runCases(
+          toolchain: _shellToolchain(),
+          code: Platform.isWindows
+              ? '@echo off\r\n:loop\r\ngoto loop'
+              : 'while true; do :; done',
+          inputs: const [''],
+          caseTimeout: const Duration(seconds: 2),
+        );
+        expect(results.single.notice, contains('timed out'));
+      },
+      timeout: const Timeout(Duration(seconds: 30)),
+    );
+
+    test('a missing toolchain fails every case with the same reason', () async {
+      final results = await LocalCodeRunner().runCases(
+        toolchain: LocalToolchain(
+          label: 'Nothing',
+          installHint: 'Install nothing.',
+          sourceName: 'main.txt',
+          runners: const ['appflowy-no-such-tool-42'],
+          runArgs: (source, artifact) => [source],
+        ),
+        code: 'x',
+        inputs: const ['a', 'b'],
+      );
+      expect(results, hasLength(2));
+      expect(
+        results.every((result) => result.notice.contains('not available')),
+        isTrue,
+      );
+    });
+  });
 }
 
 /// A toolchain that runs a script with the platform's own shell, so the runner

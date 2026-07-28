@@ -134,13 +134,13 @@ class _FolderExplorerState extends State<FolderExplorer> {
             searchController: searchController,
             onSearchChanged: _scheduleSearch,
             onNavigate: (id) => unawaited(_navigateTo(id)),
-            onNewNote: (action) => unawaited(
+            onAddFile: (action) => unawaited(
               _createFileOfKind(
                 action,
                 parentId: controller.currentFolder.id,
               ),
             ),
-            onMore: (position) => unawaited(_showGalleryMenu(position)),
+            onMore: (position) => unawaited(_showBackgroundMenu(position)),
           )
         : null;
     final errorMessage = controller.errorMessage;
@@ -220,6 +220,8 @@ class _FolderExplorerState extends State<FolderExplorer> {
         onOpen: _openView,
         onNavigate: (id) => unawaited(_navigateTo(id)),
         onContextMenu: _showContextMenu,
+        onBackgroundContextMenu: (position) =>
+            unawaited(_showBackgroundMenu(position)),
         onRequestDelete: _confirmDelete,
       );
     }
@@ -240,6 +242,8 @@ class _FolderExplorerState extends State<FolderExplorer> {
       onOpen: _openView,
       onNavigate: (id) => unawaited(_navigateTo(id)),
       onContextMenu: _showContextMenu,
+      onBackgroundContextMenu: (position) =>
+          unawaited(_showBackgroundMenu(position)),
       onRequestDelete: _confirmDelete,
       onRename: _beginGalleryRename,
     );
@@ -664,7 +668,10 @@ class _FolderExplorerState extends State<FolderExplorer> {
     }
   }
 
-  Future<void> _showGalleryMenu(Offset position) async {
+  /// The menu behind the toolbar's "more" button and behind a right click on
+  /// empty space, so a folder can be filled from wherever the pointer is.
+  Future<void> _showBackgroundMenu(Offset position) async {
+    final knowledgeMode = presentation == FolderExplorerPresentation.gallery;
     final palette = FolderExplorerPalette.of(context);
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final action = await showMenu<_GalleryMenuAction>(
@@ -688,11 +695,24 @@ class _FolderExplorerState extends State<FolderExplorer> {
       ),
       items: [
         PopupMenuItem(
+          value: _GalleryMenuAction.addFile,
+          height: 40,
+          child: _MenuLabel(
+            icon: workspaceAddFileIcon,
+            text: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
+            trailing: Icons.chevron_right_rounded,
+          ),
+        ),
+        PopupMenuItem(
           value: _GalleryMenuAction.newCollection,
           height: 40,
           child: _MenuLabel(
-            icon: Icons.auto_awesome_mosaic_outlined,
-            text: LocaleKeys.workspaceFolderExplorer_newCollection.tr(),
+            icon: knowledgeMode
+                ? Icons.auto_awesome_mosaic_outlined
+                : workspaceAddFolderIcon,
+            text: knowledgeMode
+                ? LocaleKeys.workspaceFolderExplorer_newCollection.tr()
+                : LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
           ),
         ),
         PopupMenuItem(
@@ -721,11 +741,15 @@ class _FolderExplorerState extends State<FolderExplorer> {
           ),
         ),
         PopupMenuItem(
-          value: _GalleryMenuAction.explorerView,
+          value: _GalleryMenuAction.switchPresentation,
           height: 40,
           child: _MenuLabel(
-            icon: Icons.account_tree_outlined,
-            text: LocaleKeys.workspaceFolderExplorer_treeView.tr(),
+            icon: knowledgeMode
+                ? Icons.account_tree_outlined
+                : Icons.grid_view_rounded,
+            text: knowledgeMode
+                ? LocaleKeys.workspaceFolderExplorer_treeView.tr()
+                : LocaleKeys.workspaceFolderExplorer_galleryView.tr(),
           ),
         ),
       ],
@@ -734,6 +758,15 @@ class _FolderExplorerState extends State<FolderExplorer> {
       return;
     }
     switch (action) {
+      case _GalleryMenuAction.addFile:
+        final kind = await showWorkspaceFileKindMenu(
+          context: context,
+          globalPosition: position,
+        );
+        if (kind == null || !mounted) {
+          return;
+        }
+        await _createFileOfKind(kind, parentId: controller.currentFolder.id);
       case _GalleryMenuAction.newCollection:
         _beginGalleryCreate(
           WorkspaceExplorerDraftKind.folder,
@@ -746,8 +779,12 @@ class _FolderExplorerState extends State<FolderExplorer> {
       case _GalleryMenuAction.refresh:
         previewCache.clear();
         await controller.refresh();
-      case _GalleryMenuAction.explorerView:
-        setState(() => presentation = FolderExplorerPresentation.tree);
+      case _GalleryMenuAction.switchPresentation:
+        setState(
+          () => presentation = knowledgeMode
+              ? FolderExplorerPresentation.tree
+              : FolderExplorerPresentation.gallery,
+        );
     }
   }
 
@@ -1057,18 +1094,22 @@ enum _ExplorerMoreAction {
 }
 
 enum _GalleryMenuAction {
+  addFile,
   newCollection,
   importFile,
   paste,
   refresh,
-  explorerView,
+  switchPresentation,
 }
 
 class _MenuLabel extends StatelessWidget {
-  const _MenuLabel({required this.icon, required this.text});
+  const _MenuLabel({required this.icon, required this.text, this.trailing});
 
   final IconData icon;
   final String text;
+
+  /// A chevron marks a row that opens a menu of its own.
+  final IconData? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -1076,7 +1117,15 @@ class _MenuLabel extends StatelessWidget {
       children: [
         Icon(icon, size: 17),
         const SizedBox(width: 10),
-        Text(text, style: const TextStyle(fontSize: 13)),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+        if (trailing != null) Icon(trailing, size: 16),
       ],
     );
   }

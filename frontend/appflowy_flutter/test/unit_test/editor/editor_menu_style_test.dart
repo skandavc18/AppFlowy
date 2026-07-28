@@ -81,6 +81,14 @@ void main() {
     );
     expect(items, containsAll([audioSlashMenuItem, videoSlashMenuItem]));
     expect(
+      items,
+      containsAll([
+        wordSlashMenuItem,
+        excelSlashMenuItem,
+        powerpointSlashMenuItem,
+      ]),
+    );
+    expect(
       slashMenuMetadataFor(audioSlashMenuItem)?.section,
       SlashMenuSection.media,
     );
@@ -88,6 +96,16 @@ void main() {
       slashMenuMetadataFor(videoSlashMenuItem)?.section,
       SlashMenuSection.media,
     );
+    for (final item in [
+      wordSlashMenuItem,
+      excelSlashMenuItem,
+      powerpointSlashMenuItem,
+    ]) {
+      expect(
+        slashMenuMetadataFor(item)?.section,
+        SlashMenuSection.media,
+      );
+    }
     expect(
       slashMenuMetadataFor(aiWriterSlashMenuItem)?.section,
       SlashMenuSection.suggestions,

@@ -7,12 +7,15 @@ import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
+import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
+import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -68,36 +71,34 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
               ),
             ),
           ),
-          PopupMenuButton<_WorkspaceRootItemKind>(
-            tooltip:
-                LocaleKeys.workspaceFolderExplorer_createWorkspaceItem.tr(),
-            padding: EdgeInsets.zero,
-            position: PopupMenuPosition.over,
-            icon: Icon(
-              Icons.keyboard_arrow_down_rounded,
-              size: 17,
-              color: Theme.of(context).iconTheme.color,
-            ),
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: _WorkspaceRootItemKind.folder,
-                height: 36,
-                child: _RootItemLabel(
-                  icon: Icons.create_new_folder_outlined,
-                  label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-                ),
-              ),
-              PopupMenuItem(
-                value: _WorkspaceRootItemKind.file,
-                height: 36,
-                child: _RootItemLabel(
-                  icon: Icons.note_add_outlined,
-                  label: LocaleKeys.workspaceFolderExplorer_newFile.tr(),
-                  trailing: Icons.chevron_right_rounded,
-                ),
+          PopoverActionList<PopoverAction>(
+            direction: PopoverDirection.bottomWithRightAligned,
+            offset: const Offset(0, 6),
+            constraints: const BoxConstraints(minWidth: 200),
+            actions: [
+              WorkspaceItemAddAction(WorkspaceItemAddKind.folder),
+              WorkspaceFileAddAction(
+                onCreate: (action) => unawaited(_createWorkspaceRootFile(action)),
               ),
             ],
-            onSelected: (kind) => unawaited(_createWorkspaceRootItem(kind)),
+            buildChild: (popover) => FlowyIconButton(
+              width: 24,
+              iconPadding: const EdgeInsets.all(3),
+              tooltipText:
+                  LocaleKeys.workspaceFolderExplorer_createWorkspaceItem.tr(),
+              icon: Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 17,
+                color: Theme.of(context).iconTheme.color,
+              ),
+              onPressed: popover.show,
+            ),
+            onSelected: (action, popover) {
+              popover.close();
+              if (action is WorkspaceItemAddAction) {
+                unawaited(_createWorkspaceRootFolder());
+              }
+            },
           ),
         ],
       ),
@@ -130,54 +131,16 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
     }
   }
 
-  Future<void> _createWorkspaceRootItem(
-    _WorkspaceRootItemKind kind,
-  ) async {
-    final workspaceState = context.read<UserWorkspaceBloc>().state;
-    final space = context.read<SpaceBloc>().state.currentSpace;
-    final workspaceId = workspaceState.currentWorkspace?.workspaceId;
-    final parentId = space?.id ?? workspaceId;
-    if (parentId == null || parentId.isEmpty) {
-      showSnackBarMessage(
-        context,
-        LocaleKeys.workspaceFolderExplorer_workspaceUnavailable.tr(),
-      );
+  Future<void> _createWorkspaceRootFolder() async {
+    final parent = _resolveParent();
+    if (parent == null) {
       return;
     }
-    final section = space == null
-        ? workspaceState.isCollabWorkspaceOn
-            ? ViewSectionPB.Private
-            : ViewSectionPB.Public
-        : null;
-
-    if (kind == _WorkspaceRootItemKind.file) {
-      final action = await showWorkspaceFileKindMenu(
-        context: context,
-        globalPosition: _menuAnchor(),
-      );
-      if (action == null || !mounted) {
-        return;
-      }
-      final createdFile = await createWorkspaceFile(
-        parentViewId: parentId,
-        action: action,
-        section: section,
-      );
-      if (createdFile == null || !mounted) {
-        return;
-      }
-      createdFile.fold(
-        (view) => context.read<TabsBloc>().openPlugin(view),
-        (error) => showSnackBarMessage(context, error.msg),
-      );
-      return;
-    }
-
     const service = WorkspaceItemService();
     final created = await service.createFolder(
-      parentViewId: parentId,
+      parentViewId: parent.id,
       name: LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
-      section: section,
+      section: parent.section,
     );
     if (!mounted) {
       return;
@@ -188,42 +151,44 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
     );
   }
 
-  Offset _menuAnchor() {
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null) {
-      return Offset.zero;
+  Future<void> _createWorkspaceRootFile(WorkspaceFileMenuAction action) async {
+    final parent = _resolveParent();
+    if (parent == null) {
+      return;
     }
-    return box.localToGlobal(Offset(0, box.size.height));
+    final created = await createWorkspaceFile(
+      parentViewId: parent.id,
+      action: action,
+      section: parent.section,
+    );
+    if (created == null || !mounted) {
+      return;
+    }
+    created.fold(
+      (view) => context.read<TabsBloc>().openPlugin(view),
+      (error) => showSnackBarMessage(context, error.msg),
+    );
   }
-}
 
-enum _WorkspaceRootItemKind {
-  folder,
-  file,
-}
-
-class _RootItemLabel extends StatelessWidget {
-  const _RootItemLabel({
-    required this.icon,
-    required this.label,
-    this.trailing,
-  });
-
-  final IconData icon;
-  final String label;
-  final IconData? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 17),
-        const SizedBox(width: 9),
-        Expanded(
-          child: Text(label, style: const TextStyle(fontSize: 13)),
-        ),
-        if (trailing != null) Icon(trailing, size: 16),
-      ],
+  /// Where a root item belongs: the open space, or the workspace itself.
+  ({String id, ViewSectionPB? section})? _resolveParent() {
+    final workspaceState = context.read<UserWorkspaceBloc>().state;
+    final space = context.read<SpaceBloc>().state.currentSpace;
+    final parentId = space?.id ?? workspaceState.currentWorkspace?.workspaceId;
+    if (parentId == null || parentId.isEmpty) {
+      showSnackBarMessage(
+        context,
+        LocaleKeys.workspaceFolderExplorer_workspaceUnavailable.tr(),
+      );
+      return null;
+    }
+    return (
+      id: parentId,
+      section: space == null
+          ? workspaceState.isCollabWorkspaceOn
+              ? ViewSectionPB.Private
+              : ViewSectionPB.Public
+          : null,
     );
   }
 }

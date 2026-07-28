@@ -89,6 +89,7 @@ class LocalCodeResult {
     required this.stderr,
     required this.exitCode,
     this.notice = '',
+    this.duration = Duration.zero,
   });
 
   final String stdout;
@@ -98,6 +99,9 @@ class LocalCodeResult {
   /// A message from the runner itself rather than from the program: a missing
   /// toolchain, a failed compile, a timeout, a cancellation.
   final String notice;
+
+  /// How long the program itself took, from spawn to exit.
+  final Duration duration;
 }
 
 /// The toolchain that can run [name], or null when the extension is not
@@ -333,6 +337,123 @@ class LocalCodeRunner {
     }
   }
 
+  /// Runs the same code once per entry in [inputs], each with its own stdin.
+  ///
+  /// The program is built once for the whole batch: rebuilding a C++ or Rust
+  /// binary for every case would cost more than running it. Each case is on a
+  /// clock, because nobody is there to answer a prompt — a program waiting for
+  /// input has hung as far as a test is concerned.
+  ///
+  /// Always returns one result per input, so a batch that could not start
+  /// still says why against every case.
+  Future<List<LocalCodeResult>> runCases({
+    required LocalToolchain toolchain,
+    required String code,
+    required List<String> inputs,
+    Duration caseTimeout = const Duration(seconds: 20),
+    void Function(int index, LocalCodeResult result)? onCaseFinished,
+  }) async {
+    if (inputs.isEmpty) {
+      return const [];
+    }
+    List<LocalCodeResult> everyCase(LocalCodeResult result) {
+      for (var index = 0; index < inputs.length; index++) {
+        onCaseFinished?.call(index, result);
+      }
+      return List.filled(inputs.length, result);
+    }
+
+    final missing = toolchain.missingExecutables;
+    if (missing.isNotEmpty) {
+      return everyCase(
+        LocalCodeResult(
+          stdout: '',
+          stderr: '',
+          exitCode: -1,
+          notice: '${toolchain.label} is not available on this computer.\n'
+              'Looked for ${missing.join(', ')} on your PATH.\n'
+              '${toolchain.installHint}\n',
+        ),
+      );
+    }
+
+    final directory =
+        await Directory.systemTemp.createTemp('appflowy_code_tests_');
+    try {
+      final source = File(p.join(directory.path, toolchain.sourceName));
+      await source.writeAsString(code);
+      final artifact = toolchain.artifactName.isEmpty
+          ? ''
+          : p.join(directory.path, toolchain.artifactName);
+
+      if (toolchain.isCompiled) {
+        final compiled = await _spawn(
+          executable: resolveExecutable(toolchain.compilers)!,
+          arguments: toolchain.compileArgs!(source.path, artifact),
+          workingDirectory: directory.path,
+          environment: toolchain.environment,
+          hardTimeout: toolchain.compileTimeout,
+        );
+        if (_cancelled) {
+          return everyCase(_stopped(compiled));
+        }
+        if (compiled.exitCode != 0) {
+          return everyCase(
+            LocalCodeResult(
+              stdout: compiled.stdout,
+              stderr: compiled.stderr,
+              exitCode: compiled.exitCode,
+              notice: compiled.notice.isEmpty
+                  ? '${toolchain.label} failed to compile the code.\n'
+                  : compiled.notice,
+            ),
+          );
+        }
+      }
+
+      final runner = toolchain.runners.isEmpty
+          ? File(artifact)
+          : resolveExecutable(toolchain.runners)!;
+      final results = <LocalCodeResult>[];
+      for (var index = 0; index < inputs.length; index++) {
+        final result = _cancelled
+            ? const LocalCodeResult(
+                stdout: '',
+                stderr: '',
+                exitCode: -1,
+                notice: 'Execution stopped.\n',
+              )
+            : await _spawn(
+                executable: runner,
+                arguments: toolchain.runArgs(source.path, artifact),
+                workingDirectory: directory.path,
+                environment: toolchain.environment,
+                hardTimeout: caseTimeout,
+                stdinData: inputs[index],
+              );
+        results.add(result);
+        onCaseFinished?.call(index, result);
+      }
+      return results;
+    } on ProcessException catch (error) {
+      return everyCase(
+        LocalCodeResult(
+          stdout: '',
+          stderr: '',
+          exitCode: -1,
+          notice: '${error.message}\n',
+        ),
+      );
+    } finally {
+      _acceptsInput = false;
+      try {
+        await directory.delete(recursive: true);
+      } on FileSystemException {
+        // Windows can still hold the executable briefly; the OS sweeps temp.
+      }
+    }
+  }
+
   /// Hands one line to the running program, as if it had been typed at a
   /// terminal.
   void sendLine(String line) {
@@ -382,6 +503,7 @@ class LocalCodeRunner {
     Duration? hardTimeout,
     Duration? idleTimeout,
     bool interactive = false,
+    String? stdinData,
     void Function(String chunk)? onStdout,
     void Function(String chunk)? onStderr,
   }) async {
@@ -392,6 +514,7 @@ class LocalCodeRunner {
     // routes them through the command processor and escapes the arguments.
     final isBatch = UniversalPlatform.isWindows &&
         const ['.bat', '.cmd'].contains(p.extension(executable.path));
+    final startedAt = DateTime.now();
     final process = await Process.start(
       executable.path,
       arguments,
@@ -402,6 +525,15 @@ class LocalCodeRunner {
     _process = process;
     _acceptsInput = interactive;
     if (!interactive) {
+      if (stdinData != null && stdinData.isNotEmpty) {
+        // A program reading its last line needs the newline a terminal would
+        // have sent when the answer was submitted.
+        process.stdin
+            .write(stdinData.endsWith('\n') ? stdinData : '$stdinData\n');
+      }
+      // A program that exits without reading breaks the pipe; that is how it
+      // ends, not a failure of the run.
+      unawaited(process.stdin.done.catchError((_) {}));
       unawaited(process.stdin.close().catchError((_) {}));
     }
 
@@ -487,6 +619,7 @@ class LocalCodeRunner {
       stderr: err.toString(),
       exitCode: exitCode,
       notice: notice.toString(),
+      duration: DateTime.now().difference(startedAt),
     );
   }
 }

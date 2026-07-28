@@ -117,6 +117,7 @@ void showSettingsDialog(
   required UserWorkspaceBloc userWorkspaceBloc,
   PasswordBloc? passwordBloc,
   SettingsPage? initPage,
+  VoidCallback? onClosed,
 }) {
   final userProfile = context.read<UserWorkspaceBloc>().state.userProfile;
   AFFocusManager.maybeOf(context)?.notifyLoseFocus();
@@ -162,5 +163,5 @@ void showSettingsDialog(
         },
       ),
     ),
-  );
+  ).whenComplete(() => onClosed?.call());
 }

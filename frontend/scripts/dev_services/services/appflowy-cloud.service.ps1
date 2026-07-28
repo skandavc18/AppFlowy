@@ -12,6 +12,7 @@
     Enabled     = $true
     Order       = 20
     Tags        = @('cloud', 'backend', 'sync', 'auth')
+    DependsOn   = @('onlyoffice')
 
     Defaults    = [ordered]@{
         RepoPath          = 'C:\AppFlowy-Cloud'
@@ -43,6 +44,11 @@
         S3Bucket          = 'appflowy'
         WebUrl            = 'http://localhost:3000'
         RustLog           = 'info'
+        DocumentServerContainer        = 'appflowy-onlyoffice'
+        DocumentServerPublicUrl        = 'http://localhost:8080'
+        DocumentServerInternalUrl      = 'http://appflowy-onlyoffice'
+        DocumentServerJwtSecret        = 'appflowy-office-dev-secret'
+        DocumentServerMaxFileSizeBytes = 104857600
 
         AdminEmail        = 'admin@example.com'
         AdminPassword     = 'password'
@@ -102,6 +108,20 @@
             throw 'gotrue did not become healthy; run "dev-services.ps1 logs appflowy-cloud" or check docker compose logs.'
         }
 
+        $documentServerState = Get-DevContainerState -Name $config.DocumentServerContainer
+        if ($documentServerState -ne 'running') {
+            throw "document server container $($config.DocumentServerContainer) is not running"
+        }
+        $documentServerNetworks = (
+            Invoke-DevDocker `
+                -Arguments @('inspect', '--format', '{{json .NetworkSettings.Networks}}', $config.DocumentServerContainer) `
+                -Capture
+        ) -join ''
+        if ($documentServerNetworks -notmatch [Regex]::Escape('"' + $config.Network + '"')) {
+            Write-DevStep "connecting $($config.DocumentServerContainer) to $($config.Network)"
+            Invoke-DevDocker -Arguments @('network', 'connect', $config.Network, $config.DocumentServerContainer)
+        }
+
         $environment = [ordered]@{
             APP_ENVIRONMENT             = 'production'
             APPFLOWY_APPLICATION_PORT   = "$($config.ServerPort)"
@@ -116,6 +136,11 @@
             APPFLOWY_S3_SECRET_KEY      = $config.S3SecretKey
             APPFLOWY_S3_USE_MINIO       = 'true'
             APPFLOWY_WEB_URL            = $config.WebUrl
+            APPFLOWY_DOCUMENT_SERVER_PUBLIC_URL        = $config.DocumentServerPublicUrl
+            APPFLOWY_DOCUMENT_SERVER_INTERNAL_URL      = $config.DocumentServerInternalUrl
+            APPFLOWY_DOCUMENT_SERVER_CALLBACK_URL      = "http://$($config.ServerContainer):$($config.ServerPort)"
+            APPFLOWY_DOCUMENT_SERVER_JWT_SECRET        = $config.DocumentServerJwtSecret
+            APPFLOWY_DOCUMENT_SERVER_MAX_FILE_SIZE_BYTES = "$($config.DocumentServerMaxFileSizeBytes)"
             PORT                        = "$($config.ServerPort)"
             RUST_BACKTRACE              = '1'
             RUST_LOG                    = $config.RustLog
@@ -138,7 +163,22 @@
         Activity    = 'waiting for the cloud API'
         Probe       = {
             param($ctx)
-            Test-DevHttp -Url "http://localhost:$($ctx.Config.ServerPort)/health"
+            if (-not (Test-DevHttp -Url "http://localhost:$($ctx.Config.ServerPort)/health")) {
+                return $false
+            }
+            $documentServerHealth = (
+                Invoke-DevDocker `
+                    -Arguments @(
+                        'exec',
+                        $ctx.Config.ServerContainer,
+                        'curl',
+                        '-fsS',
+                        "$($ctx.Config.DocumentServerInternalUrl)/healthcheck"
+                    ) `
+                    -Capture `
+                    -AllowFailure
+            ) -join ''
+            return $documentServerHealth.Trim().ToLowerInvariant() -eq 'true'
         }
     }
 
@@ -177,9 +217,28 @@
         }
         $serverState = Get-DevContainerState -Name $config.ServerContainer
         $state = if ($parts.Count -gt 0) { "$serverState (" + ($parts -join ' ') + ')' } else { $serverState }
+        $documentServerHealth = if ($serverState -eq 'running') {
+            (
+                Invoke-DevDocker `
+                    -Arguments @(
+                        'exec',
+                        $config.ServerContainer,
+                        'curl',
+                        '-fsS',
+                        "$($config.DocumentServerInternalUrl)/healthcheck"
+                    ) `
+                    -Capture `
+                    -AllowFailure
+            ) -join ''
+        } else {
+            ''
+        }
         @{
             State   = $state
-            Healthy = Test-DevHttp -Url "http://localhost:$($config.ServerPort)/health" -TimeoutSec 3
+            Healthy = (
+                (Test-DevHttp -Url "http://localhost:$($config.ServerPort)/health" -TimeoutSec 3) -and
+                $documentServerHealth.Trim().ToLowerInvariant() -eq 'true'
+            )
         }
     }
 
@@ -204,6 +263,23 @@
         if (-not (Test-DevNetworkExists -Name $config.Network)) {
             $messages += "network $($config.Network) does not exist yet; it is created by the first compose up"
         }
+        if ((Get-DevContainerState -Name $config.ServerContainer) -eq 'running') {
+            $documentServerHealth = (
+                Invoke-DevDocker `
+                    -Arguments @(
+                        'exec',
+                        $config.ServerContainer,
+                        'curl',
+                        '-fsS',
+                        "$($config.DocumentServerInternalUrl)/healthcheck"
+                    ) `
+                    -Capture `
+                    -AllowFailure
+            ) -join ''
+            if ($documentServerHealth.Trim().ToLowerInvariant() -ne 'true') {
+                $messages += "cloud cannot reach the document server directly at $($config.DocumentServerInternalUrl)"
+            }
+        }
         return $messages
     }
 
@@ -222,6 +298,8 @@
                 "  Server URL   http://localhost:$($config.ServerPort)",
                 "Sign in with $($config.AdminEmail) / $($config.AdminPassword) (email confirmation is auto accepted).",
                 'Rebuild the server after changing the AppFlowy-Cloud sources: dev-services.ps1 up appflowy-cloud -Rebuild'
+                'Office files use the managed document server automatically after sign-in; no client server settings are needed.'
+                "Cloud document traffic goes directly to $($config.DocumentServerInternalUrl) over the Docker network."
             )
         }
     }

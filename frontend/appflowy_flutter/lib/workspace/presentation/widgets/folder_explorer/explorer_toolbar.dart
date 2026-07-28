@@ -38,7 +38,7 @@ class ExplorerToolbar extends StatelessWidget {
       children: [
         _NewFileButton(onSelected: onNewFile),
         _ToolbarButton(
-          icon: Icons.create_new_folder_outlined,
+          icon: workspaceAddFolderIcon,
           tooltip: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
           onPressed: onNewFolder,
         ),
@@ -140,8 +140,8 @@ class _NewFileButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Builder(
       builder: (buttonContext) => _ToolbarButton(
-        icon: Icons.note_add_outlined,
-        tooltip: LocaleKeys.workspaceFolderExplorer_newFile.tr(),
+        icon: workspaceAddFileIcon,
+        tooltip: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
         onPressed: () async {
           final box = buttonContext.findRenderObject() as RenderBox?;
           if (box == null) {

@@ -324,6 +324,13 @@ flutter:
     - assets/images/login/
     - assets/translations/
     - assets/icons/icons.json
+    - assets/icons/color_icons.json
+    - assets/icons/phosphor_thin.json
+    - assets/icons/phosphor_light.json
+    - assets/icons/phosphor_regular.json
+    - assets/icons/phosphor_bold.json
+    - assets/icons/phosphor_fill.json
+    - assets/icons/phosphor_duotone.json
     - assets/fonts/
     - assets/built_in_prompts.json
 
