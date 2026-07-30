@@ -52,8 +52,8 @@ Future<bool?> showImageEditor(
 enum _PanelTab {
   adjust('Adjust', Icons.tune_rounded),
   crop('Crop', Icons.crop_rounded),
-  filters('Filters', Icons.auto_awesome_outlined),
-  annotate('Mark up', Icons.draw_outlined);
+  filters('Filters', Icons.auto_awesome_rounded),
+  annotate('Mark up', Icons.draw_rounded);
 
   const _PanelTab(this.label, this.icon);
 
@@ -583,7 +583,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
             child: Container(width: 1, height: 16, color: palette.divider),
           ),
           ImageEditorIconButton(
-            icon: Icons.fit_screen_outlined,
+            icon: Icons.fit_screen_rounded,
             tooltip: 'Fit to screen',
             palette: palette,
             dimension: 28,
@@ -773,7 +773,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
         children: [
           _iconAction(
             palette,
-            Icons.rotate_90_degrees_ccw_outlined,
+            Icons.rotate_90_degrees_ccw_rounded,
             'Rotate left',
             () => _updateAndCommit(
               _current.copyWith(transform: _current.transform.rotated(-1)),
@@ -781,7 +781,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
           ),
           _iconAction(
             palette,
-            Icons.rotate_90_degrees_cw_outlined,
+            Icons.rotate_90_degrees_cw_rounded,
             'Rotate right',
             () => _updateAndCommit(
               _current.copyWith(transform: _current.transform.rotated(1)),
@@ -989,7 +989,7 @@ class _ImageEditorPageState extends State<ImageEditorPage> {
   IconData _toolIcon(ImageAnnotationTool tool) => switch (tool) {
         ImageAnnotationTool.arrow => Icons.north_east_rounded,
         ImageAnnotationTool.rectangle => Icons.crop_square_rounded,
-        ImageAnnotationTool.ellipse => Icons.circle_outlined,
+        ImageAnnotationTool.ellipse => Icons.circle_rounded,
         ImageAnnotationTool.freehand => Icons.gesture_rounded,
         ImageAnnotationTool.highlight => Icons.highlight_alt_rounded,
         ImageAnnotationTool.text => Icons.text_fields_rounded,

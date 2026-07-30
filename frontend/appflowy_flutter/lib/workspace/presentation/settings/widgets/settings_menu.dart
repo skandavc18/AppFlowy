@@ -96,7 +96,7 @@ class SettingsMenu extends StatelessWidget {
               page: SettingsPage.documentEditing,
               selectedPage: currentPage,
               label: 'Document editing',
-              icon: const Icon(Icons.description_outlined, size: 20),
+              icon: const Icon(Icons.description_rounded, size: 20),
               changeSelectedPage: changeSelectedPage,
             ),
             SettingsMenuElement(

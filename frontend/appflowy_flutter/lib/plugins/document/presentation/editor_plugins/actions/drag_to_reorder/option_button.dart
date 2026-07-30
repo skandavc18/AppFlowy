@@ -13,13 +13,13 @@ const _interceptorKey = 'document_option_button_interceptor';
 class OptionButton extends StatefulWidget {
   const OptionButton({
     super.key,
-    required this.controller,
+    required this.onShowMenu,
     required this.editorState,
     required this.blockComponentContext,
     required this.isDragging,
   });
 
-  final PopoverController controller;
+  final VoidCallback onShowMenu;
   final EditorState editorState;
   final BlockComponentContext blockComponentContext;
   final ValueNotifier<bool> isDragging;
@@ -94,10 +94,10 @@ class _OptionButtonState extends State<OptionButton> {
               beforeSelection = selection.normalized;
             }
 
-            widget.controller.show();
-
-            // update selection
+            // The selection has to be the block before the menu reads it.
             _updateBlockSelection(context);
+
+            widget.onShowMenu();
           },
         );
       },

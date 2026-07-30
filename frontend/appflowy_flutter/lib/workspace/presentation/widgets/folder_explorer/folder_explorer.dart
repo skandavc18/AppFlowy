@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -614,45 +615,26 @@ class _FolderExplorerState extends State<FolderExplorer> {
   }
 
   Future<void> _showMoreMenu() async {
-    final palette = FolderExplorerPalette.of(context);
     final box = context.findRenderObject() as RenderBox;
     final origin = box.localToGlobal(Offset(box.size.width - 220, 76));
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final action = await showMenu<_ExplorerMoreAction>(
+    final action = await showAppMenu<_ExplorerMoreAction>(
       context: context,
-      color: palette.floatingSurface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 10,
-      shadowColor: palette.shadow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(11),
-        side: BorderSide(color: palette.border),
-      ),
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(origin.dx, origin.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      items: [
-        PopupMenuItem(
+      globalPosition: origin,
+      entries: [
+        AppMenuItem(
+          label: LocaleKeys.workspaceFolderExplorer_importFile.tr(),
+          icon: Icons.upload_file_rounded,
           value: _ExplorerMoreAction.importFile,
-          child: _MenuLabel(
-            icon: Icons.upload_file_outlined,
-            text: LocaleKeys.workspaceFolderExplorer_importFile.tr(),
-          ),
         ),
-        PopupMenuItem(
+        AppMenuItem(
+          label: LocaleKeys.workspaceFolderExplorer_selectAll.tr(),
+          icon: Icons.select_all_rounded,
           value: _ExplorerMoreAction.selectAll,
-          child: _MenuLabel(
-            icon: Icons.select_all_rounded,
-            text: LocaleKeys.workspaceFolderExplorer_selectAll.tr(),
-          ),
         ),
-        PopupMenuItem(
+        AppMenuItem(
+          label: LocaleKeys.workspaceFolderExplorer_properties.tr(),
+          icon: Icons.info_outline_rounded,
           value: _ExplorerMoreAction.properties,
-          child: _MenuLabel(
-            icon: Icons.info_outline,
-            text: LocaleKeys.workspaceFolderExplorer_properties.tr(),
-          ),
         ),
       ],
     );
@@ -673,109 +655,73 @@ class _FolderExplorerState extends State<FolderExplorer> {
   /// empty space, so a folder can be filled from wherever the pointer is.
   Future<void> _showBackgroundMenu(Offset position) async {
     final knowledgeMode = presentation == FolderExplorerPresentation.gallery;
-    final palette = FolderExplorerPalette.of(context);
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final action = await showMenu<_GalleryMenuAction>(
+    WorkspaceFileMenuAction? kind;
+    final action = await showAppMenu<_GalleryMenuAction>(
       context: context,
-      color: palette.floatingSurface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 16,
-      shadowColor: palette.shadow.withValues(alpha: 0.34),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(15),
-      ),
-      constraints: const BoxConstraints(minWidth: 210, maxWidth: 240),
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(position.dx, position.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      popUpAnimationStyle: AnimationStyle(
-        duration: const Duration(milliseconds: 150),
-        reverseDuration: const Duration(milliseconds: 110),
-        curve: Curves.easeOutCubic,
-      ),
-      items: [
-        PopupMenuItem(
-          value: _GalleryMenuAction.addFile,
-          height: 40,
-          child: _MenuLabel(
-            icon: workspaceAddFileIcon,
-            text: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
-            trailing: Icons.chevron_right_rounded,
+      globalPosition: position,
+      entries: [
+        AppMenuItem(
+          label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
+          icon: workspaceAddFileIcon,
+          submenu: workspaceFileKindEntries(
+            onSelected: (action) => kind = action,
           ),
         ),
-        PopupMenuItem(
+        AppMenuItem(
+          label: knowledgeMode
+              ? LocaleKeys.workspaceFolderExplorer_newCollection.tr()
+              : LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
+          icon: knowledgeMode
+              ? Icons.auto_awesome_mosaic_rounded
+              : workspaceAddFolderIcon,
           value: _GalleryMenuAction.newCollection,
-          height: 40,
-          child: _MenuLabel(
-            icon: knowledgeMode
-                ? Icons.auto_awesome_mosaic_outlined
-                : workspaceAddFolderIcon,
-            text: knowledgeMode
-                ? LocaleKeys.workspaceFolderExplorer_newCollection.tr()
-                : LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-          ),
         ),
-        PopupMenuItem(
+        AppMenuItem(
+          label: LocaleKeys.workspaceFolderExplorer_importFile.tr(),
+          icon: Icons.arrow_downward_rounded,
           value: _GalleryMenuAction.importFile,
-          height: 40,
-          child: _MenuLabel(
-            icon: Icons.arrow_downward_rounded,
-            text: LocaleKeys.workspaceFolderExplorer_importFile.tr(),
-          ),
         ),
         if (controller.canPaste)
-          PopupMenuItem(
+          AppMenuItem(
+            label: LocaleKeys.workspaceFolderExplorer_paste.tr(),
+            icon: Icons.content_paste_rounded,
             value: _GalleryMenuAction.paste,
-            height: 40,
-            child: _MenuLabel(
-              icon: Icons.content_paste_outlined,
-              text: LocaleKeys.workspaceFolderExplorer_paste.tr(),
-            ),
           ),
-        PopupMenuItem(
+        const AppMenuSeparator(),
+        AppMenuItem(
+          label: LocaleKeys.workspaceFolderExplorer_refresh.tr(),
+          icon: Icons.refresh_rounded,
           value: _GalleryMenuAction.refresh,
-          height: 40,
-          child: _MenuLabel(
-            icon: Icons.refresh_rounded,
-            text: LocaleKeys.workspaceFolderExplorer_refresh.tr(),
-          ),
         ),
-        PopupMenuItem(
+        AppMenuItem(
+          label: GalleryCardSizeStore.value.label,
+          icon: Icons.tune_rounded,
           value: _GalleryMenuAction.cardSize,
-          height: 40,
-          child: _MenuLabel(
-            icon: Icons.tune_rounded,
-            text: GalleryCardSizeStore.value.label,
-          ),
         ),
-        PopupMenuItem(
+        AppMenuItem(
+          label: knowledgeMode
+              ? LocaleKeys.workspaceFolderExplorer_treeView.tr()
+              : LocaleKeys.workspaceFolderExplorer_galleryView.tr(),
+          icon: knowledgeMode
+              ? Icons.account_tree_rounded
+              : Icons.grid_view_rounded,
           value: _GalleryMenuAction.switchPresentation,
-          height: 40,
-          child: _MenuLabel(
-            icon: knowledgeMode
-                ? Icons.account_tree_outlined
-                : Icons.grid_view_rounded,
-            text: knowledgeMode
-                ? LocaleKeys.workspaceFolderExplorer_treeView.tr()
-                : LocaleKeys.workspaceFolderExplorer_galleryView.tr(),
-          ),
         ),
       ],
     );
-    if (!mounted || action == null) {
+    if (!mounted) {
+      return;
+    }
+    if (kind != null) {
+      await _createFileOfKind(kind!, parentId: controller.currentFolder.id);
+      return;
+    }
+    if (action == null) {
       return;
     }
     switch (action) {
       case _GalleryMenuAction.addFile:
-        final kind = await showWorkspaceFileKindMenu(
-          context: context,
-          globalPosition: position,
-        );
-        if (kind == null || !mounted) {
-          return;
-        }
-        await _createFileOfKind(kind, parentId: controller.currentFolder.id);
+        break;
       case _GalleryMenuAction.newCollection:
         _beginGalleryCreate(
           WorkspaceExplorerDraftKind.folder,
@@ -1040,7 +986,7 @@ class _ExplorerPresentationToggle extends StatelessWidget {
           ),
           _ExplorerPresentationButton(
             selected: presentation == FolderExplorerPresentation.tree,
-            icon: Icons.account_tree_outlined,
+            icon: Icons.account_tree_rounded,
             tooltip: LocaleKeys.workspaceFolderExplorer_treeView.tr(),
             onPressed: () => onChanged(FolderExplorerPresentation.tree),
           ),
@@ -1117,35 +1063,6 @@ enum _GalleryMenuAction {
   switchPresentation,
 }
 
-class _MenuLabel extends StatelessWidget {
-  const _MenuLabel({required this.icon, required this.text, this.trailing});
-
-  final IconData icon;
-  final String text;
-
-  /// A chevron marks a row that opens a menu of its own.
-  final IconData? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 17),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13),
-          ),
-        ),
-        if (trailing != null) Icon(trailing, size: 16),
-      ],
-    );
-  }
-}
-
 class _ExplorerErrorBanner extends StatelessWidget {
   const _ExplorerErrorBanner({
     required this.message,
@@ -1176,7 +1093,7 @@ class _ExplorerErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.error_outline, size: 15, color: palette.danger),
+          Icon(Icons.error_outline_rounded, size: 15, color: palette.danger),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

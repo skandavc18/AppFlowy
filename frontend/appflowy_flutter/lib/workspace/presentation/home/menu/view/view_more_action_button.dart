@@ -1,4 +1,4 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
@@ -307,31 +307,13 @@ class ViewMoreActionTypeWrapper extends CustomActionCell {
     BuildContext context,
     VoidCallback? onTap,
   ) {
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.symmetric(vertical: 2.0),
-      child: FlowyIconTextButton(
-        margin: const EdgeInsets.symmetric(horizontal: 6),
-        onTap: onTap,
-        // show the error color when delete is hovered
-        leftIconBuilder: (onHover) => FlowySvg(
-          inner.leftIconSvg,
-          color: inner == ViewMoreActionType.delete && onHover
-              ? Theme.of(context).colorScheme.error
-              : null,
-        ),
-        rightIconBuilder: (_) => inner.rightIcon,
-        iconPadding: 10.0,
-        textBuilder: (onHover) => FlowyText.regular(
-          inner.name,
-          fontSize: 14.0,
-          lineHeight: 1.0,
-          figmaLineHeight: 18.0,
-          color: inner == ViewMoreActionType.delete && onHover
-              ? Theme.of(context).colorScheme.error
-              : null,
-        ),
-      ),
+    return AppMenuRow(
+      label: inner.name,
+      icon: inner.leftIcon,
+      trailing: inner.rightIcon,
+      tracksHover: true,
+      destructive: inner == ViewMoreActionType.delete,
+      onTap: onTap ?? () {},
     );
   }
 }

@@ -433,7 +433,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
         const SpreadsheetMenuEntry.divider(),
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_menu_filter.tr(),
-          icon: Icons.filter_alt_outlined,
+          icon: Icons.filter_alt_rounded,
           selected: _controller.filterFor(column).isNotEmpty,
           onSelected: () => showSpreadsheetFilterPrompt(
             context: context,
@@ -443,14 +443,14 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
         ),
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_menu_clearFilters.tr(),
-          icon: Icons.filter_alt_off_outlined,
+          icon: Icons.filter_alt_off_rounded,
           enabled: _editable && _controller.data.filters.isNotEmpty,
           onSelected: _controller.clearFilters,
         ),
         const SpreadsheetMenuEntry.divider(),
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_menu_detectTypes.tr(),
-          icon: Icons.auto_fix_high_outlined,
+          icon: Icons.auto_fix_high_rounded,
           enabled: _editable,
           onSelected: _controller.applyAutomaticColumnTypes,
         ),
@@ -544,7 +544,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
         ),
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_menu_showAllColumns.tr(),
-          icon: Icons.visibility_outlined,
+          icon: Icons.visibility_rounded,
           enabled: _editable && hasHidden,
           onSelected: _controller.showAllColumns,
         ),
@@ -563,7 +563,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
         ),
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_data_saveToWorkspace.tr(),
-          icon: Icons.drive_file_move_outline,
+          icon: Icons.drive_file_move_rounded,
           onSelected: _saveToWorkspace,
         ),
         const SpreadsheetMenuEntry.divider(),
@@ -575,7 +575,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
         ),
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_data_importExcel.tr(),
-          icon: Icons.table_chart_outlined,
+          icon: Icons.table_chart_rounded,
           enabled: _editable,
           onSelected: () => _import(spreadsheetWorkbookExtensions),
         ),
@@ -597,7 +597,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
         ),
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_data_exportExcel.tr(),
-          icon: Icons.download_for_offline_outlined,
+          icon: Icons.download_for_offline_rounded,
           onSelected: () => _runIo(
             () => exportSpreadsheetAsXlsx(
               _controller.data,

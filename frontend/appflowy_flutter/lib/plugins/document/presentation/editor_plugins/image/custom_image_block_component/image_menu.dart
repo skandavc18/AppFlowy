@@ -16,12 +16,12 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/resizeable_image.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
-import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -93,7 +93,7 @@ class _ImageMenuState extends State<ImageMenu> {
           if (!isPlaceholder) ...[
             _MenuIconButton(
               tooltip: 'Scan text',
-              icon: Icons.document_scanner_outlined,
+              icon: Icons.document_scanner_rounded,
               onTap: scanText,
             ),
             const HSpace(2),
@@ -112,127 +112,107 @@ class _ImageMenuState extends State<ImageMenu> {
 
   Widget _buildMoreMenu({required bool isPlaceholder}) {
     return IgnoreParentGestureWidget(
-      child: AppFlowyPopover(
-        controller: popoverController,
-        onClose: _allowMenuClose,
-        direction: PopoverDirection.bottomWithRightAligned,
-        constraints: const BoxConstraints(maxWidth: 220),
-        offset: const Offset(0, 8),
-        popupBuilder: (_) {
-          _preventMenuClose();
-          return _buildMenuItems(isPlaceholder: isPlaceholder);
-        },
-        child: const MenuBlockButton(
-          tooltip: 'More actions',
-          iconData: FlowySvgs.three_dots_s,
+      child: Builder(
+        builder: (buttonContext) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _showMoreMenu(buttonContext, isPlaceholder),
+          child: const MenuBlockButton(
+            tooltip: 'More actions',
+            iconData: FlowySvgs.three_dots_s,
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildMenuItems({required bool isPlaceholder}) {
-    final editable = editorState.editable;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (editable && !isPlaceholder) ...[
-          _item(
-            icon: const FlowySvg(FlowySvgs.align_left_s),
-            label: LocaleKeys.document_plugins_optionAction_left.tr(),
-            onTap: () => _onAlignChanged(leftAlignmentKey),
-          ),
-          _item(
-            icon: const FlowySvg(FlowySvgs.align_center_s),
-            label: LocaleKeys.document_plugins_optionAction_center.tr(),
-            onTap: () => _onAlignChanged(centerAlignmentKey),
-          ),
-          _item(
-            icon: const FlowySvg(FlowySvgs.align_right_s),
-            label: LocaleKeys.document_plugins_optionAction_right.tr(),
-            onTap: () => _onAlignChanged(rightAlignmentKey),
-          ),
-          const _MenuDivider(),
-        ],
-        if (!isPlaceholder) ...[
-          if (editable)
-            _item(
-              icon: const Icon(Icons.tune_rounded, size: 17),
-              label: 'Edit image',
-              onTap: editImage,
-            ),
-          _item(
-            icon: const Icon(Icons.document_scanner_outlined, size: 16),
-            label: 'Scan text',
-            onTap: scanText,
-          ),
-          if (editable)
-            _item(
-              icon: const Icon(Icons.closed_caption_off_rounded, size: 17),
-              label: 'Add a caption',
-              onTap: widget.state.requestCaptionFocus,
-            ),
-          _item(
-            icon: const FlowySvg(FlowySvgs.full_view_s),
-            label: LocaleKeys.document_imageBlock_openFullScreen.tr(),
-            onTap: openFullScreen,
-          ),
-          const _MenuDivider(),
-          _item(
-            icon: const FlowySvg(FlowySvgs.copy_s),
-            label: LocaleKeys.editor_copy.tr(),
-            onTap: copyImage,
-          ),
-          if (editable)
-            _item(
-              icon: const Icon(Icons.content_cut_rounded, size: 16),
-              label: LocaleKeys.editor_cut.tr(),
-              onTap: cutBlock,
-            ),
-          _item(
-            icon: const FlowySvg(FlowySvgs.download_s),
-            label: LocaleKeys.button_download.tr(),
-            onTap: downloadImage,
-          ),
-          _item(
-            icon: const FlowySvg(FlowySvgs.share_s),
-            label: LocaleKeys.button_share.tr(),
-            onTap: shareImage,
-          ),
-          if (editable) const _MenuDivider(),
-        ],
-        if (editable)
-          _item(
-            icon: const FlowySvg(FlowySvgs.trash_s),
-            label: LocaleKeys.button_delete.tr(),
-            onTap: deleteImage,
-          ),
-      ],
+  Future<void> _showMoreMenu(
+    BuildContext buttonContext,
+    bool isPlaceholder,
+  ) async {
+    _preventMenuClose();
+    await showAppMenuForWidget<void>(
+      context: buttonContext,
+      entries: _menuEntries(isPlaceholder: isPlaceholder),
     );
-  }
-
-  Widget _item({
-    required Widget icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: HoverButton(
-        itemHeight: 20,
-        leftIcon: icon,
-        name: label,
-        onTap: () {
-          _closeMenu();
-          onTap();
-        },
-      ),
-    );
-  }
-
-  void _closeMenu() {
-    popoverController.close();
     _allowMenuClose();
+  }
+
+  List<AppMenuEntry> _menuEntries({required bool isPlaceholder}) {
+    final editable = editorState.editable;
+    return [
+      if (editable && !isPlaceholder) ...[
+        AppMenuItem(
+          label: LocaleKeys.document_plugins_optionAction_left.tr(),
+          icon: Icons.format_align_left_rounded,
+          onSelected: () => _onAlignChanged(leftAlignmentKey),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.document_plugins_optionAction_center.tr(),
+          icon: Icons.format_align_center_rounded,
+          onSelected: () => _onAlignChanged(centerAlignmentKey),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.document_plugins_optionAction_right.tr(),
+          icon: Icons.format_align_right_rounded,
+          onSelected: () => _onAlignChanged(rightAlignmentKey),
+        ),
+        const AppMenuSeparator(),
+      ],
+      if (!isPlaceholder) ...[
+        if (editable)
+          AppMenuItem(
+            label: 'Edit image',
+            icon: Icons.tune_rounded,
+            onSelected: editImage,
+          ),
+        AppMenuItem(
+          label: 'Scan text',
+          icon: Icons.document_scanner_rounded,
+          onSelected: scanText,
+        ),
+        if (editable)
+          AppMenuItem(
+            label: 'Add a caption',
+            icon: Icons.closed_caption_off_rounded,
+            onSelected: widget.state.requestCaptionFocus,
+          ),
+        AppMenuItem(
+          label: LocaleKeys.document_imageBlock_openFullScreen.tr(),
+          icon: Icons.open_in_full_rounded,
+          onSelected: openFullScreen,
+        ),
+        const AppMenuSeparator(),
+        AppMenuItem(
+          label: LocaleKeys.editor_copy.tr(),
+          icon: Icons.copy_rounded,
+          onSelected: copyImage,
+        ),
+        if (editable)
+          AppMenuItem(
+            label: LocaleKeys.editor_cut.tr(),
+            icon: Icons.content_cut_rounded,
+            onSelected: cutBlock,
+          ),
+        AppMenuItem(
+          label: LocaleKeys.button_download.tr(),
+          icon: Icons.download_rounded,
+          onSelected: downloadImage,
+        ),
+        AppMenuItem(
+          label: LocaleKeys.button_share.tr(),
+          icon: Icons.ios_share_rounded,
+          onSelected: shareImage,
+        ),
+        if (editable) const AppMenuSeparator(),
+      ],
+      if (editable)
+        AppMenuItem(
+          label: LocaleKeys.button_delete.tr(),
+          icon: Icons.delete_outline_rounded,
+          destructive: true,
+          onSelected: deleteImage,
+        ),
+    ];
   }
 
   void _preventMenuClose() {
@@ -523,21 +503,6 @@ class _ImageMenuState extends State<ImageMenu> {
                 }
               : null,
         ),
-      ),
-    );
-  }
-}
-
-class _MenuDivider extends StatelessWidget {
-  const _MenuDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Container(
-        height: 1,
-        color: EditorSurfaceStyle.embedBorder(context),
       ),
     );
   }

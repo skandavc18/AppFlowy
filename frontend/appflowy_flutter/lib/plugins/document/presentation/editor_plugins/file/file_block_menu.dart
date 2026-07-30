@@ -75,7 +75,7 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
         if (canPreview) ...[
           HoverButton(
             itemHeight: 20,
-            leftIcon: const Icon(Icons.preview_outlined, size: 18),
+            leftIcon: const Icon(Icons.preview_rounded, size: 18),
             name: widget.node.attributes[FileBlockKeys.displayMode] == 'preview'
                 ? 'Show as file'
                 : 'Show preview',
@@ -100,8 +100,8 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
             itemHeight: 20,
             leftIcon: Icon(
               editingSource
-                  ? Icons.visibility_outlined
-                  : Icons.edit_note_outlined,
+                  ? Icons.visibility_rounded
+                  : Icons.edit_note_rounded,
               size: 18,
             ),
             name: editingSource ? 'Done editing' : 'Edit source',

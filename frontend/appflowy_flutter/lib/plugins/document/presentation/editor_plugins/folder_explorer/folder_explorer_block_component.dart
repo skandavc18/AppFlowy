@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/plugins/trash/application/trash_listener.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
@@ -308,7 +309,7 @@ class FolderExplorerBlockComponentState
         padding: const EdgeInsets.symmetric(horizontal: 14),
         child: Row(
           children: [
-            Icon(Icons.folder_off_outlined, color: palette.textMuted, size: 20),
+            Icon(Icons.folder_off_rounded, color: palette.textMuted, size: 20),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -432,119 +433,88 @@ class FolderExplorerBlockComponentState
   }
 
   Widget _buildMenu(ViewPB folder) {
-    final palette = FolderExplorerPalette.of(context);
-    return PopupMenuButton<_FolderBlockAction>(
+    return AppMenuIconButton(
+      icon: Icons.more_horiz_rounded,
+      iconSize: 18,
       tooltip: LocaleKeys.workspaceFolderExplorer_blockOptions.tr(),
-      color: palette.floatingSurface,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: palette.border),
-      ),
-      icon: Icon(Icons.more_horiz_rounded, size: 18, color: palette.textMuted),
-      itemBuilder: (_) => _menuItems(),
-      onSelected: (action) => unawaited(_handleMenuAction(folder, action)),
+      entries: () => _menuItems(folder),
     );
   }
 
   /// The same list behind the "⋯" button and behind a right click on the
   /// preview, so the block offers one set of options however it is asked.
-  List<PopupMenuEntry<_FolderBlockAction>> _menuItems() {
+  List<AppMenuEntry> _menuItems(ViewPB folder, {Offset? position}) {
     final displayMode = FolderExplorerBlockDisplayMode.fromValue(
       node.attributes[FolderExplorerBlockKeys.displayMode],
     );
     final previewMode = ViewPreviewMode.fromValue(
       node.attributes[FolderExplorerBlockKeys.previewMode],
     );
+
+    AppMenuItem item(
+      _FolderBlockAction action,
+      IconData icon,
+      String label,
+    ) =>
+        AppMenuItem(
+          label: label,
+          icon: icon,
+          onSelected: () =>
+              _handleMenuAction(folder, action, position: position),
+        );
+
     return [
       if (editorState.editable) ...[
-        PopupMenuItem(
-          value: _FolderBlockAction.addFile,
-          child: _FolderBlockMenuLabel(
-            icon: workspaceAddFileIcon,
-            label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
-            trailing: Icons.chevron_right_rounded,
-          ),
+        item(
+          _FolderBlockAction.addFile,
+          workspaceAddFileIcon,
+          LocaleKeys.workspaceFolderExplorer_addFile.tr(),
         ),
-        PopupMenuItem(
-          value: _FolderBlockAction.newFolder,
-          child: _FolderBlockMenuLabel(
-            icon: workspaceAddFolderIcon,
-            label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-          ),
+        item(
+          _FolderBlockAction.newFolder,
+          workspaceAddFolderIcon,
+          LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
         ),
-        const PopupMenuDivider(height: 9),
+        const AppMenuSeparator(),
       ],
-      PopupMenuItem(
-        value: _FolderBlockAction.open,
-        child: _FolderBlockMenuLabel(
-          icon: Icons.open_in_new_rounded,
-          label: LocaleKeys.workspaceFolderExplorer_openFolder.tr(),
-        ),
+      item(
+        _FolderBlockAction.open,
+        Icons.open_in_new_rounded,
+        LocaleKeys.workspaceFolderExplorer_openFolder.tr(),
       ),
-      PopupMenuItem(
-        value: _FolderBlockAction.toggleMode,
-        child: _FolderBlockMenuLabel(
-          icon: displayMode == FolderExplorerBlockDisplayMode.icon
-              ? Icons.view_agenda_outlined
-              : Icons.folder_outlined,
-          label: displayMode == FolderExplorerBlockDisplayMode.icon
-              ? LocaleKeys.workspaceFolderExplorer_showEmbeddedExplorer.tr()
-              : LocaleKeys.workspaceFolderExplorer_showAsFolderIcon.tr(),
-        ),
+      item(
+        _FolderBlockAction.toggleMode,
+        displayMode == FolderExplorerBlockDisplayMode.icon
+            ? Icons.view_agenda_rounded
+            : Icons.folder_rounded,
+        displayMode == FolderExplorerBlockDisplayMode.icon
+            ? LocaleKeys.workspaceFolderExplorer_showEmbeddedExplorer.tr()
+            : LocaleKeys.workspaceFolderExplorer_showAsFolderIcon.tr(),
       ),
       if (displayMode == FolderExplorerBlockDisplayMode.explorer)
-        PopupMenuItem(
-          value: _FolderBlockAction.togglePreview,
-          child: _FolderBlockMenuLabel(
-            icon: previewMode == ViewPreviewMode.cover
-                ? Icons.article_outlined
-                : Icons.photo_outlined,
-            label: previewMode == ViewPreviewMode.cover
-                ? LocaleKeys.workspaceFolderExplorer_showContentPreview.tr()
-                : LocaleKeys.workspaceFolderExplorer_showCoverPreview.tr(),
-          ),
+        item(
+          _FolderBlockAction.togglePreview,
+          previewMode == ViewPreviewMode.cover
+              ? Icons.article_rounded
+              : Icons.photo_rounded,
+          previewMode == ViewPreviewMode.cover
+              ? LocaleKeys.workspaceFolderExplorer_showContentPreview.tr()
+              : LocaleKeys.workspaceFolderExplorer_showCoverPreview.tr(),
         ),
-      PopupMenuItem(
-        value: _FolderBlockAction.changeFolder,
-        child: _FolderBlockMenuLabel(
-          icon: Icons.swap_horiz_rounded,
-          label: LocaleKeys.workspaceFolderExplorer_changeFolder.tr(),
-        ),
+      item(
+        _FolderBlockAction.changeFolder,
+        Icons.swap_horiz_rounded,
+        LocaleKeys.workspaceFolderExplorer_changeFolder.tr(),
       ),
     ];
   }
 
-  Future<void> _showBlockContextMenu(ViewPB folder, Offset position) async {
-    final palette = FolderExplorerPalette.of(context);
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final action = await showMenu<_FolderBlockAction>(
-      context: context,
-      color: palette.floatingSurface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 14,
-      shadowColor: palette.shadow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: palette.border),
-      ),
-      constraints: const BoxConstraints(minWidth: 208, maxWidth: 260),
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(position.dx, position.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      popUpAnimationStyle: AnimationStyle(
-        duration: const Duration(milliseconds: 140),
-        reverseDuration: const Duration(milliseconds: 100),
-        curve: Curves.easeOutCubic,
-      ),
-      items: _menuItems(),
-    );
-    if (action == null || !mounted) {
-      return;
-    }
-    await _handleMenuAction(folder, action, position: position);
-  }
+  Future<void> _showBlockContextMenu(ViewPB folder, Offset position) =>
+      showAppMenu<void>(
+        context: context,
+        globalPosition: position,
+        entries: _menuItems(folder, position: position),
+      );
 
   Future<void> _handleMenuAction(
     ViewPB folder,
@@ -792,37 +762,4 @@ enum _FolderBlockAction {
   toggleMode,
   togglePreview,
   changeFolder,
-}
-
-class _FolderBlockMenuLabel extends StatelessWidget {
-  const _FolderBlockMenuLabel({
-    required this.icon,
-    required this.label,
-    this.trailing,
-  });
-
-  final IconData icon;
-  final String label;
-
-  /// A chevron marks a row that opens a menu of its own.
-  final IconData? trailing;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 17),
-        const SizedBox(width: 9),
-        Expanded(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13),
-          ),
-        ),
-        if (trailing != null) Icon(trailing, size: 16),
-      ],
-    );
-  }
 }

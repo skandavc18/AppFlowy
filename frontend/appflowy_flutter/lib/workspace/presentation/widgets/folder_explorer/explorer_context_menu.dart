@@ -1,8 +1,8 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -32,70 +32,23 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
   required bool knowledgeMode,
   ViewPreviewMode previewMode = ViewPreviewMode.cover,
 }) {
-  final palette = FolderExplorerPalette.of(context);
-  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-  final position = RelativeRect.fromRect(
-    Rect.fromPoints(globalPosition, globalPosition),
-    Offset.zero & overlay.size,
-  );
-  const iconSize = 17.0;
-
-  PopupMenuItem<ExplorerContextAction> action(
+  AppMenuItem action(
     ExplorerContextAction value,
     IconData icon,
     String label, {
     bool danger = false,
-  }) {
-    return PopupMenuItem(
-      value: value,
-      height: 34,
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: iconSize,
-            color: danger ? palette.danger : palette.textSecondary,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 13,
-                color: danger ? palette.danger : palette.textPrimary,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  PopupMenuItem<ExplorerContextAction> gap() => const PopupMenuItem(
-        enabled: false,
-        height: 6,
-        child: SizedBox.shrink(),
+  }) =>
+      AppMenuItem(
+        label: label,
+        icon: icon,
+        value: value,
+        destructive: danger,
       );
 
-  return showMenu<ExplorerContextAction>(
+  return showAppMenu<ExplorerContextAction>(
     context: context,
-    position: position,
-    elevation: 12,
-    color: palette.floatingSurface,
-    shadowColor: palette.shadow,
-    surfaceTintColor: Colors.transparent,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(12),
-    ),
-    constraints: const BoxConstraints(minWidth: 190, maxWidth: 230),
-    popUpAnimationStyle: AnimationStyle(
-      duration: Duration(milliseconds: 140),
-      reverseDuration: Duration(milliseconds: 100),
-      curve: Curves.easeOutCubic,
-    ),
-    items: [
+    globalPosition: globalPosition,
+    entries: [
       action(
         ExplorerContextAction.open,
         Icons.open_in_new_rounded,
@@ -111,16 +64,16 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
         action(
           ExplorerContextAction.togglePreviewMode,
           previewMode == ViewPreviewMode.cover
-              ? Icons.article_outlined
-              : Icons.photo_outlined,
+              ? Icons.article_rounded
+              : Icons.photo_rounded,
           previewMode == ViewPreviewMode.cover
               ? LocaleKeys.workspaceFolderExplorer_showContentPreview.tr()
               : LocaleKeys.workspaceFolderExplorer_showCoverPreview.tr(),
         ),
-      gap(),
+      const AppMenuSeparator(),
       action(
         ExplorerContextAction.rename,
-        Icons.edit_outlined,
+        Icons.edit_rounded,
         LocaleKeys.workspaceFolderExplorer_rename.tr(),
       ),
       action(
@@ -132,27 +85,27 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
       ),
       action(
         ExplorerContextAction.duplicate,
-        Icons.copy_all_outlined,
+        Icons.copy_all_rounded,
         LocaleKeys.workspaceFolderExplorer_duplicate.tr(),
       ),
       action(
         ExplorerContextAction.copy,
-        Icons.copy_outlined,
+        Icons.copy_rounded,
         LocaleKeys.workspaceFolderExplorer_copy.tr(),
       ),
       action(
         ExplorerContextAction.cut,
-        Icons.content_cut_outlined,
+        Icons.content_cut_rounded,
         LocaleKeys.workspaceFolderExplorer_cut.tr(),
       ),
       if (canPaste && item.isFolder)
         action(
           ExplorerContextAction.paste,
-          Icons.content_paste_outlined,
+          Icons.content_paste_rounded,
           LocaleKeys.workspaceFolderExplorer_paste.tr(),
         ),
       if (item.isFolder) ...[
-        gap(),
+        const AppMenuSeparator(),
         action(
           ExplorerContextAction.newFile,
           workspaceAddFileIcon,
@@ -161,7 +114,7 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
         action(
           ExplorerContextAction.newFolder,
           knowledgeMode
-              ? Icons.auto_awesome_mosaic_outlined
+              ? Icons.auto_awesome_mosaic_rounded
               : workspaceAddFolderIcon,
           knowledgeMode
               ? LocaleKeys.workspaceFolderExplorer_newCollection.tr()
@@ -169,7 +122,7 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
         ),
       ],
       if (!knowledgeMode) ...[
-        gap(),
+        const AppMenuSeparator(),
         action(
           ExplorerContextAction.copyPath,
           Icons.link_rounded,
@@ -181,7 +134,7 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
           LocaleKeys.workspaceFolderExplorer_properties.tr(),
         ),
       ],
-      gap(),
+      const AppMenuSeparator(),
       action(
         ExplorerContextAction.delete,
         Icons.delete_outline_rounded,

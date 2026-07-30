@@ -1,6 +1,5 @@
-import 'dart:math' as math;
-
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -42,9 +41,9 @@ class SpreadsheetMenuEntry {
 
 abstract final class SpreadsheetMenuStyle {
   static const double width = 232;
-  static const double radius = 12;
-  static const double rowHeight = 30;
-  static const EdgeInsets padding = EdgeInsets.symmetric(vertical: 5);
+  static const double radius = AppMenuMetrics.cornerRadius;
+  static const double rowHeight = AppMenuMetrics.rowHeight;
+  static const EdgeInsets padding = AppMenuMetrics.cardPadding;
 }
 
 /// Shows a menu anchored at [position] in global coordinates.
@@ -58,19 +57,25 @@ Future<void> showSpreadsheetMenu({
   double width = SpreadsheetMenuStyle.width,
   bool alignRight = false,
 }) {
-  final navigator = Navigator.of(context, rootNavigator: true);
-  final themes = InheritedTheme.capture(
-    from: context,
-    to: navigator.context,
-  );
-  return navigator.push(
-    _SpreadsheetMenuRoute<void>(
-      position: alignRight ? position.translate(-width, 0) : position,
-      entries: entries,
-      width: width,
-      capturedThemes: themes,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    ),
+  return showAppMenu<void>(
+    context: context,
+    globalPosition: alignRight ? position.translate(-width, 0) : position,
+    width: width,
+    entries: [
+      for (final entry in entries)
+        if (entry.isDivider)
+          const AppMenuSeparator()
+        else
+          AppMenuItem(
+            label: entry.label,
+            icon: entry.icon,
+            enabled: entry.enabled,
+            selected: entry.selected,
+            destructive: entry.destructive,
+            shortcut: entry.trailing,
+            onSelected: entry.onSelected,
+          ),
+    ],
   );
 }
 
@@ -82,129 +87,15 @@ Future<T?> showSpreadsheetPanel<T>({
   required WidgetBuilder builder,
   double width = 260,
 }) {
-  final navigator = Navigator.of(context, rootNavigator: true);
-  final themes = InheritedTheme.capture(from: context, to: navigator.context);
-  return navigator.push<T>(
-    _SpreadsheetMenuRoute<T>(
-      position: position,
-      width: width,
-      capturedThemes: themes,
-      panelBuilder: builder,
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    ),
+  return showAppMenu<T>(
+    context: context,
+    globalPosition: position,
+    width: width,
+    entries: [AppMenuCustom(builder: builder)],
   );
 }
 
-class _SpreadsheetMenuRoute<T> extends PopupRoute<T> {
-  _SpreadsheetMenuRoute({
-    required this.position,
-    required this.width,
-    required this.capturedThemes,
-    required this.barrierLabel,
-    this.entries = const [],
-    this.panelBuilder,
-  });
-
-  final Offset position;
-  final List<SpreadsheetMenuEntry> entries;
-  final double width;
-  final CapturedThemes capturedThemes;
-  final WidgetBuilder? panelBuilder;
-
-  @override
-  final String barrierLabel;
-
-  @override
-  Color? get barrierColor => null;
-
-  @override
-  bool get barrierDismissible => true;
-
-  @override
-  Duration get transitionDuration => const Duration(milliseconds: 140);
-
-  @override
-  Duration get reverseTransitionDuration => const Duration(milliseconds: 100);
-
-  @override
-  Widget buildPage(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-  ) {
-    return Builder(
-      builder: (context) => CustomSingleChildLayout(
-        delegate: _SpreadsheetMenuLayout(
-          position: position,
-          windowPadding: MediaQuery.paddingOf(context),
-        ),
-        child: capturedThemes.wrap(
-          panelBuilder != null
-              ? _SpreadsheetPanelCard(width: width, builder: panelBuilder!)
-              : _SpreadsheetMenuCard(entries: entries, width: width),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget buildTransitions(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) {
-    final curved = CurvedAnimation(
-      parent: animation,
-      curve: Curves.easeOutCubic,
-      reverseCurve: Curves.easeInCubic,
-    );
-    return FadeTransition(
-      opacity: curved,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.96, end: 1).animate(curved),
-        alignment: Alignment.topLeft,
-        child: child,
-      ),
-    );
-  }
-}
-
-class _SpreadsheetMenuLayout extends SingleChildLayoutDelegate {
-  const _SpreadsheetMenuLayout({
-    required this.position,
-    required this.windowPadding,
-  });
-
-  final Offset position;
-  final EdgeInsets windowPadding;
-
-  static const _inset = 8.0;
-
-  @override
-  BoxConstraints getConstraintsForChild(BoxConstraints constraints) =>
-      BoxConstraints.loose(constraints.biggest)
-          .deflate(windowPadding + const EdgeInsets.all(_inset));
-
-  @override
-  Offset getPositionForChild(Size size, Size childSize) {
-    final minX = windowPadding.left + _inset;
-    final minY = windowPadding.top + _inset;
-    final maxX = size.width - windowPadding.right - _inset - childSize.width;
-    final maxY = size.height - windowPadding.bottom - _inset - childSize.height;
-    return Offset(
-      math.min(position.dx, math.max(minX, maxX)),
-      math.min(position.dy, math.max(minY, maxY)),
-    );
-  }
-
-  @override
-  bool shouldRelayout(_SpreadsheetMenuLayout oldDelegate) =>
-      position != oldDelegate.position ||
-      windowPadding != oldDelegate.windowPadding;
-}
-
-/// The shared card chrome, used by both the row menus and the format panels.
+/// The shared card chrome, used by panels that live outside a menu route.
 class SpreadsheetPanelCard extends StatelessWidget {
   const SpreadsheetPanelCard({
     super.key,
@@ -216,166 +107,8 @@ class SpreadsheetPanelCard extends StatelessWidget {
   final double? width;
 
   @override
-  Widget build(BuildContext context) {
-    final palette = SpreadsheetPalette.of(context);
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        width: width,
-        decoration: BoxDecoration(
-          color: palette.floating,
-          borderRadius: BorderRadius.circular(SpreadsheetMenuStyle.radius),
-          boxShadow: [
-            BoxShadow(
-              color: palette.shadow,
-              blurRadius: 30,
-              spreadRadius: -10,
-              offset: const Offset(0, 14),
-            ),
-            BoxShadow(
-              color: palette.shadow.withValues(alpha: palette.shadow.a * 0.6),
-              blurRadius: 6,
-              spreadRadius: -2,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(SpreadsheetMenuStyle.radius),
-          child: child,
-        ),
-      ),
-    );
-  }
-}
-
-class _SpreadsheetPanelCard extends StatelessWidget {
-  const _SpreadsheetPanelCard({required this.width, required this.builder});
-
-  final double width;
-  final WidgetBuilder builder;
-
-  @override
   Widget build(BuildContext context) =>
-      SpreadsheetPanelCard(width: width, child: builder(context));
-}
-
-class _SpreadsheetMenuCard extends StatelessWidget {
-  const _SpreadsheetMenuCard({required this.entries, required this.width});
-
-  final List<SpreadsheetMenuEntry> entries;
-  final double width;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = SpreadsheetPalette.of(context);
-    return SpreadsheetPanelCard(
-      width: width,
-      child: SingleChildScrollView(
-        padding: SpreadsheetMenuStyle.padding,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final entry in entries)
-              entry.isDivider
-                  ? Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 5, 12, 5),
-                      child: Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: palette.gridLine,
-                      ),
-                    )
-                  : _SpreadsheetMenuRow(entry: entry, palette: palette),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _SpreadsheetMenuRow extends StatefulWidget {
-  const _SpreadsheetMenuRow({required this.entry, required this.palette});
-
-  final SpreadsheetMenuEntry entry;
-  final SpreadsheetPalette palette;
-
-  @override
-  State<_SpreadsheetMenuRow> createState() => _SpreadsheetMenuRowState();
-}
-
-class _SpreadsheetMenuRowState extends State<_SpreadsheetMenuRow> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final entry = widget.entry;
-    final palette = widget.palette;
-    final color = !entry.enabled
-        ? palette.textMuted.withValues(alpha: 0.5)
-        : entry.destructive
-            ? palette.danger
-            : palette.textPrimary;
-    final iconColor = !entry.enabled
-        ? palette.textMuted.withValues(alpha: 0.5)
-        : entry.destructive
-            ? palette.danger
-            : palette.textMuted;
-    return MouseRegion(
-      cursor:
-          entry.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: entry.enabled
-            ? () {
-                Navigator.of(context).pop();
-                entry.onSelected?.call();
-              }
-            : null,
-        child: Container(
-          height: SpreadsheetMenuStyle.rowHeight,
-          margin: const EdgeInsets.symmetric(horizontal: 5),
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color:
-                _hovered && entry.enabled ? palette.hover : Colors.transparent,
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: Row(
-            children: [
-              if (entry.icon != null) ...[
-                Icon(entry.icon, size: 15, color: iconColor),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: Text(
-                  entry.label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.2,
-                    color: color,
-                    fontWeight:
-                        entry.selected ? FontWeight.w500 : FontWeight.w400,
-                  ),
-                ),
-              ),
-              if (entry.trailing != null)
-                Text(
-                  entry.trailing!,
-                  style: TextStyle(fontSize: 11, color: palette.textMuted),
-                ),
-              if (entry.selected)
-                Icon(Icons.check_rounded, size: 14, color: palette.accent),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+      AppMenuSurface(width: width, child: child);
 }
 
 // ---------------------------------------------------------------------------
@@ -637,7 +370,7 @@ Future<void> showSpreadsheetCellMenu({
         ),
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_format_color.tr(),
-          icon: Icons.palette_outlined,
+          icon: Icons.palette_rounded,
           onSelected: () => showSpreadsheetColorPanel(
             context: context,
             controller: controller,
@@ -670,7 +403,7 @@ Future<void> showSpreadsheetCellMenu({
       ),
       SpreadsheetMenuEntry(
         label: LocaleKeys.spreadsheet_menu_clear.tr(),
-        icon: Icons.backspace_outlined,
+        icon: Icons.backspace_rounded,
         enabled: editable,
         onSelected: controller.clearSelection,
       ),
@@ -756,7 +489,7 @@ Future<void> showSpreadsheetRowMenu({
       ),
       SpreadsheetMenuEntry(
         label: LocaleKeys.spreadsheet_format_color.tr(),
-        icon: Icons.palette_outlined,
+        icon: Icons.palette_rounded,
         enabled: editable,
         onSelected: () => showSpreadsheetColorPanel(
           context: context,
@@ -771,7 +504,7 @@ Future<void> showSpreadsheetRowMenu({
       ),
       SpreadsheetMenuEntry(
         label: LocaleKeys.spreadsheet_menu_clear.tr(),
-        icon: Icons.backspace_outlined,
+        icon: Icons.backspace_rounded,
         enabled: editable,
         onSelected: controller.clearSelection,
       ),
@@ -824,7 +557,7 @@ Future<void> showSpreadsheetColumnMenu({
       ),
       SpreadsheetMenuEntry(
         label: LocaleKeys.spreadsheet_menu_filter.tr(),
-        icon: Icons.filter_alt_outlined,
+        icon: Icons.filter_alt_rounded,
         selected: controller.filterFor(column).isNotEmpty,
         onSelected: () => showSpreadsheetFilterPrompt(
           context: context,
@@ -835,7 +568,7 @@ Future<void> showSpreadsheetColumnMenu({
       if (controller.data.filters.isNotEmpty)
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_menu_clearFilters.tr(),
-          icon: Icons.filter_alt_off_outlined,
+          icon: Icons.filter_alt_off_rounded,
           onSelected: controller.clearFilters,
         ),
       const SpreadsheetMenuEntry.divider(),
@@ -864,7 +597,7 @@ Future<void> showSpreadsheetColumnMenu({
       ),
       SpreadsheetMenuEntry(
         label: LocaleKeys.spreadsheet_format_color.tr(),
-        icon: Icons.palette_outlined,
+        icon: Icons.palette_rounded,
         enabled: editable,
         onSelected: () => showSpreadsheetColorPanel(
           context: context,
@@ -880,14 +613,14 @@ Future<void> showSpreadsheetColumnMenu({
       ),
       SpreadsheetMenuEntry(
         label: LocaleKeys.spreadsheet_menu_hideColumn.tr(),
-        icon: Icons.visibility_off_outlined,
+        icon: Icons.visibility_off_rounded,
         enabled: editable && controller.data.columnCount > 1,
         onSelected: () => controller.setColumnHidden(column, true),
       ),
       if (hasHiddenColumns)
         SpreadsheetMenuEntry(
           label: LocaleKeys.spreadsheet_menu_showAllColumns.tr(),
-          icon: Icons.visibility_outlined,
+          icon: Icons.visibility_rounded,
           enabled: editable,
           onSelected: controller.showAllColumns,
         ),

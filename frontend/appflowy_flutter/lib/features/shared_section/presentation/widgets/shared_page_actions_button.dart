@@ -1,5 +1,4 @@
 import 'package:appflowy/features/share_tab/data/models/share_access_level.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -91,9 +90,9 @@ class _SharedPageActionsButtonState extends State<SharedPageActionsButton> {
       } else {
         menuItems.add(
           AFTextMenuItem(
-            leading: FlowySvg(
-              actionType.leftIconSvg,
-              size: const Size.square(16),
+            leading: Icon(
+              actionType.leftIcon,
+              size: 16,
               color: actionType == ViewMoreActionType.delete
                   ? Theme.of(context).colorScheme.error
                   : null,

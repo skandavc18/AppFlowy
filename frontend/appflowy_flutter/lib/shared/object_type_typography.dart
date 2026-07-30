@@ -1,9 +1,18 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 abstract final class ObjectTypeTypography {
   static const cssFontWeight = FontWeight.w500;
   // Chromium maps ObjectType's CSS 500/550 to Segoe UI Semibold on Windows.
   static const windowsFontWeight = FontWeight.w600;
+
+  /// The weight emphasised text sits at inside a table cell.
+  ///
+  /// One step above ordinary body copy rather than the editor's full bold:
+  /// [FontWeight.bold] is what a hand-bolded span already uses, so a header
+  /// set at it shouts and reads as marked-up text rather than as a heading.
+  static const emphasisFontWeight = FontWeight.w600;
   static const letterSpacingEm = -0.01;
   static const editorFontSize = 16.0;
   static const editorLineHeight = 1.6;
@@ -61,6 +70,31 @@ abstract final class ObjectTypeTypography {
     return style.copyWith(
       color: editorTextColorForBrightness(brightness, fallbackColor),
       shadows: editorTextShadowsForPlatform(platform, brightness),
+    );
+  }
+
+  /// Lifts table header and bolded cells above the text around them without
+  /// ever going below it, and moves the variable-weight axis with the weight
+  /// so a variable face actually responds.
+  static TextStyle emphasizeTableCellText(TextStyle style) {
+    final base = style.fontWeight ?? FontWeight.w400;
+    final weight =
+        base.index >= emphasisFontWeight.index ? base : emphasisFontWeight;
+    final variations = style.fontVariations;
+    if (variations == null) {
+      return style.copyWith(fontWeight: weight);
+    }
+    return style.copyWith(
+      fontWeight: weight,
+      fontVariations: [
+        for (final variation in variations)
+          if (variation.axis == 'wght')
+            FontVariation.weight(
+              math.max(variation.value, weight.value.toDouble()),
+            )
+          else
+            variation,
+      ],
     );
   }
 

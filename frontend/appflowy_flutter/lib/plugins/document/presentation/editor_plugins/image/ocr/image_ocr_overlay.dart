@@ -1004,7 +1004,9 @@ class _OcrLineRow extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 1),
                 child: Icon(
-                  selected ? Icons.check_circle_rounded : Icons.circle_outlined,
+                  selected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
                   size: 14,
                   color: selected ? palette.accent : palette.textMuted,
                 ),

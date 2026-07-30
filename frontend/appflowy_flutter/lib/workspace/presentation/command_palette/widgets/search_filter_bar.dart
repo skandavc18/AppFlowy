@@ -39,7 +39,7 @@ class SearchFilterBar extends StatelessWidget {
           ),
           _FilterMenuButton<bool>(
             key: const ValueKey('command-palette-creator-filter'),
-            icon: Icons.person_outline,
+            icon: Icons.person_outline_rounded,
             label: filter.createdByMe
                 ? '${LocaleKeys.commandPalette_createdBy.tr()}: '
                     '${LocaleKeys.commandPalette_me.tr()}'
@@ -62,7 +62,7 @@ class SearchFilterBar extends StatelessWidget {
           ),
           _FilterMenuButton<String?>(
             key: const ValueKey('command-palette-space-filter'),
-            icon: Icons.folder_outlined,
+            icon: Icons.folder_rounded,
             label: selectedSpace == null
                 ? LocaleKeys.commandPalette_in.tr()
                 : '${LocaleKeys.commandPalette_in.tr()}: '
@@ -150,11 +150,11 @@ class SearchFilterBar extends StatelessWidget {
       };
 
   static IconData _pageTypeIcon(ViewLayoutPB layout) => switch (layout) {
-        ViewLayoutPB.Grid => Icons.table_chart_outlined,
-        ViewLayoutPB.Board => Icons.view_kanban_outlined,
-        ViewLayoutPB.Calendar => Icons.calendar_today_outlined,
-        ViewLayoutPB.Chat => Icons.chat_bubble_outline,
-        _ => Icons.description_outlined,
+        ViewLayoutPB.Grid => Icons.table_chart_rounded,
+        ViewLayoutPB.Board => Icons.view_kanban_rounded,
+        ViewLayoutPB.Calendar => Icons.calendar_today_rounded,
+        ViewLayoutPB.Chat => Icons.chat_bubble_outline_rounded,
+        _ => Icons.description_rounded,
       };
 }
 

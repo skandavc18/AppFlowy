@@ -52,7 +52,7 @@ class _SettingsOfficeViewState extends State<SettingsOfficeView> {
               children: [
                 Icon(
                   usesCloud
-                      ? Icons.cloud_done_outlined
+                      ? Icons.cloud_done_rounded
                       : Icons.computer_rounded,
                   size: 20,
                 ),

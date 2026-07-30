@@ -1,7 +1,6 @@
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/material.dart';
-import 'package:styled_widget/styled_widget.dart';
 
 class PopoverActionList<T extends PopoverAction> extends StatefulWidget {
   const PopoverActionList({
@@ -106,6 +105,10 @@ class _PopoverActionListState<T extends PopoverAction>
       triggerActions: PopoverTriggerFlags.none,
       onClose: widget.onClosed,
       showAtCursor: widget.showAtCursor,
+      // The list draws the application's menu card itself, so the popover
+      // must not stack a second one behind it.
+      popoverDecoration: const BoxDecoration(),
+      margin: EdgeInsets.zero,
       popupBuilder: (_) {
         widget.onPopupBuilder?.call();
         final List<Widget> children = widget.actions.map((action) {
@@ -135,18 +138,15 @@ class _PopoverActionListState<T extends PopoverAction>
           }
         }).toList();
 
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: ColoredBox(
-            color: widget.backgroundColor ?? Theme.of(context).cardColor,
-            // A long action list scrolls rather than overflowing its
-            // popover's maxHeight.
-            child: IntrinsicWidth(
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: children,
-                ),
+        return AppMenuSurface(
+          // A long action list scrolls rather than overflowing its
+          // popover's maxHeight.
+          child: IntrinsicWidth(
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: children,
               ),
             ),
           ),
@@ -178,8 +178,8 @@ abstract class PopoverActionCell extends PopoverAction {
   String get name;
 
   /// Whether pointing at the row is enough to reveal the submenu, the way a
-  /// desktop menu bar behaves. Otherwise the row has to be clicked.
-  bool get openOnHover => false;
+  /// desktop menu bar behaves.
+  bool get openOnHover => true;
 
   /// Chrome for the submenu container. A cell that draws its own card returns
   /// a blank decoration and no margin so the popover does not stack a second
@@ -202,10 +202,10 @@ abstract class CustomActionCell extends PopoverAction {
 abstract class PopoverAction {}
 
 class ActionListSizes {
-  static double itemHPadding = 10;
-  static double itemHeight = 20;
-  static double vPadding = 6;
-  static double hPadding = 10;
+  static double itemHPadding = AppMenuMetrics.iconGap;
+  static double itemHeight = AppMenuMetrics.rowHeight;
+  static double vPadding = 0;
+  static double hPadding = 0;
 }
 
 class ActionCellWidget<T extends PopoverAction> extends StatelessWidget {
@@ -228,11 +228,9 @@ class ActionCellWidget<T extends PopoverAction> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final actionCell = action as ActionCell;
-    final leftIcon =
-        actionCell.leftIcon(Theme.of(context).colorScheme.onSurface);
-
-    final rightIcon =
-        actionCell.rightIcon(Theme.of(context).colorScheme.onSurface);
+    final style = AppMenuStyle.of(context);
+    final leftIcon = actionCell.leftIcon(style.icon);
+    final rightIcon = actionCell.rightIcon(style.iconMuted);
 
     final Widget child = HoverButton(
       itemHeight: itemHeight,
@@ -279,10 +277,9 @@ class _PopoverActionCellWidgetState<T extends PopoverAction>
   @override
   Widget build(BuildContext context) {
     final actionCell = widget.action as PopoverActionCell;
-    final leftIcon =
-        actionCell.leftIcon(Theme.of(context).colorScheme.onSurface);
-    final rightIcon =
-        actionCell.rightIcon(Theme.of(context).colorScheme.onSurface);
+    final leftIcon = actionCell.leftIcon(AppMenuStyle.of(context).icon);
+    final rightIcon = actionCell.rightIcon(AppMenuStyle.of(context).iconMuted);
+    final drawsOwnSurface = actionCell.popoverDecoration != null;
     return AppFlowyPopover(
       mutex: widget.popoverMutex,
       controller: popoverController,
@@ -290,19 +287,29 @@ class _PopoverActionCellWidgetState<T extends PopoverAction>
       triggerActions: actionCell.openOnHover
           ? PopoverTriggerFlags.hover
           : PopoverTriggerFlags.none,
-      popoverDecoration: actionCell.popoverDecoration,
-      margin: actionCell.popoverMargin ?? const EdgeInsets.all(6),
+      popoverDecoration: actionCell.popoverDecoration ?? const BoxDecoration(),
+      margin: actionCell.popoverMargin ?? EdgeInsets.zero,
       constraints: actionCell.popoverConstraints ??
-          const BoxConstraints(maxWidth: 240, maxHeight: 600),
-      popupBuilder: (context) => actionCell.builder(
-        context,
-        widget.popoverController,
-        popoverController,
-      ),
+          const BoxConstraints(maxWidth: 260, maxHeight: 600),
+      popupBuilder: (context) {
+        final child = actionCell.builder(
+          context,
+          widget.popoverController,
+          popoverController,
+        );
+        return drawsOwnSurface
+            ? child
+            : AppMenuSurface(child: IntrinsicWidth(child: child));
+      },
       child: HoverButton(
         itemHeight: widget.itemHeight,
         leftIcon: leftIcon,
-        rightIcon: rightIcon,
+        rightIcon: rightIcon ??
+            Icon(
+              Icons.chevron_right_rounded,
+              size: AppMenuMetrics.submenuArrowSize,
+              color: AppMenuStyle.of(context).iconMuted,
+            ),
         name: actionCell.name,
         onTap: () => popoverController.show(),
       ),
@@ -310,6 +317,10 @@ class _PopoverActionCellWidgetState<T extends PopoverAction>
   }
 }
 
+/// A single row outside a menu that still has to look like one.
+///
+/// Everything the application draws as an action row goes through here, so a
+/// row in a popover is the same object as a row in a context menu.
 class HoverButton extends StatelessWidget {
   const HoverButton({
     super.key,
@@ -330,37 +341,13 @@ class HoverButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FlowyHover(
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: SizedBox(
-          height: itemHeight,
-          child: Row(
-            children: [
-              if (leftIcon != null) ...[
-                leftIcon!,
-                HSpace(ActionListSizes.itemHPadding),
-              ],
-              Expanded(
-                child: FlowyText.medium(
-                  name,
-                  overflow: TextOverflow.visible,
-                  lineHeight: 1.15,
-                  color: textColor,
-                ),
-              ),
-              if (rightIcon != null) ...[
-                HSpace(ActionListSizes.itemHPadding),
-                rightIcon!,
-              ],
-            ],
-          ),
-        ).padding(
-          horizontal: ActionListSizes.hPadding,
-          vertical: ActionListSizes.vPadding,
-        ),
-      ),
+    return AppMenuRow(
+      label: name,
+      iconWidget: leftIcon,
+      trailing: rightIcon,
+      tracksHover: true,
+      labelColor: textColor,
+      onTap: onTap,
     );
   }
 }

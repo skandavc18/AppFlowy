@@ -44,7 +44,7 @@ class ExplorerToolbar extends StatelessWidget {
         ),
         if (canPaste && onPaste != null)
           _ToolbarButton(
-            icon: Icons.content_paste_outlined,
+            icon: Icons.content_paste_rounded,
             tooltip: LocaleKeys.workspaceFolderExplorer_paste.tr(),
             onPressed: onPaste,
           ),

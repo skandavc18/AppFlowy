@@ -389,11 +389,11 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
   }
 
   IconData _layoutIcon(ViewLayoutPB layout) => switch (layout) {
-        ViewLayoutPB.Grid => Icons.table_chart_outlined,
-        ViewLayoutPB.Board => Icons.view_kanban_outlined,
-        ViewLayoutPB.Calendar => Icons.calendar_month_outlined,
+        ViewLayoutPB.Grid => Icons.table_chart_rounded,
+        ViewLayoutPB.Board => Icons.view_kanban_rounded,
+        ViewLayoutPB.Calendar => Icons.calendar_month_rounded,
         ViewLayoutPB.Chat => Icons.chat_bubble_outline_rounded,
-        _ => Icons.description_outlined,
+        _ => Icons.description_rounded,
       };
 }
 

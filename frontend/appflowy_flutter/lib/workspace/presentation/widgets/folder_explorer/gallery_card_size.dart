@@ -1,6 +1,6 @@
 import 'package:appflowy/core/config/kv.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/startup/startup.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_metrics.dart';
 import 'package:flutter/material.dart';
 
@@ -56,58 +56,18 @@ Future<void> showGalleryCardSizeMenu({
   required BuildContext context,
   required Offset globalPosition,
 }) async {
-  final palette = FolderExplorerPalette.of(context);
-  final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
   final current = GalleryCardSizeStore.value;
-  final chosen = await showMenu<GalleryCardSize>(
+  final chosen = await showAppMenu<GalleryCardSize>(
     context: context,
-    color: palette.floatingSurface,
-    surfaceTintColor: Colors.transparent,
-    elevation: 14,
-    shadowColor: palette.shadow,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    constraints: const BoxConstraints(minWidth: 196, maxWidth: 240),
-    position: RelativeRect.fromRect(
-      Rect.fromLTWH(globalPosition.dx, globalPosition.dy, 1, 1),
-      Offset.zero & overlay.size,
-    ),
-    items: [
-      PopupMenuItem<GalleryCardSize>(
-        enabled: false,
-        height: 26,
-        child: Text(
-          'CARD SIZE',
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 10.5,
-            letterSpacing: 0.6,
-            fontWeight: FontWeight.w600,
-            color: palette.textMuted,
-          ),
-        ),
-      ),
+    globalPosition: globalPosition,
+    entries: [
+      const AppMenuHeader('Card size'),
       for (final size in GalleryCardSize.values)
-        PopupMenuItem<GalleryCardSize>(
+        AppMenuItem(
+          label: size.label,
+          icon: size.icon,
           value: size,
-          height: 40,
-          child: Row(
-            children: [
-              Icon(size.icon, size: 17, color: palette.textSecondary),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text(
-                  size.label,
-                  style: TextStyle(
-                    fontFamily: 'Inter',
-                    fontSize: 13,
-                    color: palette.textPrimary,
-                  ),
-                ),
-              ),
-              if (size == current)
-                Icon(Icons.check_rounded, size: 16, color: palette.accent),
-            ],
-          ),
+          selected: size == current,
         ),
     ],
   );

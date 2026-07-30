@@ -259,10 +259,10 @@ class ViewTransferAction extends ActionCell {
   final ViewMoreActionType type;
 
   @override
-  Widget? leftIcon(Color iconColor) => FlowySvg(
-        type.leftIconSvg,
+  Widget? leftIcon(Color iconColor) => Icon(
+        type.leftIcon,
         color: iconColor,
-        size: const Size.square(16),
+        size: 16,
       );
 
   @override

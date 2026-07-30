@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_menu_style.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -263,23 +264,21 @@ class _AppFlowyDesktopSelectionMenuWidgetState
     return Focus(
       focusNode: _focusNode,
       onKeyEvent: _onKeyEvent,
-      child: AFMenu(
+      child: AppMenuSurface(
         width: AppFlowyEditorMenuStyle.menuWidth,
-        children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxHeight: AppFlowyEditorMenuStyle.slashMenuContentMaxHeight,
-            ),
-            child: _showingItems.isEmpty
-                ? _buildNoResults(context)
-                : ListView(
-                    controller: _scrollController,
-                    shrinkWrap: true,
-                    padding: EdgeInsets.zero,
-                    children: _buildMenuChildren(context),
-                  ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(
+            maxHeight: AppFlowyEditorMenuStyle.slashMenuContentMaxHeight,
           ),
-        ],
+          child: _showingItems.isEmpty
+              ? _buildNoResults(context)
+              : ListView(
+                  controller: _scrollController,
+                  shrinkWrap: true,
+                  padding: EdgeInsets.zero,
+                  children: _buildMenuChildren(context),
+                ),
+        ),
       ),
     );
   }
@@ -298,40 +297,22 @@ class _AppFlowyDesktopSelectionMenuWidgetState
 
       final isSelected = index == _selectedIndex;
       children.add(
-        MouseRegion(
-          onEnter: (_) {
-            if (_selectedIndex != index) {
-              setState(() => _selectedIndex = index);
-            }
-          },
-          child: AFMenuItem(
-            key: _itemKeys.putIfAbsent(item, GlobalKey.new),
-            selected: isSelected,
-            selectedBackgroundColor:
-                AppFlowyTheme.of(context).fillColorScheme.contentHover,
-            leading: SizedBox.square(
-              dimension: 20,
-              child: Center(
-                child: item.icon(
-                  widget.editorState,
-                  isSelected,
-                  widget.selectionMenuStyle,
-                ),
-              ),
-            ),
-            title: Text(
-              item.name,
-              style: AppFlowyEditorMenuStyle.itemTextStyle(
-                context,
-                color: isSelected
-                    ? widget
-                        .selectionMenuStyle.selectionMenuItemSelectedTextColor
-                    : widget.selectionMenuStyle.selectionMenuItemTextColor,
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+        KeyedSubtree(
+          key: _itemKeys.putIfAbsent(item, GlobalKey.new),
+          child: AppMenuRow(
+            label: item.name,
+            highlighted: isSelected,
+            iconWidget: item.icon(
+              widget.editorState,
+              isSelected,
+              widget.selectionMenuStyle,
             ),
             trailing: _buildTrailing(context, metadata),
+            onHover: (_) {
+              if (_selectedIndex != index) {
+                setState(() => _selectedIndex = index);
+              }
+            },
             onTap: () => item.handler(
               widget.editorState,
               widget.menuService,
@@ -349,21 +330,17 @@ class _AppFlowyDesktopSelectionMenuWidgetState
     BuildContext context,
     SlashMenuSection section,
   ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Text(
-        switch (section) {
-          SlashMenuSection.suggestions =>
-            LocaleKeys.document_toolbar_suggestions.tr(),
-          SlashMenuSection.basicBlocks => 'Basic blocks',
-          SlashMenuSection.media =>
-            LocaleKeys.document_slashMenu_name_fileAndMedia.tr(),
-          SlashMenuSection.database => LocaleKeys.importPanel_database.tr(),
-          SlashMenuSection.advanced =>
-            LocaleKeys.document_slashMenu_name_advanced.tr(),
-        },
-        style: AppFlowyEditorMenuStyle.sectionTextStyle(context),
-      ),
+    return AppMenuSectionLabel(
+      label: switch (section) {
+        SlashMenuSection.suggestions =>
+          LocaleKeys.document_toolbar_suggestions.tr(),
+        SlashMenuSection.basicBlocks => 'Basic blocks',
+        SlashMenuSection.media =>
+          LocaleKeys.document_slashMenu_name_fileAndMedia.tr(),
+        SlashMenuSection.database => LocaleKeys.importPanel_database.tr(),
+        SlashMenuSection.advanced =>
+          LocaleKeys.document_slashMenu_name_advanced.tr(),
+      },
     );
   }
 
@@ -371,6 +348,7 @@ class _AppFlowyDesktopSelectionMenuWidgetState
     BuildContext context,
     SlashMenuItemMetadata metadata,
   ) {
+    final style = AppMenuStyle.of(context);
     if (metadata.isNew) {
       final appTheme = AppFlowyTheme.of(context);
       return Container(
@@ -389,10 +367,7 @@ class _AppFlowyDesktopSelectionMenuWidgetState
     final shortcut = metadata.shortcut;
     return shortcut == null
         ? null
-        : Text(
-            shortcut,
-            style: AppFlowyEditorMenuStyle.shortcutTextStyle(context),
-          );
+        : Text(shortcut, style: style.shortcutStyle);
   }
 
   Widget _buildNoResults(BuildContext context) {
@@ -401,7 +376,7 @@ class _AppFlowyDesktopSelectionMenuWidgetState
       child: Text(
         LocaleKeys.inlineActions_noResults.tr(),
         textAlign: TextAlign.center,
-        style: AppFlowyEditorMenuStyle.itemTextStyle(context),
+        style: AppMenuStyle.of(context).labelStyle,
       ),
     );
   }

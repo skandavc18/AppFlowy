@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mo
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/executable_code_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
+import 'package:appflowy/shared/object_type_typography.dart';
 import 'package:appflowy_editor/appflowy_editor.dart'
     hide QuoteBlockComponentBuilder, quoteNode, QuoteBlockKeys;
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
@@ -638,9 +639,9 @@ NumberedListBlockComponentBuilder _buildNumberedListBlockComponentBuilder(
     iconBuilder: (_, node, textDirection) {
       TextStyle? textStyle;
       if (node.isInHeaderColumn || node.isInHeaderRow) {
-        textStyle = configuration.textStyle(node).copyWith(
-              fontWeight: FontWeight.bold,
-            );
+        textStyle = ObjectTypeTypography.emphasizeTableCellText(
+          configuration.textStyle(node),
+        );
       }
       return NumberedListIcon(
         node: node,
@@ -1110,9 +1111,7 @@ TextStyle _buildTextStyleInTableCell(
       node.isInHeaderRow ||
       node.isInBoldColumn ||
       node.isInBoldRow) {
-    textStyle = textStyle.copyWith(
-      fontWeight: FontWeight.bold,
-    );
+    textStyle = ObjectTypeTypography.emphasizeTableCellText(textStyle);
   }
 
   final cellTextColor = node.textColorInColumn ?? node.textColorInRow;

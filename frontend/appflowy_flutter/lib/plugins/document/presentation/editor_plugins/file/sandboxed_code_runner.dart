@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/local_code_runner.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -1039,7 +1040,7 @@ class _CodeBlockHeader extends StatelessWidget {
                         : LocaleKeys.document_codeBlock_copyTooltip.tr(),
                     icon: copied
                         ? Icons.check_rounded
-                        : Icons.content_copy_outlined,
+                        : Icons.content_copy_rounded,
                     label: copied
                         ? veryCompact
                             ? null
@@ -1056,7 +1057,7 @@ class _CodeBlockHeader extends StatelessWidget {
                     CodeToolbarButton(
                       palette: palette,
                       tooltip: 'Download code',
-                      icon: Icons.download_outlined,
+                      icon: Icons.download_rounded,
                       onPressed: onDownload,
                     ),
                   ],
@@ -1107,94 +1108,52 @@ class _CodeLanguageMenu extends StatelessWidget {
 
     return Tooltip(
       message: 'Select language',
-      child: PopupMenuButton<String>(
-        tooltip: '',
-        position: PopupMenuPosition.under,
-        offset: const Offset(0, 6),
-        color: palette.menu,
-        surfaceTintColor: Colors.transparent,
-        shadowColor: Colors.transparent,
-        elevation: 0,
-        constraints: const BoxConstraints(
-          minWidth: 176,
-          maxWidth: 208,
-          maxHeight: 320,
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: BorderSide(color: palette.border, width: 0.5),
-        ),
-        popUpAnimationStyle: AnimationStyle(
-          duration: codeBlockAnimationDuration,
-          reverseDuration: codeBlockAnimationDuration,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        ),
-        onSelected: onSelected,
-        itemBuilder: (context) => [
-          for (final language in languages)
-            PopupMenuItem<String>(
-              value: language,
-              height: 34,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 18,
-                    child: language == selectedLanguage
-                        ? Icon(
-                            Icons.check_rounded,
-                            size: 14,
-                            color: palette.accent,
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    language == 'auto'
-                        ? LocaleKeys.document_codeBlock_language_auto.tr()
-                        : _languageLabel(language),
+      child: Builder(
+        builder: (buttonContext) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => showAppMenuForWidget<void>(
+            context: buttonContext,
+            placement: AppMenuPlacement.below,
+            maxHeight: 320,
+            entries: [
+              for (final language in languages)
+                AppMenuItem(
+                  label: language == 'auto'
+                      ? LocaleKeys.document_codeBlock_language_auto.tr()
+                      : _languageLabel(language),
+                  selected: language == selectedLanguage,
+                  onSelected: () => onSelected(language),
+                ),
+            ],
+          ),
+          child: CodeHoverSurface(
+            palette: palette,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.code_rounded, size: 14, color: palette.textMuted),
+                const SizedBox(width: 6),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxLabelWidth),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: codeUiTextStyle(
-                      color: language == selectedLanguage
-                          ? palette.textPrimary
-                          : palette.textSecondary,
+                      color: palette.textSecondary,
                       fontSize: 11.5,
-                      fontWeight: language == selectedLanguage
-                          ? FontWeight.w600
-                          : FontWeight.w500,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ],
-              ),
-            ),
-        ],
-        child: CodeHoverSurface(
-          palette: palette,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.code_rounded, size: 14, color: palette.textMuted),
-              const SizedBox(width: 6),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxLabelWidth),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: codeUiTextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                  ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 15,
-                color: palette.textMuted,
-              ),
-            ],
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 15,
+                  color: palette.textMuted,
+                ),
+              ],
+            ),
           ),
         ),
       ),

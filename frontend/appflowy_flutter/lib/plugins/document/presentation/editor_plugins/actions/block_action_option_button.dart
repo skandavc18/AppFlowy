@@ -1,11 +1,9 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_option_cubit.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_option_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/option/option_actions.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/columns/simple_column_node_extension.dart';
-import 'package:appflowy/shared/context_menu_surface_style.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
-import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:appflowy_popover/appflowy_popover.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -32,126 +30,54 @@ class BlockOptionButton extends StatefulWidget {
 }
 
 class _BlockOptionButtonState extends State<BlockOptionButton> {
-  // the mutex is used to ensure that only one popover is open at a time
-  // for example, when the user is selecting the color, the turn into option
-  // should not be shown.
-  final mutex = PopoverMutex();
-
   @override
   Widget build(BuildContext context) {
-    final direction =
-        context.read<AppearanceSettingsCubit>().state.layoutDirection ==
-                LayoutDirection.rtlLayout
-            ? PopoverDirection.rightWithCenterAligned
-            : PopoverDirection.leftWithCenterAligned;
     return BlocProvider(
       create: (context) => BlockActionOptionCubit(
         editorState: widget.editorState,
         blockComponentBuilder: widget.blockComponentBuilder,
       ),
-      child: BlocBuilder<BlockActionOptionCubit, BlockActionOptionState>(
-        builder: (context, _) => PopoverActionList<PopoverAction>(
-          actions: _buildPopoverActions(context),
-          animationDuration: Durations.short3,
-          slideDistance: 5,
-          beginScaleFactor: 1.0,
-          beginOpacity: 0.8,
-          direction: direction,
-          constraints: const BoxConstraints(
-            minWidth: 220,
-            maxWidth: 460,
-            maxHeight: 460,
-          ),
-          backgroundColor: ContextMenuSurfaceStyle.background(context),
-          onPopupBuilder: _onPopoverBuilder,
-          onClosed: () => _onPopoverClosed(context),
-          onSelected: (action, controller) => _onActionSelected(
-            context,
-            action,
-            controller,
-          ),
-          buildChild: (controller) => DraggableOptionButton(
-            controller: controller,
-            editorState: widget.editorState,
-            blockComponentContext: widget.blockComponentContext,
-            blockComponentBuilder: widget.blockComponentBuilder,
-          ),
+      child: Builder(
+        builder: (context) => DraggableOptionButton(
+          onShowMenu: () => _showMenu(context),
+          editorState: widget.editorState,
+          blockComponentContext: widget.blockComponentContext,
+          blockComponentBuilder: widget.blockComponentBuilder,
         ),
       ),
     );
   }
 
-  @override
-  void dispose() {
-    mutex.dispose();
+  Future<void> _showMenu(BuildContext context) async {
+    final cubit = context.read<BlockActionOptionCubit>();
+    // In a right-to-left layout the handle sits on the other side of the
+    // block, so the menu has to open the other way too.
+    final rtl = context.read<AppearanceSettingsCubit>().state.layoutDirection ==
+        LayoutDirection.rtlLayout;
 
-    super.dispose();
-  }
-
-  List<PopoverAction> _buildPopoverActions(BuildContext context) {
-    final node = widget.blockComponentContext.node;
-    final actions = widget.actions.where((action) {
-      if (action == OptionAction.splitIntoColumns) {
-        return !node.isInColumnsBlock;
-      }
-      if (action == OptionAction.stackColumns) {
-        return node.isInColumnsBlock;
-      }
-      return true;
-    });
-    return actions.map((e) {
-      switch (e) {
-        case OptionAction.divider:
-          return DividerOptionAction();
-        case OptionAction.color:
-          return ColorOptionAction(
-            editorState: widget.editorState,
-            mutex: mutex,
-          );
-        case OptionAction.align:
-          return AlignOptionAction(editorState: widget.editorState);
-        case OptionAction.depth:
-          return DepthOptionAction(editorState: widget.editorState);
-        case OptionAction.turnInto:
-          return TurnIntoOptionAction(
-            editorState: widget.editorState,
-            blockComponentBuilder: widget.blockComponentBuilder,
-            mutex: mutex,
-          );
-        default:
-          return OptionActionWrapper(e);
-      }
-    }).toList();
-  }
-
-  void _onPopoverBuilder() {
     keepEditorFocusNotifier.increase();
     widget.blockComponentState.alwaysShowActions = true;
-  }
 
-  void _onPopoverClosed(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+    await showAppMenuForWidget<void>(
+      context: context,
+      placement: rtl ? AppMenuPlacement.endTop : AppMenuPlacement.startTop,
+      entries: buildBlockOptionMenu(
+        context: context,
+        editorState: widget.editorState,
+        node: widget.blockComponentContext.node,
+        actions: widget.actions,
+        cubit: cubit,
+      ),
+    );
+
+    keepEditorFocusNotifier.decrease();
+    if (!mounted) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.editorState.selectionType = null;
       widget.editorState.selection = null;
       widget.blockComponentState.alwaysShowActions = false;
     });
-
-    PopoverContainer.maybeOf(context)?.closeAll();
-  }
-
-  void _onActionSelected(
-    BuildContext context,
-    PopoverAction action,
-    PopoverController controller,
-  ) {
-    if (action is! OptionActionWrapper) {
-      return;
-    }
-
-    context.read<BlockActionOptionCubit>().handleAction(
-          action.inner,
-          widget.blockComponentContext.node,
-        );
-    controller.close();
   }
 }

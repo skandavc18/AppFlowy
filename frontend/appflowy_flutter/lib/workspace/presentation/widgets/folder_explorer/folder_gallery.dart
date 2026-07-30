@@ -1404,7 +1404,7 @@ class _GalleryImageThumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     final source = url;
     if (source == null || source.isEmpty) {
-      return const _GalleryMediaFallback(icon: Icons.image_outlined);
+      return const _GalleryMediaFallback(icon: Icons.image_rounded);
     }
     if (_isNetworkUrl(source)) {
       return FlowyNetworkImage(
@@ -1414,14 +1414,14 @@ class _GalleryImageThumbnail extends StatelessWidget {
         userProfilePB: userProfile,
         progressIndicatorBuilder: (_, __, ___) => const _GalleryMediaLoading(),
         errorWidgetBuilder: (_, __, ___) =>
-            const _GalleryMediaFallback(icon: Icons.broken_image_outlined),
+            const _GalleryMediaFallback(icon: Icons.broken_image_rounded),
       );
     }
     return Image.file(
       File(source),
       fit: BoxFit.cover,
       errorBuilder: (_, __, ___) =>
-          const _GalleryMediaFallback(icon: Icons.broken_image_outlined),
+          const _GalleryMediaFallback(icon: Icons.broken_image_rounded),
     );
   }
 }
@@ -1439,7 +1439,7 @@ class _GalleryPdfThumbnail extends StatelessWidget {
   Widget build(BuildContext context) {
     final source = url;
     if (source == null || source.isEmpty) {
-      return const _GalleryMediaFallback(icon: Icons.picture_as_pdf_outlined);
+      return const _GalleryMediaFallback(icon: Icons.picture_as_pdf_rounded);
     }
     Widget builder(BuildContext context, PdfDocument? document) {
       if (document == null || document.pages.isEmpty) {
@@ -1493,7 +1493,7 @@ class _GalleryPdfThumbnail extends StatelessWidget {
       );
     }
     if (!File(source).existsSync()) {
-      return const _GalleryMediaFallback(icon: Icons.picture_as_pdf_outlined);
+      return const _GalleryMediaFallback(icon: Icons.picture_as_pdf_rounded);
     }
     return PdfDocumentViewBuilder.file(source, builder: builder);
   }
@@ -1556,7 +1556,7 @@ class _GalleryVideoThumbnailState extends State<_GalleryVideoThumbnail> {
     final player = this.player;
     final controller = videoController;
     if (player == null || controller == null) {
-      return const _GalleryMediaFallback(icon: Icons.movie_outlined);
+      return const _GalleryMediaFallback(icon: Icons.movie_rounded);
     }
     return Stack(
       fit: StackFit.expand,

@@ -1,4 +1,3 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -73,36 +72,38 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
     }
   }
 
-  FlowySvgData get leftIconSvg {
+  /// One Material glyph per action, so the sidebar menu shares its icon family
+  /// with every other menu in the application.
+  IconData get leftIcon {
     switch (this) {
       case ViewMoreActionType.delete:
-        return FlowySvgs.trash_s;
+        return Icons.delete_outline_rounded;
       case ViewMoreActionType.favorite:
-        return FlowySvgs.favorite_s;
+        return Icons.star_border_rounded;
       case ViewMoreActionType.unFavorite:
-        return FlowySvgs.unfavorite_s;
+        return Icons.star_rounded;
       case ViewMoreActionType.duplicate:
-        return FlowySvgs.duplicate_s;
+        return Icons.control_point_duplicate_rounded;
       case ViewMoreActionType.copyTo:
-        return FlowySvgs.copy_s;
+        return Icons.copy_rounded;
       case ViewMoreActionType.cut:
-        return FlowySvgs.m_table_quick_action_cut_s;
+        return Icons.content_cut_rounded;
       case ViewMoreActionType.pasteInto:
-        return FlowySvgs.m_table_quick_action_paste_s;
+        return Icons.content_paste_rounded;
       case ViewMoreActionType.rename:
-        return FlowySvgs.view_item_rename_s;
+        return Icons.drive_file_rename_outline_rounded;
       case ViewMoreActionType.moveTo:
-        return FlowySvgs.move_to_s;
+        return Icons.drive_file_move_rounded;
       case ViewMoreActionType.openInNewTab:
-        return FlowySvgs.view_item_open_in_new_tab_s;
+        return Icons.open_in_new_rounded;
       case ViewMoreActionType.changeIcon:
-        return FlowySvgs.change_icon_s;
+        return Icons.emoji_emotions_rounded;
       case ViewMoreActionType.collapseAllPages:
-        return FlowySvgs.collapse_all_page_s;
+        return Icons.unfold_less_rounded;
       case ViewMoreActionType.lockPage:
-        return FlowySvgs.lock_page_s;
+        return Icons.lock_outline_rounded;
       case ViewMoreActionType.leaveSharedPage:
-        return FlowySvgs.leave_workspace_s;
+        return Icons.logout_rounded;
       case ViewMoreActionType.divider:
       case ViewMoreActionType.lastModified:
       case ViewMoreActionType.copyLink:

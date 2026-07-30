@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:pdfrx/pdfrx.dart';
 
@@ -8,17 +9,17 @@ import 'pdf_preview_theme.dart';
 /// How the pages of a PDF are arranged on the canvas.
 enum PdfPageLayoutMode {
   /// One column, pages flowing into each other. The classic reading mode.
-  continuous('Continuous scroll', Icons.view_day_outlined),
+  continuous('Continuous scroll', Icons.view_day_rounded),
 
   /// One column with a full break between pages; scrolling turns a page at a
   /// time instead of sliding through the seam.
-  pageBreak('Page break scroll', Icons.auto_stories_outlined),
+  pageBreak('Page break scroll', Icons.auto_stories_rounded),
 
   /// One row, pages laid out left to right.
-  horizontal('Horizontal scroll', Icons.view_carousel_outlined),
+  horizontal('Horizontal scroll', Icons.view_carousel_rounded),
 
   /// Two pages side by side, starting with pages one and two.
-  facing('Side by side', Icons.menu_book_outlined);
+  facing('Side by side', Icons.menu_book_rounded);
 
   const PdfPageLayoutMode(this.label, this.icon);
 
@@ -38,10 +39,10 @@ enum PdfPageLayoutMode {
 
 /// The animation played when the viewer moves to another page.
 enum PdfPageTransition {
-  none('None', Icons.block_outlined),
-  slide('Slide', Icons.swipe_up_alt_outlined),
-  fade('Fade', Icons.gradient_outlined),
-  flip('Page turn', Icons.auto_stories_outlined);
+  none('None', Icons.block_rounded),
+  slide('Slide', Icons.swipe_up_alt_rounded),
+  fade('Fade', Icons.gradient_rounded),
+  flip('Page turn', Icons.auto_stories_rounded);
 
   const PdfPageTransition(this.label, this.icon);
 
@@ -73,14 +74,14 @@ enum PdfViewPreset {
   continuous(
     'Continuous scroll',
     'Pages flow into each other',
-    Icons.view_day_outlined,
+    Icons.view_day_rounded,
     PdfPageLayoutMode.continuous,
     PdfPageTransition.none,
   ),
   horizontal(
     'Horizontal scroll',
     'Pages run left to right',
-    Icons.view_carousel_outlined,
+    Icons.view_carousel_rounded,
     PdfPageLayoutMode.horizontal,
     PdfPageTransition.none,
   ),
@@ -94,28 +95,28 @@ enum PdfViewPreset {
   singlePageFade(
     'Single page, fading',
     'One page at a time, crossfading',
-    Icons.gradient_outlined,
+    Icons.gradient_rounded,
     PdfPageLayoutMode.pageBreak,
     PdfPageTransition.fade,
   ),
   singlePageTurn(
     'Single page, page turn',
     'One page at a time, peeling like paper',
-    Icons.auto_stories_outlined,
+    Icons.auto_stories_rounded,
     PdfPageLayoutMode.pageBreak,
     PdfPageTransition.flip,
   ),
   spread(
     'Two pages',
     'Facing pages, a spread at a time',
-    Icons.import_contacts_outlined,
+    Icons.import_contacts_rounded,
     PdfPageLayoutMode.facing,
     PdfPageTransition.slide,
   ),
   book(
     'Book',
     'Facing pages with a real page turn',
-    Icons.menu_book_outlined,
+    Icons.menu_book_rounded,
     PdfPageLayoutMode.facing,
     PdfPageTransition.flip,
   );
@@ -327,162 +328,34 @@ class PdfViewOptionsMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = PdfPreviewPalette.of(context);
-    return SizedBox.square(
-      dimension: 30,
-      child: PopupMenuButton<_PdfViewOption>(
-        key: const ValueKey('pdf-view-options-menu'),
-        tooltip: 'Reading mode',
-        enabled: enabled,
-        onSelected: _handle,
-        color: palette.chrome,
-        surfaceTintColor: Colors.transparent,
-        constraints: const BoxConstraints(minWidth: 262),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: palette.border),
-        ),
-        style: ButtonStyle(
-          animationDuration: const Duration(milliseconds: 200),
-          fixedSize: const WidgetStatePropertyAll(Size.square(30)),
-          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    return AppMenuIconButton(
+      key: const ValueKey('pdf-view-options-menu'),
+      icon: preset.icon,
+      tooltip: 'Reading mode',
+      size: 30,
+      iconSize: 18,
+      radius: 6,
+      iconColor: palette.icon,
+      enabled: enabled,
+      width: 268,
+      entries: () => [
+        const AppMenuHeader('Reading mode'),
+        for (final value in PdfViewPreset.values)
+          AppMenuItem(
+            label: value.label,
+            subtitle: value.description,
+            icon: value.icon,
+            selected: value == preset,
+            onSelected: () => onPresetChanged(value),
           ),
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.hovered) ||
-                states.contains(WidgetState.focused) ||
-                states.contains(WidgetState.pressed)) {
-              return palette.controlHover;
-            }
-            return Colors.transparent;
-          }),
-          splashFactory: NoSplash.splashFactory,
+        const AppMenuSeparator(),
+        AppMenuItem(
+          label: 'Hide toolbar when idle',
+          icon: Icons.visibility_off_rounded,
+          selected: autoHideToolbar,
+          onSelected: () => onAutoHideToolbarChanged(!autoHideToolbar),
         ),
-        padding: EdgeInsets.zero,
-        iconSize: 18,
-        iconColor: palette.icon,
-        icon: Icon(preset.icon),
-        itemBuilder: (_) => [
-          _label(context, 'READING MODE'),
-          for (final value in PdfViewPreset.values)
-            _choice(
-              context,
-              _PdfViewOption.preset(value),
-              value.icon,
-              value.label,
-              description: value.description,
-              selected: value == preset,
-            ),
-          const PopupMenuDivider(height: 9),
-          _choice(
-            context,
-            const _PdfViewOption.autoHide(),
-            Icons.visibility_off_outlined,
-            'Hide toolbar when idle',
-            selected: autoHideToolbar,
-          ),
-        ],
-      ),
+      ],
     );
   }
-
-  void _handle(_PdfViewOption option) {
-    final value = option.preset;
-    if (value != null) {
-      onPresetChanged(value);
-      return;
-    }
-    onAutoHideToolbarChanged(!autoHideToolbar);
-  }
-
-  PopupMenuEntry<_PdfViewOption> _label(BuildContext context, String text) {
-    final palette = PdfPreviewPalette.of(context);
-    return PopupMenuItem<_PdfViewOption>(
-      enabled: false,
-      height: 26,
-      child: Text(
-        text,
-        style: TextStyle(
-          color: palette.textSecondary,
-          fontFamily: 'Geist Mono',
-          fontFamilyFallback: const ['RobotoMono', 'monospace'],
-          fontSize: 9.5,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.8,
-        ),
-      ),
-    );
-  }
-
-  PopupMenuEntry<_PdfViewOption> _choice(
-    BuildContext context,
-    _PdfViewOption value,
-    IconData icon,
-    String label, {
-    required bool selected,
-    String? description,
-  }) {
-    final palette = PdfPreviewPalette.of(context);
-    return PopupMenuItem<_PdfViewOption>(
-      value: value,
-      height: description == null ? 38 : 46,
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 17,
-            color: selected ? palette.accent : palette.icon,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontFamily: 'Inter',
-                    fontSize: 12,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                  ),
-                ),
-                if (description != null)
-                  Text(
-                    description,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.textSecondary,
-                      fontFamily: 'Inter',
-                      fontSize: 10.5,
-                      height: 15 / 10.5,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (selected)
-            Icon(Icons.check_rounded, size: 15, color: palette.accent),
-        ],
-      ),
-    );
-  }
-}
-
-@immutable
-class _PdfViewOption {
-  const _PdfViewOption.preset(PdfViewPreset value) : preset = value;
-
-  const _PdfViewOption.autoHide() : preset = null;
-
-  final PdfViewPreset? preset;
-
-  @override
-  bool operator ==(Object other) =>
-      other is _PdfViewOption && other.preset == preset;
-
-  @override
-  int get hashCode => preset.hashCode;
 }

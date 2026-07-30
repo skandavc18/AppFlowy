@@ -1,18 +1,14 @@
 import 'dart:async';
-import 'dart:math' as math;
 
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/plugins/document/presentation/editor_menu_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/ai_writer_toolbar_item.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/operations/ai_writer_entities.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_copy_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_cut_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_paste_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/simple_table/simple_table_context_menu_entries.dart';
-import 'package:appflowy/shared/context_menu_surface_style.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -30,16 +26,18 @@ class EditorContextMenuEntry {
   const EditorContextMenuEntry({
     required this.action,
     required this.getName,
-    required this.iconBuilder,
+    required this.icon,
     required this.onPressed,
     this.shortcut,
+    this.destructive = false,
   });
 
   final EditorContextMenuAction action;
   final String Function() getName;
-  final Widget Function(BuildContext context) iconBuilder;
+  final IconData icon;
   final void Function(EditorState editorState) onPressed;
   final String Function(TargetPlatform platform)? shortcut;
+  final bool destructive;
 }
 
 final List<List<EditorContextMenuEntry>> editorContextMenuEntries = [
@@ -47,37 +45,28 @@ final List<List<EditorContextMenuEntry>> editorContextMenuEntries = [
     EditorContextMenuEntry(
       action: EditorContextMenuAction.copy,
       getName: LocaleKeys.document_plugins_contextMenu_copy.tr,
-      iconBuilder: (context) => _menuIcon(
-        context,
-        FlowySvgs.m_table_quick_action_copy_s,
-      ),
+      icon: Icons.copy_rounded,
       shortcut: (platform) => _shortcut(platform, 'C'),
       onPressed: (editorState) => customCopyCommand.execute(editorState),
     ),
     EditorContextMenuEntry(
       action: EditorContextMenuAction.cut,
       getName: LocaleKeys.document_plugins_contextMenu_cut.tr,
-      iconBuilder: (context) => _menuIcon(
-        context,
-        FlowySvgs.m_table_quick_action_cut_s,
-      ),
+      icon: Icons.content_cut_rounded,
       shortcut: (platform) => _shortcut(platform, 'X'),
       onPressed: (editorState) => customCutCommand.execute(editorState),
     ),
     EditorContextMenuEntry(
       action: EditorContextMenuAction.paste,
       getName: LocaleKeys.document_plugins_contextMenu_paste.tr,
-      iconBuilder: (context) => _menuIcon(
-        context,
-        FlowySvgs.m_table_quick_action_paste_s,
-      ),
+      icon: Icons.content_paste_rounded,
       shortcut: (platform) => _shortcut(platform, 'V'),
       onPressed: (editorState) => customPasteCommand.execute(editorState),
     ),
     EditorContextMenuEntry(
       action: EditorContextMenuAction.pasteAsPlainText,
       getName: LocaleKeys.document_plugins_contextMenu_pasteAsPlainText.tr,
-      iconBuilder: _pasteAsPlainTextIcon,
+      icon: Icons.content_paste_go_rounded,
       shortcut: (platform) => _shortcut(platform, 'V', shift: true),
       onPressed: (editorState) =>
           customPastePlainTextCommand.execute(editorState),
@@ -87,10 +76,7 @@ final List<List<EditorContextMenuEntry>> editorContextMenuEntries = [
     EditorContextMenuEntry(
       action: EditorContextMenuAction.askAi,
       getName: LocaleKeys.document_plugins_smartEdit.tr,
-      iconBuilder: (context) => _menuIcon(
-        context,
-        FlowySvgs.toolbar_ai_ask_anything_m,
-      ),
+      icon: Icons.auto_awesome_rounded,
       onPressed: (editorState) {
         unawaited(
           insertAiWriterNode(editorState, AiWriterCommand.userQuestion),
@@ -109,48 +95,6 @@ String _shortcut(
     return '${shift ? '⇧' : ''}⌘$key';
   }
   return 'Ctrl+${shift ? 'Shift+' : ''}$key';
-}
-
-Widget _menuIcon(BuildContext context, FlowySvgData data) {
-  final appTheme = AppFlowyTheme.of(context);
-  return FlowySvg(
-    data,
-    size: const Size.square(20),
-    color: appTheme.iconColorScheme.primary,
-  );
-}
-
-Widget _pasteAsPlainTextIcon(BuildContext context) {
-  final appTheme = AppFlowyTheme.of(context);
-  return SizedBox.square(
-    dimension: 20,
-    child: Stack(
-      alignment: Alignment.center,
-      children: [
-        FlowySvg(
-          FlowySvgs.m_table_quick_action_paste_s,
-          size: const Size.square(20),
-          color: appTheme.iconColorScheme.primary,
-        ),
-        Positioned(
-          right: 1,
-          bottom: 1,
-          child: ColoredBox(
-            color: appTheme.surfaceColorScheme.primary,
-            child: Text(
-              'T',
-              style:
-                  AppFlowyEditorMenuStyle.shortcutTextStyle(context).copyWith(
-                color: appTheme.iconColorScheme.primary,
-                fontSize: 8,
-                height: 1,
-              ),
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
 }
 
 class EditorContextMenuRegion extends StatefulWidget {
@@ -177,19 +121,12 @@ class EditorContextMenuRegion extends StatefulWidget {
 }
 
 class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
-  OverlayEntry? _overlayEntry;
   final Set<int> _preventedPointers = {};
 
   void _preventForPointer(int pointer) {
     if (widget.enabled) {
       _preventedPointers.add(pointer);
     }
-  }
-
-  @override
-  void dispose() {
-    _dismiss();
-    super.dispose();
   }
 
   @override
@@ -239,41 +176,60 @@ class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
       return;
     }
 
-    final overlay = Overlay.of(context, rootOverlay: true);
-    final overlayBox = overlay.context.findRenderObject();
-    if (overlayBox is! RenderBox) {
-      return;
+    unawaited(
+      showAppMenu<void>(
+        context: context,
+        globalPosition: globalPosition,
+        entries: _entries(context, editorState),
+      ),
+    );
+  }
+
+  List<AppMenuEntry> _entries(BuildContext context, EditorState editorState) {
+    final platform = Theme.of(context).platform;
+    final entries = <AppMenuEntry>[];
+
+    final groups = [
+      ...editorContextMenuEntries,
+      ...simpleTableContextMenuGroups(editorState),
+    ];
+    for (final group in groups) {
+      if (group.isEmpty) {
+        continue;
+      }
+      entries.add(const AppMenuSeparator());
+      for (final entry in group) {
+        entries.add(
+          AppMenuItem(
+            label: entry.getName(),
+            icon: entry.icon,
+            shortcut: entry.shortcut?.call(platform),
+            destructive: entry.destructive,
+            onSelected: () => entry.onPressed(editorState),
+          ),
+        );
+      }
     }
 
-    _dismiss();
-    final pointer = overlayBox.globalToLocal(globalPosition);
-
-    final menu = InheritedTheme.captureAll(
-      context,
-      _EditorContextMenu(
-        editorState: editorState,
-        onDismiss: _dismiss,
-      ),
-    );
-    _overlayEntry = OverlayEntry(
-      builder: (_) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _dismiss,
+    if (simpleTableContextMenuHasColors(editorState)) {
+      entries
+        ..add(const AppMenuSeparator())
+        ..add(
+          AppMenuCustom(
+            builder: (menuContext) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: simpleTableContextMenuColors(
+                menuContext,
+                editorState,
+                onDismiss: () => AppMenuScope.maybeOf(menuContext)?.close(),
+              ),
             ),
           ),
-          // The menu is as tall as its entries, and inside a table that is a
-          // lot of them, so it is measured rather than estimated.
-          CustomSingleChildLayout(
-            delegate: _ContextMenuLayout(pointer: pointer),
-            child: menu,
-          ),
-        ],
-      ),
-    );
-    overlay.insert(_overlayEntry!);
+        );
+    }
+
+    return entries;
   }
 
   /// A right click outside the current selection acts on what is under the
@@ -302,136 +258,5 @@ class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
         reason: SelectionUpdateReason.uiEvent,
       );
     }
-  }
-
-  void _dismiss() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-  }
-}
-
-/// Anchors the menu at the pointer and hands it whatever room is left, so a
-/// long menu near the bottom of the window flips up instead of running off.
-class _ContextMenuLayout extends SingleChildLayoutDelegate {
-  const _ContextMenuLayout({required this.pointer});
-
-  final Offset pointer;
-
-  static const double _margin = 8;
-
-  @override
-  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
-    final below = constraints.maxHeight - pointer.dy - _margin * 2;
-    final above = pointer.dy - _margin * 2;
-    return BoxConstraints(
-      maxWidth: constraints.maxWidth - _margin * 2,
-      maxHeight: math.max(120, math.max(below, above)),
-    );
-  }
-
-  @override
-  Offset getPositionForChild(Size size, Size childSize) {
-    final left = pointer.dx + _margin + childSize.width <= size.width
-        ? pointer.dx + _margin
-        : pointer.dx - childSize.width - _margin;
-    final fitsBelow = pointer.dy + _margin + childSize.height <= size.height;
-    final top =
-        fitsBelow ? pointer.dy + _margin : pointer.dy - childSize.height;
-    return Offset(
-      left.clamp(_margin, math.max(_margin, size.width - childSize.width)),
-      top.clamp(_margin, math.max(_margin, size.height - childSize.height)),
-    );
-  }
-
-  @override
-  bool shouldRelayout(_ContextMenuLayout oldDelegate) =>
-      oldDelegate.pointer != pointer;
-}
-
-class _EditorContextMenu extends StatelessWidget {
-  const _EditorContextMenu({
-    required this.editorState,
-    required this.onDismiss,
-  });
-
-  final EditorState editorState;
-  final VoidCallback onDismiss;
-
-  @override
-  Widget build(BuildContext context) {
-    final platform = Theme.of(context).platform;
-    final children = <Widget>[];
-    final groups = [
-      ...editorContextMenuEntries,
-      ...simpleTableContextMenuGroups(editorState),
-    ];
-
-    for (final (groupIndex, group) in groups.indexed) {
-      if (groupIndex > 0) {
-        children.add(
-          Divider(
-            height: 16,
-            thickness: 1,
-            color: AppFlowyTheme.of(context).borderColorScheme.primary,
-          ),
-        );
-      }
-      for (final entry in group) {
-        children.add(
-          AFMenuItem(
-            leading: SizedBox.square(
-              dimension: 20,
-              child: Center(child: entry.iconBuilder(context)),
-            ),
-            title: Text(
-              entry.getName(),
-              style: AppFlowyEditorMenuStyle.itemTextStyle(context),
-            ),
-            trailing: entry.action == EditorContextMenuAction.askAi
-                ? Icon(
-                    Icons.chevron_right_rounded,
-                    size: 20,
-                    color: AppFlowyTheme.of(context).iconColorScheme.tertiary,
-                  )
-                : Text(
-                    entry.shortcut?.call(platform) ?? '',
-                    style: AppFlowyEditorMenuStyle.shortcutTextStyle(context),
-                  ),
-            onTap: () {
-              onDismiss();
-              entry.onPressed(editorState);
-            },
-          ),
-        );
-      }
-    }
-
-    final colors = simpleTableContextMenuColors(
-      context,
-      editorState,
-      onDismiss: onDismiss,
-    );
-    if (colors.isNotEmpty) {
-      children.add(
-        Divider(
-          height: 16,
-          thickness: 1,
-          color: AppFlowyTheme.of(context).borderColorScheme.primary,
-        ),
-      );
-      children.addAll(colors);
-    }
-
-    return AFMenu(
-      width: AppFlowyEditorMenuStyle.menuWidth,
-      backgroundColor: ContextMenuSurfaceStyle.background(context),
-      children: [
-        Flexible(
-          child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: children),
-          ),
-        ),
-      ],
-    );
   }
 }

@@ -249,7 +249,7 @@ class _SourceModeToggle extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                editing ? Icons.visibility_outlined : Icons.edit_outlined,
+                editing ? Icons.visibility_rounded : Icons.edit_rounded,
                 size: 15,
                 color: palette.textSecondary,
               ),

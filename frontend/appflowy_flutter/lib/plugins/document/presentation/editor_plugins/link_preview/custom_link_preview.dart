@@ -208,7 +208,7 @@ class CustomLinkPreviewWidget extends StatelessWidget {
           height: 16,
           width: 16,
           child: Icon(
-            Icons.error_outline,
+            Icons.error_outline_rounded,
             color: Colors.red,
           ),
         ),

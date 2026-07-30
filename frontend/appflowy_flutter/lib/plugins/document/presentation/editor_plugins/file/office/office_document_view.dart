@@ -893,7 +893,7 @@ class _OfficeUnavailable extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  managed ? Icons.cloud_off_outlined : Icons.dns_outlined,
+                  managed ? Icons.cloud_off_rounded : Icons.dns_rounded,
                   size: 34,
                   color: theme.iconColorScheme.secondary,
                 ),

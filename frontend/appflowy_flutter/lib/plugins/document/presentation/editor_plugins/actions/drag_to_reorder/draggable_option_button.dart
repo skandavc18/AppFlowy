@@ -3,7 +3,6 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/dr
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/drag_to_reorder/visual_drag_area.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:appflowy_popover/appflowy_popover.dart';
 import 'package:flutter/material.dart';
 
 import 'draggable_option_button_feedback.dart';
@@ -15,13 +14,13 @@ ValueNotifier<bool> isDraggingAppFlowyEditorBlock = ValueNotifier(false);
 class DraggableOptionButton extends StatefulWidget {
   const DraggableOptionButton({
     super.key,
-    required this.controller,
+    required this.onShowMenu,
     required this.editorState,
     required this.blockComponentContext,
     required this.blockComponentBuilder,
   });
 
-  final PopoverController controller;
+  final VoidCallback onShowMenu;
   final EditorState editorState;
   final BlockComponentContext blockComponentContext;
   final Map<String, BlockComponentBuilder> blockComponentBuilder;
@@ -59,14 +58,13 @@ class _DraggableOptionButtonState extends State<DraggableOptionButton> {
       onDragUpdate: _onDragUpdate,
       onDragEnd: _onDragEnd,
       feedback: DraggleOptionButtonFeedback(
-        controller: widget.controller,
         editorState: widget.editorState,
         blockComponentContext: widget.blockComponentContext,
         blockComponentBuilder: widget.blockComponentBuilder,
       ),
       child: OptionButton(
         isDragging: isDraggingAppFlowyEditorBlock,
-        controller: widget.controller,
+        onShowMenu: widget.onShowMenu,
         editorState: widget.editorState,
         blockComponentContext: widget.blockComponentContext,
       ),

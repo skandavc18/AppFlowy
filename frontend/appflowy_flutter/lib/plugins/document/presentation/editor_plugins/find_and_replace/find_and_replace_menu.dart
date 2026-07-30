@@ -305,7 +305,7 @@ class _ReplaceMenuState extends State<ReplaceMenu> {
         _FindAndReplaceIcon(
           onPressed: _replaceSelectedWord,
           iconBuilder: (_) => const Icon(
-            Icons.find_replace_outlined,
+            Icons.find_replace_rounded,
             size: 16,
           ),
           tooltipText: LocaleKeys.findAndReplace_replace.tr(),
@@ -313,7 +313,7 @@ class _ReplaceMenuState extends State<ReplaceMenu> {
         const HSpace(4.0),
         _FindAndReplaceIcon(
           iconBuilder: (_) => const Icon(
-            Icons.change_circle_outlined,
+            Icons.change_circle_rounded,
             size: 16,
           ),
           tooltipText: LocaleKeys.findAndReplace_replaceAll.tr(),

@@ -6,6 +6,9 @@ export 'section.dart';
 export 'text_menu_item.dart';
 
 /// The main menu container widget, supporting sections, menu items.
+///
+/// Geometry is fixed rather than derived from spacing tokens so this card is
+/// interchangeable with the application's context menu surface.
 class AFMenu extends StatelessWidget {
   const AFMenu({
     super.key,
@@ -13,6 +16,15 @@ class AFMenu extends StatelessWidget {
     this.width,
     this.backgroundColor,
   });
+
+  /// Corner radius shared with every other menu in the application.
+  static const double cornerRadius = 13;
+
+  /// Inset around the rows.
+  static const EdgeInsets cardPadding = EdgeInsets.symmetric(
+    horizontal: 5,
+    vertical: 5,
+  );
 
   /// The list of widgets to display in the menu (sections or menu items).
   final List<Widget> children;
@@ -28,7 +40,7 @@ class AFMenu extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: backgroundColor ?? theme.surfaceColorScheme.primary,
-        borderRadius: BorderRadius.circular(theme.borderRadius.l),
+        borderRadius: BorderRadius.circular(cornerRadius),
         border: Border.all(
           color: theme.borderColorScheme.primary,
           width: 0.6,
@@ -36,7 +48,7 @@ class AFMenu extends StatelessWidget {
         boxShadow: theme.shadow.small,
       ),
       width: width,
-      padding: EdgeInsets.all(theme.spacing.s),
+      padding: cardPadding,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: children,

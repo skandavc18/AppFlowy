@@ -19,6 +19,14 @@ class AFMenuItem extends StatelessWidget {
     this.selectedBackgroundColor,
   });
 
+  /// Row geometry shared with every other menu in the application.
+  static const double rowRadius = 8;
+  static const double iconGap = 10;
+  static const EdgeInsets rowPadding = EdgeInsets.symmetric(
+    horizontal: 9,
+    vertical: 6,
+  );
+
   /// Widget to display before the title (e.g., an icon or avatar).
   final Widget? leading;
 
@@ -48,18 +56,12 @@ class AFMenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-
-    final effectivePadding = padding ??
-        EdgeInsets.symmetric(
-          horizontal: theme.spacing.l,
-          vertical: theme.spacing.m,
-        );
+    final effectivePadding = padding ?? rowPadding;
 
     return AFBaseButton(
       onTap: onTap,
       padding: effectivePadding,
-      borderRadius: theme.borderRadius.m,
+      borderRadius: rowRadius,
       borderColor: (context, isHovering, disabled, isFocused) {
         return Colors.transparent;
       },
@@ -82,7 +84,7 @@ class AFMenuItem extends StatelessWidget {
             // Leading widget (icon/avatar), if provided
             if (leading != null) ...[
               leading!,
-              SizedBox(width: theme.spacing.m),
+              const SizedBox(width: iconGap),
             ],
             // Main content: title and optional subtitle
             Expanded(

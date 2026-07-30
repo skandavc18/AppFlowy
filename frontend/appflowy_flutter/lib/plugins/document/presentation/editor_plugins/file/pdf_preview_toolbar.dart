@@ -127,7 +127,7 @@ class PdfPreviewToolbar extends StatelessWidget {
                                 : 'Show page thumbnails',
                             onPressed: onToggleThumbnails,
                             selected: showThumbnails,
-                            icon: Icons.view_sidebar_outlined,
+                            icon: Icons.view_sidebar_rounded,
                           ),
                           if (showOutlineButton)
                             FilePreviewToolbarButton(
@@ -136,14 +136,14 @@ class PdfPreviewToolbar extends StatelessWidget {
                                   : 'Show document outline',
                               onPressed: onToggleOutline,
                               selected: showOutline,
-                              icon: Icons.account_tree_outlined,
+                              icon: Icons.account_tree_rounded,
                             ),
                         ],
                       ),
                       if (showTitle) ...[
                         const SizedBox(width: 8),
                         Icon(
-                          Icons.picture_as_pdf_outlined,
+                          Icons.picture_as_pdf_rounded,
                           size: 15,
                           color: palette.icon,
                         ),
@@ -204,7 +204,7 @@ class PdfPreviewToolbar extends StatelessWidget {
                             FilePreviewToolbarButton(
                               tooltip: 'Fit to width',
                               onPressed: onFitWidth,
-                              icon: Icons.fit_screen_outlined,
+                              icon: Icons.fit_screen_rounded,
                             ),
                             FilePreviewToolbarButton(
                               tooltip: 'Fit whole page',
@@ -227,17 +227,17 @@ class PdfPreviewToolbar extends StatelessWidget {
                             FilePreviewToolbarButton(
                               tooltip: 'Rotate clockwise',
                               onPressed: onRotate,
-                              icon: Icons.rotate_90_degrees_cw_outlined,
+                              icon: Icons.rotate_90_degrees_cw_rounded,
                             ),
                             FilePreviewToolbarButton(
                               tooltip: 'Download PDF',
                               onPressed: onDownload,
-                              icon: Icons.download_outlined,
+                              icon: Icons.download_rounded,
                             ),
                             FilePreviewToolbarButton(
                               tooltip: 'Print PDF',
                               onPressed: onPrint,
-                              icon: Icons.print_outlined,
+                              icon: Icons.print_rounded,
                             ),
                           ],
                           FilePreviewToolbarButton(

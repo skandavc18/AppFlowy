@@ -51,7 +51,7 @@ class EmojiCategoryIcons {
     this.foodIcon = Icons.fastfood,
     this.activityIcon = Icons.directions_run,
     this.travelIcon = Icons.location_city,
-    this.objectIcon = Icons.lightbulb_outline,
+    this.objectIcon = Icons.lightbulb_outline_rounded,
     this.symbolIcon = Icons.emoji_symbols,
     this.flagIcon = Icons.flag,
     this.searchIcon = Icons.search,

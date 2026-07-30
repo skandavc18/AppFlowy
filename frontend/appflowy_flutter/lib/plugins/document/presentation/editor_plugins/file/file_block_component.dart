@@ -1183,7 +1183,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
           text: node.attributes[FileBlockKeys.displayMode] == 'preview'
               ? 'Show as file'
               : 'Show preview',
-          leftIcon: const Icon(Icons.preview_outlined),
+          leftIcon: const Icon(Icons.preview_rounded),
           onTap: () {
             context.pop();
             final mode = node.attributes[FileBlockKeys.displayMode] == 'preview'

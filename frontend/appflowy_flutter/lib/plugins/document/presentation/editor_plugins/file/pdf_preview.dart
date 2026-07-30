@@ -10,6 +10,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -363,7 +364,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
         : 'PDF';
     return DocumentIdentity(
       title: widget.name,
-      icon: Icons.picture_as_pdf_outlined,
+      icon: Icons.picture_as_pdf_rounded,
       subtitle: pages,
     );
   }
@@ -771,137 +772,99 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
   Widget _buildOverflowMenu() {
     final palette = PdfPreviewPalette.of(context);
-    return SizedBox.square(
-      dimension: 30,
-      child: PopupMenuButton<_PdfOverflowAction>(
-        key: const ValueKey('pdf-overflow-menu'),
-        tooltip: 'More actions',
-        enabled: viewerReady || widget.menuBuilder != null,
-        onSelected: _handleOverflowAction,
-        color: palette.chrome,
-        surfaceTintColor: Colors.transparent,
-        constraints: const BoxConstraints(minWidth: 210),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: palette.border),
-        ),
-        style: ButtonStyle(
-          animationDuration: const Duration(milliseconds: 200),
-          fixedSize: const WidgetStatePropertyAll(Size.square(30)),
-          padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          ),
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.hovered) ||
-                states.contains(WidgetState.focused) ||
-                states.contains(WidgetState.pressed)) {
-              return palette.controlHover;
-            }
-            return Colors.transparent;
-          }),
-          splashFactory: NoSplash.splashFactory,
-        ),
-        padding: EdgeInsets.zero,
-        iconSize: 18,
-        iconColor: palette.icon,
-        icon: const Icon(Icons.more_horiz_rounded),
-        itemBuilder: (_) => [
-          _popupItem(
-            _PdfOverflowAction.copyText,
-            Icons.content_copy_outlined,
-            'Copy selected text',
-            enabled: hasTextSelection,
-          ),
-          _popupItem(
-            _PdfOverflowAction.scanText,
-            Icons.document_scanner_outlined,
-            ocrInProgress ? 'Scanning page…' : 'Scan text on this page (OCR)',
-            enabled: viewerReady && !ocrInProgress,
-          ),
-          _popupItem(
-            _PdfOverflowAction.highlight,
-            Icons.highlight_alt_rounded,
-            'Highlight selection',
-            enabled: widget.editable && hasTextSelection,
-          ),
-          const PopupMenuDivider(height: 9),
-          _popupItem(
-            _PdfOverflowAction.fitWidth,
-            Icons.fit_screen_outlined,
-            'Fit to width',
-            enabled: viewerReady,
-          ),
-          _popupItem(
-            _PdfOverflowAction.fitPage,
-            Icons.fullscreen_exit_rounded,
-            'Fit whole page',
-            enabled: viewerReady,
-          ),
-          _popupItem(
-            _PdfOverflowAction.actualSize,
-            Icons.filter_1_outlined,
-            'Actual size',
-            enabled: viewerReady,
-          ),
-          _popupItem(
-            _PdfOverflowAction.rotate,
-            Icons.rotate_90_degrees_cw_outlined,
-            'Rotate clockwise',
-            enabled: viewerReady,
-          ),
-          const PopupMenuDivider(height: 9),
-          _popupItem(
-            _PdfOverflowAction.download,
-            Icons.download_outlined,
-            'Download PDF',
-          ),
-          _popupItem(
-            _PdfOverflowAction.print,
-            Icons.print_outlined,
-            canPrint ? 'Print PDF' : 'Printing is restricted',
-            enabled: canPrint,
-          ),
-          if (widget.menuBuilder != null) ...[
-            const PopupMenuDivider(height: 9),
-            PdfPreviewMenuSection(builder: widget.menuBuilder!),
-          ],
-        ],
-      ),
+    return AppMenuIconButton(
+      key: const ValueKey('pdf-overflow-menu'),
+      icon: Icons.more_horiz_rounded,
+      tooltip: 'More actions',
+      size: 30,
+      iconSize: 18,
+      radius: 6,
+      iconColor: palette.icon,
+      enabled: viewerReady || widget.menuBuilder != null,
+      entries: _overflowEntries,
     );
   }
 
-  PopupMenuItem<_PdfOverflowAction> _popupItem(
-    _PdfOverflowAction value,
-    IconData icon,
-    String label, {
-    bool enabled = true,
-  }) {
-    final palette = PdfPreviewPalette.of(context);
-    return PopupMenuItem(
-      value: value,
-      enabled: enabled,
-      height: 38,
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 17,
-            color: enabled ? palette.icon : palette.iconDisabled,
-          ),
-          const SizedBox(width: 10),
-          Text(
-            label,
-            style: TextStyle(
-              color: enabled ? palette.textPrimary : palette.textSecondary,
-              fontFamily: 'Inter',
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+  List<AppMenuEntry> _overflowEntries() {
+    AppMenuItem item(
+      _PdfOverflowAction value,
+      IconData icon,
+      String label, {
+      bool enabled = true,
+    }) =>
+        AppMenuItem(
+          label: label,
+          icon: icon,
+          enabled: enabled,
+          onSelected: () => _handleOverflowAction(value),
+        );
+
+    return [
+      item(
+        _PdfOverflowAction.copyText,
+        Icons.content_copy_rounded,
+        'Copy selected text',
+        enabled: hasTextSelection,
       ),
-    );
+      item(
+        _PdfOverflowAction.scanText,
+        Icons.document_scanner_rounded,
+        ocrInProgress ? 'Scanning page…' : 'Scan text on this page (OCR)',
+        enabled: viewerReady && !ocrInProgress,
+      ),
+      item(
+        _PdfOverflowAction.highlight,
+        Icons.highlight_alt_rounded,
+        'Highlight selection',
+        enabled: widget.editable && hasTextSelection,
+      ),
+      const AppMenuSeparator(),
+      item(
+        _PdfOverflowAction.fitWidth,
+        Icons.fit_screen_rounded,
+        'Fit to width',
+        enabled: viewerReady,
+      ),
+      item(
+        _PdfOverflowAction.fitPage,
+        Icons.fullscreen_exit_rounded,
+        'Fit whole page',
+        enabled: viewerReady,
+      ),
+      item(
+        _PdfOverflowAction.actualSize,
+        Icons.filter_1_rounded,
+        'Actual size',
+        enabled: viewerReady,
+      ),
+      item(
+        _PdfOverflowAction.rotate,
+        Icons.rotate_90_degrees_cw_rounded,
+        'Rotate clockwise',
+        enabled: viewerReady,
+      ),
+      const AppMenuSeparator(),
+      item(
+        _PdfOverflowAction.download,
+        Icons.download_rounded,
+        'Download PDF',
+      ),
+      item(
+        _PdfOverflowAction.print,
+        Icons.print_rounded,
+        canPrint ? 'Print PDF' : 'Printing is restricted',
+        enabled: canPrint,
+      ),
+      if (widget.menuBuilder != null) ...[
+        const AppMenuSeparator(),
+        AppMenuCustom(
+          builder: (menuContext) => widget.menuBuilder!(
+            menuContext,
+            () => AppMenuScope.maybeOf(menuContext)?.close(),
+          ),
+        ),
+      ],
+    ];
   }
 
   void _handleOverflowAction(_PdfOverflowAction action) {
@@ -2244,37 +2207,6 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   void _save(String key, Object value) {
     setState(() => metadata = {...metadata, key: value});
     widget.onMetadataChanged(metadata);
-  }
-}
-
-@visibleForTesting
-class PdfPreviewMenuSection<T> extends PopupMenuEntry<T> {
-  const PdfPreviewMenuSection({
-    super.key,
-    required this.builder,
-    this.estimatedHeight = 188,
-  });
-
-  final PdfPreviewMenuBuilder builder;
-  final double estimatedHeight;
-
-  @override
-  double get height => estimatedHeight;
-
-  @override
-  bool represents(T? value) => false;
-
-  @override
-  State<PdfPreviewMenuSection<T>> createState() => _PdfMenuSectionState<T>();
-}
-
-class _PdfMenuSectionState<T> extends State<PdfPreviewMenuSection<T>> {
-  @override
-  Widget build(BuildContext context) {
-    return widget.builder(
-      context,
-      () => Navigator.of(context).pop(),
-    );
   }
 }
 

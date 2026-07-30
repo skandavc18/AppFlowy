@@ -74,7 +74,7 @@ class _OfficeServerSettingsFormState extends State<OfficeServerSettingsForm> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (widget.showIcon) ...[
-            const _OfficeIcon(icon: Icons.description_outlined),
+            const _OfficeIcon(icon: Icons.description_rounded),
             const SizedBox(height: 14),
           ],
           Text(
@@ -114,7 +114,7 @@ class _OfficeServerSettingsFormState extends State<OfficeServerSettingsForm> {
             controller: _url,
             label: 'Document server address',
             hint: 'http://localhost:8080',
-            prefixIcon: Icons.dns_outlined,
+            prefixIcon: Icons.dns_rounded,
             validator: validateOfficeServerUrl,
             enabled: !_isConnecting,
             keyboardType: TextInputType.url,
@@ -138,7 +138,7 @@ class _OfficeServerSettingsFormState extends State<OfficeServerSettingsForm> {
               controller: _secret,
               label: 'JWT secret',
               hint: 'Must match the server JWT_SECRET',
-              prefixIcon: Icons.key_outlined,
+              prefixIcon: Icons.key_rounded,
               obscure: !_showSecret,
               enabled: !_isConnecting,
               suffixIcon: IconButton(
@@ -148,8 +148,8 @@ class _OfficeServerSettingsFormState extends State<OfficeServerSettingsForm> {
                     : () => setState(() => _showSecret = !_showSecret),
                 icon: Icon(
                   _showSecret
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
                   size: 18,
                 ),
               ),

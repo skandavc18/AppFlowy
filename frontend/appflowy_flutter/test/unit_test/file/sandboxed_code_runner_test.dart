@@ -202,7 +202,7 @@ void main() {
       final expandedHeight =
           tester.getSize(find.byType(SandboxedCodeRunner)).height;
 
-      await tester.tap(find.byIcon(Icons.content_copy_outlined));
+      await tester.tap(find.byIcon(Icons.content_copy_rounded));
       await tester.pump(codeBlockAnimationDuration);
       expect(find.textContaining('Copied'), findsOneWidget);
 

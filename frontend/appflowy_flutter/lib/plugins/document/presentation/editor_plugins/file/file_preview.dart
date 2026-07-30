@@ -1520,7 +1520,7 @@ class _PreviewError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline, size: 32),
+            const Icon(Icons.error_outline_rounded, size: 32),
             const SizedBox(height: 8),
             Text(message, textAlign: TextAlign.center),
             const SizedBox(height: 12),

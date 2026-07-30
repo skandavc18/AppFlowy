@@ -14,13 +14,11 @@ import 'package:provider/provider.dart';
 class DraggleOptionButtonFeedback extends StatefulWidget {
   const DraggleOptionButtonFeedback({
     super.key,
-    required this.controller,
     required this.editorState,
     required this.blockComponentContext,
     required this.blockComponentBuilder,
   });
 
-  final PopoverController controller;
   final EditorState editorState;
   final BlockComponentContext blockComponentContext;
   final Map<String, BlockComponentBuilder> blockComponentBuilder;

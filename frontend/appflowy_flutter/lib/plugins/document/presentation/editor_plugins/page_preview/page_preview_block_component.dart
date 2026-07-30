@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/mention/me
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
@@ -583,12 +584,6 @@ class _PagePreviewCardState extends State<PagePreviewCard> {
   }
 }
 
-enum _PagePreviewAction {
-  open,
-  togglePreview,
-  changePage,
-}
-
 class _PagePreviewMenu extends StatelessWidget {
   const _PagePreviewMenu({
     required this.previewMode,
@@ -605,87 +600,38 @@ class _PagePreviewMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return PopupMenuButton<_PagePreviewAction>(
+    return AppMenuIconButton(
       key: const ValueKey('page-preview-options'),
+      icon: Icons.more_horiz_rounded,
+      iconSize: 18,
+      iconColor: palette.textSecondary,
       tooltip: LocaleKeys.workspaceFolderExplorer_blockOptions.tr(),
-      color: palette.floatingSurface,
-      surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: palette.border),
-      ),
-      icon: Icon(
-        Icons.more_horiz_rounded,
-        size: 18,
-        color: palette.textSecondary,
-      ),
-      itemBuilder: (_) => [
-        PopupMenuItem(
-          value: _PagePreviewAction.open,
-          child: _PagePreviewMenuLabel(
-            icon: Icons.open_in_new_rounded,
-            label: LocaleKeys.workspaceFolderExplorer_open.tr(),
-          ),
+      entries: () => [
+        AppMenuItem(
+          label: LocaleKeys.workspaceFolderExplorer_open.tr(),
+          icon: Icons.open_in_new_rounded,
+          onSelected: onOpen,
         ),
         if (onPreviewModeChanged != null)
-          PopupMenuItem(
-            value: _PagePreviewAction.togglePreview,
-            child: _PagePreviewMenuLabel(
-              icon: previewMode == ViewPreviewMode.cover
-                  ? Icons.article_outlined
-                  : Icons.photo_outlined,
-              label: previewMode == ViewPreviewMode.cover
-                  ? LocaleKeys.workspaceFolderExplorer_showContentPreview.tr()
-                  : LocaleKeys.workspaceFolderExplorer_showCoverPreview.tr(),
-            ),
-          ),
-        if (onChangePage != null)
-          PopupMenuItem(
-            value: _PagePreviewAction.changePage,
-            child: _PagePreviewMenuLabel(
-              icon: Icons.swap_horiz_rounded,
-              label: LocaleKeys.workspaceFolderExplorer_chooseAnother.tr(),
-            ),
-          ),
-      ],
-      onSelected: (action) {
-        switch (action) {
-          case _PagePreviewAction.open:
-            onOpen();
-          case _PagePreviewAction.togglePreview:
-            onPreviewModeChanged?.call(
+          AppMenuItem(
+            label: previewMode == ViewPreviewMode.cover
+                ? LocaleKeys.workspaceFolderExplorer_showContentPreview.tr()
+                : LocaleKeys.workspaceFolderExplorer_showCoverPreview.tr(),
+            icon: previewMode == ViewPreviewMode.cover
+                ? Icons.article_rounded
+                : Icons.photo_rounded,
+            onSelected: () => onPreviewModeChanged?.call(
               previewMode == ViewPreviewMode.cover
                   ? ViewPreviewMode.content
                   : ViewPreviewMode.cover,
-            );
-          case _PagePreviewAction.changePage:
-            onChangePage?.call();
-        }
-      },
-    );
-  }
-}
-
-class _PagePreviewMenuLabel extends StatelessWidget {
-  const _PagePreviewMenuLabel({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 17),
-        const SizedBox(width: 9),
-        Expanded(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13),
+            ),
           ),
-        ),
+        if (onChangePage != null)
+          AppMenuItem(
+            label: LocaleKeys.workspaceFolderExplorer_chooseAnother.tr(),
+            icon: Icons.swap_horiz_rounded,
+            onSelected: () => onChangePage?.call(),
+          ),
       ],
     );
   }
@@ -720,7 +666,7 @@ class _PagePreviewPlaceholder extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _PagePreviewSelectionSurface(
-      icon: Icons.article_outlined,
+      icon: Icons.article_rounded,
       title: LocaleKeys.document_mobilePageSelector_title.tr(),
       subtitle: LocaleKeys.commandPalette_pagePreview.tr(),
       onSelect: onSelect,

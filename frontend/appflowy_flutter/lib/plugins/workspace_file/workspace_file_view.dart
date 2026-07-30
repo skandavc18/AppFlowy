@@ -267,7 +267,7 @@ class _SourceModeToggle extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                editing ? Icons.visibility_outlined : Icons.edit_outlined,
+                editing ? Icons.visibility_rounded : Icons.edit_rounded,
                 size: 16,
                 color: theme.iconColorScheme.secondary,
               ),
@@ -387,7 +387,7 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage> {
       revealKey: widget.file.path,
       identity: DocumentIdentity(
         title: widget.name,
-        icon: Icons.image_outlined,
+        icon: Icons.image_rounded,
         subtitle: _subtitle,
       ),
       actions: [
@@ -409,7 +409,7 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage> {
         ),
         const DocumentViewportSeparator(),
         DocumentViewportButton(
-          icon: Icons.fit_screen_outlined,
+          icon: Icons.fit_screen_rounded,
           tooltip: 'Fit to view',
           onPressed: () => _transformation.value = Matrix4.identity(),
         ),

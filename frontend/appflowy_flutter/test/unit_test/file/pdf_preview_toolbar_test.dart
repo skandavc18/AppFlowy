@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_p
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_view_options.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
@@ -597,21 +598,25 @@ void main() {
     await tester.pumpWidget(
       _themedApp(
         child: Center(
-          child: PopupMenuButton<String>(
-            key: const ValueKey('merged-menu-test-trigger'),
-            icon: const Icon(Icons.more_horiz_rounded),
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: 'fit-width',
-                child: Text('Fit to width'),
+          child: Builder(
+            builder: (context) => TextButton(
+              key: const ValueKey('merged-menu-test-trigger'),
+              onPressed: () => showAppMenu<void>(
+                context: context,
+                globalPosition: const Offset(80, 80),
+                entries: [
+                  const AppMenuItem(label: 'Fit to width'),
+                  AppMenuCustom(
+                    builder: (menuContext) => TextButton(
+                      onPressed: () =>
+                          AppMenuScope.maybeOf(menuContext)?.close(),
+                      child: const Text('Rename file'),
+                    ),
+                  ),
+                ],
               ),
-              PdfPreviewMenuSection<String>(
-                builder: (_, closeMenu) => TextButton(
-                  onPressed: closeMenu,
-                  child: const Text('Rename file'),
-                ),
-              ),
-            ],
+              child: const Icon(Icons.more_horiz_rounded),
+            ),
           ),
         ),
       ),

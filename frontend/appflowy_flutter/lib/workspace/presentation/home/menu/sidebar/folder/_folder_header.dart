@@ -203,11 +203,11 @@ class SidebarRootCreateAction extends SidebarRootAction {
   Widget? leftIcon(Color iconColor) => Icon(
         switch (kind) {
           SidebarRootCreateKind.folder => workspaceAddFolderIcon,
-          SidebarRootCreateKind.page => Icons.description_outlined,
-          SidebarRootCreateKind.table => Icons.table_chart_outlined,
-          SidebarRootCreateKind.board => Icons.view_kanban_outlined,
-          SidebarRootCreateKind.calendar => Icons.calendar_month_outlined,
-          SidebarRootCreateKind.chat => Icons.forum_outlined,
+          SidebarRootCreateKind.page => Icons.description_rounded,
+          SidebarRootCreateKind.table => Icons.table_chart_rounded,
+          SidebarRootCreateKind.board => Icons.view_kanban_rounded,
+          SidebarRootCreateKind.calendar => Icons.calendar_month_rounded,
+          SidebarRootCreateKind.chat => Icons.forum_rounded,
         },
         color: iconColor,
         size: 17,
@@ -230,7 +230,7 @@ class SidebarRootCreateAction extends SidebarRootAction {
 class SidebarRootPasteAction extends SidebarRootAction {
   @override
   Widget? leftIcon(Color iconColor) => Icon(
-        Icons.content_paste_outlined,
+        Icons.content_paste_rounded,
         color: iconColor,
         size: 17,
       );

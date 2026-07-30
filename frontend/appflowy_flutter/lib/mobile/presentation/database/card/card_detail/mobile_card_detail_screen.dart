@@ -319,13 +319,13 @@ class RowDetailFab extends StatelessWidget {
                     borderOnForeground: false,
                     child: previousDisabled
                         ? Icon(
-                            Icons.chevron_left_outlined,
+                            Icons.chevron_left_rounded,
                             color: Theme.of(context).disabledColor,
                           )
                         : InkWell(
                             borderRadius: BorderRadius.circular(26),
                             onTap: onTapPrevious,
-                            child: const Icon(Icons.chevron_left_outlined),
+                            child: const Icon(Icons.chevron_left_rounded),
                           ),
                   ),
                 ),
@@ -341,13 +341,13 @@ class RowDetailFab extends StatelessWidget {
                     borderOnForeground: false,
                     child: nextDisabled
                         ? Icon(
-                            Icons.chevron_right_outlined,
+                            Icons.chevron_right_rounded,
                             color: Theme.of(context).disabledColor,
                           )
                         : InkWell(
                             borderRadius: BorderRadius.circular(26),
                             onTap: onTapNext,
-                            child: const Icon(Icons.chevron_right_outlined),
+                            child: const Icon(Icons.chevron_right_rounded),
                           ),
                   ),
                 ),

@@ -310,6 +310,48 @@ void main() {
   });
 
   group('polish', () {
+    testWidgets('cells are set at the weight of the page around them',
+        (tester) async {
+      // The editor sets its body face per platform — Segoe UI Semibold on
+      // Windows — so a sheet that names its own weight renders lighter than
+      // the paragraph above it.
+      const body = TextStyle(
+        fontFamily: 'DM Sans',
+        fontWeight: FontWeight.w600,
+        fontVariations: [FontVariation.weight(600)],
+      );
+      late SpreadsheetTypography typography;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) {
+              typography = SpreadsheetTypography.of(
+                context,
+                SpreadsheetPalette.of(context),
+                base: body,
+              );
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
+
+      final roles = [
+        typography.cell,
+        typography.header,
+        typography.gutter,
+        typography.chrome,
+        typography.placeholder,
+      ];
+      for (final style in roles) {
+        expect(style.fontWeight, body.fontWeight);
+        expect(style.fontVariations, body.fontVariations);
+        expect(style.fontFamily, body.fontFamily);
+      }
+      expect(typography.cell.fontSize, SpreadsheetMetrics.cellFontSize);
+    });
+
     SheetBodyPainter bodyPainter(WidgetTester tester) {
       final paints = tester
           .widgetList<CustomPaint>(find.byType(CustomPaint))

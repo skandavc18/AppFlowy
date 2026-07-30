@@ -113,7 +113,7 @@ class SpreadsheetFloatingToolbar extends StatelessWidget {
               onOpen: (position) => _openNumberFormat(context, position),
             ),
             _AnchoredButton(
-              icon: Icons.palette_outlined,
+              icon: Icons.palette_rounded,
               tooltip: LocaleKeys.spreadsheet_format_textColor.tr(),
               iconColor: iconColor,
               palette: palette,
@@ -175,7 +175,7 @@ class SpreadsheetFloatingToolbar extends StatelessWidget {
           entry(
             CellNumberFormat.automatic,
             LocaleKeys.spreadsheet_format_automatic.tr(),
-            Icons.auto_awesome_outlined,
+            Icons.auto_awesome_rounded,
           ),
           entry(
             CellNumberFormat.number,
@@ -242,7 +242,7 @@ class SpreadsheetFloatingToolbar extends StatelessWidget {
           const SpreadsheetMenuEntry.divider(),
           SpreadsheetMenuEntry(
             label: LocaleKeys.spreadsheet_menu_clear.tr(),
-            icon: Icons.backspace_outlined,
+            icon: Icons.backspace_rounded,
             onSelected: controller.clearSelection,
           ),
           SpreadsheetMenuEntry(

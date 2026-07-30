@@ -56,7 +56,7 @@ class PdfPreviewSidebar extends StatelessWidget {
                     Icon(
                       isThumbnails
                           ? Icons.grid_view_rounded
-                          : Icons.account_tree_outlined,
+                          : Icons.account_tree_rounded,
                       size: 15,
                       color: palette.icon,
                     ),

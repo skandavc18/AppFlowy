@@ -213,9 +213,12 @@ class SpreadsheetTypography {
   }) {
     final source =
         base ?? Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    // The weight is inherited, never restated: the editor sets its body face
+    // per platform (Segoe UI Semibold on Windows) and a variable face carries
+    // its axis in fontVariations, so naming a weight here renders the grid
+    // lighter than the paragraph above it.
     final cell = source.copyWith(
       fontSize: SpreadsheetMetrics.cellFontSize,
-      fontWeight: FontWeight.w400,
       height: 1.25,
       letterSpacing: 0,
       color: palette.textPrimary,
@@ -226,19 +229,16 @@ class SpreadsheetTypography {
       cell: cell,
       header: cell.copyWith(
         fontSize: 12,
-        fontWeight: FontWeight.w500,
         color: palette.textSecondary,
         letterSpacing: 0.15,
       ),
       gutter: cell.copyWith(
         fontSize: 10.5,
-        fontWeight: FontWeight.w500,
         color: palette.textMuted,
         letterSpacing: 0.2,
       ),
       chrome: cell.copyWith(
         fontSize: 12,
-        fontWeight: FontWeight.w500,
         color: palette.textSecondary,
       ),
       placeholder: cell.copyWith(color: palette.placeholder),

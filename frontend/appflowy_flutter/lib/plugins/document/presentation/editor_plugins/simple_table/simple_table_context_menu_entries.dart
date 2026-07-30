@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/option/color_option_action.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/context_menu/custom_context_menu.dart';
@@ -36,23 +35,25 @@ List<List<EditorContextMenuEntry>> simpleTableContextMenuGroups(
 
   EditorContextMenuEntry entry(
     String name,
-    FlowySvgData icon,
-    Future<void> Function(EditorState editorState) run,
-  ) =>
+    IconData icon,
+    Future<void> Function(EditorState editorState) run, {
+    bool destructive = false,
+  }) =>
       EditorContextMenuEntry(
         action: EditorContextMenuAction.table,
         getName: () => name,
-        iconBuilder: (context) => FlowySvg(
-          icon,
-          size: const Size.square(16),
-          color: AppFlowyTheme.of(context).iconColorScheme.secondary,
-        ),
+        icon: icon,
+        destructive: destructive,
         onPressed: (editorState) => unawaited(run(editorState)),
       );
 
   EditorContextMenuEntry alignEntry(TableAlign align) => entry(
         align.name,
-        align.leftIconSvg,
+        switch (align) {
+          TableAlign.left => Icons.format_align_left_rounded,
+          TableAlign.center => Icons.format_align_center_rounded,
+          TableAlign.right => Icons.format_align_right_rounded,
+        },
         (editorState) =>
             editorState.updateColumnAlign(tableCellNode: cell, align: align),
       );
@@ -61,22 +62,22 @@ List<List<EditorContextMenuEntry>> simpleTableContextMenuGroups(
     [
       entry(
         LocaleKeys.document_plugins_simpleTable_moreActions_insertAbove.tr(),
-        FlowySvgs.table_insert_above_s,
+        Icons.arrow_upward_rounded,
         (editorState) => editorState.insertRowInTable(table, rowIndex),
       ),
       entry(
         LocaleKeys.document_plugins_simpleTable_moreActions_insertBelow.tr(),
-        FlowySvgs.table_insert_below_s,
+        Icons.arrow_downward_rounded,
         (editorState) => editorState.insertRowInTable(table, rowIndex + 1),
       ),
       entry(
         LocaleKeys.document_plugins_simpleTable_moreActions_insertLeft.tr(),
-        FlowySvgs.table_insert_left_s,
+        Icons.arrow_back_rounded,
         (editorState) => editorState.insertColumnInTable(table, columnIndex),
       ),
       entry(
         LocaleKeys.document_plugins_simpleTable_moreActions_insertRight.tr(),
-        FlowySvgs.table_insert_right_s,
+        Icons.arrow_forward_rounded,
         (editorState) =>
             editorState.insertColumnInTable(table, columnIndex + 1),
       ),
@@ -89,7 +90,7 @@ List<List<EditorContextMenuEntry>> simpleTableContextMenuGroups(
     [
       entry(
         LocaleKeys.document_plugins_simpleTable_moreActions_clearContents.tr(),
-        FlowySvgs.table_clear_content_s,
+        Icons.backspace_rounded,
         (editorState) => editorState.clearContentAtRowIndex(
           tableNode: table,
           rowIndex: rowIndex,
@@ -98,18 +99,25 @@ List<List<EditorContextMenuEntry>> simpleTableContextMenuGroups(
       if (table.rowLength > 1)
         entry(
           LocaleKeys.document_plugins_simpleTable_moreActions_deleteRow.tr(),
-          FlowySvgs.trash_s,
+          Icons.remove_circle_outline_rounded,
           (editorState) => editorState.deleteRowInTable(table, rowIndex),
+          destructive: true,
         ),
       if (table.columnLength > 1)
         entry(
           LocaleKeys.document_plugins_simpleTable_moreActions_deleteColumn.tr(),
-          FlowySvgs.trash_s,
+          Icons.remove_circle_outline_rounded,
           (editorState) => editorState.deleteColumnInTable(table, columnIndex),
+          destructive: true,
         ),
     ],
   ];
 }
+
+/// Whether the pointer is inside a table cell, and so whether the row and
+/// column swatches belong in the menu at all.
+bool simpleTableContextMenuHasColors(EditorState editorState) =>
+    _selectedCell(editorState) != null;
 
 Node? _selectedCell(EditorState editorState) {
   final selection = editorState.selection;

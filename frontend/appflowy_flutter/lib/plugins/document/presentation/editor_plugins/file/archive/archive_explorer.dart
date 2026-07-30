@@ -4,6 +4,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
@@ -1027,44 +1028,33 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   Future<void> _showBackgroundMenu(Offset position) async {
     final canEdit =
         widget.editable && (document?.supportsMultipleEntries ?? false);
-    final action = await _showArchiveMenu<_ArchiveBackgroundAction>(
-      position: position,
-      items: [
+    final action = await showAppMenu<_ArchiveBackgroundAction>(
+      context: context,
+      globalPosition: position,
+      entries: [
         if (canEdit) ...[
-          PopupMenuItem(
+          AppMenuItem(
+            label: 'Add files…',
+            icon: workspaceAddFileIcon,
             value: _ArchiveBackgroundAction.addFiles,
-            height: 40,
-            child: _ArchiveMenuLabel(
-              icon: workspaceAddFileIcon,
-              text: 'Add files…',
-            ),
           ),
-          PopupMenuItem(
+          AppMenuItem(
+            label: 'New folder',
+            icon: workspaceAddFolderIcon,
             value: _ArchiveBackgroundAction.newFolder,
-            height: 40,
-            child: _ArchiveMenuLabel(
-              icon: workspaceAddFolderIcon,
-              text: 'New folder',
-            ),
           ),
-          const PopupMenuDivider(height: 9),
+          const AppMenuSeparator(),
         ],
         if (currentPath.isNotEmpty)
-          PopupMenuItem(
+          const AppMenuItem(
+            label: 'Go up',
+            icon: Icons.drive_folder_upload_rounded,
             value: _ArchiveBackgroundAction.goUp,
-            height: 40,
-            child: const _ArchiveMenuLabel(
-              icon: Icons.drive_folder_upload_rounded,
-              text: 'Go up',
-            ),
           ),
-        PopupMenuItem(
+        const AppMenuItem(
+          label: 'Reload archive',
+          icon: Icons.refresh_rounded,
           value: _ArchiveBackgroundAction.refresh,
-          height: 40,
-          child: const _ArchiveMenuLabel(
-            icon: Icons.refresh_rounded,
-            text: 'Reload archive',
-          ),
         ),
       ],
     );
@@ -1083,85 +1073,37 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     }
   }
 
-  /// One set of clothes for every menu the archive raises.
-  Future<T?> _showArchiveMenu<T>({
-    required Offset position,
-    required List<PopupMenuEntry<T>> items,
-  }) {
-    final palette = FolderExplorerPalette.of(context);
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    return showMenu<T>(
-      context: context,
-      color: palette.floatingSurface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 14,
-      shadowColor: palette.shadow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      constraints: const BoxConstraints(minWidth: 196, maxWidth: 240),
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(position.dx, position.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      items: items,
-    );
-  }
-
   Future<void> _showEntryMenu(ArchiveEntry entry, Offset position) async {
-    final palette = FolderExplorerPalette.of(context);
-    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
     final canEdit =
         widget.editable && (document?.supportsMultipleEntries ?? false);
-    final action = await showMenu<_ArchiveEntryAction>(
+    final action = await showAppMenu<_ArchiveEntryAction>(
       context: context,
-      color: palette.floatingSurface,
-      surfaceTintColor: Colors.transparent,
-      elevation: 14,
-      shadowColor: palette.shadow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
-      constraints: const BoxConstraints(minWidth: 196, maxWidth: 240),
-      position: RelativeRect.fromRect(
-        Rect.fromLTWH(position.dx, position.dy, 1, 1),
-        Offset.zero & overlay.size,
-      ),
-      items: [
-        PopupMenuItem(
+      globalPosition: position,
+      entries: [
+        AppMenuItem(
+          label: 'Open',
+          icon: entry.isDirectory
+              ? Icons.folder_open_rounded
+              : Icons.open_in_new_rounded,
           value: _ArchiveEntryAction.open,
-          height: 40,
-          child: _ArchiveMenuLabel(
-            icon: entry.isDirectory
-                ? Icons.folder_open_rounded
-                : Icons.open_in_new_rounded,
-            text: 'Open',
-          ),
         ),
-        PopupMenuItem(
+        const AppMenuItem(
+          label: 'Extract to…',
+          icon: Icons.download_rounded,
           value: _ArchiveEntryAction.extract,
-          height: 40,
-          child: const _ArchiveMenuLabel(
-            icon: Icons.download_rounded,
-            text: 'Extract to…',
-          ),
         ),
         if (canEdit) ...[
-          PopupMenuItem(
+          const AppMenuSeparator(),
+          const AppMenuItem(
+            label: 'Rename',
+            icon: Icons.drive_file_rename_outline_rounded,
             value: _ArchiveEntryAction.rename,
-            height: 40,
-            child: const _ArchiveMenuLabel(
-              icon: Icons.drive_file_rename_outline_rounded,
-              text: 'Rename',
-            ),
           ),
-          PopupMenuItem(
+          const AppMenuItem(
+            label: 'Remove',
+            icon: Icons.delete_outline_rounded,
             value: _ArchiveEntryAction.delete,
-            height: 40,
-            child: const _ArchiveMenuLabel(
-              icon: Icons.delete_rounded,
-              text: 'Remove',
-            ),
+            destructive: true,
           ),
         ],
       ],
@@ -1482,32 +1424,6 @@ class _ArchiveSourceRowState extends State<_ArchiveSourceRow> {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _ArchiveMenuLabel extends StatelessWidget {
-  const _ArchiveMenuLabel({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return Row(
-      children: [
-        Icon(icon, size: 17, color: palette.textSecondary),
-        const SizedBox(width: 11),
-        Text(
-          text,
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 13,
-            color: palette.textPrimary,
-          ),
-        ),
-      ],
     );
   }
 }
