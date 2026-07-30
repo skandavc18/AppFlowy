@@ -139,9 +139,14 @@ class _PopoverActionListState<T extends PopoverAction>
           borderRadius: BorderRadius.circular(8),
           child: ColoredBox(
             color: widget.backgroundColor ?? Theme.of(context).cardColor,
-            child: IntrinsicHeight(
-              child: IntrinsicWidth(
-                child: Column(children: children),
+            // A long action list scrolls rather than overflowing its
+            // popover's maxHeight.
+            child: IntrinsicWidth(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: children,
+                ),
               ),
             ),
           ),

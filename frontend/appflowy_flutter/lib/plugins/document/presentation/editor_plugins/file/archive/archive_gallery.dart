@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -56,15 +59,21 @@ class ArchiveGallery extends StatelessWidget {
 
   final String emptyMessage;
 
-  double get _cardHeight => compact ? 292 : KnowledgeGalleryLayout.cardHeight;
+  /// An embed has a fraction of the window's width, so the same setting asks
+  /// for cards a step smaller there.
+  double get _scale => compact ? 0.74 : 1;
 
   double get _spacing => compact ? 16 : KnowledgeGalleryLayout.cardSpacing;
 
-  double get _minimumCardWidth =>
-      compact ? 218 : KnowledgeGalleryLayout.minimumCardWidth;
-
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<GalleryCardSize>(
+      valueListenable: GalleryCardSizeStore.notifier,
+      builder: (context, cardSize, _) => _buildGrid(context, cardSize),
+    );
+  }
+
+  Widget _buildGrid(BuildContext context, GalleryCardSize cardSize) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onSecondaryTapDown: onBackgroundContextMenu == null
@@ -88,6 +97,13 @@ class ArchiveGallery extends StatelessWidget {
                   child: _ArchiveGalleryEmptyState(message: emptyMessage),
                 );
               }
+              final metrics = GalleryCardMetrics.resolve(
+                available: constraints.crossAxisExtent - horizontal * 2,
+                size: cardSize,
+                spacing: _spacing,
+                scale: _scale,
+                maximumColumns: compact ? 4 : 5,
+              );
               return SliverPadding(
                 padding: EdgeInsets.fromLTRB(
                   horizontal,
@@ -97,12 +113,10 @@ class ArchiveGallery extends StatelessWidget {
                 ),
                 sliver: SliverGrid(
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: _columnCount(
-                      constraints.crossAxisExtent - horizontal * 2,
-                    ),
-                    mainAxisSpacing: _spacing,
-                    crossAxisSpacing: _spacing,
-                    mainAxisExtent: _cardHeight,
+                    crossAxisCount: metrics.columns,
+                    mainAxisSpacing: metrics.spacing,
+                    crossAxisSpacing: metrics.spacing,
+                    mainAxisExtent: metrics.height,
                   ),
                   delegate: SliverChildBuilderDelegate(
                     (context, index) {
@@ -146,15 +160,6 @@ class ArchiveGallery extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  int _columnCount(double width) {
-    if (!width.isFinite || width <= 0) {
-      return 1;
-    }
-    return ((width + _spacing) / (_minimumCardWidth + _spacing))
-        .floor()
-        .clamp(1, 5);
   }
 }
 
@@ -354,6 +359,28 @@ class ArchiveGalleryHeader extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                     ],
+                    Builder(
+                      builder: (buttonContext) => ArchivePillButton(
+                        icon: Icons.tune_rounded,
+                        tooltip: 'Card size',
+                        onPressed: () {
+                          final box =
+                              buttonContext.findRenderObject() as RenderBox?;
+                          if (box == null) {
+                            return;
+                          }
+                          unawaited(
+                            showGalleryCardSizeMenu(
+                              context: buttonContext,
+                              globalPosition: box.localToGlobal(
+                                Offset(0, box.size.height + 4),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     ArchivePillButton(
                       icon: Icons.refresh_rounded,
                       tooltip: 'Reload archive',

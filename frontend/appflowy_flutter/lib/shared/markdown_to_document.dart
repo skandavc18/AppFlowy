@@ -55,6 +55,7 @@ Future<String> customDocumentToMarkdown(
         const CustomParagraphNodeParser(),
         const SubPageNodeParser(),
         const SimpleTableNodeParser(),
+        const SpreadsheetNodeParser(),
         const LinkPreviewNodeParser(),
         const FileBlockNodeParser(),
         const FolderExplorerNodeParser(),

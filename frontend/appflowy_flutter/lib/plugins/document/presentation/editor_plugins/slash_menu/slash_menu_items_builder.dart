@@ -63,6 +63,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
 }) {
   final databaseItems = <SelectionMenuItem>[
     tableSlashMenuItem,
+    spreadsheetSlashMenuItem,
     linkToPageSlashMenuItem,
     pagePreviewSlashMenuItem,
     if (documentBloc != null) gridSlashMenuItem(documentBloc),

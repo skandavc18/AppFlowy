@@ -20,6 +20,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_g
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery_header.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/explorer_tree.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
@@ -741,6 +742,14 @@ class _FolderExplorerState extends State<FolderExplorer> {
           ),
         ),
         PopupMenuItem(
+          value: _GalleryMenuAction.cardSize,
+          height: 40,
+          child: _MenuLabel(
+            icon: Icons.tune_rounded,
+            text: GalleryCardSizeStore.value.label,
+          ),
+        ),
+        PopupMenuItem(
           value: _GalleryMenuAction.switchPresentation,
           height: 40,
           child: _MenuLabel(
@@ -779,6 +788,11 @@ class _FolderExplorerState extends State<FolderExplorer> {
       case _GalleryMenuAction.refresh:
         previewCache.clear();
         await controller.refresh();
+      case _GalleryMenuAction.cardSize:
+        await showGalleryCardSizeMenu(
+          context: context,
+          globalPosition: position,
+        );
       case _GalleryMenuAction.switchPresentation:
         setState(
           () => presentation = knowledgeMode
@@ -1099,6 +1113,7 @@ enum _GalleryMenuAction {
   importFile,
   paste,
   refresh,
+  cardSize,
   switchPresentation,
 }
 

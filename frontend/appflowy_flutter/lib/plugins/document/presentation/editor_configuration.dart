@@ -199,6 +199,14 @@ List<OptionAction> _buildOptionActions(BuildContext context, String type) {
       OptionAction.divider,
       OptionAction.setToPageWidth,
       OptionAction.distributeColumnsEvenly,
+      OptionAction.convertToSpreadsheet,
+    ]);
+  }
+
+  if (TableBlockKeys.type == type) {
+    standardActions.addAll([
+      OptionAction.divider,
+      OptionAction.convertToSpreadsheet,
     ]);
   }
 
@@ -437,6 +445,9 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
       configuration,
     ),
     FolderExplorerBlockKeys.type: FolderExplorerBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    SpreadsheetBlockKeys.type: SpreadsheetBlockComponentBuilder(
       configuration: configuration,
     ),
     PagePreviewBlockKeys.type: PagePreviewBlockComponentBuilder(

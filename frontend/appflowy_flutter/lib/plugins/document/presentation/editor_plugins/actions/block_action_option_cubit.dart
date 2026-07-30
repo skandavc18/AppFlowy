@@ -3,6 +3,7 @@ import 'package:appflowy/plugins/document/application/document_data_pb_extension
 import 'package:appflowy/plugins/document/presentation/editor_notification.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/spreadsheet/spreadsheet_table_conversion.dart';
 import 'package:appflowy/plugins/shared/share/constants.dart';
 import 'package:appflowy/plugins/trash/application/prelude.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -77,6 +78,9 @@ class BlockActionOptionCubit extends Cubit<BlockActionOptionState> {
       case OptionAction.distributeColumnsEvenly:
         await _distributeColumnsEvenly(node);
         break;
+      case OptionAction.convertToSpreadsheet:
+        _convertToSpreadsheet(transaction, node);
+        break;
       case OptionAction.align:
       case OptionAction.color:
       case OptionAction.divider:
@@ -92,6 +96,21 @@ class BlockActionOptionCubit extends Cubit<BlockActionOptionState> {
     transaction
       ..insertNode(path, paragraphNode())
       ..afterSelection = Selection.collapsed(Position(path: path));
+  }
+
+  /// Rows, columns, values and the formatting the two models share carry over.
+  void _convertToSpreadsheet(Transaction transaction, Node node) {
+    if (!isConvertibleTable(node)) {
+      return;
+    }
+    final path = node.path;
+    transaction
+      ..insertNode(
+        path,
+        spreadsheetNode(data: spreadsheetFromTable(node)),
+      )
+      ..deleteNode(node)
+      ..afterSelection = null;
   }
 
   void _splitIntoColumns(Transaction transaction, Node node) {

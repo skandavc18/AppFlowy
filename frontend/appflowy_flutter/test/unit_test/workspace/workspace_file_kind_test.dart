@@ -16,10 +16,14 @@ void main() {
 
     test('derives the kind from a file name', () {
       expect(
-          WorkspaceFileKind.fromName('notes.md'), WorkspaceFileKind.markdown);
+        WorkspaceFileKind.fromName('notes.md'),
+        WorkspaceFileKind.markdown,
+      );
       expect(WorkspaceFileKind.fromName('Report.DOCX'), WorkspaceFileKind.word);
       expect(
-          WorkspaceFileKind.fromName('budget.xlsx'), WorkspaceFileKind.excel);
+        WorkspaceFileKind.fromName('budget.xlsx'),
+        WorkspaceFileKind.excel,
+      );
       expect(
         WorkspaceFileKind.fromName('deck.pptx'),
         WorkspaceFileKind.powerpoint,
@@ -69,8 +73,11 @@ void main() {
     test('only authors kinds that can be produced blank', () {
       for (final action in workspaceFileMenuActions) {
         if (action.source == WorkspaceFileSource.create) {
-          expect(action.kind.isBlankCreatable, isTrue,
-              reason: '${action.kind}');
+          expect(
+            action.kind.isBlankCreatable,
+            isTrue,
+            reason: '${action.kind}',
+          );
         }
       }
     });

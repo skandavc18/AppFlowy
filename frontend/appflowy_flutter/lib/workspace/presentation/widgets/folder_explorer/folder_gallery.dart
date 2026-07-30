@@ -18,6 +18,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_explorer
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -267,6 +268,12 @@ class _FolderGalleryState extends State<FolderGallery> {
   int crossAxisCount = 1;
 
   @override
+  void initState() {
+    super.initState();
+    unawaited(GalleryCardSizeStore.ensureLoaded());
+  }
+
+  @override
   void dispose() {
     focusNode.dispose();
     super.dispose();
@@ -274,6 +281,13 @@ class _FolderGalleryState extends State<FolderGallery> {
 
   @override
   Widget build(BuildContext context) {
+    return ValueListenableBuilder<GalleryCardSize>(
+      valueListenable: GalleryCardSizeStore.notifier,
+      builder: (context, cardSize, _) => _buildGallery(context, cardSize),
+    );
+  }
+
+  Widget _buildGallery(BuildContext context, GalleryCardSize cardSize) {
     final controller = widget.controller;
     final entries = _visibleEntries(controller);
     final draft = controller.draft;
@@ -312,7 +326,12 @@ class _FolderGalleryState extends State<FolderGallery> {
                 );
                 final contentWidth =
                     constraints.crossAxisExtent - horizontal * 2;
-                crossAxisCount = _columnCount(contentWidth);
+                final metrics = GalleryCardMetrics.resolve(
+                  available: contentWidth,
+                  size: cardSize,
+                  spacing: KnowledgeGalleryLayout.cardSpacing,
+                );
+                crossAxisCount = metrics.columns;
                 if (itemCount == 0) {
                   return SliverFillRemaining(
                     hasScrollBody: false,
@@ -333,10 +352,10 @@ class _FolderGalleryState extends State<FolderGallery> {
                   ),
                   sliver: SliverGrid(
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      mainAxisSpacing: KnowledgeGalleryLayout.cardSpacing,
-                      crossAxisSpacing: KnowledgeGalleryLayout.cardSpacing,
-                      mainAxisExtent: KnowledgeGalleryLayout.cardHeight,
+                      crossAxisCount: metrics.columns,
+                      mainAxisSpacing: metrics.spacing,
+                      crossAxisSpacing: metrics.spacing,
+                      mainAxisExtent: metrics.height,
                     ),
                     delegate: SliverChildBuilderDelegate(
                       (context, index) {
@@ -445,17 +464,6 @@ class _FolderGalleryState extends State<FolderGallery> {
     return controller.rows
         .where((row) => row.item.name.toLowerCase().contains(query))
         .toList();
-  }
-
-  int _columnCount(double width) {
-    if (!width.isFinite || width <= 0) {
-      return 1;
-    }
-    return ((width + KnowledgeGalleryLayout.cardSpacing) /
-            (KnowledgeGalleryLayout.minimumCardWidth +
-                KnowledgeGalleryLayout.cardSpacing))
-        .floor()
-        .clamp(1, 5);
   }
 
   void _activate(
@@ -801,59 +809,66 @@ class _GalleryCardContent extends StatelessWidget {
           FolderGalleryPreviewKind.pdf,
           FolderGalleryPreviewKind.video,
         }.contains(preview.kind);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: KeyedSubtree(
-            key: const ValueKey('folder-gallery-preview-stage'),
-            child: previewMode == ViewPreviewMode.cover && cover != null
-                ? ViewCoverImage(
-                    cover: cover,
-                    userProfile: userProfile,
-                    width: double.infinity,
-                  )
-                : previewMode == ViewPreviewMode.content && item.isFolder
-                    ? FolderContentPreviewThumbnail(
-                        folder: view,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final density = GalleryCardDensity.forWidth(constraints.maxWidth);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: KeyedSubtree(
+                key: const ValueKey('folder-gallery-preview-stage'),
+                child: previewMode == ViewPreviewMode.cover && cover != null
+                    ? ViewCoverImage(
+                        cover: cover,
                         userProfile: userProfile,
+                        width: double.infinity,
                       )
-                    : hasMediaPreview
-                        ? _GalleryMediaPreview(
-                            preview: preview,
+                    : previewMode == ViewPreviewMode.content && item.isFolder
+                        ? FolderContentPreviewThumbnail(
+                            folder: view,
                             userProfile: userProfile,
                           )
-                        : _GalleryPreviewStage(
-                            item: item,
-                            preview: preview,
-                            userProfile: userProfile,
-                          ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(21, 19, 21, 20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _GalleryCardTitle(
-                item: item,
-                view: view,
-                editing: editing,
-                searchPath: searchPath,
-                onRename: onRename,
-                onSubmitted: onRenameSubmitted,
-                onCancelled: onRenameCancelled,
+                        : hasMediaPreview
+                            ? _GalleryMediaPreview(
+                                preview: preview,
+                                userProfile: userProfile,
+                              )
+                            : _GalleryPreviewStage(
+                                item: item,
+                                preview: preview,
+                                userProfile: userProfile,
+                              ),
               ),
-              const SizedBox(height: 15),
-              _GalleryMetadata(
-                item: item,
-                view: view,
-                preview: preview,
+            ),
+            Padding(
+              padding: density.footerPadding,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _GalleryCardTitle(
+                    item: item,
+                    view: view,
+                    editing: editing,
+                    searchPath: searchPath,
+                    density: density,
+                    onRename: onRename,
+                    onSubmitted: onRenameSubmitted,
+                    onCancelled: onRenameCancelled,
+                  ),
+                  SizedBox(height: density.titleGap),
+                  _GalleryMetadata(
+                    item: item,
+                    view: view,
+                    preview: preview,
+                    density: density,
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ],
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -929,6 +944,7 @@ class _GalleryCardTitle extends StatelessWidget {
     required this.onRename,
     required this.onSubmitted,
     required this.onCancelled,
+    required this.density,
     this.searchPath,
     this.view,
   });
@@ -937,6 +953,7 @@ class _GalleryCardTitle extends StatelessWidget {
   final ViewPB? view;
   final bool editing;
   final String? searchPath;
+  final GalleryCardDensity density;
   final VoidCallback onRename;
   final Future<bool> Function(String) onSubmitted;
   final VoidCallback onCancelled;
@@ -947,10 +964,10 @@ class _GalleryCardTitle extends StatelessWidget {
     final titleStyle = TextStyle(
       color: palette.textPrimary,
       fontFamily: 'Inter',
-      fontSize: 17,
+      fontSize: density.titleSize,
       height: 1.24,
       fontWeight: FontWeight.w600,
-      letterSpacing: -0.38,
+      letterSpacing: density.titleSpacing,
     );
     final title = item.name.isEmpty
         ? LocaleKeys.workspaceFolderExplorer_untitled.tr()
@@ -967,7 +984,7 @@ class _GalleryCardTitle extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 1),
                 child: RawEmojiIconWidget(
                   emoji: icon,
-                  emojiSize: 18,
+                  emojiSize: density.emojiSize,
                 ),
               ),
               const SizedBox(width: 8),
@@ -2460,11 +2477,13 @@ class _GalleryMetadata extends StatelessWidget {
     required this.item,
     required this.view,
     required this.preview,
+    required this.density,
   });
 
   final WorkspaceExplorerItem item;
   final ViewPB view;
   final FolderGalleryPreview preview;
+  final GalleryCardDensity density;
 
   @override
   Widget build(BuildContext context) {
@@ -2492,7 +2511,7 @@ class _GalleryMetadata extends StatelessWidget {
             style: TextStyle(
               color: palette.accent.withValues(alpha: 0.72),
               fontFamily: 'Inter',
-              fontSize: 10.5,
+              fontSize: density.tagSize,
               height: 1.2,
               fontWeight: FontWeight.w500,
               letterSpacing: 0.04,
@@ -2516,7 +2535,7 @@ class _GalleryMetadata extends StatelessWidget {
               style: TextStyle(
                 color: palette.textMuted,
                 fontFamily: 'Inter',
-                fontSize: 9.5,
+                fontSize: density.typeLabelSize,
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.72,
               ),
@@ -2539,7 +2558,7 @@ class _GalleryMetadata extends StatelessWidget {
                   style: TextStyle(
                     color: palette.textMuted,
                     fontFamily: 'Inter',
-                    fontSize: 10,
+                    fontSize: density.metadataSize,
                     height: 1.2,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
@@ -2673,54 +2692,67 @@ class _GalleryCardSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(27, 32, 27, 24),
-            color: palette.floatingSurface.withValues(alpha: 0.56),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 92,
-                  height: 11,
-                  decoration: BoxDecoration(
-                    color: palette.textMuted.withValues(alpha: 0.11),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                for (final width in [0.94, 0.76, 0.88, 0.61, 0.82, 0.49]) ...[
-                  FractionallySizedBox(
-                    widthFactor: width,
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      height: 6,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final density = GalleryCardDensity.forWidth(constraints.maxWidth);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(27, 32, 27, 24),
+                color: palette.floatingSurface.withValues(alpha: 0.56),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 92,
+                      height: 11,
                       decoration: BoxDecoration(
-                        color: palette.textMuted.withValues(alpha: 0.085),
-                        borderRadius: BorderRadius.circular(4),
+                        color: palette.textMuted.withValues(alpha: 0.11),
+                        borderRadius: BorderRadius.circular(6),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 13),
-                ],
-              ],
+                    const SizedBox(height: 24),
+                    for (final width in [
+                      0.94,
+                      0.76,
+                      0.88,
+                      0.61,
+                      0.82,
+                      0.49,
+                    ]) ...[
+                      FractionallySizedBox(
+                        widthFactor: width,
+                        alignment: Alignment.centerLeft,
+                        child: Container(
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: palette.textMuted.withValues(alpha: 0.085),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 13),
+                    ],
+                  ],
+                ),
+              ),
             ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(21, 19, 21, 22),
-          child: _GalleryCardTitle(
-            item: item,
-            editing: editing,
-            onRename: onRename,
-            onSubmitted: onRenameSubmitted,
-            onCancelled: onRenameCancelled,
-          ),
-        ),
-      ],
+            Padding(
+              padding: density.footerPadding,
+              child: _GalleryCardTitle(
+                item: item,
+                editing: editing,
+                density: density,
+                onRename: onRename,
+                onSubmitted: onRenameSubmitted,
+                onCancelled: onRenameCancelled,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

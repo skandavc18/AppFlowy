@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
@@ -8,6 +9,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/operati
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_copy_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_cut_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_paste_command.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/simple_table/simple_table_context_menu_entries.dart';
 import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -21,6 +23,7 @@ enum EditorContextMenuAction {
   paste,
   pasteAsPlainText,
   askAi,
+  table,
 }
 
 class EditorContextMenuEntry {
@@ -211,6 +214,7 @@ class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
 
   void _show(Offset globalPosition) {
     final editorState = widget.editorState;
+    _placeCaretUnderPointer(globalPosition);
     final selection = editorState.selection;
     final selectionRects = editorState.selectionRects();
     if (selection == null || selectionRects.isEmpty) {
@@ -243,21 +247,6 @@ class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
 
     _dismiss();
     final pointer = overlayBox.globalToLocal(globalPosition);
-    const width = AppFlowyEditorMenuStyle.menuWidth;
-    const estimatedHeight = AppFlowyEditorMenuStyle.contextMenuEstimatedHeight;
-    const margin = 8.0;
-    final left = pointer.dx + margin + width <= overlayBox.size.width
-        ? pointer.dx + margin
-        : (pointer.dx - width - margin).clamp(
-            margin,
-            overlayBox.size.width - width - margin,
-          );
-    final top = pointer.dy + margin + estimatedHeight <= overlayBox.size.height
-        ? pointer.dy + margin
-        : (pointer.dy - estimatedHeight - margin).clamp(
-            margin,
-            overlayBox.size.height - estimatedHeight - margin,
-          );
 
     final menu = InheritedTheme.captureAll(
       context,
@@ -275,9 +264,10 @@ class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
               onTap: _dismiss,
             ),
           ),
-          Positioned(
-            left: left,
-            top: top,
+          // The menu is as tall as its entries, and inside a table that is a
+          // lot of them, so it is measured rather than estimated.
+          CustomSingleChildLayout(
+            delegate: _ContextMenuLayout(pointer: pointer),
             child: menu,
           ),
         ],
@@ -286,10 +276,76 @@ class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
     overlay.insert(_overlayEntry!);
   }
 
+  /// A right click outside the current selection acts on what is under the
+  /// pointer, not on wherever the caret happened to be left.
+  void _placeCaretUnderPointer(Offset globalPosition) {
+    final editorState = widget.editorState;
+    final selection = editorState.selection;
+    if (selection != null && !selection.isCollapsed) {
+      final rects = editorState.selectionRects();
+      final within = rects.any(
+        (rect) => Rect.fromCenter(
+          center: rect.center,
+          width: rect.width + 20,
+          height: rect.height + 20,
+        ).contains(globalPosition),
+      );
+      if (within) {
+        return;
+      }
+    }
+    final position = editorState.service.selectionService
+        .getPositionInOffset(globalPosition);
+    if (position != null && position != selection?.start) {
+      editorState.updateSelectionWithReason(
+        Selection.collapsed(position),
+        reason: SelectionUpdateReason.uiEvent,
+      );
+    }
+  }
+
   void _dismiss() {
     _overlayEntry?.remove();
     _overlayEntry = null;
   }
+}
+
+/// Anchors the menu at the pointer and hands it whatever room is left, so a
+/// long menu near the bottom of the window flips up instead of running off.
+class _ContextMenuLayout extends SingleChildLayoutDelegate {
+  const _ContextMenuLayout({required this.pointer});
+
+  final Offset pointer;
+
+  static const double _margin = 8;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final below = constraints.maxHeight - pointer.dy - _margin * 2;
+    final above = pointer.dy - _margin * 2;
+    return BoxConstraints(
+      maxWidth: constraints.maxWidth - _margin * 2,
+      maxHeight: math.max(120, math.max(below, above)),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    final left = pointer.dx + _margin + childSize.width <= size.width
+        ? pointer.dx + _margin
+        : pointer.dx - childSize.width - _margin;
+    final fitsBelow = pointer.dy + _margin + childSize.height <= size.height;
+    final top =
+        fitsBelow ? pointer.dy + _margin : pointer.dy - childSize.height;
+    return Offset(
+      left.clamp(_margin, math.max(_margin, size.width - childSize.width)),
+      top.clamp(_margin, math.max(_margin, size.height - childSize.height)),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_ContextMenuLayout oldDelegate) =>
+      oldDelegate.pointer != pointer;
 }
 
 class _EditorContextMenu extends StatelessWidget {
@@ -305,8 +361,12 @@ class _EditorContextMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final platform = Theme.of(context).platform;
     final children = <Widget>[];
+    final groups = [
+      ...editorContextMenuEntries,
+      ...simpleTableContextMenuGroups(editorState),
+    ];
 
-    for (final (groupIndex, group) in editorContextMenuEntries.indexed) {
+    for (final (groupIndex, group) in groups.indexed) {
       if (groupIndex > 0) {
         children.add(
           Divider(
@@ -346,10 +406,32 @@ class _EditorContextMenu extends StatelessWidget {
       }
     }
 
+    final colors = simpleTableContextMenuColors(
+      context,
+      editorState,
+      onDismiss: onDismiss,
+    );
+    if (colors.isNotEmpty) {
+      children.add(
+        Divider(
+          height: 16,
+          thickness: 1,
+          color: AppFlowyTheme.of(context).borderColorScheme.primary,
+        ),
+      );
+      children.addAll(colors);
+    }
+
     return AFMenu(
       width: AppFlowyEditorMenuStyle.menuWidth,
       backgroundColor: ContextMenuSurfaceStyle.background(context),
-      children: children,
+      children: [
+        Flexible(
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: children),
+          ),
+        ),
+      ],
     );
   }
 }

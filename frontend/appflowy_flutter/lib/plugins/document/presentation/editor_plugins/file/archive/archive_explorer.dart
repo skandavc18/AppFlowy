@@ -11,6 +11,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_file_kin
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:file_picker/file_picker.dart';
@@ -96,6 +97,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   @override
   void initState() {
     super.initState();
+    unawaited(GalleryCardSizeStore.ensureLoaded());
     unawaited(_load());
   }
 

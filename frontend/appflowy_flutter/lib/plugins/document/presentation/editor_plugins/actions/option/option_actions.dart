@@ -82,7 +82,10 @@ enum OptionAction {
 
   // Simple table
   setToPageWidth,
-  distributeColumnsEvenly;
+  distributeColumnsEvenly,
+
+  /// Upgrades a table block into an inline spreadsheet.
+  convertToSpreadsheet;
 
   FlowySvgData get svg {
     switch (this) {
@@ -123,6 +126,8 @@ enum OptionAction {
         return FlowySvgs.table_set_to_page_width_s;
       case OptionAction.distributeColumnsEvenly:
         return FlowySvgs.table_distribute_columns_evenly_s;
+      case OptionAction.convertToSpreadsheet:
+        return FlowySvgs.slash_menu_icon_grid_s;
     }
   }
 
@@ -170,6 +175,8 @@ enum OptionAction {
         return LocaleKeys
             .document_plugins_simpleTable_moreActions_distributeColumnsWidth
             .tr();
+      case OptionAction.convertToSpreadsheet:
+        return LocaleKeys.spreadsheet_convertToSpreadsheet.tr();
     }
   }
 }
