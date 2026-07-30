@@ -1,4 +1,6 @@
+import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
+import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_thumbnail.dart';
@@ -45,6 +47,16 @@ class WorkspaceItemIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final collectionKind = item.collection?.kind;
+    if (collectionKind != null) {
+      final definition = CollectionRegistry.typeFor(collectionKind);
+      return Icon(
+        definition.icon,
+        size: size,
+        color: color ?? CollectionPalette.of(context, collectionKind).accent,
+      );
+    }
+
     final resolvedColor = color ??
         switch (item.metadata?.contentKind) {
           WorkspaceFileContentKind.binary =>

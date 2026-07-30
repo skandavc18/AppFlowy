@@ -1,5 +1,7 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
@@ -30,6 +32,7 @@ class FolderHeader extends StatefulWidget {
     required this.onPressed,
     required this.onCreate,
     required this.onCreateFile,
+    required this.onCreateCollection,
     required this.isExpanded,
     this.leading,
     this.onRename,
@@ -41,6 +44,7 @@ class FolderHeader extends StatefulWidget {
   final VoidCallback onPressed;
   final ValueChanged<SidebarRootCreateKind> onCreate;
   final ValueChanged<WorkspaceFileMenuAction> onCreateFile;
+  final ValueChanged<CollectionKind> onCreateCollection;
   final bool isExpanded;
   final Widget? leading;
   final Future<bool> Function(String name)? onRename;
@@ -90,7 +94,10 @@ class _FolderHeaderState extends State<FolderHeader> {
         offset: const Offset(0, 6),
         constraints: const BoxConstraints(minWidth: 200),
         showAtCursor: true,
-        actions: sidebarRootCreateActions(onCreateFile: widget.onCreateFile),
+        actions: sidebarRootCreateActions(
+          onCreateFile: widget.onCreateFile,
+          onCreateCollection: widget.onCreateCollection,
+        ),
         onSelected: (action, popover) {
           if (action is SidebarRootCreateAction) {
             widget.onCreate(action.kind);
@@ -183,10 +190,12 @@ sealed class SidebarRootAction extends ActionCell {}
 /// on a right click anywhere else in the sidebar.
 List<PopoverAction> sidebarRootCreateActions({
   required ValueChanged<WorkspaceFileMenuAction> onCreateFile,
+  required ValueChanged<CollectionKind> onCreateCollection,
   List<PopoverAction> trailing = const [],
 }) {
   return [
     SidebarRootCreateAction(SidebarRootCreateKind.folder),
+    CollectionAddAction(onCreate: onCreateCollection),
     WorkspaceFileAddAction(onCreate: onCreateFile),
     for (final kind in SidebarRootCreateKind.values)
       if (kind != SidebarRootCreateKind.folder) SidebarRootCreateAction(kind),

@@ -4,6 +4,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_bloc.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -129,6 +130,8 @@ class SidebarBackgroundContextMenu extends StatelessWidget {
         return PopoverActionList<PopoverAction>(
           actions: sidebarRootCreateActions(
             onCreateFile: (action) => unawaited(_createFile(context, action)),
+            onCreateCollection: (kind) =>
+                unawaited(_createCollection(context, kind)),
             trailing: [if (clipboard.hasData) SidebarRootPasteAction()],
           ),
           direction: PopoverDirection.bottomWithLeftAligned,
@@ -168,6 +171,20 @@ class SidebarBackgroundContextMenu extends StatelessWidget {
       context,
       spaceType: FolderSpaceType.public,
       action: action,
+    );
+    if (view != null && context.mounted) {
+      context.read<TabsBloc>().openPlugin(view);
+    }
+  }
+
+  Future<void> _createCollection(
+    BuildContext context,
+    CollectionKind kind,
+  ) async {
+    final view = await createSidebarRootCollection(
+      context,
+      spaceType: FolderSpaceType.public,
+      kind: kind,
     );
     if (view != null && context.mounted) {
       context.read<TabsBloc>().openPlugin(view);

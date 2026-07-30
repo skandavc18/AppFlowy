@@ -113,12 +113,8 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
         ),
         action(
           ExplorerContextAction.newFolder,
-          knowledgeMode
-              ? Icons.auto_awesome_mosaic_rounded
-              : workspaceAddFolderIcon,
-          knowledgeMode
-              ? LocaleKeys.workspaceFolderExplorer_newCollection.tr()
-              : LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
+          workspaceAddFolderIcon,
+          LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
         ),
       ],
       if (!knowledgeMode) ...[

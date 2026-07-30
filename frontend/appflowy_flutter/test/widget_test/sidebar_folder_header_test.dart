@@ -43,6 +43,8 @@ void main() {
             addButtonTooltip: 'Add',
             onPressed: () {},
             onCreate: (kind) => selected = kind,
+            onCreateFile: (_) {},
+            onCreateCollection: (_) {},
             isExpanded: true,
           ),
         ),
@@ -92,6 +94,8 @@ void main() {
             addButtonTooltip: 'Add',
             onPressed: () {},
             onCreate: (_) {},
+            onCreateFile: (_) {},
+            onCreateCollection: (_) {},
             isExpanded: true,
             leading: const WorkspaceRootIcon(),
             onRename: (name) async {

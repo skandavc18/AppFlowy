@@ -3529,6 +3529,43 @@
   "shareSection": {
     "shared": "Shared with me"
   },
+  "collections": {
+    "collection": "Collection",
+    "newCollection": "New collection",
+    "untitled": "Untitled collection",
+    "add": "Add",
+    "searchPlaceholder": "Search this collection",
+    "oneObject": "1 object",
+    "objectCount": "{} objects",
+    "kind": {
+      "book": "Book",
+      "album": "Album",
+      "repository": "Repository",
+      "database": "Database",
+      "bookmark": "Bookmark library",
+      "email": "Email"
+    },
+    "kindDescription": {
+      "book": "Pages and documents as one long read",
+      "album": "Pictures, video and audio as a visual story",
+      "repository": "Source, docs and assets for a project",
+      "database": "Related tables kept side by side",
+      "bookmark": "Links, articles and research, filed",
+      "email": "Accounts, conversations and attachments"
+    },
+    "defaultName": {
+      "book": "New book",
+      "album": "New album",
+      "repository": "New repository",
+      "database": "New database",
+      "bookmark": "New bookmark library",
+      "email": "New mailbox"
+    },
+    "views": {
+      "gallery": "Gallery",
+      "list": "List"
+    }
+  },
   "workspaceFolderExplorer": {
     "folder": "Folder",
     "file": "File",

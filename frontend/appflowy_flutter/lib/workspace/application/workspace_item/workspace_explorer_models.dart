@@ -1,3 +1,4 @@
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
@@ -19,6 +20,7 @@ class WorkspaceExplorerItem {
     required this.metadata,
     required this.hasChildren,
     required this.lastEdited,
+    this.collection,
   });
 
   factory WorkspaceExplorerItem.fromView(ViewPB view) {
@@ -36,6 +38,7 @@ class WorkspaceExplorerItem {
       name: view.name,
       kind: kind,
       metadata: metadata,
+      collection: view.collection,
       hasChildren: view.childViews.isNotEmpty,
       lastEdited: backendLastEdited > 0
           ? DateTime.fromMillisecondsSinceEpoch(backendLastEdited * 1000)
@@ -48,11 +51,15 @@ class WorkspaceExplorerItem {
   final String name;
   final WorkspaceExplorerItemKind kind;
   final WorkspaceItemMetadata? metadata;
+
+  /// Set when this container is a collection rather than a plain folder.
+  final CollectionMetadata? collection;
   final bool hasChildren;
   final DateTime? lastEdited;
 
   bool get isFolder => kind == WorkspaceExplorerItemKind.folder;
   bool get isFile => kind == WorkspaceExplorerItemKind.file;
+  bool get isCollection => collection != null;
 }
 
 @immutable

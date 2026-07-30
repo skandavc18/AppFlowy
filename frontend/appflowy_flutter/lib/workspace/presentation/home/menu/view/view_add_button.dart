@@ -2,10 +2,14 @@ import 'dart:async';
 
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/plugins/document/document.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/import/import_panel.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_registry.dart';
+import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
@@ -53,6 +57,9 @@ class ViewAddButton extends StatelessWidget {
     if (!sourceView.isWorkspaceFile) {
       actions.addAll([
         WorkspaceItemAddAction(WorkspaceItemAddKind.folder),
+        CollectionAddAction(
+          onCreate: (kind) => unawaited(_createCollection(hostContext, kind)),
+        ),
         WorkspaceFileAddAction(
           onCreate: (action) => _createWorkspaceFile(hostContext, action),
         ),
@@ -162,6 +169,24 @@ class ViewAddButton extends StatelessWidget {
       action: action,
     );
     if (created == null || !context.mounted) {
+      return;
+    }
+    created.fold(
+      (view) => context.read<TabsBloc>().openPlugin(view),
+      (error) => showSnackBarMessage(context, error.msg),
+    );
+  }
+
+  Future<void> _createCollection(
+    BuildContext context,
+    CollectionKind kind,
+  ) async {
+    final created = await const CollectionService().createCollection(
+      parentViewId: parentViewId,
+      kind: kind,
+      name: CollectionRegistry.typeFor(kind).defaultName,
+    );
+    if (!context.mounted) {
       return;
     }
     created.fold(

@@ -5,6 +5,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart'
     show PageStyleFontLayout, PageStyleLineHeightLayout;
 import 'package:appflowy/plugins/ai_chat/chat.dart';
+import 'package:appflowy/plugins/collection/collection_plugin.dart';
 import 'package:appflowy/plugins/database/board/presentation/board_page.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_page.dart';
 import 'package:appflowy/plugins/database/grid/presentation/grid_page.dart';
@@ -17,6 +18,7 @@ import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -116,6 +118,11 @@ extension ViewExtension on ViewPB {
   Plugin plugin({
     Map<String, dynamic> arguments = const {},
   }) {
+    // A collection is a workspace folder with a purpose, so it must be matched
+    // before the plain folder it also declares itself to be.
+    if (isCollection) {
+      return CollectionPlugin(view: this);
+    }
     if (isWorkspaceFolder) {
       return WorkspaceFolderPlugin(view: this);
     }

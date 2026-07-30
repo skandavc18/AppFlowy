@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_registry.dart';
+import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -89,6 +92,8 @@ class _SectionFolderState extends State<SectionFolder> {
       onPressed: () => _handleHeaderPressed(context, workspace),
       onCreate: (kind) => _createRootItem(context, kind),
       onCreateFile: (action) => unawaited(_createRootFile(context, action)),
+      onCreateCollection: (kind) =>
+          unawaited(_createRootCollection(context, kind)),
       leading: widget.isWorkspaceRoot && workspace != null
           ? WorkspaceIcon(
               workspaceIcon: workspace.icon,
@@ -200,6 +205,24 @@ class _SectionFolderState extends State<SectionFolder> {
       context,
       spaceType: widget.spaceType,
       action: action,
+    );
+    if (view == null || !context.mounted) {
+      return;
+    }
+    context
+        .read<FolderBloc>()
+        .add(const FolderEvent.expandOrUnExpand(isExpanded: true));
+    context.read<TabsBloc>().openPlugin(view);
+  }
+
+  Future<void> _createRootCollection(
+    BuildContext context,
+    CollectionKind kind,
+  ) async {
+    final view = await createSidebarRootCollection(
+      context,
+      spaceType: widget.spaceType,
+      kind: kind,
     );
     if (view == null || !context.mounted) {
       return;
@@ -352,6 +375,40 @@ Future<ViewPB?> createSidebarRootFile(
     section: spaceType.toViewSectionPB,
   );
   if (created == null || !context.mounted) {
+    return null;
+  }
+  return created.fold(
+    (view) => view,
+    (error) {
+      showSnackBarMessage(context, error.msg);
+      return null;
+    },
+  );
+}
+
+/// Adds a collection straight to the top level of [spaceType].
+Future<ViewPB?> createSidebarRootCollection(
+  BuildContext context, {
+  required FolderSpaceType spaceType,
+  required CollectionKind kind,
+}) async {
+  final workspaceId =
+      context.read<UserWorkspaceBloc>().state.currentWorkspace?.workspaceId;
+  if (workspaceId == null || workspaceId.isEmpty) {
+    showSnackBarMessage(
+      context,
+      LocaleKeys.workspaceFolderExplorer_workspaceUnavailable.tr(),
+    );
+    return null;
+  }
+
+  final created = await const CollectionService().createCollection(
+    parentViewId: workspaceId,
+    kind: kind,
+    name: CollectionRegistry.typeFor(kind).defaultName,
+    section: spaceType.toViewSectionPB,
+  );
+  if (!context.mounted) {
     return null;
   }
   return created.fold(

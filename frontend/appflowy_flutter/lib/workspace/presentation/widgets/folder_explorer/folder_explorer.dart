@@ -2,9 +2,13 @@ import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_registry.dart';
+import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_service.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
@@ -44,6 +48,7 @@ class FolderExplorer extends StatefulWidget {
     required this.rootView,
     this.embedded = false,
     this.showHeader = true,
+    this.showControls = true,
     this.showFooter = true,
     this.onOpen,
     this.controller,
@@ -53,6 +58,10 @@ class FolderExplorer extends StatefulWidget {
   final ViewPB rootView;
   final bool embedded;
   final bool showHeader;
+
+  /// Whether the toolbar and breadcrumb strip are drawn. A host that supplies
+  /// its own chrome — the collection page — turns them off.
+  final bool showControls;
   final bool showFooter;
   final ValueChanged<ViewPB>? onOpen;
   final WorkspaceExplorerController? controller;
@@ -197,7 +206,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (widget.showHeader) _buildHeader(context),
-          _buildControls(context),
+          if (widget.showControls) _buildControls(context),
           if (controller.errorMessage case final message?)
             _ExplorerErrorBanner(
               message: message,
@@ -585,6 +594,21 @@ class _FolderExplorerState extends State<FolderExplorer> {
     }
   }
 
+  Future<void> _createCollection(CollectionKind kind) async {
+    final created = await const CollectionService().createCollection(
+      parentViewId: controller.currentFolder.id,
+      kind: kind,
+      name: CollectionRegistry.typeFor(kind).defaultName,
+    );
+    if (!mounted) {
+      return;
+    }
+    created.fold(
+      _openView,
+      (error) => controller.showError(error.msg),
+    );
+  }
+
   void _beginGalleryCreate(
     WorkspaceExplorerDraftKind kind, {
     required String parentId,
@@ -593,7 +617,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
       kind,
       parentId: parentId,
       suggestedName: kind == WorkspaceExplorerDraftKind.folder
-          ? LocaleKeys.workspaceFolderExplorer_untitledCollection.tr()
+          ? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr()
           : LocaleKeys.workspaceFolderExplorer_untitledNote.tr(),
     );
   }
@@ -656,6 +680,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
   Future<void> _showBackgroundMenu(Offset position) async {
     final knowledgeMode = presentation == FolderExplorerPresentation.gallery;
     WorkspaceFileMenuAction? kind;
+    CollectionKind? collectionKind;
     final action = await showAppMenu<_GalleryMenuAction>(
       context: context,
       globalPosition: position,
@@ -668,13 +693,16 @@ class _FolderExplorerState extends State<FolderExplorer> {
           ),
         ),
         AppMenuItem(
-          label: knowledgeMode
-              ? LocaleKeys.workspaceFolderExplorer_newCollection.tr()
-              : LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-          icon: knowledgeMode
-              ? Icons.auto_awesome_mosaic_rounded
-              : workspaceAddFolderIcon,
-          value: _GalleryMenuAction.newCollection,
+          label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
+          icon: workspaceAddFolderIcon,
+          value: _GalleryMenuAction.newFolder,
+        ),
+        AppMenuItem(
+          label: LocaleKeys.collections_newCollection.tr(),
+          icon: collectionAddIcon,
+          submenu: collectionKindEntries(
+            onSelected: (selected) => collectionKind = selected,
+          ),
         ),
         AppMenuItem(
           label: LocaleKeys.workspaceFolderExplorer_importFile.tr(),
@@ -716,13 +744,17 @@ class _FolderExplorerState extends State<FolderExplorer> {
       await _createFileOfKind(kind!, parentId: controller.currentFolder.id);
       return;
     }
+    if (collectionKind != null) {
+      await _createCollection(collectionKind!);
+      return;
+    }
     if (action == null) {
       return;
     }
     switch (action) {
       case _GalleryMenuAction.addFile:
         break;
-      case _GalleryMenuAction.newCollection:
+      case _GalleryMenuAction.newFolder:
         _beginGalleryCreate(
           WorkspaceExplorerDraftKind.folder,
           parentId: controller.currentFolder.id,
@@ -1055,7 +1087,7 @@ enum _ExplorerMoreAction {
 
 enum _GalleryMenuAction {
   addFile,
-  newCollection,
+  newFolder,
   importFile,
   paste,
   refresh,
