@@ -359,7 +359,8 @@ void main() {
       expect(style.leadingDistribution, TextLeadingDistribution.even);
     });
 
-    testWidgets('a resting row keeps the hover colour channels', (tester) async {
+    testWidgets('a resting row keeps the hover colour channels',
+        (tester) async {
       await openMenu(tester, entries: const [AppMenuItem(label: 'Rename')]);
 
       final container = tester.widget<AnimatedContainer>(

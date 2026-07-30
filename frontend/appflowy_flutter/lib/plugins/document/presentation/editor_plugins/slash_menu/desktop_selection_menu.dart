@@ -365,9 +365,7 @@ class _AppFlowyDesktopSelectionMenuWidgetState
     }
 
     final shortcut = metadata.shortcut;
-    return shortcut == null
-        ? null
-        : Text(shortcut, style: style.shortcutStyle);
+    return shortcut == null ? null : Text(shortcut, style: style.shortcutStyle);
   }
 
   Widget _buildNoResults(BuildContext context) {

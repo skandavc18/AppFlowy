@@ -44,7 +44,10 @@ void main() {
       // axis behind renders the header at body weight.
       expect(
         emphasized.fontVariations,
-        [FontVariation.weight(ObjectTypeTypography.emphasisFontWeight.value.toDouble())],
+        [
+          FontVariation.weight(
+              ObjectTypeTypography.emphasisFontWeight.value.toDouble())
+        ],
       );
     });
 

@@ -927,8 +927,10 @@ class _AppMenuLayout extends SingleChildLayoutDelegate {
   Offset getPositionForChild(Size size, Size childSize) {
     final minX = safeArea.left + AppMenuMetrics.screenInset;
     final minY = safeArea.top + AppMenuMetrics.screenInset;
-    final maxX =
-        size.width - safeArea.right - AppMenuMetrics.screenInset - childSize.width;
+    final maxX = size.width -
+        safeArea.right -
+        AppMenuMetrics.screenInset -
+        childSize.width;
     final maxY = size.height -
         safeArea.bottom -
         AppMenuMetrics.screenInset -

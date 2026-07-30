@@ -147,9 +147,8 @@ List<AppMenuEntry> _turnIntoEntries(EditorState editorState) {
     return const [];
   }
 
-  final unsupported = editorState
-      .getNodesInSelection(selection)
-      .any((n) => !EditorOptionActionType.turnInto.supportTypes.contains(n.type));
+  final unsupported = editorState.getNodesInSelection(selection).any(
+      (n) => !EditorOptionActionType.turnInto.supportTypes.contains(n.type));
   if (unsupported) {
     return [_turnIntoItem(editorState, pateItem, null)];
   }
@@ -225,8 +224,7 @@ List<AppMenuEntry> _colorEntries(
   Future<void> apply(String id) async {
     final transaction = editorState.transaction;
     final selection = editorState.selection;
-    if (editorState.selectionType == SelectionType.block &&
-        selection != null) {
+    if (editorState.selectionType == SelectionType.block && selection != null) {
       for (final target in editorState.getNodesInSelection(
         selection.normalized,
       )) {

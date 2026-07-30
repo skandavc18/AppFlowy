@@ -60,9 +60,8 @@ class AppContextMenuRegion extends StatelessWidget {
       behavior: behavior,
       onSecondaryTapDown:
           enabled ? (details) => _show(context, details.globalPosition) : null,
-      onLongPressStart: enabled
-          ? (details) => _show(context, details.globalPosition)
-          : null,
+      onLongPressStart:
+          enabled ? (details) => _show(context, details.globalPosition) : null,
       child: child,
     );
   }
