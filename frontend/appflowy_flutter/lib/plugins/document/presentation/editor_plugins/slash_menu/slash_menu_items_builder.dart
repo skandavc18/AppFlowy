@@ -132,6 +132,12 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       ],
     ),
     SlashMenuSectionItems(
+      section: SlashMenuSection.collections,
+      items: [
+        if (documentBloc != null) ...collectionSlashMenuItems(documentBloc),
+      ],
+    ),
+    SlashMenuSectionItems(
       section: SlashMenuSection.database,
       items: databaseItems,
     ),

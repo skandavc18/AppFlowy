@@ -126,6 +126,7 @@ class PdfPreview extends StatefulWidget {
     this.fullscreen = false,
     this.sourceDocumentRef,
     this.scrollController,
+    this.bare = false,
   });
 
   final File file;
@@ -137,6 +138,10 @@ class PdfPreview extends StatefulWidget {
   final bool fullscreen;
   final PdfDocumentRef? sourceDocumentRef;
   final PdfPreviewScrollController? scrollController;
+
+  /// Renders the pages alone — no toolbar, search bar or sidebar — for a host
+  /// that supplies the surface and the navigation, such as the book reader.
+  final bool bare;
 
   @override
   State<PdfPreview> createState() => _PdfPreviewState();
@@ -329,11 +334,13 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
                 color: palette.canvas,
                 child: Column(
                   children: [
-                    DocumentViewportHeader(identity: _documentIdentity()),
+                    if (!widget.bare)
+                      DocumentViewportHeader(identity: _documentIdentity()),
                     Expanded(
                       child: LayoutBuilder(
-                        builder: (context, constraints) =>
-                            _buildViewerBody(constraints.maxWidth >= 720),
+                        builder: (context, constraints) => _buildViewerBody(
+                          !widget.bare && constraints.maxWidth >= 720,
+                        ),
                       ),
                     ),
                   ],
@@ -443,14 +450,18 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   }
 
   /// The vertical room the floating chrome occupies, including its margins.
-  double get _chromeHeight =>
-      PdfPreviewGeometry.toolbarHeight +
-      14 +
-      (searchVisible ? PdfPreviewGeometry.searchHeight + 6 : 0);
+  double get _chromeHeight => widget.bare
+      ? 0
+      : PdfPreviewGeometry.toolbarHeight +
+          14 +
+          (searchVisible ? PdfPreviewGeometry.searchHeight + 6 : 0);
 
   /// The toolbar and the search bar float over the canvas so they can slide
   /// away once the reader stops interacting with the document.
   Widget _buildChrome() {
+    if (widget.bare) {
+      return const SizedBox.shrink();
+    }
     final visible = chromeVisible || !autoHideToolbar;
     return IgnorePointer(
       ignoring: !visible,

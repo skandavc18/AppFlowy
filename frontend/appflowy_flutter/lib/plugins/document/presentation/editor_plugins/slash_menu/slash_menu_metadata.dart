@@ -4,6 +4,7 @@ enum SlashMenuSection {
   suggestions,
   basicBlocks,
   media,
+  collections,
   database,
   advanced,
 }

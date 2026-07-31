@@ -39,7 +39,8 @@ void main() {
     });
 
     test('a new collection is also a workspace folder', () {
-      final view = ViewPB(extra: CollectionMetadata.newExtra(CollectionKind.book));
+      final view =
+          ViewPB(extra: CollectionMetadata.newExtra(CollectionKind.book));
 
       expect(view.isCollection, isTrue);
       expect(view.isWorkspaceFolder, isTrue);
@@ -117,7 +118,8 @@ void main() {
     test('a new visualisation registers itself without touching the type', () {
       addTearDown(CollectionRegistry.reset);
 
-      final before = CollectionRegistry.typeFor(CollectionKind.book).views.length;
+      final before =
+          CollectionRegistry.typeFor(CollectionKind.book).views.length;
       CollectionRegistry.registerView(
         CollectionKind.book,
         CollectionViewDefinition(

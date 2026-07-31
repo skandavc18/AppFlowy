@@ -475,6 +475,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
     WorkspaceExplorerItem item,
     Offset position,
   ) async {
+    CollectionKind? collectionKind;
     final action = await showExplorerContextMenu(
       context: context,
       globalPosition: position,
@@ -482,10 +483,18 @@ class _FolderExplorerState extends State<FolderExplorer> {
       canPaste: controller.canPaste,
       isFavorite: controller.viewForId(item.id)?.isFavorite ?? false,
       knowledgeMode: presentation == FolderExplorerPresentation.gallery,
+      onCreateCollection: (kind) => collectionKind = kind,
       previewMode:
           controller.viewForId(item.id)?.previewMode ?? ViewPreviewMode.cover,
     );
-    if (action == null || !mounted) {
+    if (!mounted) {
+      return;
+    }
+    if (collectionKind != null) {
+      await _createCollection(collectionKind!, parentId: item.id);
+      return;
+    }
+    if (action == null) {
       return;
     }
     switch (action) {
@@ -594,9 +603,12 @@ class _FolderExplorerState extends State<FolderExplorer> {
     }
   }
 
-  Future<void> _createCollection(CollectionKind kind) async {
+  Future<void> _createCollection(
+    CollectionKind kind, {
+    String? parentId,
+  }) async {
     final created = await const CollectionService().createCollection(
-      parentViewId: controller.currentFolder.id,
+      parentViewId: parentId ?? controller.currentFolder.id,
       kind: kind,
       name: CollectionRegistry.typeFor(kind).defaultName,
     );

@@ -277,6 +277,59 @@ class WorkspaceExplorerController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Creates a file immediately instead of opening an inline name field.
+  ///
+  /// Hosts that do not draw the explorer's draft row — the collection page —
+  /// must use this, or a blank document is asked for and never appears.
+  Future<ViewPB?> createFileImmediately(
+    WorkspaceFileMenuAction action, {
+    String? parentId,
+    String? name,
+  }) async {
+    final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    final result = await createWorkspaceFile(
+      parentViewId: resolvedParent,
+      action: action,
+      name: name ?? action.kind.defaultFileName,
+    );
+    if (result == null) {
+      return null;
+    }
+    return _adopt(resolvedParent, result);
+  }
+
+  Future<ViewPB?> createFolderImmediately({
+    String? parentId,
+    String? name,
+  }) async {
+    final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    final result = await _repository.createFolder(
+      parentViewId: resolvedParent,
+      name: name ?? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
+    );
+    return _adopt(resolvedParent, result);
+  }
+
+  Future<ViewPB?> _adopt(
+    String parentId,
+    FlowyResult<ViewPB, FlowyError> result,
+  ) async {
+    return result.fold(
+      (view) async {
+        _cacheView(view);
+        _insertChild(parentId, view.id);
+        selection.selectOnly(view.id);
+        _refreshRows();
+        await _refreshActiveSearch();
+        return view;
+      },
+      (error) {
+        _setError(error.msg);
+        return null;
+      },
+    );
+  }
+
   void beginRename(String id) {
     if (!_views.containsKey(id)) {
       return;
@@ -583,6 +636,17 @@ class WorkspaceExplorerController extends ChangeNotifier {
   ViewPB? viewForId(String id) => _views[id];
 
   WorkspaceExplorerItem? itemForId(String id) => _item(id);
+
+  /// The cached children of [id] in backend order, regardless of where the
+  /// explorer has navigated to.
+  List<ViewPB> childrenOf(String id) => [
+        for (final childId in _children[id] ?? const <String>[])
+          if (_views[childId] case final view?) view,
+      ];
+
+  bool hasLoaded(String id) => _loadedFolders.contains(id);
+
+  Future<void> ensureLoaded(String id) => _loadChildren(id);
 
   void updateView(ViewPB view) => _handleViewUpdated(view);
 

@@ -73,7 +73,9 @@ class CollectionMetadata {
   /// Reads the state a single adaptive view persisted.
   Map<String, dynamic> stateFor(String viewId) {
     final value = viewState[viewId];
-    return value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
+    return value is Map
+        ? Map<String, dynamic>.from(value)
+        : <String, dynamic>{};
   }
 
   /// Returns a copy where [viewId] holds [state], dropping the entry when the
@@ -139,7 +141,9 @@ class CollectionMetadata {
   /// also declares its purpose.
   static String newExtra(CollectionKind kind, {DateTime? createdAt}) =>
       CollectionMetadata(kind: kind, createdAt: createdAt ?? DateTime.now())
-          .mergeIntoExtra(const WorkspaceItemMetadata.folder().mergeIntoExtra(''));
+          .mergeIntoExtra(
+        const WorkspaceItemMetadata.folder().mergeIntoExtra(''),
+      );
 }
 
 extension CollectionViewExtension on ViewPB {

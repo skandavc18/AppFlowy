@@ -7,6 +7,8 @@ import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
@@ -340,6 +342,10 @@ class FolderExplorerBlockComponentState
 
   Widget _buildCompact(ViewPB folder) {
     final palette = FolderExplorerPalette.of(context);
+    final collectionKind = folder.collection?.kind;
+    final subtitle = collectionKind == null
+        ? LocaleKeys.workspaceFolderExplorer_workspaceFolder.tr()
+        : CollectionRegistry.typeFor(collectionKind).label;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -386,8 +392,7 @@ class FolderExplorerBlockComponentState
                             ),
                           ),
                           Text(
-                            LocaleKeys.workspaceFolderExplorer_workspaceFolder
-                                .tr(),
+                            subtitle,
                             style: TextStyle(
                               color: palette.textMuted,
                               fontSize: 10.5,

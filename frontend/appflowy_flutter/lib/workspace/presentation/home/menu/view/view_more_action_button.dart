@@ -1,13 +1,21 @@
+import 'dart:async';
+
+import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_registry.dart';
+import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/move_to/move_page_menu.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
+import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -42,11 +50,24 @@ class ViewMoreActionPopover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final wrappers = _buildActionTypeWrappers();
-    return PopoverActionList<ViewMoreActionTypeWrapper>(
+    return PopoverActionList<PopoverAction>(
       controller: controller,
       direction: PopoverDirection.bottomWithLeftAligned,
       offset: const Offset(0, 8),
-      actions: wrappers,
+      actions: [
+        if (view.canContainWorkspaceItems) ...[
+          CollectionAddAction(
+            onCreate: (kind) => unawaited(_createCollection(context, kind)),
+          ),
+          ViewMoreActionTypeWrapper(
+            ViewMoreActionType.divider,
+            view,
+            (_, __) {},
+            useInlineMoveMenu: false,
+          ),
+        ],
+        ...wrappers,
+      ],
       constraints: const BoxConstraints(minWidth: 260),
       backgroundColor: ContextMenuSurfaceStyle.background(context),
       onPopupBuilder: () => onEditing(true),
@@ -54,6 +75,25 @@ class ViewMoreActionPopover extends StatelessWidget {
       onSelected: (_, __) {},
       onClosed: () => onEditing(false),
       showAtCursor: showAtCursor,
+    );
+  }
+
+  Future<void> _createCollection(
+    BuildContext context,
+    CollectionKind kind,
+  ) async {
+    onEditing(false);
+    final created = await const CollectionService().createCollection(
+      parentViewId: view.id,
+      kind: kind,
+      name: CollectionRegistry.typeFor(kind).defaultName,
+    );
+    if (!context.mounted) {
+      return;
+    }
+    created.fold(
+      (created) => context.read<TabsBloc>().openPlugin(created),
+      (error) => showSnackBarMessage(context, error.msg),
     );
   }
 

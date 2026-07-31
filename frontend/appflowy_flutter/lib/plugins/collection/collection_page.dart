@@ -8,7 +8,6 @@ import 'package:appflowy/workspace/application/collections/collection_registry.d
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
-import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/breadcrumb_bar.dart';
@@ -83,7 +82,8 @@ class _CollectionPageState extends State<CollectionPage> {
       builder: (context, _) {
         final palette = CollectionPalette.of(context, metadata.kind);
         final definition = CollectionRegistry.typeFor(metadata.kind);
-        final view = definition.viewById(activeViewId) ?? definition.defaultView;
+        final view =
+            definition.viewById(activeViewId) ?? definition.defaultView;
         return DecoratedBox(
           decoration: BoxDecoration(color: palette.background),
           child: Column(
@@ -99,8 +99,9 @@ class _CollectionPageState extends State<CollectionPage> {
                     definition: view,
                     explorer: controller,
                     onOpen: _openView,
-                    onStateChanged: (state) =>
-                        unawaited(_persistViewState(view.id, state)),
+                    onOpenView: (id) => unawaited(_setActiveView(id)),
+                    onStateChanged: (key, state) =>
+                        unawaited(_persistViewState(key, state)),
                   ),
                 ),
               ),
@@ -279,6 +280,7 @@ class _CollectionPageState extends State<CollectionPage> {
 
   Future<void> _showAddMenu(Offset position) async {
     final parentId = controller.currentFolder.id;
+    var createFolder = false;
     final action = await showAppMenu<WorkspaceFileMenuAction>(
       context: context,
       globalPosition: position,
@@ -287,18 +289,21 @@ class _CollectionPageState extends State<CollectionPage> {
         AppMenuItem(
           label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
           icon: workspaceAddFolderIcon,
-          onSelected: () => controller.beginCreate(
-            WorkspaceExplorerDraftKind.folder,
-            parentId: parentId,
-          ),
+          onSelected: () => createFolder = true,
         ),
         ...workspaceFileKindEntries(),
       ],
     );
+    if (createFolder) {
+      await controller.createFolderImmediately(parentId: parentId);
+      return;
+    }
     if (action == null) {
       return;
     }
-    await controller.createFileOfKind(action, parentId: parentId);
+    // The collection page has no inline draft row, so the object is created
+    // outright rather than asked for and left waiting for a name.
+    await controller.createFileImmediately(action, parentId: parentId);
   }
 }
 

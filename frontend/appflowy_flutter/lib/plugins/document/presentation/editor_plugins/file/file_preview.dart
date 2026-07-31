@@ -54,6 +54,7 @@ class FilePreview extends StatefulWidget {
     this.pdfMenuBuilder,
     this.height,
     this.previewScrollController,
+    this.bare = false,
   });
 
   final File file;
@@ -66,6 +67,10 @@ class FilePreview extends StatefulWidget {
   final PdfPreviewMenuBuilder? pdfMenuBuilder;
   final double? height;
   final PdfPreviewScrollController? previewScrollController;
+
+  /// Renders the content alone — no card, no header, no background of its
+  /// own — for a host that supplies the surface, such as the book reader.
+  final bool bare;
 
   @override
   State<FilePreview> createState() => _FilePreviewState();
@@ -98,6 +103,26 @@ class _FilePreviewState extends State<FilePreview> {
 
   @override
   Widget build(BuildContext context) {
+    final content = FutureBuilder<Widget>(
+      future: preview,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _PreviewError(
+            message: snapshot.error.toString(),
+            onRetry: () => setState(() => preview = _buildPreview()),
+          );
+        }
+        return snapshot.data ??
+            const Center(child: CircularProgressIndicator());
+      },
+    );
+
+    if (widget.bare) {
+      return widget.height == null
+          ? content
+          : SizedBox(height: widget.height, child: content);
+    }
+
     final materialTheme = Theme.of(context);
     final appFlowyTheme = AppFlowyTheme.of(context);
     final isPremiumPreview = widget.kind == FilePreviewKind.pdf;
@@ -112,19 +137,7 @@ class _FilePreviewState extends State<FilePreview> {
       color: backgroundColor,
       child: SizedBox(
         height: widget.height ?? defaultFilePreviewHeight(widget.kind),
-        child: FutureBuilder<Widget>(
-          future: preview,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return _PreviewError(
-                message: snapshot.error.toString(),
-                onRetry: () => setState(() => preview = _buildPreview()),
-              );
-            }
-            return snapshot.data ??
-                const Center(child: CircularProgressIndicator());
-          },
-        ),
+        child: content,
       ),
     );
   }
@@ -221,6 +234,9 @@ class _FilePreviewState extends State<FilePreview> {
   }
 
   Widget _buildPreviewScaffold(Widget child, {bool writingSurface = false}) {
+    if (widget.bare) {
+      return DocumentScrollScope(child: child);
+    }
     return Builder(
       builder: (context) => DocumentViewport(
         framed: false,

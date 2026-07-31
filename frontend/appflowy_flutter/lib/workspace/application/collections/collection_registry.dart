@@ -14,6 +14,7 @@ class CollectionViewContext {
     required this.definition,
     required this.explorer,
     required this.onOpen,
+    required this.onOpenView,
     required this.onStateChanged,
   });
 
@@ -32,13 +33,20 @@ class CollectionViewContext {
   /// Opens one of the collection's objects in the workspace.
   final ValueChanged<ViewPB> onOpen;
 
-  /// Persists this view's own state, e.g. reading position or zoom.
-  final ValueChanged<Map<String, dynamic>> onStateChanged;
+  /// Switches the collection to another of its adaptive views, so a contents
+  /// page can hand straight over to the reader.
+  final ValueChanged<String> onOpenView;
+
+  /// Persists state under a key. Views that share a model — a reader and its
+  /// contents page are one book — pass the same key.
+  final void Function(String key, Map<String, dynamic> state) onStateChanged;
 
   CollectionKind get kind => metadata.kind;
 
   /// The state this view persisted the last time it was open.
   Map<String, dynamic> get state => metadata.stateFor(definition.id);
+
+  Map<String, dynamic> stateFor(String key) => metadata.stateFor(key);
 }
 
 typedef CollectionViewBuilder = Widget Function(
@@ -78,6 +86,7 @@ class CollectionTypeDefinition {
     required this.icon,
     required this.accent,
     required this.views,
+    this.searchKeywords = const <String>[],
   });
 
   final CollectionKind kind;
@@ -85,6 +94,10 @@ class CollectionTypeDefinition {
   final String descriptionKey;
   final String defaultNameKey;
   final IconData icon;
+
+  /// The words a person might reach for when looking for this type, for the
+  /// slash menu and search.
+  final List<String> searchKeywords;
 
   /// The hue that identifies this type. Always blended against the surface
   /// rather than painted flat, so it reads the same in paper, light and dark.
@@ -118,6 +131,7 @@ class CollectionTypeDefinition {
         defaultNameKey: defaultNameKey,
         icon: icon,
         accent: accent,
+        searchKeywords: searchKeywords,
         views: views,
       );
 }

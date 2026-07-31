@@ -1,5 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
@@ -30,6 +32,7 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
   required bool canPaste,
   required bool isFavorite,
   required bool knowledgeMode,
+  ValueChanged<CollectionKind>? onCreateCollection,
   ViewPreviewMode previewMode = ViewPreviewMode.cover,
 }) {
   AppMenuItem action(
@@ -116,6 +119,12 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
           workspaceAddFolderIcon,
           LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
         ),
+        if (onCreateCollection != null)
+          AppMenuItem(
+            label: LocaleKeys.collections_newCollection.tr(),
+            icon: collectionAddIcon,
+            submenu: collectionKindEntries(onSelected: onCreateCollection),
+          ),
       ],
       if (!knowledgeMode) ...[
         const AppMenuSeparator(),
