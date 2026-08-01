@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/views/album/album_views.dart';
 import 'package:appflowy/plugins/collection/views/book/book_views.dart';
 import 'package:appflowy/plugins/collection/views/collection_contents_view.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
@@ -11,16 +12,20 @@ import 'package:flutter/material.dart';
 /// A collection organises objects that already exist, so the baseline view is
 /// always the objects themselves. Specialised views — a reader, a filmstrip, a
 /// repository tree — register themselves on top of these.
-List<CollectionViewDefinition> _contentViews() => [
-      CollectionViewDefinition(
-        id: CollectionViewIds.gallery,
-        labelKey: LocaleKeys.collections_views_gallery,
-        icon: Icons.grid_view_rounded,
-        builder: (context, collection) => CollectionContentsView(
-          collection: collection,
-          presentation: FolderExplorerPresentation.gallery,
+///
+/// A type that already shows its media visually turns [includeGallery] off:
+/// two card walls in one switcher is one too many.
+List<CollectionViewDefinition> _contentViews({bool includeGallery = true}) => [
+      if (includeGallery)
+        CollectionViewDefinition(
+          id: CollectionViewIds.gallery,
+          labelKey: LocaleKeys.collections_views_files,
+          icon: Icons.grid_view_rounded,
+          builder: (context, collection) => CollectionContentsView(
+            collection: collection,
+            presentation: FolderExplorerPresentation.gallery,
+          ),
         ),
-      ),
       CollectionViewDefinition(
         id: CollectionViewIds.list,
         labelKey: LocaleKeys.collections_views_list,
@@ -83,7 +88,10 @@ void registerBuiltInCollections() {
         'slideshow',
         'collection',
       ],
-      views: _contentViews(),
+      views: [
+        ...albumCollectionViews(),
+        ..._contentViews(includeGallery: false),
+      ],
     ),
   );
   CollectionRegistry.register(

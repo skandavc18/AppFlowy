@@ -13,6 +13,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_item_ser
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/breadcrumb_bar.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -43,6 +44,7 @@ class _CollectionPageState extends State<CollectionPage> {
   late final WorkspaceExplorerController controller;
   late CollectionMetadata metadata;
   late String activeViewId;
+  List<ViewPB> ancestors = const [];
   Timer? searchDebounce;
 
   @override
@@ -57,6 +59,26 @@ class _CollectionPageState extends State<CollectionPage> {
       repository: const WorkspaceItemService(),
     );
     unawaited(controller.initialize());
+    unawaited(_loadAncestors());
+  }
+
+  /// The folders the collection lives in, so it is placed in the workspace the
+  /// same way a page or a folder is.
+  Future<void> _loadAncestors() async {
+    final result =
+        await const WorkspaceItemService().getAncestors(widget.view.id);
+    if (!mounted) {
+      return;
+    }
+    result.fold(
+      (views) => setState(() {
+        ancestors = [
+          for (final view in views)
+            if (view.id != widget.view.id) view,
+        ];
+      }),
+      (_) {},
+    );
   }
 
   @override
@@ -64,6 +86,8 @@ class _CollectionPageState extends State<CollectionPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.view.id == widget.view.id) {
       controller.updateRoot(widget.view);
+    } else {
+      unawaited(_loadAncestors());
     }
   }
 
@@ -133,6 +157,14 @@ class _CollectionPageState extends State<CollectionPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (ancestors.isNotEmpty) ...[
+            _CollectionAncestors(
+              ancestors: ancestors,
+              palette: palette,
+              onOpen: _openView,
+            ),
+            const SizedBox(height: 8),
+          ],
           Row(
             children: [
               Container(
@@ -307,9 +339,105 @@ class _CollectionPageState extends State<CollectionPage> {
   }
 }
 
+/// Where the collection sits in the workspace, above its own name.
+class _CollectionAncestors extends StatelessWidget {
+  const _CollectionAncestors({
+    required this.ancestors,
+    required this.palette,
+    required this.onOpen,
+  });
+
+  final List<ViewPB> ancestors;
+  final CollectionPalette palette;
+  final ValueChanged<ViewPB> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (var index = 0; index < ancestors.length; index++) ...[
+            if (index > 0)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(
+                  Icons.chevron_right_rounded,
+                  size: 13,
+                  color: palette.textMuted.withValues(alpha: 0.55),
+                ),
+              ),
+            _CollectionAncestor(
+              view: ancestors[index],
+              palette: palette,
+              onOpen: () => onOpen(ancestors[index]),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CollectionAncestor extends StatefulWidget {
+  const _CollectionAncestor({
+    required this.view,
+    required this.palette,
+    required this.onOpen,
+  });
+
+  final ViewPB view;
+  final CollectionPalette palette;
+  final VoidCallback onOpen;
+
+  @override
+  State<_CollectionAncestor> createState() => _CollectionAncestorState();
+}
+
+class _CollectionAncestorState extends State<_CollectionAncestor> {
+  bool hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    final name = widget.view.name.trim().isEmpty
+        ? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr()
+        : widget.view.name;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => hovered = true),
+      onExit: (_) => setState(() => hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onOpen,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            WorkspaceItemIcon.fromView(
+              view: widget.view,
+              size: 13,
+              color: hovered ? palette.textSecondary : palette.textMuted,
+            ),
+            const SizedBox(width: 5),
+            AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 150),
+              curve: Curves.easeOutCubic,
+              style: TextStyle(
+                color: hovered ? palette.textPrimary : palette.textMuted,
+                fontSize: 11.5,
+                height: 1.2,
+              ),
+              child: Text(name),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The adaptive views a collection offers, as one segmented control.
-class CollectionViewSwitcher extends StatelessWidget {
-  const CollectionViewSwitcher({
+class CollectionViewSwitcher extends StatelessWidget {  const CollectionViewSwitcher({
     super.key,
     required this.palette,
     required this.views,

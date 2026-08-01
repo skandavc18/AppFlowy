@@ -91,7 +91,9 @@ class _BookContentsViewState extends State<BookContentsView> {
             if (reading.state.bookmarks.isNotEmpty) ...[
               const SizedBox(height: 26),
               _sectionLabel(
-                  palette, LocaleKeys.collections_book_bookmarks.tr()),
+                palette,
+                LocaleKeys.collections_book_bookmarks.tr(),
+              ),
               const SizedBox(height: 10),
               _buildBookmarks(palette),
             ],

@@ -37,7 +37,7 @@ class BookReadingController extends ChangeNotifier {
 
   List<BookChapter> get readableChapters => [
         for (final chapter in _chapters)
-          if (!chapter.isPart) chapter
+          if (!chapter.isPart) chapter,
       ];
 
   BookChapter? get currentChapter {
