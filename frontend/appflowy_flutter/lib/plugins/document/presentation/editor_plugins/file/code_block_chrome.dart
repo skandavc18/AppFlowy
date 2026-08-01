@@ -181,7 +181,22 @@ class CodeBlockPalette {
   final Color success;
   final Color error;
   final List<BoxShadow> shadows;
+
+  /// The lift for a surface that sits INSIDE the code shell — the terminal,
+  /// the test tray. Softer than [shadows], because a second full shadow inside
+  /// a card only muddies the first.
+  List<BoxShadow> get nestedShadows => [
+        BoxShadow(
+          color: shadows.first.color.withValues(alpha: 0.5),
+          blurRadius: 14,
+          offset: const Offset(0, 3),
+          spreadRadius: -6,
+        ),
+      ];
 }
+
+/// The radius of a surface nested inside a code shell.
+const double codeSurfaceRadius = 12;
 
 TextStyle codeUiTextStyle({
   required Color color,

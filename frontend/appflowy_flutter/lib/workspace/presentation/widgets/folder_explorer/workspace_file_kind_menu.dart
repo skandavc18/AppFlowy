@@ -1,5 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -26,8 +28,12 @@ abstract final class WorkspaceFileKindMenuStyle {
 ///
 /// [onSelected] is optional: a menu opened with `showAppMenu` reads the row's
 /// value instead, while a submenu inside a popover needs the callback.
+///
+/// Pass [onCreateCollection] wherever a container can also hold a collection,
+/// so "add something here" means the same thing everywhere it is offered.
 List<AppMenuEntry> workspaceFileKindEntries({
   ValueChanged<WorkspaceFileMenuAction>? onSelected,
+  ValueChanged<CollectionKind>? onCreateCollection,
 }) {
   final entries = <AppMenuEntry>[];
   WorkspaceFileSource? section;
@@ -47,18 +53,30 @@ List<AppMenuEntry> workspaceFileKindEntries({
       ),
     );
   }
+  if (onCreateCollection != null) {
+    entries
+      ..add(const AppMenuSeparator())
+      ..add(AppMenuHeader(LocaleKeys.collections_plural.tr()))
+      ..addAll(collectionKindEntries(onSelected: onCreateCollection));
+  }
   return entries;
 }
 
 /// Shows the creatable and uploadable file types anchored at [globalPosition].
+///
+/// Returns null when a collection was picked instead — the collection
+/// callback has already run by then.
 Future<WorkspaceFileMenuAction?> showWorkspaceFileKindMenu({
   required BuildContext context,
   required Offset globalPosition,
+  ValueChanged<CollectionKind>? onCreateCollection,
 }) =>
     showAppMenu<WorkspaceFileMenuAction>(
       context: context,
       globalPosition: globalPosition,
-      entries: workspaceFileKindEntries(),
+      entries: workspaceFileKindEntries(
+        onCreateCollection: onCreateCollection,
+      ),
       width: WorkspaceFileKindMenuStyle.width,
     );
 
@@ -67,9 +85,10 @@ Future<WorkspaceFileMenuAction?> showWorkspaceFileKindMenu({
 /// Shared by the sidebar `+` button, the folder header and the sidebar
 /// background menu so a submenu is never a second design.
 class WorkspaceFileAddAction extends PopoverActionCell {
-  WorkspaceFileAddAction({required this.onCreate});
+  WorkspaceFileAddAction({required this.onCreate, this.onCreateCollection});
 
   final void Function(WorkspaceFileMenuAction action) onCreate;
+  final ValueChanged<CollectionKind>? onCreateCollection;
 
   @override
   Widget? leftIcon(Color iconColor) => Icon(
@@ -96,18 +115,32 @@ class WorkspaceFileAddAction extends PopoverActionCell {
               parentController.close();
               onCreate(action);
             },
+            onCreateCollection: onCreateCollection == null
+                ? null
+                : (kind) {
+                    controller.close();
+                    parentController.close();
+                    onCreateCollection!(kind);
+                  },
           );
 }
 
 /// The file-type rows on their own, for a popover that supplies the card.
 class WorkspaceFileKindList extends StatelessWidget {
-  const WorkspaceFileKindList({super.key, required this.onSelected});
+  const WorkspaceFileKindList({
+    super.key,
+    required this.onSelected,
+    this.onCreateCollection,
+  });
 
   final ValueChanged<WorkspaceFileMenuAction> onSelected;
+  final ValueChanged<CollectionKind>? onCreateCollection;
 
   @override
   Widget build(BuildContext context) {
-    final entries = normalizeAppMenuEntries(workspaceFileKindEntries());
+    final entries = normalizeAppMenuEntries(
+      workspaceFileKindEntries(onCreateCollection: onCreateCollection),
+    );
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -122,8 +155,11 @@ class WorkspaceFileKindList extends StatelessWidget {
                   label: entry.label,
                   icon: entry.icon,
                   tracksHover: true,
-                  onTap: () =>
-                      onSelected(entry.value! as WorkspaceFileMenuAction),
+                  onTap: () => switch (entry.value) {
+                    final WorkspaceFileMenuAction action => onSelected(action),
+                    final CollectionKind kind => onCreateCollection?.call(kind),
+                    _ => null,
+                  },
                 ),
             },
         ],

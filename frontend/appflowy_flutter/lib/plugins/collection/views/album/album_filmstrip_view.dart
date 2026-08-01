@@ -261,7 +261,12 @@ class _FilmstripState extends State<_Filmstrip> {
           height: stripHeight,
           decoration: BoxDecoration(
             color: palette.surface,
-            border: Border(top: BorderSide(color: palette.border, width: 0.6)),
+            border: Border(
+              top: BorderSide(
+                color: palette.border.withValues(alpha: 0.35),
+                width: 0.6,
+              ),
+            ),
           ),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,

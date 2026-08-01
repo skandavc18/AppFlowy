@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
@@ -11,6 +12,7 @@ class ExplorerToolbar extends StatelessWidget {
     required this.searchController,
     required this.onNewFile,
     required this.onNewFolder,
+    required this.onCreateCollection,
     required this.onPaste,
     required this.onRefresh,
     required this.onMore,
@@ -23,6 +25,7 @@ class ExplorerToolbar extends StatelessWidget {
   final TextEditingController searchController;
   final ValueChanged<WorkspaceFileMenuAction> onNewFile;
   final VoidCallback onNewFolder;
+  final ValueChanged<CollectionKind> onCreateCollection;
   final VoidCallback? onPaste;
   final VoidCallback onRefresh;
   final VoidCallback onMore;
@@ -36,7 +39,10 @@ class ExplorerToolbar extends StatelessWidget {
     final palette = FolderExplorerPalette.of(context);
     return Row(
       children: [
-        _NewFileButton(onSelected: onNewFile),
+        _NewFileButton(
+          onSelected: onNewFile,
+          onCreateCollection: onCreateCollection,
+        ),
         _ToolbarButton(
           icon: workspaceAddFolderIcon,
           tooltip: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
@@ -132,9 +138,13 @@ class ExplorerToolbar extends StatelessWidget {
 }
 
 class _NewFileButton extends StatelessWidget {
-  const _NewFileButton({required this.onSelected});
+  const _NewFileButton({
+    required this.onSelected,
+    required this.onCreateCollection,
+  });
 
   final ValueChanged<WorkspaceFileMenuAction> onSelected;
+  final ValueChanged<CollectionKind> onCreateCollection;
 
   @override
   Widget build(BuildContext context) {
@@ -150,6 +160,7 @@ class _NewFileButton extends StatelessWidget {
           final action = await showWorkspaceFileKindMenu(
             context: buttonContext,
             globalPosition: box.localToGlobal(Offset(0, box.size.height)),
+            onCreateCollection: onCreateCollection,
           );
           if (action != null) {
             onSelected(action);

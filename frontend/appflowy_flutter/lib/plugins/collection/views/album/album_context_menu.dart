@@ -465,9 +465,8 @@ class _ConfirmButtonState extends State<_ConfirmButton> {
 
   @override
   Widget build(BuildContext context) {
-    final base = widget.destructive
-        ? const Color(0xFFCC5A57)
-        : widget.palette.accent;
+    final base =
+        widget.destructive ? const Color(0xFFCC5A57) : widget.palette.accent;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => hovered = true),

@@ -24,6 +24,7 @@ import 'package:path/path.dart' as p;
 
 import 'archive/archive_explorer.dart';
 import 'file_preview_kind.dart';
+import 'markdown_preview_fonts.dart';
 import 'pdf_preview.dart';
 import 'pdf_preview_scroll_physics.dart';
 import 'pdf_preview_theme.dart';
@@ -317,6 +318,22 @@ class _MarkdownPreviewState extends State<_MarkdownPreview> {
   late String renderedHtml;
 
   @override
+  void initState() {
+    super.initState();
+    // The bundled faces are read once for the whole application; the first
+    // preview to open pays for it and re-renders when they arrive.
+    if (markdownPreviewFontFaces == null) {
+      unawaited(
+        loadMarkdownPreviewFontFaces().then((_) {
+          if (mounted) {
+            setState(_renderMarkdown);
+          }
+        }),
+      );
+    }
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _renderMarkdown();
@@ -367,6 +384,7 @@ String buildThemedMarkdownPreviewHtml(
       materialTheme.colorScheme.surfaceContainer,
       isPaper: isPaper,
     ),
+    fontFaces: markdownPreviewFontFaces ?? '',
   );
 }
 
@@ -378,6 +396,7 @@ String buildMarkdownPreviewHtml(
   required Color linkColor,
   required Color borderColor,
   required Color codeBackground,
+  String fontFaces = '',
 }) {
   final body = markdown.markdownToHtml(
     source,
@@ -392,39 +411,93 @@ String buildMarkdownPreviewHtml(
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  :root { color-scheme: ${_cssColorScheme(brightness)}; }
+$fontFaces
+  :root {
+    color-scheme: ${_cssColorScheme(brightness)};
+    --rule: ${_cssRgba(borderColor.withValues(alpha: 0.22))};
+    --rule-strong: ${_cssRgba(borderColor.withValues(alpha: 0.32))};
+    --muted: ${_cssRgba(textColor.withValues(alpha: 0.6))};
+  }
   * { box-sizing: border-box; }
   html { background: ${_cssColor(backgroundColor)}; }
   body {
     margin: 0;
-    padding: 16px;
+    padding: 32px 36px 40px;
     color: ${_cssColor(textColor)};
     background: ${_cssColor(backgroundColor)};
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    font-size: 15px;
-    line-height: 1.6;
+    font-family: "$previewUiFontFamily", "Segoe UI Variable Text", "Segoe UI",
+      -apple-system, BlinkMacSystemFont, "Inter", "Helvetica Neue", Arial,
+      sans-serif;
+    font-size: 14.5px;
+    line-height: 1.65;
     overflow-wrap: anywhere;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern" 1, "liga" 1;
   }
-  h1, h2 { border-bottom: 1px solid ${_cssColor(borderColor)}; }
-  h1, h2, h3, h4, h5, h6 { line-height: 1.25; }
-  a { color: ${_cssColor(linkColor)}; }
-  img { max-width: 100%; height: auto; }
+  h1, h2, h3, h4, h5, h6 {
+    margin: 28px 0 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: -0.014em;
+  }
+  h1 { font-size: 1.7em; }
+  h2 { font-size: 1.32em; }
+  h3 { font-size: 1.12em; }
+  h4 { font-size: 1em; }
+  h5, h6 { font-size: 0.92em; color: var(--muted); }
+  /* A hairline, the way GitHub sets it — never a drawn border. */
+  h1, h2 { padding-bottom: 0.32em; border-bottom: 1px solid var(--rule); }
+  body > *:first-child { margin-top: 0; }
+  p { margin: 0 0 14px; }
+  a { color: ${_cssColor(linkColor)}; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  img { max-width: 100%; height: auto; border-radius: 6px; }
+  ul, ol { margin: 0 0 14px; padding-left: 26px; }
+  li { margin: 0.25em 0; }
+  li > ul, li > ol { margin: 0.25em 0; }
   pre, code {
     background: ${_cssColor(codeBackground)};
-    border-radius: 6px;
-    font-family: "JetBrains Mono", "Geist Mono", monospace;
+    font-family: "$previewCodeFontFamily", "JetBrains Mono", "Geist Mono",
+      "Cascadia Mono", Consolas, monospace;
+    font-size: 0.88em;
   }
-  code { padding: 0.15em 0.35em; }
-  pre { padding: 12px; overflow-x: auto; overflow-y: hidden; }
-  pre code { padding: 0; background: transparent; }
+  code { padding: 0.16em 0.4em; border-radius: 5px; }
+  pre {
+    padding: 14px 16px;
+    margin: 0 0 16px;
+    border-radius: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    line-height: 1.55;
+  }
+  pre code { padding: 0; background: transparent; font-size: 1em; }
   blockquote {
-    margin-left: 0;
-    padding-left: 12px;
-    border-left: 3px solid ${_cssColor(borderColor)};
+    margin: 0 0 14px;
+    padding: 2px 0 2px 14px;
+    color: var(--muted);
+    border-left: 3px solid var(--rule-strong);
   }
-  table { border-collapse: collapse; max-width: 100%; }
-  th, td { padding: 6px 12px; border: 1px solid ${_cssColor(borderColor)}; }
-  hr { border: 0; border-top: 1px solid ${_cssColor(borderColor)}; }
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
+    max-width: 100%;
+    margin: 0 0 16px;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td { padding: 7px 13px; border-bottom: 1px solid var(--rule); }
+  th { text-align: left; font-weight: 600; background: ${_cssColor(codeBackground)}; }
+  tr:last-child td { border-bottom: 0; }
+  hr { border: 0; border-top: 1px solid var(--rule); margin: 24px 0; }
+  kbd {
+    padding: 2px 6px;
+    border-radius: 5px;
+    border: 1px solid var(--rule-strong);
+    font-size: 0.85em;
+  }
 </style>
 </head>
 <body>$body</body>
@@ -878,14 +951,9 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
           if (widget.showLineNumbers)
             Container(
               width: 26 + '$lineCount'.length * 9,
-              decoration: BoxDecoration(
-                color: surfaceColor,
-                border: Border(
-                  right: BorderSide(
-                    color: appFlowyTheme.borderColorScheme.primary,
-                  ),
-                ),
-              ),
+              // The gutter is told apart by its muted numbers and the space
+              // beside them; a drawn rule reads as a table border.
+              color: surfaceColor,
               child: SingleChildScrollView(
                 controller: lineNumberScrollController,
                 physics: const NeverScrollableScrollPhysics(),

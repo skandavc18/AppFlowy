@@ -151,6 +151,9 @@ class _FolderExplorerState extends State<FolderExplorer> {
                 parentId: controller.currentFolder.id,
               ),
             ),
+            onCreateCollection: (kind) => unawaited(
+              _createCollection(kind, parentId: controller.currentFolder.id),
+            ),
             onMore: (position) => unawaited(_showBackgroundMenu(position)),
           )
         : null;
@@ -386,6 +389,14 @@ class _FolderExplorerState extends State<FolderExplorer> {
                     ? controller.currentFolder.id
                     : null,
               ),
+              onCreateCollection: (kind) => unawaited(
+                _createCollection(
+                  kind,
+                  parentId: presentation == FolderExplorerPresentation.gallery
+                      ? controller.currentFolder.id
+                      : null,
+                ),
+              ),
               onPaste: controller.canPaste
                   ? () => unawaited(controller.paste())
                   : null,
@@ -583,6 +594,8 @@ class _FolderExplorerState extends State<FolderExplorer> {
     final action = await showWorkspaceFileKindMenu(
       context: context,
       globalPosition: position,
+      onCreateCollection: (kind) =>
+          unawaited(_createCollection(kind, parentId: item.id)),
     );
     if (action == null || !mounted) {
       return;

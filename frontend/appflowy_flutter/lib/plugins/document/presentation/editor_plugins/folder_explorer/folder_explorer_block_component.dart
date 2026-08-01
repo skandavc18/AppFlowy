@@ -6,9 +6,10 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resi
 import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
-import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
+import 'package:appflowy/workspace/application/collections/collection_service.dart';
+import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
@@ -566,6 +567,8 @@ class FolderExplorerBlockComponentState
     final kind = await showWorkspaceFileKindMenu(
       context: context,
       globalPosition: anchor,
+      onCreateCollection: (collection) =>
+          unawaited(_createCollectionInFolder(folder, collection)),
     );
     if (kind == null || !mounted) {
       return;
@@ -575,6 +578,24 @@ class FolderExplorerBlockComponentState
       action: kind,
     );
     if (created == null || !mounted) {
+      return;
+    }
+    created.fold(
+      (view) => context.read<TabsBloc>().openPlugin(view),
+      (error) => showSnackBarMessage(context, error.msg),
+    );
+  }
+
+  Future<void> _createCollectionInFolder(
+    ViewPB folder,
+    CollectionKind kind,
+  ) async {
+    final created = await const CollectionService().createCollection(
+      parentViewId: folder.id,
+      kind: kind,
+      name: CollectionRegistry.typeFor(kind).defaultName,
+    );
+    if (!mounted) {
       return;
     }
     created.fold(

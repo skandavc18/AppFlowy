@@ -76,6 +76,7 @@ class AlbumMetadataCache {
       return metadata;
     });
   }
+
   Future<AlbumMediaMetadata> _read(AlbumMediaItem item) async {
     if (!item.isLocal || item.kind != AlbumMediaKind.image) {
       return AlbumMediaMetadata(

@@ -409,9 +409,8 @@ class _TiffReader {
     if (offset + 8 > bytes.length) {
       return null;
     }
-    final numerator = signed
-        ? data.getInt32(offset, endian)
-        : data.getUint32(offset, endian);
+    final numerator =
+        signed ? data.getInt32(offset, endian) : data.getUint32(offset, endian);
     final denominator = signed
         ? data.getInt32(offset + 4, endian)
         : data.getUint32(offset + 4, endian);

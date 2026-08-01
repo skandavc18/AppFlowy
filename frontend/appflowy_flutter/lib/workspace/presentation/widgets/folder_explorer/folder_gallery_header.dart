@@ -5,6 +5,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -34,6 +35,7 @@ class FolderGalleryHeader extends StatefulWidget {
     required this.onSearchChanged,
     required this.onNavigate,
     required this.onAddFile,
+    required this.onCreateCollection,
     required this.onMore,
     this.userProfile,
     this.workspace,
@@ -44,6 +46,7 @@ class FolderGalleryHeader extends StatefulWidget {
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onNavigate;
   final ValueChanged<WorkspaceFileMenuAction> onAddFile;
+  final ValueChanged<CollectionKind> onCreateCollection;
   final ValueChanged<Offset> onMore;
   final UserProfilePB? userProfile;
   final UserWorkspacePB? workspace;
@@ -393,6 +396,7 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
                 context: buttonContext,
                 globalPosition:
                     box.localToGlobal(Offset(0, box.size.height + 4)),
+                onCreateCollection: widget.onCreateCollection,
               );
               if (action != null) {
                 widget.onAddFile(action);

@@ -35,11 +35,15 @@ class AlbumController extends ChangeNotifier {
   /// The media as the current sort arranges it.
   List<AlbumMediaItem> get ordered => _ordered;
 
-  List<AlbumMediaItem> get visual =>
-      [for (final item in _ordered) if (item.kind.isVisual) item];
+  List<AlbumMediaItem> get visual => [
+        for (final item in _ordered)
+          if (item.kind.isVisual) item,
+      ];
 
-  List<AlbumMediaItem> get playable =>
-      [for (final item in _ordered) if (item.kind.plays) item];
+  List<AlbumMediaItem> get playable => [
+        for (final item in _ordered)
+          if (item.kind.plays) item,
+      ];
 
   bool get isEmpty => _items.isEmpty;
 

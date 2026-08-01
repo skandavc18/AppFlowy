@@ -152,82 +152,82 @@ class _PlaylistState extends State<_Playlist> {
                 child: item == null
                     ? const SizedBox.shrink()
                     : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          LocaleKeys.collections_album_nowPlaying
-                              .tr()
-                              .toUpperCase(),
-                          style: TextStyle(
-                            color: palette.textMuted,
-                            fontSize: 9.5,
-                            letterSpacing: 0.8,
-                            fontWeight: FontWeight.w600,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            LocaleKeys.collections_album_nowPlaying
+                                .tr()
+                                .toUpperCase(),
+                            style: TextStyle(
+                              color: palette.textMuted,
+                              fontSize: 9.5,
+                              letterSpacing: 0.8,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          item.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.textPrimary,
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
+                          const SizedBox(height: 6),
+                          Text(
+                            item.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.textPrimary,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 18),
-                        Expanded(
-                          child: Center(
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(
-                                maxWidth: item.kind == AlbumMediaKind.audio
-                                    ? 620
-                                    : 1180,
+                          const SizedBox(height: 18),
+                          Expanded(
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: item.kind == AlbumMediaKind.audio
+                                      ? 620
+                                      : 1180,
+                                ),
+                                child: FileMediaPlayer(
+                                  key: ValueKey('playlist-${item.id}'),
+                                  url: item.path,
+                                  name: item.name,
+                                  kind: item.kind == AlbumMediaKind.audio
+                                      ? FileMediaKind.audio
+                                      : FileMediaKind.video,
+                                ),
                               ),
-                              child: FileMediaPlayer(
-                                key: ValueKey('playlist-${item.id}'),
-                                url: item.path,
-                                name: item.name,
-                                kind: item.kind == AlbumMediaKind.audio
-                                    ? FileMediaKind.audio
-                                    : FileMediaKind.video,
-                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            AlbumToolbarButton(
-                              palette: palette,
-                              icon: Icons.skip_previous_rounded,
-                              tooltip:
-                                  LocaleKeys.collections_album_previous.tr(),
-                              onPressed:
-                                  index > 0 ? () => _play(index - 1) : null,
-                            ),
-                            AlbumToolbarButton(
-                              palette: palette,
-                              icon: Icons.skip_next_rounded,
-                              tooltip: LocaleKeys.collections_album_next.tr(),
-                              onPressed: index < widget.items.length - 1
-                                  ? () => _play(index + 1)
-                                  : null,
-                            ),
-                            const Spacer(),
-                            AlbumToolbarButton(
-                              palette: palette,
-                              icon: Icons.open_in_new_rounded,
-                              tooltip: LocaleKeys
-                                  .collections_album_openInWorkspace
-                                  .tr(),
-                              onPressed: () => widget.onOpenInWorkspace(item),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              AlbumToolbarButton(
+                                palette: palette,
+                                icon: Icons.skip_previous_rounded,
+                                tooltip:
+                                    LocaleKeys.collections_album_previous.tr(),
+                                onPressed:
+                                    index > 0 ? () => _play(index - 1) : null,
+                              ),
+                              AlbumToolbarButton(
+                                palette: palette,
+                                icon: Icons.skip_next_rounded,
+                                tooltip: LocaleKeys.collections_album_next.tr(),
+                                onPressed: index < widget.items.length - 1
+                                    ? () => _play(index + 1)
+                                    : null,
+                              ),
+                              const Spacer(),
+                              AlbumToolbarButton(
+                                palette: palette,
+                                icon: Icons.open_in_new_rounded,
+                                tooltip: LocaleKeys
+                                    .collections_album_openInWorkspace
+                                    .tr(),
+                                onPressed: () => widget.onOpenInWorkspace(item),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
               ),
             ),
           ),
@@ -236,7 +236,12 @@ class _PlaylistState extends State<_Playlist> {
           width: 316,
           decoration: BoxDecoration(
             color: palette.surface,
-            border: Border(left: BorderSide(color: palette.border, width: 0.6)),
+            border: Border(
+              left: BorderSide(
+                color: palette.border.withValues(alpha: 0.35),
+                width: 0.6,
+              ),
+            ),
           ),
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,

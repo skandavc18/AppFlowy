@@ -126,17 +126,19 @@ class _CodeTestCasePanelState extends State<CodeTestCasePanel> {
     final selected = cases.isEmpty ? null : cases[selectedIndex];
     final outcome = selected == null ? null : widget.outcomes[selected.id];
 
-    return DecoratedBox(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       decoration: BoxDecoration(
         color: palette.terminal,
-        border: Border(top: BorderSide(color: palette.divider)),
+        borderRadius: BorderRadius.circular(codeSurfaceRadius),
+        boxShadow: palette.nestedShadows,
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildHeader(palette),
           if (cases.isNotEmpty) _buildCaseStrip(palette),
-          Divider(height: 1, color: palette.divider),
           Expanded(
             child: selected == null
                 ? _buildEmptyState(palette)

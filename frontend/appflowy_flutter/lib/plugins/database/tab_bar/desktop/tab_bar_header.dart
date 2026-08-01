@@ -287,7 +287,7 @@ class _TabBarItemButtonState extends State<TabBarItemButton> {
                           confirm: () {
                             context.read<DatabaseTabBarBloc>().add(
                                   DatabaseTabBarEvent.deleteView(
-                                      widget.view.id,
+                                    widget.view.id,
                                   ),
                                 );
                           },

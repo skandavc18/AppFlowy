@@ -118,7 +118,8 @@ class AlbumSlideshowSettings {
     }
     final values = Map<String, dynamic>.from(value);
     return const AlbumSlideshowSettings().copyWith(
-      seconds: values['seconds'] is num ? (values['seconds'] as num).toInt() : 5,
+      seconds:
+          values['seconds'] is num ? (values['seconds'] as num).toInt() : 5,
       transition: AlbumSlideshowTransition.fromValue(values['transition']),
       shuffle: values['shuffle'] == true,
       loop: values['loop'] != false,
@@ -260,7 +261,11 @@ class AlbumState {
 /// A run of media that shares a heading — a day, a month or a year.
 @immutable
 class AlbumGroup {
-  const AlbumGroup({required this.key, required this.date, required this.items});
+  const AlbumGroup({
+    required this.key,
+    required this.date,
+    required this.items,
+  });
 
   final String key;
 

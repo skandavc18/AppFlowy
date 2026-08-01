@@ -481,7 +481,12 @@ class _BookReaderViewState extends State<BookReaderView>
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: palette.chrome,
-        border: Border(bottom: BorderSide(color: palette.rule, width: 0.6)),
+        border: Border(
+          bottom: BorderSide(
+            color: palette.rule.withValues(alpha: 0.35),
+            width: 0.6,
+          ),
+        ),
       ),
       child: Row(
         children: [

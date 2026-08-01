@@ -65,7 +65,7 @@ const _lightSyntaxTheme = <String, TextStyle>{
   'root': TextStyle(color: Color(0xFF24292F)),
   'comment': TextStyle(color: Color(0xFF6E7781), fontStyle: FontStyle.italic),
   'quote': TextStyle(color: Color(0xFF6E7781)),
-  'keyword': TextStyle(color: Color(0xFF8250DF)),
+  'keyword': TextStyle(color: Color(0xFFCF222E)),
   'selector-tag': TextStyle(color: Color(0xFF953800)),
   'type': TextStyle(color: Color(0xFF116329)),
   'built_in': TextStyle(color: Color(0xFF116329)),
@@ -184,22 +184,239 @@ TextSpan buildSyntaxHighlightedTextSpan({
 
   return TextSpan(
     style: rootStyle,
-    children: result.nodes
-            ?.map((node) => _convertHighlightNode(node, theme))
-            .toList() ??
-        [TextSpan(text: code)],
+    children: _buildSpans(result.nodes, theme) ?? [TextSpan(text: code)],
   );
 }
 
-TextSpan _convertHighlightNode(
-  highlight.Node node,
+/// A leaf of the parse tree, with the style its whole ancestry resolves to.
+class _Token {
+  _Token(this.text, this.className, this.style);
+
+  final String text;
+  final String? className;
+  final TextStyle? style;
+}
+
+List<TextSpan>? _buildSpans(
+  List<highlight.Node>? nodes,
   Map<String, TextStyle> theme,
 ) {
-  return TextSpan(
-    text: node.value,
-    style: node.className == null ? null : theme[node.className],
-    children: node.children
-        ?.map((child) => _convertHighlightNode(child, theme))
-        .toList(),
-  );
+  if (nodes == null) {
+    return null;
+  }
+
+  final tokens = <_Token>[];
+  for (final node in nodes) {
+    _collectTokens(node, theme, null, null, tokens);
+  }
+
+  final spans = <TextSpan>[];
+  for (var i = 0; i < tokens.length; i++) {
+    final token = tokens[i];
+    if (!_isCodeContext(token.className)) {
+      spans.add(TextSpan(text: token.text, style: token.style));
+      continue;
+    }
+
+    final split = _markCallees(
+      token.text,
+      token.style,
+      theme['title'],
+      spillsIntoArgumentList: _opensArgumentList(tokens, i + 1),
+    );
+    if (split == null) {
+      spans.add(TextSpan(text: token.text, style: token.style));
+    } else {
+      spans.addAll(split);
+    }
+  }
+  return spans;
+}
+
+void _collectTokens(
+  highlight.Node node,
+  Map<String, TextStyle> theme,
+  String? inheritedClass,
+  TextStyle? inheritedStyle,
+  List<_Token> out,
+) {
+  final className = node.className ?? inheritedClass;
+  final own = node.className == null ? null : theme[node.className];
+  final style =
+      own == null ? inheritedStyle : inheritedStyle?.merge(own) ?? own;
+
+  final text = node.value;
+  if (text != null && text.isNotEmpty) {
+    out.add(_Token(text, className, style));
+  }
+  for (final child in node.children ?? const <highlight.Node>[]) {
+    _collectTokens(child, theme, className, style, out);
+  }
+}
+
+/// Whether a token's text is live code rather than prose, a string or a
+/// comment, so a callee inside it is worth marking.
+bool _isCodeContext(String? className) =>
+    className == null || className == 'params' || className == 'subst';
+
+/// Whether the code after [from] opens an argument list, which a grammar
+/// often splits into its own node - `foo` and `(bar)` arrive separately.
+bool _opensArgumentList(List<_Token> tokens, int from) {
+  for (var i = from; i < tokens.length; i++) {
+    final rest = tokens[i].text.replaceFirst(RegExp(r'^[ \t]+'), '');
+    if (rest.isNotEmpty) {
+      return rest.startsWith('(');
+    }
+  }
+  return false;
+}
+
+/// highlight.js only names a function where a grammar declares one, so calls
+/// - and definitions in grammars that skip them, such as Dart's - come back as
+/// unclassified text. Colour the name in front of an argument list so a call
+/// reads the same as a declaration.
+final _calleePattern = RegExp(r'([A-Za-z_$][A-Za-z0-9_$]*)(?=!?[ \t]*\()');
+
+/// The same name, where the argument list lands in the following token.
+final _trailingCalleePattern = RegExp(r'([A-Za-z_$][A-Za-z0-9_$]*)!?[ \t]*$');
+
+/// Words that take a parenthesised clause without being a call.
+const _nonCallableWords = {
+  'and',
+  'as',
+  'assert',
+  'await',
+  'base',
+  'begin',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'declare',
+  'def',
+  'defer',
+  'del',
+  'delete',
+  'do',
+  'elif',
+  'else',
+  'elseif',
+  'elsif',
+  'end',
+  'ensure',
+  'enum',
+  'except',
+  'export',
+  'extends',
+  'finally',
+  'fn',
+  'for',
+  'foreach',
+  'from',
+  'fun',
+  'func',
+  'function',
+  'go',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'instanceof',
+  'interface',
+  'is',
+  'lambda',
+  'let',
+  'lock',
+  'loop',
+  'match',
+  'module',
+  'namespace',
+  'new',
+  'not',
+  'operator',
+  'or',
+  'package',
+  'private',
+  'protected',
+  'public',
+  'raise',
+  'record',
+  'repeat',
+  'rescue',
+  'rethrow',
+  'return',
+  'select',
+  'self',
+  'static',
+  'struct',
+  'sub',
+  'super',
+  'switch',
+  'template',
+  'then',
+  'this',
+  'throw',
+  'try',
+  'typeof',
+  'unless',
+  'until',
+  'using',
+  'val',
+  'var',
+  'when',
+  'where',
+  'while',
+  'with',
+  'yield',
+};
+
+/// Returns the split spans, or null when nothing in [text] is a call.
+List<TextSpan>? _markCallees(
+  String text,
+  TextStyle? baseStyle,
+  TextStyle? titleStyle, {
+  required bool spillsIntoArgumentList,
+}) {
+  if (titleStyle == null || (!text.contains('(') && !spillsIntoArgumentList)) {
+    return null;
+  }
+
+  final calleeStyle = baseStyle?.merge(titleStyle) ?? titleStyle;
+  List<TextSpan>? spans;
+  var start = 0;
+
+  void take(int at, String name) {
+    spans ??= <TextSpan>[];
+    if (at > start) {
+      spans!.add(TextSpan(text: text.substring(start, at), style: baseStyle));
+    }
+    spans!.add(TextSpan(text: name, style: calleeStyle));
+    start = at + name.length;
+  }
+
+  for (final match in _calleePattern.allMatches(text)) {
+    final name = match.group(1)!;
+    if (!_nonCallableWords.contains(name)) {
+      take(match.start, name);
+    }
+  }
+
+  if (spillsIntoArgumentList) {
+    final tail = _trailingCalleePattern.firstMatch(text);
+    final name = tail?.group(1);
+    if (tail != null &&
+        name != null &&
+        tail.start >= start &&
+        !_nonCallableWords.contains(name)) {
+      take(tail.start, name);
+    }
+  }
+
+  if (spans == null) {
+    return null;
+  }
+  if (start < text.length) {
+    spans!.add(TextSpan(text: text.substring(start), style: baseStyle));
+  }
+  return spans;
 }

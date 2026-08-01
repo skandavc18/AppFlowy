@@ -384,9 +384,7 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
     final resolved = target < 0
         ? (widget.controller.settings.slideshow.loop ? items.length - 1 : 0)
         : target >= items.length
-            ? (widget.controller.settings.slideshow.loop
-                ? 0
-                : items.length - 1)
+            ? (widget.controller.settings.slideshow.loop ? 0 : items.length - 1)
             : target;
     if (resolved == index) {
       return;
@@ -519,7 +517,8 @@ class _AlbumStagePage extends StatelessWidget {
       builder: (context, scale, leaf) =>
           Transform.scale(scale: scale, child: leaf),
       child: child,
-    );  }
+    );
+  }
 
   Widget _buildPicture() {
     if (!item.isLocal) {

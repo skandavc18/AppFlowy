@@ -175,7 +175,10 @@ void main() {
       );
 
       expect(groups.single.items.length, 2);
-      expect(groupAlbumMedia(const [], AlbumGrouping.day, (_) => null), isEmpty);
+      expect(
+        groupAlbumMedia(const [], AlbumGrouping.day, (_) => null),
+        isEmpty,
+      );
     });
   });
 
@@ -215,7 +218,11 @@ void main() {
 
     test('a place reads as coordinates a person can use', () {
       final place = clusterAlbumPlaces([
-        AlbumPlacePoint(item: _item('a'), latitude: 51.5074, longitude: -0.1278),
+        AlbumPlacePoint(
+          item: _item('a'),
+          latitude: 51.5074,
+          longitude: -0.1278,
+        ),
       ]).single;
 
       expect(place.label, '51.50740, -0.12780');

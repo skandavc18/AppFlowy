@@ -172,7 +172,12 @@ class _PlacesState extends State<_Places> {
           height: 172,
           decoration: BoxDecoration(
             color: palette.surface,
-            border: Border(top: BorderSide(color: palette.border, width: 0.6)),
+            border: Border(
+              top: BorderSide(
+                color: palette.border.withValues(alpha: 0.35),
+                width: 0.6,
+              ),
+            ),
           ),
           padding: const EdgeInsets.fromLTRB(
             AlbumMetrics.gutter,
@@ -205,15 +210,13 @@ class _PlacesState extends State<_Places> {
                         ? LocaleKeys.collections_album_onePhoto.tr()
                         : LocaleKeys.collections_album_itemCount
                             .tr(args: ['${place.count}']),
-                    style:
-                        TextStyle(color: palette.textMuted, fontSize: 11.5),
+                    style: TextStyle(color: palette.textMuted, fontSize: 11.5),
                   ),
                   const Spacer(),
                   AlbumToolbarButton(
                     palette: palette,
                     icon: Icons.content_copy_rounded,
-                    tooltip:
-                        LocaleKeys.collections_album_copyCoordinates.tr(),
+                    tooltip: LocaleKeys.collections_album_copyCoordinates.tr(),
                     onPressed: () => _copy(place),
                   ),
                   AlbumToolbarButton(
@@ -448,7 +451,8 @@ class _WorldPlotPainter extends CustomPainter {
       anchor,
     );
 
-    final maximum = places.fold<int>(1, (value, place) => math.max(value, place.count));
+    final maximum =
+        places.fold<int>(1, (value, place) => math.max(value, place.count));
     for (var index = 0; index < places.length; index++) {
       final place = places[index];
       final centre = _project(place, size);

@@ -90,7 +90,7 @@ class _ExplorerTreeState extends State<ExplorerTree> {
               )
             : ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                itemExtent: 34,
+                itemExtent: 38,
                 itemCount: itemCount,
                 itemBuilder: (context, index) {
                   if (draft != null && index == insertIndex) {
@@ -281,7 +281,9 @@ class _ExplorerTreeState extends State<ExplorerTree> {
   }
 
   void _open(WorkspaceExplorerItem item) {
-    if (item.isFolder) {
+    // A collection is a folder with a purpose, so it opens as itself rather
+    // than being browsed into as plain contents.
+    if (item.isFolder && !item.isCollection) {
       widget.onNavigate(item.id);
       return;
     }
@@ -349,7 +351,7 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
     final row = widget.row;
     final nameStyle = TextStyle(
       color: palette.textPrimary,
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: row.item.isFolder ? FontWeight.w600 : FontWeight.w400,
     );
     Widget content = MouseRegion(
@@ -357,9 +359,9 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
       onEnter: (_) => setState(() => hovered = true),
       onExit: (_) => setState(() => hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
+        duration: const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
-        margin: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
           color: dropPosition == _ExplorerDropPosition.inside
               ? palette.accent.withValues(alpha: 0.14)
@@ -367,8 +369,10 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
                   ? palette.selected
                   : hovered
                       ? palette.hover
-                      : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
+                      // Fading from Colors.transparent runs through
+                      // transparent black and flashes dark on the way in.
+                      : palette.hover.withValues(alpha: 0),
+          borderRadius: BorderRadius.circular(6),
           border: switch (dropPosition) {
             _ExplorerDropPosition.before => Border(
                 top: BorderSide(color: palette.accent, width: 2),
@@ -454,10 +458,10 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
               ),
               if (hovered && !widget.editing)
                 Padding(
-                  padding: const EdgeInsets.only(right: 8),
+                  padding: const EdgeInsets.only(right: 10),
                   child: Text(
                     _kindLabel(row.item.kind),
-                    style: TextStyle(fontSize: 10, color: palette.textMuted),
+                    style: TextStyle(fontSize: 11, color: palette.textMuted),
                   ),
                 ),
             ],

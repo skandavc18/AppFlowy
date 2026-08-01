@@ -2,9 +2,11 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/album/album_views.dart';
 import 'package:appflowy/plugins/collection/views/book/book_views.dart';
 import 'package:appflowy/plugins/collection/views/collection_contents_view.dart';
+import 'package:appflowy/plugins/collection/views/repository/repository_views.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
 
 /// The adaptive views every collection type has from the start.
@@ -14,16 +16,23 @@ import 'package:flutter/material.dart';
 /// repository tree — register themselves on top of these.
 ///
 /// A type that already shows its media visually turns [includeGallery] off:
-/// two card walls in one switcher is one too many.
-List<CollectionViewDefinition> _contentViews({bool includeGallery = true}) => [
+/// two card walls in one switcher is one too many. [galleryLabelKey] renames
+/// the wall for a type that has no competing view to be told apart from.
+List<CollectionViewDefinition> _contentViews({
+  bool includeGallery = true,
+  String galleryLabelKey = LocaleKeys.collections_views_files,
+  void Function(CollectionViewContext collection, ViewPB view)? onOpenObject,
+}) =>
+    [
       if (includeGallery)
         CollectionViewDefinition(
           id: CollectionViewIds.gallery,
-          labelKey: LocaleKeys.collections_views_files,
+          labelKey: galleryLabelKey,
           icon: Icons.grid_view_rounded,
           builder: (context, collection) => CollectionContentsView(
             collection: collection,
             presentation: FolderExplorerPresentation.gallery,
+            onOpenObject: onOpenObject,
           ),
         ),
       CollectionViewDefinition(
@@ -33,6 +42,7 @@ List<CollectionViewDefinition> _contentViews({bool includeGallery = true}) => [
         builder: (context, collection) => CollectionContentsView(
           collection: collection,
           presentation: FolderExplorerPresentation.tree,
+          onOpenObject: onOpenObject,
         ),
       ),
     ];
@@ -112,7 +122,13 @@ void registerBuiltInCollections() {
         'developer',
         'collection',
       ],
-      views: _contentViews(),
+      views: [
+        ...repositoryCollectionViews(),
+        ..._contentViews(
+          galleryLabelKey: LocaleKeys.collections_views_gallery,
+          onOpenObject: openRepoObject,
+        ),
+      ],
     ),
   );
   CollectionRegistry.register(

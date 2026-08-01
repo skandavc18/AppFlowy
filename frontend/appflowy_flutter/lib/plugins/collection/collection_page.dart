@@ -152,7 +152,7 @@ class _CollectionPageState extends State<CollectionPage> {
         CollectionMetrics.headerHorizontalPadding,
         CollectionMetrics.headerTopPadding,
         CollectionMetrics.headerHorizontalPadding,
-        14,
+        0,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -167,24 +167,14 @@ class _CollectionPageState extends State<CollectionPage> {
           ],
           Row(
             children: [
-              Container(
-                width: CollectionMetrics.identityTileSize,
-                height: CollectionMetrics.identityTileSize,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: palette.accentSoft,
-                  borderRadius: BorderRadius.circular(
-                    CollectionMetrics.identityTileRadius,
-                  ),
-                  border: Border.all(color: palette.accentBorder, width: 0.6),
-                ),
+              Padding(
+                padding: const EdgeInsets.only(right: 11, bottom: 2),
                 child: Icon(
                   definition.icon,
                   size: CollectionMetrics.identityIconSize,
                   color: palette.accent,
                 ),
               ),
-              const SizedBox(width: 13),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -200,19 +190,21 @@ class _CollectionPageState extends State<CollectionPage> {
                       onDoubleTap: () => controller.beginRename(root.id),
                       style: TextStyle(
                         color: palette.textPrimary,
-                        fontSize: 22,
+                        fontSize: 21,
                         fontWeight: FontWeight.w600,
-                        letterSpacing: -0.3,
+                        fontVariations: const [FontVariation.weight(650)],
+                        letterSpacing: -0.35,
+                        height: 1.2,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 3),
                     Text(
                       _subtitle(definition),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: palette.textSecondary,
-                        fontSize: 12.5,
+                        color: palette.textMuted,
+                        fontSize: 12,
                       ),
                     ),
                   ],
@@ -224,14 +216,14 @@ class _CollectionPageState extends State<CollectionPage> {
                 palette: palette,
                 onChanged: _scheduleSearch,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               _CollectionAddButton(
                 palette: palette,
                 onPressed: _showAddMenu,
               ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           Row(
             children: [
               CollectionViewSwitcher(
@@ -241,7 +233,7 @@ class _CollectionPageState extends State<CollectionPage> {
                 onChanged: _setActiveView,
               ),
               if (nested) ...[
-                const SizedBox(width: 14),
+                const SizedBox(width: 16),
                 Expanded(
                   child: BreadcrumbBar(
                     items: controller.breadcrumbs,
@@ -251,6 +243,7 @@ class _CollectionPageState extends State<CollectionPage> {
               ],
             ],
           ),
+          const SizedBox(height: 6),
         ],
       ),
     );
@@ -313,6 +306,7 @@ class _CollectionPageState extends State<CollectionPage> {
   Future<void> _showAddMenu(Offset position) async {
     final parentId = controller.currentFolder.id;
     var createFolder = false;
+    CollectionKind? collectionKind;
     final action = await showAppMenu<WorkspaceFileMenuAction>(
       context: context,
       globalPosition: position,
@@ -323,11 +317,17 @@ class _CollectionPageState extends State<CollectionPage> {
           icon: workspaceAddFolderIcon,
           onSelected: () => createFolder = true,
         ),
-        ...workspaceFileKindEntries(),
+        ...workspaceFileKindEntries(
+          onCreateCollection: (kind) => collectionKind = kind,
+        ),
       ],
     );
     if (createFolder) {
       await controller.createFolderImmediately(parentId: parentId);
+      return;
+    }
+    if (collectionKind != null) {
+      await _createCollection(collectionKind!, parentId: parentId);
       return;
     }
     if (action == null) {
@@ -336,6 +336,21 @@ class _CollectionPageState extends State<CollectionPage> {
     // The collection page has no inline draft row, so the object is created
     // outright rather than asked for and left waiting for a name.
     await controller.createFileImmediately(action, parentId: parentId);
+  }
+
+  Future<void> _createCollection(
+    CollectionKind kind, {
+    required String parentId,
+  }) async {
+    final created = await _service.createCollection(
+      parentViewId: parentId,
+      kind: kind,
+      name: CollectionRegistry.typeFor(kind).defaultName,
+    );
+    if (!mounted) {
+      return;
+    }
+    created.fold(_openView, (error) => controller.showError(error.msg));
   }
 }
 
@@ -437,7 +452,12 @@ class _CollectionAncestorState extends State<_CollectionAncestor> {
 }
 
 /// The adaptive views a collection offers, as one segmented control.
-class CollectionViewSwitcher extends StatelessWidget {  const CollectionViewSwitcher({
+/// The adaptive views a collection offers, as one row of tabs.
+///
+/// An underline rather than a pill: the row has to read as navigation sitting
+/// on the page, not as a control floating above it.
+class CollectionViewSwitcher extends StatelessWidget {
+  const CollectionViewSwitcher({
     super.key,
     required this.palette,
     required this.views,
@@ -452,14 +472,8 @@ class CollectionViewSwitcher extends StatelessWidget {  const CollectionViewSwit
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       height: CollectionMetrics.switcherHeight,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(CollectionMetrics.switcherRadius),
-        border: Border.all(color: palette.border, width: 0.6),
-      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -500,7 +514,7 @@ class _CollectionViewSegmentState extends State<_CollectionViewSegment> {
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final foreground = widget.selected
-        ? palette.accent
+        ? palette.textPrimary
         : hovered
             ? palette.textPrimary
             : palette.textSecondary;
@@ -511,34 +525,60 @@ class _CollectionViewSegmentState extends State<_CollectionViewSegment> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
-          curve: Curves.easeOutCubic,
-          padding: const EdgeInsets.symmetric(horizontal: 11),
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? palette.accentSoft
-                : hovered
+        child: Stack(
+          children: [
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 140),
+              curve: Curves.easeOutCubic,
+              margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+              padding: const EdgeInsets.symmetric(horizontal: 9),
+              decoration: BoxDecoration(
+                color: hovered && !widget.selected
                     ? palette.hover
-                    : Colors.transparent,
-            borderRadius:
-                BorderRadius.circular(CollectionMetrics.switcherSegmentRadius),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(widget.definition.icon, size: 15, color: foreground),
-              const SizedBox(width: 6),
-              Text(
-                widget.definition.label,
-                style: TextStyle(
-                  color: foreground,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
+                    : palette.hover.withValues(alpha: 0),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(widget.definition.icon, size: 14.5, color: foreground),
+                  const SizedBox(width: 7),
+                  AnimatedDefaultTextStyle(
+                    duration: const Duration(milliseconds: 140),
+                    curve: Curves.easeOutCubic,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 12.5,
+                      fontWeight:
+                          widget.selected ? FontWeight.w600 : FontWeight.w500,
+                      fontVariations: [
+                        FontVariation.weight(widget.selected ? 620 : 545),
+                      ],
+                    ),
+                    child: Text(widget.definition.label),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 8,
+              right: 8,
+              bottom: 0,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                curve: Curves.easeOutCubic,
+                height: 2,
+                decoration: BoxDecoration(
+                  color: widget.selected
+                      ? palette.accent
+                      : palette.accent.withValues(alpha: 0),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(2),
+                  ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -558,43 +598,43 @@ class _CollectionSearchField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final field = Color.alphaBlend(palette.hover, palette.background);
     return SizedBox(
       width: CollectionMetrics.searchFieldWidth,
       height: CollectionMetrics.searchFieldHeight,
       child: TextField(
         controller: controller,
         onChanged: onChanged,
-        style: TextStyle(color: palette.textPrimary, fontSize: 13),
+        cursorWidth: 1.4,
+        cursorColor: palette.accent,
+        style: TextStyle(color: palette.textPrimary, fontSize: 12.5),
         decoration: InputDecoration(
           isDense: true,
           filled: true,
-          fillColor: palette.surface,
-          hoverColor: palette.surface,
+          fillColor: field,
+          hoverColor: field,
           contentPadding: const EdgeInsets.symmetric(vertical: 8),
           prefixIcon: Icon(
             Icons.search_rounded,
-            size: 16,
+            size: 15,
             color: palette.textMuted,
           ),
-          prefixIconConstraints: const BoxConstraints(minWidth: 32),
+          prefixIconConstraints: const BoxConstraints(minWidth: 30),
           hintText: LocaleKeys.collections_searchPlaceholder.tr(),
-          hintStyle: TextStyle(color: palette.textMuted, fontSize: 13),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: BorderSide(color: palette.border, width: 0.6),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: BorderSide(color: palette.border, width: 0.6),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(9),
-            borderSide: BorderSide(color: palette.accentBorder),
-          ),
+          hintStyle: TextStyle(color: palette.textMuted, fontSize: 12.5),
+          // A shade, not an outlined box.
+          border: _border,
+          enabledBorder: _border,
+          focusedBorder: _border,
         ),
       ),
     );
   }
+
+  OutlineInputBorder get _border => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(9),
+        borderSide: BorderSide.none,
+      );
 }
 
 class _CollectionAddButton extends StatefulWidget {
@@ -623,31 +663,26 @@ class _CollectionAddButtonState extends State<_CollectionAddButton> {
         onTap: _open,
         child: AnimatedContainer(
           key: anchor,
-          duration: const Duration(milliseconds: 150),
+          duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,
           height: CollectionMetrics.searchFieldHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 11),
           decoration: BoxDecoration(
-            color: hovered
-                ? Color.alphaBlend(
-                    Colors.white.withValues(alpha: 0.08),
-                    palette.accentSoft,
-                  )
-                : palette.accentSoft,
+            color: palette.accent.withValues(alpha: hovered ? 0.16 : 0.1),
             borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: palette.accentBorder, width: 0.6),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.add_rounded, size: 16, color: palette.accent),
+              Icon(Icons.add_rounded, size: 15, color: palette.accent),
               const SizedBox(width: 5),
               Text(
                 LocaleKeys.collections_add.tr(),
                 style: TextStyle(
                   color: palette.accent,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  fontVariations: const [FontVariation.weight(600)],
                 ),
               ),
             ],

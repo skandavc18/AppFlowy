@@ -139,11 +139,6 @@ class AlbumScaffold extends StatelessWidget {
             padding: const EdgeInsets.symmetric(
               horizontal: AlbumMetrics.gutter,
             ),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(color: palette.border, width: 0.6),
-              ),
-            ),
             child: Row(
               children: [
                 Text(
@@ -490,8 +485,7 @@ class _AlbumTileState extends State<AlbumTile> {
             children: [
               Container(
                 decoration: BoxDecoration(
-                  borderRadius:
-                      BorderRadius.circular(AlbumMetrics.tileRadius),
+                  borderRadius: BorderRadius.circular(AlbumMetrics.tileRadius),
                   border: widget.selected
                       ? Border.all(color: palette.accent, width: 2)
                       : null,

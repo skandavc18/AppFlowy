@@ -195,9 +195,24 @@ Uint8List _wrapInPng(Uint8List tiff) {
     0, 0, 0, 0, // CRC, unchecked by the reader
   ];
   return Uint8List.fromList([
-    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+    0x89,
+    0x50,
+    0x4E,
+    0x47,
+    0x0D,
+    0x0A,
+    0x1A,
+    0x0A,
     ...chunk,
-    0, 0, 0, 0, ...'IEND'.codeUnits, 0, 0, 0, 0,
+    0,
+    0,
+    0,
+    0,
+    ...'IEND'.codeUnits,
+    0,
+    0,
+    0,
+    0,
   ]);
 }
 
@@ -243,8 +258,7 @@ void main() {
       expect(exif.focalLength, closeTo(50, 0.001));
     });
 
-    test('turns GPS degrees, minutes and seconds into a signed coordinate',
-        () {
+    test('turns GPS degrees, minutes and seconds into a signed coordinate', () {
       final exif = readPhotoExif(
         _wrapInJpeg(_buildTiff(endian: Endian.little, withGps: true)),
       );

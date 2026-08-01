@@ -375,23 +375,24 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       skipTraversal: true,
       onFocusChange: widget.onTerminalFocusChanged,
       child: Container(
-        height: 190,
+        height: 202,
+        margin: const EdgeInsets.fromLTRB(12, 4, 12, 12),
         decoration: BoxDecoration(
           color: palette.terminal,
-          border: Border(
-            top: BorderSide(color: palette.divider),
-          ),
+          borderRadius: BorderRadius.circular(codeSurfaceRadius),
+          boxShadow: palette.nestedShadows,
         ),
+        clipBehavior: Clip.antiAlias,
         // Stretch, or the transcript shrink-wraps and floats in the middle
         // instead of starting at the left edge like a terminal.
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(
-              height: 32,
+              height: 34,
               child: Row(
                 children: [
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 14),
                   Icon(
                     Icons.terminal_rounded,
                     color: palette.textMuted,
@@ -449,11 +450,10 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
                         ? null
                         : () => setState(() => terminalVisible = false),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                 ],
               ),
             ),
-            Divider(height: 1, color: palette.divider),
             Expanded(
               // Clicking anywhere in the pane puts the caret back on the
               // prompt, the way clicking a terminal window does.
@@ -462,7 +462,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
                 onTap: inputFocusNode.requestFocus,
                 child: SingleChildScrollView(
                   controller: terminalScrollController,
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,

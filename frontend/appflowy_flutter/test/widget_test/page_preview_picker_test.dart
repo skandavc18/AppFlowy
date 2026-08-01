@@ -194,7 +194,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 180));
     await tester.tap(find.byKey(const ValueKey('page-preview-options')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.photo_outlined));
+    await tester.tap(find.byIcon(Icons.photo_rounded));
     await tester.pumpAndSettle();
 
     expect(selectedMode, ViewPreviewMode.cover);

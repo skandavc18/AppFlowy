@@ -494,7 +494,9 @@ class _FolderGalleryState extends State<FolderGallery> {
   }
 
   void _open(WorkspaceExplorerItem item) {
-    if (item.isFolder) {
+    // A collection is a folder with a purpose, so it opens as itself rather
+    // than being browsed into as plain contents.
+    if (item.isFolder && !item.isCollection) {
       widget.onNavigate(item.id);
       return;
     }

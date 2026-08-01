@@ -21,7 +21,10 @@ ImageHeaderSize? readImageHeaderSize(Uint8List bytes) {
     return null;
   }
   try {
-    return _png(bytes) ?? _gif(bytes) ?? _webp(bytes) ?? _bmp(bytes) ??
+    return _png(bytes) ??
+        _gif(bytes) ??
+        _webp(bytes) ??
+        _bmp(bytes) ??
         _jpeg(bytes);
   } on Object {
     return null;

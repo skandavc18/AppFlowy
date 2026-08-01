@@ -256,9 +256,9 @@ class _AlbumGrid extends StatelessWidget {
           constraints.maxWidth,
           controller.settings.tileSize.targetWidth,
         );
-        final tileWidth = (constraints.maxWidth -
-                AlbumMetrics.spacing * (columns - 1)) /
-            columns;
+        final tileWidth =
+            (constraints.maxWidth - AlbumMetrics.spacing * (columns - 1)) /
+                columns;
         return GridView.builder(
           padding: EdgeInsets.zero,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -305,9 +305,9 @@ class _AlbumMasonry extends StatelessWidget {
           constraints.maxWidth,
           controller.settings.tileSize.targetWidth,
         );
-        final tileWidth = (constraints.maxWidth -
-                AlbumMetrics.spacing * (columns - 1)) /
-            columns;
+        final tileWidth =
+            (constraints.maxWidth - AlbumMetrics.spacing * (columns - 1)) /
+                columns;
         return MasonryGridView.count(
           padding: EdgeInsets.zero,
           crossAxisCount: columns,
@@ -363,9 +363,9 @@ class _AlbumTimeline extends StatelessWidget {
           constraints.maxWidth,
           controller.settings.tileSize.targetWidth,
         );
-        final tileWidth = (constraints.maxWidth -
-                AlbumMetrics.spacing * (columns - 1)) /
-            columns;
+        final tileWidth =
+            (constraints.maxWidth - AlbumMetrics.spacing * (columns - 1)) /
+                columns;
         return CustomScrollView(
           slivers: [
             for (final group in groups) ...[

@@ -41,7 +41,12 @@ class _BookContentsRailState extends State<BookContentsRail> {
     return DecoratedBox(
       decoration: BoxDecoration(
         color: palette.chrome,
-        border: Border(right: BorderSide(color: palette.rule, width: 0.6)),
+        border: Border(
+          right: BorderSide(
+            color: palette.rule.withValues(alpha: 0.35),
+            width: 0.6,
+          ),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -64,7 +69,12 @@ class _BookContentsRailState extends State<BookContentsRail> {
       height: BookReaderMetrics.chromeHeight,
       padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
       decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: palette.rule, width: 0.6)),
+        border: Border(
+          bottom: BorderSide(
+            color: palette.rule.withValues(alpha: 0.35),
+            width: 0.6,
+          ),
+        ),
       ),
       child: Row(
         children: [

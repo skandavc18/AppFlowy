@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_registry.dart';
+import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -80,6 +83,8 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
               WorkspaceFileAddAction(
                 onCreate: (action) =>
                     unawaited(_createWorkspaceRootFile(action)),
+                onCreateCollection: (kind) =>
+                    unawaited(_createWorkspaceRootCollection(kind)),
               ),
             ],
             buildChild: (popover) => FlowyIconButton(
@@ -171,9 +176,28 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
     );
   }
 
+  Future<void> _createWorkspaceRootCollection(CollectionKind kind) async {
+    final parent = _resolveParent();
+    if (parent == null) {
+      return;
+    }
+    final created = await const CollectionService().createCollection(
+      parentViewId: parent.id,
+      kind: kind,
+      name: CollectionRegistry.typeFor(kind).defaultName,
+      section: parent.section,
+    );
+    if (!mounted) {
+      return;
+    }
+    created.fold(
+      (view) => context.read<TabsBloc>().openPlugin(view),
+      (error) => showSnackBarMessage(context, error.msg),
+    );
+  }
+
   /// Where a root item belongs: the open space, or the workspace itself.
-  ({String id, ViewSectionPB? section})? _resolveParent() {
-    final workspaceState = context.read<UserWorkspaceBloc>().state;
+  ({String id, ViewSectionPB? section})? _resolveParent() {    final workspaceState = context.read<UserWorkspaceBloc>().state;
     final space = context.read<SpaceBloc>().state.currentSpace;
     final parentId = space?.id ?? workspaceState.currentWorkspace?.workspaceId;
     if (parentId == null || parentId.isEmpty) {
