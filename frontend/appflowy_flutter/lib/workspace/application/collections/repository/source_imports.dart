@@ -112,7 +112,8 @@ final _importPatterns = <String, List<RegExp>>{
   ],
   'php': [
     RegExp(r'^\s*use\s+([\w\\]+)'),
-    RegExp('''^\\s*(?:require|include)(?:_once)?\\s*\\(?\\s*['"]([^'"]+)['"]'''),
+    RegExp(
+        '''^\\s*(?:require|include)(?:_once)?\\s*\\(?\\s*['"]([^'"]+)['"]'''),
   ],
   'css': [
     RegExp('''^\\s*@import\\s+(?:url\\()?\\s*['"]([^'"]+)['"]'''),
@@ -341,12 +342,15 @@ String? _resolve({
       addPath('lib/$inside');
     }
   } else if (languageId == 'python') {
-    final leadingDots = target.length - target.replaceFirst(RegExp(r'^\.+'), '').length;
+    final leadingDots =
+        target.length - target.replaceFirst(RegExp(r'^\.+'), '').length;
     final module = target.substring(leadingDots).replaceAll('.', '/');
     final base = leadingDots > 0
-        ? resolveRepoPath(directory, List.filled(leadingDots - 1, '..').join('/'))
+        ? resolveRepoPath(
+            directory, List.filled(leadingDots - 1, '..').join('/'))
         : '';
-    final head = base == null ? null : (base.isEmpty ? module : '$base/$module');
+    final head =
+        base == null ? null : (base.isEmpty ? module : '$base/$module');
     addPath(head == null ? null : '$head.py');
     addPath(head == null ? null : '$head/__init__.py');
     if (leadingDots == 0) {

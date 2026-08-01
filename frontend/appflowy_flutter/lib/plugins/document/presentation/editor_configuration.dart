@@ -448,6 +448,9 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
     FolderExplorerBlockKeys.type: FolderExplorerBlockComponentBuilder(
       configuration: configuration,
     ),
+    BookmarkBlockKeys.type: BookmarkBlockComponentBuilder(
+      configuration: configuration,
+    ),
     SpreadsheetBlockKeys.type: SpreadsheetBlockComponentBuilder(
       configuration: configuration,
     ),

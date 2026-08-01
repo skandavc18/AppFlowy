@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/album/album_views.dart';
 import 'package:appflowy/plugins/collection/views/book/book_views.dart';
+import 'package:appflowy/plugins/collection/views/bookmark/bookmark_views.dart';
 import 'package:appflowy/plugins/collection/views/collection_contents_view.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_views.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
@@ -169,7 +170,10 @@ void registerBuiltInCollections() {
         'reading list',
         'collection',
       ],
-      views: _contentViews(),
+      views: [
+        ...bookmarkCollectionViews(),
+        ..._contentViews(includeGallery: false),
+      ],
     ),
   );
   CollectionRegistry.register(

@@ -531,7 +531,6 @@ const _htmlPreviewContentSecurityPolicy = "script-src 'none'; "
 
 /// Applied to the document element while the preview is scrolling so the
 /// renderer only reveals its scrollbar thumbs during movement.
-@visibleForTesting
 const htmlPreviewScrollingClassName = 'appflowy-preview-scrolling';
 
 @visibleForTesting
@@ -588,7 +587,6 @@ html.$htmlPreviewScrollingClassName ::-webkit-scrollbar-thumb {
 
 /// Reveals the preview scrollbars while the document scrolls and hides them
 /// again once movement stops.
-@visibleForTesting
 String buildHtmlPreviewScrollbarAutoHideScript() => '''
 (function () {
   const root = document.documentElement;
@@ -1193,7 +1191,6 @@ class _HtmlPreview extends StatefulWidget {
   State<_HtmlPreview> createState() => _HtmlPreviewState();
 }
 
-@visibleForTesting
 final htmlPreviewScrollContentWorld =
     ContentWorld.world(name: 'appflowyDocumentScroll');
 
@@ -1586,9 +1583,44 @@ class _PendingWebViewScrollCommand {
   final Offset fallbackDelta;
 }
 
-@visibleForTesting
-String buildWebViewDirectScrollScript(Offset delta) =>
-    'window.scrollBy(${delta.dx}, ${delta.dy});';
+/// Moves a page without the kinetic engine.
+///
+/// A site that leaves the document itself unscrollable and moves one big pane
+/// instead cannot be scrolled by `window` alone, so the largest scrollable
+/// element stands in for it.
+String buildWebViewDirectScrollScript(Offset delta) => '''
+(function () {
+  const dx = ${delta.dx};
+  const dy = ${delta.dy};
+  const root = document.scrollingElement || document.documentElement;
+  if (root && (root.scrollHeight - root.clientHeight > 1 ||
+      root.scrollWidth - root.clientWidth > 1)) {
+    window.scrollBy(dx, dy);
+    return true;
+  }
+  let best = null;
+  let bestArea = 0;
+  for (const element of (document.body ? document.body.querySelectorAll('*') : [])) {
+    if (element.scrollHeight - element.clientHeight <= 1 &&
+        element.scrollWidth - element.clientWidth <= 1) {
+      continue;
+    }
+    const style = getComputedStyle(element);
+    if (!['auto', 'scroll'].includes(style.overflowY) &&
+        !['auto', 'scroll'].includes(style.overflowX)) {
+      continue;
+    }
+    const rect = element.getBoundingClientRect();
+    const area = rect.width * rect.height;
+    if (area > bestArea) {
+      bestArea = area;
+      best = element;
+    }
+  }
+  (best || window).scrollBy(dx, dy);
+  return true;
+})();
+''';
 
 class _PreviewError extends StatelessWidget {
   const _PreviewError({required this.message, required this.onRetry});

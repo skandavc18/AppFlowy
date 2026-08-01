@@ -1,6 +1,7 @@
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/views/bookmark/bookmark_page_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/callout/callout_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/custom_link_parser.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/default_selectable_mixin.dart';
@@ -233,7 +234,11 @@ class LinkEmbedBlockComponentState
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: () => afLaunchUrlString(url, addingHttpSchemeWhenFailed: true),
+        onTap: () => openBookmarkPagePreview(
+          context: context,
+          url: url,
+          title: linkInfo.siteName,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

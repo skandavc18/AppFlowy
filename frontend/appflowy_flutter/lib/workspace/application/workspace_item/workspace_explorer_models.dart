@@ -1,3 +1,4 @@
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -21,6 +22,7 @@ class WorkspaceExplorerItem {
     required this.hasChildren,
     required this.lastEdited,
     this.collection,
+    this.bookmark,
   });
 
   factory WorkspaceExplorerItem.fromView(ViewPB view) {
@@ -39,6 +41,7 @@ class WorkspaceExplorerItem {
       kind: kind,
       metadata: metadata,
       collection: view.collection,
+      bookmark: view.bookmark,
       hasChildren: view.childViews.isNotEmpty,
       lastEdited: backendLastEdited > 0
           ? DateTime.fromMillisecondsSinceEpoch(backendLastEdited * 1000)
@@ -54,12 +57,16 @@ class WorkspaceExplorerItem {
 
   /// Set when this container is a collection rather than a plain folder.
   final CollectionMetadata? collection;
+
+  /// Set when this item is a saved link rather than a file on disk.
+  final BookmarkMetadata? bookmark;
   final bool hasChildren;
   final DateTime? lastEdited;
 
   bool get isFolder => kind == WorkspaceExplorerItemKind.folder;
   bool get isFile => kind == WorkspaceExplorerItemKind.file;
   bool get isCollection => collection != null;
+  bool get isBookmark => bookmark != null;
 }
 
 @immutable

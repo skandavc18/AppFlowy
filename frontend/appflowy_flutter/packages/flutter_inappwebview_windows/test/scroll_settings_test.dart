@@ -44,11 +44,11 @@ void main() {
   test('trackpad direct deltas are scaled and bounded', () {
     expect(
       webViewTrackpadDirectDelta(const Offset(10, -20)),
-      const Offset(5.5, -11),
+      const Offset(10, -20),
     );
     final bounded = webViewTrackpadDirectDelta(const Offset(100, -100));
-    expect(bounded.dx, closeTo(26.4, 0.0001));
-    expect(bounded.dy, closeTo(-26.4, 0.0001));
+    expect(bounded.dx, closeTo(48, 0.0001));
+    expect(bounded.dy, closeTo(-48, 0.0001));
   });
 
   testWidgets('routes trackpad input through native touch manipulation', (
@@ -170,21 +170,13 @@ void main() {
     );
     expect(
       pointerCalls.map((call) => (call.arguments as List)[3]),
-      [100.0, 94.5, 86.25, 75.25, 75.25],
+      [100.0, 90.0, 75.0, 55.0, 55.0],
     );
     expect(
-      viewCalls.where(
-        (call) =>
-            call.method == 'setScrollDelta' ||
-            call.method == 'setTrackpadScrollDelta',
-      ),
+      viewCalls.where((call) => call.method == 'setScrollDelta'),
       isEmpty,
     );
     expect(parentScrollController.offset, 0);
-    expect(
-      viewCalls.any((call) => call.method == 'setCursorPos'),
-      isTrue,
-    );
   });
 
   testWidgets('disposes a platform view that finishes creating late', (

@@ -143,7 +143,8 @@ RepoEntryKind repoEntryKindOf(ViewPB view) {
   }
   final dot = lower.lastIndexOf('.');
   final extension = dot <= 0 ? '' : lower.substring(dot + 1);
-  if (repoReadmeNames.contains(lower) || _repoDocExtensions.contains(extension)) {
+  if (repoReadmeNames.contains(lower) ||
+      _repoDocExtensions.contains(extension)) {
     return RepoEntryKind.documentation;
   }
   if (_repoDataExtensions.contains(extension)) {

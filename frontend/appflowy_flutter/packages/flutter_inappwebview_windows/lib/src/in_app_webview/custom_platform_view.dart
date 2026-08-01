@@ -87,9 +87,16 @@ Offset filterScrollDeltaForSettings(Offset delta, dynamic creationParams) {
   );
 }
 
-const _trackpadDirectManipulationScale = 0.55;
+/// Trackpad panning moves the page by exactly the distance the fingers
+/// travelled. Scaling it down both lags the content behind the gesture and
+/// weakens the renderer's own fling, which is estimated from this movement.
+const _trackpadDirectManipulationScale = 1.0;
 const _trackpadMaximumDirectDelta = 48.0;
 const _trackpadPointerId = 0x3ffffffe;
+
+/// How far a pinch has to travel before it counts as a zoom rather than the
+/// scale noise a two-finger scroll carries.
+const _trackpadZoomThreshold = 0.01;
 
 @visibleForTesting
 Offset webViewTrackpadDirectDelta(Offset delta) {
@@ -263,6 +270,15 @@ class CustomPlatformViewController
     return _methodChannel.invokeMethod('setScrollDelta', [dx, dy]);
   }
 
+  /// Zooms by [scale] relative to the current zoom factor.
+  Future<void> _setZoomScale(double scale) async {
+    if (_isDisposed) {
+      return;
+    }
+    assert(value.isInitialized);
+    return _methodChannel.invokeMethod('setZoomScale', scale);
+  }
+
   /// Sets the surface size to the provided [size].
   Future<void> _setSize(Size size, double scaleFactor) async {
     if (_isDisposed) {
@@ -322,6 +338,8 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
   final _controller = CustomPlatformViewController();
   final _focusNode = FocusNode();
   Offset? _trackpadPointerPosition;
+  double _trackpadScale = 1;
+  bool _panning = false;
 
   StreamSubscription? _cursorSubscription;
 
@@ -456,7 +474,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
         }
       },
       child: MouseRegion(
-          cursor: _cursor,
+          cursor: _panning ? SystemMouseCursors.none : _cursor,
           child: Texture(
             textureId: _controller._textureId,
             filterQuality: widget.filterQuality,
@@ -490,9 +508,13 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
 
   void _handleTrackpadStart(PointerPanZoomStartEvent event) {
     _endTrackpadPointer();
-    _controller._setCursorPos(event.localPosition);
+    _trackpadScale = 1;
     final position = _boundTrackpadPosition(event.localPosition);
     _trackpadPointerPosition = position;
+    // The renderer scrolls a dragged pointer on its compositor, which is what
+    // makes this smooth; the cursor is hidden because that pointer sweeps the
+    // page and would otherwise drag the hover and the cursor shape with it.
+    setState(() => _panning = true);
     _controller._setPointerUpdate(
       InAppWebViewPointerEventKind.down,
       _trackpadPointerId,
@@ -503,6 +525,15 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
   }
 
   void _handleTrackpadUpdate(PointerPanZoomUpdateEvent event) {
+    // `scale` is cumulative from the start of the gesture, so the renderer is
+    // sent the step since the last update.
+    if ((event.scale - _trackpadScale).abs() > _trackpadZoomThreshold) {
+      final step = event.scale / _trackpadScale;
+      _trackpadScale = event.scale;
+      _controller._setZoomScale(step);
+      return;
+    }
+
     final delta = webViewTrackpadDirectDelta(
       filterScrollDeltaForSettings(
         event.localPanDelta,
@@ -525,6 +556,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
   }
 
   void _handleTrackpadEnd(PointerPanZoomEndEvent event) {
+    _trackpadScale = 1;
     _endTrackpadPointer();
   }
 
@@ -541,6 +573,9 @@ class _CustomPlatformViewState extends State<CustomPlatformView> {
   }
 
   void _endTrackpadPointer() {
+    if (_panning && mounted) {
+      setState(() => _panning = false);
+    }
     final position = _trackpadPointerPosition;
     if (position == null) {
       return;

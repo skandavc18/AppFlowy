@@ -53,7 +53,14 @@ namespace flutter_inappwebview_plugin
   WebViewChannelDelegate::PermissionRequestCallback::PermissionRequestCallback()
   {
     decodeResult = [](const flutter::EncodableValue* value)
+      -> std::optional<const std::shared_ptr<PermissionResponse>>
       {
+        // A host with no onPermissionRequest handler answers null. Falling
+        // through to defaultBehaviour denies the request; dereferencing here
+        // crashes the moment a page asks for one (an embedded video does).
+        if (!value || value->IsNull()) {
+          return std::nullopt;
+        }
         return std::make_shared<PermissionResponse>(std::get<flutter::EncodableMap>(*value));
       };
   }

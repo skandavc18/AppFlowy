@@ -424,7 +424,8 @@ class RepositoryController extends ChangeNotifier {
         continue;
       }
       final current = byLanguage[language.id] ?? (0, 0);
-      byLanguage[language.id] = (current.$1 + 1, current.$2 + math.max(size, 1));
+      byLanguage[language.id] =
+          (current.$1 + 1, current.$2 + math.max(size, 1));
     }
 
     final total = byLanguage.values.fold<int>(0, (sum, it) => sum + it.$2);

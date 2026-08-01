@@ -197,7 +197,8 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
   }
 
   /// Where a root item belongs: the open space, or the workspace itself.
-  ({String id, ViewSectionPB? section})? _resolveParent() {    final workspaceState = context.read<UserWorkspaceBloc>().state;
+  ({String id, ViewSectionPB? section})? _resolveParent() {
+    final workspaceState = context.read<UserWorkspaceBloc>().state;
     final space = context.read<SpaceBloc>().state.currentSpace;
     final parentId = space?.id ?? workspaceState.currentWorkspace?.workspaceId;
     if (parentId == null || parentId.isEmpty) {

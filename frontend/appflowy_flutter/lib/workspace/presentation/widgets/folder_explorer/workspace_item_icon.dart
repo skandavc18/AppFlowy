@@ -1,5 +1,6 @@
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -54,6 +55,17 @@ class WorkspaceItemIcon extends StatelessWidget {
         definition.icon,
         size: size,
         color: color ?? CollectionPalette.of(context, collectionKind).accent,
+      );
+    }
+
+    // A saved link has no bytes on disk, so the file glyph would name it by an
+    // extension it does not have.
+    if (item.isBookmark) {
+      return Icon(
+        Icons.link_rounded,
+        size: size,
+        color: color ??
+            CollectionPalette.of(context, CollectionKind.bookmark).accent,
       );
     }
 

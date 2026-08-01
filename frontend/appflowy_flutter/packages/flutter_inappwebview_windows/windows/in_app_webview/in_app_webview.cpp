@@ -1841,6 +1841,19 @@ namespace flutter_inappwebview_plugin
     }
   }
 
+  void InAppWebView::setZoomScale(double scale)
+  {
+    if (!webViewController || scale <= 0.0) {
+      return;
+    }
+
+    double current = 1.0;
+    if (succeededOrLog(webViewController->get_ZoomFactor(&current))) {
+      failedLog(webViewController->put_ZoomFactor(
+        std::clamp(current * scale, 0.25, 5.0)));
+    }
+  }
+
   bool InAppWebView::createSurface(const HWND parentWindow,
     winrt::com_ptr<ABI::Windows::UI::Composition::ICompositor> compositor)
   {
@@ -1892,15 +1905,31 @@ namespace flutter_inappwebview_plugin
     if (webView) {
       failedLog(webView->Stop());
     }
+
     HWND parentWindow = nullptr;
-    if (webViewCompositionController && webViewController && succeededOrLog(webViewController->get_ParentWindow(&parentWindow))) {
-      // if it's an InAppWebView (so webViewCompositionController will be not a nullptr!),
-      // then destroy the Window created with it
-      DestroyWindow(parentWindow);
+    const auto hasCompositionWindow = webViewCompositionController && webViewController
+      && succeededOrLog(webViewController->get_ParentWindow(&parentWindow));
+
+    // Detach the composition tree before anything is torn down. The visual is
+    // still referenced by DirectComposition until the target is cleared, and
+    // releasing the window underneath it faults inside dcomp.
+    if (webViewCompositionController) {
+      failedLog(webViewCompositionController->put_RootVisualTarget(nullptr));
     }
+    surface_ = nullptr;
+
+    // Close the controller BEFORE destroying the window it is hosted in.
+    // Doing it the other way round leaves WebView2 operating on a window that
+    // no longer exists, which is an access violation inside this plugin.
     if (webViewController) {
+      failedLog(webViewController->put_IsVisible(false));
       failedLog(webViewController->Close());
     }
+
+    if (hasCompositionWindow && parentWindow) {
+      DestroyWindow(parentWindow);
+    }
+
     navigationActions_.clear();
     inAppBrowser = nullptr;
     plugin = nullptr;

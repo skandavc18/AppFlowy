@@ -72,9 +72,8 @@ class RepoSourceCache {
       final file = File(entry.storageUrl);
       final length = await file.length();
       final truncated = length > maxBytes;
-      final bytes = truncated
-          ? await _readHead(file)
-          : await file.readAsBytes();
+      final bytes =
+          truncated ? await _readHead(file) : await file.readAsBytes();
       final source = const Utf8Decoder(allowMalformed: true).convert(bytes);
       _text[entry.id] = source;
       return RepoFileAnalysis(

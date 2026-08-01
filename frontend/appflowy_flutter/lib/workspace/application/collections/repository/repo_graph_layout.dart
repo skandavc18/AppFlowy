@@ -64,7 +64,9 @@ RepoGraphLayoutResult layoutRepoGraph({
   final paths = {for (final entry in kept) entry.key};
   final liveEdges = [
     for (final edge in edges)
-      if (paths.contains(edge.$1) && paths.contains(edge.$2) && edge.$1 != edge.$2)
+      if (paths.contains(edge.$1) &&
+          paths.contains(edge.$2) &&
+          edge.$1 != edge.$2)
         edge,
   ];
 
@@ -181,13 +183,12 @@ Map<String, Offset> _radialLayout(
     // Each ring holds a few more than the one inside it.
     final capacity = ring == 0 ? 1 : (ring * 6);
     final take = math.min(capacity, nodes.length - index);
-    final radius = nodes.length == 1
-        ? 0.0
-        : maxRadius * (ring / _ringCount(nodes.length));
+    final radius =
+        nodes.length == 1 ? 0.0 : maxRadius * (ring / _ringCount(nodes.length));
     for (var slot = 0; slot < take; slot++) {
       final angle = take == 1 ? 0.0 : 2 * math.pi * slot / take;
-      positions[nodes[index + slot].key] = centre +
-          Offset(radius * math.cos(angle), radius * math.sin(angle));
+      positions[nodes[index + slot].key] =
+          centre + Offset(radius * math.cos(angle), radius * math.sin(angle));
     }
     index += take;
     ring += 1;
@@ -238,9 +239,7 @@ Map<String, Offset> _layeredLayout(
   for (final node in nodes) {
     layers.putIfAbsent(layerOf[node.key] ?? 0, () => []).add(node.key);
   }
-  final depth = layers.keys.isEmpty
-      ? 1
-      : layers.keys.reduce(math.max) + 1;
+  final depth = layers.keys.isEmpty ? 1 : layers.keys.reduce(math.max) + 1;
   final positions = <String, Offset>{};
   for (final entry in layers.entries) {
     final y = depth == 1

@@ -20,6 +20,7 @@ namespace flutter_inappwebview_plugin
   constexpr auto kMethodSetPointerUpdate = "setPointerUpdate";
   constexpr auto kMethodSetPointerButton = "setPointerButton";
   constexpr auto kMethodSetScrollDelta = "setScrollDelta";
+  constexpr auto kMethodSetZoomScale = "setZoomScale";
   constexpr auto kMethodSetFpsLimit = "setFpsLimit";
 
   constexpr auto kEventType = "type";
@@ -273,6 +274,16 @@ namespace flutter_inappwebview_plugin
       const auto delta = GetPointFromArgs(method_call.arguments());
       if (delta && view) {
         view->setScrollDelta(delta->first, delta->second);
+        return result->Success();
+      }
+      return result->Error(kErrorInvalidArgs);
+    }
+
+    // setZoomScale: double relative scale
+    if (method_name.compare(kMethodSetZoomScale) == 0) {
+      const auto scale = std::get_if<double>(method_call.arguments());
+      if (scale && view) {
+        view->setZoomScale(*scale);
         return result->Success();
       }
       return result->Error(kErrorInvalidArgs);

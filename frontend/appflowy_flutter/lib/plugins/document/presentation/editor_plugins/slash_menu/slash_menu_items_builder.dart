@@ -116,6 +116,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         videoSlashMenuItem,
         folderLinkSlashMenuItem,
         folderExplorerSlashMenuItem,
+        bookmarkSlashMenuItem,
         fileSlashMenuItem,
         pdfSlashMenuItem,
         wordSlashMenuItem,

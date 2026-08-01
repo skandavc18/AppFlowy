@@ -138,6 +138,27 @@ class PremiumScrollPhysicsConfig {
         wheelStopDistance,
         desktopDirectManipulationScale,
       );
+
+  PremiumScrollPhysicsConfig copyWith({double? immediateResponse}) =>
+      PremiumScrollPhysicsConfig(
+        friction: friction,
+        wheelAcceleration: wheelAcceleration,
+        precisionAcceleration: precisionAcceleration,
+        maxVelocity: maxVelocity,
+        momentumRetention: momentumRetention,
+        directionChangeRetention: directionChangeRetention,
+        maxWheelDelta: maxWheelDelta,
+        maxPrecisionDelta: maxPrecisionDelta,
+        precisionDeltaThreshold: precisionDeltaThreshold,
+        minimumVelocity: minimumVelocity,
+        stopVelocity: stopVelocity,
+        immediateResponse: immediateResponse ?? this.immediateResponse,
+        wheelSmoothingRate: wheelSmoothingRate,
+        maxWheelScrollVelocity: maxWheelScrollVelocity,
+        maxWheelQueuedDistance: maxWheelQueuedDistance,
+        wheelStopDistance: wheelStopDistance,
+        desktopDirectManipulationScale: desktopDirectManipulationScale,
+      );
 }
 
 /// Applies premium scrolling to every descendant Flutter [Scrollable].
@@ -567,11 +588,53 @@ String buildPremiumKineticScrollEngineScript({
       : config.wheelAcceleration;
     return clamp(delta, -limit, limit) * acceleration;
   };
-  const findScrollTarget = (positionX, positionY, horizontal) => {
-    if (!Number.isFinite(positionX) || !Number.isFinite(positionY)) {
-      return null;
+  const documentScrolls = horizontal => {
+    const root = document.scrollingElement || document.documentElement;
+    if (!root) return false;
+    return (horizontal
+      ? root.scrollWidth - root.clientWidth
+      : root.scrollHeight - root.clientHeight) > 1;
+  };
+  const dominant = { h: { value: undefined, at: 0 }, v: { value: undefined, at: 0 } };
+  // A single-page application often leaves the document itself unscrollable
+  // and moves one big pane instead; without this the page cannot be moved.
+  // The search reads every element, so a miss is remembered too.
+  const dominantScroller = horizontal => {
+    const slot = horizontal ? dominant.h : dominant.v;
+    const now = Date.now();
+    if (slot.value !== undefined &&
+        now - slot.at < 1500 &&
+        (slot.value === null || slot.value.isConnected)) {
+      return slot.value;
     }
-    let element = document.elementFromPoint(positionX, positionY);
+    let best = null;
+    let bestArea = 0;
+    const candidates = document.body
+      ? document.body.querySelectorAll('*')
+      : [];
+    for (const element of candidates) {
+      const extent = horizontal
+        ? element.scrollWidth - element.clientWidth
+        : element.scrollHeight - element.clientHeight;
+      if (extent <= 1) continue;
+      const style = getComputedStyle(element);
+      const overflow = horizontal ? style.overflowX : style.overflowY;
+      if (overflow !== 'auto' && overflow !== 'scroll') continue;
+      const rect = element.getBoundingClientRect();
+      const area = rect.width * rect.height;
+      if (area > bestArea) {
+        bestArea = area;
+        best = element;
+      }
+    }
+    slot.value = best;
+    slot.at = now;
+    return best;
+  };
+  const findScrollTarget = (positionX, positionY, horizontal) => {
+    let element = Number.isFinite(positionX) && Number.isFinite(positionY)
+      ? document.elementFromPoint(positionX, positionY)
+      : null;
     while (element && element !== document.documentElement) {
       const scrollExtent = horizontal
         ? element.scrollWidth - element.clientWidth
@@ -585,7 +648,7 @@ String buildPremiumKineticScrollEngineScript({
       }
       element = element.parentElement;
     }
-    return null;
+    return documentScrolls(horizontal) ? null : dominantScroller(horizontal);
   };
   const updateHorizontalTarget = (positionX, positionY) => {
     const target = findScrollTarget(positionX, positionY, true);
@@ -654,7 +717,7 @@ String buildPremiumKineticScrollEngineScript({
     state.residualY = blockedY ? 0 : requestedY - actualY;
     return { blockedX, blockedY };
   };
-  const stop = () => {
+  const halt = () => {
     if (state.frame) cancelAnimationFrame(state.frame);
     state.frame = 0;
     state.lastTime = 0;
@@ -662,6 +725,9 @@ String buildPremiumKineticScrollEngineScript({
     state.velocityY = 0;
     state.residualX = 0;
     state.residualY = 0;
+  };
+  const stop = () => {
+    halt();
     state.horizontalTarget = null;
     state.verticalTarget = null;
   };
@@ -752,7 +818,7 @@ String buildPremiumKineticScrollEngineScript({
       );
       if (Math.hypot(state.velocityX, state.velocityY) <
           config.minimumVelocity) {
-        stop();
+        halt();
         return;
       }
       start();

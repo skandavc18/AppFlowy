@@ -276,7 +276,8 @@ Some prose.
       );
       expect(symbols.first.depth, 0);
       expect(symbols.last.depth, 2);
-      expect(symbols.every((symbol) => symbol.kind == SymbolKind.heading), true);
+      expect(
+          symbols.every((symbol) => symbol.kind == SymbolKind.heading), true);
     });
 
     test('a language with no rules yields nothing rather than guessing', () {
@@ -335,7 +336,8 @@ func main() {}
 
       final imports = parseSourceImports(repoLanguageById('go'), source);
 
-      expect(imports.map((it) => it.target), ['fmt', 'github.com/user/project/pkg']);
+      expect(imports.map((it) => it.target),
+          ['fmt', 'github.com/user/project/pkg']);
     });
 
     test('follows a relative import to the file it names', () {
