@@ -11,13 +11,15 @@ use crate::services::database_view::{
 use crate::services::field::checklist_filter::ChecklistCellChangeset;
 use crate::services::field::type_option_transform::transform_type_option;
 use crate::services::field::{
+  LOCATION_TYPE_OPTION_KEY, LocationTypeOption, ROLLUP_TYPE_OPTION_KEY, RollupTypeOption,
   SelectOptionCellChangeset, StringCellData, TypeOptionCellDataHandler, TypeOptionCellExt,
-  default_type_option_data_from_type, select_type_option_from_field, type_option_data_from_pb,
+  default_type_option_data_from_type, is_location_field, select_type_option_from_field,
+  type_option_data_from_pb,
 };
 use crate::services::field_settings::{FieldSettings, default_field_settings_by_layout_map};
 use crate::services::filter::{Filter, FilterChangeset};
 use crate::services::group::{GroupChangeset, GroupSetting, default_group_setting};
-use crate::services::share::csv::{CSVExport, CSVFormat};
+use crate::services::share::csv::{CSVExport, CSVFormat, RelationNames};
 use crate::services::sort::Sort;
 use crate::utils::cache::AnyTypeCache;
 use arc_swap::ArcSwapOption;
@@ -488,6 +490,79 @@ impl DatabaseEditor {
     Ok(())
   }
 
+  /// The rollup settings a field carries, if it carries any.
+  pub async fn get_rollup(&self, field_id: &str) -> Option<RollupTypeOption> {
+    let field = self.database.read().await.get_field(field_id)?;
+    RollupTypeOption::from_field(&field)
+  }
+
+  /// Stores rollup settings on a field.
+  ///
+  /// The settings sit beside the field's own type option under their own key,
+  /// so the column stays an ordinary text column: clearing the relation simply
+  /// stops it being recalculated and leaves the last values in place.
+  pub async fn update_rollup(&self, field_id: &str, option: RollupTypeOption) -> FlowyResult<()> {
+    let view_editors = self.database_views.editors().await;
+    let field = {
+      let mut database = self.database.write().await;
+      let field = database.get_field(field_id).ok_or_else(|| {
+        FlowyError::record_not_found().with_context("The rolled up column is gone")
+      })?;
+      let data = TypeOptionData::from(option);
+      database.update_field(field_id, |update| {
+        update.update_type_options(|type_options_update| {
+          type_options_update.insert(ROLLUP_TYPE_OPTION_KEY, data);
+        });
+      });
+      let _ = notify_did_update_database_field(&database, field_id);
+      field
+    };
+
+    for view_editor in view_editors {
+      view_editor.v_did_update_field_type_option(&field).await?;
+    }
+    Ok(())
+  }
+
+  /// The columns of a view that have been told they hold a place.
+  pub async fn location_field_ids(&self, view_id: &str) -> Vec<String> {
+    self
+      .get_fields(view_id, None)
+      .await
+      .into_iter()
+      .filter(is_location_field)
+      .map(|field| field.id)
+      .collect()
+  }
+
+  /// Marks a text column as holding a place, or takes the mark away.
+  pub async fn set_location_field(
+    &self,
+    field_id: &str,
+    option: LocationTypeOption,
+  ) -> FlowyResult<()> {
+    let view_editors = self.database_views.editors().await;
+    let field = {
+      let mut database = self.database.write().await;
+      let field = database
+        .get_field(field_id)
+        .ok_or_else(|| FlowyError::record_not_found().with_context("The column is gone"))?;
+      let data = TypeOptionData::from(option);
+      database.update_field(field_id, |update| {
+        update.update_type_options(|type_options_update| {
+          type_options_update.insert(LOCATION_TYPE_OPTION_KEY, data);
+        });
+      });
+      let _ = notify_did_update_database_field(&database, field_id);
+      field
+    };
+
+    for view_editor in view_editors {
+      view_editor.v_did_update_field_type_option(&field).await?;
+    }
+    Ok(())
+  }
+
   pub async fn switch_to_field_type(
     &self,
     view_id: &str,
@@ -779,6 +854,60 @@ impl DatabaseEditor {
   pub async fn get_all_rows(&self, view_id: &str) -> FlowyResult<Vec<Arc<Row>>> {
     let view_editor = self.database_views.get_or_init_view_editor(view_id).await?;
     Ok(view_editor.v_get_all_rows().await)
+  }
+
+  /// Every row of a view with its cells actually read in.
+  ///
+  /// `get_all_rows` hands back whatever the view's cache holds, and a row that
+  /// has never been opened carries no cells at all — which reads as an empty
+  /// table. Streaming them in blocks is what the CSV export does.
+  pub async fn get_loaded_rows(&self, view_id: &str) -> Vec<Row> {
+    let mut rows = {
+      let database = self.database.read().await;
+      let orders = database.get_row_orders_for_view(view_id);
+      let rows = Self::rows_from(&database, orders.clone()).await;
+      if !rows.is_empty() {
+        rows
+      } else {
+        // A view can be left with no row order of its own, or with one whose
+        // rows no longer load — the log says "[RowOrder]: insert row at
+        // index:N out of range:0" when that happens. The table still has its
+        // rows, and reporting it as empty is never the right answer.
+        let all = database.get_all_row_orders().await;
+        if all.is_empty() || all == orders {
+          rows
+        } else {
+          warn!(
+            "[Database]: view {} reads as empty; falling back to the database's own {} rows",
+            view_id,
+            all.len()
+          );
+          Self::rows_from(&database, all).await
+        }
+      }
+    };
+
+    // A row that has never been opened arrives carrying no cells at all, so a
+    // full table reads as a page of blank lines. Editing one finalizes it; so
+    // must reading one.
+    for row in rows.iter_mut() {
+      if !row.cells.is_empty() {
+        continue;
+      }
+      if self.init_database_row(&row.id).await.is_ok() {
+        *row = self.database.read().await.get_row(&row.id).await;
+      }
+    }
+    rows
+  }
+
+  async fn rows_from(database: &Database, orders: Vec<RowOrder>) -> Vec<Row> {
+    database
+      .get_rows_from_row_orders(orders, 20, None)
+      .await
+      .filter_map(|result| async { result.ok() })
+      .collect::<Vec<_>>()
+      .await
   }
 
   pub async fn get_row(&self, view_id: &str, row_id: &RowId) -> Option<Row> {
@@ -1699,14 +1828,46 @@ impl DatabaseEditor {
     });
   }
 
-  pub async fn export_csv(&self, style: CSVFormat) -> FlowyResult<String> {
+  pub async fn export_csv(
+    &self,
+    style: CSVFormat,
+    relation_names: &RelationNames,
+  ) -> FlowyResult<String> {
     let database = self.database.clone();
     let database_guard = database.read().await;
     let csv = CSVExport
-      .export_database(&database_guard, style)
+      .export_database(&database_guard, style, relation_names)
       .await
       .map_err(internal_error)?;
     Ok(csv)
+  }
+
+  /// The databases the relation columns of this one point at, by field id.
+  pub async fn relation_database_ids(&self) -> Vec<String> {
+    let database = self.database.read().await;
+    database
+      .get_all_field_orders()
+      .into_iter()
+      .filter_map(|order| database.get_field(&order.id))
+      .filter(|field| FieldType::from(field.field_type) == FieldType::Relation)
+      .filter_map(|field| {
+        field
+          .get_type_option::<RelationTypeOption>(FieldType::Relation)
+          .map(|option| option.database_id)
+      })
+      .filter(|id| !id.is_empty())
+      .collect()
+  }
+
+  /// A view this database can be read through, for callers that only hold the
+  /// database itself.
+  pub async fn get_first_view_id(&self) -> FlowyResult<String> {
+    self
+      .database
+      .read()
+      .await
+      .get_first_database_view_id()
+      .ok_or_else(|| FlowyError::internal().with_context("The database has no view"))
   }
 
   pub async fn get_field_settings(

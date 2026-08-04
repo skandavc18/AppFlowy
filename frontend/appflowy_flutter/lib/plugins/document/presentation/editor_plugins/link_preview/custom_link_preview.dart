@@ -19,6 +19,10 @@ import 'package:universal_platform/universal_platform.dart';
 
 import 'custom_link_parser.dart';
 
+/// How tall a link preview card stands before anyone drags it.
+const defaultLinkPreviewHeight = 96.0;
+const minimumLinkPreviewHeight = 72.0;
+
 class CustomLinkPreviewWidget extends StatelessWidget {
   const CustomLinkPreviewWidget({
     super.key,
@@ -29,6 +33,7 @@ class CustomLinkPreviewWidget extends StatelessWidget {
     this.imageUrl,
     this.isHovering = false,
     this.status = LinkLoadingStatus.loading,
+    this.height,
   });
 
   final Node node;
@@ -38,6 +43,9 @@ class CustomLinkPreviewWidget extends StatelessWidget {
   final String url;
   final bool isHovering;
   final LinkLoadingStatus status;
+
+  /// Null lets the card keep its own compact height.
+  final double? height;
 
   @override
   Widget build(BuildContext context) {
@@ -67,7 +75,7 @@ class CustomLinkPreviewWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(16.0),
       ),
       child: SizedBox(
-        height: 96,
+        height: height ?? defaultLinkPreviewHeight,
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [

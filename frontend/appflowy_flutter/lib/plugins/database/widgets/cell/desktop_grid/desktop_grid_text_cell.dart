@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/database/application/cell/bloc/text_cell_bloc.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
+import 'package:appflowy/plugins/database/widgets/cell/desktop_grid/location_cell_suggestions.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -54,26 +55,33 @@ class DesktopGridTextCellSkin extends IEditableTextCellSkin {
             children: [
               const _IconOrEmoji(),
               Expanded(
-                child: TextField(
+                child: LocationCellSuggestions(
+                  viewId: bloc.cellController.viewId,
+                  fieldId: bloc.cellController.fieldId,
                   controller: textEditingController,
                   focusNode: focusNode,
-                  maxLines: context.watch<TextCellBloc>().state.wrap ? null : 1,
-                  style: DesktopGridTextCellStyle.resolve(
-                    context,
-                    isPrimary: context
-                        .read<TextCellBloc>()
-                        .cellController
-                        .fieldInfo
-                        .isPrimary,
-                  ),
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    errorBorder: InputBorder.none,
-                    disabledBorder: InputBorder.none,
-                    isDense: true,
-                    isCollapsed: true,
+                  child: TextField(
+                    controller: textEditingController,
+                    focusNode: focusNode,
+                    maxLines:
+                        context.watch<TextCellBloc>().state.wrap ? null : 1,
+                    style: DesktopGridTextCellStyle.resolve(
+                      context,
+                      isPrimary: context
+                          .read<TextCellBloc>()
+                          .cellController
+                          .fieldInfo
+                          .isPrimary,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      isDense: true,
+                      isCollapsed: true,
+                    ),
                   ),
                 ),
               ),

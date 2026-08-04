@@ -26,7 +26,12 @@ class LinkEmbedKeys {
   static const String embed = 'embed';
   static const String align = 'align';
   static const String width = 'width';
+  static const String height = 'height';
 }
+
+/// How tall a page embed stands before anyone drags it.
+const defaultLinkEmbedHeight = 450.0;
+const minimumLinkEmbedHeight = 220.0;
 
 Node linkEmbedNode({required String url}) => Node(
       type: LinkPreviewBlockKeys.type,
@@ -154,41 +159,58 @@ class LinkEmbedBlockComponentState
     } else {
       child = buildErrorLoadingWidget(context);
     }
+    final editable = context.read<EditorState>().editable;
+    final storedWidth = node.attributes[LinkEmbedKeys.width]?.toDouble();
+    final storedHeight = node.attributes[LinkEmbedKeys.height]?.toDouble();
+
     final container = Container(
-      height: isYoutubeVideo ? null : 450,
       key: widgetKey,
       decoration: BoxDecoration(
         color: fillScheme.content,
         borderRadius: BorderRadius.all(Radius.circular(16)),
         border: Border.all(color: borderScheme.primary),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Stack(
         children: [
-          child,
+          // A video sizes itself by its ratio; a preview card fills whatever
+          // height the frame has been dragged to.
+          if (isYoutubeVideo) child else Positioned.fill(child: child),
           buildMenu(context),
         ],
       ),
     );
+
     if (!isYoutubeVideo) {
-      return container;
+      return ResizableMedia(
+        width: storedWidth ?? defaultVisualMediaWidth,
+        height: storedHeight ?? defaultLinkEmbedHeight,
+        minHeight: minimumLinkEmbedHeight,
+        editable: editable,
+        onResize: (value) => _write({LinkEmbedKeys.width: value}),
+        onResizeHeight: (value) => _write({LinkEmbedKeys.height: value}),
+        child: container,
+      );
     }
 
     // Portrait clips, Shorts above all, get a phone-sized frame so they fill
     // it end to end instead of sitting between black bars.
     final aspectRatio = videoAspectRatio ?? initialYoutubeAspectRatio(url);
-    final width = node.attributes[LinkEmbedKeys.width]?.toDouble() ??
-        (aspectRatio < 1 ? defaultPortraitMediaWidth : defaultVisualMediaWidth);
     return ResizableMedia(
-      width: width,
-      editable: context.read<EditorState>().editable,
-      onResize: (width) {
-        final editorState = context.read<EditorState>();
-        final transaction = editorState.transaction
-          ..updateNode(node, {LinkEmbedKeys.width: width});
-        editorState.apply(transaction);
-      },
+      width: storedWidth ??
+          (aspectRatio < 1
+              ? defaultPortraitMediaWidth
+              : defaultVisualMediaWidth),
+      editable: editable,
+      onResize: (value) => _write({LinkEmbedKeys.width: value}),
       child: container,
     );
+  }
+
+  void _write(Map<String, Object?> attributes) {
+    final editorState = context.read<EditorState>();
+    final transaction = editorState.transaction..updateNode(node, attributes);
+    editorState.apply(transaction);
   }
 
   Widget buildMenu(BuildContext context) {

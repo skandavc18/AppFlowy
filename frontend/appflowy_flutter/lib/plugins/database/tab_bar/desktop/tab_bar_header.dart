@@ -16,6 +16,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
@@ -46,18 +47,45 @@ class TabBarHeader extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Expanded(
-                child: DatabaseTabBar(),
-              ),
-              Flexible(
-                child: BlocBuilder<DatabaseTabBarBloc, DatabaseTabBarState>(
-                  builder: (context, state) {
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 6.0),
-                      child: pageSettingBarFromState(context, state),
-                    );
-                  },
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Flexible(child: DatabaseTabBar()),
+                    // The add button sits outside the strip, so a table with
+                    // more tabs than fit is still one another view can be
+                    // added to.
+                    AddDatabaseViewButton(
+                      onTap: (kind) {
+                        final bloc = context.read<DatabaseTabBarBloc>();
+                        if (kind.charted) {
+                          bloc.createChartView(kind.label);
+                        } else if (kind.mapped) {
+                          bloc.createMapView(kind.label);
+                        } else if (kind.slided) {
+                          bloc.createSlideView(kind.label);
+                        } else if (kind.tableView != null) {
+                          bloc.createTableView(kind.tableView!, kind.label);
+                        } else {
+                          bloc.add(
+                            DatabaseTabBarEvent.createView(kind.layout, null),
+                          );
+                        }
+                      },
+                    ),
+                  ],
                 ),
+              ),
+              // The settings take only what they need; a flexible box here
+              // would halve the strip and cut a tab off with the rest of the
+              // row standing empty.
+              BlocBuilder<DatabaseTabBarBloc, DatabaseTabBarState>(
+                builder: (context, state) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6.0),
+                    child: pageSettingBarFromState(context, state),
+                  );
+                },
               ),
             ],
           ),
@@ -100,35 +128,56 @@ class _DatabaseTabBarState extends State<DatabaseTabBar> {
   Widget build(BuildContext context) {
     return BlocBuilder<DatabaseTabBarBloc, DatabaseTabBarState>(
       builder: (context, state) {
-        return ListView.separated(
-          controller: _scrollController,
-          scrollDirection: Axis.horizontal,
-          shrinkWrap: true,
-          itemCount: state.tabBars.length + 1,
-          itemBuilder: (context, index) => index == state.tabBars.length
-              ? AddDatabaseViewButton(
-                  onTap: (layoutType) {
-                    context
-                        .read<DatabaseTabBarBloc>()
-                        .add(DatabaseTabBarEvent.createView(layoutType, null));
-                  },
-                )
-              : DatabaseTabBarItem(
-                  key: ValueKey(state.tabBars[index].viewId),
-                  view: state.tabBars[index].view,
-                  isSelected: state.selectedIndex == index,
-                  onTap: (selectedView) {
-                    context
-                        .read<DatabaseTabBarBloc>()
-                        .add(DatabaseTabBarEvent.selectView(selectedView.id));
-                  },
-                ),
-          separatorBuilder: (context, index) => VerticalDivider(
-            width: 1.0,
-            thickness: 1.0,
-            indent: 8,
-            endIndent: 13,
-            color: Theme.of(context).dividerColor,
+        return ScrollConfiguration(
+          // A tab strip is dragged and wheeled sideways, so it says so rather
+          // than relying on the platform's vertical-only defaults.
+          behavior: ScrollConfiguration.of(context).copyWith(
+            dragDevices: {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.trackpad,
+              PointerDeviceKind.stylus,
+            },
+            scrollbars: false,
+          ),
+          child: Listener(
+            onPointerSignal: (signal) {
+              if (signal is PointerScrollEvent &&
+                  _scrollController.hasClients) {
+                final delta = signal.scrollDelta.dx.abs() > 0
+                    ? signal.scrollDelta.dx
+                    : signal.scrollDelta.dy;
+                _scrollController.jumpTo(
+                  (_scrollController.offset + delta).clamp(
+                    0.0,
+                    _scrollController.position.maxScrollExtent,
+                  ),
+                );
+              }
+            },
+            child: ListView.separated(
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              shrinkWrap: true,
+              itemCount: state.tabBars.length,
+              itemBuilder: (context, index) => DatabaseTabBarItem(
+                key: ValueKey(state.tabBars[index].viewId),
+                view: state.tabBars[index].view,
+                isSelected: state.selectedIndex == index,
+                onTap: (selectedView) {
+                  context
+                      .read<DatabaseTabBarBloc>()
+                      .add(DatabaseTabBarEvent.selectView(selectedView.id));
+                },
+              ),
+              separatorBuilder: (context, index) => VerticalDivider(
+                width: 1.0,
+                thickness: 1.0,
+                indent: 8,
+                endIndent: 13,
+                color: Theme.of(context).dividerColor,
+              ),
+            ),
           ),
         );
       },

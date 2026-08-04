@@ -2,7 +2,9 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -13,6 +15,7 @@ class ExplorerToolbar extends StatelessWidget {
     required this.onNewFile,
     required this.onNewFolder,
     required this.onCreateCollection,
+    required this.onCreateDatabase,
     required this.onPaste,
     required this.onRefresh,
     required this.onMore,
@@ -26,6 +29,7 @@ class ExplorerToolbar extends StatelessWidget {
   final ValueChanged<WorkspaceFileMenuAction> onNewFile;
   final VoidCallback onNewFolder;
   final ValueChanged<CollectionKind> onCreateCollection;
+  final ValueChanged<WorkspaceTableKind> onCreateDatabase;
   final VoidCallback? onPaste;
   final VoidCallback onRefresh;
   final VoidCallback onMore;
@@ -42,6 +46,7 @@ class ExplorerToolbar extends StatelessWidget {
         _NewFileButton(
           onSelected: onNewFile,
           onCreateCollection: onCreateCollection,
+          onCreateDatabase: onCreateDatabase,
         ),
         _ToolbarButton(
           icon: workspaceAddFolderIcon,
@@ -141,10 +146,12 @@ class _NewFileButton extends StatelessWidget {
   const _NewFileButton({
     required this.onSelected,
     required this.onCreateCollection,
+    required this.onCreateDatabase,
   });
 
   final ValueChanged<WorkspaceFileMenuAction> onSelected;
   final ValueChanged<CollectionKind> onCreateCollection;
+  final ValueChanged<WorkspaceTableKind> onCreateDatabase;
 
   @override
   Widget build(BuildContext context) {
@@ -161,6 +168,7 @@ class _NewFileButton extends StatelessWidget {
             context: buttonContext,
             globalPosition: box.localToGlobal(Offset(0, box.size.height)),
             onCreateCollection: onCreateCollection,
+            onCreateDatabase: onCreateDatabase,
           );
           if (action != null) {
             onSelected(action);

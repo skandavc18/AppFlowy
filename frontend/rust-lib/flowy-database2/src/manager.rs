@@ -9,7 +9,8 @@ use collab_database::database::{Database, DatabaseData};
 use collab_database::entity::{CreateDatabaseParams, CreateViewParams, EncodedDatabase};
 use collab_database::error::DatabaseError;
 use collab_database::fields::translate_type_option::TranslateTypeOption;
-use collab_database::rows::RowId;
+use collab_database::fields::Field;
+use collab_database::rows::{Cell, RowId};
 use collab_database::template::csv::CSVTemplate;
 use collab_database::views::DatabaseLayout;
 use collab_database::workspace_database::{
@@ -38,10 +39,14 @@ use lib_infra::priority_task::TaskDispatcher;
 
 use crate::entities::{DatabaseLayoutPB, DatabaseSnapshotPB, FieldType, RowMetaPB};
 use crate::services::cell::stringify_cell;
+use crate::services::field::{
+  LocationTypeOption, RollupTypeOption, StringCellData, apply_rollup, cell_value,
+  is_rollup_target,
+};
 use crate::services::database::DatabaseEditor;
 use crate::services::database_view::DatabaseLayoutDepsResolver;
 use crate::services::field_settings::default_field_settings_by_layout_map;
-use crate::services::share::csv::{CSVFormat, CSVImporter, ImportResult};
+use crate::services::share::csv::{CSVFormat, CSVImporter, ImportResult, RelationNames};
 use tokio::sync::RwLock as TokioRwLock;
 use uuid::Uuid;
 
@@ -550,7 +555,188 @@ impl DatabaseManager {
 
   pub async fn export_csv(&self, view_id: &str, style: CSVFormat) -> FlowyResult<String> {
     let database = self.get_database_editor_with_view_id(view_id).await?;
-    database.export_csv(style).await
+    // A relation cell holds ids, so the names behind them are gathered from
+    // the databases it points at before the rows are written out.
+    let relation_names = match style {
+      CSVFormat::Original => self.relation_names_of(&database).await,
+      CSVFormat::META => RelationNames::new(),
+    };
+    database.export_csv(style, &relation_names).await
+  }
+
+  /// What every row a database's relations point at is called, by row id.
+  ///
+  /// A relation cell stores ids, which say nothing to a reader, and the names
+  /// live in another database that a cell cannot reach on its own.
+  pub async fn relation_names_of(&self, database: &Arc<DatabaseEditor>) -> RelationNames {
+    let mut names = RelationNames::new();
+    for database_id in database.relation_database_ids().await {
+      let Ok(related) = self.get_or_init_database_editor(&database_id).await else {
+        continue;
+      };
+      if let Ok(rows) = related.get_related_rows(None).await {
+        for row in rows {
+          names.insert(row.row_id, row.name);
+        }
+      }
+    }
+    names
+  }
+
+  /// Fills in every rollup column of a database from the rows its relations
+  /// point at.
+  ///
+  /// A rollup reads another database, which cannot be reached from inside a
+  /// cell, so the values are worked out here and written into the rows. The
+  /// count of cells that changed comes back so a caller can tell whether
+  /// anything moved.
+  pub async fn recalculate_rollups(&self, view_id: &str) -> FlowyResult<i64> {
+    let database = self.get_database_editor_with_view_id(view_id).await?;
+    let fields = database.get_fields(view_id, None).await;
+
+    let rollups: Vec<(Field, RollupTypeOption)> = fields
+      .iter()
+      .filter_map(|field| {
+        RollupTypeOption::from_field(field).map(|option| (field.clone(), option))
+      })
+      .collect();
+    if rollups.is_empty() {
+      return Ok(0);
+    }
+
+    let rows = database.get_all_rows(view_id).await?;
+    let mut written = 0_i64;
+
+    for (rollup_field, option) in rollups {
+      let Some(relation_field) = fields
+        .iter()
+        .find(|field| field.id == option.relation_field_id)
+      else {
+        continue;
+      };
+      let Ok(related_database_id) = database
+        .get_related_database_id(&relation_field.id)
+        .await
+      else {
+        continue;
+      };
+      let Ok(related) = self.get_or_init_database_editor(&related_database_id).await else {
+        continue;
+      };
+      let Ok(related_view_id) = related.get_first_view_id().await else {
+        continue;
+      };
+      let Some(target_field) = related
+        .get_fields(&related_view_id, None)
+        .await
+        .into_iter()
+        .find(|field| field.id == option.target_field_id)
+      else {
+        continue;
+      };
+
+      for row in rows.iter() {
+        let linked = row
+          .cells
+          .get(&relation_field.id)
+          .map(|cell| stringify_cell(cell, relation_field))
+          .unwrap_or_default();
+        let row_ids: Vec<String> = linked
+          .split(',')
+          .map(|id| id.trim().to_string())
+          .filter(|id| !id.is_empty())
+          .collect();
+
+        let mut values = Vec::with_capacity(row_ids.len());
+        for row_id in &row_ids {
+          if let Some(linked_row) = related
+            .get_row(&related_view_id, &RowId::from(row_id.clone()))
+            .await
+          {
+            values.push(cell_value(&linked_row, &target_field));
+          }
+        }
+
+        let computed = apply_rollup(option.aggregation, &values, row_ids.len());
+        let current = row
+          .cells
+          .get(&rollup_field.id)
+          .map(|cell| stringify_cell(cell, &rollup_field))
+          .unwrap_or_default();
+        if current == computed {
+          continue;
+        }
+
+        let cell = Cell::from(StringCellData::from(computed));
+        if database
+          .update_cell(view_id, &row.id, &rollup_field.id, cell)
+          .await
+          .is_ok()
+        {
+          written += 1;
+        }
+      }
+    }
+
+    Ok(written)
+  }
+
+  /// The rollup settings on a column, empty when it is an ordinary column.
+  pub async fn get_rollup(&self, view_id: &str, field_id: &str) -> FlowyResult<RollupTypeOption> {
+    let database = self.get_database_editor_with_view_id(view_id).await?;
+    Ok(database.get_rollup(field_id).await.unwrap_or_default())
+  }
+
+  /// The columns of a view that hold a place.
+  pub async fn location_field_ids(&self, view_id: &str) -> FlowyResult<Vec<String>> {
+    let database = self.get_database_editor_with_view_id(view_id).await?;
+    Ok(database.location_field_ids(view_id).await)
+  }
+
+  /// Tells a text column that it holds a place, or takes that back.
+  pub async fn set_location_field(
+    &self,
+    view_id: &str,
+    field_id: &str,
+    option: LocationTypeOption,
+  ) -> FlowyResult<()> {
+    let database = self.get_database_editor_with_view_id(view_id).await?;
+    database.set_location_field(field_id, option).await
+  }
+
+  /// Stores rollup settings on a column and fills it in straight away, so the
+  /// grid shows the answer rather than an empty column waiting for a refresh.
+  pub async fn update_rollup(
+    &self,
+    view_id: &str,
+    field_id: &str,
+    option: RollupTypeOption,
+  ) -> FlowyResult<i64> {
+    let database = self.get_database_editor_with_view_id(view_id).await?;
+    database.update_rollup(field_id, option).await?;
+    self.recalculate_rollups(view_id).await
+  }
+
+  /// The columns a rollup can read once it follows the given relation.
+  pub async fn rollup_targets(&self, view_id: &str, relation_field_id: &str) -> Vec<Field> {
+    let Ok(database) = self.get_database_editor_with_view_id(view_id).await else {
+      return vec![];
+    };
+    let Ok(related_database_id) = database.get_related_database_id(relation_field_id).await else {
+      return vec![];
+    };
+    let Ok(related) = self.get_or_init_database_editor(&related_database_id).await else {
+      return vec![];
+    };
+    let Ok(related_view_id) = related.get_first_view_id().await else {
+      return vec![];
+    };
+    related
+      .get_fields(&related_view_id, None)
+      .await
+      .into_iter()
+      .filter(is_rollup_target)
+      .collect()
   }
 
   pub async fn update_database_layout(

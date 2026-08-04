@@ -5,6 +5,33 @@ import 'package:calendar_view/calendar_view.dart';
 import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 
+extension GroupColor on GroupPB {
+  /// The colour the option behind this group wears, if it has one.
+  ///
+  /// Only select columns carry colours; a checkbox, date or text group and the
+  /// catch-all "No …" group have none, and say so.
+  SelectOptionColorPB? groupOptionColor(DatabaseController databaseController) {
+    if (isDefault) {
+      return null;
+    }
+
+    final field = databaseController.fieldController.getField(fieldId);
+    if (field == null) {
+      return null;
+    }
+
+    final options = switch (field.fieldType) {
+      FieldType.SingleSelect =>
+        SingleSelectTypeOptionPB.fromBuffer(field.field.typeOptionData).options,
+      FieldType.MultiSelect =>
+        MultiSelectTypeOptionPB.fromBuffer(field.field.typeOptionData).options,
+      _ => const <SelectOptionPB>[],
+    };
+
+    return options.firstWhereOrNull((option) => option.id == groupId)?.color;
+  }
+}
+
 extension GroupName on GroupPB {
   String generateGroupName(DatabaseController databaseController) {
     final fieldController = databaseController.fieldController;

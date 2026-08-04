@@ -185,9 +185,9 @@ class InsertRowButton extends StatelessWidget {
           rowBloc.add(const RowEvent.createRow());
         }
       },
-      iconPadding: const EdgeInsets.all(3),
       icon: FlowySvg(
         FlowySvgs.add_s,
+        size: const Size.square(19),
         color: Theme.of(context).colorScheme.tertiary,
       ),
     );
@@ -226,9 +226,9 @@ class _RowMenuButtonState extends State<RowMenuButton> {
       width: 20,
       height: 30,
       onPressed: () => widget.openMenu(),
-      iconPadding: const EdgeInsets.all(3),
       icon: FlowySvg(
         FlowySvgs.drag_element_s,
+        size: const Size.square(19),
         color: Theme.of(context).colorScheme.tertiary,
       ),
     );

@@ -16,6 +16,19 @@ enum FlowyGradientColor {
     );
   }
 
+  /// The gradient something falls back to when nobody has chosen one.
+  ///
+  /// The same seed always gives the same gradient, so a row wears one colour
+  /// wherever it is drawn. `hashCode` cannot be used: it is not promised to
+  /// be stable between runs.
+  static FlowyGradientColor forSeed(String seed) {
+    var hash = 0x811c9dc5;
+    for (final unit in seed.codeUnits) {
+      hash = ((hash ^ unit) * 0x01000193) & 0x7fffffff;
+    }
+    return FlowyGradientColor.values[hash % FlowyGradientColor.values.length];
+  }
+
   String get id {
     // DON'T change this name because it's saved in the database!
     switch (this) {

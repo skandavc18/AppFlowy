@@ -136,6 +136,15 @@ impl DatabaseViewEditor {
   /// Initialize the editor after creating it
   /// You should call [DatabaseViewEditor::initialize] after creating the editor
   pub async fn initialize(&self) -> FlowyResult<()> {
+    // Only opening a database used to fill this in, and opening is skipped
+    // while another view of the same database is still loading — leaving this
+    // view believing it has no rows for as long as it lives.
+    if self.row_orders.read().await.is_empty() {
+      if let Ok(orders) = self.get_all_row_orders().await {
+        self.set_row_orders(orders).await;
+      }
+    }
+
     if let Some(group) = self.group_controller.write().await.as_mut() {
       group.load_group_data().await?;
     }

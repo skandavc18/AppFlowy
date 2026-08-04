@@ -3,7 +3,9 @@ import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -30,10 +32,12 @@ abstract final class WorkspaceFileKindMenuStyle {
 /// value instead, while a submenu inside a popover needs the callback.
 ///
 /// Pass [onCreateCollection] wherever a container can also hold a collection,
-/// so "add something here" means the same thing everywhere it is offered.
+/// and [onCreateDatabase] wherever it can hold a table, so "add something
+/// here" means the same thing everywhere it is offered.
 List<AppMenuEntry> workspaceFileKindEntries({
   ValueChanged<WorkspaceFileMenuAction>? onSelected,
   ValueChanged<CollectionKind>? onCreateCollection,
+  ValueChanged<WorkspaceTableKind>? onCreateDatabase,
 }) {
   final entries = <AppMenuEntry>[];
   WorkspaceFileSource? section;
@@ -53,6 +57,12 @@ List<AppMenuEntry> workspaceFileKindEntries({
       ),
     );
   }
+  if (onCreateDatabase != null) {
+    entries
+      ..add(const AppMenuSeparator())
+      ..add(AppMenuHeader(LocaleKeys.collections_database_tables.tr()))
+      ..addAll(databaseLayoutEntries(onSelected: onCreateDatabase));
+  }
   if (onCreateCollection != null) {
     entries
       ..add(const AppMenuSeparator())
@@ -64,18 +74,20 @@ List<AppMenuEntry> workspaceFileKindEntries({
 
 /// Shows the creatable and uploadable file types anchored at [globalPosition].
 ///
-/// Returns null when a collection was picked instead — the collection
+/// Returns null when a collection or a table was picked instead — that
 /// callback has already run by then.
 Future<WorkspaceFileMenuAction?> showWorkspaceFileKindMenu({
   required BuildContext context,
   required Offset globalPosition,
   ValueChanged<CollectionKind>? onCreateCollection,
+  ValueChanged<WorkspaceTableKind>? onCreateDatabase,
 }) =>
     showAppMenu<WorkspaceFileMenuAction>(
       context: context,
       globalPosition: globalPosition,
       entries: workspaceFileKindEntries(
         onCreateCollection: onCreateCollection,
+        onCreateDatabase: onCreateDatabase,
       ),
       width: WorkspaceFileKindMenuStyle.width,
     );
@@ -85,10 +97,15 @@ Future<WorkspaceFileMenuAction?> showWorkspaceFileKindMenu({
 /// Shared by the sidebar `+` button, the folder header and the sidebar
 /// background menu so a submenu is never a second design.
 class WorkspaceFileAddAction extends PopoverActionCell {
-  WorkspaceFileAddAction({required this.onCreate, this.onCreateCollection});
+  WorkspaceFileAddAction({
+    required this.onCreate,
+    this.onCreateCollection,
+    this.onCreateDatabase,
+  });
 
   final void Function(WorkspaceFileMenuAction action) onCreate;
   final ValueChanged<CollectionKind>? onCreateCollection;
+  final ValueChanged<WorkspaceTableKind>? onCreateDatabase;
 
   @override
   Widget? leftIcon(Color iconColor) => Icon(
@@ -122,6 +139,13 @@ class WorkspaceFileAddAction extends PopoverActionCell {
                     parentController.close();
                     onCreateCollection!(kind);
                   },
+            onCreateDatabase: onCreateDatabase == null
+                ? null
+                : (kind) {
+                    controller.close();
+                    parentController.close();
+                    onCreateDatabase!(kind);
+                  },
           );
 }
 
@@ -131,15 +155,20 @@ class WorkspaceFileKindList extends StatelessWidget {
     super.key,
     required this.onSelected,
     this.onCreateCollection,
+    this.onCreateDatabase,
   });
 
   final ValueChanged<WorkspaceFileMenuAction> onSelected;
   final ValueChanged<CollectionKind>? onCreateCollection;
+  final ValueChanged<WorkspaceTableKind>? onCreateDatabase;
 
   @override
   Widget build(BuildContext context) {
     final entries = normalizeAppMenuEntries(
-      workspaceFileKindEntries(onCreateCollection: onCreateCollection),
+      workspaceFileKindEntries(
+        onCreateCollection: onCreateCollection,
+        onCreateDatabase: onCreateDatabase,
+      ),
     );
     return SingleChildScrollView(
       child: Column(
@@ -158,6 +187,8 @@ class WorkspaceFileKindList extends StatelessWidget {
                   onTap: () => switch (entry.value) {
                     final WorkspaceFileMenuAction action => onSelected(action),
                     final CollectionKind kind => onCreateCollection?.call(kind),
+                    final WorkspaceTableKind kind =>
+                      onCreateDatabase?.call(kind),
                     _ => null,
                   },
                 ),

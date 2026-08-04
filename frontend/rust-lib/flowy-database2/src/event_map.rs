@@ -35,6 +35,7 @@ pub fn init(database_manager: Weak<DatabaseManager>) -> AFPlugin {
          // Row
          .event(DatabaseEvent::CreateRow, create_row_handler)
          .event(DatabaseEvent::GetRow, get_row_handler)
+         .event(DatabaseEvent::GetAllRows, get_all_rows_handler)
          .event(DatabaseEvent::InitRow, init_row_handler)
          .event(DatabaseEvent::GetRowMeta, get_row_meta_handler)
          .event(DatabaseEvent::UpdateRowMeta, update_row_meta_handler)
@@ -76,8 +77,7 @@ pub fn init(database_manager: Weak<DatabaseManager>) -> AFPlugin {
          .event(DatabaseEvent::GetLayoutSetting, get_layout_setting_handler)
          .event(DatabaseEvent::CreateDatabaseView, create_database_view)
          // Export
-         .event(DatabaseEvent::ExportCSV, export_csv_handler)
-         .event(DatabaseEvent::ExportRawDatabaseData, export_raw_database_data_handler)
+         .event(DatabaseEvent::ExportCSV, export_csv_handler)         .event(DatabaseEvent::ExportRawDatabaseData, export_raw_database_data_handler)
          .event(DatabaseEvent::GetDatabaseSnapshots, get_snapshots_handler)
          // Field settings
          .event(DatabaseEvent::GetFieldSettings, get_field_settings_handler)
@@ -92,6 +92,13 @@ pub fn init(database_manager: Weak<DatabaseManager>) -> AFPlugin {
          .event(DatabaseEvent::UpdateRelationCell, update_relation_cell_handler)
          .event(DatabaseEvent::GetRelatedRowDatas, get_related_row_datas_handler)
          .event(DatabaseEvent::GetRelatedDatabaseRows, get_related_database_rows_handler)
+         .event(DatabaseEvent::RecalculateRollups, recalculate_rollups_handler)
+         .event(DatabaseEvent::GetRollupSettings, get_rollup_settings_handler)
+         .event(DatabaseEvent::UpdateRollupSettings, update_rollup_settings_handler)
+         .event(DatabaseEvent::GetRollupTargets, get_rollup_targets_handler)
+         .event(DatabaseEvent::GetRowsAsText, get_rows_as_text_handler)
+         .event(DatabaseEvent::SetLocationField, set_location_field_handler)
+         .event(DatabaseEvent::GetLocationFields, get_location_fields_handler)
          // AI
          .event(DatabaseEvent::SummarizeRow, summarize_row_handler)
          .event(DatabaseEvent::TranslateRow, translate_row_handler)
@@ -403,6 +410,27 @@ pub enum DatabaseEvent {
 
   #[event(input = "RenameMediaChangesetPB")]
   RenameMediaFile = 201,
+
+  #[event(input = "DatabaseViewIdPB", output = "RollupResultPB")]
+  RecalculateRollups = 202,
+
+  #[event(input = "RollupFieldPB", output = "RollupSettingsPB")]
+  GetRollupSettings = 203,
+
+  #[event(input = "RollupSettingsPB", output = "RollupResultPB")]
+  UpdateRollupSettings = 204,
+
+  #[event(input = "RollupFieldPB", output = "RepeatedFieldPB")]
+  GetRollupTargets = 205,
+
+  #[event(input = "DatabaseViewIdPB", output = "RepeatedRowTextPB")]
+  GetRowsAsText = 206,
+
+  #[event(input = "LocationFieldPB")]
+  SetLocationField = 207,
+
+  #[event(input = "DatabaseViewIdPB", output = "RepeatedFieldIdPB")]
+  GetLocationFields = 208,
 
   #[event(
     input = "CustomPromptDatabaseConfigPB",

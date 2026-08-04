@@ -1,10 +1,13 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/grid/application/row/row_document_bloc.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
+import 'package:appflowy/plugins/database/widgets/row/row_banner.dart';
+import 'package:appflowy/plugins/database/widgets/row/row_comments.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_handler.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart';
 import 'package:appflowy/plugins/document/presentation/editor_page.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_list.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/widgets/ai_writer_scroll_wrapper.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/shared_context/shared_context.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/transaction_handler/editor_transaction_service.dart';
@@ -14,7 +17,9 @@ import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
@@ -24,10 +29,16 @@ class RowDocument extends StatelessWidget {
     super.key,
     required this.viewId,
     required this.rowId,
+    this.userProfile,
+    this.showComments = false,
   });
 
   final String viewId;
   final String rowId;
+  final UserProfilePB? userProfile;
+
+  /// Whether the row's discussion is shown above its page.
+  final bool showComments;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +62,8 @@ class RowDocument extends StatelessWidget {
             ),
             finish: () => _RowEditor(
               view: state.viewPB!,
+              userProfile: userProfile,
+              showComments: showComments,
               onIsEmptyChanged: (isEmpty) => context
                   .read<RowDocumentBloc>()
                   .add(RowDocumentEvent.updateIsEmpty(isEmpty)),
@@ -66,10 +79,14 @@ class _RowEditor extends StatelessWidget {
   const _RowEditor({
     required this.view,
     this.onIsEmptyChanged,
+    this.userProfile,
+    this.showComments = false,
   });
 
   final ViewPB view;
   final void Function(bool)? onIsEmptyChanged;
+  final UserProfilePB? userProfile;
+  final bool showComments;
 
   @override
   Widget build(BuildContext context) {
@@ -140,9 +157,43 @@ class _RowEditor extends StatelessWidget {
                           shrinkWrap: true,
                           autoFocus: false,
                           editorState: editorState,
+                          // The thread rides in the editor's own header, so
+                          // the body stays the single scrollable the row page
+                          // scrolls.
+                          header: showComments
+                              ? Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    rowDetailContentInset,
+                                    0,
+                                    rowDetailContentInset,
+                                    18,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      RowCommentSection(
+                                        editorState: editorState,
+                                        userProfile: userProfile,
+                                        padding: EdgeInsets.zero,
+                                      ),
+                                      const VSpace(18),
+                                      const Divider(height: 1.0),
+                                    ],
+                                  ),
+                                )
+                              : null,
                           styleCustomizer: EditorStyleCustomizer(
                             context: context,
-                            padding: const EdgeInsets.only(left: 16, right: 54),
+                            // The editor lays the + and :: handles out ahead of
+                            // each block, so the page starts a gutter early to
+                            // put them in the margin and the text on the
+                            // measure.
+                            padding: const EdgeInsets.only(
+                              left: rowDetailContentInset -
+                                  BlockActionList.gutterWidth,
+                              right: rowDetailContentInset,
+                            ),
                           ),
                           showParagraphPlaceholder: (editorState, _) =>
                               editorState.document.isEmpty,

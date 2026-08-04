@@ -7,7 +7,6 @@ import 'package:appflowy/plugins/database/application/cell/cell_controller.dart'
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_banner_bloc.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
-import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/widgets/cell/card_cell_skeleton/text_card_cell.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_builder.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_skeleton/text.dart';
@@ -42,6 +41,25 @@ import '../../../document/presentation/editor_plugins/plugins.dart';
 /// Used to determine the position of the row actions depending on if there is a cover or not.
 ///
 const rowCoverHeight = 250.0;
+
+/// Where every line of a row's content begins, and how far it stops short of
+/// the far edge: the title, the properties, the rule, the notes and the
+/// comments all answer to this one measure.
+const rowDetailContentInset = 96.0;
+
+/// How far the cover sits inside the popup, and how round its corners are.
+const _coverInset = 10.0;
+const _coverRadius = 14.0;
+
+/// The cover a row wears when nobody has chosen one for it.
+///
+/// A row page with no cover reads as unfinished beside one that has it, so
+/// every row is given a gradient of its own instead. Nothing is written down —
+/// choosing a cover still replaces this, and removing one comes back to it.
+RowCoverPB defaultRowCover(String rowId) => RowCoverPB(
+      data: FlowyGradientColor.forSeed(rowId).id,
+      coverType: CoverTypePB.GradientCover,
+    );
 
 const _iconHeight = 60.0;
 const _toolbarHeight = 40.0;
@@ -88,7 +106,9 @@ class _RowBannerState extends State<RowBanner> {
       )..add(const RowBannerEvent.initial()),
       child: BlocBuilder<RowBannerBloc, RowBannerState>(
         builder: (context, state) {
-          final hasCover = state.rowMeta.cover.data.isNotEmpty;
+          final chosen = state.rowMeta.cover.data.isNotEmpty;
+          final cover =
+              chosen ? state.rowMeta.cover : defaultRowCover(state.rowMeta.id);
           final hasIcon = state.rowMeta.icon.isNotEmpty;
 
           return Column(
@@ -98,12 +118,12 @@ class _RowBannerState extends State<RowBanner> {
                   return Stack(
                     children: [
                       SizedBox(
-                        height: _calculateOverallHeight(hasIcon, hasCover),
+                        height: rowCoverHeight + _toolbarHeight,
                         width: constraints.maxWidth,
                         child: RowHeaderToolbar(
-                          offset: GridSize.horizontalHeaderPadding + 20,
+                          offset: rowDetailContentInset,
                           hasIcon: hasIcon,
-                          hasCover: hasCover,
+                          hasCover: chosen,
                           onIconChanged: (icon) {
                             if (icon != null) {
                               context
@@ -120,36 +140,33 @@ class _RowBannerState extends State<RowBanner> {
                           },
                         ),
                       ),
-                      if (hasCover)
-                        RowCover(
-                          rowId: widget.rowController.rowId,
-                          cover: state.rowMeta.cover,
-                          userProfile: widget.userProfile,
-                          onCoverChanged: (type, details, uploadType) {
-                            if (details != null) {
-                              context.read<RowBannerBloc>().add(
-                                    RowBannerEvent.setCover(
-                                      RowCoverPB(
-                                        data: details,
-                                        uploadType: uploadType,
-                                        coverType: type.into(),
-                                      ),
+                      RowCover(
+                        rowId: widget.rowController.rowId,
+                        cover: cover,
+                        userProfile: widget.userProfile,
+                        onCoverChanged: (type, details, uploadType) {
+                          if (details != null) {
+                            context.read<RowBannerBloc>().add(
+                                  RowBannerEvent.setCover(
+                                    RowCoverPB(
+                                      data: details,
+                                      uploadType: uploadType,
+                                      coverType: type.into(),
                                     ),
-                                  );
-                            } else {
-                              context
-                                  .read<RowBannerBloc>()
-                                  .add(const RowBannerEvent.removeCover());
-                            }
-                          },
-                          isLocalMode: isLocalMode,
-                        ),
+                                  ),
+                                );
+                          } else {
+                            context
+                                .read<RowBannerBloc>()
+                                .add(const RowBannerEvent.removeCover());
+                          }
+                        },
+                        isLocalMode: isLocalMode,
+                      ),
                       if (hasIcon)
                         Positioned(
-                          left: GridSize.horizontalHeaderPadding + 20,
-                          bottom: hasCover
-                              ? _toolbarHeight - _iconHeight / 2
-                              : _toolbarHeight,
+                          left: rowDetailContentInset,
+                          bottom: _toolbarHeight - _iconHeight / 2,
                           child: RowIcon(
                             ///TODO: avoid hardcoding for [FlowyIconType]
                             icon: EmojiIconData(
@@ -183,19 +200,6 @@ class _RowBannerState extends State<RowBanner> {
         },
       ),
     );
-  }
-
-  double _calculateOverallHeight(bool hasIcon, bool hasCover) {
-    switch ((hasIcon, hasCover)) {
-      case (true, true):
-        return rowCoverHeight + _toolbarHeight;
-      case (true, false):
-        return 50 + _iconHeight + _toolbarHeight;
-      case (false, true):
-        return rowCoverHeight + _toolbarHeight;
-      case (false, false):
-        return _toolbarHeight;
-    }
   }
 }
 
@@ -235,18 +239,32 @@ class _RowCoverState extends State<RowCover> {
       child: MouseRegion(
         onEnter: (_) => setState(() => isOverlayButtonsHidden = false),
         onExit: (_) => setState(() => isOverlayButtonsHidden = true),
-        child: Stack(
-          children: [
-            SizedBox(
-              width: double.infinity,
-              child: DesktopRowCover(
-                cover: widget.cover,
-                userProfile: widget.userProfile,
-              ),
+        child: Padding(
+          // The popup is a card, so its cover sits inside it rather than
+          // running to the edges and squaring off the corners.
+          padding: const EdgeInsets.fromLTRB(
+            _coverInset,
+            _coverInset,
+            _coverInset,
+            0,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_coverRadius),
+            child: Stack(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  height: double.infinity,
+                  child: DesktopRowCover(
+                    cover: widget.cover,
+                    userProfile: widget.userProfile,
+                  ),
+                ),
+                if (!isOverlayButtonsHidden || isPopoverOpen)
+                  _buildCoverOverlayButtons(context),
+              ],
             ),
-            if (!isOverlayButtonsHidden || isPopoverOpen)
-              _buildCoverOverlayButtons(context),
-          ],
+          ),
         ),
       ),
     );
@@ -372,9 +390,7 @@ class _DesktopRowCoverState extends State<DesktopRowCover> {
   @override
   Widget build(BuildContext context) {
     if (cover.coverType == CoverTypePB.FileCover) {
-      return SizedBox(
-        height: rowCoverHeight,
-        width: double.infinity,
+      return SizedBox.expand(
         child: AFImage(
           url: cover.data,
           uploadType: cover.uploadType,
@@ -384,9 +400,7 @@ class _DesktopRowCoverState extends State<DesktopRowCover> {
     }
 
     if (cover.coverType == CoverTypePB.AssetCover) {
-      return SizedBox(
-        height: rowCoverHeight,
-        width: double.infinity,
+      return SizedBox.expand(
         child: Image.asset(
           PageStyleCoverImageType.builtInImagePath(cover.data),
           fit: BoxFit.cover,
@@ -397,20 +411,18 @@ class _DesktopRowCoverState extends State<DesktopRowCover> {
     if (cover.coverType == CoverTypePB.ColorCover) {
       final color = FlowyTint.fromId(cover.data)?.color(context) ??
           cover.data.tryToColor();
-      return Container(
-        height: rowCoverHeight,
-        width: double.infinity,
-        color: color,
+      return ColoredBox(
+        color: color ?? Colors.transparent,
+        child: const SizedBox.expand(),
       );
     }
 
     if (cover.coverType == CoverTypePB.GradientCover) {
-      return Container(
-        height: rowCoverHeight,
-        width: double.infinity,
+      return DecoratedBox(
         decoration: BoxDecoration(
           gradient: FlowyGradientColor.fromId(cover.data).linear,
         ),
+        child: const SizedBox.expand(),
       );
     }
 
@@ -597,12 +609,19 @@ class _BannerTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<RowBannerBloc, RowBannerState>(
       builder: (context, state) {
+        // The primary field is read from the backend, while the cell is built
+        // against the field controller — so it can be named before it is known.
+        final primaryField = state.primaryField;
+        final known = primaryField != null &&
+            cellBuilder.databaseController.fieldController
+                    .getField(primaryField.id) !=
+                null;
         final children = [
-          if (state.primaryField != null)
+          if (known)
             Expanded(
               child: cellBuilder.buildCustom(
                 CellContext(
-                  fieldId: state.primaryField!.id,
+                  fieldId: primaryField.id,
                   rowId: rowController.rowId,
                 ),
                 skinMap: EditableCellSkinMap(textSkin: _TitleSkin()),
@@ -611,7 +630,7 @@ class _BannerTitle extends StatelessWidget {
         ];
 
         return Padding(
-          padding: const EdgeInsets.only(left: 60),
+          padding: const EdgeInsets.only(left: rowDetailContentInset),
           child: Row(children: children),
         );
       },

@@ -163,6 +163,11 @@ class _EventCardState extends State<EventCard> {
             BlocProvider.value(
               value: context.read<ViewBloc>(),
             ),
+            // A relation cell opens the workspace to name the rows it points
+            // at, and a popover is built outside the tree that provides it.
+            BlocProvider.value(
+              value: context.read<UserWorkspaceBloc>(),
+            ),
           ],
           child: CalendarEventEditor(
             databaseController: widget.databaseController,

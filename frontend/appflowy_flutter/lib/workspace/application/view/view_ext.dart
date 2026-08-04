@@ -6,11 +6,19 @@ import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.
     show PageStyleFontLayout, PageStyleLineHeightLayout;
 import 'package:appflowy/plugins/ai_chat/chat.dart';
 import 'package:appflowy/plugins/collection/bookmark_plugin.dart';
+import 'package:appflowy/plugins/collection/chart_plugin.dart';
 import 'package:appflowy/plugins/collection/collection_plugin.dart';
+import 'package:appflowy/plugins/collection/map_plugin.dart';
+import 'package:appflowy/plugins/collection/slide_plugin.dart';
+import 'package:appflowy/plugins/collection/table_view_plugin.dart';
 import 'package:appflowy/plugins/database/board/presentation/board_page.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_page.dart';
 import 'package:appflowy/plugins/database/grid/presentation/grid_page.dart';
 import 'package:appflowy/plugins/database/grid/presentation/mobile_grid_page.dart';
+import 'package:appflowy/plugins/database/tab_bar/desktop/chart_tab_bar_builder.dart';
+import 'package:appflowy/plugins/database/tab_bar/desktop/map_tab_bar_builder.dart';
+import 'package:appflowy/plugins/database/tab_bar/desktop/slide_tab_bar_builder.dart';
+import 'package:appflowy/plugins/database/tab_bar/desktop/table_view_tab_builders.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/document.dart';
 import 'package:appflowy/plugins/workspace_folder/workspace_folder_plugin.dart';
@@ -19,7 +27,11 @@ import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
+import 'package:appflowy/workspace/application/maps/map_metadata.dart';
+import 'package:appflowy/workspace/application/slides/slide_metadata.dart';
+import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
@@ -95,6 +107,19 @@ extension ViewExtension on ViewPB {
         size: size?.width ?? 16,
       );
     }
+    if (isChart) {
+      return Icon(Icons.bar_chart_rounded, size: size?.width ?? 16);
+    }
+    if (isMap) {
+      return Icon(Icons.map_rounded, size: size?.width ?? 16);
+    }
+    if (isSlideDeck) {
+      return Icon(Icons.view_carousel_rounded, size: size?.width ?? 16);
+    }
+    final tableView = tableViewKind;
+    if (tableView != null) {
+      return Icon(tableViewIcon(tableView), size: size?.width ?? 16);
+    }
     return FlowySvg(
       switch (layout) {
         ViewLayoutPB.Board => FlowySvgs.icon_board_s,
@@ -138,6 +163,24 @@ extension ViewExtension on ViewPB {
     if (isWorkspaceFile) {
       return WorkspaceFilePlugin(view: this);
     }
+    // A chart is a table that has been asked to draw itself; the rows are
+    // still there, one click away.
+    if (isChart) {
+      return ChartPlugin(view: this);
+    }
+    // A map is a table that has been asked where its rows are.
+    if (isMap) {
+      return MapPlugin(view: this);
+    }
+    // A deck is a table that has been asked to show one row at a time.
+    if (isSlideDeck) {
+      return SlidePlugin(view: this);
+    }
+    // The rest of the readings of a table share one page.
+    final tableView = tableViewKind;
+    if (tableView != null) {
+      return TableViewPlugin(view: this, kind: tableView);
+    }
     switch (layout) {
       case ViewLayoutPB.Board:
       case ViewLayoutPB.Calendar:
@@ -168,12 +211,37 @@ extension ViewExtension on ViewPB {
     throw UnimplementedError;
   }
 
-  DatabaseTabBarItemBuilder tabBarItem() => switch (layout) {
-        ViewLayoutPB.Board => BoardPageTabBarBuilderImpl(),
-        ViewLayoutPB.Calendar => CalendarPageTabBarBuilderImpl(),
-        ViewLayoutPB.Grid => DesktopGridTabBarBuilderImpl(),
-        _ => throw UnimplementedError,
+  DatabaseTabBarItemBuilder tabBarItem() {
+    // A chart showing its rows is a grid again, which is also what keeps the
+    // standalone chart page from opening itself.
+    final chart = this.chart;
+    if (chart != null && !chart.showTable) {
+      return ChartTabBarBuilderImpl();
+    }
+    final map = mapView;
+    if (map != null && !map.showTable) {
+      return MapTabBarBuilderImpl();
+    }
+    final slides = slideView;
+    if (slides != null && !slides.showTable) {
+      return SlideTabBarBuilderImpl();
+    }
+    final tableView = tableViewKind;
+    if (tableView != null && tableViewMark(tableView)?.showTable != true) {
+      return switch (tableView) {
+        TableViewKind.timeline => TimelineTabBarBuilderImpl(),
+        TableViewKind.feed => FeedTabBarBuilderImpl(),
+        TableViewKind.form => FormTabBarBuilderImpl(),
+        TableViewKind.gallery => GalleryTabBarBuilderImpl(),
       };
+    }
+    return switch (layout) {
+      ViewLayoutPB.Board => BoardPageTabBarBuilderImpl(),
+      ViewLayoutPB.Calendar => CalendarPageTabBarBuilderImpl(),
+      ViewLayoutPB.Grid => DesktopGridTabBarBuilderImpl(),
+      _ => throw UnimplementedError,
+    };
+  }
 
   DatabaseTabBarItemBuilder mobileTabBarItem() => switch (layout) {
         ViewLayoutPB.Board => BoardPageTabBarBuilderImpl(),

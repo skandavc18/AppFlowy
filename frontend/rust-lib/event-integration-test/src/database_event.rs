@@ -25,10 +25,7 @@ impl EventIntegrationTest {
     self
       .appflowy_core
       .database_manager
-      .get_database_editor_with_view_id(database_view_id)
-      .await
-      .unwrap()
-      .export_csv(CSVFormat::Original)
+      .export_csv(database_view_id, CSVFormat::Original)
       .await
       .unwrap()
   }

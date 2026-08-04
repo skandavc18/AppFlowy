@@ -28,6 +28,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_e
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:cross_file/cross_file.dart';
@@ -153,6 +154,9 @@ class _FolderExplorerState extends State<FolderExplorer> {
             ),
             onCreateCollection: (kind) => unawaited(
               _createCollection(kind, parentId: controller.currentFolder.id),
+            ),
+            onCreateDatabase: (kind) => unawaited(
+              _createDatabase(kind, parentId: controller.currentFolder.id),
             ),
             onMore: (position) => unawaited(_showBackgroundMenu(position)),
           )
@@ -397,6 +401,14 @@ class _FolderExplorerState extends State<FolderExplorer> {
                       : null,
                 ),
               ),
+              onCreateDatabase: (kind) => unawaited(
+                _createDatabase(
+                  kind,
+                  parentId: presentation == FolderExplorerPresentation.gallery
+                      ? controller.currentFolder.id
+                      : null,
+                ),
+              ),
               onPaste: controller.canPaste
                   ? () => unawaited(controller.paste())
                   : null,
@@ -596,6 +608,8 @@ class _FolderExplorerState extends State<FolderExplorer> {
       globalPosition: position,
       onCreateCollection: (kind) =>
           unawaited(_createCollection(kind, parentId: item.id)),
+      onCreateDatabase: (kind) =>
+          unawaited(_createDatabase(kind, parentId: item.id)),
     );
     if (action == null || !mounted) {
       return;
@@ -632,6 +646,19 @@ class _FolderExplorerState extends State<FolderExplorer> {
       _openView,
       (error) => controller.showError(error.msg),
     );
+  }
+
+  Future<void> _createDatabase(
+    WorkspaceTableKind kind, {
+    String? parentId,
+  }) async {
+    final view = await createWorkspaceDatabase(
+      parentViewId: parentId ?? controller.currentFolder.id,
+      kind: kind,
+    );
+    if (view != null && mounted) {
+      _openView(view);
+    }
   }
 
   void _beginGalleryCreate(
@@ -706,6 +733,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
     final knowledgeMode = presentation == FolderExplorerPresentation.gallery;
     WorkspaceFileMenuAction? kind;
     CollectionKind? collectionKind;
+    WorkspaceTableKind? databaseLayout;
     final action = await showAppMenu<_GalleryMenuAction>(
       context: context,
       globalPosition: position,
@@ -721,6 +749,13 @@ class _FolderExplorerState extends State<FolderExplorer> {
           label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
           icon: workspaceAddFolderIcon,
           value: _GalleryMenuAction.newFolder,
+        ),
+        AppMenuItem(
+          label: LocaleKeys.collections_database_table.tr(),
+          icon: Icons.table_rows_rounded,
+          submenu: databaseLayoutEntries(
+            onSelected: (selected) => databaseLayout = selected,
+          ),
         ),
         AppMenuItem(
           label: LocaleKeys.collections_newCollection.tr(),
@@ -771,6 +806,10 @@ class _FolderExplorerState extends State<FolderExplorer> {
     }
     if (collectionKind != null) {
       await _createCollection(collectionKind!);
+      return;
+    }
+    if (databaseLayout != null) {
+      await _createDatabase(databaseLayout!);
       return;
     }
     if (action == null) {

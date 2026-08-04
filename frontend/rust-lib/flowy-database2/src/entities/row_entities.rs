@@ -74,6 +74,32 @@ pub struct RowMetaPB {
   pub cover: Option<RowCoverPB>,
 }
 
+/// One row, read the way the table displays it.
+///
+/// The cells line up with the field ids alongside them, so a caller that
+/// already knows the columns can pick out the ones it wants without a call
+/// per cell — which is what makes a map of thousands of rows affordable.
+#[derive(Debug, Default, Clone, ProtoBuf)]
+pub struct RowTextPB {
+  #[pb(index = 1)]
+  pub row_id: String,
+
+  #[pb(index = 2)]
+  pub cells: Vec<String>,
+
+  #[pb(index = 3)]
+  pub modified_at: i64,
+}
+
+#[derive(Debug, Default, Clone, ProtoBuf)]
+pub struct RepeatedRowTextPB {
+  #[pb(index = 1)]
+  pub field_ids: Vec<String>,
+
+  #[pb(index = 2)]
+  pub rows: Vec<RowTextPB>,
+}
+
 #[derive(Debug, Default, Clone, ProtoBuf, Serialize, Deserialize)]
 pub struct RowCoverPB {
   #[pb(index = 1)]

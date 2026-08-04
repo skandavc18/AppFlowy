@@ -1,9 +1,11 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/callout/callout_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/link_embed_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/custom_link_parser.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:universal_platform/universal_platform.dart';
 
 import 'custom_link_preview.dart';
@@ -127,6 +129,10 @@ class CustomLinkPreviewBlockComponentState
   }
 
   Widget buildPreview(bool showActions) {
+    final editorState = context.read<EditorState>();
+    final storedWidth = node.attributes[LinkEmbedKeys.width]?.toDouble();
+    final storedHeight = node.attributes[LinkEmbedKeys.height]?.toDouble();
+
     Widget child = CustomLinkPreviewWidget(
       key: widgetKey,
       node: node,
@@ -136,19 +142,12 @@ class CustomLinkPreviewBlockComponentState
       description: linkInfo.description,
       imageUrl: linkInfo.imageUrl,
       status: status,
+      height: double.infinity,
     );
-
-    if (widget.showActions && widget.actionBuilder != null) {
-      child = BlockComponentActionWrapper(
-        node: node,
-        actionBuilder: widget.actionBuilder!,
-        child: child,
-      );
-    }
 
     child = Stack(
       children: [
-        child,
+        Positioned.fill(child: child),
         if (showActions && UniversalPlatform.isDesktopOrWeb)
           Positioned(
             top: 12,
@@ -177,6 +176,27 @@ class CustomLinkPreviewBlockComponentState
       ],
     );
 
+    child = ResizableMedia(
+      width: storedWidth ?? double.infinity,
+      minWidth: 260,
+      height: storedHeight ?? defaultLinkPreviewHeight,
+      minHeight: minimumLinkPreviewHeight,
+      maxHeight: 640,
+      alignment: Alignment.centerLeft,
+      editable: editorState.editable,
+      onResize: (value) => _write({LinkEmbedKeys.width: value}),
+      onResizeHeight: (value) => _write({LinkEmbedKeys.height: value}),
+      child: child,
+    );
+
+    if (widget.showActions && widget.actionBuilder != null) {
+      child = BlockComponentActionWrapper(
+        node: node,
+        actionBuilder: widget.actionBuilder!,
+        child: child,
+      );
+    }
+
     final parent = node.parent;
     EdgeInsets newPadding = padding;
     if (parent?.type == CalloutBlockKeys.type) {
@@ -185,6 +205,12 @@ class CustomLinkPreviewBlockComponentState
     child = Padding(padding: newPadding, child: child);
 
     return child;
+  }
+
+  void _write(Map<String, Object?> attributes) {
+    final editorState = context.read<EditorState>();
+    final transaction = editorState.transaction..updateNode(node, attributes);
+    editorState.apply(transaction);
   }
 
   @override

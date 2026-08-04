@@ -23,6 +23,13 @@ import '../cell/editable_cell_builder.dart';
 import 'row_banner.dart';
 import 'row_property.dart';
 
+/// How the row popup is shaped: a landscape 4:3 box, an iPad held sideways.
+const double _rowDetailAspectRatio = 4 / 3;
+const double _rowDetailMaxWidth = 960;
+const double _rowDetailMinHeight = 320;
+const double _rowDetailMargin = 56;
+const double _rowDetailRadius = 20;
+
 class RowDetailPage extends StatefulWidget with FlowyOverlayDelegate {
   const RowDetailPage({
     super.key,
@@ -70,7 +77,35 @@ class _RowDetailPageState extends State<RowDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    // The dialog adds the view insets to its own margin, so the box has to come
+    // off the same total or the content overflows what it was given. It stops
+    // short of the window on every side, because the way out is a click on the
+    // backdrop.
+    final roomWide = media.size.width - _rowDetailMargin * 2;
+    final roomTall =
+        media.size.height - media.viewInsets.vertical - _rowDetailMargin * 2;
+
+    // The widest 4:3 box the window will take; a short window decides instead.
+    double width =
+        roomWide.clamp(overlayContainerMinWidth, _rowDetailMaxWidth).toDouble();
+    double height = width / _rowDetailAspectRatio;
+    final tallest =
+        roomTall < _rowDetailMinHeight ? _rowDetailMinHeight : roomTall;
+    if (height > tallest) {
+      height = tallest;
+      width = height * _rowDetailAspectRatio;
+    }
+
     return FlowyDialog(
+      width: width,
+      expandHeight: false,
+      insetPadding: const EdgeInsets.all(_rowDetailMargin),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(_rowDetailRadius),
+      ),
+      constraints: BoxConstraints.tightFor(height: height),
+      padding: EdgeInsets.zero,
       child: ChangeNotifierProvider.value(
         value: dropManagerState,
         child: MultiBlocProvider(
@@ -105,8 +140,13 @@ class _RowDetailPageState extends State<RowDetailPage> {
                               ),
                               const VSpace(16),
                               Padding(
-                                padding:
-                                    const EdgeInsets.only(left: 40, right: 60),
+                                // The drag handle rides in the margin and the
+                                // name button insets itself, so the property
+                                // names still begin on the measure.
+                                padding: const EdgeInsets.only(
+                                  left: rowDetailContentInset - 24,
+                                  right: rowDetailContentInset,
+                                ),
                                 child: RowPropertyList(
                                   cellBuilder: cellBuilder,
                                   viewId: widget.databaseController.viewId,
@@ -116,7 +156,9 @@ class _RowDetailPageState extends State<RowDetailPage> {
                               ),
                               const VSpace(20),
                               const Padding(
-                                padding: EdgeInsets.symmetric(horizontal: 60),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: rowDetailContentInset,
+                                ),
                                 child: Divider(height: 1.0),
                               ),
                               const VSpace(20),
@@ -128,13 +170,13 @@ class _RowDetailPageState extends State<RowDetailPage> {
                     body: RowDocument(
                       viewId: widget.rowController.viewId,
                       rowId: widget.rowController.rowId,
+                      userProfile: widget.userProfile,
+                      showComments: true,
                     ),
                   ),
                 ),
                 Positioned(
-                  top: calculateActionsOffset(
-                    state.rowMeta.cover.data.isNotEmpty,
-                  ),
+                  top: calculateActionsOffset(),
                   right: 12,
                   child: Row(children: actions(context)),
                 ),
@@ -152,11 +194,8 @@ class _RowDetailPageState extends State<RowDetailPage> {
     }
   }
 
-  double calculateActionsOffset(bool hasCover) {
-    if (!hasCover) {
-      return 12;
-    }
-
+  // Every row wears a cover now, so the actions always ride down with it.
+  double calculateActionsOffset() {
     final offsetByScroll = clampDouble(
       rowCoverHeight - scrollOffset,
       0,

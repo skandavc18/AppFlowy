@@ -173,7 +173,7 @@ class _PropertyCellState extends State<_PropertyCell> {
             ),
             const HSpace(4),
             _buildFieldButton(context),
-            const HSpace(8),
+            const HSpace(20),
             Expanded(child: gesture),
           ],
         ),

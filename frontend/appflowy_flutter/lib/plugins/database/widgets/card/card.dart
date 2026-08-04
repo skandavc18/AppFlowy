@@ -236,6 +236,7 @@ class _CardContent extends StatelessWidget {
           cover: rowMeta.cover,
           userProfile: userProfile,
           isCompact: isCompact,
+          radius: styleConfiguration.coverRadius,
         ),
         Padding(
           padding: styleConfiguration.cardPadding,
@@ -338,11 +339,13 @@ class CardCover extends StatelessWidget {
     this.cover,
     this.userProfile,
     this.isCompact = false,
+    this.radius = 4,
   });
 
   final RowCoverPB? cover;
   final UserProfilePB? userProfile;
   final bool isCompact;
+  final double radius;
 
   @override
   Widget build(BuildContext context) {
@@ -356,9 +359,9 @@ class CardCover extends StatelessWidget {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(4),
-          topRight: Radius.circular(4),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(radius),
+          topRight: Radius.circular(radius),
         ),
         color: Theme.of(context).cardColor,
       ),
@@ -461,11 +464,13 @@ class RowCardStyleConfiguration {
     required this.cellStyleMap,
     this.showAccessory = true,
     this.cardPadding = const EdgeInsets.all(4),
+    this.coverRadius = 4,
     this.hoverStyle,
   });
 
   final CardCellStyleMap cellStyleMap;
   final bool showAccessory;
   final EdgeInsets cardPadding;
+  final double coverRadius;
   final HoverStyle? hoverStyle;
 }

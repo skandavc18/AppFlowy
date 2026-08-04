@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
+import 'package:appflowy/plugins/database/widgets/row/row_comments.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
@@ -451,12 +452,21 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
     BookmarkBlockKeys.type: BookmarkBlockComponentBuilder(
       configuration: configuration,
     ),
+    ChartBlockKeys.type: ChartBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    MapBlockKeys.type: MapBlockComponentBuilder(
+      configuration: configuration,
+    ),
     SpreadsheetBlockKeys.type: SpreadsheetBlockComponentBuilder(
       configuration: configuration,
     ),
     PagePreviewBlockKeys.type: PagePreviewBlockComponentBuilder(
       configuration: configuration,
     ),
+    // A row's comments travel with its page but are drawn beside it, so the
+    // block that carries them renders nothing here.
+    RowCommentKeys.type: RowCommentsBlockComponentBuilder(),
     SubPageBlockKeys.type: _buildSubPageBlockComponentBuilder(
       context,
       configuration,

@@ -6,11 +6,13 @@ import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/breadcrumb_bar.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
@@ -164,6 +166,11 @@ class _CollectionPageState extends State<CollectionPage> {
               onOpen: _openView,
             ),
             const SizedBox(height: 8),
+          ] else ...[
+            // A collection at the root has no chain above it, so the
+            // workspace itself says where it lives.
+            _WorkspaceCrumb(palette: palette),
+            const SizedBox(height: 8),
           ],
           Row(
             children: [
@@ -307,6 +314,7 @@ class _CollectionPageState extends State<CollectionPage> {
     final parentId = controller.currentFolder.id;
     var createFolder = false;
     CollectionKind? collectionKind;
+    WorkspaceTableKind? databaseLayout;
     final action = await showAppMenu<WorkspaceFileMenuAction>(
       context: context,
       globalPosition: position,
@@ -319,6 +327,7 @@ class _CollectionPageState extends State<CollectionPage> {
         ),
         ...workspaceFileKindEntries(
           onCreateCollection: (kind) => collectionKind = kind,
+          onCreateDatabase: (kind) => databaseLayout = kind,
         ),
       ],
     );
@@ -328,6 +337,16 @@ class _CollectionPageState extends State<CollectionPage> {
     }
     if (collectionKind != null) {
       await _createCollection(collectionKind!, parentId: parentId);
+      return;
+    }
+    if (databaseLayout != null) {
+      final view = await createWorkspaceDatabase(
+        parentViewId: parentId,
+        kind: databaseLayout!,
+      );
+      if (view != null && mounted) {
+        _openView(view);
+      }
       return;
     }
     if (action == null) {
@@ -361,7 +380,6 @@ class _CollectionAncestors extends StatelessWidget {
     required this.palette,
     required this.onOpen,
   });
-
   final List<ViewPB> ancestors;
   final CollectionPalette palette;
   final ValueChanged<ViewPB> onOpen;
@@ -394,13 +412,45 @@ class _CollectionAncestors extends StatelessWidget {
   }
 }
 
+/// The workspace a collection sits directly in.
+class _WorkspaceCrumb extends StatelessWidget {
+  const _WorkspaceCrumb({required this.palette});
+
+  final CollectionPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    final workspace =
+        context.watch<UserWorkspaceBloc?>()?.state.currentWorkspace;
+    final name = workspace?.name.trim();
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.workspaces_rounded,
+          size: 13,
+          color: palette.textMuted,
+        ),
+        const SizedBox(width: 5),
+        Text(
+          name?.isNotEmpty == true ? name! : LocaleKeys.sideBar_workspace.tr(),
+          style: TextStyle(
+            color: palette.textMuted,
+            fontSize: 11.5,
+            height: 1.2,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _CollectionAncestor extends StatefulWidget {
   const _CollectionAncestor({
     required this.view,
     required this.palette,
     required this.onOpen,
   });
-
   final ViewPB view;
   final CollectionPalette palette;
   final VoidCallback onOpen;

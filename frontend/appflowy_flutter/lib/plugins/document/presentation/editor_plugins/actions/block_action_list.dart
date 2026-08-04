@@ -20,6 +20,12 @@ class BlockActionList extends StatelessWidget {
   /// The height of the row, driven by the square action buttons.
   static const double height = BlockActionButton.size;
 
+  /// The width the two buttons and their trailing gap take up.
+  ///
+  /// The editor lays this row out *before* the block, so a page that wants its
+  /// text to begin on a given measure has to start a gutter's width earlier.
+  static const double gutterWidth = BlockActionButton.size * 2 + 2.0 + 5.0;
+
   /// The vertical offset, measured from the top of the block's content, that
   /// vertically centers the action buttons on the first line of the block's
   /// text.

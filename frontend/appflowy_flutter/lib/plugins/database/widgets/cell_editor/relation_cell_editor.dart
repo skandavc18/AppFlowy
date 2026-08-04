@@ -317,21 +317,14 @@ class _SearchField extends StatelessWidget {
                   .rows
                   .firstWhereOrNull((e) => e.rowId == focusedRowId);
               if (row != null) {
-                FlowyOverlay.show(
-                  context: context,
-                  builder: (BuildContext overlayContext) {
-                    return BlocProvider.value(
-                      value: context.read<UserWorkspaceBloc>(),
-                      child: RelatedRowDetailPage(
-                        databaseId: context
-                            .read<RelationCellBloc>()
-                            .state
-                            .relatedDatabaseMeta!
-                            .databaseId,
-                        rowId: row.rowId,
-                      ),
-                    );
-                  },
+                showRelatedRowDetailPage(
+                  context,
+                  databaseId: context
+                      .read<RelationCellBloc>()
+                      .state
+                      .relatedDatabaseMeta!
+                      .databaseId,
+                  rowId: row.rowId,
                 );
                 PopoverContainer.of(context).close();
               } else {
@@ -398,19 +391,11 @@ class _RowListItem extends StatelessWidget {
       ),
       child: GestureDetector(
         onTap: () {
-          final userWorkspaceBloc = context.read<UserWorkspaceBloc>();
           if (isSelected) {
-            FlowyOverlay.show(
-              context: context,
-              builder: (BuildContext overlayContext) {
-                return BlocProvider.value(
-                  value: userWorkspaceBloc,
-                  child: RelatedRowDetailPage(
-                    databaseId: databaseId,
-                    rowId: row.rowId,
-                  ),
-                );
-              },
+            showRelatedRowDetailPage(
+              context,
+              databaseId: databaseId,
+              rowId: row.rowId,
             );
             PopoverContainer.of(context).close();
           } else {

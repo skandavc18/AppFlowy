@@ -8,12 +8,15 @@ import 'package:appflowy/mobile/presentation/database/board/mobile_board_page.da
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
 import 'package:appflowy/plugins/database/board/application/board_actions_bloc.dart';
+import 'package:appflowy/plugins/database/board/group_ext.dart';
+import 'package:appflowy/plugins/database/board/presentation/board_style.dart';
 import 'package:appflowy/plugins/database/board/presentation/widgets/board_column_header.dart';
 import 'package:appflowy/plugins/database/grid/presentation/grid_page.dart';
 import 'package:appflowy/plugins/database/tab_bar/desktop/setting_menu.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/database/widgets/card/card_bloc.dart';
 import 'package:appflowy/plugins/database/widgets/cell/card_cell_style_maps/desktop_board_card_cell_style.dart';
+import 'package:appflowy/plugins/database/widgets/cell_editor/extension.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_detail.dart';
 import 'package:appflowy/shared/conditional_listenable_builder.dart';
 import 'package:appflowy/shared/flowy_error_page.dart';
@@ -22,9 +25,7 @@ import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_board/appflowy_board.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/material.dart' hide Card;
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -261,18 +262,49 @@ class _BoardContentState extends State<_BoardContent> {
   final AppFlowyBoardScrollController scrollManager =
       AppFlowyBoardScrollController();
 
-  final config = const AppFlowyBoardConfig(
-    groupMargin: EdgeInsets.symmetric(horizontal: 4),
-    groupBodyPadding: EdgeInsets.symmetric(horizontal: 4),
-    groupFooterPadding: EdgeInsets.fromLTRB(8, 14, 8, 4),
-    groupHeaderPadding: EdgeInsets.symmetric(horizontal: 8),
-    cardMargin: EdgeInsets.symmetric(horizontal: 4, vertical: 3),
-    stretchGroupHeight: false,
-  );
-
   late final cellBuilder = CardCellBuilder(
     databaseController: databaseController,
   );
+
+  /// A column is a tinted well with room to breathe, not a bare list.
+  ///
+  /// The body carries no padding of its own: each card brings the inset with
+  /// it so the column's wash can run edge to edge behind them all.
+  AppFlowyBoardConfig _configOf(BoardPalette palette) => AppFlowyBoardConfig(
+        groupCornerRadius: BoardMetrics.columnRadius,
+        groupBackgroundColor: palette.sunken,
+        groupMargin:
+            const EdgeInsets.symmetric(horizontal: BoardMetrics.columnGap),
+        groupBodyPadding: EdgeInsets.zero,
+        groupFooterPadding: const EdgeInsets.fromLTRB(
+          BoardMetrics.columnInset,
+          6,
+          BoardMetrics.columnInset,
+          8,
+        ),
+        groupHeaderPadding: const EdgeInsets.fromLTRB(12, 0, 8, 0),
+        cardMargin: const EdgeInsets.symmetric(
+          horizontal: BoardMetrics.cardGap,
+          vertical: BoardMetrics.cardGap,
+        ),
+        stretchGroupHeight: false,
+      );
+
+  /// The wash the column for [columnData] wears, or null when its group has no
+  /// colour to lend.
+  Color? _washOf(BuildContext context, AppFlowyGroupData columnData) {
+    final custom = columnData.customData;
+    if (custom is! GroupData) {
+      return null;
+    }
+    final color = custom.group.groupOptionColor(databaseController);
+    return color == null
+        ? null
+        : boardColumnWashColor(
+            boardPaletteOf(context),
+            color.toColor(context),
+          );
+  }
 
   DatabaseController get databaseController =>
       context.read<BoardBloc>().databaseController;
@@ -285,6 +317,8 @@ class _BoardContentState extends State<_BoardContent> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = boardPaletteOf(context);
+    final config = _configOf(palette);
     final horizontalPadding =
         context.read<DatabasePluginWidgetBuilderSize?>()?.horizontalPadding ??
             0.0;
@@ -343,88 +377,105 @@ class _BoardContentState extends State<_BoardContent> {
             child: ValueListenableBuilder(
               valueListenable: databaseController.compactModeNotifier,
               builder: (context, compactMode, _) {
-                return AppFlowyBoard(
-                  boardScrollController: scrollManager,
-                  scrollController: scrollController,
-                  shrinkWrap: widget.shrinkWrap,
-                  controller: context.read<BoardBloc>().boardController,
-                  groupConstraints:
-                      BoxConstraints.tightFor(width: compactMode ? 196 : 256),
-                  config: config,
-                  leading: HiddenGroupsColumn(
-                    shrinkWrap: widget.shrinkWrap,
-                    margin: config.groupHeaderPadding +
-                        EdgeInsets.only(
-                          left: widget.shrinkWrap ? horizontalPadding : 0.0,
-                        ),
-                  ),
-                  trailing: context
-                              .read<BoardBloc>()
-                              .groupingFieldType
-                              ?.canCreateNewGroup ??
-                          false
-                      ? BoardTrailing(scrollController: scrollController)
-                      : const HSpace(40),
-                  headerBuilder: (_, groupData) => BlocProvider.value(
-                    value: context.read<BoardBloc>(),
-                    child: BoardColumnHeader(
-                      databaseController: databaseController,
-                      groupData: groupData,
-                      margin: config.groupHeaderPadding,
-                    ),
-                  ),
-                  footerBuilder: (_, groupData) => MultiBlocProvider(
-                    providers: [
-                      BlocProvider.value(value: context.read<BoardBloc>()),
-                      BlocProvider.value(
-                        value: context.read<BoardActionsCubit>(),
+                return ScrollConfiguration(
+                  behavior: const BoardScrollBehaviour(),
+                  child: BoardColumnSurface(
+                    child: AppFlowyBoard(
+                      boardScrollController: scrollManager,
+                      scrollController: scrollController,
+                      shrinkWrap: widget.shrinkWrap,
+                      controller: context.read<BoardBloc>().boardController,
+                      groupConstraints: BoxConstraints.tightFor(
+                        width: compactMode ? 196 : 256,
                       ),
-                    ],
-                    child: BoardColumnFooter(
-                      columnData: groupData,
-                      boardConfig: config,
-                      scrollManager: scrollManager,
-                    ),
-                  ),
-                  cardBuilder: (cardContext, column, columnItem) =>
-                      MultiBlocProvider(
-                    key: ValueKey("board_card_${column.id}_${columnItem.id}"),
-                    providers: [
-                      BlocProvider<BoardBloc>.value(
-                        value: cardContext.read<BoardBloc>(),
-                      ),
-                      BlocProvider.value(
-                        value: cardContext.read<BoardActionsCubit>(),
-                      ),
-                      BlocProvider(
-                        create: (_) => PageAccessLevelBloc(
-                          view: widget.view,
-                          ignorePageAccessLevel: true,
-                        )..add(PageAccessLevelEvent.initial()),
-                      ),
-                    ],
-                    child:
-                        BlocBuilder<PageAccessLevelBloc, PageAccessLevelState>(
-                      builder: (lockStatusContext, state) {
-                        return IgnorePointer(
-                          ignoring: !state.isEditable,
-                          child: _BoardCard(
-                            afGroupData: column,
-                            groupItem: columnItem as GroupItem,
-                            boardConfig: config,
-                            notifier: widget.focusScope,
-                            cellBuilder: cellBuilder,
-                            compactMode: compactMode,
-                            onOpenCard: (rowMeta) => _openCard(
-                              context: context,
-                              databaseController: lockStatusContext
-                                  .read<BoardBloc>()
-                                  .databaseController,
-                              rowMeta: rowMeta,
+                      config: config,
+                      leading: HiddenGroupsColumn(
+                        shrinkWrap: widget.shrinkWrap,
+                        margin: config.groupHeaderPadding +
+                            EdgeInsets.only(
+                              left: widget.shrinkWrap ? horizontalPadding : 0.0,
                             ),
+                      ),
+                      trailing: context
+                                  .read<BoardBloc>()
+                                  .groupingFieldType
+                                  ?.canCreateNewGroup ??
+                              false
+                          ? BoardTrailing(scrollController: scrollController)
+                          : const HSpace(40),
+                      headerBuilder: (_, groupData) => BoardColumnWash(
+                        color: _washOf(context, groupData),
+                        child: BlocProvider.value(
+                          value: context.read<BoardBloc>(),
+                          child: BoardColumnHeader(
+                            databaseController: databaseController,
+                            groupData: groupData,
+                            margin: config.groupHeaderPadding,
                           ),
-                        );
-                      },
+                        ),
+                      ),
+                      footerBuilder: (_, groupData) => BoardColumnWash(
+                        color: _washOf(context, groupData),
+                        child: MultiBlocProvider(
+                          providers: [
+                            BlocProvider.value(
+                              value: context.read<BoardBloc>(),
+                            ),
+                            BlocProvider.value(
+                              value: context.read<BoardActionsCubit>(),
+                            ),
+                          ],
+                          child: BoardColumnFooter(
+                            columnData: groupData,
+                            boardConfig: config,
+                            scrollManager: scrollManager,
+                          ),
+                        ),
+                      ),
+                      cardBuilder: (cardContext, column, columnItem) =>
+                          MultiBlocProvider(
+                        key: ValueKey(
+                          "board_card_${column.id}_${columnItem.id}",
+                        ),
+                        providers: [
+                          BlocProvider<BoardBloc>.value(
+                            value: cardContext.read<BoardBloc>(),
+                          ),
+                          BlocProvider.value(
+                            value: cardContext.read<BoardActionsCubit>(),
+                          ),
+                          BlocProvider(
+                            create: (_) => PageAccessLevelBloc(
+                              view: widget.view,
+                              ignorePageAccessLevel: true,
+                            )..add(PageAccessLevelEvent.initial()),
+                          ),
+                        ],
+                        child: BlocBuilder<PageAccessLevelBloc,
+                            PageAccessLevelState>(
+                          builder: (lockStatusContext, state) {
+                            return IgnorePointer(
+                              ignoring: !state.isEditable,
+                              child: _BoardCard(
+                                afGroupData: column,
+                                groupItem: columnItem as GroupItem,
+                                boardConfig: config,
+                                columnWash: _washOf(context, column),
+                                notifier: widget.focusScope,
+                                cellBuilder: cellBuilder,
+                                compactMode: compactMode,
+                                onOpenCard: (rowMeta) => _openCard(
+                                  context: context,
+                                  databaseController: lockStatusContext
+                                      .read<BoardBloc>()
+                                      .databaseController,
+                                  rowMeta: rowMeta,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     ),
                   ),
                 );
@@ -492,12 +543,29 @@ class _BoardColumnFooterState extends State<BoardColumnFooter> {
         _focusNode.requestFocus();
       }
     });
+    final palette = boardPaletteOf(context);
     return Padding(
       padding: widget.boardConfig.groupFooterPadding,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 150),
-        child:
-            _isCreating ? _createCardsTextField() : _startCreatingCardsButton(),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // A column with nothing in it says so, rather than trailing off into
+          // an empty well.
+          if (widget.columnData.items.isEmpty && !_isCreating)
+            _EmptyColumnHint(palette: palette),
+          AnimatedSize(
+            duration: BoardMetrics.settle,
+            curve: BoardMetrics.hoverCurve,
+            alignment: Alignment.topCenter,
+            child: AnimatedSwitcher(
+              duration: BoardMetrics.settle,
+              child: _isCreating
+                  ? _createCardsTextField()
+                  : _startCreatingCardsButton(palette),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -546,7 +614,7 @@ class _BoardColumnFooterState extends State<BoardColumnFooter> {
     );
   }
 
-  Widget _startCreatingCardsButton() {
+  Widget _startCreatingCardsButton(BoardPalette palette) {
     return BlocListener<BoardActionsCubit, BoardActionsState>(
       listener: (context, state) {
         state.maybeWhen(
@@ -560,24 +628,132 @@ class _BoardColumnFooterState extends State<BoardColumnFooter> {
       },
       child: FlowyTooltip(
         message: LocaleKeys.board_column_addToColumnBottomTooltip.tr(),
-        child: SizedBox(
-          height: 36,
-          child: FlowyButton(
-            leftIcon: FlowySvg(
-              FlowySvgs.add_s,
-              color: Theme.of(context).hintColor,
-            ),
-            text: FlowyText(
-              LocaleKeys.board_column_createNewCard.tr(),
-              color: Theme.of(context).hintColor,
-            ),
-            onTap: () {
-              context
-                  .read<BoardActionsCubit>()
-                  .startCreateBottomRow(widget.columnData.id);
-            },
+        child: _NewCardRow(
+          palette: palette,
+          onTap: () => context
+              .read<BoardActionsCubit>()
+              .startCreateBottomRow(widget.columnData.id),
+        ),
+      ),
+    );
+  }
+}
+
+/// The invitation at the foot of a column.
+class _NewCardRow extends StatefulWidget {
+  const _NewCardRow({required this.palette, required this.onTap});
+
+  final BoardPalette palette;
+  final VoidCallback onTap;
+
+  @override
+  State<_NewCardRow> createState() => _NewCardRowState();
+}
+
+class _NewCardRowState extends State<_NewCardRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: BoardMetrics.hover,
+          curve: BoardMetrics.hoverCurve,
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: _hovered ? palette.surface : palette.hoverAtRest,
+            borderRadius: BorderRadius.circular(BoardMetrics.cardRadius - 4),
+            boxShadow: _hovered
+                ? palette.cardShadow(prominence: 0.7)
+                : const <BoxShadow>[],
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.add_rounded, size: 16, color: palette.textMuted),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  LocaleKeys.board_column_createNewCard.tr(),
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: palette.textSecondary,
+                  ),
+                ),
+              ),
+              AnimatedOpacity(
+                duration: BoardMetrics.hover,
+                opacity: _hovered ? 1 : 0,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: palette.raised,
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: Text(
+                    'N',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: palette.textMuted,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// What a column shows before anything has been put in it.
+class _EmptyColumnHint extends StatelessWidget {
+  const _EmptyColumnHint({required this.palette});
+
+  final BoardPalette palette;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 10, 4, 14),
+      child: Column(
+        children: [
+          Container(
+            width: 42,
+            height: 34,
+            decoration: BoxDecoration(
+              color: palette.surface,
+              borderRadius: BorderRadius.circular(9),
+              boxShadow: palette.cardShadow(prominence: 0.5),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.dashboard_customize_outlined,
+              size: 16,
+              color: palette.textMuted,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            LocaleKeys.board_column_emptyColumn.tr(),
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.45,
+              color: palette.textMuted,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -588,6 +764,7 @@ class _BoardCard extends StatefulWidget {
     required this.afGroupData,
     required this.groupItem,
     required this.boardConfig,
+    required this.columnWash,
     required this.cellBuilder,
     required this.notifier,
     required this.compactMode,
@@ -597,6 +774,7 @@ class _BoardCard extends StatefulWidget {
   final AppFlowyGroupData afGroupData;
   final GroupItem groupItem;
   final AppFlowyBoardConfig boardConfig;
+  final Color? columnWash;
   final CardCellBuilder cellBuilder;
   final BoardFocusScope notifier;
   final bool compactMode;
@@ -608,6 +786,7 @@ class _BoardCard extends StatefulWidget {
 
 class _BoardCardState extends State<_BoardCard> {
   bool _isEditing = false;
+  bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
@@ -692,14 +871,40 @@ class _BoardCardState extends State<_BoardCard> {
             final margin = widget.compactMode
                 ? cardMargin - EdgeInsets.symmetric(horizontal: 2)
                 : cardMargin;
-            return Container(
-              margin: margin,
-              decoration: _makeBoxDecoration(
-                context,
-                groupData.group.groupId,
-                widget.groupItem.id,
+            final focused = widget.notifier.isFocused(
+              GroupedRowId(
+                rowId: widget.groupItem.id,
+                groupId: groupData.group.groupId,
               ),
-              child: child,
+            );
+            return BoardColumnWash(
+              color: widget.columnWash,
+              padding: margin +
+                  const EdgeInsets.symmetric(
+                    horizontal: BoardMetrics.columnInset,
+                  ),
+              child: MouseRegion(
+                opaque: false,
+                onEnter: (_) => setState(() => _hovered = true),
+                onExit: (_) => setState(() => _hovered = false),
+                child: AnimatedScale(
+                  duration: BoardMetrics.hover,
+                  curve: BoardMetrics.hoverCurve,
+                  scale: _hovered ? BoardMetrics.cardGrowth : 1,
+                  child: AnimatedContainer(
+                    duration: BoardMetrics.hover,
+                    curve: BoardMetrics.hoverCurve,
+                    clipBehavior: Clip.antiAlias,
+                    transform: Matrix4.translationValues(
+                      0,
+                      _hovered ? -BoardMetrics.cardLift : 0,
+                      0,
+                    ),
+                    decoration: _makeBoxDecoration(context, focused),
+                    child: child,
+                  ),
+                ),
+              ),
             );
           },
           child: RowCard(
@@ -724,13 +929,10 @@ class _BoardCardState extends State<_BoardCard> {
             },
             styleConfiguration: RowCardStyleConfiguration(
               cellStyleMap: desktopBoardCardCellStyleMap(context),
-              hoverStyle: HoverStyle(
-                hoverColor: Theme.of(context).brightness == Brightness.light
-                    ? const Color(0x0F1F2329)
-                    : const Color(0x0FEFF4FB),
-                foregroundColorOnHover:
-                    AFThemeExtension.of(context).onBackground,
-              ),
+              cardPadding: widget.compactMode
+                  ? const EdgeInsets.fromLTRB(10, 8, 10, 9)
+                  : const EdgeInsets.fromLTRB(12, 10, 12, 11),
+              coverRadius: BoardMetrics.cardRadius,
             ),
             onStartEditing: () =>
                 context.read<BoardActionsCubit>().startEditingRow(
@@ -752,35 +954,20 @@ class _BoardCardState extends State<_BoardCard> {
     );
   }
 
-  BoxDecoration _makeBoxDecoration(
-    BuildContext context,
-    String groupId,
-    String rowId,
-  ) {
+  BoxDecoration _makeBoxDecoration(BuildContext context, bool focused) {
+    final palette = boardPaletteOf(context);
+    // A card is defined by its shadow, not by an outline; only a focused one
+    // draws a ring, and only in the accent.
     return BoxDecoration(
-      color: Theme.of(context).colorScheme.surface,
-      borderRadius: const BorderRadius.all(Radius.circular(6)),
-      border: Border.fromBorderSide(
-        BorderSide(
-          color: widget.notifier
-                  .isFocused(GroupedRowId(rowId: rowId, groupId: groupId))
-              ? Theme.of(context).colorScheme.primary
-              : Theme.of(context).brightness == Brightness.light
-                  ? const Color(0xFF1F2329).withValues(alpha: 0.12)
-                  : const Color(0xFF59647A),
-        ),
+      color: _hovered ? palette.raised : palette.surface,
+      borderRadius: BorderRadius.circular(BoardMetrics.cardRadius),
+      border: focused
+          ? Border.all(color: palette.accent, width: 1.4)
+          : Border.all(color: palette.border.withValues(alpha: 0.28)),
+      boxShadow: palette.cardShadow(
+        prominence: _hovered ? 1 : 0.6,
+        lift: _hovered ? BoardMetrics.cardLift : 0,
       ),
-      boxShadow: [
-        BoxShadow(
-          blurRadius: 4,
-          color: const Color(0xFF1F2329).withValues(alpha: 0.02),
-        ),
-        BoxShadow(
-          blurRadius: 4,
-          spreadRadius: -2,
-          color: const Color(0xFF1F2329).withValues(alpha: 0.02),
-        ),
-      ],
     );
   }
 }

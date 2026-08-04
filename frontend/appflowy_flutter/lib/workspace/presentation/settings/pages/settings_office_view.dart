@@ -51,9 +51,7 @@ class _SettingsOfficeViewState extends State<SettingsOfficeView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
-                  usesCloud
-                      ? Icons.cloud_done_rounded
-                      : Icons.computer_rounded,
+                  usesCloud ? Icons.cloud_done_rounded : Icons.computer_rounded,
                   size: 20,
                 ),
                 const SizedBox(width: 10),

@@ -2,6 +2,10 @@ import 'package:appflowy/plugins/database/domain/database_view_service.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/database/widgets/database_layout_ext.dart';
 import 'package:appflowy/plugins/document/presentation/compact_mode_event.dart';
+import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
+import 'package:appflowy/workspace/application/maps/map_metadata.dart';
+import 'package:appflowy/workspace/application/slides/slide_metadata.dart';
+import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/view/prelude.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy_backend/log.dart';
@@ -177,7 +181,11 @@ class DatabaseTabBarBloc
     return tabBarControllerByViewId;
   }
 
-  Future<void> _createLinkedView(ViewLayoutPB layoutType, String name) async {
+  Future<void> _createLinkedView(
+    ViewLayoutPB layoutType,
+    String name, {
+    String? extra,
+  }) async {
     final viewId = state.parentView.id;
     final databaseIdOrError =
         await DatabaseViewBackendService(viewId: viewId).getDatabaseId();
@@ -189,6 +197,7 @@ class DatabaseTabBarBloc
           databaseId: databaseId,
           layoutType: layoutType,
           name: name,
+          extra: extra,
         );
 
         linkedViewOrError.fold(
@@ -199,6 +208,38 @@ class DatabaseTabBarBloc
       (r) => Log.error(r),
     );
   }
+
+  /// Adds a tab that draws this database instead of listing it.
+  ///
+  /// The mark is written as the view is created so the tab is never briefly a
+  /// grid before it becomes a chart.
+  Future<void> createChartView(String name) => _createLinkedView(
+        ViewLayoutPB.Grid,
+        name,
+        extra: ChartMetadata.newExtra(),
+      );
+
+  /// Adds a tab that places this database instead of listing it.
+  Future<void> createMapView(String name) => _createLinkedView(
+        ViewLayoutPB.Grid,
+        name,
+        extra: MapMetadata.newExtra(),
+      );
+
+  /// Adds a tab that reads this database one row at a time.
+  Future<void> createSlideView(String name) => _createLinkedView(
+        ViewLayoutPB.Grid,
+        name,
+        extra: SlideMetadata.newExtra(),
+      );
+
+  /// Adds a tab that is one of the shared readings of this database.
+  Future<void> createTableView(TableViewKind kind, String name) =>
+      _createLinkedView(
+        ViewLayoutPB.Grid,
+        name,
+        extra: TableViewMark.newExtra(kind),
+      );
 
   void _loadChildView() async {
     final viewsOrFail =

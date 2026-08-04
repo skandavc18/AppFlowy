@@ -117,6 +117,8 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         folderLinkSlashMenuItem,
         folderExplorerSlashMenuItem,
         bookmarkSlashMenuItem,
+        chartSlashMenuItem,
+        mapSlashMenuItem,
         fileSlashMenuItem,
         pdfSlashMenuItem,
         wordSlashMenuItem,

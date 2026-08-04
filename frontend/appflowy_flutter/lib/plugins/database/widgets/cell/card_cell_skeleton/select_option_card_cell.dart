@@ -14,11 +14,13 @@ class SelectOptionCardCellStyle extends CardCellStyle {
     required this.tagFontSize,
     required this.wrap,
     required this.tagPadding,
+    this.tagRadius,
   });
 
   final double tagFontSize;
   final bool wrap;
   final EdgeInsets tagPadding;
+  final BorderRadius? tagRadius;
 }
 
 class SelectOptionCardCell extends CardCell<SelectOptionCardCellStyle> {
@@ -63,6 +65,7 @@ class _SelectOptionCellState extends State<SelectOptionCardCell> {
                   option: option,
                   fontSize: widget.style.tagFontSize,
                   padding: widget.style.tagPadding,
+                  borderRadius: widget.style.tagRadius,
                 ),
               )
               .toList();

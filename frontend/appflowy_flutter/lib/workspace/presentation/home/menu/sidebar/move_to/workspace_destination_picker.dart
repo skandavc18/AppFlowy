@@ -4,6 +4,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -636,7 +637,14 @@ class _DestinationItemTile extends StatelessWidget {
 }
 
 String _itemKindLabel(ViewPB view) {
-  return switch (WorkspaceExplorerItem.fromView(view).kind) {
+  final item = WorkspaceExplorerItem.fromView(view);
+  // A collection takes items the same way a folder does, so it is named by
+  // what it is — a book, a database — rather than lumped in with folders.
+  final collection = item.collection;
+  if (collection != null) {
+    return CollectionRegistry.typeFor(collection.kind).label;
+  }
+  return switch (item.kind) {
     WorkspaceExplorerItemKind.folder =>
       LocaleKeys.workspaceFolderExplorer_collection.tr(),
     WorkspaceExplorerItemKind.file =>

@@ -25,6 +25,7 @@ enum SettingsPage {
   notifications,
   cloud,
   documentEditing,
+  maps,
   member,
   featureFlags,
 }

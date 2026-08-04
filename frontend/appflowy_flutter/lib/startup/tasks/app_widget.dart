@@ -6,6 +6,7 @@ import 'package:appflowy/shared/clipboard_state.dart';
 import 'package:appflowy/shared/easy_localiation_service.dart';
 import 'package:appflowy/shared/feature_flags.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
+import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/premium_theme_backdrop.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
@@ -57,6 +58,8 @@ class InitAppWidgetTask extends LaunchTask {
     await NotificationService.initialize();
 
     await loadIconGroups();
+
+    await MapsSettings.instance.ensureLoaded();
 
     final widget = context.getIt<EntryPoint>().create(context.config);
     final appearanceSetting =

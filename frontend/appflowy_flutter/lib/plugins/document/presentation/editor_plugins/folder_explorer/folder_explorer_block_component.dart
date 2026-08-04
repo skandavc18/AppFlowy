@@ -19,6 +19,7 @@ import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_collection_preview.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/log.dart';
@@ -569,6 +570,9 @@ class FolderExplorerBlockComponentState
       globalPosition: anchor,
       onCreateCollection: (collection) =>
           unawaited(_createCollectionInFolder(folder, collection)),
+      onCreateDatabase: (kind) => unawaited(
+        createWorkspaceDatabase(parentViewId: folder.id, kind: kind),
+      ),
     );
     if (kind == null || !mounted) {
       return;

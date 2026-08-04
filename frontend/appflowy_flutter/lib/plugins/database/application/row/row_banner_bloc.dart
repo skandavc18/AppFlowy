@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:appflowy/plugins/database/application/field/field_controller.dart';
@@ -47,6 +49,7 @@ class RowBannerBloc extends Bloc<RowBannerEvent, RowBannerState> {
       (event, emit) {
         event.when(
           initial: () async {
+            unawaited(_readRowMeta());
             await _loadPrimaryField();
             _listenRowMetaChanged();
             final result = await UserEventGetUserProfile().send();
@@ -71,6 +74,24 @@ class RowBannerBloc extends Bloc<RowBannerEvent, RowBannerState> {
           },
         );
       },
+    );
+  }
+
+  /// Reads the row's own metadata rather than trusting what was handed in.
+  ///
+  /// A caller passes whatever its row cache holds, and a view that has only
+  /// just opened holds a row with no cover or icon on it — which is why the
+  /// same row looked bare when it was opened from one view and dressed when
+  /// opened from another.
+  Future<void> _readRowMeta() async {
+    final result = await _rowBackendSvc.getRowMeta(state.rowMeta.id);
+    result.fold(
+      (rowMeta) {
+        if (!isClosed) {
+          add(RowBannerEvent.didReceiveRowMeta(rowMeta));
+        }
+      },
+      (error) => Log.warn('could not read the row metadata: $error'),
     );
   }
 

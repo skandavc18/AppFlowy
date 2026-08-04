@@ -10,6 +10,8 @@ export 'emoji_item.dart';
 export 'file_item.dart';
 export 'folder_explorer_item.dart';
 export 'bookmark_item.dart';
+export 'chart_item.dart';
+export 'map_item.dart';
 export 'page_preview_item.dart';
 export 'heading_items.dart';
 export 'image_item.dart';

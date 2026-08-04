@@ -14,6 +14,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_explorer
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
@@ -36,6 +37,7 @@ class FolderGalleryHeader extends StatefulWidget {
     required this.onNavigate,
     required this.onAddFile,
     required this.onCreateCollection,
+    required this.onCreateDatabase,
     required this.onMore,
     this.userProfile,
     this.workspace,
@@ -47,6 +49,7 @@ class FolderGalleryHeader extends StatefulWidget {
   final ValueChanged<String> onNavigate;
   final ValueChanged<WorkspaceFileMenuAction> onAddFile;
   final ValueChanged<CollectionKind> onCreateCollection;
+  final ValueChanged<WorkspaceTableKind> onCreateDatabase;
   final ValueChanged<Offset> onMore;
   final UserProfilePB? userProfile;
   final UserWorkspacePB? workspace;
@@ -397,6 +400,7 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
                 globalPosition:
                     box.localToGlobal(Offset(0, box.size.height + 4)),
                 onCreateCollection: widget.onCreateCollection,
+                onCreateDatabase: widget.onCreateDatabase,
               );
               if (action != null) {
                 widget.onAddFile(action);

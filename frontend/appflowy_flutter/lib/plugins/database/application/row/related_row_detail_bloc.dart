@@ -2,9 +2,11 @@ import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:appflowy_result/appflowy_result.dart';
 import 'package:bloc/bloc.dart';
+import 'package:collection/collection.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import '../database_controller.dart';
@@ -74,19 +76,7 @@ class RelatedRowDetailPageBloc
   }
 
   void _init(String databaseId, String initialRowId) async {
-    final viewId = await DatabaseEventGetDefaultDatabaseViewId(
-      DatabaseIdPB(value: databaseId),
-    ).send().fold(
-          (pb) => pb.value,
-          (error) => null,
-        );
-
-    if (viewId == null) {
-      return;
-    }
-
-    final databaseView = await ViewBackendService.getView(viewId)
-        .fold((viewPB) => viewPB, (f) => null);
+    final databaseView = await _openableView(databaseId);
     if (databaseView == null) {
       return;
     }
@@ -111,6 +101,44 @@ class RelatedRowDetailPageBloc
         rowController,
       ),
     );
+  }
+
+  /// A database's views are not all reachable: one can be in the trash or in a
+  /// section this user cannot see, and the backend's default view is simply the
+  /// last one linked. So try each candidate until the folder gives one up.
+  Future<ViewPB?> _openableView(String databaseId) async {
+    final candidates = <String>[];
+
+    final listedViewId = await DatabaseEventGetDatabases().send().fold(
+          (databases) => databases.items
+              .firstWhereOrNull((meta) => meta.databaseId == databaseId)
+              ?.viewId,
+          (_) => null,
+        );
+    if (listedViewId != null) {
+      candidates.add(listedViewId);
+    }
+
+    final defaultViewId = await DatabaseEventGetDefaultDatabaseViewId(
+      DatabaseIdPB(value: databaseId),
+    ).send().fold(
+          (pb) => pb.value,
+          (error) => null,
+        );
+    if (defaultViewId != null && !candidates.contains(defaultViewId)) {
+      candidates.add(defaultViewId);
+    }
+
+    for (final viewId in candidates) {
+      final view = await ViewBackendService.getView(viewId)
+          .fold((viewPB) => viewPB, (f) => null);
+      if (view != null) {
+        return view;
+      }
+    }
+
+    Log.error("No reachable view for the related database: $databaseId");
+    return null;
   }
 }
 

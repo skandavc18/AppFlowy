@@ -13,7 +13,9 @@ import 'package:appflowy/workspace/application/collections/repository/repo_state
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -108,6 +110,7 @@ Future<void> showRepoBackgroundMenu({
   RepoSort? sort;
   WorkspaceFileMenuAction? file;
   CollectionKind? collectionKind;
+  WorkspaceTableKind? databaseLayout;
   var newFolder = false;
 
   final action = await showAppMenu<RepoBackgroundAction>(
@@ -120,6 +123,7 @@ Future<void> showRepoBackgroundMenu({
         submenu: workspaceFileKindEntries(
           onSelected: (selected) => file = selected,
           onCreateCollection: (kind) => collectionKind = kind,
+          onCreateDatabase: (kind) => databaseLayout = kind,
         ),
       ),
       AppMenuItem(
@@ -168,6 +172,13 @@ Future<void> showRepoBackgroundMenu({
   }
   if (collectionKind != null) {
     await createRepoCollection(collection, parentId, collectionKind!);
+    return;
+  }
+  if (databaseLayout != null) {
+    await createWorkspaceDatabase(
+      parentViewId: parentId,
+      kind: databaseLayout!,
+    );
     return;
   }
   if (newFolder) {
@@ -277,6 +288,7 @@ class RepoAddButton extends StatelessWidget {
   Future<void> _show(BuildContext context, Offset position) async {
     WorkspaceFileMenuAction? file;
     CollectionKind? collectionKind;
+    WorkspaceTableKind? databaseLayout;
     var newFolder = false;
 
     await showAppMenu<void>(
@@ -292,6 +304,7 @@ class RepoAddButton extends StatelessWidget {
         ...workspaceFileKindEntries(
           onSelected: (selected) => file = selected,
           onCreateCollection: (kind) => collectionKind = kind,
+          onCreateDatabase: (kind) => databaseLayout = kind,
         ),
       ],
     );
@@ -306,6 +319,13 @@ class RepoAddButton extends StatelessWidget {
     }
     if (collectionKind != null) {
       await createRepoCollection(collection, parentId, collectionKind!);
+      return;
+    }
+    if (databaseLayout != null) {
+      await createWorkspaceDatabase(
+        parentViewId: parentId,
+        kind: databaseLayout!,
+      );
       return;
     }
     if (file != null) {

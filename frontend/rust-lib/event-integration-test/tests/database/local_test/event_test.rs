@@ -915,3 +915,169 @@ async fn get_detailed_relation_cell_data() {
   assert_eq!(rows.len(), 1);
   assert_eq!(rows[0].name, "hello world");
 }
+
+#[tokio::test]
+async fn get_rows_as_text_event_test() {
+  let test = EventIntegrationTest::new_anon().await;
+  let current_workspace = test.get_current_workspace().await;
+  let grid_view = test
+    .create_grid(&current_workspace.id, "places".to_owned(), vec![])
+    .await;
+  let database = test.get_database(&grid_view.id).await;
+  let fields = test.get_all_database_fields(&grid_view.id).await.items;
+  let row_id = database.rows[0].id.clone();
+  let field_id = fields[0].id.clone();
+
+  test
+    .update_cell(CellChangesetPB {
+      view_id: grid_view.id.clone(),
+      row_id: row_id.clone(),
+      field_id: field_id.clone(),
+      cell_changeset: "Bengaluru".to_string(),
+    })
+    .await;
+
+  let rows = EventBuilder::new(test.clone())
+    .event(flowy_database2::event_map::DatabaseEvent::GetRowsAsText)
+    .payload(DatabaseViewIdPB {
+      value: grid_view.id.clone(),
+    })
+    .async_send()
+    .await
+    .parse_or_panic::<flowy_database2::entities::RepeatedRowTextPB>();
+
+  let at = rows
+    .field_ids
+    .iter()
+    .position(|id| id == &field_id)
+    .expect("the column that was written must be among the columns read");
+  let row = rows
+    .rows
+    .iter()
+    .find(|row| row.row_id == row_id)
+    .expect("the row that was written must be among the rows read");
+  assert_eq!(row.cells[at], "Bengaluru");
+}
+
+#[tokio::test]
+async fn get_rows_as_text_from_linked_view_test() {
+  let test = EventIntegrationTest::new_anon().await;
+  let current_workspace = test.get_current_workspace().await;
+  let grid_view = test
+    .create_grid(&current_workspace.id, "places".to_owned(), vec![])
+    .await;
+  let database = test.get_database(&grid_view.id).await;
+  let fields = test.get_all_database_fields(&grid_view.id).await.items;
+  let row_id = database.rows[0].id.clone();
+  let field_id = fields[0].id.clone();
+
+  test
+    .update_cell(CellChangesetPB {
+      view_id: grid_view.id.clone(),
+      row_id: row_id.clone(),
+      field_id: field_id.clone(),
+      cell_changeset: "Bengaluru".to_string(),
+    })
+    .await;
+
+  // A map tab is a linked view of the same database, exactly like this.
+  let mut ext = std::collections::HashMap::new();
+  ext.insert("database_id".to_string(), database.id.clone());
+  let linked = EventBuilder::new(test.clone())
+    .event(flowy_folder::event_map::FolderEvent::CreateView)
+    .payload(flowy_folder::entities::CreateViewPayloadPB {
+      parent_view_id: grid_view.id.clone(),
+      name: "map".to_string(),
+      layout: flowy_folder::entities::ViewLayoutPB::Grid,
+      initial_data: vec![],
+      meta: ext,
+      set_as_current: false,
+      index: None,
+      section: None,
+      view_id: None,
+      extra: None,
+      thumbnail: None,
+    })
+    .async_send()
+    .await
+    .parse_or_panic::<flowy_folder::entities::ViewPB>();
+
+  let rows = EventBuilder::new(test.clone())
+    .event(flowy_database2::event_map::DatabaseEvent::GetRowsAsText)
+    .payload(DatabaseViewIdPB {
+      value: linked.id.clone(),
+    })
+    .async_send()
+    .await
+    .parse_or_panic::<flowy_database2::entities::RepeatedRowTextPB>();
+
+
+  let at = rows
+    .field_ids
+    .iter()
+    .position(|id| id == &field_id)
+    .expect("the written column must be among the columns the linked view reads");
+  let row = rows
+    .rows
+    .iter()
+    .find(|row| row.row_id == row_id)
+    .expect("the written row must be among the rows the linked view reads");
+  assert_eq!(row.cells[at], "Bengaluru");
+}
+
+
+
+#[tokio::test]
+async fn location_column_still_reads_as_text_test() {
+  let test = EventIntegrationTest::new_anon().await;
+  let current_workspace = test.get_current_workspace().await;
+  let grid_view = test
+    .create_grid(&current_workspace.id, "places".to_owned(), vec![])
+    .await;
+  let database = test.get_database(&grid_view.id).await;
+  let fields = test.get_all_database_fields(&grid_view.id).await.items;
+  let row_id = database.rows[0].id.clone();
+  let field_id = fields[0].id.clone();
+
+  test
+    .update_cell(CellChangesetPB {
+      view_id: grid_view.id.clone(),
+      row_id: row_id.clone(),
+      field_id: field_id.clone(),
+      cell_changeset: "Bengaluru".to_string(),
+    })
+    .await;
+
+  // Marking the column as a location must not cost it its own type option.
+  EventBuilder::new(test.clone())
+    .event(flowy_database2::event_map::DatabaseEvent::SetLocationField)
+    .payload(flowy_database2::entities::LocationFieldPB {
+      view_id: grid_view.id.clone(),
+      field_id: field_id.clone(),
+      enabled: true,
+      format: "address".to_string(),
+    })
+    .async_send()
+    .await;
+
+  let rows = EventBuilder::new(test.clone())
+    .event(flowy_database2::event_map::DatabaseEvent::GetRowsAsText)
+    .payload(DatabaseViewIdPB {
+      value: grid_view.id.clone(),
+    })
+    .async_send()
+    .await
+    .parse_or_panic::<flowy_database2::entities::RepeatedRowTextPB>();
+
+  let at = rows
+    .field_ids
+    .iter()
+    .position(|id| id == &field_id)
+    .expect("the marked column must still be among the columns read");
+  let row = rows
+    .rows
+    .iter()
+    .find(|row| row.row_id == row_id)
+    .expect("the row must still be read");
+  assert_eq!(row.cells[at], "Bengaluru");
+}

@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/cell/bloc/text_cell_bloc.dart';
+import 'package:appflowy/plugins/database/widgets/cell/desktop_grid/location_cell_suggestions.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -16,23 +17,30 @@ class DesktopRowDetailTextCellSkin extends IEditableTextCellSkin {
     FocusNode focusNode,
     TextEditingController textEditingController,
   ) {
-    return TextField(
+    return LocationCellSuggestions(
+      viewId: bloc.cellController.viewId,
+      fieldId: bloc.cellController.fieldId,
       controller: textEditingController,
       focusNode: focusNode,
-      maxLines: null,
-      style: Theme.of(context).textTheme.bodyMedium,
-      decoration: InputDecoration(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
-        border: InputBorder.none,
-        focusedBorder: InputBorder.none,
-        enabledBorder: InputBorder.none,
-        errorBorder: InputBorder.none,
-        disabledBorder: InputBorder.none,
-        hintText: LocaleKeys.grid_row_textPlaceholder.tr(),
-        hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).hintColor,
-            ),
-        isDense: true,
+      child: TextField(
+        controller: textEditingController,
+        focusNode: focusNode,
+        maxLines: null,
+        style: Theme.of(context).textTheme.bodyMedium,
+        decoration: InputDecoration(
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
+          border: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          hintText: LocaleKeys.grid_row_textPlaceholder.tr(),
+          hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).hintColor,
+              ),
+          isDense: true,
+        ),
       ),
     );
   }

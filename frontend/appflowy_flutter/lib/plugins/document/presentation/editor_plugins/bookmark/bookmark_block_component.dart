@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_page_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_browser_reader.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_fetcher.dart';
@@ -25,6 +26,8 @@ class BookmarkBlockKeys {
   static const String siteName = 'site_name';
   static const String imageUrl = 'image_url';
   static const String faviconUrl = 'favicon_url';
+  static const String width = 'width';
+  static const String height = 'height';
 }
 
 Node bookmarkBlockNode({String url = ''}) => Node(
@@ -81,6 +84,12 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
 
   String get _url => node.attributes[BookmarkBlockKeys.url] as String? ?? '';
 
+  double? get _storedWidth =>
+      (node.attributes[BookmarkBlockKeys.width] as num?)?.toDouble();
+
+  double? get _storedHeight =>
+      (node.attributes[BookmarkBlockKeys.height] as num?)?.toDouble();
+
   @override
   void initState() {
     super.initState();
@@ -99,10 +108,23 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
   @override
   Widget build(BuildContext context) {
     final theme = bookmarkThemeOf(context);
-    Widget child = Padding(
-      padding: padding,
-      child: _url.isEmpty ? _placeholder(theme) : _card(theme),
-    );
+    Widget child = _url.isEmpty
+        ? _placeholder(theme)
+        : ResizableMedia(
+            width: _storedWidth ?? double.infinity,
+            minWidth: 260,
+            height: _storedHeight ?? BookmarkMetrics.feedRowHeight,
+            minHeight: 72,
+            maxHeight: 640,
+            alignment: Alignment.centerLeft,
+            editable: context.read<EditorState>().editable,
+            onResize: (value) => _write({BookmarkBlockKeys.width: value}),
+            onResizeHeight: (value) =>
+                _write({BookmarkBlockKeys.height: value}),
+            child: _card(theme, fill: true),
+          );
+
+    child = Padding(padding: padding, child: child);
 
     if (widget.showActions && widget.actionBuilder != null) {
       child = BlockComponentActionWrapper(
@@ -196,7 +218,7 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
         ),
       );
 
-  Widget _card(BookmarkTheme theme) {
+  Widget _card(BookmarkTheme theme, {bool fill = false}) {
     final attributes = node.attributes;
     final title = attributes[BookmarkBlockKeys.title] as String?;
     final description = attributes[BookmarkBlockKeys.description] as String?;
@@ -218,7 +240,7 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
           reactsToPointer: false,
           color: theme.panel,
           child: SizedBox(
-            height: BookmarkMetrics.feedRowHeight,
+            height: fill ? double.infinity : BookmarkMetrics.feedRowHeight,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [

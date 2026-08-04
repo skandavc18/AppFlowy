@@ -1,5 +1,7 @@
+use collab_database::fields::Field;
 use collab_database::fields::media_type_option::MediaCellData;
 use collab_database::rows::{Cell, RowCover, RowId};
+use collab_database::template::timestamp_parse::TimestampCellData;
 use lib_infra::box_any::BoxAny;
 use std::sync::{Arc, Weak};
 use tokio::sync::oneshot;
@@ -10,13 +12,15 @@ use lib_dispatch::prelude::{AFPluginData, AFPluginState, DataResult, data_result
 
 use crate::entities::*;
 use crate::manager::DatabaseManager;
+use crate::services::cell::stringify_cell;
 use crate::services::field::checklist_filter::ChecklistCellChangeset;
 use crate::services::field::date_filter::DateCellChangeset;
 use crate::services::field::{
-  RelationCellChangeset, SelectOptionCellChangeset, TypeOptionCellExt, type_option_data_from_pb,
+  LocationTypeOption, RelationCellChangeset, RollupTypeOption, SelectOptionCellChangeset,
+  TypeOptionCellExt, type_option_data_from_pb,
 };
 use crate::services::group::GroupChangeset;
-use crate::services::share::csv::CSVFormat;
+use crate::services::share::csv::{CSVFormat, resolve_relation};
 
 fn upgrade_manager(
   database_manager: AFPluginState<Weak<DatabaseManager>>,
@@ -1032,8 +1036,7 @@ pub(crate) async fn export_csv_handler(
 ) -> DataResult<DatabaseExportDataPB, FlowyError> {
   let manager = upgrade_manager(manager)?;
   let view_id = data.into_inner().value;
-  let database = manager.get_database_editor_with_view_id(&view_id).await?;
-  let data = database.export_csv(CSVFormat::Original).await?;
+  let data = manager.export_csv(&view_id, CSVFormat::Original).await?;
   data_result_ok(DatabaseExportDataPB {
     export_type: DatabaseExportDataType::CSV,
     data,
@@ -1257,6 +1260,159 @@ pub(crate) async fn get_related_database_rows_handler(
   let database_editor = manager.get_or_init_database_editor(&database_id).await?;
   let rows = database_editor.get_related_rows(None).await?;
   data_result_ok(RepeatedRelatedRowDataPB { rows })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub(crate) async fn get_rows_as_text_handler(
+  data: AFPluginData<DatabaseViewIdPB>,
+  manager: AFPluginState<Weak<DatabaseManager>>,
+) -> DataResult<RepeatedRowTextPB, FlowyError> {
+  let manager = upgrade_manager(manager)?;
+  let view_id = data.into_inner().value;
+  let database = manager.get_database_editor_with_view_id(&view_id).await?;
+  let fields = database.get_fields(&view_id, None).await;
+  let rows = database.get_loaded_rows(&view_id).await;
+  // A relation cell stores row ids, which read as nothing but a GUID, so the
+  // names behind them are gathered before the cells are written out.
+  let relation_names = manager.relation_names_of(&database).await;
+
+  let write = |cell: &Cell, field: &Field| {
+    let value = stringify_cell(cell, field);
+    if FieldType::from(field.field_type) == FieldType::Relation {
+      resolve_relation(&value, &relation_names)
+    } else {
+      value
+    }
+  };
+
+  let field_ids: Vec<String> = fields.iter().map(|field| field.id.clone()).collect();
+  let text_rows: Vec<RowTextPB> = rows
+    .iter()
+    .map(|row| RowTextPB {
+      row_id: row.id.to_string(),
+      cells: fields
+        .iter()
+        .map(|field| match FieldType::from(field.field_type) {
+          // These two are not stored on the row; they are the row's own times.
+          FieldType::CreatedTime => write(
+            &TimestampCellData::new(row.created_at).to_cell(field.field_type),
+            field,
+          ),
+          FieldType::LastEditedTime => write(
+            &TimestampCellData::new(row.modified_at).to_cell(field.field_type),
+            field,
+          ),
+          _ => row
+            .cells
+            .get(&field.id)
+            .map(|cell| write(cell, field))
+            .unwrap_or_default(),
+        })
+        .collect(),
+      modified_at: row.modified_at,
+    })
+    .collect();
+
+  // A view that reads as empty and a view whose rows are all blank look the
+  // same from the outside, so the counts are worth saying apart. The values
+  // themselves are the person's own writing and stay out of the log.
+  tracing::info!(
+    "[Database]: {} read as text: {} rows, {} fields, {} rows carrying cells",
+    view_id,
+    rows.len(),
+    fields.len(),
+    rows.iter().filter(|row| !row.cells.is_empty()).count(),
+  );
+
+  data_result_ok(RepeatedRowTextPB {
+    field_ids,
+    rows: text_rows,
+  })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub(crate) async fn set_location_field_handler(
+  data: AFPluginData<LocationFieldPB>,
+  manager: AFPluginState<Weak<DatabaseManager>>,
+) -> Result<(), FlowyError> {
+  let manager = upgrade_manager(manager)?;
+  let params = data.into_inner();
+  let view_id = params.view_id.clone();
+  let field_id = params.field_id.clone();
+  manager
+    .set_location_field(&view_id, &field_id, LocationTypeOption::from(params))
+    .await
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub(crate) async fn get_location_fields_handler(
+  data: AFPluginData<DatabaseViewIdPB>,
+  manager: AFPluginState<Weak<DatabaseManager>>,
+) -> DataResult<RepeatedFieldIdPB, FlowyError> {
+  let manager = upgrade_manager(manager)?;
+  let view_id = data.into_inner().value;
+  let field_ids = manager.location_field_ids(&view_id).await?;
+  data_result_ok(RepeatedFieldIdPB {
+    items: field_ids
+      .into_iter()
+      .map(|field_id| FieldIdPB { field_id })
+      .collect(),
+  })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub(crate) async fn recalculate_rollups_handler(
+  data: AFPluginData<DatabaseViewIdPB>,
+  manager: AFPluginState<Weak<DatabaseManager>>,
+) -> DataResult<RollupResultPB, FlowyError> {
+  let manager = upgrade_manager(manager)?;
+  let view_id = data.into_inner().value;
+  let updated_cells = manager.recalculate_rollups(&view_id).await?;
+  data_result_ok(RollupResultPB { updated_cells })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub(crate) async fn get_rollup_settings_handler(
+  data: AFPluginData<RollupFieldPB>,
+  manager: AFPluginState<Weak<DatabaseManager>>,
+) -> DataResult<RollupSettingsPB, FlowyError> {
+  let manager = upgrade_manager(manager)?;
+  let params = data.into_inner();
+  let option = manager.get_rollup(&params.view_id, &params.field_id).await?;
+  let mut settings = RollupSettingsPB::from(option);
+  settings.view_id = params.view_id;
+  settings.field_id = params.field_id;
+  data_result_ok(settings)
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub(crate) async fn update_rollup_settings_handler(
+  data: AFPluginData<RollupSettingsPB>,
+  manager: AFPluginState<Weak<DatabaseManager>>,
+) -> DataResult<RollupResultPB, FlowyError> {
+  let manager = upgrade_manager(manager)?;
+  let params = data.into_inner();
+  let view_id = params.view_id.clone();
+  let field_id = params.field_id.clone();
+  let updated_cells = manager
+    .update_rollup(&view_id, &field_id, RollupTypeOption::from(params))
+    .await?;
+  data_result_ok(RollupResultPB { updated_cells })
+}
+
+#[tracing::instrument(level = "debug", skip_all, err)]
+pub(crate) async fn get_rollup_targets_handler(
+  data: AFPluginData<RollupFieldPB>,
+  manager: AFPluginState<Weak<DatabaseManager>>,
+) -> DataResult<RepeatedFieldPB, FlowyError> {
+  let manager = upgrade_manager(manager)?;
+  let params = data.into_inner();
+  let fields = manager
+    .rollup_targets(&params.view_id, &params.field_id)
+    .await;
+  data_result_ok(RepeatedFieldPB::from(
+    fields.into_iter().map(FieldPB::new).collect::<Vec<_>>(),
+  ))
 }
 
 pub(crate) async fn summarize_row_handler(

@@ -3,6 +3,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/board/application/board_bloc.dart';
 import 'package:appflowy/plugins/database/board/group_ext.dart';
+import 'package:appflowy/plugins/database/board/presentation/board_style.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/util/field_type_extension.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -70,8 +71,38 @@ class _BoardColumnHeaderState extends State<BoardColumnHeader> {
 
     return Container(
       padding: widget.margin,
-      height: 50,
+      height: 46,
       child: child,
+    );
+  }
+}
+
+/// How many cards a column holds, set the way Notion and Linear set it.
+class BoardColumnCount extends StatelessWidget {
+  const BoardColumnCount({super.key, required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = boardPaletteOf(context);
+    return Container(
+      constraints: const BoxConstraints(minWidth: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: palette.raised,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '$count',
+        style: TextStyle(
+          fontSize: 11,
+          height: 1.2,
+          fontWeight: FontWeight.w600,
+          color: palette.textMuted,
+        ),
+      ),
     );
   }
 }
@@ -202,23 +233,31 @@ class _DefaultColumnHeaderContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = boardPaletteOf(context);
     final customData = groupData.customData as GroupData;
     final groupName = customData.group.generateGroupName(databaseController);
     return Row(
       children: [
-        Expanded(
-          child: Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FlowyTooltip(
-              message: groupName,
-              child: FlowyText.medium(
-                groupName,
-                overflow: TextOverflow.ellipsis,
+        Flexible(
+          child: FlowyTooltip(
+            message: groupName,
+            child: Text(
+              groupName,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.2,
+                letterSpacing: -0.1,
+                fontWeight: FontWeight.w600,
+                color: palette.textPrimary,
               ),
             ),
           ),
         ),
-        const HSpace(6),
+        const HSpace(8),
+        BoardColumnCount(count: groupData.items.length),
+        const Spacer(),
         GroupOptionsButton(
           groupData: groupData,
         ),

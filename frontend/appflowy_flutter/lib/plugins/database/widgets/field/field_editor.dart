@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -7,6 +8,7 @@ import 'package:appflowy/plugins/database/application/field/field_controller.dar
 import 'package:appflowy/plugins/database/application/field/field_editor_bloc.dart';
 import 'package:appflowy/plugins/database/application/field/field_info.dart';
 import 'package:appflowy/plugins/database/domain/field_service.dart';
+import 'package:appflowy/plugins/database/domain/location_service.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/common/type_option_separator.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/header/desktop_field_cell.dart';
@@ -736,41 +738,91 @@ class _SwitchFieldButtonState extends State<SwitchFieldButton> {
             ),
           );
         }
-        return SizedBox(
-          height: GridSize.popoverItemHeight,
-          child: AppFlowyPopover(
-            constraints: BoxConstraints.loose(const Size(460, 540)),
-            triggerActions: PopoverTriggerFlags.hover,
-            mutex: widget.popoverMutex,
-            controller: _popoverController,
-            offset: const Offset(8, 0),
-            margin: const EdgeInsets.all(8),
-            popupBuilder: (BuildContext popoverContext) {
-              return FieldTypeList(
-                onSelectField: (newFieldType) {
-                  context
-                      .read<FieldEditorBloc>()
-                      .add(FieldEditorEvent.switchFieldType(newFieldType));
+
+        final viewId = context.read<FieldEditorBloc>().viewId;
+        final fieldId = state.field.id;
+
+        return ValueListenableBuilder<Set<String>>(
+          valueListenable: LocationFieldRegistry.instance.listenable(viewId),
+          builder: (context, locationFields, _) {
+            final isLocation = state.field.fieldType == FieldType.RichText &&
+                locationFields.contains(fieldId);
+
+            return SizedBox(
+              height: GridSize.popoverItemHeight,
+              child: AppFlowyPopover(
+                constraints: BoxConstraints.loose(const Size(460, 540)),
+                triggerActions: PopoverTriggerFlags.hover,
+                mutex: widget.popoverMutex,
+                controller: _popoverController,
+                offset: const Offset(8, 0),
+                margin: const EdgeInsets.all(8),
+                popupBuilder: (BuildContext popoverContext) {
+                  return FieldTypeList(
+                    isLocation: isLocation,
+                    onSelectField: (newFieldType) {
+                      if (isLocation) {
+                        unawaited(
+                          LocationFieldRegistry.instance.setLocation(
+                            viewId: viewId,
+                            fieldId: fieldId,
+                            enabled: false,
+                          ),
+                        );
+                      }
+                      context
+                          .read<FieldEditorBloc>()
+                          .add(FieldEditorEvent.switchFieldType(newFieldType));
+                    },
+                    onSelectLocation: () {
+                      // The type switch rewrites the column's options, so the
+                      // mark has to be written after it, not beside it.
+                      final marking =
+                          state.field.fieldType == FieldType.RichText
+                              ? Future<void>.value()
+                              : Future<void>.delayed(
+                                  const Duration(milliseconds: 240),
+                                );
+                      if (state.field.fieldType != FieldType.RichText) {
+                        context.read<FieldEditorBloc>().add(
+                              const FieldEditorEvent.switchFieldType(
+                                FieldType.RichText,
+                              ),
+                            );
+                      }
+                      unawaited(
+                        marking.then(
+                          (_) => LocationFieldRegistry.instance.setLocation(
+                            viewId: viewId,
+                            fieldId: fieldId,
+                            enabled: true,
+                          ),
+                        ),
+                      );
+                    },
+                  );
                 },
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8.0),
-              child: FlowyButton(
-                onTap: () => _popoverController.show(),
-                text: FlowyText(
-                  state.field.fieldType.i18n,
-                  lineHeight: 1.0,
-                ),
-                leftIcon: FlowySvg(
-                  state.field.fieldType.svgData,
-                ),
-                rightIcon: const FlowySvg(
-                  FlowySvgs.more_s,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                  child: FlowyButton(
+                    onTap: () => _popoverController.show(),
+                    text: FlowyText(
+                      isLocation
+                          ? LocaleKeys.map_locationField.tr()
+                          : state.field.fieldType.i18n,
+                      lineHeight: 1.0,
+                    ),
+                    leftIcon: isLocation
+                        ? const Icon(Icons.place_rounded, size: 16)
+                        : FlowySvg(state.field.fieldType.svgData),
+                    rightIcon: const FlowySvg(
+                      FlowySvgs.more_s,
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );

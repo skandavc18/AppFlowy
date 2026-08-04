@@ -136,11 +136,13 @@ class ViewBackendService {
     required String databaseId,
     required ViewLayoutPB layoutType,
     required String name,
+    String? extra,
   }) {
     return createView(
       layoutType: layoutType,
       parentViewId: parentViewId,
       name: name,
+      extra: extra,
       ext: {'database_id': databaseId},
     );
   }

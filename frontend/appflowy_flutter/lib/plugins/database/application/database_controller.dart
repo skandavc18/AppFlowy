@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/database/domain/database_view_service.dart';
 import 'package:appflowy/plugins/database/domain/group_listener.dart';
 import 'package:appflowy/plugins/database/domain/layout_service.dart';
 import 'package:appflowy/plugins/database/domain/layout_setting_listener.dart';
+import 'package:appflowy/plugins/database/domain/rollup_service.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
@@ -192,6 +193,7 @@ class DatabaseController {
               return Future(() async {
                 await _loadGroups();
                 await _loadLayoutSetting();
+                unawaited(RollupBackendService.recalculate(viewId: viewId));
                 return FlowyResult.success(fields);
               });
             },

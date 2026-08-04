@@ -12,6 +12,7 @@ import 'package:appflowy_backend/protobuf/dart-ffi/ffi_response.pb.dart';
 import 'package:appflowy_backend/protobuf/dart-ffi/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-document/protobuf.dart';
+import 'package:appflowy_backend/protobuf/flowy-error/code.pbenum.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/protobuf.dart';
@@ -81,7 +82,9 @@ FlowyResult<Uint8List, Uint8List> _extractPayload(
         case FFIStatusCode.Ok:
           return FlowySuccess(Uint8List.fromList(response.payload));
         case FFIStatusCode.Err:
-          final errorBytes = Uint8List.fromList(response.payload);
+          final errorBytes = _asFlowyErrorBytes(
+            Uint8List.fromList(response.payload),
+          );
           GlobalErrorCodeNotifier.receiveErrorBytes(errorBytes);
           return FlowyFailure(errorBytes);
         case FFIStatusCode.Internal:
@@ -98,6 +101,25 @@ FlowyResult<Uint8List, Uint8List> _extractPayload(
       return FlowyFailure(emptyBytes());
     },
   );
+}
+
+/// lib-dispatch answers its OWN failures — an unregistered event, a payload it
+/// could not read, a panic in a handler — with a plain string rather than a
+/// FlowyError. Every generated event calls `FlowyError.fromBuffer` on these
+/// bytes, so left alone the failure escapes as a thrown exception instead of a
+/// result the caller can read.
+Uint8List _asFlowyErrorBytes(Uint8List payload) {
+  try {
+    FlowyError.fromBuffer(payload);
+    return payload;
+  } on Object catch (_) {
+    final message = utf8.decode(payload, allowMalformed: true);
+    Log.error("Dispatch failed before it reached the backend: $message");
+    return (FlowyError()
+          ..code = ErrorCode.Internal
+          ..msg = message)
+        .writeToBuffer();
+  }
 }
 
 Future<FlowyResult<FFIResponse, FlowyInternalError>> _extractResponse(
