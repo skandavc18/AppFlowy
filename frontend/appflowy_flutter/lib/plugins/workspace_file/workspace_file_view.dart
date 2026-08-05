@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/plugins/collection/views/email/email_file_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_explorer.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_media_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
@@ -17,6 +18,7 @@ import 'package:appflowy/plugins/workspace_file/workspace_file_migrator.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/workspace/application/collections/email/email_message.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/log.dart';
@@ -166,6 +168,12 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
 
     if (_isImage) {
       return _WorkspaceImageStage(file: file, name: _name);
+    }
+
+    // A stored message is still a message, so it opens in the mail reader
+    // rather than as an unreadable attachment.
+    if (looksLikeMessageFileName(_name)) {
+      return EmailFileView(view: widget.view, file: file);
     }
 
     final kind = _previewKind;

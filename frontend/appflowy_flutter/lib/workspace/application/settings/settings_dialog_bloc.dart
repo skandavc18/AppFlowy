@@ -26,6 +26,7 @@ enum SettingsPage {
   cloud,
   documentEditing,
   maps,
+  connectedAccounts,
   member,
   featureFlags,
 }

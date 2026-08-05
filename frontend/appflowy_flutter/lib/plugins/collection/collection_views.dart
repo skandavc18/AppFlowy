@@ -4,6 +4,7 @@ import 'package:appflowy/plugins/collection/views/book/book_views.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_views.dart';
 import 'package:appflowy/plugins/collection/views/collection_contents_view.dart';
 import 'package:appflowy/plugins/collection/views/database/database_views.dart';
+import 'package:appflowy/plugins/collection/views/email/email_views.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_views.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -197,7 +198,10 @@ void registerBuiltInCollections() {
         'conversation',
         'collection',
       ],
-      views: _contentViews(),
+      views: [
+        ...emailCollectionViews(),
+        ..._contentViews(includeGallery: false),
+      ],
     ),
   );
 }

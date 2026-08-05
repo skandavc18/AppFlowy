@@ -107,6 +107,13 @@ class SettingsMenu extends StatelessWidget {
               changeSelectedPage: changeSelectedPage,
             ),
             SettingsMenuElement(
+              page: SettingsPage.connectedAccounts,
+              selectedPage: currentPage,
+              label: LocaleKeys.settings_accountsPage_menuLabel.tr(),
+              icon: const Icon(Icons.account_circle_rounded, size: 20),
+              changeSelectedPage: changeSelectedPage,
+            ),
+            SettingsMenuElement(
               page: SettingsPage.shortcuts,
               selectedPage: currentPage,
               label: LocaleKeys.settings_shortcutsPage_menuLabel.tr(),
