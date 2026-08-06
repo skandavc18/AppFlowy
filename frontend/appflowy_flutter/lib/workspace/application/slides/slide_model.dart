@@ -114,6 +114,7 @@ class SlideCardData {
     this.subtitle = '',
     this.icon,
     this.coverUrl,
+    this.documentId = '',
     this.accent = '',
     this.properties = const [],
     this.lastModified,
@@ -128,6 +129,9 @@ class SlideCardData {
 
   /// A picture to stand behind the slide's head.
   final String? coverUrl;
+
+  /// The row's own page, which holds whatever does not fit in a column.
+  final String documentId;
 
   /// The value that decides the slide's colour, usually a status.
   final String accent;

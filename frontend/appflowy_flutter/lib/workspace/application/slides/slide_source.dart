@@ -217,6 +217,7 @@ class SlideSource extends ChangeNotifier {
               ? meta.icon
               : null,
           coverUrl: _coverOf(row, meta, cell),
+          documentId: meta?.documentId ?? '',
           accent: _accentOf(properties),
           properties: properties,
           lastModified: row.modifiedAt.toInt() == 0

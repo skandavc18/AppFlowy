@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
@@ -10,6 +12,7 @@ import 'package:appflowy/plugins/database/widgets/row/row_detail.dart';
 import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/slides/slide_stage.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
+import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/slides/slide_metadata.dart';
 import 'package:appflowy/workspace/application/slides/slide_spec.dart';
@@ -190,19 +193,29 @@ class _SlidePageState extends State<SlidePage> {
   }
 
   void _openRowMeta(DatabaseController controller, RowMetaPB rowMeta) {
-    FlowyOverlay.show(
-      context: context,
-      builder: (_) => BlocProvider.value(
-        value: context.read<UserWorkspaceBloc>(),
-        child: RowDetailPage(
-          rowController: RowController(
-            rowMeta: rowMeta,
-            viewId: controller.viewId,
-            rowCache: controller.rowCache,
+    unawaited(
+      FlowyOverlay.show(
+        context: context,
+        builder: (_) => BlocProvider.value(
+          value: context.read<UserWorkspaceBloc>(),
+          child: RowDetailPage(
+            rowController: RowController(
+              rowMeta: rowMeta,
+              viewId: controller.viewId,
+              rowCache: controller.rowCache,
+            ),
+            databaseController: controller,
           ),
-          databaseController: controller,
         ),
-      ),
+      ).then((_) {
+        if (!mounted) {
+          return;
+        }
+        // Whatever was written on the row's page has to be read again, and a
+        // page made during the visit had no id to forget.
+        RowPageText.forget();
+        _stage.currentState?.reload();
+      }),
     );
   }
 

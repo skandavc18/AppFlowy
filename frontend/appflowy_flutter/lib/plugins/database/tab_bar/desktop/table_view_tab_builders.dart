@@ -4,10 +4,12 @@ import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/shared/table_views/feed_stage.dart';
 import 'package:appflowy/shared/table_views/form_stage.dart';
 import 'package:appflowy/shared/table_views/gallery_stage.dart';
+import 'package:appflowy/shared/table_views/mailbox_stage.dart';
 import 'package:appflowy/shared/table_views/timeline_stage.dart';
 import 'package:appflowy/workspace/application/table_views/feed_spec.dart';
 import 'package:appflowy/workspace/application/table_views/form_spec.dart';
 import 'package:appflowy/workspace/application/table_views/gallery_spec.dart';
+import 'package:appflowy/workspace/application/table_views/mailbox_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/table_views/timeline_spec.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -419,6 +421,106 @@ class _FormTabPageState extends State<FormTabPage>
           onSpecChanged: _save,
           onSubmit: addRowWithAnswers,
           onOpenRow: openRow,
+        ),
+      );
+}
+
+/// A tab that reads the database the way a mail client reads a mailbox.
+class MailboxTabBarBuilderImpl extends DatabaseTabBarItemBuilder {
+  @override
+  Widget content(
+    BuildContext context,
+    ViewPB view,
+    DatabaseController controller,
+    bool shrinkWrap,
+    String? initialRowId,
+  ) =>
+      MailboxTabPage(
+        key: ValueKey(view.id),
+        view: view,
+        databaseController: controller,
+      );
+
+  @override
+  Widget settingBar(BuildContext context, DatabaseController controller) =>
+      const SizedBox.shrink();
+
+  @override
+  Widget settingBarExtension(
+    BuildContext context,
+    DatabaseController controller,
+  ) =>
+      const SizedBox.shrink();
+}
+
+class MailboxTabPage extends StatefulWidget {
+  const MailboxTabPage({
+    super.key,
+    required this.view,
+    required this.databaseController,
+  });
+
+  final ViewPB view;
+  final DatabaseController databaseController;
+
+  @override
+  State<MailboxTabPage> createState() => _MailboxTabPageState();
+}
+
+class _MailboxTabPageState extends State<MailboxTabPage>
+    with TableViewHostPlumbing<MailboxTabPage> {
+  final GlobalKey<MailboxStageState> _stage = GlobalKey<MailboxStageState>();
+
+  late MailboxSpec _spec = MailboxSpec.fromJson(
+    widget.view.tableViewMark(TableViewKind.mailbox)?.settings ?? const {},
+  );
+
+  @override
+  ViewPB get hostView => widget.view;
+
+  @override
+  DatabaseController get hostController => widget.databaseController;
+
+  @override
+  TableViewKind get hostKind => TableViewKind.mailbox;
+
+  @override
+  void onRowsChanged() => _stage.currentState?.reload();
+
+  @override
+  void initState() {
+    super.initState();
+    startHosting();
+  }
+
+  @override
+  void didUpdateWidget(MailboxTabPage old) {
+    super.didUpdateWidget(old);
+    if (old.view.extra != widget.view.extra) {
+      _spec = MailboxSpec.fromJson(
+        widget.view.tableViewMark(TableViewKind.mailbox)?.settings ?? const {},
+      );
+    }
+    onRowsChanged();
+  }
+
+  void _save(MailboxSpec spec) {
+    setState(() => _spec = spec);
+    saveHostSettings(spec.toJson());
+  }
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: _stagePadding,
+        child: MailboxStage(
+          key: _stage,
+          viewId: widget.view.id,
+          spec: _spec,
+          title: widget.view.name,
+          padding: _innerPadding,
+          onSpecChanged: _save,
+          onOpenRow: openRow,
+          onAddRow: addRow,
         ),
       );
 }

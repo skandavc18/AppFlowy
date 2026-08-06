@@ -57,6 +57,7 @@ void main() {
         flow: SlideFlow.coverFlow,
         wrap: true,
         showEmptyProperties: true,
+        showPageContent: true,
         index: 7,
       );
 
@@ -65,6 +66,14 @@ void main() {
 
     test('a deck with nothing set is small on disk', () {
       expect(const SlideSpec().toJson(), isEmpty);
+    });
+
+    test('a deck reads only its columns until it is asked for the page', () {
+      expect(const SlideSpec().showPageContent, isFalse);
+      expect(
+        SlideSpec.fromJson(const {'page': true}).showPageContent,
+        isTrue,
+      );
     });
 
     test('an unknown arrangement falls back rather than throwing', () {

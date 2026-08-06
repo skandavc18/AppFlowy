@@ -36,6 +36,7 @@ class SlideSpec {
     this.flow = SlideFlow.deck,
     this.wrap = false,
     this.showEmptyProperties = false,
+    this.showPageContent = false,
     this.index = 0,
   });
 
@@ -61,6 +62,9 @@ class SlideSpec {
   /// Whether a column with nothing in it still takes up room.
   final bool showEmptyProperties;
 
+  /// Whether the writing on the row's own page is read on the slide.
+  final bool showPageContent;
+
   /// The slide the deck was left on.
   final int index;
 
@@ -77,6 +81,7 @@ class SlideSpec {
     SlideFlow? flow,
     bool? wrap,
     bool? showEmptyProperties,
+    bool? showPageContent,
     int? index,
   }) {
     return SlideSpec(
@@ -87,6 +92,7 @@ class SlideSpec {
       flow: flow ?? this.flow,
       wrap: wrap ?? this.wrap,
       showEmptyProperties: showEmptyProperties ?? this.showEmptyProperties,
+      showPageContent: showPageContent ?? this.showPageContent,
       index: index ?? this.index,
     );
   }
@@ -99,6 +105,7 @@ class SlideSpec {
         if (flow != SlideFlow.deck) 'flow': flow.id,
         if (wrap) 'wrap': true,
         if (showEmptyProperties) 'empty': true,
+        if (showPageContent) 'page': true,
         if (index != 0) 'index': index,
       };
 
@@ -110,6 +117,7 @@ class SlideSpec {
         flow: SlideFlow.fromId(values['flow'] as String?),
         wrap: values['wrap'] == true,
         showEmptyProperties: values['empty'] == true,
+        showPageContent: values['page'] == true,
         index: (values['index'] as num?)?.toInt() ?? 0,
       );
 
@@ -127,6 +135,7 @@ class SlideSpec {
       other.flow == flow &&
       other.wrap == wrap &&
       other.showEmptyProperties == showEmptyProperties &&
+      other.showPageContent == showPageContent &&
       other.index == index;
 
   @override
@@ -138,6 +147,7 @@ class SlideSpec {
         flow,
         wrap,
         showEmptyProperties,
+        showPageContent,
         index,
       );
 }

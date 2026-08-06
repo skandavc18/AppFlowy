@@ -960,6 +960,38 @@ async fn get_rows_as_text_event_test() {
 }
 
 #[tokio::test]
+async fn get_all_rows_carries_the_document_id_test() {
+  let test = EventIntegrationTest::new_anon().await;
+  let current_workspace = test.get_current_workspace().await;
+  let grid_view = test
+    .create_grid(&current_workspace.id, "notes".to_owned(), vec![])
+    .await;
+  let database = test.get_database(&grid_view.id).await;
+  let row_id = database.rows[0].id.clone();
+
+  let metas = EventBuilder::new(test.clone())
+    .event(flowy_database2::event_map::DatabaseEvent::GetAllRows)
+    .payload(DatabaseViewIdPB {
+      value: grid_view.id.clone(),
+    })
+    .async_send()
+    .await
+    .parse_or_panic::<flowy_database2::entities::RepeatedRowMetaPB>();
+
+  let meta = metas
+    .items
+    .iter()
+    .find(|meta| meta.id == row_id)
+    .expect("the row must be among the metadata read");
+
+  // Without this every view that shows a row's own page reads it as empty.
+  assert!(
+    meta.document_id.as_ref().is_some_and(|id| !id.is_empty()),
+    "a row's metadata must name the document its page lives in"
+  );
+}
+
+#[tokio::test]
 async fn get_rows_as_text_from_linked_view_test() {
   let test = EventIntegrationTest::new_anon().await;
   let current_workspace = test.get_current_workspace().await;

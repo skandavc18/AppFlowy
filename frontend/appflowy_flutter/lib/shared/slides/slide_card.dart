@@ -1,6 +1,9 @@
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/slides/slide_property_view.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
+import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
 /// One row, drawn as something worth looking at.
@@ -16,6 +19,7 @@ class SlideCard extends StatefulWidget {
     required this.size,
     this.prominence = 1,
     this.live = false,
+    this.showPageContent = false,
     this.onOpen,
     this.onEdit,
     this.onContextMenu,
@@ -30,6 +34,9 @@ class SlideCard extends StatefulWidget {
 
   /// Whether this is the slide being read.
   final bool live;
+
+  /// Whether the writing on the row's own page is read on the slide.
+  final bool showPageContent;
 
   final VoidCallback? onOpen;
   final VoidCallback? onEdit;
@@ -112,12 +119,81 @@ class _SlideCardState extends State<SlideCard> {
           child: _buildHead(palette, showIcon: hero == null),
         ),
         Expanded(
-          child: rest.isEmpty
-              ? _buildEmpty(palette)
-              : _buildProperties(palette, rest),
+          child: widget.showPageContent
+              ? _buildPage(palette, rest)
+              : rest.isEmpty
+                  ? _buildEmpty(palette)
+                  : _buildProperties(palette, rest),
         ),
         _buildFooter(palette),
       ],
+    );
+  }
+
+  /// The row's own page, with the short facts kept above it.
+  Widget _buildPage(SlidePalette palette, List<SlideProperty> properties) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (properties.isNotEmpty)
+              ConstrainedBox(
+                // The facts take only what they need, up to their share; the
+                // page is what the rest of the slide is for.
+                constraints: BoxConstraints(
+                  maxHeight: constraints.maxHeight * 0.42,
+                ),
+                child: _buildProperties(palette, properties),
+              ),
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(
+                  SlideMetrics.cardPadding,
+                  0,
+                  SlideMetrics.cardPadding,
+                  4,
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                decoration: BoxDecoration(
+                  color: palette.sunken.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: RowPageTextView(
+                  documentId: widget.card.documentId,
+                  builder: (context, read) {
+                    final text = read?.trim() ?? '';
+                    if (text.isEmpty) {
+                      return Align(
+                        alignment: Alignment.topLeft,
+                        child: Text(
+                          LocaleKeys.slides_pageEmpty.tr(),
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: palette.textMuted,
+                          ),
+                        ),
+                      );
+                    }
+                    return Align(
+                      alignment: Alignment.topLeft,
+                      child: Text(
+                        text,
+                        overflow: TextOverflow.fade,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          height: 1.62,
+                          color: palette.textSecondary,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

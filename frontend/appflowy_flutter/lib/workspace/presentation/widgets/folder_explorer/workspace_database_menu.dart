@@ -23,6 +23,7 @@ enum WorkspaceTableKind {
   timeline(ViewLayoutPB.Grid, tableView: TableViewKind.timeline),
   feed(ViewLayoutPB.Grid, tableView: TableViewKind.feed),
   form(ViewLayoutPB.Grid, tableView: TableViewKind.form),
+  mailbox(ViewLayoutPB.Grid, tableView: TableViewKind.mailbox),
   chart(ViewLayoutPB.Grid, charted: true),
   map(ViewLayoutPB.Grid, mapped: true),
   slides(ViewLayoutPB.Grid, slided: true);
@@ -71,6 +72,7 @@ String workspaceTableKindLabel(WorkspaceTableKind kind) => switch (kind) {
       WorkspaceTableKind.timeline => LocaleKeys.timeline_name.tr(),
       WorkspaceTableKind.feed => LocaleKeys.feed_name.tr(),
       WorkspaceTableKind.form => LocaleKeys.form_name.tr(),
+      WorkspaceTableKind.mailbox => LocaleKeys.mailbox_name.tr(),
       WorkspaceTableKind.table => LocaleKeys.collections_database_table.tr(),
     };
 
@@ -84,6 +86,7 @@ IconData workspaceTableKindIcon(WorkspaceTableKind kind) => switch (kind) {
       WorkspaceTableKind.timeline => Icons.timeline_rounded,
       WorkspaceTableKind.feed => Icons.article_rounded,
       WorkspaceTableKind.form => Icons.assignment_rounded,
+      WorkspaceTableKind.mailbox => Icons.mark_email_unread_rounded,
       WorkspaceTableKind.table => Icons.table_rows_rounded,
     };
 

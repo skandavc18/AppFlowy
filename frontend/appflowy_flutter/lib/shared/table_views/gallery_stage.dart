@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/shared/table_views/table_property_view.dart';
 import 'package:appflowy/shared/table_views/table_view_chrome.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
@@ -9,9 +10,6 @@ import 'package:appflowy/workspace/application/table_views/gallery_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_query.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
 import 'package:appflowy/workspace/application/table_views/table_row_source.dart';
-import 'package:appflowy_backend/dispatch/dispatch.dart';
-import 'package:appflowy_backend/protobuf/flowy-document/protobuf.dart';
-import 'package:appflowy_result/appflowy_result.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -84,6 +82,12 @@ class GalleryStageState extends State<GalleryStage> {
 
   /// Reads the table again — the host calls this when a row changes.
   void reload() => _source.invalidate();
+
+  /// Reads the pages again as well, for when somebody asks outright.
+  void _readAgain() {
+    RowPageText.forget();
+    reload();
+  }
 
   void _onSourceChanged() {
     if (mounted) {
@@ -305,7 +309,7 @@ class GalleryStageState extends State<GalleryStage> {
         AppMenuItem(
           label: LocaleKeys.tableViews_reload.tr(),
           icon: Icons.refresh_rounded,
-          onSelected: reload,
+          onSelected: _readAgain,
         ),
       ];
 
@@ -591,13 +595,19 @@ class _GalleryCardState extends State<_GalleryCard> {
                     for (final property in facts.take(room))
                       SizedBox(
                         height: _factHeight,
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: TablePropertyView(
-                            property: property,
-                            palette: palette,
-                            showLabel: false,
-                            compact: true,
+                        // A property that asks for more than its berth is
+                        // trimmed rather than printed over the card.
+                        child: ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.centerLeft,
+                            minHeight: 0,
+                            maxHeight: double.infinity,
+                            child: TablePropertyView(
+                              property: property,
+                              palette: palette,
+                              showLabel: false,
+                              compact: true,
+                            ),
                           ),
                         ),
                       ),
@@ -639,7 +649,7 @@ class _GalleryCardState extends State<_GalleryCard> {
 ///
 /// Read once per row and remembered, because a wall of cards would otherwise
 /// ask the backend for the same page every time it scrolled past.
-class _PagePreview extends StatefulWidget {
+class _PagePreview extends StatelessWidget {
   const _PagePreview({
     required this.documentId,
     required this.palette,
@@ -651,72 +661,34 @@ class _PagePreview extends StatefulWidget {
   final double height;
 
   @override
-  State<_PagePreview> createState() => _PagePreviewState();
-}
-
-class _PagePreviewState extends State<_PagePreview> {
-  static final Map<String, String> _read = {};
-
-  String? _text;
-
-  @override
-  void initState() {
-    super.initState();
-    _adopt();
-  }
-
-  @override
-  void didUpdateWidget(_PagePreview old) {
-    super.didUpdateWidget(old);
-    if (old.documentId != widget.documentId) {
-      _adopt();
-    }
-  }
-
-  void _adopt() {
-    _text = _read[widget.documentId];
-    if (_text == null && widget.documentId.isNotEmpty) {
-      unawaited(_load());
-    }
-  }
-
-  Future<void> _load() async {
-    final text = await DocumentEventGetDocumentText(
-      OpenDocumentPayloadPB(documentId: widget.documentId),
-    ).send().fold((data) => data.text, (_) => '');
-    _read[widget.documentId] = text;
-    if (mounted) {
-      setState(() => _text = text);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = widget.palette;
-    final text = _text?.trim() ?? '';
-    return Container(
-      height: widget.height,
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-      color: palette.sunken.withValues(alpha: 0.6),
-      child: text.isEmpty
-          ? Align(
-              alignment: Alignment.topLeft,
-              child: Text(
-                LocaleKeys.gallery_pageEmpty.tr(),
-                style: TextStyle(fontSize: 12, color: palette.textMuted),
-              ),
-            )
-          : Text(
-              text,
-              maxLines: 6,
-              overflow: TextOverflow.fade,
-              style: TextStyle(
-                fontSize: 11.5,
-                height: 1.5,
-                color: palette.textSecondary,
-              ),
-            ),
-    );
-  }
+  Widget build(BuildContext context) => RowPageTextView(
+        documentId: documentId,
+        builder: (context, read) {
+          final text = read?.trim() ?? '';
+          return Container(
+            height: height,
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+            color: palette.sunken.withValues(alpha: 0.6),
+            child: text.isEmpty
+                ? Align(
+                    alignment: Alignment.topLeft,
+                    child: Text(
+                      LocaleKeys.gallery_pageEmpty.tr(),
+                      style: TextStyle(fontSize: 12, color: palette.textMuted),
+                    ),
+                  )
+                : Text(
+                    text,
+                    maxLines: 6,
+                    overflow: TextOverflow.fade,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.5,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+          );
+        },
+      );
 }

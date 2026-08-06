@@ -233,6 +233,7 @@ extension ViewExtension on ViewPB {
         TableViewKind.feed => FeedTabBarBuilderImpl(),
         TableViewKind.form => FormTabBarBuilderImpl(),
         TableViewKind.gallery => GalleryTabBarBuilderImpl(),
+        TableViewKind.mailbox => MailboxTabBarBuilderImpl(),
       };
     }
     return switch (layout) {

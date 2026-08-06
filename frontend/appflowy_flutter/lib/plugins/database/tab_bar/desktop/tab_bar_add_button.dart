@@ -23,6 +23,7 @@ enum DatabaseTabKind {
   timeline(DatabaseLayoutPB.Grid, tableView: TableViewKind.timeline),
   feed(DatabaseLayoutPB.Grid, tableView: TableViewKind.feed),
   form(DatabaseLayoutPB.Grid, tableView: TableViewKind.form),
+  mailbox(DatabaseLayoutPB.Grid, tableView: TableViewKind.mailbox),
   chart(DatabaseLayoutPB.Grid, charted: true),
   map(DatabaseLayoutPB.Grid, mapped: true),
   slides(DatabaseLayoutPB.Grid, slided: true);
@@ -78,6 +79,7 @@ enum DatabaseTabKind {
       TableViewKind.feed => LocaleKeys.feed_name.tr(),
       TableViewKind.form => LocaleKeys.form_name.tr(),
       TableViewKind.gallery => LocaleKeys.gallery_name.tr(),
+      TableViewKind.mailbox => LocaleKeys.mailbox_name.tr(),
       null => layout.layoutName,
     };
   }

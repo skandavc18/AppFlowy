@@ -856,6 +856,29 @@ impl DatabaseEditor {
     Ok(view_editor.v_get_all_rows().await)
   }
 
+  /// The metadata of every row in a view, its document id included.
+  ///
+  /// A `RowMetaPB` built from a plain `Row` carries no document id, so anything
+  /// showing a row's own page reads every page as empty. The id belongs to the
+  /// database, not to the row, which is why it has to be asked for here.
+  pub async fn get_all_row_metas(&self, view_id: &str) -> FlowyResult<Vec<RowMetaPB>> {
+    let rows = self.get_all_rows(view_id).await?;
+    let database = self.database.read().await;
+    let mut metas = Vec::with_capacity(rows.len());
+    for row in rows {
+      let meta = database.get_row_meta(&row.id).await;
+      metas.push(RowMetaPB {
+        id: row.id.clone().into_inner(),
+        document_id: database.get_row_document_id(&row.id),
+        icon: meta.as_ref().and_then(|meta| meta.icon_url.clone()),
+        is_document_empty: meta.as_ref().map(|meta| meta.is_document_empty),
+        attachment_count: meta.as_ref().map(|meta| meta.attachment_count),
+        cover: meta.and_then(|meta| meta.cover).map(|cover| cover.into()),
+      });
+    }
+    Ok(metas)
+  }
+
   /// Every row of a view with its cells actually read in.
   ///
   /// `get_all_rows` hands back whatever the view's cache holds, and a row that

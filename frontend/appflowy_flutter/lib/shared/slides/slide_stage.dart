@@ -5,6 +5,7 @@ import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/slides/slide_deck.dart';
 import 'package:appflowy/shared/slides/slide_query.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
+import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
 import 'package:appflowy/workspace/application/slides/slide_source.dart';
 import 'package:appflowy/workspace/application/slides/slide_spec.dart';
@@ -121,6 +122,12 @@ class SlideStageState extends State<SlideStage> {
 
   /// Reads the table again — the host calls this when a row changes.
   void reload() => _source.invalidate();
+
+  /// Reads the pages again as well, for when somebody asks outright.
+  void _readAgain() {
+    RowPageText.forget();
+    reload();
+  }
 
   void _onSourceChanged() {
     if (!mounted) {
@@ -244,6 +251,7 @@ class SlideStageState extends State<SlideStage> {
       flow: widget.spec.flow,
       wrap: widget.spec.wrap,
       index: _index,
+      showPageContent: widget.spec.showPageContent,
       highlighted: _query.isSearching ? _matches : null,
       onIndexChanged: _onIndexChanged,
       onOpen: widget.onOpenRow == null
@@ -403,6 +411,18 @@ class SlideStageState extends State<SlideStage> {
                 : LocaleKeys.slides_flowDeck.tr(),
             active: widget.spec.flow == SlideFlow.coverFlow,
             onTap: _toggleFlow,
+          ),
+          const SizedBox(width: SlideMetrics.controlGap),
+          SlideControlButton(
+            palette: palette,
+            icon: Icons.notes_rounded,
+            tooltip: LocaleKeys.slides_showPageContent.tr(),
+            active: widget.spec.showPageContent,
+            onTap: () => widget.onSpecChanged(
+              widget.spec.copyWith(
+                showPageContent: !widget.spec.showPageContent,
+              ),
+            ),
           ),
           const SizedBox(width: SlideMetrics.controlGap),
           SlideControlButton(
@@ -689,11 +709,21 @@ class SlideStageState extends State<SlideStage> {
             ),
           ),
         ),
+        AppMenuItem(
+          label: LocaleKeys.slides_showPageContent.tr(),
+          icon: Icons.notes_rounded,
+          selected: widget.spec.showPageContent,
+          onSelected: () => widget.onSpecChanged(
+            widget.spec.copyWith(
+              showPageContent: !widget.spec.showPageContent,
+            ),
+          ),
+        ),
         const AppMenuSeparator(),
         AppMenuItem(
           label: LocaleKeys.slides_reload.tr(),
           icon: Icons.refresh_rounded,
-          onSelected: reload,
+          onSelected: _readAgain,
         ),
       ];
 

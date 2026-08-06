@@ -68,11 +68,7 @@ pub(crate) async fn get_all_rows_handler(
     .get_database_id_with_view_id(view_id.as_ref())
     .await?;
   let database_editor = manager.get_or_init_database_editor(&database_id).await?;
-  let row_details = database_editor.get_all_rows(view_id.as_ref()).await?;
-  let rows = row_details
-    .into_iter()
-    .map(|detail| RowMetaPB::from(detail.as_ref()))
-    .collect::<Vec<RowMetaPB>>();
+  let rows = database_editor.get_all_row_metas(view_id.as_ref()).await?;
   data_result_ok(RepeatedRowMetaPB { items: rows })
 }
 #[tracing::instrument(level = "trace", skip_all, err)]

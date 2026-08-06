@@ -8,12 +8,14 @@ import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/table_views/feed_stage.dart';
 import 'package:appflowy/shared/table_views/form_stage.dart';
 import 'package:appflowy/shared/table_views/gallery_stage.dart';
+import 'package:appflowy/shared/table_views/mailbox_stage.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:appflowy/shared/table_views/timeline_stage.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/table_views/feed_spec.dart';
 import 'package:appflowy/workspace/application/table_views/form_spec.dart';
 import 'package:appflowy/workspace/application/table_views/gallery_spec.dart';
+import 'package:appflowy/workspace/application/table_views/mailbox_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/table_views/timeline_spec.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -36,6 +38,7 @@ String tableViewName(TableViewKind kind) => switch (kind) {
       TableViewKind.feed => LocaleKeys.feed_name.tr(),
       TableViewKind.form => LocaleKeys.form_name.tr(),
       TableViewKind.gallery => LocaleKeys.gallery_name.tr(),
+      TableViewKind.mailbox => LocaleKeys.mailbox_name.tr(),
     };
 
 /// A table opened as one of its other readings.
@@ -163,6 +166,7 @@ class _TableViewPageState extends State<TableViewPage>
   final GlobalKey<FeedStageState> _feed = GlobalKey<FeedStageState>();
   final GlobalKey<FormStageState> _form = GlobalKey<FormStageState>();
   final GlobalKey<GalleryStageState> _gallery = GlobalKey<GalleryStageState>();
+  final GlobalKey<MailboxStageState> _mailbox = GlobalKey<MailboxStageState>();
 
   late final DatabaseController _controller =
       DatabaseController(view: widget.view);
@@ -183,6 +187,7 @@ class _TableViewPageState extends State<TableViewPage>
     _timeline.currentState?.reload();
     _feed.currentState?.reload();
     _gallery.currentState?.reload();
+    _mailbox.currentState?.reload();
   }
 
   @override
@@ -270,6 +275,17 @@ class _TableViewPageState extends State<TableViewPage>
           viewId: widget.view.id,
           title: _title,
           spec: GallerySpec.fromJson(_mark.settings),
+          padding: padding,
+          onSpecChanged: (next) => _save(next.toJson()),
+          onOpenRow: openRow,
+          onAddRow: addRow,
+        );
+      case TableViewKind.mailbox:
+        return MailboxStage(
+          key: _mailbox,
+          viewId: widget.view.id,
+          title: _title,
+          spec: MailboxSpec.fromJson(_mark.settings),
           padding: padding,
           onSpecChanged: (next) => _save(next.toJson()),
           onOpenRow: openRow,

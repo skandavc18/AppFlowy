@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/database/application/row/row_service.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_detail.dart';
 import 'package:appflowy/shared/slides/slide_stage.dart';
+import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/workspace/application/slides/slide_metadata.dart';
 import 'package:appflowy/workspace/application/slides/slide_spec.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -131,15 +132,25 @@ class _SlideTabPageState extends State<SlideTabPage> {
       viewId: widget.databaseController.viewId,
       rowCache: widget.databaseController.rowCache,
     );
-    FlowyOverlay.show(
-      context: context,
-      builder: (_) => BlocProvider.value(
-        value: context.read<UserWorkspaceBloc>(),
-        child: RowDetailPage(
-          rowController: rowController,
-          databaseController: widget.databaseController,
+    unawaited(
+      FlowyOverlay.show(
+        context: context,
+        builder: (_) => BlocProvider.value(
+          value: context.read<UserWorkspaceBloc>(),
+          child: RowDetailPage(
+            rowController: rowController,
+            databaseController: widget.databaseController,
+          ),
         ),
-      ),
+      ).then((_) {
+        if (!mounted) {
+          return;
+        }
+        // Whatever was written on the row's page has to be read again, and a
+        // page made during the visit had no id to forget.
+        RowPageText.forget();
+        _onRows();
+      }),
     );
   }
 

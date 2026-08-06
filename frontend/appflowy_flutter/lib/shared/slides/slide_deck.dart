@@ -48,6 +48,7 @@ class SlideDeck extends StatefulWidget {
     this.flow = SlideFlow.deck,
     this.wrap = false,
     this.index = 0,
+    this.showPageContent = false,
     this.highlighted,
     this.onIndexChanged,
     this.onOpen,
@@ -64,6 +65,9 @@ class SlideDeck extends StatefulWidget {
 
   /// The slide the host would like shown.
   final int index;
+
+  /// Whether each slide reads the row's own page.
+  final bool showPageContent;
 
   /// The rows a search matched. Everything else is drawn quietly.
   final Set<String>? highlighted;
@@ -124,6 +128,7 @@ class _SlideDeckState extends State<SlideDeck>
     if (!identical(old.cards, widget.cards) ||
         old.palette != widget.palette ||
         old.flow != widget.flow ||
+        old.showPageContent != widget.showPageContent ||
         old.highlighted != widget.highlighted) {
       _built.clear();
     }
@@ -478,6 +483,7 @@ class _SlideDeckState extends State<SlideDeck>
             size: size,
             prominence: placement.prominence,
             live: live,
+            showPageContent: widget.showPageContent,
             onOpen: widget.onOpen == null
                 ? null
                 : () => _openOrCentre(placement.index, card),

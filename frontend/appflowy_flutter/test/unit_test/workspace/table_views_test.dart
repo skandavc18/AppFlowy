@@ -1,5 +1,6 @@
 import 'package:appflowy/workspace/application/table_views/form_spec.dart';
 import 'package:appflowy/workspace/application/table_views/gallery_spec.dart';
+import 'package:appflowy/workspace/application/table_views/mailbox_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_query.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
 import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
@@ -464,6 +465,78 @@ void main() {
       for (final kind in TableViewKind.values) {
         expect(tableViewIcon(kind), isNotNull);
       }
+    });
+  });
+
+  group('reading a table as a mailbox', () {
+    test('an arrangement survives a round trip', () {
+      const spec = MailboxSpec(
+        subjectColumn: 'subject',
+        senderColumn: 'owner',
+        dateColumn: 'sent',
+        snippetColumn: 'note',
+        propertyColumns: ['status'],
+        density: MailboxDensity.compact,
+        showReader: false,
+        groupByDate: false,
+      );
+
+      expect(MailboxSpec.fromJson(spec.toJson()), spec);
+    });
+
+    test('a mailbox nobody has arranged reads with a pane and by date', () {
+      const spec = MailboxSpec();
+
+      expect(spec.toJson(), isEmpty);
+      expect(spec.showReader, isTrue);
+      expect(spec.groupByDate, isTrue);
+      expect(spec.density.showsSnippet, isTrue);
+    });
+
+    test('the bands are the ones a mail client reads by', () {
+      final today = DateTime(2026, 8, 6);
+
+      expect(mailboxBandOf(today, today: today), MailboxBand.today);
+      expect(
+        mailboxBandOf(DateTime(2026, 8, 5, 23), today: today),
+        MailboxBand.yesterday,
+      );
+      expect(
+        mailboxBandOf(DateTime(2026, 8, 2), today: today),
+        MailboxBand.thisWeek,
+      );
+      expect(
+        mailboxBandOf(DateTime(2026, 7, 20), today: today),
+        MailboxBand.thisMonth,
+      );
+      expect(
+        mailboxBandOf(DateTime(2025, 1, 2), today: today),
+        MailboxBand.earlier,
+      );
+      expect(mailboxBandOf(null, today: today), MailboxBand.undated);
+    });
+
+    test('rows keep their order and only the breaks are added', () {
+      final now = DateTime(2026, 8, 6, 10);
+      final rows = <({String id, DateTime? at})>[
+        (id: 'a', at: DateTime(2026, 8, 6, 9)),
+        (id: 'b', at: DateTime(2026, 8, 6, 8)),
+        (id: 'c', at: DateTime(2026, 8, 5, 8)),
+        (id: 'd', at: null),
+      ];
+
+      final sections = groupMailboxRows(
+        rows,
+        dateOf: (row) => row.at,
+        now: now,
+      );
+
+      expect(
+        sections.map((section) => section.band).toList(),
+        [MailboxBand.today, MailboxBand.yesterday, MailboxBand.undated],
+      );
+      expect(sections.first.rows.map((row) => row.id).toList(), ['a', 'b']);
+      expect(sections.last.rows.single.id, 'd');
     });
   });
 }

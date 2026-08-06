@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/database/application/row/row_service.dart';
 import 'package:appflowy/plugins/database/domain/date_cell_service.dart';
 import 'package:appflowy/plugins/database/domain/select_option_cell_service.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_detail.dart';
+import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
 import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -74,19 +75,29 @@ mixin TableViewHostPlumbing<T extends StatefulWidget> on State<T> {
   }
 
   void openRowMeta(RowMetaPB rowMeta) {
-    FlowyOverlay.show(
-      context: context,
-      builder: (_) => BlocProvider.value(
-        value: context.read<UserWorkspaceBloc>(),
-        child: RowDetailPage(
-          rowController: RowController(
-            rowMeta: rowMeta,
-            viewId: hostController.viewId,
-            rowCache: hostController.rowCache,
+    unawaited(
+      FlowyOverlay.show(
+        context: context,
+        builder: (_) => BlocProvider.value(
+          value: context.read<UserWorkspaceBloc>(),
+          child: RowDetailPage(
+            rowController: RowController(
+              rowMeta: rowMeta,
+              viewId: hostController.viewId,
+              rowCache: hostController.rowCache,
+            ),
+            databaseController: hostController,
           ),
-          databaseController: hostController,
         ),
-      ),
+      ).then((_) {
+        if (!mounted) {
+          return;
+        }
+        // Whatever was written on the row's page has to be read again, and a
+        // page made during the visit had no id to forget.
+        RowPageText.forget();
+        onRowsChanged();
+      }),
     );
   }
 

@@ -420,7 +420,7 @@ class TablePropertyView extends StatelessWidget {
             Flexible(
               child: Text(
                 label,
-                maxLines: 2,
+                maxLines: compact ? 1 : 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 13,
