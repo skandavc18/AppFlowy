@@ -273,7 +273,8 @@ class _OpenAlbumBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.auto_stories_rounded, size: 14, color: Colors.white),
+            const Icon(Icons.auto_stories_rounded,
+                size: 14, color: Colors.white),
             const SizedBox(width: 6),
             Text(
               LocaleKeys.collections_embed_openAlbum.tr(),
@@ -499,9 +500,7 @@ class _SlideshowState extends State<_Slideshow> {
                 onTap: () => _step(-1),
               ),
               _SlideshowControl(
-                icon: playing
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded,
+                icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 onTap: () {
                   setState(() => playing = !playing);
                   _restart();

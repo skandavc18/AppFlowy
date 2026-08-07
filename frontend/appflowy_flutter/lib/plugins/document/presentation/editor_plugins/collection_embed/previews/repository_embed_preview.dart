@@ -64,9 +64,8 @@ class _RepositoryEmbedPreviewState extends State<RepositoryEmbedPreview> {
 
   CollectionEmbedContext get embed => widget.embed;
 
-  List<ViewPB> get currentChildren => path.isEmpty
-      ? embed.children
-      : embed.controller.childrenOf(path.last.id);
+  List<ViewPB> get currentChildren =>
+      path.isEmpty ? embed.children : embed.controller.childrenOf(path.last.id);
 
   @override
   void didUpdateWidget(covariant RepositoryEmbedPreview oldWidget) {
@@ -416,9 +415,8 @@ class _FileList extends StatelessWidget {
           onTap: () =>
               isFolder ? onEnterFolder(view) : embed.onOpenObject(view),
           onSecondaryTap: embed.onShowMenu,
-          onHoverChanged: onHover == null
-              ? null
-              : (hovered) => onHover!(view, hovered),
+          onHoverChanged:
+              onHover == null ? null : (hovered) => onHover!(view, hovered),
         );
       },
     );

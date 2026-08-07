@@ -75,8 +75,9 @@ class CollectionEmbedController extends ChangeNotifier {
     return views.length <= limit ? views : views.take(limit).toList();
   }
 
-  int _editedAt(ViewPB view) =>
-      view.lastEdited.toInt() != 0 ? view.lastEdited.toInt() : view.createTime.toInt();
+  int _editedAt(ViewPB view) => view.lastEdited.toInt() != 0
+      ? view.lastEdited.toInt()
+      : view.createTime.toInt();
 
   /// Children of a nested folder. Returns what is already known and starts a
   /// read when it is not — so a preview can call this straight from `build`.

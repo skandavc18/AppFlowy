@@ -70,8 +70,9 @@ class CollectionEmbedTheme {
     final brightness = Theme.of(context).brightness;
     final isDark = brightness == Brightness.dark;
     final isPaper = PaperTheme.isEnabled(context);
-    final accent =
-        kind == null ? palette.base.accent : CollectionPalette.of(context, kind).accent;
+    final accent = kind == null
+        ? palette.base.accent
+        : CollectionPalette.of(context, kind).accent;
 
     // The widget surface is only a whisper away from the page. A widget that
     // contrasts hard with the document reads as a foreign application.
@@ -80,11 +81,13 @@ class CollectionEmbedTheme {
       palette.surface,
     );
     final raised = Color.alphaBlend(
-      (isDark ? Colors.white : Colors.black).withValues(alpha: isDark ? 0.045 : 0.024),
+      (isDark ? Colors.white : Colors.black)
+          .withValues(alpha: isDark ? 0.045 : 0.024),
       surface,
     );
     final sunken = Color.alphaBlend(
-      (isDark ? Colors.black : Colors.black).withValues(alpha: isDark ? 0.16 : 0.032),
+      (isDark ? Colors.black : Colors.black)
+          .withValues(alpha: isDark ? 0.16 : 0.032),
       surface,
     );
 
@@ -505,7 +508,8 @@ class CollectionEmbedEmpty extends StatelessWidget {
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: theme.body(context, size: compact ? 11.5 : 12.5)
+                style: theme
+                    .body(context, size: compact ? 11.5 : 12.5)
                     .copyWith(color: theme.textMuted),
               ),
               if (action != null && onAction != null) ...[

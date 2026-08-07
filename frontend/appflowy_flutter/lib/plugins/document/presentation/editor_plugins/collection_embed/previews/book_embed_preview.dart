@@ -371,7 +371,9 @@ class _BookAction extends StatelessWidget {
                         theme.accentWash,
                       )
                     : theme.accentWash)
-                : (hovered ? theme.rowHover : theme.rowHover.withValues(alpha: 0)),
+                : (hovered
+                    ? theme.rowHover
+                    : theme.rowHover.withValues(alpha: 0)),
             borderRadius:
                 BorderRadius.circular(CollectionEmbedMetrics.controlRadius),
           ),
@@ -419,7 +421,8 @@ class _OpenPages extends StatelessWidget {
     final page = theme.isPaper || !theme.isDark
         ? const Color(0xFFFBF7EF)
         : Color.alphaBlend(Colors.white.withValues(alpha: 0.05), theme.sunken);
-    final ink = theme.isDark ? const Color(0xFFE8E2D6) : const Color(0xFF3A332A);
+    final ink =
+        theme.isDark ? const Color(0xFFE8E2D6) : const Color(0xFF3A332A);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -571,9 +574,8 @@ class _ContentsRow extends StatelessWidget {
         height: dense ? 28 : 34,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: hovered
-              ? ink.withValues(alpha: 0.06)
-              : ink.withValues(alpha: 0),
+          color:
+              hovered ? ink.withValues(alpha: 0.06) : ink.withValues(alpha: 0),
           borderRadius:
               BorderRadius.circular(CollectionEmbedMetrics.controlRadius),
         ),
@@ -652,7 +654,8 @@ class _Shelf extends StatelessWidget {
       );
     }
     final limit = embed.settings.itemLimit ?? embed.definition.defaultItemLimit;
-    final shown = volumes.length <= limit ? volumes : volumes.take(limit).toList();
+    final shown =
+        volumes.length <= limit ? volumes : volumes.take(limit).toList();
 
     return LayoutBuilder(
       builder: (context, constraints) {

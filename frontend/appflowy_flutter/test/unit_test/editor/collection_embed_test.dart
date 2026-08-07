@@ -64,7 +64,8 @@ void main() {
         const CollectionEmbedSettings(),
       );
       expect(
-        CollectionEmbedSettings.fromJson({'size': 'enormous', 'sort': 'colour'}),
+        CollectionEmbedSettings.fromJson(
+            {'size': 'enormous', 'sort': 'colour'}),
         const CollectionEmbedSettings(),
       );
       // An empty style is not a style; it must fall back to the type default.

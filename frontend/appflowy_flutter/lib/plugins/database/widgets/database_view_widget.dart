@@ -22,7 +22,10 @@ const double embeddedDatabaseViewHeight = 460;
 /// Only these have a height to give: a grid, a board and a calendar grow with
 /// what they hold, and forcing a shorter box on them only clips the rows.
 bool embeddedDatabaseViewFillsItsBox(ViewPB view) =>
-    view.isChart || view.isMap || view.isSlideDeck || view.tableViewKind != null;
+    view.isChart ||
+    view.isMap ||
+    view.isSlideDeck ||
+    view.tableViewKind != null;
 
 class DatabaseViewWidget extends StatefulWidget {
   const DatabaseViewWidget({

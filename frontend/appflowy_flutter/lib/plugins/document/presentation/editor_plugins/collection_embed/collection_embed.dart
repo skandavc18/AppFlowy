@@ -109,8 +109,8 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
   void _adoptController() {
     final borrowed = widget.controller;
     ownsController = borrowed == null;
-    controller = borrowed ??
-        CollectionEmbedController(collection: widget.collection);
+    controller =
+        borrowed ?? CollectionEmbedController(collection: widget.collection);
   }
 
   @override

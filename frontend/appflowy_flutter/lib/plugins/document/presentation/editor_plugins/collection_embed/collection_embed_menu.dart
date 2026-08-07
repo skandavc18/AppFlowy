@@ -198,7 +198,8 @@ String _sizeLabel(CollectionEmbedSize size) => switch (size) {
         LocaleKeys.collections_embed_sizes_compact.tr(),
       CollectionEmbedSize.medium =>
         LocaleKeys.collections_embed_sizes_medium.tr(),
-      CollectionEmbedSize.large => LocaleKeys.collections_embed_sizes_large.tr(),
+      CollectionEmbedSize.large =>
+        LocaleKeys.collections_embed_sizes_large.tr(),
     };
 
 IconData _sizeIcon(CollectionEmbedSize size) => switch (size) {

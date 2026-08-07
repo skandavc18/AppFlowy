@@ -106,17 +106,19 @@ void main() {
       expect(blockTextAlign(paragraphNode()), TextAlign.start);
       expect(
         blockTextAlign(
-          paragraphNode()..updateAttributes({
-            blockComponentAlign: blockComponentAlignCenter,
-          }),
+          paragraphNode()
+            ..updateAttributes({
+              blockComponentAlign: blockComponentAlignCenter,
+            }),
         ),
         TextAlign.start,
       );
       expect(
         blockTextAlign(
-          paragraphNode()..updateAttributes({
-            blockComponentAlign: blockComponentAlignJustify,
-          }),
+          paragraphNode()
+            ..updateAttributes({
+              blockComponentAlign: blockComponentAlignJustify,
+            }),
         ),
         TextAlign.justify,
       );

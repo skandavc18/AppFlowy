@@ -74,13 +74,11 @@ class BookmarkEmbedPreview extends StatelessWidget {
       );
     }
     return switch (embed.style) {
-      BookmarkEmbedStyles.featured =>
-        _Featured(embed: embed, entries: entries),
+      BookmarkEmbedStyles.featured => _Featured(embed: embed, entries: entries),
       BookmarkEmbedStyles.list => _Rows(embed: embed, entries: entries),
       BookmarkEmbedStyles.thumbnails =>
         _Thumbnails(embed: embed, entries: entries),
-      BookmarkEmbedStyles.magazine =>
-        _Magazine(embed: embed, entries: entries),
+      BookmarkEmbedStyles.magazine => _Magazine(embed: embed, entries: entries),
       _ => _Cards(embed: embed, entries: entries),
     };
   }
@@ -120,7 +118,9 @@ class _SiteMark extends StatelessWidget {
           ),
           child: Center(
             child: Text(
-              host.isEmpty ? '?' : host.replaceFirst('www.', '')[0].toUpperCase(),
+              host.isEmpty
+                  ? '?'
+                  : host.replaceFirst('www.', '')[0].toUpperCase(),
               style: TextStyle(
                 color: hue,
                 fontSize: size * 0.44,

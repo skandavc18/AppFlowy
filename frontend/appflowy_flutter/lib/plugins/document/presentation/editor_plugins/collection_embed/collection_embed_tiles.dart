@@ -305,9 +305,8 @@ String collectionObjectSubtitle(ViewPB view) {
     return 'Folder';
   }
   if (view.isWorkspaceFile) {
-    final extension = view.name.contains('.')
-        ? view.name.split('.').last.toUpperCase()
-        : '';
+    final extension =
+        view.name.contains('.') ? view.name.split('.').last.toUpperCase() : '';
     return extension;
   }
   if (view.isDatabase) {
