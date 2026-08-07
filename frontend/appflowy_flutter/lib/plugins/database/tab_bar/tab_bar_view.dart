@@ -168,129 +168,135 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
             ),
           ],
           child: BlocBuilder<DatabaseTabBarBloc, DatabaseTabBarState>(
-            builder: (innerContext, state) {
-              final layout = state.tabBars[state.selectedIndex].layout;
-              final isCalendar = layout == ViewLayoutPB.Calendar;
-              final databseBuilderSize =
-                  context.read<DatabasePluginWidgetBuilderSize>();
-              final horizontalPadding = databseBuilderSize.horizontalPadding;
-              final showActionWrapper = widget.showActions &&
-                  widget.actionBuilder != null &&
-                  widget.node != null;
-              final coordinateVerticalScroll = widget.showPageDecoration &&
-                  !widget.shrinkWrap &&
-                  layout == ViewLayoutPB.Grid;
-              final Widget child = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.showPageDecoration && !coordinateVerticalScroll)
-                    BlocBuilder<ViewBloc, ViewState>(
-                      builder: (context, viewState) => DatabasePageDecoration(
-                        view: viewState.view,
-                        userProfile: context
-                            .read<UserWorkspaceBloc?>()
-                            ?.state
-                            .userProfile,
-                        horizontalPadding: horizontalPadding + paddingLeft,
-                      ),
-                    ),
-                  if (UniversalPlatform.isMobile) const VSpace(12),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: state
-                        .tabBarControllerByViewId[state.parentView.id]!
-                        .controller
-                        .isLoading,
-                    builder: (_, value, ___) {
-                      if (value) {
-                        return const SizedBox.shrink();
-                      }
-
-                      Widget child = UniversalPlatform.isDesktop
-                          ? const TabBarHeader()
-                          : const MobileTabBarHeader();
-
-                      if (innerContext.watch<ViewBloc>().state.view.isLocked) {
-                        child = IgnorePointer(
-                          child: child,
-                        );
-                      }
-
-                      if (showActionWrapper) {
-                        child = BlockComponentActionWrapper(
-                          node: widget.node!,
-                          actionBuilder: widget.actionBuilder!,
-                          child: Padding(
-                            padding: EdgeInsets.only(right: horizontalPadding),
-                            child: child,
-                          ),
-                        );
-                      }
-
-                      if (UniversalPlatform.isDesktop) {
-                        child = Container(
-                          padding: EdgeInsets.fromLTRB(
-                            horizontalPadding + paddingLeft,
-                            0,
-                            horizontalPadding,
-                            0,
-                          ),
-                          child: child,
-                        );
-                      }
-
-                      return child;
-                    },
-                  ),
-                  pageSettingBarExtensionFromState(context, state),
-                  wrapContent(
-                    layout: layout,
-                    child: Padding(
-                      padding:
-                          (isCalendar && widget.shrinkWrap || showActionWrapper)
-                              ? EdgeInsets.only(left: 42 - horizontalPadding)
-                              : EdgeInsets.zero,
-                      child: Provider(
-                        create: (_) => DatabasePluginWidgetBuilderSize(
-                          horizontalPadding: horizontalPadding,
-                          paddingLeftWithMaxDocumentWidth: paddingLeft,
-                          verticalPadding: databseBuilderSize.verticalPadding,
-                          coordinateVerticalScroll: coordinateVerticalScroll,
-                        ),
-                        child: pageContentFromState(context, state),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-
-              if (coordinateVerticalScroll) {
-                return NestedScrollView(
-                  key: const ValueKey('database-page-scroll-view'),
-                  headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                    SliverToBoxAdapter(
-                      child: BlocBuilder<ViewBloc, ViewState>(
-                        builder: (context, viewState) => DatabasePageDecoration(
-                          view: viewState.view,
-                          userProfile: context
-                              .read<UserWorkspaceBloc?>()
-                              ?.state
-                              .userProfile,
-                          horizontalPadding: horizontalPadding + paddingLeft,
-                        ),
-                      ),
-                    ),
-                  ],
-                  body: child,
-                );
-              }
-
-              return child;
-            },
+            builder: (innerContext, state) => _buildTabBarView(
+              context,
+              innerContext,
+              state,
+              paddingLeft: paddingLeft,
+            ),
           ),
         );
       },
     );
+  }
+
+  Widget _buildTabBarView(
+    BuildContext context,
+    BuildContext innerContext,
+    DatabaseTabBarState state, {
+    required double paddingLeft,
+  }) {
+    final layout = state.tabBars[state.selectedIndex].layout;
+    final databseBuilderSize = context.read<DatabasePluginWidgetBuilderSize>();
+    final horizontalPadding = databseBuilderSize.horizontalPadding;
+    final showActionWrapper = widget.showActions &&
+        widget.actionBuilder != null &&
+        widget.node != null;
+    final coordinateVerticalScroll = widget.showPageDecoration &&
+        !widget.shrinkWrap &&
+        layout == ViewLayoutPB.Grid;
+    final Widget child = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (widget.showPageDecoration && !coordinateVerticalScroll)
+          BlocBuilder<ViewBloc, ViewState>(
+            builder: (context, viewState) => DatabasePageDecoration(
+              view: viewState.view,
+              userProfile:
+                  context.read<UserWorkspaceBloc?>()?.state.userProfile,
+              horizontalPadding: horizontalPadding + paddingLeft,
+            ),
+          ),
+        if (UniversalPlatform.isMobile) const VSpace(12),
+        ValueListenableBuilder<bool>(
+          valueListenable: state.tabBarControllerByViewId[state.parentView.id]!
+              .controller.isLoading,
+          builder: (_, value, ___) {
+            if (value) {
+              return const SizedBox.shrink();
+            }
+
+            Widget child = UniversalPlatform.isDesktop
+                ? const TabBarHeader()
+                : const MobileTabBarHeader();
+
+            if (innerContext.watch<ViewBloc>().state.view.isLocked) {
+              child = IgnorePointer(
+                child: child,
+              );
+            }
+
+            if (showActionWrapper) {
+              child = BlockComponentActionWrapper(
+                node: widget.node!,
+                actionBuilder: widget.actionBuilder!,
+                child: Padding(
+                  padding: EdgeInsets.only(right: horizontalPadding),
+                  child: child,
+                ),
+              );
+            }
+
+            if (UniversalPlatform.isDesktop) {
+              child = Container(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding + paddingLeft,
+                  0,
+                  horizontalPadding,
+                  0,
+                ),
+                child: child,
+              );
+            }
+
+            return child;
+          },
+        ),
+        pageSettingBarExtensionFromState(context, state),
+        wrapContent(
+          layout: layout,
+          child: Padding(
+            // Only the header carries the block's action gutter, so
+            // only then does the content below need to line up with
+            // it.
+            padding: showActionWrapper
+                ? EdgeInsets.only(left: 42 - horizontalPadding)
+                : EdgeInsets.zero,
+            child: Provider(
+              create: (_) => DatabasePluginWidgetBuilderSize(
+                horizontalPadding: horizontalPadding,
+                paddingLeftWithMaxDocumentWidth: paddingLeft,
+                verticalPadding: databseBuilderSize.verticalPadding,
+                coordinateVerticalScroll: coordinateVerticalScroll,
+              ),
+              child: pageContentFromState(context, state),
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (coordinateVerticalScroll) {
+      return NestedScrollView(
+        key: const ValueKey('database-page-scroll-view'),
+        headerSliverBuilder: (context, innerBoxIsScrolled) => [
+          SliverToBoxAdapter(
+            child: BlocBuilder<ViewBloc, ViewState>(
+              builder: (context, viewState) => DatabasePageDecoration(
+                view: viewState.view,
+                userProfile:
+                    context.read<UserWorkspaceBloc?>()?.state.userProfile,
+                horizontalPadding: horizontalPadding + paddingLeft,
+              ),
+            ),
+          ),
+        ],
+        body: child,
+      );
+    }
+
+    return child;
   }
 
   Future<bool> fetchLocalCompactMode(String compactModeId) async {

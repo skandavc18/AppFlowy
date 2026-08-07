@@ -11,10 +11,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 /// Saves one or more addresses into [collection].
+///
+/// [controller] is the open library, when there is one. The collection's own
+/// Add button has no library in scope, so it saves the links and leaves the
+/// reading to the host, which picks up new children as they arrive.
 Future<void> showAddBookmarkDialog({
   required BuildContext context,
   required CollectionViewContext collection,
-  required BookmarkController controller,
+  BookmarkController? controller,
   String? initialText,
 }) async {
   final theme = bookmarkThemeOf(context);
@@ -38,7 +42,7 @@ class _AddBookmarkDialog extends StatefulWidget {
   });
 
   final CollectionViewContext collection;
-  final BookmarkController controller;
+  final BookmarkController? controller;
   final BookmarkTheme theme;
   final String? initialText;
 
@@ -50,7 +54,7 @@ class _AddBookmarkDialogState extends State<_AddBookmarkDialog> {
   late final TextEditingController _input =
       TextEditingController(text: widget.initialText ?? '');
   final FocusNode _focus = FocusNode();
-  late bool _snapshot = widget.controller.settings.autoSnapshot;
+  late bool _snapshot = widget.controller?.settings.autoSnapshot ?? false;
   List<String> _found = const [];
   bool _saving = false;
 
@@ -174,12 +178,16 @@ class _AddBookmarkDialogState extends State<_AddBookmarkDialog> {
             ],
           ),
           const SizedBox(height: BookmarkMetrics.space2),
-          _OfflineToggle(
-            theme: theme,
-            value: _snapshot,
-            onChanged:
-                _saving ? null : (value) => setState(() => _snapshot = value),
-          ),
+          // Without an open library there is nothing to read the page with
+          // here, so the toggle would promise a snapshot nobody takes; the
+          // library's own preference governs when it picks the link up.
+          if (widget.controller != null)
+            _OfflineToggle(
+              theme: theme,
+              value: _snapshot,
+              onChanged:
+                  _saving ? null : (value) => setState(() => _snapshot = value),
+            ),
           if (_found.isNotEmpty) ...[
             const SizedBox(height: BookmarkMetrics.space3),
             ConstrainedBox(
@@ -246,18 +254,22 @@ class _AddBookmarkDialogState extends State<_AddBookmarkDialog> {
     if (!mounted) {
       return;
     }
-    if (_snapshot != widget.controller.settings.autoSnapshot) {
-      widget.controller.updateSettings(
-        widget.controller.settings.copyWith(autoSnapshot: _snapshot),
+    final controller = widget.controller;
+    Navigator.of(context).pop();
+    if (controller == null) {
+      return;
+    }
+    if (_snapshot != controller.settings.autoSnapshot) {
+      controller.updateSettings(
+        controller.settings.copyWith(autoSnapshot: _snapshot),
       );
     }
-    Navigator.of(context).pop();
     // The explorer reports the new children, and the host then reads each
     // page; asking for the snapshot here keeps that one pass.
     unawaited(
       Future<void>.delayed(
         const Duration(milliseconds: 350),
-        () => widget.controller.refreshMissing(snapshot: _snapshot),
+        () => controller.refreshMissing(snapshot: _snapshot),
       ),
     );
   }

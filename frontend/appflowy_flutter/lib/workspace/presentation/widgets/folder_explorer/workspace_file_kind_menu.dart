@@ -34,14 +34,22 @@ abstract final class WorkspaceFileKindMenuStyle {
 /// Pass [onCreateCollection] wherever a container can also hold a collection,
 /// and [onCreateDatabase] wherever it can hold a table, so "add something
 /// here" means the same thing everywhere it is offered.
+///
+/// [kinds] narrows the list to the types a particular container will hold —
+/// a collection knows what it is for and offers only that. Leave it null for
+/// a plain folder, which holds anything.
 List<AppMenuEntry> workspaceFileKindEntries({
   ValueChanged<WorkspaceFileMenuAction>? onSelected,
   ValueChanged<CollectionKind>? onCreateCollection,
   ValueChanged<WorkspaceTableKind>? onCreateDatabase,
+  Set<WorkspaceFileKind>? kinds,
 }) {
   final entries = <AppMenuEntry>[];
   WorkspaceFileSource? section;
   for (final action in workspaceFileMenuActions) {
+    if (kinds != null && !kinds.contains(action.kind)) {
+      continue;
+    }
     if (action.source != section) {
       section = action.source;
       entries
@@ -81,6 +89,7 @@ Future<WorkspaceFileMenuAction?> showWorkspaceFileKindMenu({
   required Offset globalPosition,
   ValueChanged<CollectionKind>? onCreateCollection,
   ValueChanged<WorkspaceTableKind>? onCreateDatabase,
+  Set<WorkspaceFileKind>? kinds,
 }) =>
     showAppMenu<WorkspaceFileMenuAction>(
       context: context,
@@ -88,6 +97,7 @@ Future<WorkspaceFileMenuAction?> showWorkspaceFileKindMenu({
       entries: workspaceFileKindEntries(
         onCreateCollection: onCreateCollection,
         onCreateDatabase: onCreateDatabase,
+        kinds: kinds,
       ),
       width: WorkspaceFileKindMenuStyle.width,
     );

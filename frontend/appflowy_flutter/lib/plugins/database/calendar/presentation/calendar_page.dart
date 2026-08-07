@@ -262,7 +262,12 @@ class _CalendarPageState extends State<CalendarPage> {
                 isInMonth,
                 position,
               ),
-              useAvailableVerticalSpace: widget.shrinkWrap,
+              // The month always gets a bounded box — `Expanded` on a full
+              // page, a fixed height when embedded — so it should fill it.
+              // Sizing from `cellAspectRatio` instead made a full-page month
+              // taller than the window, which read as a calendar cut off with
+              // no way to scroll the page.
+              useAvailableVerticalSpace: true,
             ),
           ),
         );

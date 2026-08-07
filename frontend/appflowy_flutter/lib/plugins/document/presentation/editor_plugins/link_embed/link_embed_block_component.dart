@@ -2,6 +2,7 @@ import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_page_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/callout/callout_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/custom_link_parser.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/default_selectable_mixin.dart';
@@ -186,6 +187,7 @@ class LinkEmbedBlockComponentState
         width: storedWidth ?? defaultVisualMediaWidth,
         height: storedHeight ?? defaultLinkEmbedHeight,
         minHeight: minimumLinkEmbedHeight,
+        alignment: blockEmbedAlignment(node),
         editable: editable,
         onResize: (value) => _write({LinkEmbedKeys.width: value}),
         onResizeHeight: (value) => _write({LinkEmbedKeys.height: value}),
@@ -201,6 +203,7 @@ class LinkEmbedBlockComponentState
           (aspectRatio < 1
               ? defaultPortraitMediaWidth
               : defaultVisualMediaWidth),
+      alignment: blockEmbedAlignment(node),
       editable: editable,
       onResize: (value) => _write({LinkEmbedKeys.width: value}),
       child: container,

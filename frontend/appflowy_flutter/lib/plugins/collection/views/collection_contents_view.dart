@@ -1,3 +1,4 @@
+import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -37,6 +38,7 @@ class CollectionContentsView extends StatelessWidget {
       showHeader: false,
       showControls: false,
       showFooter: false,
+      contentPolicy: CollectionContentPolicy.of(collection.kind),
       onOpen: onOpenObject == null
           ? collection.onOpen
           : (view) => onOpenObject!(collection, view),

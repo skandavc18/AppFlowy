@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/maps/app_map_view.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
@@ -183,7 +184,7 @@ class _MapBlockComponentState extends State<MapBlockComponent>
       height: _height,
       minHeight: _minimumHeight,
       maxHeight: 900,
-      alignment: Alignment.centerLeft,
+      alignment: blockEmbedAlignment(node),
       editable: _editable,
       onResize: (value) => _update({MapBlockKeys.width: value}),
       onResizeHeight: (value) => _update({MapBlockKeys.height: value}),

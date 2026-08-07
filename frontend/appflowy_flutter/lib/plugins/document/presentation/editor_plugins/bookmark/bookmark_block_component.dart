@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_page_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_browser_reader.dart';
@@ -116,7 +117,7 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
             height: _storedHeight ?? BookmarkMetrics.feedRowHeight,
             minHeight: 72,
             maxHeight: 640,
-            alignment: Alignment.centerLeft,
+            alignment: blockEmbedAlignment(node),
             editable: context.read<EditorState>().editable,
             onResize: (value) => _write({BookmarkBlockKeys.width: value}),
             onResizeHeight: (value) =>

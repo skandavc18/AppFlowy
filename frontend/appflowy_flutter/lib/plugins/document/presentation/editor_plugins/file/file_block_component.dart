@@ -8,6 +8,7 @@ import 'package:appflowy/mobile/presentation/widgets/flowy_option_tile.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_embed_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
@@ -439,6 +440,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
     return ResizableMedia(
       width: width,
       minWidth: kind == FileMediaKind.audio ? 320 : 240,
+      alignment: blockEmbedAlignment(node),
       editable: editorState.editable,
       onResize: _saveMediaWidth,
       child: MouseRegion(
@@ -475,6 +477,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
         );
     return ResizableMedia(
       width: width,
+      alignment: blockEmbedAlignment(node),
       editable: editorState.editable,
       onResize: _saveMediaWidth,
       child: MouseRegion(
@@ -620,6 +623,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
         FilePreviewKind.archive => 300,
         _ => 240,
       },
+      alignment: blockEmbedAlignment(node),
       editable: editorState.editable,
       onResize: _saveMediaWidth,
       onResizeHeight: _saveMediaHeight,
@@ -712,6 +716,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
         minWidth: 320,
         height: height,
         minHeight: 300,
+        alignment: blockEmbedAlignment(node),
         editable: editorState.editable,
         onResize: _saveMediaWidth,
         onResizeHeight: _saveMediaHeight,
@@ -769,6 +774,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
       minWidth: 420,
       height: height,
       minHeight: 320,
+      alignment: blockEmbedAlignment(node),
       editable: editorState.editable,
       onResize: _saveMediaWidth,
       onResizeHeight: _saveMediaHeight,
@@ -1112,7 +1118,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
     }
     // Long names ellipsize rather than dragging the card across the page.
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: blockEmbedAlignment(node),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: card,

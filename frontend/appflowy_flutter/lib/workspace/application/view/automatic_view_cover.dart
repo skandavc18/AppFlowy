@@ -92,14 +92,11 @@ abstract final class AutomaticViewCover {
     if (WorkspaceItemMetadata.fromExtra(extra)?.isFile == true) {
       return false;
     }
-    return switch (layout) {
-      ViewLayoutPB.Document ||
-      ViewLayoutPB.Grid ||
-      ViewLayoutPB.Board ||
-      ViewLayoutPB.Calendar =>
-        true,
-      _ => false,
-    };
+    // A table is data, not a document — a picture invented for it is chrome
+    // above the rows rather than something the reader chose. Grid, board,
+    // calendar and every marked reading built on them are left bare, and a
+    // cover can still be added by hand.
+    return layout == ViewLayoutPB.Document;
   }
 
   static PageStyleCover forNewView({

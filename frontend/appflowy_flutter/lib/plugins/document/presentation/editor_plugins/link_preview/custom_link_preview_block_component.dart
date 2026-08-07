@@ -1,3 +1,4 @@
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/callout/callout_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/link_embed_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/custom_link_parser.dart';
@@ -182,7 +183,7 @@ class CustomLinkPreviewBlockComponentState
       height: storedHeight ?? defaultLinkPreviewHeight,
       minHeight: minimumLinkPreviewHeight,
       maxHeight: 640,
-      alignment: Alignment.centerLeft,
+      alignment: blockEmbedAlignment(node),
       editable: editorState.editable,
       onResize: (value) => _write({LinkEmbedKeys.width: value}),
       onResizeHeight: (value) => _write({LinkEmbedKeys.height: value}),

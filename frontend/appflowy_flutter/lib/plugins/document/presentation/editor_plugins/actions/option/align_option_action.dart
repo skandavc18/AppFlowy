@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/simple_table/simple_table.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -9,16 +10,21 @@ import 'package:flutter/material.dart';
 enum OptionAlignType {
   left,
   center,
-  right;
+  right,
+
+  /// Only offered for blocks that lay out text; a box has nothing to justify.
+  justify;
 
   static OptionAlignType fromString(String? value) {
     switch (value) {
-      case 'left':
+      case blockComponentAlignLeft:
         return OptionAlignType.left;
-      case 'center':
+      case blockComponentAlignCenter:
         return OptionAlignType.center;
-      case 'right':
+      case blockComponentAlignRight:
         return OptionAlignType.right;
+      case blockComponentAlignJustify:
+        return OptionAlignType.justify;
       default:
         return OptionAlignType.center;
     }
@@ -32,6 +38,8 @@ enum OptionAlignType {
         return FlowySvgs.table_align_center_s;
       case OptionAlignType.right:
         return FlowySvgs.table_align_right_s;
+      case OptionAlignType.justify:
+        return FlowySvgs.table_align_justify_s;
     }
   }
 
@@ -43,6 +51,8 @@ enum OptionAlignType {
         return LocaleKeys.document_plugins_optionAction_center.tr();
       case OptionAlignType.right:
         return LocaleKeys.document_plugins_optionAction_right.tr();
+      case OptionAlignType.justify:
+        return LocaleKeys.document_plugins_optionAction_justify.tr();
     }
   }
 }
@@ -119,10 +129,16 @@ class AlignOptionAction extends PopoverActionCell {
       return OptionAlignType.center;
     }
     final node = editorState.getNodeAtPath(selection.start.path);
-    final align = node?.type == SimpleTableBlockKeys.type
-        ? node?.tableAlign.key
-        : node?.attributes[blockComponentAlign];
-    return OptionAlignType.fromString(align);
+    if (node == null) {
+      return OptionAlignType.center;
+    }
+    if (node.type == SimpleTableBlockKeys.type) {
+      return OptionAlignType.fromString(node.tableAlign.key);
+    }
+    final align = node.attributes[blockComponentAlign] as String?;
+    // An unaligned block is not unaligned on the page: it is laid out with the
+    // default its component renders, and that is what the menu must tick.
+    return OptionAlignType.fromString(align ?? defaultBlockAlignKey(node));
   }
 
   Future<void> onAlignChanged(OptionAlignType align) async {
@@ -140,6 +156,9 @@ class AlignOptionAction extends PopoverActionCell {
     // the align attribute for simple table is not same as the align type,
     // so we need to convert the align type to the align attribute
     if (node.type == SimpleTableBlockKeys.type) {
+      if (align == OptionAlignType.justify) {
+        return;
+      }
       await editorState.updateTableAlign(
         tableNode: node,
         align: TableAlign.fromString(align.name),

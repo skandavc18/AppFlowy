@@ -1,19 +1,17 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_add_menu.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
-import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
-import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/breadcrumb_bar.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -117,19 +115,7 @@ class _CollectionPageState extends State<CollectionPage> {
             children: [
               _buildHeader(context, palette, definition, view),
               Expanded(
-                child: view.builder(
-                  context,
-                  CollectionViewContext(
-                    collectionView: _currentView,
-                    metadata: metadata,
-                    definition: view,
-                    explorer: controller,
-                    onOpen: _openView,
-                    onOpenView: (id) => unawaited(_setActiveView(id)),
-                    onStateChanged: (key, state) =>
-                        unawaited(_persistViewState(key, state)),
-                  ),
-                ),
+                child: view.builder(context, _viewContext(view)),
               ),
             ],
           ),
@@ -137,6 +123,18 @@ class _CollectionPageState extends State<CollectionPage> {
       },
     );
   }
+
+  CollectionViewContext _viewContext(CollectionViewDefinition definition) =>
+      CollectionViewContext(
+        collectionView: _currentView,
+        metadata: metadata,
+        definition: definition,
+        explorer: controller,
+        onOpen: _openView,
+        onOpenView: (id) => unawaited(_setActiveView(id)),
+        onStateChanged: (key, state) =>
+            unawaited(_persistViewState(key, state)),
+      );
 
   Widget _buildHeader(
     BuildContext context,
@@ -312,64 +310,28 @@ class _CollectionPageState extends State<CollectionPage> {
 
   Future<void> _showAddMenu(Offset position) async {
     final parentId = controller.currentFolder.id;
-    var createFolder = false;
-    CollectionKind? collectionKind;
-    WorkspaceTableKind? databaseLayout;
-    final action = await showAppMenu<WorkspaceFileMenuAction>(
+    final definition = CollectionRegistry.typeFor(metadata.kind);
+    final choice = await showCollectionAddMenu(
       context: context,
       globalPosition: position,
-      width: WorkspaceFileKindMenuStyle.width,
-      entries: [
-        AppMenuItem(
-          label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-          icon: workspaceAddFolderIcon,
-          onSelected: () => createFolder = true,
-        ),
-        ...workspaceFileKindEntries(
-          onCreateCollection: (kind) => collectionKind = kind,
-          onCreateDatabase: (kind) => databaseLayout = kind,
-        ),
-      ],
+      policy: CollectionContentPolicy.of(metadata.kind),
     );
-    if (createFolder) {
-      await controller.createFolderImmediately(parentId: parentId);
-      return;
-    }
-    if (collectionKind != null) {
-      await _createCollection(collectionKind!, parentId: parentId);
-      return;
-    }
-    if (databaseLayout != null) {
-      final view = await createWorkspaceDatabase(
-        parentViewId: parentId,
-        kind: databaseLayout!,
-      );
-      if (view != null && mounted) {
-        _openView(view);
-      }
-      return;
-    }
-    if (action == null) {
+    if (choice == null || !mounted) {
       return;
     }
     // The collection page has no inline draft row, so the object is created
     // outright rather than asked for and left waiting for a name.
-    await controller.createFileImmediately(action, parentId: parentId);
-  }
-
-  Future<void> _createCollection(
-    CollectionKind kind, {
-    required String parentId,
-  }) async {
-    final created = await _service.createCollection(
-      parentViewId: parentId,
-      kind: kind,
-      name: CollectionRegistry.typeFor(kind).defaultName,
+    final created = await applyCollectionAddChoice(
+      context,
+      choice: choice,
+      collection: _viewContext(
+        definition.viewById(activeViewId) ?? definition.defaultView,
+      ),
+      parentId: parentId,
     );
-    if (!mounted) {
-      return;
+    if (created != null && mounted && choice is CollectionAddTable) {
+      _openView(created);
     }
-    created.fold(_openView, (error) => controller.showError(error.msg));
   }
 }
 

@@ -19,12 +19,12 @@ import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:linked_scroll_controller/linked_scroll_controller.dart';
 import 'package:markdown/markdown.dart' as markdown;
-import 'package:markdown_widget/markdown_widget.dart';
 import 'package:path/path.dart' as p;
 
 import 'archive/archive_explorer.dart';
 import 'file_preview_kind.dart';
 import 'markdown_preview_fonts.dart';
+import 'notebook/notebook_view.dart';
 import 'pdf_preview.dart';
 import 'pdf_preview_scroll_physics.dart';
 import 'pdf_preview_theme.dart';
@@ -34,11 +34,13 @@ const maxTextPreviewBytes = 10 * 1024 * 1024;
 
 /// How tall an embedded preview is before the reader resizes it.
 ///
-/// Code brings its own toolbar and terminal, and an archive brings the folder
-/// chrome, so both need more than a plain document preview.
+/// Code brings its own toolbar and terminal, an archive brings the folder
+/// chrome, and a notebook brings a whole page of cells, so all three need more
+/// than a plain document preview.
 double defaultFilePreviewHeight(FilePreviewKind kind) => switch (kind) {
       FilePreviewKind.code => 560,
       FilePreviewKind.archive => 560,
+      FilePreviewKind.notebook => 620,
       _ => 420,
     };
 
@@ -211,11 +213,15 @@ class _FilePreviewState extends State<FilePreview> {
             ),
           ),
         ),
-      FilePreviewKind.notebook => _buildPreviewScaffold(
-          _NotebookPreview(
-            document: jsonDecode(await _readText(maxTextPreviewBytes))
-                as Map<String, dynamic>,
-          ),
+      // A notebook is written, run and re-run cell by cell, so it brings its
+      // own surface instead of the shared read-only preview.
+      FilePreviewKind.notebook => NotebookView(
+          key: ValueKey('${widget.file.path}_notebook'),
+          file: widget.file,
+          name: widget.name,
+          source: await _readText(maxTextPreviewBytes),
+          editable: widget.editable,
+          toolbarTrailing: widget.toolbarTrailing,
         ),
       FilePreviewKind.code => _CodeFilePreview(
           file: widget.file,
@@ -1105,75 +1111,6 @@ class _CsvPreview extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _NotebookPreview extends StatelessWidget {
-  const _NotebookPreview({required this.document});
-
-  final Map<String, dynamic> document;
-
-  @override
-  Widget build(BuildContext context) {
-    final cells = document['cells'];
-    if (cells is! List) {
-      return const Center(child: Text('Invalid notebook document.'));
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.all(12),
-      itemCount: cells.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final cell = cells[index];
-        if (cell is! Map) {
-          return const SizedBox.shrink();
-        }
-        final source = cell['source'];
-        final text = source is List ? source.join() : source?.toString() ?? '';
-        if (cell['cell_type'] == 'markdown') {
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: MarkdownWidget(
-                data: text,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-              ),
-            ),
-          );
-        }
-        final outputs = cell['outputs'];
-        final outputText = outputs is List
-            ? outputs
-                .whereType<Map>()
-                .map((output) => output['text'])
-                .whereType<List>()
-                .map((lines) => lines.join())
-                .join()
-            : '';
-        return Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                SelectableText(
-                  text,
-                  style: const TextStyle(fontFamily: 'monospace'),
-                ),
-                if (outputText.isNotEmpty) ...[
-                  const Divider(),
-                  SelectableText(
-                    outputText,
-                    style: const TextStyle(fontFamily: 'monospace'),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }

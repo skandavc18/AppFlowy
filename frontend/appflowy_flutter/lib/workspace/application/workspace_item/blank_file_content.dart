@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/notebook/notebook_document.dart';
 import 'package:archive/archive.dart';
 
 import 'workspace_file_kind.dart';
@@ -14,6 +15,7 @@ Uint8List blankFileContent(WorkspaceFileKind kind) {
   return switch (kind) {
     WorkspaceFileKind.markdown => _utf8('# Untitled\n\n'),
     WorkspaceFileKind.html => _utf8(_blankHtml),
+    WorkspaceFileKind.notebook => _utf8(NotebookDocument.blank().encode()),
     WorkspaceFileKind.archive => _zip(const {}),
     WorkspaceFileKind.word => _zip(_wordParts),
     WorkspaceFileKind.excel => _zip(_excelParts),

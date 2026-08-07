@@ -1,21 +1,18 @@
 import 'dart:convert';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_add_menu.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_chrome.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_views.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
-import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_controller.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_state.dart';
-import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
-import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -108,28 +105,19 @@ Future<void> showRepoBackgroundMenu({
   String parentPath = '',
 }) async {
   RepoSort? sort;
-  WorkspaceFileMenuAction? file;
-  CollectionKind? collectionKind;
-  WorkspaceTableKind? databaseLayout;
-  var newFolder = false;
+  CollectionAddChoice? add;
 
   final action = await showAppMenu<RepoBackgroundAction>(
     context: context,
     globalPosition: position,
     entries: [
       AppMenuItem(
-        label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
+        label: LocaleKeys.collections_repository_add.tr(),
         icon: workspaceAddFileIcon,
-        submenu: workspaceFileKindEntries(
-          onSelected: (selected) => file = selected,
-          onCreateCollection: (kind) => collectionKind = kind,
-          onCreateDatabase: (kind) => databaseLayout = kind,
+        submenu: collectionAddEntries(
+          CollectionContentPolicy.of(CollectionKind.repository),
+          onSelected: (choice) => add = choice,
         ),
-      ),
-      AppMenuItem(
-        label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-        icon: workspaceAddFolderIcon,
-        onSelected: () => newFolder = true,
       ),
       const AppMenuSeparator(),
       AppMenuItem(
@@ -166,25 +154,12 @@ Future<void> showRepoBackgroundMenu({
   );
 
   final parentId = repoParentIdFor(collection, controller, parentPath);
-  if (file != null) {
-    await createWorkspaceFile(parentViewId: parentId, action: file!);
-    return;
-  }
-  if (collectionKind != null) {
-    await createRepoCollection(collection, parentId, collectionKind!);
-    return;
-  }
-  if (databaseLayout != null) {
-    await createWorkspaceDatabase(
-      parentViewId: parentId,
-      kind: databaseLayout!,
-    );
-    return;
-  }
-  if (newFolder) {
-    await const WorkspaceItemService().createFolder(
-      parentViewId: parentId,
-      name: LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
+  if (add != null && context.mounted) {
+    await applyCollectionAddChoice(
+      context,
+      choice: add!,
+      collection: collection,
+      parentId: parentId,
     );
     return;
   }
@@ -222,18 +197,6 @@ String repoParentIdFor(
 ) =>
     (path.isEmpty ? null : controller.entryForPath(path)?.id) ??
     collection.collectionView.id;
-
-Future<void> createRepoCollection(
-  CollectionViewContext collection,
-  String parentId,
-  CollectionKind kind,
-) async {
-  await const CollectionService().createCollection(
-    parentViewId: parentId,
-    kind: kind,
-    name: CollectionRegistry.typeFor(kind).defaultName,
-  );
-}
 
 /// Writes the document that explains the project, at the repository root.
 Future<void> createRepoReadme({
@@ -286,51 +249,20 @@ class RepoAddButton extends StatelessWidget {
   }
 
   Future<void> _show(BuildContext context, Offset position) async {
-    WorkspaceFileMenuAction? file;
-    CollectionKind? collectionKind;
-    WorkspaceTableKind? databaseLayout;
-    var newFolder = false;
-
-    await showAppMenu<void>(
+    final choice = await showCollectionAddMenu(
       context: context,
       globalPosition: position,
-      width: WorkspaceFileKindMenuStyle.width,
-      entries: [
-        AppMenuItem(
-          label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-          icon: workspaceAddFolderIcon,
-          onSelected: () => newFolder = true,
-        ),
-        ...workspaceFileKindEntries(
-          onSelected: (selected) => file = selected,
-          onCreateCollection: (kind) => collectionKind = kind,
-          onCreateDatabase: (kind) => databaseLayout = kind,
-        ),
-      ],
+      policy: CollectionContentPolicy.of(CollectionKind.repository),
     );
-
-    final parentId = repoParentIdFor(collection, controller, parentPath);
-    if (newFolder) {
-      await const WorkspaceItemService().createFolder(
-        parentViewId: parentId,
-        name: LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
-      );
+    if (choice == null || !context.mounted) {
       return;
     }
-    if (collectionKind != null) {
-      await createRepoCollection(collection, parentId, collectionKind!);
-      return;
-    }
-    if (databaseLayout != null) {
-      await createWorkspaceDatabase(
-        parentViewId: parentId,
-        kind: databaseLayout!,
-      );
-      return;
-    }
-    if (file != null) {
-      await createWorkspaceFile(parentViewId: parentId, action: file!);
-    }
+    await applyCollectionAddChoice(
+      context,
+      choice: choice,
+      collection: collection,
+      parentId: repoParentIdFor(collection, controller, parentPath),
+    );
   }
 }
 

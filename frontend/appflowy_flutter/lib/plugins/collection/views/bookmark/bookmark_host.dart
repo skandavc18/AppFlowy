@@ -31,6 +31,9 @@ class BookmarkHost extends StatefulWidget {
 class _BookmarkHostState extends State<BookmarkHost> {
   late final BookmarkController controller;
 
+  /// How many bookmarks the library held the last time it was synced.
+  int _known = 0;
+
   @override
   void initState() {
     super.initState();
@@ -76,6 +79,19 @@ class _BookmarkHostState extends State<BookmarkHost> {
       widget.collection.explorer
           .childrenOf(widget.collection.collectionView.id),
     );
+    // A link can be saved from outside the library — the collection's Add
+    // button, a drag into the sidebar — and an address with no title is not a
+    // bookmark yet, so anything new is read as it arrives.
+    if (controller.all.length > _known) {
+      _known = controller.all.length;
+      if (mounted) {
+        unawaited(
+          controller.refreshMissing(snapshot: controller.settings.autoSnapshot),
+        );
+      }
+    } else {
+      _known = controller.all.length;
+    }
   }
 
   @override

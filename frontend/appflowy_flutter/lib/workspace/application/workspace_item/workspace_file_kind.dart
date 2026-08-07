@@ -24,6 +24,7 @@ enum WorkspaceFileKind {
   file,
   text,
   code,
+  notebook,
   markdown,
   html,
   pdf,
@@ -33,6 +34,7 @@ enum WorkspaceFileKind {
   archive,
   word,
   excel,
+  csv,
   powerpoint;
 
   static WorkspaceFileKind? fromName(String? name) {
@@ -46,9 +48,11 @@ enum WorkspaceFileKind {
     return switch (extension) {
       'md' || 'markdown' => WorkspaceFileKind.markdown,
       'html' || 'htm' => WorkspaceFileKind.html,
+      'ipynb' => WorkspaceFileKind.notebook,
       'pdf' => WorkspaceFileKind.pdf,
       'doc' || 'docx' || 'odt' || 'rtf' => WorkspaceFileKind.word,
       'xls' || 'xlsx' || 'ods' => WorkspaceFileKind.excel,
+      'csv' || 'tsv' => WorkspaceFileKind.csv,
       'ppt' || 'pptx' || 'odp' => WorkspaceFileKind.powerpoint,
       _ => null,
     };
@@ -60,6 +64,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.file => 'File',
         WorkspaceFileKind.text => 'Text file',
         WorkspaceFileKind.code => 'Code file',
+        WorkspaceFileKind.notebook => 'Jupyter notebook',
         WorkspaceFileKind.markdown => 'Markdown',
         WorkspaceFileKind.html => 'HTML',
         WorkspaceFileKind.pdf => 'PDF',
@@ -69,6 +74,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.archive => 'Archive',
         WorkspaceFileKind.word => 'Word document',
         WorkspaceFileKind.excel => 'Excel spreadsheet',
+        WorkspaceFileKind.csv => 'CSV',
         WorkspaceFileKind.powerpoint => 'PowerPoint presentation',
       };
 
@@ -81,11 +87,13 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
   WorkspaceFileCreation get creation => switch (this) {
         WorkspaceFileKind.text ||
         WorkspaceFileKind.code ||
+        WorkspaceFileKind.notebook ||
         WorkspaceFileKind.markdown ||
         WorkspaceFileKind.html ||
         WorkspaceFileKind.archive ||
         WorkspaceFileKind.word ||
         WorkspaceFileKind.excel ||
+        WorkspaceFileKind.csv ||
         WorkspaceFileKind.powerpoint =>
           WorkspaceFileCreation.blank,
         WorkspaceFileKind.file ||
@@ -103,6 +111,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.file => 'txt',
         WorkspaceFileKind.text => 'txt',
         WorkspaceFileKind.code => 'py',
+        WorkspaceFileKind.notebook => 'ipynb',
         WorkspaceFileKind.markdown => 'md',
         WorkspaceFileKind.html => 'html',
         WorkspaceFileKind.pdf => 'pdf',
@@ -112,17 +121,20 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.archive => 'zip',
         WorkspaceFileKind.word => 'docx',
         WorkspaceFileKind.excel => 'xlsx',
+        WorkspaceFileKind.csv => 'csv',
         WorkspaceFileKind.powerpoint => 'pptx',
       };
 
   String get defaultFileName => switch (this) {
         WorkspaceFileKind.text => 'Untitled.txt',
         WorkspaceFileKind.code => 'Untitled.py',
+        WorkspaceFileKind.notebook => 'Untitled.ipynb',
         WorkspaceFileKind.markdown => 'Untitled.md',
         WorkspaceFileKind.html => 'Untitled.html',
         WorkspaceFileKind.archive => 'Untitled.zip',
         WorkspaceFileKind.word => 'Untitled.docx',
         WorkspaceFileKind.excel => 'Untitled.xlsx',
+        WorkspaceFileKind.csv => 'Untitled.csv',
         WorkspaceFileKind.powerpoint => 'Untitled.pptx',
         _ => 'Untitled.$fileExtension',
       };
@@ -131,6 +143,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
         WorkspaceFileKind.file => 'application/octet-stream',
         WorkspaceFileKind.text => 'text/plain',
         WorkspaceFileKind.code => 'text/plain',
+        WorkspaceFileKind.notebook => 'application/x-ipynb+json',
         WorkspaceFileKind.markdown => 'text/markdown',
         WorkspaceFileKind.html => 'text/html',
         WorkspaceFileKind.pdf => 'application/pdf',
@@ -142,6 +155,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         WorkspaceFileKind.excel =>
           'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        WorkspaceFileKind.csv => 'text/csv',
         WorkspaceFileKind.powerpoint =>
           'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       };
@@ -190,6 +204,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
             'scss',
             'less',
           ],
+        WorkspaceFileKind.notebook => const ['ipynb'],
         WorkspaceFileKind.markdown => const ['md', 'markdown'],
         WorkspaceFileKind.html => const ['html', 'htm'],
         WorkspaceFileKind.pdf => const ['pdf'],
@@ -220,6 +235,7 @@ extension WorkspaceFileKindInfo on WorkspaceFileKind {
           ],
         WorkspaceFileKind.word => const ['doc', 'docx', 'odt', 'rtf'],
         WorkspaceFileKind.excel => const ['xls', 'xlsx', 'ods'],
+        WorkspaceFileKind.csv => const ['csv', 'tsv'],
         WorkspaceFileKind.powerpoint => const ['ppt', 'pptx', 'odp'],
         WorkspaceFileKind.archive => archiveExtensions.toList(),
       };
@@ -268,12 +284,17 @@ const List<WorkspaceFileMenuAction> workspaceFileMenuActions = [
   WorkspaceFileMenuAction(WorkspaceFileKind.text, WorkspaceFileSource.create),
   WorkspaceFileMenuAction(WorkspaceFileKind.code, WorkspaceFileSource.create),
   WorkspaceFileMenuAction(
+    WorkspaceFileKind.notebook,
+    WorkspaceFileSource.create,
+  ),
+  WorkspaceFileMenuAction(
     WorkspaceFileKind.markdown,
     WorkspaceFileSource.create,
   ),
   WorkspaceFileMenuAction(WorkspaceFileKind.html, WorkspaceFileSource.create),
   WorkspaceFileMenuAction(WorkspaceFileKind.word, WorkspaceFileSource.create),
   WorkspaceFileMenuAction(WorkspaceFileKind.excel, WorkspaceFileSource.create),
+  WorkspaceFileMenuAction(WorkspaceFileKind.csv, WorkspaceFileSource.create),
   WorkspaceFileMenuAction(
     WorkspaceFileKind.powerpoint,
     WorkspaceFileSource.create,
@@ -284,6 +305,10 @@ const List<WorkspaceFileMenuAction> workspaceFileMenuActions = [
   ),
   WorkspaceFileMenuAction(WorkspaceFileKind.file, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.code, WorkspaceFileSource.upload),
+  WorkspaceFileMenuAction(
+    WorkspaceFileKind.notebook,
+    WorkspaceFileSource.upload,
+  ),
   WorkspaceFileMenuAction(WorkspaceFileKind.pdf, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.image, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.video, WorkspaceFileSource.upload),
@@ -294,6 +319,7 @@ const List<WorkspaceFileMenuAction> workspaceFileMenuActions = [
   ),
   WorkspaceFileMenuAction(WorkspaceFileKind.word, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(WorkspaceFileKind.excel, WorkspaceFileSource.upload),
+  WorkspaceFileMenuAction(WorkspaceFileKind.csv, WorkspaceFileSource.upload),
   WorkspaceFileMenuAction(
     WorkspaceFileKind.powerpoint,
     WorkspaceFileSource.upload,

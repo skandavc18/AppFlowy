@@ -3,6 +3,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy_editor/appflowy_editor.dart'
     hide QuoteBlockKeys, quoteNode;
+import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:easy_localization/easy_localization.dart' hide TextDirection;
 import 'package:easy_localization/easy_localization.dart';
 
@@ -46,8 +47,26 @@ enum EditorOptionActionType {
         };
       case EditorOptionActionType.align:
         return {
+          // Blocks that lay out text.
+          ...editorJustifiableBlockTypes,
+
+          // Blocks that lay out a box.
           ImageBlockKeys.type,
           SimpleTableBlockKeys.type,
+          FileBlockKeys.type,
+          CodeBlockKeys.type,
+          MathEquationBlockKeys.type,
+          LinkPreviewBlockKeys.type,
+          VideoBlockKeys.type,
+          DatabaseBlockKeys.gridType,
+          DatabaseBlockKeys.boardType,
+          DatabaseBlockKeys.calendarType,
+          ChartBlockKeys.type,
+          MapBlockKeys.type,
+          SpreadsheetBlockKeys.type,
+          PagePreviewBlockKeys.type,
+          BookmarkBlockKeys.type,
+          FolderExplorerBlockKeys.type,
         };
       case EditorOptionActionType.depth:
         return {
@@ -56,6 +75,22 @@ enum EditorOptionActionType {
     }
   }
 }
+
+/// The blocks that can be justified.
+///
+/// Justification spreads words across the measure, so it only means anything
+/// where the block lays out text of its own; a picture or a table has nothing
+/// to spread.
+final Set<String> editorJustifiableBlockTypes = {
+  ParagraphBlockKeys.type,
+  HeadingBlockKeys.type,
+  QuoteBlockKeys.type,
+  CalloutBlockKeys.type,
+  BulletedListBlockKeys.type,
+  NumberedListBlockKeys.type,
+  TodoListBlockKeys.type,
+  ToggleListBlockKeys.type,
+};
 
 enum OptionAction {
   addAbove,

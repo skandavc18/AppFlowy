@@ -8,9 +8,12 @@ import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/album/album_state.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,7 +33,6 @@ enum AlbumItemAction {
 
 /// What a right click on the album itself offers.
 enum AlbumBackgroundAction {
-  addMedia,
   slideshow,
   showNames,
   refresh,
@@ -152,6 +154,7 @@ Future<void> showAlbumBackgroundMenu({
   AlbumSort? sort;
   AlbumGrouping? grouping;
   AlbumTileSize? tileSize;
+  WorkspaceFileMenuAction? media;
 
   final action = await showAppMenu<AlbumBackgroundAction>(
     context: context,
@@ -160,7 +163,10 @@ Future<void> showAlbumBackgroundMenu({
       AppMenuItem(
         label: LocaleKeys.collections_album_addMedia.tr(),
         icon: Icons.add_photo_alternate_rounded,
-        value: AlbumBackgroundAction.addMedia,
+        submenu: workspaceFileKindEntries(
+          kinds: CollectionContentPolicy.of(CollectionKind.album).fileKinds,
+          onSelected: (selected) => media = selected,
+        ),
       ),
       AppMenuItem(
         label: LocaleKeys.collections_album_playSlideshow.tr(),
@@ -222,6 +228,10 @@ Future<void> showAlbumBackgroundMenu({
     ],
   );
 
+  if (media != null) {
+    await createWorkspaceFile(parentViewId: parentViewId, action: media!);
+    return;
+  }
   if (sort != null) {
     controller.updateSettings(controller.settings.copyWith(sort: sort));
     return;
@@ -239,8 +249,6 @@ Future<void> showAlbumBackgroundMenu({
   }
 
   switch (action) {
-    case AlbumBackgroundAction.addMedia:
-      await _addMedia(parentViewId);
     case AlbumBackgroundAction.slideshow:
       onSlideshow();
     case AlbumBackgroundAction.showNames:
@@ -251,18 +259,6 @@ Future<void> showAlbumBackgroundMenu({
       controller.metadata.clear();
       await controller.ensureAllMetadata();
   }
-}
-
-/// The picker is opened for pictures; video and audio come in through the
-/// collection's own Add button, which names every type.
-Future<void> _addMedia(String parentViewId) async {
-  await createWorkspaceFile(
-    parentViewId: parentViewId,
-    action: const WorkspaceFileMenuAction(
-      WorkspaceFileKind.image,
-      WorkspaceFileSource.upload,
-    ),
-  );
 }
 
 Future<void> _copyCoordinates(

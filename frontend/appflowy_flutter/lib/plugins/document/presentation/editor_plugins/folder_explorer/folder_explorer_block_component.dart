@@ -2,7 +2,10 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_settings.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_style.dart';
 import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -16,7 +19,6 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_file_cre
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_collection_preview.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
@@ -43,6 +45,10 @@ class FolderExplorerBlockKeys {
   static const width = 'width';
   static const height = 'height';
   static const globalKey = 'global_key';
+
+  /// How this particular embed is presented: size, preview style, ordering.
+  /// Two embeds of the same collection can therefore look nothing alike.
+  static const embedSettings = 'embed';
 }
 
 enum FolderExplorerBlockDisplayMode {
@@ -417,26 +423,46 @@ class FolderExplorerBlockComponentState
   Widget _buildExplorer(ViewPB folder) {
     final width =
         (node.attributes[FolderExplorerBlockKeys.width] as num?)?.toDouble() ??
-            720;
-    return ResizableMedia(
+            CollectionEmbedMetrics.defaultWidth;
+    final height =
+        (node.attributes[FolderExplorerBlockKeys.height] as num?)?.toDouble();
+    return CollectionEmbed(
+      key: ValueKey(folder.id),
+      collection: folder,
+      settings: _embedSettings,
       width: width,
-      minWidth: 320,
+      height: height,
+      alignment: blockEmbedAlignment(node),
+      userProfile: context.read<DocumentBloc>().state.userProfilePB,
       editable: editorState.editable,
-      onResize: (value) =>
-          _updateAttributes({FolderExplorerBlockKeys.width: value}),
-      child: FolderCollectionPreview(
-        key: ValueKey(folder.id),
-        folder: folder,
-        userProfile: context.read<DocumentBloc>().state.userProfilePB,
-        onOpen: () => context.read<TabsBloc>().openPlugin(folder),
-        onContextMenu: (position) =>
-            unawaited(_showBlockContextMenu(folder, position)),
-        hoverControl: _buildMenu(folder),
-        previewMode: ViewPreviewMode.fromValue(
-          node.attributes[FolderExplorerBlockKeys.previewMode],
-        ),
+      onSettingsChanged: (settings) => unawaited(
+        _updateAttributes({
+          FolderExplorerBlockKeys.embedSettings: settings.toJson(),
+          // A size preset is a height: the widget takes the shape that was
+          // asked for rather than keeping whatever the last drag left.
+          FolderExplorerBlockKeys.height: null,
+        }),
       ),
+      onResizeWidth: (value) => unawaited(
+        _updateAttributes({FolderExplorerBlockKeys.width: value}),
+      ),
+      onResizeHeight: (value) => unawaited(
+        _updateAttributes({FolderExplorerBlockKeys.height: value}),
+      ),
+      onChangeCollection: () => unawaited(showFolderPicker()),
+      onRemove: _removeBlock,
+      onInteractionFocus: () => editorState.selection = null,
     );
+  }
+
+  CollectionEmbedSettings get _embedSettings =>
+      CollectionEmbedSettings.fromJson(
+        node.attributes[FolderExplorerBlockKeys.embedSettings],
+      );
+
+  void _removeBlock() {
+    final transaction = editorState.transaction..deleteNode(node);
+    unawaited(editorState.apply(transaction));
   }
 
   Widget _buildMenu(ViewPB folder) {
@@ -453,9 +479,6 @@ class FolderExplorerBlockComponentState
   List<AppMenuEntry> _menuItems(ViewPB folder, {Offset? position}) {
     final displayMode = FolderExplorerBlockDisplayMode.fromValue(
       node.attributes[FolderExplorerBlockKeys.displayMode],
-    );
-    final previewMode = ViewPreviewMode.fromValue(
-      node.attributes[FolderExplorerBlockKeys.previewMode],
     );
 
     AppMenuItem item(
@@ -492,22 +515,12 @@ class FolderExplorerBlockComponentState
       item(
         _FolderBlockAction.toggleMode,
         displayMode == FolderExplorerBlockDisplayMode.icon
-            ? Icons.view_agenda_rounded
+            ? Icons.widgets_rounded
             : Icons.folder_rounded,
         displayMode == FolderExplorerBlockDisplayMode.icon
             ? LocaleKeys.workspaceFolderExplorer_showEmbeddedExplorer.tr()
             : LocaleKeys.workspaceFolderExplorer_showAsFolderIcon.tr(),
       ),
-      if (displayMode == FolderExplorerBlockDisplayMode.explorer)
-        item(
-          _FolderBlockAction.togglePreview,
-          previewMode == ViewPreviewMode.cover
-              ? Icons.article_rounded
-              : Icons.photo_rounded,
-          previewMode == ViewPreviewMode.cover
-              ? LocaleKeys.workspaceFolderExplorer_showContentPreview.tr()
-              : LocaleKeys.workspaceFolderExplorer_showCoverPreview.tr(),
-        ),
       item(
         _FolderBlockAction.changeFolder,
         Icons.swap_horiz_rounded,
@@ -544,15 +557,6 @@ class FolderExplorerBlockComponentState
               current == FolderExplorerBlockDisplayMode.icon
                   ? FolderExplorerBlockDisplayMode.explorer.name
                   : FolderExplorerBlockDisplayMode.icon.name,
-        });
-      case _FolderBlockAction.togglePreview:
-        final current = ViewPreviewMode.fromValue(
-          node.attributes[FolderExplorerBlockKeys.previewMode],
-        );
-        await _updateAttributes({
-          FolderExplorerBlockKeys.previewMode: current == ViewPreviewMode.cover
-              ? ViewPreviewMode.content.name
-              : ViewPreviewMode.cover.name,
         });
       case _FolderBlockAction.changeFolder:
         await showFolderPicker();
@@ -790,6 +794,5 @@ enum _FolderBlockAction {
   newFolder,
   open,
   toggleMode,
-  togglePreview,
   changeFolder,
 }

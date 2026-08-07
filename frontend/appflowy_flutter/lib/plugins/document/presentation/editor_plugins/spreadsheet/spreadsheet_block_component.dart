@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -220,15 +221,16 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
 
   Widget _buildSheet(BuildContext context) {
     final palette = SpreadsheetPalette.of(context);
+    final alignment = blockEmbedAlignment(node);
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: alignment,
       child: ResizableMedia(
         width: _width,
         minWidth: SpreadsheetMetrics.minBlockWidth,
         height: _collapsed ? null : _height,
         minHeight: SpreadsheetMetrics.minBlockHeight,
         maxHeight: SpreadsheetMetrics.maxBlockHeight,
-        alignment: Alignment.centerLeft,
+        alignment: alignment,
         editable: _editable,
         onResize: (value) =>
             _updateAttributes({SpreadsheetBlockKeys.width: value}),

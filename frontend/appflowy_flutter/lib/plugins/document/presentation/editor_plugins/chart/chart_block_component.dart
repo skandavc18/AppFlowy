@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/charts/chart_stage.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
@@ -143,7 +144,7 @@ class _ChartBlockComponentState extends State<ChartBlockComponent>
       height: _height,
       minHeight: _minimumHeight,
       maxHeight: 900,
-      alignment: Alignment.centerLeft,
+      alignment: blockEmbedAlignment(node),
       editable: _editable,
       onResize: (value) => _update({ChartBlockKeys.width: value}),
       onResizeHeight: (value) => _update({ChartBlockKeys.height: value}),

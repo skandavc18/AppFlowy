@@ -72,6 +72,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
     referencedKanbanSlashMenuItem,
     if (documentBloc != null) calendarSlashMenuItem(documentBloc),
     referencedCalendarSlashMenuItem,
+    ...linkedTableViewSlashMenuItems(),
   ];
 
   return registerSlashMenuSections([
@@ -138,6 +139,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       section: SlashMenuSection.collections,
       items: [
         if (documentBloc != null) ...collectionSlashMenuItems(documentBloc),
+        ...linkedCollectionSlashMenuItems(),
       ],
     ),
     SlashMenuSectionItems(

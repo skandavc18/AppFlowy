@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/database/widgets/row/row_comments.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/executable_code_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
@@ -146,6 +147,9 @@ BlockComponentConfiguration _buildDefaultConfiguration(
 
       return const EdgeInsets.symmetric(vertical: 5.0);
     },
+    // Left/center/right reach the text through the editor's own align mixin;
+    // justification has no box alignment to express it, so it is answered here.
+    textAlign: blockTextAlign,
     indentPadding: (node, textDirection) {
       double padding = 26.0;
 

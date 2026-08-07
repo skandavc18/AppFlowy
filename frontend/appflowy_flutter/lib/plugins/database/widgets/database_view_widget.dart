@@ -1,11 +1,28 @@
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
+import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
+import 'package:appflowy/workspace/application/maps/map_metadata.dart';
+import 'package:appflowy/workspace/application/slides/slide_metadata.dart';
+import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+/// How tall a table that opens as something other than a grid stands inside a
+/// document, until somebody drags it. Tall enough to read, short enough to
+/// scroll past.
+const double embeddedDatabaseViewHeight = 460;
+
+/// Whether this table's reading is written as a full page rather than as a
+/// widget that can shrink to its content.
+///
+/// Only these have a height to give: a grid, a board and a calendar grow with
+/// what they hold, and forcing a shorter box on them only clips the rows.
+bool embeddedDatabaseViewFillsItsBox(ViewPB view) =>
+    view.isChart || view.isMap || view.isSlideDeck || view.tableViewKind != null;
 
 class DatabaseViewWidget extends StatefulWidget {
   const DatabaseViewWidget({

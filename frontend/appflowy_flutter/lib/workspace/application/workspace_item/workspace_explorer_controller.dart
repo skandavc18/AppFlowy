@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
+import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_selection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
@@ -306,6 +307,22 @@ class WorkspaceExplorerController extends ChangeNotifier {
     final result = await _repository.createFolder(
       parentViewId: resolvedParent,
       name: name ?? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
+    );
+    return _adopt(resolvedParent, result);
+  }
+
+  /// Creates a page written in AppFlowy itself, rather than a file taken from
+  /// disk. A collection whose objects are authored here — a book of chapters,
+  /// notes filed beside a message — needs this and nothing else.
+  Future<ViewPB?> createPageImmediately({
+    String? parentId,
+    String? name,
+  }) async {
+    final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    final result = await ViewBackendService.createView(
+      layoutType: ViewLayoutPB.Document,
+      parentViewId: resolvedParent,
+      name: name ?? '',
     );
     return _adopt(resolvedParent, result);
   }

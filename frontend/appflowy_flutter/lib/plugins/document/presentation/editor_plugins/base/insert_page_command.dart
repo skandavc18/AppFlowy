@@ -100,6 +100,10 @@ extension InsertDatabase on EditorState {
       name: "$prefix ${view.nameOrDefault}",
       layoutType: view.layout,
       databaseId: databaseId,
+      // The mark that makes a table open as a chart, a map, a slide deck or
+      // one of the shared readings lives in `extra`; without carrying it the
+      // reference would silently come back as a plain grid.
+      extra: view.extra.isEmpty ? null : view.extra,
     ).then((value) => value.toNullable());
 
     if (ref == null) {

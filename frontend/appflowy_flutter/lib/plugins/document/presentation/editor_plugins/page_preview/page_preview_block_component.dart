@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/mention/mention_page_block.dart';
@@ -179,6 +180,7 @@ class PagePreviewBlockComponentState extends State<PagePreviewBlockComponent>
           return ResizableMedia(
             width: width,
             minWidth: 300,
+            alignment: blockEmbedAlignment(node),
             editable: editorState.editable,
             onResize: (value) => _updateWidth(value),
             child: PagePreviewCard(

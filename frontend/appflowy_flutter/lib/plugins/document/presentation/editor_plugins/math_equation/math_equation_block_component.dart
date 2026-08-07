@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/selectable_svg_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/block_menu/block_menu_button.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -222,7 +223,8 @@ class MathEquationBlockComponentWidgetState
   }
 
   Widget _buildMathEquation(BuildContext context) {
-    return Center(
+    return Align(
+      alignment: blockEmbedAlignment(node),
       child: Math.tex(
         formula,
         textStyle: const TextStyle(fontSize: 20),

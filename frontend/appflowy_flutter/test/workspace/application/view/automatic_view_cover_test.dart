@@ -56,7 +56,7 @@ void main() {
     expect(int.parse(first.value), inInclusiveRange(1, 6));
   });
 
-  test('targets pages, folders, and full-page tables only', () {
+  test('targets pages and folders, never tables', () {
     final folderExtra = const WorkspaceItemMetadata.folder().mergeIntoExtra('');
     final fileExtra = const WorkspaceItemMetadata.file(
       contentKind: WorkspaceFileContentKind.collaborativeText,
@@ -78,14 +78,21 @@ void main() {
       ),
       isTrue,
     );
-    expect(
-      AutomaticViewCover.supports(
-        layout: ViewLayoutPB.Grid,
-        extra: '',
-        creationMetadata: const {},
-      ),
-      isTrue,
-    );
+    for (final layout in const [
+      ViewLayoutPB.Grid,
+      ViewLayoutPB.Board,
+      ViewLayoutPB.Calendar,
+    ]) {
+      expect(
+        AutomaticViewCover.supports(
+          layout: layout,
+          extra: '',
+          creationMetadata: const {},
+        ),
+        isFalse,
+        reason: '$layout is data, so it starts without a cover',
+      );
+    }
     expect(
       AutomaticViewCover.supports(
         layout: ViewLayoutPB.Document,
@@ -180,7 +187,7 @@ void main() {
 
     expect(
       updates.map((update) => update.viewId),
-      orderedEquals(['page', 'folder', 'table']),
+      orderedEquals(['page', 'folder']),
     );
     for (final update in updates) {
       expect(ViewCoverCodec.decodeCover(update.extra)?.isNone, isFalse);

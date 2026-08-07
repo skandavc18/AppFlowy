@@ -55,10 +55,9 @@ extension InsertCollectionBlock on EditorState {
       return;
     }
 
-    final block = folderExplorerNode(
-      folderId: collectionId,
-      displayMode: FolderExplorerBlockDisplayMode.icon,
-    );
+    // A new collection appears as the interactive widget, not as a chip: the
+    // point of putting one on a page is to see into it.
+    final block = folderExplorerNode(folderId: collectionId);
     final transaction = this.transaction;
     final delta = currentNode.delta;
     if (delta != null &&

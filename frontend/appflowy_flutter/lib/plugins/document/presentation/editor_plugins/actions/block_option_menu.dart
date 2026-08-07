@@ -55,7 +55,7 @@ List<AppMenuEntry> buildBlockOptionMenu({
           AppMenuItem(
             label: LocaleKeys.document_plugins_optionAction_align.tr(),
             icon: blockOptionIcon(action),
-            submenu: _alignEntries(editorState),
+            submenu: _alignEntries(editorState, node),
           ),
         );
       case OptionAction.depth:
@@ -106,21 +106,24 @@ IconData blockOptionIcon(OptionAction action) => switch (action) {
       OptionAction.convertToSpreadsheet => Icons.grid_on_rounded,
     };
 
-List<AppMenuEntry> _alignEntries(EditorState editorState) {
+List<AppMenuEntry> _alignEntries(EditorState editorState, Node node) {
   final action = AlignOptionAction(editorState: editorState);
   final current = action.align;
+  final canJustify = editorJustifiableBlockTypes.contains(node.type);
   return [
     for (final align in OptionAlignType.values)
-      AppMenuItem(
-        label: align.description,
-        icon: switch (align) {
-          OptionAlignType.left => Icons.format_align_left_rounded,
-          OptionAlignType.center => Icons.format_align_center_rounded,
-          OptionAlignType.right => Icons.format_align_right_rounded,
-        },
-        selected: align == current,
-        onSelected: () => action.onAlignChanged(align),
-      ),
+      if (align != OptionAlignType.justify || canJustify)
+        AppMenuItem(
+          label: align.description,
+          icon: switch (align) {
+            OptionAlignType.left => Icons.format_align_left_rounded,
+            OptionAlignType.center => Icons.format_align_center_rounded,
+            OptionAlignType.right => Icons.format_align_right_rounded,
+            OptionAlignType.justify => Icons.format_align_justify_rounded,
+          },
+          selected: align == current,
+          onSelected: () => action.onAlignChanged(align),
+        ),
   ];
 }
 

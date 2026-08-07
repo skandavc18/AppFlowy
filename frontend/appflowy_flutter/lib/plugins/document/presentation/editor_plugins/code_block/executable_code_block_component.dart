@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandboxed_code_runner.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
@@ -166,6 +167,7 @@ class _ExecutableCodeBlockComponentWidgetState
             minWidth: 320,
             height: height,
             minHeight: codeBlockMinHeight,
+            alignment: blockEmbedAlignment(node),
             editable: editorState.editable && UniversalPlatform.isDesktopOrWeb,
             onResize: _updateWidth,
             onResizeHeight: _updateHeight,

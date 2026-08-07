@@ -12,6 +12,7 @@ import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/shared_w
 import 'package:appflowy/workspace/presentation/widgets/dialog_v2.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,27 @@ Future<void> createDatabaseTable({
     },
     (_) async {},
   );
+}
+
+/// Creates a table in whichever reading [kind] names, and opens it.
+///
+/// Every reading the workspace offers is a table, so a database collection
+/// offers all of them rather than the three original layouts.
+Future<void> createDatabaseTableOfKind({
+  required CollectionViewContext collection,
+  required DatabaseCollectionController controller,
+  required WorkspaceTableKind kind,
+}) async {
+  final view = await createWorkspaceDatabase(
+    parentViewId: collection.collectionView.id,
+    kind: kind,
+  );
+  if (view == null) {
+    return;
+  }
+  controller
+    ..openTable(view.id)
+    ..flush();
 }
 
 /// The menu behind a right click on a table, and behind its overflow button.
@@ -108,26 +130,16 @@ Future<void> showDatabaseBackgroundMenu({
     globalPosition: position,
     entries: [
       AppMenuHeader(LocaleKeys.collections_database_newTable.tr()),
-      for (final layout in databaseTableLayouts)
+      for (final kind in WorkspaceTableKind.values)
         AppMenuItem(
-          label: databaseLayoutLabel(layout),
-          icon: _layoutIcon(layout),
-          onSelected: () => createDatabaseTable(
+          label: workspaceTableKindLabel(kind),
+          icon: workspaceTableKindIcon(kind),
+          onSelected: () => createDatabaseTableOfKind(
             collection: collection,
             controller: controller,
-            layout: layout,
+            kind: kind,
           ),
         ),
-      AppMenuItem(
-        label: LocaleKeys.charts_chart.tr(),
-        icon: Icons.bar_chart_rounded,
-        onSelected: () => createDatabaseTable(
-          collection: collection,
-          controller: controller,
-          layout: ViewLayoutPB.Grid,
-          charted: true,
-        ),
-      ),
       const AppMenuSeparator(),
       AppMenuItem(
         label: LocaleKeys.collections_database_addExisting.tr(),
@@ -198,12 +210,6 @@ Future<void> showExistingDatabasePicker({
     ),
   );
 }
-
-IconData _layoutIcon(ViewLayoutPB layout) => switch (layout) {
-      ViewLayoutPB.Board => Icons.view_kanban_rounded,
-      ViewLayoutPB.Calendar => Icons.calendar_month_rounded,
-      _ => Icons.table_rows_rounded,
-    };
 
 Future<void> _renameTable(BuildContext context, DatabaseTable table) async {
   final name = await showAFTextFieldDialog(

@@ -7,6 +7,7 @@ import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -54,6 +55,7 @@ class FolderExplorer extends StatefulWidget {
     this.onOpen,
     this.controller,
     this.initialPresentation,
+    this.contentPolicy,
   });
 
   final ViewPB rootView;
@@ -67,6 +69,10 @@ class FolderExplorer extends StatefulWidget {
   final ValueChanged<ViewPB>? onOpen;
   final WorkspaceExplorerController? controller;
   final FolderExplorerPresentation? initialPresentation;
+
+  /// What the host will hold. A collection narrows every add affordance to
+  /// the types it is for; a plain folder leaves this null and takes anything.
+  final CollectionContentPolicy? contentPolicy;
 
   @override
   State<FolderExplorer> createState() => _FolderExplorerState();
@@ -603,13 +609,17 @@ class _FolderExplorerState extends State<FolderExplorer> {
     WorkspaceExplorerItem item,
     Offset position,
   ) async {
+    final policy = widget.contentPolicy;
     final action = await showWorkspaceFileKindMenu(
       context: context,
       globalPosition: position,
-      onCreateCollection: (kind) =>
-          unawaited(_createCollection(kind, parentId: item.id)),
-      onCreateDatabase: (kind) =>
-          unawaited(_createDatabase(kind, parentId: item.id)),
+      kinds: policy?.fileKinds,
+      onCreateCollection: policy != null && !policy.allowsCollections
+          ? null
+          : (kind) => unawaited(_createCollection(kind, parentId: item.id)),
+      onCreateDatabase: policy != null && !policy.allowsTables
+          ? null
+          : (kind) => unawaited(_createDatabase(kind, parentId: item.id)),
     );
     if (action == null || !mounted) {
       return;
@@ -731,6 +741,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
   /// empty space, so a folder can be filled from wherever the pointer is.
   Future<void> _showBackgroundMenu(Offset position) async {
     final knowledgeMode = presentation == FolderExplorerPresentation.gallery;
+    final policy = widget.contentPolicy;
     WorkspaceFileMenuAction? kind;
     CollectionKind? collectionKind;
     WorkspaceTableKind? databaseLayout;
@@ -738,32 +749,37 @@ class _FolderExplorerState extends State<FolderExplorer> {
       context: context,
       globalPosition: position,
       entries: [
-        AppMenuItem(
-          label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
-          icon: workspaceAddFileIcon,
-          submenu: workspaceFileKindEntries(
-            onSelected: (action) => kind = action,
+        if (policy == null || policy.fileKinds.isNotEmpty)
+          AppMenuItem(
+            label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
+            icon: workspaceAddFileIcon,
+            submenu: workspaceFileKindEntries(
+              kinds: policy?.fileKinds,
+              onSelected: (action) => kind = action,
+            ),
           ),
-        ),
-        AppMenuItem(
-          label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-          icon: workspaceAddFolderIcon,
-          value: _GalleryMenuAction.newFolder,
-        ),
-        AppMenuItem(
-          label: LocaleKeys.collections_database_table.tr(),
-          icon: Icons.table_rows_rounded,
-          submenu: databaseLayoutEntries(
-            onSelected: (selected) => databaseLayout = selected,
+        if (policy == null || policy.allowsFolders)
+          AppMenuItem(
+            label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
+            icon: workspaceAddFolderIcon,
+            value: _GalleryMenuAction.newFolder,
           ),
-        ),
-        AppMenuItem(
-          label: LocaleKeys.collections_newCollection.tr(),
-          icon: collectionAddIcon,
-          submenu: collectionKindEntries(
-            onSelected: (selected) => collectionKind = selected,
+        if (policy == null || policy.allowsTables)
+          AppMenuItem(
+            label: LocaleKeys.collections_database_table.tr(),
+            icon: Icons.table_rows_rounded,
+            submenu: databaseLayoutEntries(
+              onSelected: (selected) => databaseLayout = selected,
+            ),
           ),
-        ),
+        if (policy == null || policy.allowsCollections)
+          AppMenuItem(
+            label: LocaleKeys.collections_newCollection.tr(),
+            icon: collectionAddIcon,
+            submenu: collectionKindEntries(
+              onSelected: (selected) => collectionKind = selected,
+            ),
+          ),
         AppMenuItem(
           label: LocaleKeys.workspaceFolderExplorer_importFile.tr(),
           icon: Icons.arrow_downward_rounded,
