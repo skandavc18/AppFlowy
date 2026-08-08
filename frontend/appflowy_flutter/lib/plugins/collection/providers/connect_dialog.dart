@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/providers/connections/connect_service.dart';
+import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/connections/oauth_config.dart';
 import 'package:appflowy/workspace/application/providers/connections/oauth_flow.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
@@ -44,6 +45,35 @@ Future<bool> reconnectProviderAccount(
 }) async {
   final connection = await showProviderConnectDialog(context, info: info);
   return connection != null;
+}
+
+/// Makes sure the account behind [source] may actually write.
+///
+/// Marking a mount writable is not enough on its own: the token was granted
+/// read-only scopes, so the service would refuse every change whatever this
+/// side believes. Asking for the permission means signing in again, and that
+/// is a thing to be explicit about rather than to do quietly.
+Future<bool> ensureProviderWriteAccess(
+  BuildContext context, {
+  required CollectionSource source,
+}) async {
+  await ProviderConnections.instance.ensureLoaded();
+  final existing = ProviderConnections.instance.byId(source.connectionId);
+  if (existing != null &&
+      OAuthServices.grantsWrite(existing.service, existing.scopes)) {
+    return true;
+  }
+  if (!context.mounted) {
+    return false;
+  }
+
+  final granted = await showProviderConnectDialog(
+    context,
+    info: source.info,
+    requestWriteAccess: true,
+  );
+  return granted != null &&
+      OAuthServices.grantsWrite(granted.service, granted.scopes);
 }
 
 class _ConnectDialog extends StatefulWidget {

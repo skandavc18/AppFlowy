@@ -9,6 +9,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/providers/external_clipboard.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/providers/provider_controller.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
@@ -27,13 +28,22 @@ enum _ItemAction {
   open,
   openInService,
   copyLink,
+  copy,
+  cut,
   saveCopy,
   favourite,
   rename,
   delete,
 }
 
-enum _BackgroundAction { newFolder, upload, refresh, openInService }
+enum _BackgroundAction {
+  newFolder,
+  upload,
+  paste,
+  allowChanges,
+  refresh,
+  openInService,
+}
 
 /// The menu for one object inside a service's folder.
 Future<void> showExternalItemMenu(
@@ -80,6 +90,21 @@ Future<void> showExternalItemMenu(
           value: _ItemAction.saveCopy,
         ),
       ],
+      if (can.canDownload || can.canMove) ...[
+        const AppMenuSeparator(),
+        if (can.canDownload)
+          AppMenuItem(
+            label: LocaleKeys.button_copy.tr(),
+            icon: Icons.copy_rounded,
+            value: _ItemAction.copy,
+          ),
+        if (can.canMove && writable)
+          AppMenuItem(
+            label: LocaleKeys.providers_cut.tr(),
+            icon: Icons.content_cut_rounded,
+            value: _ItemAction.cut,
+          ),
+      ],
       if (can.canFavourite && writable)
         AppMenuItem(
           label: node.favourite
@@ -123,6 +148,12 @@ Future<void> showExternalItemMenu(
       }
     case _ItemAction.saveCopy:
       await _saveCopy(context, controller: controller, node: node);
+    case _ItemAction.copy:
+      ExternalClipboard.instance
+          .copy(node, connectionId: controller.source.connectionId);
+    case _ItemAction.cut:
+      ExternalClipboard.instance
+          .cut(node, connectionId: controller.source.connectionId);
     case _ItemAction.favourite:
       await controller.setFavourite(node, !node.favourite);
     case _ItemAction.rename:
@@ -138,9 +169,11 @@ Future<void> showExternalBackgroundMenu(
   required ProviderController controller,
   required String? containerId,
   required Offset position,
+  VoidCallback? onAllowChanges,
 }) async {
   final can = controller.capabilities;
   final label = controller.source.info.label;
+  final waiting = ExternalClipboard.instance.entry;
 
   final action = await showAppMenu<_BackgroundAction>(
     context: context,
@@ -158,7 +191,23 @@ Future<void> showExternalBackgroundMenu(
           icon: Icons.upload_rounded,
           value: _BackgroundAction.upload,
         ),
-      if (can.canCreateFolder || can.canUpload) const AppMenuSeparator(),
+      if (can.canUpload && waiting != null)
+        AppMenuItem(
+          label: LocaleKeys.providers_pasteHere.tr(args: [waiting.node.name]),
+          icon: Icons.content_paste_rounded,
+          value: _BackgroundAction.paste,
+        ),
+      // Nothing above appears while the mount is read only, so this is the
+      // only way back to writing — an empty menu would be a dead end.
+      if (onAllowChanges != null)
+        AppMenuItem(
+          label: LocaleKeys.providers_mount_allowChanges.tr(),
+          icon: Icons.lock_open_rounded,
+          subtitle:
+              LocaleKeys.providers_mount_allowChangesBody.tr(args: [label]),
+          value: _BackgroundAction.allowChanges,
+        ),
+      const AppMenuSeparator(),
       AppMenuItem(
         label: LocaleKeys.workspaceFolderExplorer_refresh.tr(),
         icon: Icons.refresh_rounded,
@@ -187,10 +236,63 @@ Future<void> showExternalBackgroundMenu(
       }
     case _BackgroundAction.upload:
       await _upload(controller: controller, containerId: containerId);
+    case _BackgroundAction.paste:
+      await _paste(controller: controller, containerId: containerId);
+    case _BackgroundAction.allowChanges:
+      onAllowChanges?.call();
     case _BackgroundAction.refresh:
       await controller.resync();
     case _BackgroundAction.openInService:
       await _openInBrowser(controller.source.remoteUrl);
+  }
+}
+
+/// Puts whatever was copied or cut into [containerId].
+///
+/// Moving is asked of the service when it can see both ends; anything else is
+/// a real copy of the bytes, which is the only way across two accounts.
+Future<void> _paste({
+  required ProviderController controller,
+  required String? containerId,
+}) async {
+  final waiting = ExternalClipboard.instance.entry;
+  if (waiting == null) {
+    return;
+  }
+  final sameAccount = waiting.connectionId == controller.source.connectionId;
+
+  if (waiting.cut && sameAccount) {
+    final target = containerId ?? controller.source.remoteId;
+    if (target.isEmpty) {
+      return;
+    }
+    if (await controller.move(waiting.node, parentId: target)) {
+      ExternalClipboard.instance.clear();
+    }
+    return;
+  }
+
+  if (waiting.node.isFolder) {
+    Log.warn('A folder can only be pasted where it can be moved.');
+    return;
+  }
+
+  try {
+    final path = await controller.materialize(waiting.node);
+    if (path == null) {
+      return;
+    }
+    final copied = await controller.upload(
+      providerFileNameFor(waiting.node),
+      await File(path).readAsBytes(),
+      parentId: containerId,
+      mimeType: waiting.node.mimeType,
+    );
+    if (copied && waiting.cut) {
+      ExternalClipboard.instance.clear();
+    }
+  } catch (error) {
+    Log.warn('Unable to paste "${waiting.node.name}": $error');
   }
 }
 

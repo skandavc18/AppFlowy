@@ -304,6 +304,13 @@ class ProviderController extends ChangeNotifier {
         _remove(node);
       });
 
+  Future<bool> move(ProviderNode node, {required String parentId}) =>
+      _write(() async {
+        final moved = await _resolveProvider().move(node, parentId: parentId);
+        _remove(node);
+        _insert(parentId, moved);
+      });
+
   Future<bool> setFavourite(ProviderNode node, bool favourite) =>
       _write(() async {
         final updated = await _resolveProvider().setFavourite(node, favourite);

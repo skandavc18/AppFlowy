@@ -135,6 +135,19 @@ abstract final class OAuthServices {
         ProviderService.box => boxWrite,
         _ => null,
       };
+
+  /// Whether [scopes] carry the permission a write needs.
+  ///
+  /// A service that signs in with a personal token has no scopes of its own
+  /// here — what the token may do was decided when it was made — so it is
+  /// taken at its word.
+  static bool grantsWrite(ProviderService service, List<String> scopes) {
+    final write = writeScopesFor(service);
+    if (write == null) {
+      return true;
+    }
+    return write.scopes.every(scopes.contains);
+  }
 }
 
 /// The application identity a service is asked to authenticate.

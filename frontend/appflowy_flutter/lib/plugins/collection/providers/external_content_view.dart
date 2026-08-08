@@ -63,6 +63,7 @@ class ExternalContentView extends StatefulWidget {
     this.onLayoutChanged,
     this.parentId,
     this.onOpenContainer,
+    this.onAllowChanges,
     this.header,
   });
 
@@ -76,6 +77,10 @@ class ExternalContentView extends StatefulWidget {
 
   /// What opening a folder means. When null the view navigates itself.
   final ValueChanged<ProviderNode>? onOpenContainer;
+
+  /// Offered when the binding is read only, so writing is reachable from
+  /// where somebody notices they cannot write.
+  final VoidCallback? onAllowChanges;
 
   final Widget? header;
 
@@ -104,6 +109,7 @@ class _ExternalContentViewState extends State<ExternalContentView> {
           controller: controller,
           containerId: containerId,
           position: details.globalPosition,
+          onAllowChanges: widget.onAllowChanges,
         ),
       ),
       child: Column(

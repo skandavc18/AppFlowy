@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_content_view.dart';
+import 'package:appflowy/plugins/collection/providers/external_context_menu.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
@@ -46,6 +47,9 @@ class ExternalFolderStage extends StatefulWidget {
 class _ExternalFolderStageState extends State<ExternalFolderStage> {
   ProviderController? controller;
 
+  /// The binding the model was actually built against.
+  CollectionSource? boundSource;
+
   ExternalLayout get layout {
     final stored = widget.source.option<String>('layout');
     return ExternalLayout.values.firstWhere(
@@ -63,19 +67,32 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
   @override
   void didUpdateWidget(ExternalFolderStage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Only a different remote folder is worth throwing the model away for; a
-    // layout change must not cost a re-read.
-    if (oldWidget.source.cacheKey != widget.source.cacheKey) {
-      controller?.dispose();
-      controller = null;
-      _bind();
+    // A different remote folder is worth throwing the model away for, and so
+    // is a change of permission: what the account may do is read once, in
+    // `probe`. A layout change must not cost a re-read, which is why only
+    // those two are compared — and against what was BOUND, so persisting a
+    // change this widget already applied does not read the folder twice.
+    final bound = boundSource;
+    if (bound == null ||
+        bound.cacheKey != widget.source.cacheKey ||
+        bound.readOnly != widget.source.readOnly) {
+      _rebind(widget.source);
     }
   }
 
-  void _bind() {
+  void _bind() => _rebind(widget.source);
+
+  /// Builds the model against [source].
+  ///
+  /// Taken explicitly because granting write access persists the new binding
+  /// asynchronously: `widget.source` is still the old one at that moment, and
+  /// binding to it would leave the folder believing it may not write.
+  void _rebind(CollectionSource source) {
+    controller?.dispose();
+    boundSource = source;
     final created = ProviderController(
       collectionId: widget.collectionId,
-      source: widget.source,
+      source: source,
     );
     controller = created;
     unawaited(created.load());
@@ -97,6 +114,39 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
       await live.refresh();
     }
   }
+
+  /// Turns writing on or off for this mount.
+  ///
+  /// Turning it on asks the service for the permission first; a provider
+  /// reads what the account may do once, in `probe`, so the model is built
+  /// again afterwards rather than left believing the old answer.
+  Future<void> _setWritable(bool writable) async {
+    if (!writable) {
+      final next = widget.source.copyWith(readOnly: true);
+      widget.onSourceChanged(next);
+      setState(() => _rebind(next));
+      return;
+    }
+
+    final granted = await ensureProviderWriteAccess(
+      context,
+      source: widget.source,
+    );
+    if (!granted || !mounted) {
+      return;
+    }
+    final next = widget.source.copyWith(readOnly: false);
+    widget.onSourceChanged(next);
+    setState(() => _rebind(next));
+  }
+
+  /// Whether anything in this folder can be changed right now.
+  ///
+  /// Read from the model rather than from the binding's own flag: a folder
+  /// connected before mounts existed is not marked read only, yet its grant
+  /// still is, and it needs the same way in.
+  bool _canWrite(ProviderController live) =>
+      live.capabilities.canUpload || live.capabilities.canCreateFolder;
 
   @override
   Widget build(BuildContext context) {
@@ -137,6 +187,9 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
                 controller: live,
                 palette: palette,
                 layout: layout,
+                onAllowChanges: _canWrite(live)
+                    ? null
+                    : () => unawaited(_setWritable(true)),
               ),
             ),
           ],
@@ -156,7 +209,37 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
               onTap: widget.onChangeSource,
             ),
             const Spacer(),
-            if (widget.source.readOnly) ...[
+            Builder(
+              builder: (buttonContext) => IconButton(
+                tooltip: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
+                onPressed: () {
+                  final box = buttonContext.findRenderObject() as RenderBox?;
+                  if (box == null) {
+                    return;
+                  }
+                  unawaited(
+                    showExternalBackgroundMenu(
+                      buttonContext,
+                      controller: live,
+                      containerId: null,
+                      position: box.localToGlobal(
+                        Offset(0, box.size.height),
+                      ),
+                      onAllowChanges: _canWrite(live)
+                          ? null
+                          : () => unawaited(_setWritable(true)),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.add_rounded, size: 17),
+                color: palette.textSecondary,
+                splashRadius: 15,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                padding: EdgeInsets.zero,
+              ),
+            ),
+            const SizedBox(width: 6),
+            if (!_canWrite(live)) ...[
               Icon(Icons.lock_rounded, size: 13, color: palette.textMuted),
               const SizedBox(width: 5),
               Text(
@@ -193,21 +276,19 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
                 onSelected: (value) => switch (value) {
                   0 => widget.onChangeSource?.call(),
                   1 => widget.onDisconnect?.call(),
-                  _ => widget.onSourceChanged(
-                      widget.source.copyWith(readOnly: !widget.source.readOnly),
-                    ),
+                  _ => unawaited(_setWritable(!_canWrite(live))),
                 },
                 itemBuilder: (context) => [
                   PopupMenuItem<int>(
                     value: 2,
                     height: 34,
                     child: _MenuRow(
-                      icon: widget.source.readOnly
-                          ? Icons.lock_open_rounded
-                          : Icons.lock_rounded,
-                      label: widget.source.readOnly
-                          ? LocaleKeys.providers_mount_allowChanges.tr()
-                          : LocaleKeys.providers_mount_readOnly.tr(),
+                      icon: _canWrite(live)
+                          ? Icons.lock_rounded
+                          : Icons.lock_open_rounded,
+                      label: _canWrite(live)
+                          ? LocaleKeys.providers_mount_readOnly.tr()
+                          : LocaleKeys.providers_mount_allowChanges.tr(),
                     ),
                   ),
                   if (widget.onChangeSource != null)

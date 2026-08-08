@@ -74,6 +74,10 @@ class ProviderTransport {
             ? null
             : await OAuthAppRegistry.instance.read(connection.service);
         if (endpoints == null || app == null) {
+          Log.warn(
+            'Cannot renew a sign in: '
+            '${connection == null ? 'the connection is gone' : app == null ? 'no application identity is stored' : 'the service does not refresh'}.',
+          );
           throw const ProviderFailure.authExpired('Cannot renew this sign in.');
         }
 

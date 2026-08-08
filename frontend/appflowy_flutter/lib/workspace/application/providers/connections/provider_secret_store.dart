@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy_backend/log.dart';
 import 'package:ffi/ffi.dart';
 
 /// Where a provider's access and refresh tokens live.
@@ -43,6 +44,9 @@ class ProviderSecretStore {
   Future<void> write(String connectionId, String secret) async {
     _session[connectionId] = secret;
     if (!canPersist) {
+      Log.info(
+        'Provider tokens are held for this session only on this platform.',
+      );
       return;
     }
 
@@ -51,6 +55,11 @@ class ProviderSecretStore {
       entropy: connectionId,
     );
     if (sealed == null) {
+      // Silence here reads as "signed in again every restart" with nothing to
+      // go on, so the one thing that explains it is said out loud.
+      Log.warn(
+        'Windows refused to seal a provider token; it will not persist.',
+      );
       return;
     }
     await _kv.set('$_prefix$connectionId', base64.encode(sealed));
@@ -76,12 +85,14 @@ class ProviderSecretStore {
         entropy: connectionId,
       );
       if (opened == null) {
+        Log.warn('A stored provider token could not be unsealed.');
         return null;
       }
       final secret = utf8.decode(opened, allowMalformed: true);
       _session[connectionId] = secret;
       return secret;
-    } catch (_) {
+    } catch (error) {
+      Log.warn('A stored provider token could not be read: $error');
       return null;
     }
   }

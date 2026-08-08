@@ -3923,6 +3923,8 @@
     "favourite": "Add to favourites",
     "unfavourite": "Remove from favourites",
     "uploadHere": "Upload files here\u2026",
+    "pasteHere": "Paste \u201c{}\u201d here",
+    "cut": "Cut",
     "deleteBody": "\u201c{}\u201d will be deleted from {}. This cannot be undone from AppFlowy.",
     "changeSource": "Where this collection reads from",
     "connectThisFolder": "Connect this folder to a service\u2026",
@@ -3930,6 +3932,7 @@
       "heading": "Mount a folder from a service",
       "subtitle": "Read only until you allow changes",
       "allowChanges": "Allow changes to this folder",
+      "allowChangesBody": "Sign in to {} again to grant permission",
       "readOnly": "Read only",
       "readOnlyBody": "This folder is mounted read only. Allow changes to write back to {}."
     },

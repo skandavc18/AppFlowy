@@ -504,6 +504,56 @@ theirs
     });
   });
 
+  group('what a connection is allowed to change', () {
+    test('a read-only grant may not write', () {
+      expect(
+        OAuthServices.grantsWrite(
+          ProviderService.googleDrive,
+          OAuthServices.googleDrive.scopes,
+        ),
+        isFalse,
+      );
+      expect(
+        OAuthServices.grantsWrite(
+          ProviderService.oneDrive,
+          OAuthServices.oneDrive.scopes,
+        ),
+        isFalse,
+      );
+      expect(
+        OAuthServices.grantsWrite(
+          ProviderService.box,
+          OAuthServices.box.scopes,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a grant that carries the write scope may write', () {
+      expect(
+        OAuthServices.grantsWrite(ProviderService.googleDrive, [
+          ...OAuthServices.googleDrive.scopes,
+          ...OAuthServices.googleDriveWrite.scopes,
+        ]),
+        isTrue,
+      );
+      expect(
+        OAuthServices.grantsWrite(ProviderService.box, [
+          ...OAuthServices.box.scopes,
+          ...OAuthServices.boxWrite.scopes,
+        ]),
+        isTrue,
+      );
+    });
+
+    test('a service signed in with a token is taken at its word', () {
+      // GitHub and Immich carry no scopes here: what the token may do was
+      // decided when somebody made it.
+      expect(OAuthServices.grantsWrite(ProviderService.github, const []), true);
+      expect(OAuthServices.grantsWrite(ProviderService.immich, const []), true);
+    });
+  });
+
   group('which services need a client secret', () {
     // Google's console issues a secret for a Desktop app client and its token
     // endpoint answers 400 invalid_client without it. Getting this wrong is
