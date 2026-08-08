@@ -145,6 +145,13 @@ abstract class RepositoryProvider extends CollectionProvider {
   }) =>
       throw const ProviderFailure(ProviderStatus.error);
 
+  /// Streams one file's bytes to [destination].
+  ///
+  /// The counterpart to [archiveUrl] for a repository too large to take whole:
+  /// nothing is fetched until somebody opens it.
+  Future<void> downloadFile(ProviderNode node, File destination) =>
+      throw const ProviderFailure(ProviderStatus.error);
+
   /// Language shares, as the service measures them.
   Future<Map<String, int>> languages() async => const <String, int>{};
 

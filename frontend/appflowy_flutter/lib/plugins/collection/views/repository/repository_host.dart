@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
@@ -6,6 +7,7 @@ import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_controller.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
+import 'package:appflowy/workspace/application/collections/repository/repo_file_fetcher.dart';
 import 'package:appflowy/workspace/application/providers/collection_provider.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
@@ -57,6 +59,10 @@ class _RepositoryHostState extends State<RepositoryHost> {
   RepositoryArchiveProgress? fetching;
   String? fetchError;
 
+  /// Whether the repository was listed rather than taken whole, so its files
+  /// arrive as they are opened.
+  bool browsing = false;
+
   CollectionSource get source => widget.collection.collectionView.source;
 
   @override
@@ -93,10 +99,14 @@ class _RepositoryHostState extends State<RepositoryHost> {
 
   void _onExplorerChanged() => unawaited(_walk());
 
-  /// Puts a hosted repository on disk, then reads it exactly as a local one.
+  /// Puts a hosted repository within reach, then reads it exactly as a local
+  /// one.
   ///
-  /// The whole tree arrives in one request rather than a file at a time, which
-  /// is what lets the symbol outline and the dependency graph work at all.
+  /// A project that fits arrives in one request and is unpacked, which is what
+  /// lets the symbol outline and the dependency graph work at all. One that
+  /// does not fit is listed instead — also one request — and its files are
+  /// fetched as they are opened, so a large repository is browsable rather
+  /// than refused.
   Future<void> _fetchHosted() async {
     setState(() {
       fetchError = null;
@@ -115,7 +125,7 @@ class _RepositoryHostState extends State<RepositoryHost> {
       provider = created;
       await created.ensureReady();
 
-      final root = await RepositoryArchive().ensure(
+      final fetched = await RepositoryArchive().ensure(
         provider: created,
         source: source,
         branch: created.branch,
@@ -128,25 +138,27 @@ class _RepositoryHostState extends State<RepositoryHost> {
       if (!mounted) {
         return;
       }
-      if (root == null) {
-        setState(() {
-          fetching = null;
-          fetchError = LocaleKeys.providers_repo_noArchive.tr();
-        });
+
+      final children = fetched.isLazy
+          ? await _listLazily(created, fetched.root)
+          : RepositoryTreeViews(
+              rootId: widget.collection.collectionView.id,
+              root: fetched.root,
+            ).childrenOf;
+      if (!mounted) {
         return;
       }
 
-      final tree = RepositoryTreeViews(
-        rootId: widget.collection.collectionView.id,
-        root: root,
-      );
       controller.setEntries(
         buildRepoTree(
           rootId: widget.collection.collectionView.id,
-          childrenOf: tree.childrenOf,
+          childrenOf: children,
         ),
       );
-      setState(() => fetching = null);
+      setState(() {
+        fetching = null;
+        browsing = fetched.isLazy;
+      });
 
       if (widget.readsSource) {
         unawaited(controller.analyseAll());
@@ -179,6 +191,22 @@ class _RepositoryHostState extends State<RepositoryHost> {
         });
       }
     }
+  }
+
+  /// The listing of a repository that was not unpacked, and the fetcher that
+  /// puts its files on disk one at a time as they are opened.
+  Future<RepoChildrenResolver> _listLazily(
+    RepositoryProvider provider,
+    Directory root,
+  ) async {
+    final nodes = await provider.listAll();
+    controller.fetcher = RepoFileFetcher(provider: provider, root: root)
+      ..remember(nodes);
+    return RepositoryLazyTreeViews(
+      rootId: widget.collection.collectionView.id,
+      root: root,
+      nodes: nodes,
+    ).childrenOf;
   }
 
   /// Loads every folder in the repository, then flattens it.
@@ -249,8 +277,50 @@ class _RepositoryHostState extends State<RepositoryHost> {
         onRetry: () => unawaited(_fetchHosted()),
       );
     }
-    return widget.builder(context, controller, palette);
+    final view = widget.builder(context, controller, palette);
+    if (!browsing) {
+      return view;
+    }
+    // Say so once, at the top: the symbol and dependency views can only read
+    // what has been opened, and that is otherwise inexplicable.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _BrowsingNotice(palette: palette),
+        Expanded(child: view),
+      ],
+    );
   }
+}
+
+/// Says that the repository is being read where it lives.
+class _BrowsingNotice extends StatelessWidget {
+  const _BrowsingNotice({required this.palette});
+
+  final CollectionPalette palette;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        color: palette.hover,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_queue_rounded, size: 15, color: palette.textMuted),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                LocaleKeys.providers_repo_browsingLarge.tr(),
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  fontSize: 11.5,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 class _FetchingRepository extends StatelessWidget {

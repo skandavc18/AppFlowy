@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -158,6 +160,37 @@ abstract final class AutomaticViewCover {
       extra: view.extra,
       creationMetadata: const {},
     );
+  }
+
+  /// Whether a table's cover was chosen by hand rather than invented for it.
+  ///
+  /// Tables stopped being given a cover, but the ones stamped before that keep
+  /// theirs, and the picture depends on a theme somebody typed — so a stamped
+  /// cover cannot be recognised after the fact. The rule is therefore the
+  /// other way round: a table shows a cover only once somebody has actually
+  /// set one, which is recorded the moment they do.
+  static const chosenByHandKey = 'cover_chosen';
+
+  static bool showsCover(ViewPB view) {
+    final cover = ViewCoverCodec.decodeCover(view.extra);
+    if (cover == null || cover.isNone) {
+      return false;
+    }
+    if (supports(
+      layout: view.layout,
+      extra: view.extra,
+      creationMetadata: const {},
+    )) {
+      return true;
+    }
+    return ViewCoverCodec.decodeExtra(view.extra)[chosenByHandKey] == true;
+  }
+
+  /// The view's `extra` with that record added, for the moment a cover is set.
+  static String markCoverChosenByHand(String extra) {
+    final decoded = Map<String, dynamic>.from(ViewCoverCodec.decodeExtra(extra))
+      ..[chosenByHandKey] = true;
+    return jsonEncode(decoded);
   }
 
   static int _stableHash(String value) {

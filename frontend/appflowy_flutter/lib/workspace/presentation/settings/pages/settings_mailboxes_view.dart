@@ -1,27 +1,30 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/collections/email/connected_accounts.dart';
 import 'package:appflowy/workspace/application/collections/email/mail_secret_store.dart';
+import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_category.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
-/// The mail accounts AppFlowy is signed in to.
+/// The mailboxes AppFlowy reads, and what each one signs in with.
 ///
-/// A section rather than a page: mail sits beside the external services in
-/// Settings ▸ Connections, because "what am I signed in to" is one question.
-class MailAccountsSection extends StatefulWidget {
-  const MailAccountsSection({super.key});
+/// A section rather than a page: a mailbox is not a separate kind of account,
+/// it is one more thing an already connected account is used for. Gmail and
+/// Outlook are shown as the account they belong to; only a server with no
+/// other way in still has a password of its own to manage.
+class MailboxesSection extends StatefulWidget {
+  const MailboxesSection({super.key});
 
   @override
-  State<MailAccountsSection> createState() => _MailAccountsSectionState();
+  State<MailboxesSection> createState() => _MailboxesSectionState();
 }
 
-class _MailAccountsSectionState extends State<MailAccountsSection> {
+class _MailboxesSectionState extends State<MailboxesSection> {
   final ConnectedAccountRegistry _registry = const ConnectedAccountRegistry();
   final MailSecretStore _secrets = MailSecretStore();
 
-  List<ConnectedAccount> _accounts = const <ConnectedAccount>[];
-  Set<String> _withSecret = const <String>{};
+  List<ConnectedAccount> _mailboxes = const <ConnectedAccount>[];
+  Set<String> _ready = const <String>{};
   bool _loading = true;
 
   @override
@@ -31,17 +34,23 @@ class _MailAccountsSectionState extends State<MailAccountsSection> {
   }
 
   Future<void> _load() async {
-    final accounts = await _registry.all();
-    final held = <String>{};
-    for (final account in accounts) {
-      if (await _secrets.has(account.id)) {
-        held.add(account.id);
+    await ProviderConnections.instance.ensureLoaded();
+    // A mailbox read with a connected account has nothing to manage here: it
+    // is that account's row. Only a server with a password of its own does.
+    final mailboxes = [
+      for (final mailbox in await _registry.all())
+        if (mailbox.connectionId.isEmpty) mailbox,
+    ];
+    final ready = <String>{};
+    for (final mailbox in mailboxes) {
+      if (await _secrets.has(mailbox.id)) {
+        ready.add(mailbox.id);
       }
     }
     if (mounted) {
       setState(() {
-        _accounts = accounts;
-        _withSecret = held;
+        _mailboxes = mailboxes;
+        _ready = ready;
         _loading = false;
       });
     }
@@ -49,34 +58,22 @@ class _MailAccountsSectionState extends State<MailAccountsSection> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-        ),
-      );
-    }
-    if (_accounts.isEmpty) {
+    if (_loading || _mailboxes.isEmpty) {
       return const SizedBox.shrink();
     }
     return SettingsCategory(
       title: LocaleKeys.settings_accountsPage_mail.tr(),
       children: [
-        for (final account in _accounts)
-          _AccountTile(
-            key: ValueKey(account.id),
-            account: account,
-            hasSecret: _withSecret.contains(account.id),
+        for (final mailbox in _mailboxes)
+          _MailboxTile(
+            key: ValueKey(mailbox.id),
+            mailbox: mailbox,
+            isReady: _ready.contains(mailbox.id),
             secrets: _secrets,
             onChanged: _load,
             onRemove: () async {
-              await _secrets.forget(account.id);
-              await _registry.remove(account.id);
+              await _secrets.forget(mailbox.id);
+              await _registry.remove(mailbox.id);
               await _load();
             },
           ),
@@ -85,30 +82,33 @@ class _MailAccountsSectionState extends State<MailAccountsSection> {
   }
 }
 
-class _AccountTile extends StatefulWidget {
-  const _AccountTile({
+class _MailboxTile extends StatefulWidget {
+  const _MailboxTile({
     super.key,
-    required this.account,
-    required this.hasSecret,
+    required this.mailbox,
+    required this.isReady,
     required this.secrets,
     required this.onChanged,
     required this.onRemove,
   });
 
-  final ConnectedAccount account;
-  final bool hasSecret;
+  final ConnectedAccount mailbox;
+  final bool isReady;
   final MailSecretStore secrets;
   final Future<void> Function() onChanged;
   final Future<void> Function() onRemove;
 
   @override
-  State<_AccountTile> createState() => _AccountTileState();
+  State<_MailboxTile> createState() => _MailboxTileState();
 }
 
-class _AccountTileState extends State<_AccountTile> {
+class _MailboxTileState extends State<_MailboxTile> {
   final TextEditingController _secret = TextEditingController();
   bool _editing = false;
   String _note = '';
+
+  /// Whether this mailbox has a password of its own to manage at all.
+  bool get _hasOwnPassword => widget.mailbox.connectionId.isEmpty;
 
   @override
   void dispose() {
@@ -121,11 +121,7 @@ class _AccountTileState extends State<_AccountTile> {
     if (value.isEmpty) {
       return;
     }
-    await widget.secrets.write(
-      widget.account.id,
-      value,
-      remember: true,
-    );
+    await widget.secrets.write(widget.mailbox.id, value, remember: true);
     _secret.clear();
     if (!mounted) {
       return;
@@ -140,20 +136,20 @@ class _AccountTileState extends State<_AccountTile> {
   }
 
   Future<void> _forget() async {
-    await widget.secrets.forget(widget.account.id);
+    await widget.secrets.forget(widget.mailbox.id);
     if (!mounted) {
       return;
     }
-    setState(() {
-      _note = LocaleKeys.settings_accountsPage_passwordForgotten.tr();
-    });
+    setState(
+      () => _note = LocaleKeys.settings_accountsPage_passwordForgotten.tr(),
+    );
     await widget.onChanged();
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final account = widget.account;
+    final mailbox = widget.mailbox;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -177,16 +173,16 @@ class _AccountTileState extends State<_AccountTile> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      account.username.isEmpty
-                          ? account.host
-                          : account.username,
+                      mailbox.username.isEmpty
+                          ? mailbox.host
+                          : mailbox.username,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
                       ),
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      _subtitle(account),
+                      _subtitle(mailbox),
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: theme.hintColor,
                       ),
@@ -195,10 +191,12 @@ class _AccountTileState extends State<_AccountTile> {
                 ),
               ),
               _StateChip(
-                label: widget.hasSecret
+                label: widget.isReady
                     ? LocaleKeys.settings_accountsPage_signedIn.tr()
-                    : LocaleKeys.settings_accountsPage_needsPassword.tr(),
-                tone: widget.hasSecret
+                    : _hasOwnPassword
+                        ? LocaleKeys.settings_accountsPage_needsPassword.tr()
+                        : LocaleKeys.settings_accountsPage_needsSignIn.tr(),
+                tone: widget.isReady
                     ? theme.colorScheme.primary
                     : theme.colorScheme.error,
               ),
@@ -214,7 +212,7 @@ class _AccountTileState extends State<_AccountTile> {
               decoration: InputDecoration(
                 isDense: true,
                 border: const OutlineInputBorder(),
-                hintText: account.provider.needsAppPassword
+                hintText: mailbox.provider.needsAppPassword
                     ? LocaleKeys.settings_accountsPage_appPasswordHint.tr()
                     : LocaleKeys.settings_accountsPage_passwordHint.tr(),
               ),
@@ -232,28 +230,39 @@ class _AccountTileState extends State<_AccountTile> {
           const SizedBox(height: 10),
           Row(
             children: [
-              TextButton(
-                onPressed:
-                    _editing ? _save : () => setState(() => _editing = true),
-                child: Text(
-                  _editing
-                      ? LocaleKeys.settings_accountsPage_save.tr()
-                      : LocaleKeys.settings_accountsPage_changePassword.tr(),
-                ),
-              ),
-              if (_editing)
+              if (_hasOwnPassword) ...[
                 TextButton(
-                  onPressed: () => setState(() {
-                    _editing = false;
-                    _secret.clear();
-                  }),
-                  child: Text(LocaleKeys.button_cancel.tr()),
-                ),
-              if (!_editing && widget.hasSecret)
-                TextButton(
-                  onPressed: _forget,
+                  onPressed:
+                      _editing ? _save : () => setState(() => _editing = true),
                   child: Text(
-                    LocaleKeys.settings_accountsPage_forgetPassword.tr(),
+                    _editing
+                        ? LocaleKeys.settings_accountsPage_save.tr()
+                        : LocaleKeys.settings_accountsPage_changePassword.tr(),
+                  ),
+                ),
+                if (_editing)
+                  TextButton(
+                    onPressed: () => setState(() {
+                      _editing = false;
+                      _secret.clear();
+                    }),
+                    child: Text(LocaleKeys.button_cancel.tr()),
+                  ),
+                if (!_editing && widget.isReady)
+                  TextButton(
+                    onPressed: _forget,
+                    child: Text(
+                      LocaleKeys.settings_accountsPage_forgetPassword.tr(),
+                    ),
+                  ),
+              ] else
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    LocaleKeys.settings_accountsPage_managedByAccount.tr(),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.hintColor,
+                    ),
                   ),
                 ),
               const Spacer(),
@@ -271,16 +280,22 @@ class _AccountTileState extends State<_AccountTile> {
     );
   }
 
-  String _subtitle(ConnectedAccount account) {
-    final pieces = <String>[
-      account.provider.label,
-      if (account.host.isNotEmpty) account.host,
-      if (account.mailbox.isNotEmpty) account.mailbox,
-      if (account.collectionName.isNotEmpty)
+  String _subtitle(ConnectedAccount mailbox) {
+    final account = mailbox.connectionId.isEmpty
+        ? null
+        : ProviderConnections.instance.byId(mailbox.connectionId);
+    return <String>[
+      mailbox.provider.label,
+      if (account != null)
+        LocaleKeys.settings_accountsPage_viaAccount
+            .tr(args: [account.accountLabel])
+      else if (mailbox.host.isNotEmpty)
+        mailbox.host,
+      if (mailbox.mailbox.isNotEmpty) mailbox.mailbox,
+      if (mailbox.collectionName.isNotEmpty)
         LocaleKeys.settings_accountsPage_inCollection
-            .tr(args: [account.collectionName]),
-    ];
-    return pieces.join(' · ');
+            .tr(args: [mailbox.collectionName]),
+    ].join(' · ');
   }
 }
 

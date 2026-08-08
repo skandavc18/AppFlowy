@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_picker.dart';
 import 'package:appflowy/plugins/collection/providers/google_photos_picker.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -90,13 +91,19 @@ Future<ExternalSelection?> _pickThroughService(
   BuildContext context, {
   required ProviderServiceInfo info,
 }) async {
-  final accounts = ProviderConnections.instance.forService(info.service);
+  var accounts = ProviderConnections.instance.forService(info.service);
   if (accounts.isEmpty) {
-    showToastNotification(
-      message: LocaleKeys.providers_embed_notConnected.tr(args: [info.label]),
-      type: ToastificationType.warning,
-    );
-    return null;
+    // Being told to connect and then left with nothing to press is a dead
+    // end. Google Photos needs its own permission even when the same Google
+    // account is already signed in for Drive, so ask for it here.
+    final connected = await showProviderConnectDialog(context, info: info);
+    if (connected == null) {
+      return null;
+    }
+    accounts = ProviderConnections.instance.forService(info.service);
+    if (accounts.isEmpty || !context.mounted) {
+      return null;
+    }
   }
 
   final bound = await pickGooglePhotosSelection(

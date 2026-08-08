@@ -19,12 +19,15 @@ const double embeddedDatabaseViewHeight = 460;
 /// Whether this table's reading is written as a full page rather than as a
 /// widget that can shrink to its content.
 ///
-/// Only these have a height to give: a grid, a board and a calendar grow with
-/// what they hold, and forcing a shorter box on them only clips the rows.
+/// A grid and a board grow with what they hold, so forcing a shorter box on
+/// them only clips the rows. Everything else — a calendar included, now that
+/// it lays a month, a week or a day out inside whatever height it is given —
+/// takes the box and is resized by dragging it.
 bool embeddedDatabaseViewFillsItsBox(ViewPB view) =>
     view.isChart ||
     view.isMap ||
     view.isSlideDeck ||
+    view.layout == ViewLayoutPB.Calendar ||
     view.tableViewKind != null;
 
 class DatabaseViewWidget extends StatefulWidget {
@@ -35,6 +38,7 @@ class DatabaseViewWidget extends StatefulWidget {
     required this.showActions,
     required this.node,
     this.actionBuilder,
+    this.embedHeight,
   });
 
   final ViewPB view;
@@ -42,6 +46,10 @@ class DatabaseViewWidget extends StatefulWidget {
   final BlockComponentActionBuilder? actionBuilder;
   final bool showActions;
   final Node node;
+
+  /// The height the block has been dragged to, for a reading that cannot
+  /// shrink to its content.
+  final double? embedHeight;
 
   @override
   State<DatabaseViewWidget> createState() => _DatabaseViewWidgetState();
@@ -98,6 +106,7 @@ class _DatabaseViewWidgetState extends State<DatabaseViewWidget> {
           kDatabasePluginWidgetBuilderActionBuilder: widget.actionBuilder,
           kDatabasePluginWidgetBuilderShowActions: widget.showActions,
           kDatabasePluginWidgetBuilderNode: widget.node,
+          kDatabasePluginWidgetBuilderEmbedHeight: widget.embedHeight,
         },
       ),
     );

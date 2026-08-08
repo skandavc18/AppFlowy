@@ -91,6 +91,28 @@ abstract final class OAuthServices {
     'https://www.googleapis.com/auth/drive',
   ]);
 
+  static const googleCalendar = OAuthEndpoints(
+    authorization: 'https://accounts.google.com/o/oauth2/v2/auth',
+    token: 'https://oauth2.googleapis.com/token',
+    // Read only until somebody actually asks to write, exactly like Drive.
+    scopes: [
+      'https://www.googleapis.com/auth/calendar.readonly',
+      'https://www.googleapis.com/auth/calendar.events.readonly',
+      'openid',
+      'email',
+    ],
+    extraAuthorizationParameters: {
+      'access_type': 'offline',
+      'prompt': 'consent',
+    },
+    wantsClientSecret: true,
+    registrationUrl: 'https://console.cloud.google.com/apis/credentials',
+  );
+
+  static const googleCalendarWrite = OAuthWriteScopes([
+    'https://www.googleapis.com/auth/calendar.events',
+  ]);
+
   static const oneDrive = OAuthEndpoints(
     authorization:
         'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
@@ -119,18 +141,59 @@ abstract final class OAuthServices {
 
   static const boxWrite = OAuthWriteScopes(['root_readwrite']);
 
+  /// Gmail over IMAP.
+  ///
+  /// `https://mail.google.com/` is the only scope Google accepts for IMAP —
+  /// the narrower `gmail.readonly` scope works for the REST API and is refused
+  /// by the IMAP server. The Gmail API must be enabled in the Cloud project.
+  static const gmail = OAuthEndpoints(
+    authorization: 'https://accounts.google.com/o/oauth2/v2/auth',
+    token: 'https://oauth2.googleapis.com/token',
+    scopes: ['https://mail.google.com/', 'openid', 'email'],
+    extraAuthorizationParameters: {
+      'access_type': 'offline',
+      'prompt': 'consent',
+    },
+    wantsClientSecret: true,
+    registrationUrl: 'https://console.cloud.google.com/apis/credentials',
+  );
+
+  /// Outlook and Microsoft 365 over IMAP.
+  ///
+  /// ⚠️ Microsoft's v2 endpoint will only issue a token for ONE resource at a
+  /// time, so this must not ask for a Graph scope beside the Outlook one —
+  /// mixing them is refused outright. That is also why the account is named
+  /// from the id token rather than from `graph.microsoft.com/v1.0/me`.
+  static const outlookMail = OAuthEndpoints(
+    authorization:
+        'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+    token: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+    scopes: [
+      'offline_access',
+      'openid',
+      'email',
+      'https://outlook.office.com/IMAP.AccessAsUser.All',
+    ],
+    registrationUrl:
+        'https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade',
+  );
+
   static OAuthEndpoints? forService(ProviderService service) =>
       switch (service) {
         ProviderService.googlePhotos => googlePhotos,
         ProviderService.googleDrive => googleDrive,
+        ProviderService.googleCalendar => googleCalendar,
         ProviderService.oneDrive => oneDrive,
         ProviderService.box => box,
+        ProviderService.gmail => gmail,
+        ProviderService.outlookMail => outlookMail,
         _ => null,
       };
 
   static OAuthWriteScopes? writeScopesFor(ProviderService service) =>
       switch (service) {
         ProviderService.googleDrive => googleDriveWrite,
+        ProviderService.googleCalendar => googleCalendarWrite,
         ProviderService.oneDrive => oneDriveWrite,
         ProviderService.box => boxWrite,
         _ => null,
@@ -148,6 +211,54 @@ abstract final class OAuthServices {
     }
     return write.scopes.every(scopes.contains);
   }
+
+  /// Everything one account can be asked for in a single sign in.
+  ///
+  /// This is what makes "sign in to Google once" true rather than four browser
+  /// round trips: the read scopes of every capability that account offers, in
+  /// one request. A family whose token endpoint will not carry them together
+  /// answers with just [service]'s own scopes.
+  static List<String> scopesForAccount(ProviderService service) {
+    final endpoints = forService(service);
+    if (endpoints == null) {
+      return const <String>[];
+    }
+    final family = ProviderServices.of(service).family;
+    if (!family.sharesOneGrant) {
+      return endpoints.scopes;
+    }
+    final scopes = <String>{...endpoints.scopes};
+    for (final info in ProviderServices.forFamily(family)) {
+      scopes.addAll(forService(info.service)?.scopes ?? const <String>[]);
+    }
+    return scopes.toList(growable: false);
+  }
+
+  /// The capabilities [scopes] actually reach.
+  ///
+  /// Read from what the service granted rather than from what was asked for:
+  /// a consent screen is a place where somebody can untick things.
+  static Set<ProviderService> servicesGrantedBy(
+    ProviderService service,
+    List<String> scopes,
+  ) {
+    final family = ProviderServices.of(service).family;
+    if (!family.sharesOneGrant) {
+      return {service};
+    }
+    return {
+      service,
+      for (final info in ProviderServices.forFamily(family))
+        if ((forService(info.service)?.scopes ?? const <String>[])
+            .where((scope) => !_ambient.contains(scope))
+            .every(scopes.contains))
+          info.service,
+    };
+  }
+
+  /// Scopes every service in a family asks for, so they say nothing about
+  /// which capability was granted.
+  static const _ambient = {'openid', 'email', 'profile', 'offline_access'};
 }
 
 /// The application identity a service is asked to authenticate.
@@ -201,6 +312,10 @@ class OAuthApp {
 /// every installation's quota and consent screen in one basket. Somebody who
 /// wants those services registers their own desktop application — free, and a
 /// few minutes — and pastes its client id into Settings ▸ Connections.
+///
+/// ⚠️ It is stored per ACCOUNT FAMILY, not per service: one Google Cloud
+/// client covers Drive, Photos, Calendar and Gmail, and asking for the same
+/// client id four times would be asking the same question four times.
 class OAuthAppRegistry {
   OAuthAppRegistry({KeyValueStorage? storage}) : _storage = storage;
 
@@ -209,39 +324,70 @@ class OAuthAppRegistry {
   static const storageKeyPrefix = 'appflowy_oauth_app_';
 
   final KeyValueStorage? _storage;
-  final Map<ProviderService, OAuthApp> _cache = {};
+  final Map<ProviderAccountFamily, OAuthApp> _cache = {};
 
   KeyValueStorage? get _kv =>
       _storage ??
       (getIt.isRegistered<KeyValueStorage>() ? getIt<KeyValueStorage>() : null);
 
-  Future<OAuthApp?> read(ProviderService service) async {
-    final cached = _cache[service];
+  static String keyFor(ProviderAccountFamily family) =>
+      '$storageKeyPrefix${family.name}';
+
+  Future<OAuthApp?> read(ProviderService service) =>
+      readFamily(ProviderServices.of(service).family);
+
+  Future<OAuthApp?> readFamily(ProviderAccountFamily family) async {
+    final cached = _cache[family];
     if (cached != null) {
       return cached;
     }
-    final raw = await _kv?.get('$storageKeyPrefix${service.name}');
-    if (raw == null || raw.isEmpty) {
-      return null;
-    }
-    final app = OAuthApp.fromJson(_decode(raw));
+
+    final raw = await _kv?.get(keyFor(family));
+    final app = raw == null || raw.isEmpty
+        ? await _adoptPerServiceApp(family)
+        : OAuthApp.fromJson(_decode(raw));
     if (app != null) {
-      _cache[service] = app;
+      _cache[family] = app;
     }
     return app;
   }
 
-  Future<void> write(ProviderService service, OAuthApp app) async {
-    _cache[service] = app;
-    await _kv?.set(
-      '$storageKeyPrefix${service.name}',
-      jsonEncode(app.toJson()),
-    );
+  /// Takes over a client id stored before identities were shared.
+  ///
+  /// Whichever of the family's services was configured first is adopted for
+  /// the whole family, so nobody has to paste their client id again.
+  Future<OAuthApp?> _adoptPerServiceApp(ProviderAccountFamily family) async {
+    for (final info in ProviderServices.forFamily(family)) {
+      final raw = await _kv?.get('$storageKeyPrefix${info.service.name}');
+      if (raw == null || raw.isEmpty) {
+        continue;
+      }
+      final app = OAuthApp.fromJson(_decode(raw));
+      if (app != null) {
+        await _kv?.set(keyFor(family), jsonEncode(app.toJson()));
+        return app;
+      }
+    }
+    return null;
   }
 
-  Future<void> clear(ProviderService service) async {
-    _cache.remove(service);
-    await _kv?.remove('$storageKeyPrefix${service.name}');
+  Future<void> write(ProviderService service, OAuthApp app) =>
+      writeFamily(ProviderServices.of(service).family, app);
+
+  Future<void> writeFamily(ProviderAccountFamily family, OAuthApp app) async {
+    _cache[family] = app;
+    await _kv?.set(keyFor(family), jsonEncode(app.toJson()));
+  }
+
+  Future<void> clear(ProviderService service) =>
+      clearFamily(ProviderServices.of(service).family);
+
+  Future<void> clearFamily(ProviderAccountFamily family) async {
+    _cache.remove(family);
+    await _kv?.remove(keyFor(family));
+    for (final info in ProviderServices.forFamily(family)) {
+      await _kv?.remove('$storageKeyPrefix${info.service.name}');
+    }
   }
 
   static Object? _decode(String raw) {

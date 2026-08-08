@@ -18,6 +18,7 @@ class ConnectedAccount {
     required this.host,
     required this.username,
     required this.mailbox,
+    this.connectionId = '',
     this.collectionId = '',
     this.collectionName = '',
     this.lastSyncAt,
@@ -28,6 +29,10 @@ class ConnectedAccount {
   final String host;
   final String username;
   final String mailbox;
+
+  /// The connected account this mailbox is read with, when it is not read with
+  /// a password of its own.
+  final String connectionId;
 
   /// Where the mailbox that owns this account lives.
   final String collectionId;
@@ -41,6 +46,7 @@ class ConnectedAccount {
         host: host,
         username: username,
         mailbox: mailbox,
+        connectionId: connectionId,
         collectionId: collectionId,
         collectionName: collectionName ?? this.collectionName,
         lastSyncAt: lastSyncAt,
@@ -52,6 +58,7 @@ class ConnectedAccount {
         'host': host,
         'username': username,
         'mailbox': mailbox,
+        if (connectionId.isNotEmpty) 'connection': connectionId,
         if (collectionId.isNotEmpty) 'collection': collectionId,
         if (collectionName.isNotEmpty) 'collection_name': collectionName,
         if (lastSyncAt != null) 'last_sync': lastSyncAt!.millisecondsSinceEpoch,
@@ -69,6 +76,8 @@ class ConnectedAccount {
       username:
           values['username'] is String ? values['username'] as String : '',
       mailbox: values['mailbox'] is String ? values['mailbox'] as String : '',
+      connectionId:
+          values['connection'] is String ? values['connection'] as String : '',
       collectionId:
           values['collection'] is String ? values['collection'] as String : '',
       collectionName: values['collection_name'] is String
@@ -94,6 +103,7 @@ class ConnectedAccount {
         host: account.host,
         username: account.username,
         mailbox: account.mailbox,
+        connectionId: account.connectionId,
         collectionId: collectionId,
         collectionName: collectionName,
         lastSyncAt: account.lastSyncAt,

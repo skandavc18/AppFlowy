@@ -1,15 +1,20 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:appflowy/core/config/kv.dart';
+import 'package:appflowy/workspace/application/collections/email/mail_account.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/connections/oauth_config.dart';
 import 'package:appflowy/workspace/application/providers/connections/oauth_flow.dart';
+import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
 import 'package:appflowy/workspace/application/providers/git/git_diff.dart';
 import 'package:appflowy/workspace/application/providers/git/git_repository.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/application/providers/provider_state.dart';
 import 'package:appflowy/workspace/application/providers/provider_view_factory.dart';
+import 'package:appflowy/workspace/application/providers/services/google_photos_provider.dart';
 import 'package:appflowy/workspace/application/providers/services/repository_archive.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -605,6 +610,383 @@ theirs
     });
   });
 
+  group('one sign in, one account, several things it is used for', () {
+    test('everything Google does belongs to the Google account', () {
+      expect(
+        ProviderServices.forFamily(ProviderAccountFamily.google)
+            .map((info) => info.service),
+        containsAll(<ProviderService>[
+          ProviderService.googleDrive,
+          ProviderService.googlePhotos,
+          ProviderService.googleCalendar,
+          ProviderService.gmail,
+        ]),
+      );
+    });
+
+    test('the workspace itself is never offered as an account', () {
+      expect(
+        ProviderServices.families(),
+        isNot(contains(ProviderAccountFamily.workspace)),
+      );
+      for (final family in ProviderServices.families()) {
+        expect(ProviderServices.forFamily(family), isNotEmpty);
+      }
+    });
+
+    // A client id belongs to the application, not to the feature. Asking for
+    // the same Google client id once per product is asking four times.
+    test('a family registers one application identity', () {
+      expect(
+        OAuthAppRegistry.keyFor(ProviderAccountFamily.google),
+        OAuthAppRegistry.keyFor(
+          ProviderServices.of(ProviderService.gmail).family,
+        ),
+      );
+      expect(
+        OAuthAppRegistry.keyFor(ProviderAccountFamily.google),
+        isNot(OAuthAppRegistry.keyFor(ProviderAccountFamily.microsoft)),
+      );
+    });
+
+    // One browser round trip has to carry everything the account can do, or
+    // "connected to Google" still means signing in four times.
+    test('signing in to Google asks for every Google permission', () {
+      final scopes = OAuthServices.scopesForAccount(ProviderService.googleDrive);
+      expect(scopes, contains('https://www.googleapis.com/auth/drive.readonly'));
+      expect(
+        scopes,
+        contains(
+          'https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
+        ),
+      );
+      expect(
+        scopes,
+        contains('https://www.googleapis.com/auth/calendar.readonly'),
+      );
+      expect(scopes, contains('https://mail.google.com/'));
+    });
+
+    // ⚠️ Microsoft issues a token for one resource at a time and refuses a
+    // request that mixes them, so this one CANNOT be granted together.
+    test('OneDrive and Outlook mail stay separate sign ins', () {
+      expect(ProviderAccountFamily.microsoft.sharesOneGrant, isFalse);
+      expect(ProviderAccountFamily.google.sharesOneGrant, isTrue);
+      final scopes = OAuthServices.scopesForAccount(ProviderService.oneDrive);
+      expect(scopes, isNot(contains('https://outlook.office.com/IMAP.AccessAsUser.All')));
+    });
+
+    test('what the account covers is read from what was granted', () {
+      final granted = OAuthServices.servicesGrantedBy(
+        ProviderService.googleDrive,
+        OAuthServices.scopesForAccount(ProviderService.googleDrive),
+      );
+      expect(
+        granted,
+        containsAll(<ProviderService>[
+          ProviderService.googleDrive,
+          ProviderService.googlePhotos,
+          ProviderService.googleCalendar,
+          ProviderService.gmail,
+        ]),
+      );
+
+      // Somebody who unticks a permission on the consent screen must not be
+      // told they have it.
+      final partial = OAuthServices.servicesGrantedBy(
+        ProviderService.googleDrive,
+        const [
+          'https://www.googleapis.com/auth/drive.readonly',
+          'openid',
+          'email',
+        ],
+      );
+      expect(partial, {ProviderService.googleDrive});
+    });
+
+    test('one connection answers for every service it covers', () {
+      const connection = ProviderConnection(
+        id: 'google|sub-1',
+        service: ProviderService.googleDrive,
+        accountLabel: 'me@gmail.com',
+        accountId: 'sub-1',
+        services: {
+          ProviderService.googlePhotos,
+          ProviderService.gmail,
+        },
+      );
+
+      expect(connection.covers(ProviderService.googleDrive), isTrue);
+      expect(connection.covers(ProviderService.gmail), isTrue);
+      expect(connection.covers(ProviderService.oneDrive), isFalse);
+
+      final read = ProviderConnection.fromJson(connection.toJson());
+      expect(read?.covered, connection.covered);
+    });
+
+    // Every collection and page embed already names the connection's id, so a
+    // second permission must join that account rather than make a new one.
+    test('an account keeps one id however many permissions it gains', () {
+      expect(
+        ProviderConnections.idFor(ProviderService.googleDrive, account: 'sub-1'),
+        ProviderConnections.idFor(ProviderService.gmail, account: 'sub-1'),
+      );
+    });
+
+    test('connections of one account are gathered into one row', () {
+      final groups = groupProviderAccounts([
+        ProviderConnection(
+          id: 'googledrive|1',
+          service: ProviderService.googleDrive,
+          accountLabel: 'me@gmail.com',
+          accountId: 'sub-1',
+          connectedAt: DateTime(2026, 8, 2),
+        ),
+        ProviderConnection(
+          id: 'gmail|1',
+          service: ProviderService.gmail,
+          accountLabel: 'me@gmail.com',
+          accountId: 'sub-1',
+          connectedAt: DateTime(2026, 8, 5),
+        ),
+        ProviderConnection(
+          id: 'googledrive|2',
+          service: ProviderService.googleDrive,
+          accountLabel: 'work@example.com',
+          accountId: 'sub-2',
+        ),
+      ]);
+
+      expect(groups.length, 2);
+      expect(groups.first.label, 'me@gmail.com');
+      expect(
+        groups.first.services,
+        {ProviderService.googleDrive, ProviderService.gmail},
+      );
+      // The row says when the account arrived, not when its latest capability
+      // was added, or it would change every time one is granted.
+      expect(groups.first.connectedAt, DateTime(2026, 8, 2));
+      expect(
+        groups.first.missing.map((info) => info.service),
+        containsAll(<ProviderService>[
+          ProviderService.googlePhotos,
+          ProviderService.googleCalendar,
+        ]),
+      );
+      expect(groups.last.services, {ProviderService.googleDrive});
+    });
+
+    test('two servers of the same product are two accounts', () {
+      final groups = groupProviderAccounts([
+        ProviderConnection(
+          id: 'immich|home',
+          service: ProviderService.immich,
+          accountLabel: 'me',
+          accountId: 'user-1',
+          host: 'https://home.example.com',
+        ),
+        ProviderConnection(
+          id: 'immich|work',
+          service: ProviderService.immich,
+          accountLabel: 'me',
+          accountId: 'user-1',
+          host: 'https://work.example.com',
+        ),
+      ]);
+      expect(groups.length, 2);
+    });
+
+    // ⚠️ The list is read lazily. Adding to one that has not been read yet and
+    // writing it back wipes every account already stored, which is what made a
+    // connection made once come back asking to sign in again.
+    test('signing in before the list is read keeps what was there', () async {
+      final storage = _MemoryKeyValue({
+        ProviderConnections.storageKey: jsonEncode([
+          const ProviderConnection(
+            id: 'googledrive|sub-1',
+            service: ProviderService.googleDrive,
+            accountLabel: 'me@gmail.com',
+            accountId: 'sub-1',
+          ).toJson(),
+        ]),
+      });
+      final connections = ProviderConnections(storage: storage);
+
+      // Nothing has read the list yet, exactly as at a cold start.
+      expect(connections.isLoaded, isFalse);
+      await connections.upsert(
+        const ProviderConnection(
+          id: 'googlephotos|sub-1',
+          service: ProviderService.googlePhotos,
+          accountLabel: 'me@gmail.com',
+          accountId: 'sub-1',
+        ),
+        const ProviderCredentials(accessToken: 'token'),
+      );
+
+      expect(
+        connections.all.map((c) => c.service),
+        containsAll(<ProviderService>[
+          ProviderService.googleDrive,
+          ProviderService.googlePhotos,
+        ]),
+      );
+      final written = jsonDecode(
+        (await storage.get(ProviderConnections.storageKey))!,
+      ) as List;
+      expect(written.length, 2);
+    });
+
+    test('a read that lands late does not undo a sign in', () async {
+      final storage = _MemoryKeyValue({
+        ProviderConnections.storageKey: jsonEncode([
+          const ProviderConnection(
+            id: 'github|octocat',
+            service: ProviderService.github,
+            accountLabel: 'octocat',
+          ).toJson(),
+        ]),
+      });
+      final connections = ProviderConnections(storage: storage);
+
+      final signIn = connections.upsert(
+        const ProviderConnection(
+          id: 'googledrive|sub-1',
+          service: ProviderService.googleDrive,
+          accountLabel: 'me@gmail.com',
+          accountId: 'sub-1',
+        ),
+        const ProviderCredentials(accessToken: 'token'),
+      );
+      final read = connections.ensureLoaded();
+      await Future.wait([signIn, read]);
+
+      expect(connections.all.length, 2);
+    });
+  });
+
+  group('reading a mailbox with a connected account', () {
+    // The narrower gmail.readonly scope works for the REST API and is refused
+    // by the IMAP server, which reads as a wrong password.
+    test('Gmail asks for the scope IMAP actually accepts', () {
+      expect(OAuthServices.gmail.scopes, contains('https://mail.google.com/'));
+      expect(OAuthServices.gmail.wantsClientSecret, isTrue);
+    });
+
+    // Microsoft issues a token for one resource at a time and refuses a
+    // request that mixes them, so a Graph scope here breaks the whole sign in.
+    test('Outlook asks for no Microsoft Graph scope beside its own', () {
+      expect(
+        OAuthServices.outlookMail.scopes,
+        contains('https://outlook.office.com/IMAP.AccessAsUser.All'),
+      );
+      expect(OAuthServices.outlookMail.scopes, contains('offline_access'));
+      for (final scope in OAuthServices.outlookMail.scopes) {
+        expect(
+          scope,
+          isNot(anyOf('User.Read', 'Files.Read', 'Files.Read.All')),
+        );
+      }
+      expect(OAuthServices.outlookMail.wantsClientSecret, isFalse);
+    });
+
+    test('a mailbox bound to an account carries no password', () {
+      final account = MailAccount.forConnection(
+        connectionId: 'gmail|sub-1',
+        provider: MailProvider.gmail,
+        username: 'me@gmail.com',
+      );
+
+      expect(account.usesConnection, isTrue);
+      expect(account.authKind, MailAuthKind.oauth);
+      expect(account.host, 'imap.gmail.com');
+      expect(account.port, 993);
+
+      final read = MailAccount.fromJson(account.toJson());
+      expect(read?.connectionId, 'gmail|sub-1');
+      expect(read?.usesConnection, isTrue);
+      expect(account.toJson().containsKey('password'), isFalse);
+    });
+
+    test('a server with no other way in still signs in with a password', () {
+      final account = MailAccount.forProvider(MailProvider.custom);
+      expect(account.usesConnection, isFalse);
+      expect(MailProvider.custom.signsInWithAccount, isFalse);
+      expect(MailProvider.gmail.signsInWithAccount, isTrue);
+      expect(MailProvider.gmail.oauthService, ProviderService.gmail);
+      expect(MailProvider.outlook.oauthService, ProviderService.outlookMail);
+      expect(mailProviderForService(ProviderService.gmail), MailProvider.gmail);
+      expect(mailProviderForService(ProviderService.box), isNull);
+    });
+
+    // The signature is not checked, and does not need to be: the token came
+    // straight out of the token endpoint's own TLS response.
+    test('an account is named from the claims its id token carries', () {
+      String segment(Map<String, Object?> values) =>
+          base64Url.encode(utf8.encode(jsonEncode(values))).replaceAll('=', '');
+      final token = 'header.${segment({
+            'email': 'me@outlook.com',
+            'oid': 'abc',
+          })}.signature';
+
+      final claims = readIdTokenClaims(token);
+      expect(claims['email'], 'me@outlook.com');
+      expect(claims['oid'], 'abc');
+      expect(readIdTokenClaims('not-a-token'), isEmpty);
+      expect(readIdTokenClaims(''), isEmpty);
+    });
+  });
+
+  group('a picture that can actually be shown', () {
+    ProviderNode read(Map<String, dynamic> item) =>
+        GooglePhotosProvider.readMediaItem(item);
+
+    Map<String, dynamic> item(String mime, String filename) => {
+          'id': 'photo-1',
+          'type': 'PHOTO',
+          'mediaFile': {
+            'baseUrl': 'https://lh3.googleusercontent.com/abc',
+            'mimeType': mime,
+            'filename': filename,
+            'mediaFileMetadata': {'width': 4032, 'height': 3024},
+          },
+        };
+
+    // A phone photograph is HEIC, and there is no HEIC decoder here, so the
+    // original bytes could only ever render as a broken image. Asking Google
+    // for a size instead is what makes it a JPEG.
+    test('a HEIC original is taken as a JPEG render', () {
+      final node = read(item('image/heic', '20260101_085806.heic'));
+      expect(node.downloadUrl, endsWith('=w2560-h2560'));
+      expect(node.mimeType, 'image/jpeg');
+      expect(node.name, '20260101_085806.jpg');
+      expect(node.extra['original_mime'], 'image/heic');
+    });
+
+    test('a format the app can draw is taken as it is', () {
+      final node = read(item('image/jpeg', 'holiday.jpg'));
+      expect(node.downloadUrl, endsWith('=d'));
+      expect(node.mimeType, 'image/jpeg');
+      expect(node.name, 'holiday.jpg');
+      expect(node.extra.containsKey('original_mime'), isFalse);
+    });
+
+    test('a video still asks for the video download', () {
+      final node = read({
+        'id': 'clip-1',
+        'type': 'VIDEO',
+        'mediaFile': {
+          'baseUrl': 'https://lh3.googleusercontent.com/xyz',
+          'mimeType': 'video/mp4',
+          'filename': 'clip.mp4',
+          'mediaFileMetadata': <String, Object?>{},
+        },
+      });
+      expect(node.downloadUrl, endsWith('=dv'));
+      expect(node.kind, ProviderNodeKind.video);
+    });
+  });
+
   group('the catalogue of services', () {
     test('every collection kind can at least be local', () {
       for (final kind in ProviderServices.local.kinds) {
@@ -728,4 +1110,106 @@ theirs
       );
     });
   });
+
+  group('browsing a repository too large to unpack', () {
+    final root = Directory(p.join(Directory.systemTemp.path, 'af-repo-lazy'));
+
+    ProviderNode blob(String path, {int size = 10}) => ProviderNode(
+          id: path,
+          name: path.split('/').last,
+          kind: ProviderNodeKind.code,
+          path: path,
+          byteSize: size,
+          downloadUrl: 'https://api.github.com/repos/o/r/contents/$path',
+        );
+
+    ProviderNode folder(String path) => ProviderNode(
+          id: path,
+          name: path.split('/').last,
+          kind: ProviderNodeKind.folder,
+          path: path,
+        );
+
+    RepositoryLazyTreeViews views(List<ProviderNode> nodes) =>
+        RepositoryLazyTreeViews(rootId: 'root', root: root, nodes: nodes);
+
+    test('a listing becomes the same tree an unpacked one would', () {
+      final tree = views([
+        blob('README.md'),
+        folder('lib'),
+        blob('lib/main.dart'),
+      ]);
+
+      expect(
+        tree.childrenOf('root').map((view) => view.name),
+        ['lib', 'README.md'],
+      );
+      expect(
+        tree.childrenOf('root::lib').map((view) => view.name),
+        ['main.dart'],
+      );
+    });
+
+    test('a file points at where it will be once it is fetched', () {
+      final entry = repoEntryFor(
+        views([blob('lib/main.dart')]).childrenOf('root::lib').single,
+        parentPath: 'lib',
+        depth: 1,
+      );
+
+      expect(entry.isLocalFile, isTrue);
+      expect(entry.byteSize, 10);
+      expect(entry.storageUrl, p.join(root.path, 'lib', 'main.dart'));
+    });
+
+    test('a file whose folder never arrived is still reachable', () {
+      final tree = views([blob('deep/nested/thing.dart')]);
+      expect(tree.childrenOf('root').map((view) => view.name), ['deep']);
+      expect(
+        tree.childrenOf('root::deep/nested').map((view) => view.name),
+        ['thing.dart'],
+      );
+    });
+
+    test('vendored and build folders are left out', () {
+      final tree = views([
+        folder('node_modules'),
+        blob('node_modules/left-pad/index.js'),
+        blob('lib/main.dart'),
+      ]);
+      expect(tree.childrenOf('root').map((view) => view.name), ['lib']);
+    });
+  });
+}
+
+/// Storage that answers on a later microtask, the way a real one does.
+class _MemoryKeyValue implements KeyValueStorage {
+  _MemoryKeyValue([Map<String, String>? seed]) : _values = {...?seed};
+
+  final Map<String, String> _values;
+
+  @override
+  Future<String?> get(String key) async {
+    await Future<void>.delayed(Duration.zero);
+    return _values[key];
+  }
+
+  @override
+  Future<void> set(String key, String value) async {
+    await Future<void>.delayed(Duration.zero);
+    _values[key] = value;
+  }
+
+  @override
+  Future<void> remove(String key) async => _values.remove(key);
+
+  @override
+  Future<void> clear() async => _values.clear();
+
+  @override
+  Future<T?> getWithFormat<T>(
+      String key, T Function(String value) formatter) async {
+    final value = await get(key);
+    return value == null ? null : formatter(value);
+  }
 }

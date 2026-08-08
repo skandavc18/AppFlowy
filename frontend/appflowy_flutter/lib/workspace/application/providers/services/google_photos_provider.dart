@@ -56,6 +56,26 @@ class GooglePhotosProvider extends RemoteCollectionProvider
   /// hundred of them is not a download.
   static const _thumbnailSpec = '=w640-h640';
 
+  /// A full-size render, for a picture that is going to be looked at.
+  ///
+  /// Bounded rather than original because Google returns a JPEG for any sized
+  /// request, and that is the whole point for the formats below.
+  static const _displaySpec = '=w2560-h2560';
+
+  /// What this application can actually decode and draw.
+  ///
+  /// ⚠️ A phone photograph is usually HEIC, and Flutter has no HEIC decoder,
+  /// so asking for `=d` fetches megabytes that can only ever render as a
+  /// broken image. Asking for a size instead makes Google transcode to JPEG.
+  static const _decodable = <String>{
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+  };
+
   /// Where the picked session id lives on the collection's binding.
   static const sessionOption = 'session';
 
@@ -213,7 +233,12 @@ class GooglePhotosProvider extends RemoteCollectionProvider
 
   // --- Mapping --------------------------------------------------------------
 
-  ProviderNode _mediaItem(Map<String, dynamic> item) {
+  ProviderNode _mediaItem(Map<String, dynamic> item) => readMediaItem(item);
+
+  /// How one picked item is read. Static because it depends on nothing but the
+  /// answer, which is what makes the format rules testable on their own.
+  @visibleForTesting
+  static ProviderNode readMediaItem(Map<String, dynamic> item) {
     final file = jsonMap(item['mediaFile']);
     final metadata = jsonMap(file['mediaFileMetadata']);
     final photo = jsonMap(metadata['photoMetadata']);
@@ -223,19 +248,31 @@ class GooglePhotosProvider extends RemoteCollectionProvider
     final isVideo = jsonString(item['type']).toUpperCase() == 'VIDEO' ||
         mime.startsWith('video/');
 
+    final name = jsonString(file['filename'], isVideo ? 'Video' : 'Photo');
+    // A picture in a format with no decoder here is taken as a JPEG render
+    // instead of as the original, because the original could never be shown.
+    final rendered = !isVideo &&
+        baseUrl.isNotEmpty &&
+        !_decodable.contains(mime.toLowerCase());
+
     return ProviderNode(
       id: jsonString(item['id']),
-      name: jsonString(file['filename'], isVideo ? 'Video' : 'Photo'),
+      name: rendered ? _asJpeg(name) : name,
       kind: isVideo ? ProviderNodeKind.video : ProviderNodeKind.image,
-      mimeType: mime.isEmpty ? null : mime,
+      mimeType: rendered ? 'image/jpeg' : (mime.isEmpty ? null : mime),
       createdAt: jsonDate(item['createTime']),
       thumbnailUrl: baseUrl.isEmpty ? null : '$baseUrl$_thumbnailSpec',
       // `=d` is the original, asked for only when something is opened or saved.
-      downloadUrl: baseUrl.isEmpty ? null : '$baseUrl${isVideo ? '=dv' : '=d'}',
+      downloadUrl: baseUrl.isEmpty
+          ? null
+          : isVideo
+              ? '$baseUrl=dv'
+              : '$baseUrl${rendered ? _displaySpec : '=d'}',
       width: jsonInt(metadata['width']),
       height: jsonInt(metadata['height']),
       readOnly: true,
       extra: {
+        if (rendered && mime.isNotEmpty) 'original_mime': mime,
         if (jsonString(metadata['cameraMake']).isNotEmpty)
           'camera_make': metadata['cameraMake'],
         if (jsonString(metadata['cameraModel']).isNotEmpty)
@@ -248,5 +285,11 @@ class GooglePhotosProvider extends RemoteCollectionProvider
         if (video['fps'] != null) 'fps': video['fps'],
       },
     );
+  }
+
+  static String _asJpeg(String name) {
+    final dot = name.lastIndexOf('.');
+    final stem = dot > 0 ? name.substring(0, dot) : name;
+    return '$stem.jpg';
   }
 }

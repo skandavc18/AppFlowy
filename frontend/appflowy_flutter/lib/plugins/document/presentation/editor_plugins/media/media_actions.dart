@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
 import 'package:flowy_infra/file_picker/file_picker_impl.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -14,17 +15,20 @@ Future<File> materializeMediaFile({
   required String name,
   Map<String, String> httpHeaders = const {},
 }) async {
-  final localFile = File(source);
-  if (await localFile.exists()) {
-    return localFile;
+  final resolved = await resolveLocalStorageFilePath(source);
+  if (resolved != null) {
+    return File(resolved);
   }
 
-  final uri = Uri.parse(source);
-  if (uri.isScheme('file')) {
-    final file = File.fromUri(uri);
-    if (await file.exists()) {
-      return file;
-    }
+  final uri = Uri.tryParse(source);
+  // Only an http(s) address is something to fetch. A drive letter or a bare
+  // path reaching the http client is what produced "No host specified in URI"
+  // instead of saying the stored copy is missing.
+  if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+    throw FileSystemException(
+      'AppFlowy could not find this file where it was stored.',
+      source,
+    );
   }
 
   final response = await http.get(uri, headers: httpHeaders);

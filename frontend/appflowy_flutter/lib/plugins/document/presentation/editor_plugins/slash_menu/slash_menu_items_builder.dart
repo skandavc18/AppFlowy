@@ -97,6 +97,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         numberedListSlashMenuItem,
         todoListSlashMenuItem,
         toggleListSlashMenuItem,
+        reminderSlashMenuItem,
       ],
       shortcuts: {
         heading1SlashMenuItem: '#',
@@ -191,6 +192,7 @@ List<SelectionMenuItem> _simpleTableSlashMenuItems() {
         numberedListSlashMenuItem,
         todoListSlashMenuItem,
         toggleListSlashMenuItem,
+        reminderSlashMenuItem,
       ],
       shortcuts: {
         heading1SlashMenuItem: '#',

@@ -1,5 +1,6 @@
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -107,6 +108,97 @@ void main() {
       expect(find.text('Roadmap.md'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'a double click on a title that opens on one click keeps the name selected',
+    (tester) async {
+      var title = 'Calendar';
+      var editing = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.topLeft,
+              child: StatefulBuilder(
+                builder: (context, setState) => SizedBox(
+                  width: 420,
+                  child: WorkspaceInlineEditableText(
+                    text: title,
+                    editing: editing,
+                    style: titleStyle,
+                    onTap: () => setState(() => editing = true),
+                    onSubmitted: (name) async {
+                      setState(() {
+                        title = name;
+                        editing = false;
+                      });
+                      return true;
+                    },
+                    onCancelled: () => setState(() => editing = false),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final spot = tester.getCenter(find.text(title));
+      await tester.tapAt(spot);
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.tapAt(spot);
+      await tester.pumpAndSettle();
+
+      final editable = tester.widget<EditableText>(
+        find.byKey(const ValueKey('workspace-inline-name-editor')),
+      );
+
+      expect(
+        editable.controller.selection,
+        const TextSelection(baseOffset: 0, extentOffset: 8),
+      );
+    },
+  );
+
+  testWidgets('a one-line title stays on one line while it is edited', (
+    tester,
+  ) async {
+    const title = 'Calendar';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 420,
+              child: WorkspaceInlineEditableText(
+                text: title,
+                editing: true,
+                style: titleStyle,
+                maxLines: 2,
+                onSubmitted: (_) async => true,
+                onCancelled: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final editable = tester.allRenderObjects.whereType<RenderEditable>().first;
+    final start = editable.getLocalRectForCaret(
+      const TextPosition(offset: 0),
+    );
+    final end = editable.getLocalRectForCaret(
+      const TextPosition(offset: title.length),
+    );
+
+    expect(end.top, start.top);
+  });
 
   testWidgets('Enter confirms and Escape cancels inline renames', (
     tester,

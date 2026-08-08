@@ -131,6 +131,17 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
     _saveMetadata({...metadata, filePreviewEditModeKey: !editing});
   }
 
+  /// A stack trace is not an explanation. Say what went wrong and where.
+  static String _describeError(Object error) {
+    if (error is FileSystemException) {
+      final path = error.path;
+      return path == null || path.isEmpty
+          ? error.message
+          : '${error.message}\n$path';
+    }
+    return error.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<File>(
@@ -140,7 +151,7 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
           return _WorkspaceFileMessage(
             icon: Icons.error_outline_rounded,
             title: 'This file could not be opened',
-            message: snapshot.error.toString(),
+            message: _describeError(snapshot.error!),
             action: _WorkspaceFileAction(
               label: 'Try again',
               onPressed: () => setState(_resolveFile),

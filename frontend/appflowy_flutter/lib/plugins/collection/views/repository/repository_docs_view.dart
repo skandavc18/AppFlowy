@@ -198,6 +198,7 @@ class _DocsBody extends StatelessWidget {
                             theme: theme,
                             editable: RepoFileStage.supportsEditing(active),
                             editingSource: editing,
+                            fetcher: controller.fetcher,
                           ),
                         ),
                       ),

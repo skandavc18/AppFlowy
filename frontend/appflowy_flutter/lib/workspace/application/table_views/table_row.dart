@@ -161,6 +161,9 @@ class TableRowCard {
     this.lastModified,
     this.startsAt,
     this.endsAt,
+    this.reminderAt,
+    this.reminderDone = false,
+    this.reminderRepeats = false,
   });
 
   final String rowId;
@@ -188,6 +191,38 @@ class TableRowCard {
   /// When the row happens, for the views that place it in time.
   final DateTime? startsAt;
   final DateTime? endsAt;
+
+  /// When a reminder attached to this row speaks, if one does.
+  final DateTime? reminderAt;
+  final bool reminderDone;
+  final bool reminderRepeats;
+
+  bool get hasReminder => reminderAt != null;
+
+  /// The same row carrying a reminder, so the reminder store can decorate a
+  /// card without the reader knowing where reminders are kept.
+  TableRowCard withReminder({
+    DateTime? at,
+    bool done = false,
+    bool repeats = false,
+  }) =>
+      TableRowCard(
+        rowId: rowId,
+        title: title,
+        subtitle: subtitle,
+        icon: icon,
+        coverUrl: coverUrl,
+        cover: cover,
+        documentId: documentId,
+        accent: accent,
+        properties: properties,
+        lastModified: lastModified,
+        startsAt: startsAt,
+        endsAt: endsAt,
+        reminderAt: at,
+        reminderDone: done,
+        reminderRepeats: repeats,
+      );
 
   /// Whether the row occupies a stretch of time rather than a moment.
   bool get spansTime =>

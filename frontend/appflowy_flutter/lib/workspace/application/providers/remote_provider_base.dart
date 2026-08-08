@@ -118,6 +118,41 @@ abstract class RemoteCollectionProvider extends CollectionProvider {
     }
   }
 
+  /// Streams a media URL to [file], trying the other way round if refused.
+  ///
+  /// The same rule as [fetchMedia], and it has to be: a signed media URL that
+  /// answers a thumbnail request happily can still refuse the full download
+  /// when it carries — or lacks — the access token. Without this a picture's
+  /// thumbnail appears and the picture itself never does.
+  Future<void> downloadMedia(String url, File destination) async {
+    final preferred = _mediaAuthWorks ?? authenticatesMedia(url);
+    try {
+      await transport.download(
+        url,
+        destination,
+        headers: mediaHeaders,
+        authenticated: preferred,
+      );
+      _mediaAuthWorks = preferred;
+    } on ProviderFailure catch (failure) {
+      if (failure.status != ProviderStatus.permissionDenied &&
+          failure.status != ProviderStatus.authExpired) {
+        rethrow;
+      }
+      await transport.download(
+        url,
+        destination,
+        headers: mediaHeaders,
+        authenticated: !preferred,
+      );
+      Log.info(
+        'Downloads from ${Uri.parse(url).host} want '
+        '${preferred ? 'no' : 'an'} access token.',
+      );
+      _mediaAuthWorks = !preferred;
+    }
+  }
+
   @override
   Future<Uint8List> readBytes(
     ProviderNode node, {
@@ -184,12 +219,7 @@ abstract class RemoteCollectionProvider extends CollectionProvider {
     }
 
     try {
-      await transport.download(
-        url,
-        file,
-        headers: mediaHeaders,
-        authenticated: authenticatesMedia(url),
-      );
+      await downloadMedia(url, file);
       return file.path;
     } on ProviderFailure {
       rethrow;

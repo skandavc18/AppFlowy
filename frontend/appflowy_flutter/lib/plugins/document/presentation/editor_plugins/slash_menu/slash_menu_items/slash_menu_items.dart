@@ -6,6 +6,7 @@ export 'collection_items.dart';
 export 'external_items.dart';
 export 'database_items.dart';
 export 'date_item.dart';
+export 'reminder_item.dart';
 export 'divider_item.dart';
 export 'emoji_item.dart';
 export 'file_item.dart';

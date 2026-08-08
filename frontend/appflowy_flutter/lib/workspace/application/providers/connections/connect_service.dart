@@ -82,6 +82,10 @@ class ProviderConnector {
   }
 
   /// Connects a service that signs in through a browser.
+  ///
+  /// One round trip asks for everything the account can do, so signing in to
+  /// Google covers Drive, Photos, Calendar and mail together. What comes back
+  /// joins the account already signed in rather than standing beside it.
   Future<ProviderConnection> connectWithOAuth({
     required ProviderService service,
     bool requestWriteAccess = false,
@@ -102,14 +106,21 @@ class ProviderConnector {
       );
     }
 
+    await _connections.ensureLoaded();
+    final family = ProviderServices.of(service).family;
+    final existing = _connections.accountFor(family);
+
     // Only ask for write access when somebody has said they want to write.
     // Asking for it up front is how an application ends up holding a
     // permission it never uses.
     final writeScopes =
         requestWriteAccess ? OAuthServices.writeScopesFor(service) : null;
-    final scopes = writeScopes == null
-        ? endpoints.scopes
-        : <String>{...endpoints.scopes, ...writeScopes.scopes}.toList();
+    final scopes = <String>{
+      ...OAuthServices.scopesForAccount(service),
+      // A permission already granted must be asked for again or it is dropped.
+      ...?existing?.scopes,
+      ...?writeScopes?.scopes,
+    }.toList();
 
     final credentials = await _oauth.authorize(
       endpoints: endpoints,
@@ -118,13 +129,21 @@ class ProviderConnector {
     );
 
     final account = await _identify(service, '', credentials);
+    final joined = _connections.accountFor(family, accountId: account.id);
     final connection = ProviderConnection(
-      id: ProviderConnections.idFor(service, account: account.id),
-      service: service,
+      // Keep the id an account already has: every collection and page embed
+      // bound to it names that id.
+      id: joined?.id ??
+          ProviderConnections.idFor(service, account: account.id),
+      service: joined?.service ?? service,
       accountLabel: account.label,
       accountId: account.id,
       scopes: scopes,
-      connectedAt: DateTime.now(),
+      services: {
+        ...?joined?.covered,
+        ...OAuthServices.servicesGrantedBy(service, scopes),
+      },
+      connectedAt: joined?.connectedAt ?? DateTime.now(),
       expiresAt: credentials.expiresAt,
       avatarUrl: account.avatarUrl,
     );
@@ -143,6 +162,29 @@ class ProviderConnector {
     String host,
     ProviderCredentials credentials,
   ) async {
+    // Microsoft issues a token for one resource at a time, so an IMAP token
+    // cannot ask Graph who it belongs to. The id token, which came back in the
+    // same exchange, already says.
+    if (service == ProviderService.outlookMail) {
+      final claims = readIdTokenClaims(credentials.idToken);
+      final email = _string(
+        claims['email'],
+        _string(claims['preferred_username'], _string(claims['upn'])),
+      );
+      if (email.isEmpty) {
+        throw const ProviderFailure(
+          ProviderStatus.error,
+          detail: 'Microsoft did not say which account signed in.',
+        );
+      }
+      return _Account(
+        id: _string(claims['oid'], email),
+        label: email,
+        avatarUrl: '',
+        scopes: const <String>[],
+      );
+    }
+
     final request = switch (service) {
       ProviderService.immich => (
           url: '${_immichApi(host)}/users/me',
@@ -167,7 +209,11 @@ class ProviderConnector {
           id: (Map<String, dynamic> body) => _string(body['username']),
           avatar: (Map<String, dynamic> body) => _string(body['avatar_url']),
         ),
-      ProviderService.googlePhotos || ProviderService.googleDrive => (
+      ProviderService.googlePhotos ||
+      ProviderService.googleDrive ||
+      ProviderService.googleCalendar ||
+      ProviderService.gmail =>
+        (
           url: 'https://openidconnect.googleapis.com/v1/userinfo',
           label: (Map<String, dynamic> body) =>
               _string(body['email'], _string(body['name'], 'Google')),
@@ -194,6 +240,7 @@ class ProviderConnector {
           ProviderStatus.error,
           detail: 'The workspace does not need connecting.',
         ),
+      ProviderService.outlookMail => throw StateError('answered above'),
     };
 
     final body = await _get(request.url, credentials);

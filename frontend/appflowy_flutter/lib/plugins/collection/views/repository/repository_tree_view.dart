@@ -492,6 +492,7 @@ class _TreeStage extends StatelessWidget {
               theme: theme,
               editable: writable,
               editingSource: editing,
+              fetcher: controller.fetcher,
             ),
           ),
         ),

@@ -1,3 +1,4 @@
+import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:flutter/foundation.dart';
 
 /// How the mailbox proves who it is.
@@ -17,6 +18,18 @@ enum MailAuthKind {
     return MailAuthKind.password;
   }
 }
+
+/// The mailbox a connected account reads, when that account has one.
+///
+/// This is the join between the two halves: a Google account signed in for
+/// Drive is the same account Gmail is read with, so the connection is what
+/// the mailbox names rather than a password of its own.
+MailProvider? mailProviderForService(ProviderService service) =>
+    switch (service) {
+      ProviderService.gmail => MailProvider.gmail,
+      ProviderService.outlookMail => MailProvider.outlook,
+      _ => null,
+    };
 
 /// The servers people actually use, so nobody has to look up a host name.
 enum MailProvider {
@@ -66,6 +79,10 @@ enum MailProvider {
 
   /// Whether the provider refuses an account password outright and wants a
   /// separately issued one. Saying so up front saves a failed sign-in.
+  ///
+  /// Only ever asked of a server AppFlowy cannot sign in to properly: Gmail
+  /// and Outlook go through OAuth now, and an app password there is a worse
+  /// answer than the one already available.
   bool get needsAppPassword => switch (this) {
         MailProvider.gmail => true,
         MailProvider.icloud => true,
@@ -75,6 +92,16 @@ enum MailProvider {
         MailProvider.proton => false,
         MailProvider.custom => false,
       };
+
+  /// The connection this mailbox signs in through, when it can sign in the way
+  /// the rest of the application does.
+  ProviderService? get oauthService => switch (this) {
+        MailProvider.gmail => ProviderService.gmail,
+        MailProvider.outlook => ProviderService.outlookMail,
+        _ => null,
+      };
+
+  bool get signsInWithAccount => oauthService != null;
 
   /// Where the provider issues those passwords, for the panel to link to.
   String? get appPasswordUrl => switch (this) {
@@ -102,6 +129,7 @@ class MailAccount {
     this.mailbox = 'INBOX',
     this.useSsl = true,
     this.authKind = MailAuthKind.password,
+    this.connectionId = '',
     this.rememberSecret = true,
     this.syncLimit = 200,
     this.sinceDays = 90,
@@ -119,6 +147,11 @@ class MailAccount {
   final String mailbox;
   final bool useSsl;
   final MailAuthKind authKind;
+
+  /// The connected account this mailbox signs in with, for an OAuth mailbox.
+  ///
+  /// Empty for a server that still takes a password of its own.
+  final String connectionId;
 
   /// Whether the secret may be kept between sessions.
   final bool rememberSecret;
@@ -144,6 +177,10 @@ class MailAccount {
 
   bool get hasSynced => lastSyncAt != null;
 
+  /// Whether the token comes from a connected account rather than a password.
+  bool get usesConnection =>
+      authKind == MailAuthKind.oauth && connectionId.isNotEmpty;
+
   MailAccount copyWith({
     MailProvider? provider,
     String? host,
@@ -152,6 +189,7 @@ class MailAccount {
     String? mailbox,
     bool? useSsl,
     MailAuthKind? authKind,
+    String? connectionId,
     bool? rememberSecret,
     int? syncLimit,
     int? sinceDays,
@@ -170,6 +208,7 @@ class MailAccount {
         mailbox: mailbox ?? this.mailbox,
         useSsl: useSsl ?? this.useSsl,
         authKind: authKind ?? this.authKind,
+        connectionId: connectionId ?? this.connectionId,
         rememberSecret: rememberSecret ?? this.rememberSecret,
         syncLimit: syncLimit ?? this.syncLimit,
         sinceDays: sinceDays ?? this.sinceDays,
@@ -197,6 +236,7 @@ class MailAccount {
         'mailbox': mailbox,
         if (!useSsl) 'ssl': false,
         if (authKind != MailAuthKind.password) 'auth': authKind.name,
+        if (connectionId.isNotEmpty) 'connection': connectionId,
         if (!rememberSecret) 'remember': false,
         'limit': syncLimit,
         'since_days': sinceDays,
@@ -225,6 +265,8 @@ class MailAccount {
           : 'INBOX',
       useSsl: values['ssl'] != false,
       authKind: MailAuthKind.fromValue(values['auth']),
+      connectionId:
+          values['connection'] is String ? values['connection'] as String : '',
       rememberSecret: values['remember'] != false,
       syncLimit: values['limit'] is int ? values['limit'] as int : 200,
       sinceDays: values['since_days'] is int ? values['since_days'] as int : 90,
@@ -254,5 +296,28 @@ class MailAccount {
         port: provider.port,
         username: '',
         useSsl: provider.useSsl,
+      );
+
+  /// A mailbox read with an already connected account.
+  ///
+  /// The id is derived from the connection, so re-binding the same account to
+  /// the same collection replaces the mailbox rather than stacking a second
+  /// one up, and there is no password anywhere in it.
+  static MailAccount forConnection({
+    required String connectionId,
+    required MailProvider provider,
+    required String username,
+    String mailbox = 'INBOX',
+  }) =>
+      MailAccount(
+        id: 'mail-$connectionId',
+        provider: provider,
+        host: provider.host,
+        port: provider.port,
+        username: username,
+        mailbox: mailbox,
+        useSsl: provider.useSsl,
+        authKind: MailAuthKind.oauth,
+        connectionId: connectionId,
       );
 }

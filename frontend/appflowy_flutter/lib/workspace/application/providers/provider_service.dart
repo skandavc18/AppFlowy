@@ -15,7 +15,10 @@ enum ProviderService {
   gitlab,
   googleDrive,
   oneDrive,
-  box;
+  box,
+  googleCalendar,
+  gmail,
+  outlookMail;
 
   static ProviderService fromValue(Object? value) {
     for (final service in ProviderService.values) {
@@ -28,6 +31,64 @@ enum ProviderService {
 
   bool get isLocal => this == ProviderService.local;
   bool get isRemote => !isLocal;
+}
+
+/// Who the account belongs to, rather than what it is being used for.
+///
+/// Drive, Photos, Calendar and Gmail are four things AppFlowy can do with ONE
+/// Google account: the same sign in, the same application identity, the same
+/// refresh token. Grouping by family is what lets the connections page read as
+/// a list of accounts instead of a list of products, and it is why a client id
+/// is registered once per family rather than once per feature.
+enum ProviderAccountFamily {
+  workspace,
+  google,
+  microsoft,
+  box,
+  immich,
+  github,
+  gitlab;
+
+  /// A company name is not translated, the same way a product name is not.
+  String get label => switch (this) {
+        ProviderAccountFamily.workspace => 'This workspace',
+        ProviderAccountFamily.google => 'Google',
+        ProviderAccountFamily.microsoft => 'Microsoft',
+        ProviderAccountFamily.box => 'Box',
+        ProviderAccountFamily.immich => 'Immich',
+        ProviderAccountFamily.github => 'GitHub',
+        ProviderAccountFamily.gitlab => 'GitLab',
+      };
+
+  IconData get icon => switch (this) {
+        ProviderAccountFamily.workspace => Icons.home_rounded,
+        ProviderAccountFamily.google => Icons.g_mobiledata_rounded,
+        ProviderAccountFamily.microsoft => Icons.window_rounded,
+        ProviderAccountFamily.box => Icons.inbox_rounded,
+        ProviderAccountFamily.immich => Icons.photo_camera_back_rounded,
+        ProviderAccountFamily.github => Icons.hub_rounded,
+        ProviderAccountFamily.gitlab => Icons.merge_type_rounded,
+      };
+
+  Color get accent => switch (this) {
+        ProviderAccountFamily.workspace => const Color(0xFF6B7280),
+        ProviderAccountFamily.google => const Color(0xFF1A73E8),
+        ProviderAccountFamily.microsoft => const Color(0xFF0364B8),
+        ProviderAccountFamily.box => const Color(0xFF0061D5),
+        ProviderAccountFamily.immich => const Color(0xFF4250AF),
+        ProviderAccountFamily.github => const Color(0xFF24292F),
+        ProviderAccountFamily.gitlab => const Color(0xFFFC6D26),
+      };
+
+  bool get isWorkspace => this == ProviderAccountFamily.workspace;
+
+  /// Whether one sign in can carry every permission this account offers.
+  ///
+  /// ⚠️ Microsoft's is the exception and cannot be made to: its token endpoint
+  /// issues a token for ONE resource at a time, so a Graph scope for OneDrive
+  /// and an Outlook scope for mail are refused in the same request. Everything
+  /// else grants the lot in a single browser round trip.
+  bool get sharesOneGrant => this != ProviderAccountFamily.microsoft;
 }
 
 /// How a service proves who is asking.
@@ -56,6 +117,7 @@ class ProviderServiceInfo {
     required this.accent,
     required this.authKind,
     required this.kinds,
+    required this.family,
     this.tokenHelpUrl,
     this.needsHost = false,
     this.hostHint = '',
@@ -73,6 +135,10 @@ class ProviderServiceInfo {
 
   /// The collection types this service can stand behind.
   final Set<CollectionKind> kinds;
+
+  /// Whose account signs this in. Everything in one family shares an
+  /// application identity and can share a sign in.
+  final ProviderAccountFamily family;
 
   /// Where the person creates the token this service wants, when it wants one.
   final String? tokenHelpUrl;
@@ -101,6 +167,7 @@ abstract final class ProviderServices {
     accent: Color(0xFF6B7280),
     authKind: ProviderAuthKind.none,
     kinds: {...CollectionKind.values},
+    family: ProviderAccountFamily.workspace,
   );
 
   static const immich = ProviderServiceInfo(
@@ -110,6 +177,7 @@ abstract final class ProviderServices {
     accent: Color(0xFF4250AF),
     authKind: ProviderAuthKind.selfHostedToken,
     kinds: {CollectionKind.album},
+    family: ProviderAccountFamily.immich,
     needsHost: true,
     hostHint: 'https://photos.example.com',
     tokenHelpUrl: 'https://immich.app/docs/features/command-line-interface',
@@ -122,6 +190,7 @@ abstract final class ProviderServices {
     accent: Color(0xFFEA4335),
     authKind: ProviderAuthKind.oauth,
     kinds: {CollectionKind.album},
+    family: ProviderAccountFamily.google,
     picksExternally: true,
   );
 
@@ -132,6 +201,7 @@ abstract final class ProviderServices {
     accent: Color(0xFF24292F),
     authKind: ProviderAuthKind.personalToken,
     kinds: {CollectionKind.repository},
+    family: ProviderAccountFamily.github,
     tokenHelpUrl: 'https://github.com/settings/tokens',
   );
 
@@ -142,6 +212,7 @@ abstract final class ProviderServices {
     accent: Color(0xFFFC6D26),
     authKind: ProviderAuthKind.personalToken,
     kinds: {CollectionKind.repository},
+    family: ProviderAccountFamily.gitlab,
     needsHost: true,
     hostHint: 'https://gitlab.com',
     tokenHelpUrl: 'https://gitlab.com/-/user_settings/personal_access_tokens',
@@ -154,6 +225,7 @@ abstract final class ProviderServices {
     accent: Color(0xFF1A73E8),
     authKind: ProviderAuthKind.oauth,
     kinds: {CollectionKind.folder},
+    family: ProviderAccountFamily.google,
   );
 
   static const oneDrive = ProviderServiceInfo(
@@ -163,6 +235,7 @@ abstract final class ProviderServices {
     accent: Color(0xFF0364B8),
     authKind: ProviderAuthKind.oauth,
     kinds: {CollectionKind.folder},
+    family: ProviderAccountFamily.microsoft,
   );
 
   static const box = ProviderServiceInfo(
@@ -172,6 +245,43 @@ abstract final class ProviderServices {
     accent: Color(0xFF0061D5),
     authKind: ProviderAuthKind.oauth,
     kinds: {CollectionKind.folder},
+    family: ProviderAccountFamily.box,
+  );
+
+  /// A calendar is not a collection, so this stands behind no [CollectionKind]
+  /// at all — it is connected in settings and read by the calendar view.
+  static const googleCalendar = ProviderServiceInfo(
+    service: ProviderService.googleCalendar,
+    label: 'Google Calendar',
+    icon: Icons.calendar_month_rounded,
+    accent: Color(0xFF1A73E8),
+    authKind: ProviderAuthKind.oauth,
+    kinds: {},
+    family: ProviderAccountFamily.google,
+  );
+
+  /// Mail signs in the same way everything else does, and reads over IMAP with
+  /// the access token as `XOAUTH2`. It stands behind no [CollectionKind]: a
+  /// mailbox is bound from the email collection's own panel, not by binding
+  /// the collection itself to a service.
+  static const gmail = ProviderServiceInfo(
+    service: ProviderService.gmail,
+    label: 'Gmail',
+    icon: Icons.mail_rounded,
+    accent: Color(0xFFEA4335),
+    authKind: ProviderAuthKind.oauth,
+    kinds: {},
+    family: ProviderAccountFamily.google,
+  );
+
+  static const outlookMail = ProviderServiceInfo(
+    service: ProviderService.outlookMail,
+    label: 'Outlook Mail',
+    icon: Icons.alternate_email_rounded,
+    accent: Color(0xFF0364B8),
+    authKind: ProviderAuthKind.oauth,
+    kinds: {},
+    family: ProviderAccountFamily.microsoft,
   );
 
   static const all = <ProviderServiceInfo>[
@@ -183,6 +293,9 @@ abstract final class ProviderServices {
     googleDrive,
     oneDrive,
     box,
+    googleCalendar,
+    gmail,
+    outlookMail,
   ];
 
   /// The services a person can actually connect to, i.e. everything but the
@@ -223,4 +336,24 @@ abstract final class ProviderServices {
               info.kinds.contains(CollectionKind.folder))
             info,
       ];
+
+  /// Everything one account can be used for, in catalogue order.
+  static List<ProviderServiceInfo> forFamily(ProviderAccountFamily family) => [
+        for (final info in all)
+          if (info.service.isRemote && info.family == family) info,
+      ];
+
+  /// The families a person can connect an account in, in catalogue order.
+  static List<ProviderAccountFamily> families() {
+    final seen = <ProviderAccountFamily>[];
+    for (final info in all) {
+      if (info.service.isRemote && !seen.contains(info.family)) {
+        seen.add(info.family);
+      }
+    }
+    return seen;
+  }
+
+  /// The services that read a mailbox over IMAP with an OAuth token.
+  static List<ProviderServiceInfo> mailServices() => const [gmail, outlookMail];
 }

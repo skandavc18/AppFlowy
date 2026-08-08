@@ -1135,10 +1135,7 @@ impl DatabaseViewEditor {
       .unwrap_or_default()
       .into();
 
-    let timestamp = date_cell
-      .into_date_field_cell_data()
-      .unwrap_or_default()
-      .timestamp;
+    let date_data = date_cell.into_date_field_cell_data().unwrap_or_default();
 
     let (_, row_detail) = self.delegate.get_row_detail(&self.view_id, &row_id).await?;
 
@@ -1146,7 +1143,11 @@ impl DatabaseViewEditor {
       row_meta: RowMetaPB::from(row_detail.as_ref().clone()),
       date_field_id: date_field.id.clone(),
       title,
-      timestamp,
+      timestamp: date_data.timestamp,
+      end_timestamp: date_data.end_timestamp,
+      include_time: date_data.include_time,
+      is_range: date_data.is_range,
+      reminder_id: date_data.reminder_id.clone(),
     })
   }
 
@@ -1175,9 +1176,9 @@ impl DatabaseViewEditor {
       let timestamp_cell =
         get_cell_for_row(self.delegate.clone(), &calendar_setting.field_id, &row.id).await;
 
-      let timestamp = timestamp_cell
+      let date_data = timestamp_cell
         .and_then(|cell| cell.into_date_field_cell_data())
-        .and_then(|cell_data| cell_data.timestamp);
+        .unwrap_or_default();
 
       let title = primary_cell
         .and_then(|cell| cell.into_text_field_cell_data())
@@ -1189,7 +1190,11 @@ impl DatabaseViewEditor {
         row_meta: RowMetaPB::from(row_detail.as_ref().clone()),
         date_field_id: calendar_setting.field_id.clone(),
         title,
-        timestamp,
+        timestamp: date_data.timestamp,
+        end_timestamp: date_data.end_timestamp,
+        include_time: date_data.include_time,
+        is_range: date_data.is_range,
+        reminder_id: date_data.reminder_id.clone(),
       };
 
       events.push(event);

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
+import 'package:appflowy/workspace/application/collections/repository/repo_file_fetcher.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_language.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_source_cache.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_state.dart';
@@ -79,6 +80,7 @@ class RepositoryController extends ChangeNotifier {
   RepoPathIndex _index = RepoPathIndex(const []);
   RepoStats _stats = const RepoStats();
   RepoDependencyGraph _graph = RepoDependencyGraph.empty;
+  RepoFileFetcher? _fetcher;
   Timer? _persistTimer;
   bool _disposed = false;
   bool _analysing = false;
@@ -86,6 +88,15 @@ class RepositoryController extends ChangeNotifier {
 
   RepoState get state => _state;
   RepoSettings get settings => _state.settings;
+
+  /// Set when the repository was listed rather than taken whole, in which case
+  /// a file's bytes only arrive once it is opened.
+  RepoFileFetcher? get fetcher => _fetcher;
+
+  set fetcher(RepoFileFetcher? value) {
+    _fetcher = value;
+    source.fetch = value?.ensureLocal;
+  }
 
   /// Everything found in the repository, in tree order.
   List<RepoEntry> get allEntries => _all;
@@ -104,11 +115,18 @@ class RepositoryController extends ChangeNotifier {
     return total == 0 ? 1 : (_analysed / total).clamp(0.0, 1.0);
   }
 
-  List<RepoEntry> get readableEntries => [
-        for (final entry in _visible)
-          if (!entry.isFolder && entry.kind.isReadable && entry.isLocalFile)
-            entry,
-      ];
+  /// The files a whole-tree read may touch.
+  ///
+  /// A lazily fetched repository only offers what is already on disk: reading
+  /// all of it would be the download the lazy listing exists to avoid.
+  List<RepoEntry> get readableEntries {
+    final fetcher = _fetcher;
+    return [
+      for (final entry in _visible)
+        if (!entry.isFolder && entry.kind.isReadable && entry.isLocalFile)
+          if (fetcher == null || fetcher.hasLocal(entry)) entry,
+    ];
+  }
 
   List<RepoEntry> get sourceEntries => [
         for (final entry in _visible)
@@ -532,6 +550,7 @@ class RepositoryController extends ChangeNotifier {
       flush();
     }
     _persistTimer?.cancel();
+    _fetcher?.dispose();
     _disposed = true;
     super.dispose();
   }

@@ -74,6 +74,27 @@ String _clamp(String value) {
   return line.length > 200 ? '${line.substring(0, 200)}…' : line;
 }
 
+/// The claims an OIDC id token carries.
+///
+/// The signature is deliberately NOT checked, and that is sound here: the
+/// token was just read out of a TLS response from the token endpoint this
+/// process addressed itself, so there is no third party to authenticate it
+/// against. It is used for one thing — naming the account in the connections
+/// list — and never to decide what anything may do.
+Map<String, dynamic> readIdTokenClaims(String idToken) {
+  final parts = idToken.split('.');
+  if (parts.length < 2) {
+    return const <String, dynamic>{};
+  }
+  try {
+    final payload = base64Url.decode(base64Url.normalize(parts[1]));
+    final decoded = jsonDecode(utf8.decode(payload, allowMalformed: true));
+    return decoded is Map ? Map<String, dynamic>.from(decoded) : const {};
+  } catch (_) {
+    return const <String, dynamic>{};
+  }
+}
+
 /// The authorization code flow with PKCE, over a loopback redirect.
 ///
 /// This is the flow every one of these services documents for a desktop
@@ -359,6 +380,7 @@ class OAuthFlow {
           : expiresIn is String && int.tryParse(expiresIn) != null
               ? DateTime.now().add(Duration(seconds: int.parse(expiresIn)))
               : null,
+      idToken: values['id_token'] is String ? values['id_token'] as String : '',
     );
   }
 

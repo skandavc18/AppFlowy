@@ -39,9 +39,14 @@ class RepoFileAnalysis {
 /// its first stretch, and reading whole trees into memory is what makes tools
 /// like this stall.
 class RepoSourceCache {
-  RepoSourceCache({this.maxBytes = 512 * 1024});
+  RepoSourceCache({this.maxBytes = 512 * 1024, this.fetch});
 
   final int maxBytes;
+
+  /// Puts a file that is not on disk there, for a repository whose contents
+  /// are fetched as they are read. Null when everything is already local.
+  Future<String?> Function(RepoEntry entry)? fetch;
+
   final Map<String, RepoFileAnalysis> _analysis = {};
   final Map<String, String> _text = {};
   final Map<String, Future<RepoFileAnalysis>> _inFlight = {};
@@ -69,7 +74,14 @@ class RepoSourceCache {
       return const RepoFileAnalysis(failed: true);
     }
     try {
-      final file = File(entry.storageUrl);
+      var file = File(entry.storageUrl);
+      if (!file.existsSync()) {
+        final fetched = await fetch?.call(entry);
+        if (fetched == null) {
+          return const RepoFileAnalysis(failed: true);
+        }
+        file = File(fetched);
+      }
       final length = await file.length();
       final truncated = length > maxBytes;
       final bytes =

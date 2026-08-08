@@ -309,6 +309,15 @@ class GitHubRepositoryProvider extends RemoteCollectionProvider
       );
 
   @override
+  Future<void> downloadFile(ProviderNode node, File destination) {
+    final url = node.downloadUrl;
+    if (url == null || url.isEmpty) {
+      throw const ProviderFailure.notFound('This file has no contents.');
+    }
+    return downloadMedia(url, destination);
+  }
+
+  @override
   Future<Map<String, int>> languages() async {
     final languages = jsonMap(
       await transport.json(

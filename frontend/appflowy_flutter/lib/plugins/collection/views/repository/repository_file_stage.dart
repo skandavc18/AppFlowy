@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
@@ -11,6 +12,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandb
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
+import 'package:appflowy/workspace/application/collections/repository/repo_file_fetcher.dart';
 import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -22,7 +24,11 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 /// highlighting, markdown keeps its preview, a PDF keeps pdfrx and a page
 /// keeps the document editor. What the repository adds is the surface around
 /// them, so a project reads as one thing rather than five.
-class RepoFileStage extends StatelessWidget {
+///
+/// When the repository was listed rather than taken whole, this is also where
+/// a file's bytes are asked for: opening it fetches that one file and nothing
+/// else.
+class RepoFileStage extends StatefulWidget {
   const RepoFileStage({
     super.key,
     required this.entry,
@@ -30,6 +36,7 @@ class RepoFileStage extends StatelessWidget {
     this.editable = false,
     this.editingSource = false,
     this.onEditingSourceChanged,
+    this.fetcher,
   });
 
   final RepoEntry entry;
@@ -42,6 +49,10 @@ class RepoFileStage extends StatelessWidget {
   /// Whether a rendered kind is showing its source for editing.
   final bool editingSource;
   final ValueChanged<Map<String, dynamic>>? onEditingSourceChanged;
+
+  /// Fetches the file when the repository keeps its contents remote. Null when
+  /// the whole project is already on disk.
+  final RepoFileFetcher? fetcher;
 
   /// Whether this file can be written to at all.
   ///
@@ -57,8 +68,63 @@ class RepoFileStage extends StatelessWidget {
   }
 
   @override
+  State<RepoFileStage> createState() => _RepoFileStageState();
+}
+
+class _RepoFileStageState extends State<RepoFileStage> {
+  bool fetching = false;
+  bool unavailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ensureFetched();
+  }
+
+  @override
+  void didUpdateWidget(covariant RepoFileStage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry.id != widget.entry.id) {
+      unavailable = false;
+      _ensureFetched();
+    }
+  }
+
+  /// Both callers are followed by a build, so the flags are set directly and
+  /// only the answer that arrives later needs [setState].
+  void _ensureFetched() {
+    final fetcher = widget.fetcher;
+    final entry = widget.entry;
+    fetching = false;
+    if (fetcher == null ||
+        entry.kind == RepoEntryKind.page ||
+        fetcher.hasLocal(entry)) {
+      return;
+    }
+    if (!fetcher.canFetch(entry)) {
+      unavailable = true;
+      return;
+    }
+    fetching = true;
+    unawaited(
+      fetcher.ensureLocal(entry).then((path) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          fetching = false;
+          unavailable = path == null;
+        });
+      }),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final entry = widget.entry;
+    final theme = widget.theme;
     final view = entry.view;
+
     if (entry.kind == RepoEntryKind.page) {
       return MultiBlocProvider(
         key: ValueKey('repo-page-${view.id}'),
@@ -85,7 +151,10 @@ class RepoFileStage extends StatelessWidget {
       );
     }
 
-    if (!entry.isLocalFile) {
+    if (fetching) {
+      return _RepoFileFetching(theme: theme);
+    }
+    if (unavailable || !entry.isLocalFile) {
       return _RepoFileUnavailable(theme: theme);
     }
     final file = File(entry.storageUrl);
@@ -101,7 +170,7 @@ class RepoFileStage extends StatelessWidget {
         file: file,
         name: entry.name,
         bare: true,
-        editable: editable,
+        editable: widget.editable,
         metadata: const {},
         onMetadataChanged: (_) {},
       );
@@ -112,14 +181,41 @@ class RepoFileStage extends StatelessWidget {
     return FilePreview(
       // Switching between the preview and the source must rebuild the
       // renderer, not reuse it with a stale mode.
-      key: ValueKey('repo-file-${view.id}-$editingSource'),
+      key: ValueKey('repo-file-${view.id}-${widget.editingSource}'),
       file: file,
       name: entry.name,
       kind: kind,
       bare: true,
-      editable: editable,
-      metadata: {if (editingSource) filePreviewEditModeKey: true},
-      onMetadataChanged: onEditingSourceChanged ?? (_) {},
+      editable: widget.editable,
+      metadata: {if (widget.editingSource) filePreviewEditModeKey: true},
+      onMetadataChanged: widget.onEditingSourceChanged ?? (_) {},
+    );
+  }
+}
+
+class _RepoFileFetching extends StatelessWidget {
+  const _RepoFileFetching({required this.theme});
+
+  final RepoTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            LocaleKeys.collections_repository_fetchingFile.tr(),
+            style: theme.rowLabel.copyWith(color: theme.textFaint),
+          ),
+        ],
+      ),
     );
   }
 }

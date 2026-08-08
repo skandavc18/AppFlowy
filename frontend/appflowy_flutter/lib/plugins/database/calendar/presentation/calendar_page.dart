@@ -1,5 +1,4 @@
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
 import 'package:appflowy/mobile/presentation/database/card/card.dart';
@@ -17,7 +16,6 @@ import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:calendar_view/calendar_view.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/size.dart';
-import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -26,8 +24,7 @@ import 'package:universal_platform/universal_platform.dart';
 
 import '../../application/row/row_controller.dart';
 import '../../widgets/row/row_detail.dart';
-import 'calendar_day.dart';
-import 'layout/sizes.dart';
+import 'calendar_stage.dart';
 import 'toolbar/calendar_setting_bar.dart';
 
 class CalendarPageTabBarBuilderImpl extends DatabaseTabBarItemBuilder {
@@ -101,12 +98,10 @@ class CalendarPage extends StatefulWidget {
 class _CalendarPageState extends State<CalendarPage> {
   final _eventController = EventController<CalendarDayEvent>();
   late final CalendarBloc _calendarBloc;
-  GlobalKey<MonthViewState>? _calendarState;
 
   @override
   void initState() {
     super.initState();
-    _calendarState = GlobalKey<MonthViewState>();
     _calendarBloc = CalendarBloc(
       databaseController: widget.databaseController,
     )..add(const CalendarEvent.initial());
@@ -217,197 +212,68 @@ class _CalendarPageState extends State<CalendarPage> {
     BuildContext context,
     EventController eventController,
     int firstDayOfWeek,
-  ) {
-    return LayoutBuilder(
-      // must specify MonthView width for useAvailableVerticalSpace to work properly
-      builder: (context, constraints) {
-        final paddingLeft =
-            context.read<DatabasePluginWidgetBuilderSize>().paddingLeft;
-        EdgeInsets padding = UniversalPlatform.isMobile
-            ? CalendarSize.contentInsetsMobile
-            : CalendarSize.contentInsets +
-                const EdgeInsets.symmetric(horizontal: 40);
-        final double horizontalPadding =
-            context.read<DatabasePluginWidgetBuilderSize>().horizontalPadding;
-        if (horizontalPadding == 0) {
-          padding = padding.copyWith(left: 0, right: 0);
-        }
-        padding = padding.copyWith(left: paddingLeft + padding.left);
-        return Padding(
-          padding: padding,
-          child: ScrollConfiguration(
-            behavior:
-                ScrollConfiguration.of(context).copyWith(scrollbars: false),
-            child: MonthView(
-              key: _calendarState,
-              controller: _eventController,
-              width: constraints.maxWidth,
-              cellAspectRatio: UniversalPlatform.isMobile ? 0.9 : 0.6,
-              startDay: _weekdayFromInt(firstDayOfWeek),
-              showBorder: false,
-              headerBuilder: _headerNavigatorBuilder,
-              weekDayBuilder: _headerWeekDayBuilder,
-              cellBuilder: (
-                date,
-                calenderEvents,
-                isToday,
-                isInMonth,
-                position,
-              ) =>
-                  _calendarDayBuilder(
-                context,
-                date,
-                calenderEvents,
-                isToday,
-                isInMonth,
-                position,
-              ),
-              // The month always gets a bounded box — `Expanded` on a full
-              // page, a fixed height when embedded — so it should fill it.
-              // Sizing from `cellAspectRatio` instead made a full-page month
-              // taller than the window, which read as a calendar cut off with
-              // no way to scroll the page.
-              useAvailableVerticalSpace: true,
-            ),
-          ),
-        );
-      },
-    );
-  }
+  ) =>
+      _buildStage(context, firstDayOfWeek);
 
-  Widget _headerNavigatorBuilder(DateTime currentMonth) {
-    return SizedBox(
-      height: 24,
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: UniversalPlatform.isMobile
-                ? () => showMobileBottomSheet(
-                      context,
-                      title: LocaleKeys.calendar_quickJumpYear.tr(),
-                      showHeader: true,
-                      showCloseButton: true,
-                      builder: (_) => SizedBox(
-                        height: 200,
-                        child: YearPicker(
-                          firstDate: CalendarConstants.epochDate.withoutTime,
-                          lastDate: CalendarConstants.maxDate.withoutTime,
-                          selectedDate: currentMonth,
-                          currentDate: DateTime.now(),
-                          onChanged: (newDate) {
-                            _calendarState?.currentState?.jumpToMonth(newDate);
-                            context.pop();
-                          },
-                        ),
-                      ),
-                    )
-                : null,
-            child: Row(
-              children: [
-                FlowyText.medium(
-                  DateFormat('MMMM y', context.locale.toLanguageTag())
-                      .format(currentMonth),
-                ),
-                if (UniversalPlatform.isMobile) ...[
-                  const HSpace(6),
-                  const FlowySvg(FlowySvgs.arrow_down_s),
-                ],
-              ],
-            ),
-          ),
-          const Spacer(),
-          FlowyIconButton(
-            width: CalendarSize.navigatorButtonWidth,
-            height: CalendarSize.navigatorButtonHeight,
-            icon: const FlowySvg(FlowySvgs.arrow_left_s),
-            tooltipText: LocaleKeys.calendar_navigation_previousMonth.tr(),
-            hoverColor: AFThemeExtension.of(context).lightGreyHover,
-            onPressed: () => _calendarState?.currentState?.previousPage(),
-          ),
-          FlowyTextButton(
-            LocaleKeys.calendar_navigation_today.tr(),
-            fillColor: Colors.transparent,
-            fontWeight: FontWeight.w400,
-            fontSize: 10,
-            fontColor: AFThemeExtension.of(context).textColor,
-            tooltip: LocaleKeys.calendar_navigation_jumpToday.tr(),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            hoverColor: AFThemeExtension.of(context).lightGreyHover,
-            onPressed: () =>
-                _calendarState?.currentState?.animateToMonth(DateTime.now()),
-          ),
-          FlowyIconButton(
-            width: CalendarSize.navigatorButtonWidth,
-            height: CalendarSize.navigatorButtonHeight,
-            icon: const FlowySvg(FlowySvgs.arrow_right_s),
-            tooltipText: LocaleKeys.calendar_navigation_nextMonth.tr(),
-            hoverColor: AFThemeExtension.of(context).lightGreyHover,
-            onPressed: () => _calendarState?.currentState?.nextPage(),
-          ),
-          const HSpace(6.0),
-          UnscheduledEventsButton(
+  /// The modern calendar: month, week, day, agenda and year over the same
+  /// table, plus reminders and any connected account.
+  ///
+  /// Mobile gets the same readings, only laid out for a narrow window.
+  Widget _buildStage(BuildContext context, int firstDayOfWeek) {
+    final compact = UniversalPlatform.isMobile;
+    final settings = _calendarBloc.state.settings;
+    final paddingLeft =
+        context.read<DatabasePluginWidgetBuilderSize>().paddingLeft;
+    final horizontalPadding =
+        context.read<DatabasePluginWidgetBuilderSize>().horizontalPadding;
+    return Padding(
+      padding: EdgeInsets.only(
+        left: paddingLeft + (horizontalPadding == 0 || compact ? 0 : 8),
+        right: horizontalPadding == 0 || compact ? 0 : 8,
+      ),
+      child: CalendarStage(
+        view: widget.view,
+        databaseController: widget.databaseController,
+        firstDayOfWeek: firstDayOfWeek,
+        showWeekends: settings?.showWeekends ?? true,
+        showWeekNumbers: settings?.showWeekNumbers ?? false,
+        compact: compact,
+        onOpenRow: (rowId) {
+          final rowMeta =
+              widget.databaseController.rowCache.getRow(rowId)?.rowMeta;
+          if (rowMeta == null) {
+            return;
+          }
+          if (compact) {
+            context.push(
+              MobileRowDetailPage.routeName,
+              extra: {
+                MobileRowDetailPage.argRowId: rowId,
+                MobileRowDetailPage.argDatabaseController:
+                    widget.databaseController,
+              },
+            );
+            return;
+          }
+          showEventDetails(
+            context: context,
             databaseController: widget.databaseController,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _headerWeekDayBuilder(day) {
-    // incoming day starts from Monday, the symbols start from Sunday
-    final symbols = DateFormat.EEEE(context.locale.toLanguageTag()).dateSymbols;
-    String weekDayString = symbols.WEEKDAYS[(day + 1) % 7];
-
-    if (UniversalPlatform.isMobile) {
-      weekDayString = weekDayString.substring(0, 3);
-    }
-
-    return Center(
-      child: Padding(
-        padding: CalendarSize.daysOfWeekInsets,
-        child: FlowyText.regular(
-          weekDayString,
-          fontSize: 9,
-          color: Theme.of(context).hintColor,
+            rowMeta: rowMeta,
+          );
+        },
+        onDuplicateRow: (rowId) => _calendarBloc.add(
+          CalendarEvent.duplicateEvent(widget.databaseController.viewId, rowId),
         ),
+        onDeleteRow: (rowId) => _calendarBloc.add(
+          CalendarEvent.deleteEvent(widget.databaseController.viewId, rowId),
+        ),
+        toolbarTrailing: compact
+            ? null
+            : UnscheduledEventsButton(
+                databaseController: widget.databaseController,
+              ),
       ),
     );
-  }
-
-  Widget _calendarDayBuilder(
-    BuildContext context,
-    DateTime date,
-    List<CalendarEventData<CalendarDayEvent>> calenderEvents,
-    isToday,
-    isInMonth,
-    position,
-  ) {
-    // Sort the events by timestamp. Because the database view is not
-    // reserving the order of the events. Reserving the order of the rows/events
-    // is implemnted in the develop branch(WIP). Will be replaced with that.
-    final events = calenderEvents.map((value) => value.event!).toList()
-      ..sort((a, b) => a.event.timestamp.compareTo(b.event.timestamp));
-    final isEditable =
-        context.watch<PageAccessLevelBloc?>()?.state.isEditable ?? false;
-    return IgnorePointer(
-      ignoring: !isEditable,
-      child: CalendarDayCard(
-        viewId: widget.view.id,
-        isToday: isToday,
-        isInMonth: isInMonth,
-        events: events,
-        date: date,
-        rowCache: _calendarBloc.rowCache,
-        onCreateEvent: (date) =>
-            _calendarBloc.add(CalendarEvent.createEvent(date)),
-        position: position,
-      ),
-    );
-  }
-
-  WeekDays _weekdayFromInt(int dayOfWeek) {
-    // dayOfWeek starts from Sunday, WeekDays starts from Monday
-    return WeekDays.values[(dayOfWeek - 1) % 7];
   }
 }
 

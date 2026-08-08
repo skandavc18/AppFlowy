@@ -35,7 +35,10 @@ class _SidebarUserState extends State<SidebarUser> {
         context.read<UserWorkspaceBloc>().state.currentWorkspace?.workspaceId ??
             '';
     return BlocProvider<MenuUserBloc>(
-      create: (_) => MenuUserBloc(widget.userProfile, workspaceId),
+      // Without this the bloc never starts its listener, so a name changed in
+      // settings never reaches the sidebar.
+      create: (_) => MenuUserBloc(widget.userProfile, workspaceId)
+        ..add(const MenuUserEvent.initial()),
       child: BlocBuilder<MenuUserBloc, MenuUserState>(
         builder: (context, state) => MouseRegion(
           onEnter: (_) => setState(() => _isHovered = true),

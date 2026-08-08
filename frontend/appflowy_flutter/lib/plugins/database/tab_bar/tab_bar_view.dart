@@ -17,6 +17,7 @@ import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -86,6 +87,7 @@ class DatabaseTabBarView extends StatefulWidget {
     this.actionBuilder,
     this.node,
     this.showPageDecoration = false,
+    this.embedHeight,
   });
 
   final ViewPB view;
@@ -94,6 +96,10 @@ class DatabaseTabBarView extends StatefulWidget {
   final bool showActions;
   final Node? node;
   final bool showPageDecoration;
+
+  /// How tall this reading should stand when it is embedded and cannot shrink
+  /// to its content. Null falls back to the layout's own figure.
+  final double? embedHeight;
 
   /// Used to open a Row on plugin load
   ///
@@ -194,7 +200,7 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
         widget.node != null;
     final coordinateVerticalScroll = widget.showPageDecoration &&
         !widget.shrinkWrap &&
-        layout == ViewLayoutPB.Grid;
+        (layout == ViewLayoutPB.Grid || layout == ViewLayoutPB.Calendar);
     final Widget child = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -342,7 +348,7 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
       }
 
       return SizedBox(
-        height: layout.pluginHeight,
+        height: widget.embedHeight ?? layout.pluginHeight,
         child: child,
       );
     }
@@ -419,6 +425,7 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
   @override
   Widget build(BuildContext context) {
     final view = locallyUpdatedView ?? widget.view;
+    final showsCover = AutomaticViewCover.showsCover(view);
     final cover = view.cover;
     final icon = view.icon.toEmojiIconData();
     final padding = max(20.0, widget.horizontalPadding);
@@ -434,7 +441,7 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (cover != null && !cover.isNone)
+          if (showsCover && cover != null && !cover.isNone)
             Padding(
               padding: EdgeInsets.fromLTRB(padding, 0, padding, 18),
               child: ClipRRect(
@@ -458,7 +465,7 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
                 ViewDecorationActions(
                   view: view,
                   userProfile: widget.userProfile,
-                  onViewChanged: _updateView,
+                  onViewChanged: _onDecorationChanged,
                   visible: !UniversalPlatform.isDesktopOrWeb ||
                       decorationRegionHovered,
                 ),
@@ -523,6 +530,26 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
   void _updateView(ViewPB view) {
     if (mounted) {
       setState(() => locallyUpdatedView = view);
+    }
+  }
+
+  /// The cover or icon was changed through the decoration actions.
+  ///
+  /// A table shows a cover only once somebody has set one, and that choice is
+  /// recorded here — never on a rename, whose own write it would race.
+  void _onDecorationChanged(ViewPB view) {
+    final previous = (locallyUpdatedView ?? widget.view).cover;
+    _updateView(view);
+
+    final cover = view.cover;
+    if (cover == null || cover.isNone || cover == previous) {
+      return;
+    }
+    final marked = AutomaticViewCover.markCoverChosenByHand(view.extra);
+    if (marked != view.extra) {
+      unawaited(
+        ViewBackendService.updateView(viewId: view.id, extra: marked),
+      );
     }
   }
 
@@ -621,6 +648,7 @@ const kDatabasePluginWidgetBuilderHorizontalPadding = 'horizontal_padding';
 const kDatabasePluginWidgetBuilderShowActions = 'show_actions';
 const kDatabasePluginWidgetBuilderActionBuilder = 'action_builder';
 const kDatabasePluginWidgetBuilderNode = 'node';
+const kDatabasePluginWidgetBuilderEmbedHeight = 'embed_height';
 
 class DatabasePluginWidgetBuilderSize {
   const DatabasePluginWidgetBuilderSize({
@@ -694,6 +722,8 @@ class DatabasePluginWidgetBuilder extends PluginWidgetBuilder {
     final bool showActions =
         data?[kDatabasePluginWidgetBuilderShowActions] ?? false;
     final Node? node = data?[kDatabasePluginWidgetBuilderNode];
+    final double? embedHeight =
+        data?[kDatabasePluginWidgetBuilderEmbedHeight] as double?;
 
     return Provider(
       create: (context) => DatabasePluginWidgetBuilderSize(
@@ -708,6 +738,7 @@ class DatabasePluginWidgetBuilder extends PluginWidgetBuilder {
         showActions: showActions,
         node: node,
         showPageDecoration: node == null,
+        embedHeight: embedHeight,
       ),
     );
   }

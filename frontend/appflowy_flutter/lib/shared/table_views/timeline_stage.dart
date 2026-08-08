@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/calendar/reminder_store.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/table_views/table_property_view.dart';
 import 'package:appflowy/shared/table_views/table_view_chrome.dart';
@@ -59,6 +60,7 @@ class TimelineStage extends StatefulWidget {
 
 class TimelineStageState extends State<TimelineStage> {
   late final TableRowSource _source = TableRowSource(viewId: widget.viewId);
+  final ReminderStore _reminders = ReminderStore.instance;
   final ScrollController _horizontal = ScrollController();
   final ScrollController _vertical = ScrollController();
   final GlobalKey<TableViewHeaderState> _header =
@@ -95,6 +97,9 @@ class TimelineStageState extends State<TimelineStage> {
       ..updateSpec(widget.spec.readSpec)
       ..addListener(_onSourceChanged);
     unawaited(_source.load());
+    _reminders
+      ..addListener(_onSourceChanged)
+      ..start();
   }
 
   @override
@@ -107,6 +112,7 @@ class TimelineStageState extends State<TimelineStage> {
 
   @override
   void dispose() {
+    _reminders.removeListener(_onSourceChanged);
     _source.removeListener(_onSourceChanged);
     _source.dispose();
     _horizontal.dispose();
@@ -133,7 +139,10 @@ class TimelineStageState extends State<TimelineStage> {
   }
 
   void _refine() {
-    _visible = applyTableQuery(_source.cards, _query);
+    _visible = attachRemindersToCards(
+      applyTableQuery(_source.cards, _query),
+      _reminders.reminders,
+    );
     _matches = tableMatchesOf(_visible, _query.search);
   }
 
@@ -708,6 +717,37 @@ class TimelineStageState extends State<TimelineStage> {
                     color: palette.textPrimary,
                   ),
                 ),
+                if (card.reminderAt case final at?) ...[
+                  const SizedBox(height: TableViewMetrics.space2),
+                  Row(
+                    children: [
+                      Icon(
+                        card.reminderDone
+                            ? Icons.notifications_off_rounded
+                            : Icons.notifications_rounded,
+                        size: 12,
+                        color: card.reminderDone
+                            ? palette.textMuted
+                            : palette.accent,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          DateFormat.MMMEd().add_jm().format(at),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: palette.textSecondary,
+                            decoration: card.reminderDone
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
                 for (final property in properties) ...[
                   const SizedBox(height: TableViewMetrics.space3),
                   TablePropertyView(
@@ -1453,6 +1493,21 @@ class _TimelineEventBarState extends State<_TimelineEventBar> {
                       color: palette.textPrimary,
                     ),
                   ),
+                ),
+              ),
+            // A reminder is a marker, never a badge: the bell says there is
+            // one and hovering the bar says when.
+            if (widget.card.hasReminder && constraints.maxWidth >= 44)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: Icon(
+                  widget.card.reminderDone
+                      ? Icons.notifications_off_rounded
+                      : widget.card.reminderRepeats
+                          ? Icons.notifications_active_rounded
+                          : Icons.notifications_rounded,
+                  size: 12,
+                  color: widget.card.reminderDone ? palette.textMuted : colour,
                 ),
               ),
           ],

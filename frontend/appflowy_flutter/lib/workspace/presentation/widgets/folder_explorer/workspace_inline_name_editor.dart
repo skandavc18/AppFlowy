@@ -1,10 +1,19 @@
 import 'dart:async';
 
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:flutter/gestures.dart' show kDoubleTapTimeout;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 const workspaceInlineRenameTransitionDuration = Duration(milliseconds: 120);
+
+/// `RenderEditable` lays its text out in `width - (1.0 + cursorWidth)` and keeps
+/// the rest for the caret. A box measured from the label alone is therefore too
+/// narrow for the same string, and wraps its last glyph onto a clipped line.
+const workspaceInlineRenameCaretRoom = 3.0;
+
+const _caretRoom =
+    EdgeInsetsDirectional.only(end: workspaceInlineRenameCaretRoom);
 
 bool isWorkspaceRenameShortcut(
   TargetPlatform platform,
@@ -56,23 +65,26 @@ class WorkspaceInlineEditableText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final displayChild = MouseRegion(
-      cursor: onTap == null && onDoubleTap == null
-          ? MouseCursor.defer
-          : SystemMouseCursors.text,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        onDoubleTap: onDoubleTap,
-        child: display ??
-            Text(
-              text,
-              maxLines: maxLines,
-              overflow: overflow,
-              textAlign: textAlign,
-              strutStyle: strutStyle,
-              style: style,
-            ),
+    final displayChild = Padding(
+      padding: _caretRoom,
+      child: MouseRegion(
+        cursor: onTap == null && onDoubleTap == null
+            ? MouseCursor.defer
+            : SystemMouseCursors.text,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onDoubleTap: onDoubleTap,
+          child: display ??
+              Text(
+                text,
+                maxLines: maxLines,
+                overflow: overflow,
+                textAlign: textAlign,
+                strutStyle: strutStyle,
+                style: style,
+              ),
+        ),
       ),
     );
 
@@ -158,9 +170,21 @@ class _WorkspaceInlineNameEditorState extends State<WorkspaceInlineNameEditor> {
   bool cancelled = false;
   bool invalid = false;
 
+  /// `RenderEditable` carries its own tap recognizer, and it collapses the
+  /// selection onto a caret. A title that opens on a single click therefore
+  /// loses its select-all to the second click of a double click, so the field
+  /// stays deaf to the pointer until that click can no longer arrive.
+  bool acceptsPointer = false;
+  Timer? pointerGate;
+
   @override
   void initState() {
     super.initState();
+    pointerGate = Timer(kDoubleTapTimeout, () {
+      if (mounted) {
+        setState(() => acceptsPointer = true);
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -175,6 +199,7 @@ class _WorkspaceInlineNameEditorState extends State<WorkspaceInlineNameEditor> {
 
   @override
   void dispose() {
+    pointerGate?.cancel();
     focusNode
       ..removeListener(_handleFocusChanged)
       ..dispose();
@@ -199,13 +224,16 @@ class _WorkspaceInlineNameEditorState extends State<WorkspaceInlineNameEditor> {
         IgnorePointer(
           child: Opacity(
             opacity: 0,
-            child: Text(
-              sizingText.isEmpty ? '\u200B' : sizingText,
-              maxLines: widget.maxLines,
-              overflow: TextOverflow.ellipsis,
-              textAlign: widget.textAlign,
-              strutStyle: widget.strutStyle,
-              style: style,
+            child: Padding(
+              padding: _caretRoom,
+              child: Text(
+                sizingText.isEmpty ? '\u200B' : sizingText,
+                maxLines: widget.maxLines,
+                overflow: TextOverflow.ellipsis,
+                textAlign: widget.textAlign,
+                strutStyle: widget.strutStyle,
+                style: style,
+              ),
             ),
           ),
         ),
@@ -241,13 +269,14 @@ class _WorkspaceInlineNameEditorState extends State<WorkspaceInlineNameEditor> {
                 LengthLimitingTextInputFormatter(widget.maxLength),
               ],
               mouseCursor: SystemMouseCursors.text,
+              rendererIgnoresPointer: !acceptsPointer,
               onChanged: (_) {
                 if (invalid) {
                   setState(() => invalid = false);
                 }
               },
               onSubmitted: (_) => unawaited(_submit()),
-              onTapOutside: (_) => unawaited(_submit()),
+              onTapOutside: _handleTapOutside,
             ),
           ),
         ),
@@ -256,9 +285,40 @@ class _WorkspaceInlineNameEditorState extends State<WorkspaceInlineNameEditor> {
   }
 
   void _handleFocusChanged() {
-    if (!focusNode.hasFocus && !cancelled && !completed) {
-      unawaited(_submit());
+    if (focusNode.hasFocus || cancelled || completed) {
+      return;
     }
+    // Focus bounces for a frame while the label swaps for the field. Only a
+    // loss that is still true next frame means somebody moved on.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !focusNode.hasFocus && !cancelled && !completed) {
+        unawaited(_submit());
+      }
+    });
+  }
+
+  /// A tap that landed on the editor's own box is not "outside" it.
+  ///
+  /// The second click of a double click arrives while the label is still
+  /// swapping for the field, so it misses the `EditableText`'s tap region and
+  /// would otherwise submit and close the editor the instant it opened.
+  void _handleTapOutside(PointerDownEvent event) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box != null && box.hasSize) {
+      final local = box.globalToLocal(event.position);
+      if (local.dx >= 0 &&
+          local.dy >= 0 &&
+          local.dx <= box.size.width &&
+          local.dy <= box.size.height) {
+        focusNode.requestFocus();
+        controller.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _selectionEnd(controller.text),
+        );
+        return;
+      }
+    }
+    unawaited(_submit());
   }
 
   void _cancel() {

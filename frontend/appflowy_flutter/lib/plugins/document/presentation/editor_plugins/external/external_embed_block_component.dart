@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_content_view.dart';
 import 'package:appflowy/plugins/collection/providers/external_file_stage.dart';
+import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
@@ -161,7 +163,16 @@ class _ExternalEmbedBlockComponentState
       // twenty embeds from becoming twenty timers.
       autoRefresh: Duration.zero,
     );
+    // Refreshing builds a new model, so the previous one has to let its
+    // connection go rather than be left open behind it.
+    controller?.dispose();
     controller = created;
+    if (!loading) {
+      setState(() {
+        loading = true;
+        status = ProviderStatus.loading;
+      });
+    }
 
     try {
       await created.refresh();
@@ -189,11 +200,21 @@ class _ExternalEmbedBlockComponentState
       }
 
       final file = await created.materialize(resolved);
+      if (found != null) {
+        unawaited(_rememberResolved(found));
+      }
       if (mounted) {
         setState(() {
           path = file;
           loading = false;
-          status = file == null ? ProviderStatus.error : ProviderStatus.ready;
+          // The model usually knows more than "it did not work": a lapsed
+          // Google Photos selection is `notFound`, a withdrawn grant is
+          // `authExpired`, and each of those has its own way out.
+          status = file != null
+              ? ProviderStatus.ready
+              : created.status.isFailure
+                  ? created.status
+                  : ProviderStatus.error;
         });
       }
     } catch (_) {
@@ -254,6 +275,33 @@ class _ExternalEmbedBlockComponentState
     final transaction = editorState.transaction
       ..updateNode(node, {key: value.roundToDouble()});
     await editorState.apply(transaction);
+  }
+
+  /// Writes back what the service says this object is now.
+  ///
+  /// The cached copy is filed under the object's name, so a name that drifts
+  /// leaves the copy invisible the next time the service cannot be reached —
+  /// which is exactly when it is needed.
+  Future<void> _rememberResolved(ProviderNode resolved) async {
+    final changes = <String, dynamic>{};
+    if (resolved.name.isNotEmpty &&
+        resolved.name !=
+            _stringOrNull(node.attributes[ExternalEmbedKeys.name])) {
+      changes[ExternalEmbedKeys.name] = resolved.name;
+    }
+    final mime = resolved.mimeType;
+    if (mime != null &&
+        mime != _stringOrNull(node.attributes[ExternalEmbedKeys.mimeType])) {
+      changes[ExternalEmbedKeys.mimeType] = mime;
+    }
+    // A block that has been deleted has no path left to update.
+    if (changes.isEmpty ||
+        !mounted ||
+        !editorState.editable ||
+        node.parent == null) {
+      return;
+    }
+    await editorState.apply(editorState.transaction..updateNode(node, changes));
   }
 
   double get _height {
@@ -341,16 +389,7 @@ class _ExternalEmbedBlockComponentState
     final live = controller;
     final node = remote;
     if (live == null || node == null || status.isFailure) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Text(
-            LocaleKeys.providers_cannotOpen.tr(),
-            textAlign: TextAlign.center,
-            style: TextStyle(color: palette.textMuted, fontSize: 12.5),
-          ),
-        ),
-      );
+      return _failure(live);
     }
 
     if (node.isFolder) {
@@ -369,16 +408,35 @@ class _ExternalEmbedBlockComponentState
       );
     }
 
+    // Only a file has bytes to wait for; a folder never has a path.
     final file = path;
     if (file == null) {
-      return Center(
-        child: Text(
-          LocaleKeys.providers_cannotOpen.tr(),
-          style: TextStyle(color: palette.textMuted, fontSize: 12.5),
-        ),
-      );
+      return _failure(live);
     }
     return externalFileRenderer(node: node, path: file, palette: palette);
+  }
+
+  /// Says which of the several reasons this is, and offers the way out.
+  Widget _failure(ProviderController? live) {
+    final info = ProviderServices.of(_source.service);
+    return ProviderStateView(
+      status: status.isFailure ? status : ProviderStatus.error,
+      info: info,
+      palette: CollectionPalette.of(context, CollectionKind.folder),
+      retryAfter: live?.failure?.retryAfter,
+      onRetry: () => unawaited(_load()),
+      onReconnect: info.needsBrowser ? () => unawaited(_reconnect()) : null,
+    );
+  }
+
+  Future<void> _reconnect() async {
+    final signedIn = await reconnectProviderAccount(
+      context,
+      info: ProviderServices.of(_source.service),
+    );
+    if (signedIn && mounted) {
+      await _load();
+    }
   }
 
   static String _string(Object? value, [String fallback = '']) =>

@@ -110,6 +110,23 @@ pub struct CalendarEventPB {
 
   #[pb(index = 4, one_of)]
   pub timestamp: Option<i64>,
+
+  /// When the event finishes. Only set when the date cell holds a range;
+  /// without it a week or day view has no height to draw.
+  #[pb(index = 5, one_of)]
+  pub end_timestamp: Option<i64>,
+
+  /// False means "some time that day", which a time grid must show as all day
+  /// rather than pinning to midnight.
+  #[pb(index = 6)]
+  pub include_time: bool,
+
+  #[pb(index = 7)]
+  pub is_range: bool,
+
+  /// The reminder attached to the date cell, when there is one.
+  #[pb(index = 8)]
+  pub reminder_id: String,
 }
 
 #[derive(Debug, Clone, Default, ProtoBuf)]

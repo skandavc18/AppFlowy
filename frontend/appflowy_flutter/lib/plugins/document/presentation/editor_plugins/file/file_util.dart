@@ -42,6 +42,60 @@ bool fileNameMatchesExtensions(
   );
 }
 
+/// The folders AppFlowy keeps imported files in, under its data directory.
+const _localStorageFolders = ['files', 'images'];
+
+/// Answers where the file behind a stored url actually lives right now.
+///
+/// A workspace file records the ABSOLUTE path it was copied to when it was
+/// imported. Change the data folder — or open a workspace that was written
+/// under a different one — and that path points nowhere, even though the file
+/// itself is still in storage under the same name. So a missing file is looked
+/// for once more in the current storage folders before it is given up on.
+///
+/// Returns null for a remote url and for a file that really is gone.
+Future<String?> resolveLocalStorageFilePath(String source) async {
+  if (source.isEmpty) {
+    return null;
+  }
+
+  final uri = Uri.tryParse(source);
+  if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) {
+    return null;
+  }
+
+  var path = source;
+  if (uri != null && uri.isScheme('file')) {
+    try {
+      path = uri.toFilePath(windows: Platform.isWindows);
+    } on UnsupportedError {
+      // A file url that names a host cannot be opened from here.
+      return null;
+    }
+  }
+
+  if (File(path).existsSync()) {
+    return path;
+  }
+
+  if (!getIt.isRegistered<ApplicationDataStorage>()) {
+    return null;
+  }
+  final storage = await getIt<ApplicationDataStorage>().getPath();
+  final name = p.basename(path);
+  if (name.isEmpty) {
+    return null;
+  }
+  for (final folder in _localStorageFolders) {
+    final candidate = p.join(storage, folder, name);
+    if (candidate != path && File(candidate).existsSync()) {
+      Log.info('Found $name in the current storage folder instead.');
+      return candidate;
+    }
+  }
+  return null;
+}
+
 Future<String?> saveFileToLocalStorage(String localFilePath) async {
   final path = await getIt<ApplicationDataStorage>().getPath();
   final filePath = p.join(path, 'files');

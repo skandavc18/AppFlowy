@@ -10,6 +10,8 @@ import 'package:appflowy/workspace/application/collections/email/mail_account.da
 import 'package:appflowy/workspace/application/collections/email/mail_secret_store.dart';
 import 'package:appflowy/workspace/application/collections/email/mail_sync.dart';
 import 'package:appflowy/workspace/application/collections/email/mime_message.dart';
+import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
+import 'package:appflowy/workspace/application/providers/provider_http.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
 
@@ -141,11 +143,14 @@ class EmailController extends ChangeNotifier {
   MailSecretStore get secrets => _secrets;
 
   /// Joins the mailbox to a server, keeping the secret where it belongs.
+  ///
+  /// An account-backed mailbox brings no secret at all: its token comes from
+  /// the connection, and is renewed there.
   Future<void> connectAccount(
     MailAccount account, {
-    required String secret,
+    String secret = '',
   }) async {
-    if (secret.isNotEmpty) {
+    if (secret.isNotEmpty && !account.usesConnection) {
       await _secrets.write(
         account.id,
         secret,
@@ -185,7 +190,24 @@ class EmailController extends ChangeNotifier {
   /// because this machine will not keep one.
   Future<bool> hasSecret() async {
     final account = _state.account;
-    return account == null ? false : await _secrets.has(account.id);
+    if (account == null) {
+      return false;
+    }
+    if (account.usesConnection) {
+      return ProviderConnections.instance.hasCredentials(account.connectionId);
+    }
+    return _secrets.has(account.id);
+  }
+
+  /// The secret this mailbox signs in with right now.
+  ///
+  /// For an account-backed mailbox that is a freshly renewed access token; for
+  /// a plain server it is the stored password.
+  Future<String?> _secretFor(MailAccount account) async {
+    if (account.usesConnection) {
+      return providerAccessToken(account.connectionId);
+    }
+    return _secrets.read(account.id);
   }
 
   /// Brings down whatever is new.
@@ -198,11 +220,11 @@ class EmailController extends ChangeNotifier {
       return null;
     }
 
-    final password = secret ?? await _secrets.read(account.id);
+    final password = secret ?? await _secretFor(account);
     if (password == null || password.isEmpty) {
       return null;
     }
-    if (secret != null) {
+    if (secret != null && !account.usesConnection) {
       await _secrets.write(
         account.id,
         secret,
@@ -250,8 +272,10 @@ class EmailController extends ChangeNotifier {
       );
     }
     // A refused password is worth forgetting, or every sync repeats the same
-    // failure with the same wrong secret.
-    if (result.isAuthFailure) {
+    // failure with the same wrong secret. A refused access token is not: it is
+    // renewed from the connection, and dropping it would only sign the account
+    // out of Drive and everything else it is shared with.
+    if (result.isAuthFailure && !account.usesConnection) {
       await _secrets.forget(account.id);
     }
     notifyListeners();

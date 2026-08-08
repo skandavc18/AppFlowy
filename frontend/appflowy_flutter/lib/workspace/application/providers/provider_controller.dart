@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/workspace/application/providers/collection_provider.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
+import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
 import 'package:appflowy/workspace/application/providers/provider_cache.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:appflowy/workspace/application/providers/provider_registry.dart';
@@ -43,6 +44,7 @@ class ProviderController extends ChangeNotifier {
 
   final CollectionSource _source;
   CollectionProvider? _provider;
+  Future<CollectionProvider>? _resolving;
   bool _disposed = false;
   Timer? _refreshTimer;
 
@@ -151,7 +153,7 @@ class ProviderController extends ChangeNotifier {
 
     _set(silent ? ProviderStatus.syncing : ProviderStatus.loading);
     try {
-      final provider = _resolveProvider();
+      final provider = await _resolveProvider();
       await provider.ensureReady();
 
       final nodes = await provider.listAll();
@@ -195,7 +197,7 @@ class ProviderController extends ChangeNotifier {
         );
       }
 
-      final provider = _resolveProvider();
+      final provider = await _resolveProvider();
       final nodes = await provider.listAll(parentId: containerId);
       _adopt(containerId, nodes);
       await _cache.writeJson(
@@ -234,7 +236,7 @@ class ProviderController extends ChangeNotifier {
 
     notifyListeners();
     try {
-      final provider = _resolveProvider();
+      final provider = await _resolveProvider();
       if (provider.capabilities.canSearch) {
         final page = await provider.search(query);
         _searchResults = page.nodes;
@@ -274,7 +276,7 @@ class ProviderController extends ChangeNotifier {
   /// The bytes of [node] on disk, so an existing viewer can open it by path.
   Future<String?> materialize(ProviderNode node) async {
     try {
-      return await _resolveProvider().materialize(node);
+      return await (await _resolveProvider()).materialize(node);
     } on ProviderFailure catch (failure) {
       _failure = failure;
       notifyListeners();
@@ -289,31 +291,33 @@ class ProviderController extends ChangeNotifier {
 
   Future<bool> createFolder(String name, {String? parentId}) =>
       _write(() async {
-        final node =
-            await _resolveProvider().createFolder(name, parentId: parentId);
+        final node = await (await _resolveProvider())
+            .createFolder(name, parentId: parentId);
         _insert(parentId, node);
       });
 
   Future<bool> rename(ProviderNode node, String name) => _write(() async {
-        final renamed = await _resolveProvider().rename(node, name);
+        final renamed = await (await _resolveProvider()).rename(node, name);
         _replace(renamed);
       });
 
   Future<bool> delete(ProviderNode node) => _write(() async {
-        await _resolveProvider().delete(node);
+        await (await _resolveProvider()).delete(node);
         _remove(node);
       });
 
   Future<bool> move(ProviderNode node, {required String parentId}) =>
       _write(() async {
-        final moved = await _resolveProvider().move(node, parentId: parentId);
+        final moved =
+            await (await _resolveProvider()).move(node, parentId: parentId);
         _remove(node);
         _insert(parentId, moved);
       });
 
   Future<bool> setFavourite(ProviderNode node, bool favourite) =>
       _write(() async {
-        final updated = await _resolveProvider().setFavourite(node, favourite);
+        final updated =
+            await (await _resolveProvider()).setFavourite(node, favourite);
         _replace(updated);
       });
 
@@ -324,7 +328,7 @@ class ProviderController extends ChangeNotifier {
     String? mimeType,
   }) =>
       _write(() async {
-        final node = await _resolveProvider().upload(
+        final node = await (await _resolveProvider()).upload(
           name,
           bytes,
           parentId: parentId,
@@ -353,20 +357,36 @@ class ProviderController extends ChangeNotifier {
 
   // --- Internals -------------------------------------------------------------
 
-  CollectionProvider _resolveProvider() {
+  /// The provider for this collection, built on first use.
+  ///
+  /// ⚠️ The connection list is read lazily, and a provider cannot be built
+  /// without it: [ProviderRegistry.create] reports a missing connection as an
+  /// expired sign in. Awaiting it here is what stops a page opened before the
+  /// list has loaded — an embed, or a folder bound to a service — from
+  /// claiming the account is gone and asking somebody to sign in again.
+  Future<CollectionProvider> _resolveProvider() {
     final live = _provider;
     if (live != null) {
-      return live;
+      return Future<CollectionProvider>.value(live);
     }
-    final created = ProviderRegistry.create(_source);
-    if (created == null) {
-      throw const ProviderFailure(
-        ProviderStatus.error,
-        detail: 'This collection has no external source.',
-      );
-    }
-    _provider = created;
-    return created;
+    // One build at a time: a view firing a listing, a search and six
+    // thumbnails at once must not end up with seven providers.
+    return _resolving ??= () async {
+      try {
+        await ProviderConnections.instance.ensureLoaded();
+        final created = ProviderRegistry.create(_source);
+        if (created == null) {
+          throw const ProviderFailure(
+            ProviderStatus.error,
+            detail: 'This collection has no external source.',
+          );
+        }
+        _provider = created;
+        return created;
+      } finally {
+        _resolving = null;
+      }
+    }();
   }
 
   Future<void> _restoreFromCache() async {
@@ -479,7 +499,7 @@ class ProviderController extends ChangeNotifier {
 
   Future<String?> _thumbnailFor(ProviderNode node) async {
     try {
-      return await _resolveProvider().thumbnailPath(node);
+      return await (await _resolveProvider()).thumbnailPath(node);
     } catch (_) {
       return null;
     }

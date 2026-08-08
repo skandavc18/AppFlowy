@@ -177,10 +177,10 @@ class _DatabaseBlockComponentWidgetState
   }
 
   Widget _buildResizableDatabase(ViewPB view, EditorState editorState) {
-    // A chart, a map, a slide deck and the shared table readings are written
-    // as pages, so they take whatever height they are given. A grid, a board
-    // and a calendar grow with their rows — pinning them to a shorter box only
-    // clips what is in them, so they are resized by width alone.
+    // A chart, a map, a slide deck, a calendar and the shared table readings
+    // are written as pages, so they take whatever height they are given. A
+    // grid and a board grow with their rows — pinning them to a shorter box
+    // only clips what is in them, so they are resized by width alone.
     final givesHeight = embeddedDatabaseViewFillsItsBox(view);
     return ResizableMedia(
       // Unset means "as wide as the page": clamping infinity to the incoming
@@ -207,6 +207,11 @@ class _DatabaseBlockComponentWidgetState
         view: view,
         showActions: false,
         node: widget.node,
+        // A reading that cannot shrink to its content is sized by a `SizedBox`
+        // inside the tab bar, so the dragged height has to reach it there —
+        // the outer box alone never gets past the tab bar's own Column.
+        embedHeight:
+            givesHeight ? (_height ?? embeddedDatabaseViewHeight) : null,
       ),
     );
   }

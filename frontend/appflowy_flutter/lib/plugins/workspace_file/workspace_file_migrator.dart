@@ -29,6 +29,15 @@ class WorkspaceFileMigrator {
   Future<String?> resolveStorageUrl(ViewPB view) async {
     final stored = view.workspaceItem?.storageUrl;
     if (stored != null && stored.isNotEmpty) {
+      // The url is the absolute path the file was copied to when it was
+      // imported. If the data folder has moved since, the same file is still
+      // in storage under its own name — adopt that path so the view mends
+      // itself instead of failing on every open.
+      final resolved = await resolveLocalStorageFilePath(stored);
+      if (resolved != null && resolved != stored) {
+        await _persist(view, resolved, size: await File(resolved).length());
+        return resolved;
+      }
       return stored;
     }
 

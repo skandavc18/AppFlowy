@@ -6,10 +6,14 @@ import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/shared/table_views/table_property_view.dart';
 import 'package:appflowy/shared/table_views/table_view_chrome.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
+import 'package:appflowy/user/application/user_listener.dart';
+import 'package:appflowy/user/application/user_service.dart';
 import 'package:appflowy/workspace/application/table_views/mailbox_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_query.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
 import 'package:appflowy/workspace/application/table_views/table_row_source.dart';
+import 'package:appflowy_backend/log.dart';
+import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -62,6 +66,11 @@ class MailboxStageState extends State<MailboxStage> {
   Set<String> _matches = const {};
   String _openId = '';
 
+  /// A row that names nobody was written here, so it is signed with the name on
+  /// the profile rather than left as a stranger.
+  String _profileName = '';
+  UserListener? _profileListener;
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +78,7 @@ class MailboxStageState extends State<MailboxStage> {
       ..updateSpec(widget.spec.readSpec)
       ..addListener(_onSourceChanged);
     unawaited(_source.load());
+    unawaited(_readProfile());
   }
 
   @override
@@ -82,10 +92,46 @@ class MailboxStageState extends State<MailboxStage> {
 
   @override
   void dispose() {
+    unawaited(_profileListener?.stop());
+    _profileListener = null;
     _source.removeListener(_onSourceChanged);
     _source.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  Future<void> _readProfile() async {
+    final result = await UserBackendService.getCurrentUserProfile();
+    result.fold(
+      (profile) {
+        _watchProfile(profile);
+        _setProfileName(profile.name);
+      },
+      (error) => Log.error(error),
+    );
+  }
+
+  /// Follows a rename made in settings, so the list never signs itself with a
+  /// name the person has already replaced.
+  void _watchProfile(UserProfilePB profile) {
+    if (!mounted || _profileListener != null) {
+      return;
+    }
+    _profileListener = UserListener(userProfile: profile)
+      ..start(
+        onProfileUpdated: (result) => result.fold(
+          (updated) => _setProfileName(updated.name),
+          (error) => Log.error(error),
+        ),
+      );
+  }
+
+  void _setProfileName(String name) {
+    final next = name.trim();
+    if (!mounted || _profileName == next) {
+      return;
+    }
+    setState(() => _profileName = next);
   }
 
   /// Reads the table again — the host calls this when a row changes.
@@ -149,14 +195,15 @@ class MailboxStageState extends State<MailboxStage> {
   String _senderOf(TableRowCard card) {
     final column = widget.spec.senderColumn;
     if (column.isNotEmpty) {
-      return card.propertyOf(column)?.value.trim() ?? '';
+      final named = card.propertyOf(column)?.value.trim() ?? '';
+      return named.isEmpty ? _profileName : named;
     }
     for (final property in card.properties) {
       if (property.kind == TablePropertyKind.person && !property.isEmpty) {
         return property.value.trim();
       }
     }
-    return '';
+    return _profileName;
   }
 
   String _snippetColumnOf(TableRowCard card) {

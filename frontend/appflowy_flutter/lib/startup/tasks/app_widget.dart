@@ -6,9 +6,11 @@ import 'package:appflowy/shared/clipboard_state.dart';
 import 'package:appflowy/shared/easy_localiation_service.dart';
 import 'package:appflowy/shared/feature_flags.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
+import 'package:appflowy/shared/keyboard_state.dart';
 import 'package:appflowy/shared/maps/maps_settings.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/premium_theme_backdrop.dart';
+import 'package:appflowy/shared/calendar/reminder_notifications.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -56,6 +58,14 @@ class InitAppWidgetTask extends LaunchTask {
     WidgetsFlutterBinding.ensureInitialized();
 
     await NotificationService.initialize();
+
+    // Windows can keep the key up of a modifier to itself, and one stale
+    // modifier stops Backspace working in every text field.
+    KeyboardStateReconciler.instance.start();
+
+    // Reminders keep their own clock, so a due one still speaks when nobody
+    // has the calendar open.
+    startReminderNotifications();
 
     await loadIconGroups();
 
@@ -235,6 +245,10 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
               dispose: (_, state) => state.dispose(),
               child: ToastificationWrapper(
                 child: Listener(
+                  onPointerDown: (_) =>
+                      // Clicking back into the window is the earliest moment a
+                      // modifier the shell swallowed can be handed back.
+                      KeyboardStateReconciler.instance.reconcile(),
                   onPointerSignal: (pointerSignal) {
                     /// This is a workaround to deal with below question:
                     /// When the mouse hovers over the tooltip, the scroll event is intercepted by it

@@ -790,11 +790,14 @@
       "menuLabel": "Connected accounts",
       "title": "Connected accounts",
       "description": "Accounts AppFlowy signs in to on your behalf. Passwords are kept apart from everything else and are never written into a page or a collection.",
-      "mail": "Mail",
+      "mail": "Mailboxes",
       "empty": "No connected accounts",
       "emptyHint": "Open an Email collection and connect a mailbox; it will appear here so you can change its password without going back.",
       "signedIn": "Signed in",
       "needsPassword": "Password needed",
+      "needsSignIn": "Sign in needed",
+      "viaAccount": "through your {} account",
+      "managedByAccount": "Signed in with a connected account",
       "changePassword": "Change password",
       "passwordHint": "New password",
       "appPasswordHint": "New app password",
@@ -2466,6 +2469,139 @@
     "quickJumpYear": "Jump to",
     "duplicateEvent": "Duplicate event"
   },
+  "calendarView": {
+    "views": {
+      "month": "Month",
+      "week": "Week",
+      "day": "Day",
+      "agenda": "Agenda",
+      "year": "Year"
+    },
+    "today": "Today",
+    "previous": "Previous",
+    "next": "Next",
+    "search": "Search events",
+    "searchHint": "Search events and reminders",
+    "filter": "Filter",
+    "newEvent": "New event",
+    "openRow": "Open row",
+    "editEvent": "Edit",
+    "deleteEvent": "Delete",
+    "duplicateEvent": "Duplicate",
+    "addReminder": "Add reminder",
+    "openInGoogle": "Open in Google Calendar",
+    "allDay": "All day",
+    "relative": {
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "yesterday": "Yesterday"
+    },
+    "calendars": "Calendars",
+    "showCalendar": "Show this calendar",
+    "calendarColor": "Colour",
+    "defaultCalendar": "Default calendar",
+    "filters": {
+      "events": "Events",
+      "reminders": "Reminders",
+      "completed": "Completed",
+      "reset": "Reset filters"
+    },
+    "sync": {
+      "synced": "Synced",
+      "syncing": "Syncing…",
+      "offline": "Offline",
+      "expired": "Connection expired",
+      "failed": "Could not sync",
+      "pending": {
+        "one": "{count} change waiting",
+        "other": "{count} changes waiting"
+      },
+      "lastSynced": "Last synced {}",
+      "reconnect": "Sign in again",
+      "retry": "Try again"
+    },
+    "empty": {
+      "dayTitle": "No events today",
+      "dayBody": "Your day is clear.",
+      "rangeTitle": "Nothing scheduled",
+      "rangeBody": "Nothing is planned for this period.",
+      "remindersTitle": "No reminders",
+      "remindersBody": "Nothing waiting for you.",
+      "noConnectionTitle": "No connected calendar",
+      "noConnectionBody": "Connect Google Calendar to see everything in one place.",
+      "connect": "Connect Google Calendar",
+      "noDateFieldTitle": "Choose a date column",
+      "noDateFieldBody": "The calendar needs a date column to lay this table out.",
+      "searchTitle": "Nothing matches",
+      "searchBody": "Try a different word, or clear the filters."
+    },
+    "google": {
+      "title": "Google Calendar",
+      "connect": "Connect Google Calendar",
+      "connected": "Connected",
+      "chooseCalendars": "Choose calendars",
+      "chooseCalendarsHint": "Pick the calendars to show inside AppFlowy.",
+      "disconnect": "Disconnect",
+      "allowChanges": "Allow AppFlowy to change events",
+      "allowChangesHint": "Sign in again to grant permission to create, move and delete events.",
+      "readOnly": "Read only",
+      "noCalendars": "This account has no calendars to show."
+    }
+  },
+  "reminders": {
+    "title": "Reminder",
+    "newReminder": "New reminder",
+    "create": "Create reminder",
+    "titleHint": "What should we remind you about?",
+    "quickHint": "Try “Call John tomorrow at 10 AM”",
+    "date": "Date",
+    "time": "Time",
+    "allDay": "All day",
+    "repeat": "Repeat",
+    "priority": "Priority",
+    "notification": "Notification",
+    "sound": "Alert sound",
+    "syncToGoogle": "Also add to Google Calendar",
+    "relatedPage": "Related page",
+    "review": "Review before saving",
+    "understood": "Read as",
+    "noDate": "No date found — pick one",
+    "save": "Save",
+    "cancel": "Cancel",
+    "markDone": "Mark as done",
+    "markNotDone": "Mark as not done",
+    "delete": "Delete reminder",
+    "snooze": "Snooze",
+    "open": "Open",
+    "done": "Done",
+    "repeats": {
+      "none": "Does not repeat",
+      "daily": "Daily",
+      "weekdays": "Every weekday",
+      "weekly": "Weekly",
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "custom": "Custom"
+    },
+    "priorities": {
+      "none": "None",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "snoozeOptions": {
+      "fiveMinutes": "5 minutes",
+      "tenMinutes": "10 minutes",
+      "thirtyMinutes": "30 minutes",
+      "oneHour": "1 hour",
+      "tomorrow": "Tomorrow",
+      "custom": "Custom…"
+    },
+    "slashMenu": {
+      "name": "Reminder",
+      "description": "Set a reminder with a date and time"
+    }
+  },
   "errorDialog": {
     "title": "@:appName Error",
     "howToFixFallback": "We're sorry for the inconvenience! Submit an issue on our GitHub page that describes your error.",
@@ -4039,6 +4175,7 @@
       "fetching": "Fetching the repository\u2026",
       "unpacking": "Unpacking the repository\u2026",
       "fetchingHint": "The whole tree is taken in one request so the browser, symbols and dependencies all work offline afterwards.",
+      "browsingLarge": "This repository is too large to keep a copy of, so it is read where it lives. Files are fetched as you open them, and the symbol and dependency views only cover what you have opened.",
       "noArchive": "This host does not offer a downloadable copy of the repository, so only its file listing is available.",
       "noCommits": "No commits yet",
       "noIssues": "No open issues",
@@ -4125,7 +4262,10 @@
       "clearCache": "Clear cache",
       "cacheSize": "{} in use",
       "confirmDisconnectTitle": "Disconnect {}?",
-      "confirmDisconnectBody": "Collections that read from this account will stop until it is connected again. Nothing on the service is changed."
+      "confirmDisconnectBody": "Collections that read from this account will stop until it is connected again. Nothing on the service is changed.",
+      "alsoUseFor": "Also available for",
+      "anotherAccount": "Connect another {} account",
+      "signInOnce": "Sign in to {} once"
     }
   },
   "collections": {
@@ -4471,6 +4611,7 @@
       "documents": "Documents",
       "contents": "Contents",
       "truncated": "Large file — only the first part was read.",
+      "fetchingFile": "Fetching this file…",
       "unreadable": "This file could not be read.",
       "analysing": "Reading {}%",
       "goToFile": "Go to file",
@@ -4645,7 +4786,12 @@
       "remoteBlocked": "{} remote images were not loaded. Loading them tells the sender you opened this message.",
       "loadImages": "Load images",
       "hideImages": "Do not load remote images",
-      "messageUnreadable": "This file could not be read as a message"
+      "messageUnreadable": "This file could not be read as a message",
+      "signedInWith": "Signed in with",
+      "noAccount": "No {} account is connected yet",
+      "connectAccount": "Connect a {} account",
+      "signInAgain": "That sign in is no longer accepted. Sign in again.",
+      "needAccount": "Connect an account first."
     },
     "bookmark": {
       "grid": "Cards",

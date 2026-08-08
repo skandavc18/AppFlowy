@@ -365,3 +365,23 @@ class ProviderTransport {
     _oauth.close();
   }
 }
+
+/// A working access token for [connectionId], renewed if it had expired.
+///
+/// For the one thing that is not an HTTP request: IMAP presents the same token
+/// as `XOAUTH2`, and it must go through the same renewal as everything else or
+/// mail would be the only feature that expires after an hour.
+Future<String?> providerAccessToken(String connectionId) async {
+  final transport = ProviderTransport(connectionId: connectionId);
+  try {
+    return (await transport.credentials()).accessToken;
+  } on ProviderFailure catch (failure) {
+    Log.warn('No usable token for a connection: ${failure.status.name}');
+    return null;
+  } catch (error) {
+    Log.warn('No usable token for a connection: $error');
+    return null;
+  } finally {
+    transport.close();
+  }
+}

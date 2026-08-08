@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:appflowy/workspace/application/providers/collection_provider.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/provider_cache.dart';
+import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:appflowy/workspace/application/providers/provider_state.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/log.dart';
@@ -36,6 +37,19 @@ class RepositoryArchiveProgress {
 
 enum RepositoryArchiveStage { downloading, extracting, ready, failed }
 
+/// How a repository was made readable.
+@immutable
+class RepositoryFetch {
+  const RepositoryFetch({required this.root, required this.isLazy});
+
+  /// Where the repository's files are, or will be once they are fetched.
+  final Directory root;
+
+  /// Whether only the listing was taken, so a file arrives when it is opened
+  /// rather than up front.
+  final bool isLazy;
+}
+
 /// Puts a hosted repository on disk, once.
 ///
 /// Reading a project needs its file contents, not just its names: the symbol
@@ -46,6 +60,12 @@ enum RepositoryArchiveStage { downloading, extracting, ready, failed }
 ///
 /// After this, every repository view works on ordinary local files, which is
 /// why the hosted repository and the local one share one implementation.
+///
+/// A repository too big for that — or hosted somewhere that offers no archive —
+/// falls back to a lazy fetch: the listing alone is read, and each file is
+/// downloaded into the same place the archive would have put it the moment
+/// somebody opens it. Browsing a large repository therefore costs one request,
+/// not a download of the entire project.
 class RepositoryArchive {
   RepositoryArchive({ProviderCache? cache})
       : _cache = cache ?? ProviderCache.instance;
@@ -58,11 +78,18 @@ class RepositoryArchive {
 
   static const maxEntries = 40000;
 
+  /// Above the size the host reports, the archive is not even attempted: a
+  /// download that is going to be refused halfway is worse than not starting
+  /// it, and the lazy listing is ready in one request.
+  static const maxUnpackedKb = 100 * 1024;
+
   final ProviderCache _cache;
 
-  /// The unpacked tree for [source], fetching it when the branch has changed
-  /// or nothing has been fetched yet.
-  Future<Directory?> ensure({
+  /// The tree for [source], fetching it when the branch has changed or nothing
+  /// has been fetched yet.
+  ///
+  /// Never throws for size: a repository that will not fit comes back lazy.
+  Future<RepositoryFetch> ensure({
     required RepositoryProvider provider,
     required CollectionSource source,
     required String branch,
@@ -70,16 +97,26 @@ class RepositoryArchive {
   }) async {
     final root = await _treeDirectory(source);
     final stamp = File(p.join(root.parent.path, 'tree.ref'));
+    final marker = _marker(stamp);
 
-    if (root.existsSync() &&
-        stamp.existsSync() &&
-        stamp.readAsStringSync().trim() == branch) {
-      return root;
+    if (root.existsSync() && marker == branch) {
+      return RepositoryFetch(root: root, isLazy: false);
+    }
+    if (root.existsSync() && marker == _lazyMarker(branch)) {
+      return RepositoryFetch(root: root, isLazy: true);
     }
 
     final url = await provider.archiveUrl(branch);
     if (url == null || url.isEmpty) {
-      return null;
+      return _beginLazy(root, stamp, branch);
+    }
+
+    final sizeKb = (await provider.summary())?.sizeKb ?? 0;
+    if (sizeKb > maxUnpackedKb) {
+      Log.info(
+        'Browsing a repository of ${sizeKb ~/ 1024} MB rather than unpacking it.',
+      );
+      return _beginLazy(root, stamp, branch);
     }
 
     final download = File(p.join(root.parent.path, 'repo.tar.gz'));
@@ -116,18 +153,21 @@ class RepositoryArchive {
       onProgress?.call(
         const RepositoryArchiveProgress(stage: RepositoryArchiveStage.ready),
       );
-      return root;
-    } on ProviderFailure {
-      onProgress?.call(
-        const RepositoryArchiveProgress(stage: RepositoryArchiveStage.failed),
-      );
-      rethrow;
+      return RepositoryFetch(root: root, isLazy: false);
+    } on ProviderFailure catch (failure) {
+      // Only a refusal to fetch this much is a reason to browse instead;
+      // being signed out or offline is not, and must still be reported.
+      if (failure.status != ProviderStatus.error) {
+        onProgress?.call(
+          const RepositoryArchiveProgress(stage: RepositoryArchiveStage.failed),
+        );
+        rethrow;
+      }
+      Log.info('Browsing a repository that was too large to unpack.');
+      return _beginLazy(root, stamp, branch);
     } catch (error, stackTrace) {
       Log.warn('Unable to unpack a repository: $error\n$stackTrace');
-      onProgress?.call(
-        const RepositoryArchiveProgress(stage: RepositoryArchiveStage.failed),
-      );
-      return null;
+      return _beginLazy(root, stamp, branch);
     } finally {
       try {
         if (download.existsSync()) {
@@ -136,6 +176,35 @@ class RepositoryArchive {
       } catch (_) {
         // A leftover download is not worth reporting.
       }
+    }
+  }
+
+  /// Starts a lazy tree, discarding whatever an earlier branch left behind so
+  /// a stale file is never mistaken for one that has been fetched.
+  Future<RepositoryFetch> _beginLazy(
+    Directory root,
+    File stamp,
+    String branch,
+  ) async {
+    try {
+      if (root.existsSync() && _marker(stamp) != _lazyMarker(branch)) {
+        await root.delete(recursive: true);
+      }
+      await root.create(recursive: true);
+      await stamp.writeAsString(_lazyMarker(branch), flush: true);
+    } catch (error) {
+      Log.warn('Unable to prepare a repository for browsing: $error');
+    }
+    return RepositoryFetch(root: root, isLazy: true);
+  }
+
+  static String _lazyMarker(String branch) => 'lazy:$branch';
+
+  static String _marker(File stamp) {
+    try {
+      return stamp.existsSync() ? stamp.readAsStringSync().trim() : '';
+    } catch (_) {
+      return '';
     }
   }
 
@@ -327,6 +396,125 @@ class RepositoryTreeViews {
         layout: ViewLayoutPB.Document,
         extra: metadata.mergeIntoExtra(''),
       );
+}
+
+/// A repository that was listed rather than unpacked, dressed as workspace
+/// items.
+///
+/// The same shape [RepositoryTreeViews] produces, built from listing metadata
+/// instead of files on disk, so every repository view works unchanged. Each
+/// file's storage path is where the archive would have put it; the fetcher
+/// puts it there when it is opened, and until then only its name and size are
+/// known — which is all a listing draws anyway.
+class RepositoryLazyTreeViews {
+  RepositoryLazyTreeViews({
+    required this.rootId,
+    required this.root,
+    required List<ProviderNode> nodes,
+  }) : _nodes = nodes;
+
+  final String rootId;
+  final Directory root;
+  final List<ProviderNode> _nodes;
+
+  final Map<String, List<ViewPB>> _children = <String, List<ViewPB>>{};
+  bool _loaded = false;
+
+  List<ViewPB> childrenOf(String id) {
+    if (!_loaded) {
+      _load();
+    }
+    return _children[id] ?? const <ViewPB>[];
+  }
+
+  String idFor(String relative) =>
+      relative.isEmpty ? rootId : '$rootId::$relative';
+
+  void _load() {
+    _loaded = true;
+    final folders = <String>{''};
+    final pending = <ProviderNode>[];
+
+    for (final node in _nodes) {
+      final path = node.path.isEmpty ? node.id : node.path;
+      if (path.isEmpty || _isSkipped(path)) {
+        continue;
+      }
+      if (node.isFolder) {
+        folders.add(path);
+      }
+      pending.add(node);
+    }
+
+    for (final node in pending) {
+      final path = node.path.isEmpty ? node.id : node.path;
+      // A listing truncated part way can leave a file whose folder never
+      // arrived; inventing the folder keeps the file reachable.
+      var parent = _parentOf(path);
+      while (parent.isNotEmpty && folders.add(parent)) {
+        parent = _parentOf(parent);
+      }
+    }
+
+    for (final folder in folders) {
+      _children.putIfAbsent(idFor(folder), () => <ViewPB>[]);
+    }
+
+    final seen = <String>{};
+    for (final folder in folders) {
+      if (folder.isEmpty || !seen.add(folder)) {
+        continue;
+      }
+      _children[idFor(_parentOf(folder))]!.add(
+        RepositoryTreeViews._view(
+          id: idFor(folder),
+          parentId: idFor(_parentOf(folder)),
+          name: folder.split('/').last,
+          metadata: const WorkspaceItemMetadata.folder(),
+        ),
+      );
+    }
+
+    for (final node in pending) {
+      final path = node.path.isEmpty ? node.id : node.path;
+      if (node.isFolder || !seen.add(path)) {
+        continue;
+      }
+      _children[idFor(_parentOf(path))]!.add(
+        RepositoryTreeViews._view(
+          id: idFor(path),
+          parentId: idFor(_parentOf(path)),
+          name: path.split('/').last,
+          metadata: WorkspaceItemMetadata.file(
+            contentKind: WorkspaceFileContentKind.binary,
+            storageUrl: p.join(root.path, p.joinAll(path.split('/'))),
+            size: node.byteSize,
+            modifiedAt: node.modifiedAt,
+          ),
+        ),
+      );
+    }
+
+    for (final views in _children.values) {
+      views
+          .sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    }
+  }
+
+  static bool _isSkipped(String path) {
+    for (final segment in path.split('/')) {
+      if (segment.startsWith('.git') ||
+          RepositoryTreeViews._skipped.contains(segment)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static String _parentOf(String path) {
+    final slash = path.lastIndexOf('/');
+    return slash < 0 ? '' : path.substring(0, slash);
+  }
 }
 
 /// Reads a file out of the unpacked tree, for anything that wants text rather
