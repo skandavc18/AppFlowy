@@ -41,10 +41,16 @@ class SettingsMenuElement extends StatelessWidget {
           children: [
             icon,
             HSpace(theme.spacing.m),
-            Text(
-              label,
-              style: theme.textStyle.body.standard(
-                color: theme.textColorScheme.primary,
+            // The rail is a fixed width, so a long label — or a longer one in
+            // another language — has to ellipsize rather than overflow.
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textStyle.body.standard(
+                  color: theme.textColorScheme.primary,
+                ),
               ),
             ),
           ],

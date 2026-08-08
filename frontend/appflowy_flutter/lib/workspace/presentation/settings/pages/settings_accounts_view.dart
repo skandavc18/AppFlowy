@@ -1,21 +1,22 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/collections/email/connected_accounts.dart';
 import 'package:appflowy/workspace/application/collections/email/mail_secret_store.dart';
-import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_category.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
-/// Every account the application is signed in to, and what can be done about
-/// them: change the password one was issued, forget it, or drop the account.
-class SettingsAccountsView extends StatefulWidget {
-  const SettingsAccountsView({super.key});
+/// The mail accounts AppFlowy is signed in to.
+///
+/// A section rather than a page: mail sits beside the external services in
+/// Settings ▸ Connections, because "what am I signed in to" is one question.
+class MailAccountsSection extends StatefulWidget {
+  const MailAccountsSection({super.key});
 
   @override
-  State<SettingsAccountsView> createState() => _SettingsAccountsViewState();
+  State<MailAccountsSection> createState() => _MailAccountsSectionState();
 }
 
-class _SettingsAccountsViewState extends State<SettingsAccountsView> {
+class _MailAccountsSectionState extends State<MailAccountsSection> {
   final ConnectedAccountRegistry _registry = const ConnectedAccountRegistry();
   final MailSecretStore _secrets = MailSecretStore();
 
@@ -47,71 +48,39 @@ class _SettingsAccountsViewState extends State<SettingsAccountsView> {
   }
 
   @override
-  Widget build(BuildContext context) => SettingsBody(
-        title: LocaleKeys.settings_accountsPage_title.tr(),
-        description: LocaleKeys.settings_accountsPage_description.tr(),
-        children: [
-          if (_loading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(
-                child: SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              ),
-            )
-          else if (_accounts.isEmpty)
-            _EmptyAccounts()
-          else
-            SettingsCategory(
-              title: LocaleKeys.settings_accountsPage_mail.tr(),
-              children: [
-                for (final account in _accounts)
-                  _AccountTile(
-                    key: ValueKey(account.id),
-                    account: account,
-                    hasSecret: _withSecret.contains(account.id),
-                    secrets: _secrets,
-                    onChanged: _load,
-                    onRemove: () async {
-                      await _secrets.forget(account.id);
-                      await _registry.remove(account.id);
-                      await _load();
-                    },
-                  ),
-              ],
-            ),
-        ],
-      );
-}
-
-class _EmptyAccounts extends StatelessWidget {
-  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            LocaleKeys.settings_accountsPage_empty.tr(),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+    if (_loading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
           ),
-          const SizedBox(height: 6),
-          Text(
-            LocaleKeys.settings_accountsPage_emptyHint.tr(),
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.hintColor,
-              height: 1.5,
-            ),
+        ),
+      );
+    }
+    if (_accounts.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return SettingsCategory(
+      title: LocaleKeys.settings_accountsPage_mail.tr(),
+      children: [
+        for (final account in _accounts)
+          _AccountTile(
+            key: ValueKey(account.id),
+            account: account,
+            hasSecret: _withSecret.contains(account.id),
+            secrets: _secrets,
+            onChanged: _load,
+            onRemove: () async {
+              await _secrets.forget(account.id);
+              await _registry.remove(account.id);
+              await _load();
+            },
           ),
-        ],
-      ),
+      ],
     );
   }
 }

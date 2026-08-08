@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/executable_code_block_component.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/external/external_embed_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/object_type_typography.dart';
@@ -451,6 +452,9 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
       configuration,
     ),
     FolderExplorerBlockKeys.type: FolderExplorerBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    ExternalEmbedKeys.type: ExternalEmbedBlockComponentBuilder(
       configuration: configuration,
     ),
     BookmarkBlockKeys.type: BookmarkBlockComponentBuilder(

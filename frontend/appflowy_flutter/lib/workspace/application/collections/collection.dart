@@ -13,6 +13,7 @@ enum CollectionKind {
   book,
   album,
   repository,
+  folder,
   database,
   bookmark,
   email;

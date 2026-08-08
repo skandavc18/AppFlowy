@@ -12,8 +12,15 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/collection
 /// Registration is lazy — [CollectionEmbedRegistry] calls this the first time
 /// a widget is built — so a preview can import the registry back without a
 /// top-level import cycle.
+import 'package:appflowy/workspace/application/collections/collection.dart';
+
 void registerBuiltInCollectionEmbeds() {
   CollectionEmbedRegistry.register(buildFolderEmbedDefinition());
+  // A folder collection reads exactly as a plain folder does inside a page;
+  // the difference is only where its contents come from.
+  CollectionEmbedRegistry.register(
+    buildFolderEmbedDefinition(kind: CollectionKind.folder),
+  );
   CollectionEmbedRegistry.register(buildBookEmbedDefinition());
   CollectionEmbedRegistry.register(buildAlbumEmbedDefinition());
   CollectionEmbedRegistry.register(buildBookmarkEmbedDefinition());

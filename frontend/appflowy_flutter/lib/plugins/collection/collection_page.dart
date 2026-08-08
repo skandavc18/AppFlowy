@@ -3,12 +3,20 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_add_menu.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/providers/external_repository_view.dart';
+import 'package:appflowy/plugins/collection/providers/external_collection_host.dart';
+import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
+import 'package:appflowy/plugins/collection/providers/source_picker.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
+import 'package:appflowy/workspace/application/providers/collection_source.dart';
+import 'package:appflowy/workspace/application/providers/provider_cache.dart';
+import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/breadcrumb_bar.dart';
@@ -106,18 +114,23 @@ class _CollectionPageState extends State<CollectionPage> {
       builder: (context, _) {
         final palette = CollectionPalette.of(context, metadata.kind);
         final definition = CollectionRegistry.typeFor(metadata.kind);
-        final view =
-            definition.viewById(activeViewId) ?? definition.defaultView;
+        final view = _viewFor(definition);
         return DecoratedBox(
           decoration: BoxDecoration(color: palette.background),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildHeader(context, palette, definition, view),
-              Expanded(
-                child: view.builder(context, _viewContext(view)),
+          child: ProviderSourceUpdate(
+            onChanged: (source) => unawaited(_persistSource(source)),
+            child: ProviderReconnectRequest(
+              onReconnect: (_) => unawaited(_changeSource()),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildHeader(context, palette, definition, view),
+                  Expanded(
+                    child: view.builder(context, _viewContext(view)),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         );
       },
@@ -203,19 +216,48 @@ class _CollectionPageState extends State<CollectionPage> {
                       ),
                     ),
                     const SizedBox(height: 3),
-                    Text(
-                      _subtitle(definition),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.textMuted,
-                        fontSize: 12,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            _subtitle(definition),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.textMuted,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        if (_currentView.source.isRemote) ...[
+                          Text(
+                            '  ·  ',
+                            style: TextStyle(
+                              color: palette.textMuted,
+                              fontSize: 12,
+                            ),
+                          ),
+                          Flexible(
+                            child: ProviderBadge(
+                              source: _currentView.source,
+                              palette: palette,
+                              detail: _currentView.source.remoteName,
+                              onTap: () => unawaited(_changeSource()),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 16),
+              if (ProviderServices.hasRemoteOptions(metadata.kind))
+                _SourceButton(
+                  palette: palette,
+                  source: _currentView.source,
+                  onPressed: () => unawaited(_changeSource()),
+                ),
               _CollectionSearchField(
                 controller: searchController,
                 palette: palette,
@@ -233,7 +275,10 @@ class _CollectionPageState extends State<CollectionPage> {
             children: [
               CollectionViewSwitcher(
                 palette: palette,
-                views: definition.views,
+                views: [
+                  for (final view in definition.views)
+                    if (view.availableFor(_currentView.source)) view,
+                ],
                 activeViewId: activeView.id,
                 onChanged: _setActiveView,
               ),
@@ -286,6 +331,18 @@ class _CollectionPageState extends State<CollectionPage> {
     );
   }
 
+  /// The view to show, ignoring one that no longer applies.
+  ///
+  /// A collection that was pointed at a service and then brought back home
+  /// would otherwise be left looking at an empty pane.
+  CollectionViewDefinition _viewFor(CollectionTypeDefinition definition) {
+    final stored = definition.viewById(activeViewId);
+    if (stored != null && stored.availableFor(_currentView.source)) {
+      return stored;
+    }
+    return definition.defaultView;
+  }
+
   Future<void> _setActiveView(String id) async {
     if (id == activeViewId) {
       return;
@@ -308,6 +365,46 @@ class _CollectionPageState extends State<CollectionPage> {
     await _service.updateMetadata(view: _currentView, metadata: next);
   }
 
+  /// Asks what the collection should be backed by, and rebinds it.
+  Future<void> _changeSource() async {
+    final view = _currentView;
+    final previous = view.source;
+    final chosen = await showCollectionSourcePicker(
+      context,
+      kind: metadata.kind,
+      current: previous,
+    );
+    if (chosen == null || !mounted || chosen.cacheKey == previous.cacheKey) {
+      return;
+    }
+
+    // Everything cached for the old binding is about content this collection
+    // no longer shows, so it goes with the binding rather than lingering.
+    if (previous.isRemote) {
+      unawaited(ProviderCache.instance.evict(previous.cacheKey));
+    }
+    await _persistSource(chosen);
+  }
+
+  Future<void> _persistSource(CollectionSource source) async {
+    final view = _currentView;
+    await ViewBackendService.updateView(
+      viewId: view.id,
+      extra: source.mergeIntoExtra(view.extra),
+    );
+    if (!mounted) {
+      return;
+    }
+    // The explorer holds the view every adaptive view reads, so it has to be
+    // told or the switcher would keep handing out the old binding.
+    controller.updateView(
+      ViewPB()
+        ..mergeFromMessage(view)
+        ..extra = source.mergeIntoExtra(view.extra),
+    );
+    setState(() {});
+  }
+
   Future<void> _showAddMenu(Offset position) async {
     final parentId = controller.currentFolder.id;
     final definition = CollectionRegistry.typeFor(metadata.kind);
@@ -324,9 +421,7 @@ class _CollectionPageState extends State<CollectionPage> {
     final created = await applyCollectionAddChoice(
       context,
       choice: choice,
-      collection: _viewContext(
-        definition.viewById(activeViewId) ?? definition.defaultView,
-      ),
+      collection: _viewContext(_viewFor(definition)),
       parentId: parentId,
     );
     if (created != null && mounted && choice is CollectionAddTable) {
@@ -647,6 +742,79 @@ class _CollectionSearchField extends StatelessWidget {
         borderRadius: BorderRadius.circular(9),
         borderSide: BorderSide.none,
       );
+}
+
+/// Where the collection's content comes from, and how to change it.
+///
+/// It sits beside the search field rather than in a menu because binding a
+/// collection to a service is a first-class choice, not a setting.
+class _SourceButton extends StatefulWidget {
+  const _SourceButton({
+    required this.palette,
+    required this.source,
+    required this.onPressed,
+  });
+
+  final CollectionPalette palette;
+  final CollectionSource source;
+  final VoidCallback onPressed;
+
+  @override
+  State<_SourceButton> createState() => _SourceButtonState();
+}
+
+class _SourceButtonState extends State<_SourceButton> {
+  bool hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    final info = widget.source.info;
+    final remote = widget.source.isRemote;
+    return Tooltip(
+      message: LocaleKeys.providers_changeSource.tr(),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => hovered = true),
+        onExit: (_) => setState(() => hovered = false),
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            height: CollectionMetrics.searchFieldHeight,
+            margin: const EdgeInsets.only(right: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: remote
+                  ? info.accent.withValues(alpha: hovered ? 0.18 : 0.11)
+                  : palette.hover.withValues(alpha: hovered ? 1 : 0),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  remote ? info.icon : Icons.cloud_sync_rounded,
+                  size: 15,
+                  color: remote ? info.accent : palette.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  remote ? info.label : LocaleKeys.providers_connect.tr(),
+                  style: TextStyle(
+                    color: remote ? info.accent : palette.textSecondary,
+                    fontSize: 12,
+                    fontVariations: const [FontVariation.weight(570)],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _CollectionAddButton extends StatefulWidget {

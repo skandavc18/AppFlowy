@@ -5,7 +5,7 @@ import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/home/home_stack.dart';
 import 'package:appflowy/workspace/presentation/widgets/favorite_button.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer.dart';
+import 'package:appflowy/plugins/workspace_folder/workspace_folder_stage.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/more_view_actions.dart';
 import 'package:appflowy/workspace/presentation/widgets/tab_bar_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_title_bar.dart';
@@ -92,9 +92,9 @@ class WorkspaceFolderPluginWidgetBuilder extends PluginWidgetBuilder
     });
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 18, 28, 26),
-      child: FolderExplorer(
+      child: WorkspaceFolderStage(
         key: ValueKey(view.id),
-        rootView: view,
+        view: view,
       ),
     );
   }

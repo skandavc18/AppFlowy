@@ -127,6 +127,15 @@ const Map<CollectionKind, CollectionContentPolicy> collectionContentPolicies = {
     allowsCollections: true,
   ),
 
+  // A folder collection is the plain container: files of any kind, folders
+  // inside it, and pages written here. It is what a workspace folder already
+  // was, given a purpose — and what a Drive, OneDrive or Box folder maps onto.
+  CollectionKind.folder: CollectionContentPolicy(
+    fileKinds: _everyFileKind,
+    allowsPages: true,
+    allowsCollections: true,
+  ),
+
   // A database is tables, plus the two files a table is imported from.
   CollectionKind.database: CollectionContentPolicy(
     fileKinds: {

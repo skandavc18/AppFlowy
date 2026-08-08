@@ -1,13 +1,22 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/providers/external_collection_host.dart';
+import 'package:appflowy/plugins/collection/providers/external_content_view.dart';
+import 'package:appflowy/plugins/collection/providers/external_repository_view.dart';
+import 'package:appflowy/plugins/collection/providers/git/git_collection_view.dart';
+import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/collection/views/album/album_views.dart';
 import 'package:appflowy/plugins/collection/views/book/book_views.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_views.dart';
 import 'package:appflowy/plugins/collection/views/collection_contents_view.dart';
 import 'package:appflowy/plugins/collection/views/database/database_views.dart';
 import 'package:appflowy/plugins/collection/views/email/email_views.dart';
+import 'package:appflowy/plugins/collection/views/folder/folder_collection_views.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_views.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
+import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
@@ -59,6 +68,71 @@ abstract final class CollectionViewIds {
   static const list = 'list';
 }
 
+/// Makes one view answer for whatever the collection is backed by.
+///
+/// A collection that holds the workspace's own objects renders exactly as it
+/// always did. A collection bound to a service renders the service's content
+/// through the same switcher, in the same place, with the same label — which
+/// is what makes the provider an implementation detail rather than a second
+/// kind of collection.
+CollectionViewDefinition _sourceAware(
+  CollectionViewDefinition definition, {
+  ExternalLayout layout = ExternalLayout.gallery,
+}) =>
+    CollectionViewDefinition(
+      id: definition.id,
+      labelKey: definition.labelKey,
+      icon: definition.icon,
+      builder: (context, collection) {
+        if (collection.collectionView.source.isLocal) {
+          return definition.builder(context, collection);
+        }
+        return ExternalCollectionHost(
+          collection: collection,
+          builder: (context, controller, palette) {
+            if (controller == null) {
+              return definition.builder(context, collection);
+            }
+            return ExternalContentView(
+              controller: controller,
+              palette: palette,
+              layout: layout,
+              header: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+                child: Row(
+                  children: [
+                    ProviderBadge(
+                      source: collection.collectionView.source,
+                      palette: palette,
+                      detail: controller.originLabel,
+                    ),
+                    const Spacer(),
+                    ProviderSyncStrip(
+                      palette: palette,
+                      status: controller.status,
+                      lastSyncedAt: controller.lastSyncedAt,
+                      canSync: controller.capabilities.canSync,
+                      onSync: () => unawaited(controller.resync()),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+/// Every view of a type, made source aware in one step.
+List<CollectionViewDefinition> _sourceAwareAll(
+  List<CollectionViewDefinition> definitions, {
+  ExternalLayout layout = ExternalLayout.gallery,
+}) =>
+    [
+      for (final definition in definitions)
+        _sourceAware(definition, layout: layout),
+    ];
+
 void registerBuiltInCollections() {
   CollectionRegistry.register(
     CollectionTypeDefinition(
@@ -101,10 +175,10 @@ void registerBuiltInCollections() {
         'slideshow',
         'collection',
       ],
-      views: [
+      views: _sourceAwareAll([
         ...albumCollectionViews(),
         ..._contentViews(includeGallery: false),
-      ],
+      ]),
     ),
   );
   CollectionRegistry.register(
@@ -126,12 +200,61 @@ void registerBuiltInCollections() {
         'collection',
       ],
       views: [
+        // NOT source aware: `RepositoryHost` unpacks a hosted repository onto
+        // disk and then feeds these exactly as it feeds a local one, so the
+        // browser, tree, symbols, dependencies and docs all work either way.
         ...repositoryCollectionViews(),
         ..._contentViews(
           galleryLabelKey: LocaleKeys.collections_views_gallery,
           onOpenObject: openRepoObject,
         ),
+        CollectionViewDefinition(
+          id: 'repo_remote',
+          labelKey: LocaleKeys.providers_repo_remote,
+          icon: Icons.cloud_rounded,
+          isAvailable: (source) => source.isRemote,
+          builder: (context, collection) => ExternalCollectionHost(
+            collection: collection,
+            builder: (context, controller, palette) => controller == null
+                ? const SizedBox.shrink()
+                : ExternalRepositoryView(
+                    controller: controller,
+                    palette: palette,
+                    source: collection.collectionView.source,
+                  ),
+          ),
+        ),
+        CollectionViewDefinition(
+          id: 'source_control',
+          labelKey: LocaleKeys.providers_git_title,
+          icon: Icons.account_tree_rounded,
+          builder: (context, collection) =>
+              GitCollectionView(collection: collection),
+        ),
       ],
+    ),
+  );
+  CollectionRegistry.register(
+    CollectionTypeDefinition(
+      kind: CollectionKind.folder,
+      labelKey: LocaleKeys.collections_kind_folder,
+      descriptionKey: LocaleKeys.collections_kindDescription_folder,
+      defaultNameKey: LocaleKeys.collections_defaultName_folder,
+      icon: Icons.folder_copy_rounded,
+      accent: const Color(0xFF5B8DEF),
+      searchKeywords: const [
+        'folder',
+        'files',
+        'drive',
+        'storage',
+        'cloud',
+        'google drive',
+        'onedrive',
+        'box',
+        'documents',
+        'collection',
+      ],
+      views: folderCollectionViews(),
     ),
   );
   CollectionRegistry.register(

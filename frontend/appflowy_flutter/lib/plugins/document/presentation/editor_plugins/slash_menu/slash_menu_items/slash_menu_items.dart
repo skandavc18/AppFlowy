@@ -3,6 +3,7 @@ export 'bulleted_list_item.dart';
 export 'callout_item.dart';
 export 'code_block_item.dart';
 export 'collection_items.dart';
+export 'external_items.dart';
 export 'database_items.dart';
 export 'date_item.dart';
 export 'divider_item.dart';

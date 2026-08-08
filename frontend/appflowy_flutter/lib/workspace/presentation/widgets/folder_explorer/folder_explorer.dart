@@ -56,6 +56,7 @@ class FolderExplorer extends StatefulWidget {
     this.controller,
     this.initialPresentation,
     this.contentPolicy,
+    this.onConnectSource,
   });
 
   final ViewPB rootView;
@@ -73,6 +74,10 @@ class FolderExplorer extends StatefulWidget {
   /// What the host will hold. A collection narrows every add affordance to
   /// the types it is for; a plain folder leaves this null and takes anything.
   final CollectionContentPolicy? contentPolicy;
+
+  /// Offers to back this folder with an external service. Null for a host that
+  /// already has its own way of choosing that, such as the collection page.
+  final VoidCallback? onConnectSource;
 
   @override
   State<FolderExplorer> createState() => _FolderExplorerState();
@@ -792,6 +797,12 @@ class _FolderExplorerState extends State<FolderExplorer> {
             value: _GalleryMenuAction.paste,
           ),
         const AppMenuSeparator(),
+        if (widget.onConnectSource != null)
+          AppMenuItem(
+            label: LocaleKeys.providers_connectThisFolder.tr(),
+            icon: Icons.cloud_sync_rounded,
+            value: _GalleryMenuAction.connectSource,
+          ),
         AppMenuItem(
           label: LocaleKeys.workspaceFolderExplorer_refresh.tr(),
           icon: Icons.refresh_rounded,
@@ -857,6 +868,8 @@ class _FolderExplorerState extends State<FolderExplorer> {
               ? FolderExplorerPresentation.tree
               : FolderExplorerPresentation.gallery,
         );
+      case _GalleryMenuAction.connectSource:
+        widget.onConnectSource?.call();
     }
   }
 
@@ -1173,6 +1186,7 @@ enum _GalleryMenuAction {
   refresh,
   cardSize,
   switchPresentation,
+  connectSource,
 }
 
 class _ExplorerErrorBanner extends StatelessWidget {

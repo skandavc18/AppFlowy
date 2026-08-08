@@ -1,5 +1,6 @@
 import 'package:appflowy/plugins/collection/collection_views.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -65,12 +66,22 @@ class CollectionViewDefinition {
     required this.labelKey,
     required this.icon,
     required this.builder,
+    this.isAvailable,
   });
 
   final String id;
   final String labelKey;
   final IconData icon;
   final CollectionViewBuilder builder;
+
+  /// Whether this view has anything to show for a given collection.
+  ///
+  /// A view that only makes sense against a host — commits, issues, releases
+  /// — would otherwise be an empty tab on a local collection.
+  final bool Function(CollectionSource source)? isAvailable;
+
+  bool availableFor(CollectionSource source) =>
+      isAvailable?.call(source) ?? true;
 
   String get label => labelKey.tr();
 }

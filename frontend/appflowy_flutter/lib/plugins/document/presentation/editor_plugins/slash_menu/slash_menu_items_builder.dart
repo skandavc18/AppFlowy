@@ -140,6 +140,9 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       items: [
         if (documentBloc != null) ...collectionSlashMenuItems(documentBloc),
         ...linkedCollectionSlashMenuItems(),
+        // A page can also pull one object out of a connected service, which
+        // reads as `/Google Drive`, `/OneDrive`, `/Box`, `/Google Photos`.
+        ...externalEmbedSlashMenuItems(),
       ],
     ),
     SlashMenuSectionItems(

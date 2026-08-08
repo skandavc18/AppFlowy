@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_registry.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_tiles.dart';
@@ -15,9 +16,9 @@ abstract final class FolderEmbedStyles {
   static const list = 'list';
 }
 
-CollectionEmbedDefinition buildFolderEmbedDefinition() =>
+CollectionEmbedDefinition buildFolderEmbedDefinition({CollectionKind? kind}) =>
     CollectionEmbedDefinition(
-      kind: null,
+      kind: kind,
       defaultItemLimit: 8,
       compactHeight: 118,
       mediumHeight: 250,
