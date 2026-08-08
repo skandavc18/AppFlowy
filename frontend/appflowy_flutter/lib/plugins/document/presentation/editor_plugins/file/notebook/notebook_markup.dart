@@ -9,6 +9,7 @@
 // Nothing is executed: no scripts, no stylesheets, no frames. The markup is
 // parsed and mapped onto widgets, so the page cannot do anything but be read.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -16,12 +17,14 @@ import 'dart:typed_data';
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy_backend/log.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
+import 'package:http/http.dart' as http;
 import 'package:markdown/markdown.dart' as md;
 import 'package:path/path.dart' as p;
 
@@ -789,7 +792,7 @@ class NotebookMarkupBuilder {
       return null;
     }
     if (source.startsWith('http://') || source.startsWith('https://')) {
-      return Image.network(source, errorBuilder: broken);
+      return _NetworkMarkupImage(source: source, broken: _brokenMedia(label));
     }
     final directory = baseDirectory;
     if (directory == null) {
@@ -928,6 +931,118 @@ class _NotebookDisclosureState extends State<NotebookDisclosure> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// A picture from the web, decoded by what it actually is.
+///
+/// A README's badges come from addresses with no extension that answer with
+/// SVG, which the bitmap decoder cannot read — so the payload decides, not the
+/// address. Nothing is executed: an SVG is drawn by the vector renderer.
+class _NetworkMarkupImage extends StatefulWidget {
+  const _NetworkMarkupImage({required this.source, required this.broken});
+
+  final String source;
+  final Widget broken;
+
+  /// A page of badges must not be fetched again on every theme change.
+  static final Map<String, _FetchedImage?> _cache = {};
+  static const _maximumCached = 96;
+  static const _maximumBytes = 4 << 20;
+
+  @override
+  State<_NetworkMarkupImage> createState() => _NetworkMarkupImageState();
+}
+
+@immutable
+class _FetchedImage {
+  const _FetchedImage({required this.bytes, required this.isSvg});
+
+  final Uint8List bytes;
+  final bool isSvg;
+}
+
+class _NetworkMarkupImageState extends State<_NetworkMarkupImage> {
+  _FetchedImage? image;
+  bool settled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_fetch());
+  }
+
+  Future<void> _fetch() async {
+    if (_NetworkMarkupImage._cache.containsKey(widget.source)) {
+      setState(() {
+        image = _NetworkMarkupImage._cache[widget.source];
+        settled = true;
+      });
+      return;
+    }
+
+    _FetchedImage? fetched;
+    try {
+      final response = await http
+          .get(Uri.parse(widget.source))
+          .timeout(const Duration(seconds: 12));
+      final bytes = response.bodyBytes;
+      if (response.statusCode == 200 &&
+          bytes.isNotEmpty &&
+          bytes.length <= _NetworkMarkupImage._maximumBytes) {
+        fetched = _FetchedImage(
+          bytes: bytes,
+          isSvg: _looksLikeSvg(response.headers['content-type'], bytes),
+        );
+      }
+    } catch (error) {
+      Log.debug('Unable to read a picture in some markup: $error');
+    }
+
+    if (_NetworkMarkupImage._cache.length >=
+        _NetworkMarkupImage._maximumCached) {
+      _NetworkMarkupImage._cache.remove(_NetworkMarkupImage._cache.keys.first);
+    }
+    _NetworkMarkupImage._cache[widget.source] = fetched;
+    if (mounted) {
+      setState(() {
+        image = fetched;
+        settled = true;
+      });
+    }
+  }
+
+  /// The declared type first, then the payload's own opening.
+  ///
+  /// Merely containing `<svg>` is not enough — a sign-in page redirected to
+  /// from a picture's address would match that.
+  static bool _looksLikeSvg(String? contentType, Uint8List bytes) {
+    if (contentType != null && contentType.contains('image/svg')) {
+      return true;
+    }
+    final head = const Utf8Decoder(allowMalformed: true)
+        .convert(bytes.sublist(0, bytes.length < 128 ? bytes.length : 128))
+        .trimLeft()
+        .toLowerCase();
+    return head.startsWith('<svg') || head.startsWith('<?xml');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fetched = image;
+    if (fetched == null) {
+      return settled ? widget.broken : const SizedBox(width: 1, height: 18);
+    }
+    if (fetched.isSvg) {
+      return SvgPicture.memory(
+        fetched.bytes,
+        errorBuilder: (context, error, stackTrace) => widget.broken,
+      );
+    }
+    return Image.memory(
+      fetched.bytes,
+      errorBuilder: (context, error, stackTrace) => widget.broken,
     );
   }
 }

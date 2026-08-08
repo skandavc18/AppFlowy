@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/album/image_header.dart';
 import 'package:appflowy/workspace/application/collections/album/photo_exif.dart';
+import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:flutter/foundation.dart';
 
 /// What could be learned about one piece of media without decoding it.
@@ -63,6 +64,18 @@ class AlbumMetadataCache {
   final Map<String, Future<AlbumMediaMetadata>> _inFlight = {};
 
   AlbumMediaMetadata? peek(String id) => _resolved[id];
+
+  /// Records what a service has already said about a picture.
+  ///
+  /// A hosted album's shapes, capture dates and coordinates arrive with the
+  /// listing, so nothing has to be downloaded for the wall to lay out or for
+  /// the timeline and the places plot to have anything to show. Seeding also
+  /// stops [load] reading the cached thumbnail and reporting ITS size as the
+  /// picture's own.
+  void seed(String id, AlbumMediaMetadata metadata) {
+    _resolved[id] = metadata;
+    _inFlight.removeWhere((key, _) => key == id);
+  }
 
   Future<AlbumMediaMetadata> load(AlbumMediaItem item) {
     final cached = _resolved[item.id];
@@ -130,4 +143,28 @@ class AlbumMetadataCache {
     _resolved.clear();
     _inFlight.clear();
   }
+}
+
+/// What a service has already told us about one piece of media.
+///
+/// A hosted photo is never opened to be laid out: the listing carries its
+/// shape, when it was taken and where, which is everything the wall, the
+/// timeline and the places plot ask for.
+AlbumMediaMetadata albumMetadataOfProviderNode(ProviderNode node) {
+  final width = node.width;
+  final height = node.height;
+  return AlbumMediaMetadata(
+    exif: PhotoExif(
+      takenAt: node.createdAt,
+      pixelWidth: width,
+      pixelHeight: height,
+      latitude: node.latitude,
+      longitude: node.longitude,
+    ),
+    pixelSize: width != null && height != null && width > 0 && height > 0
+        ? ImageHeaderSize(width, height)
+        : null,
+    capturedAt: node.createdAt ?? node.modifiedAt,
+    byteSize: node.byteSize,
+  );
 }

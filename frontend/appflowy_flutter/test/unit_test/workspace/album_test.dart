@@ -1,3 +1,4 @@
+import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/album/album_places.dart';
 import 'package:appflowy/workspace/application/collections/album/album_state.dart';
@@ -26,6 +27,61 @@ AlbumMediaItem _item(String id, {DateTime? at}) => AlbumMediaItem(
     );
 
 void main() {
+  group('what makes an album repaint', () {
+    AlbumMediaItem at(String id, String path) => AlbumMediaItem(
+          view: _file(id, '$id.jpg'),
+          kind: AlbumMediaKind.image,
+          path: path,
+          index: 0,
+        );
+
+    AlbumController controller() => AlbumController(
+          initialState: const {},
+          onPersist: (_) {},
+          persistDebounce: const Duration(days: 1),
+        );
+
+    test('a picture arriving is reported even though the ids did not move', () {
+      final album = controller();
+      addTearDown(album.dispose);
+      album.setItems([at('a', 'https://photos/a')]);
+
+      var notified = 0;
+      album.addListener(() => notified++);
+      // What a hosted album does when a thumbnail lands: same id, new path.
+      album.setItems([at('a', 'C:/cache/a.jpg')]);
+
+      expect(notified, 1);
+      expect(album.items.single.isLocal, isTrue);
+    });
+
+    test('setting the very same list again says nothing', () {
+      final album = controller();
+      addTearDown(album.dispose);
+      album.setItems([at('a', 'C:/cache/a.jpg')]);
+
+      var notified = 0;
+      album.addListener(() => notified++);
+      album.setItems([at('a', 'C:/cache/a.jpg')]);
+
+      expect(notified, 0);
+    });
+
+    test('a picture the service refused is not the same as one still coming',
+        () {
+      final waiting = at('a', 'https://photos/a');
+      final refused = AlbumMediaItem(
+        view: _file('a', 'a.jpg'),
+        kind: AlbumMediaKind.image,
+        path: 'https://photos/a',
+        index: 0,
+        unavailable: true,
+      );
+
+      expect(waiting == refused, isFalse);
+    });
+  });
+
   group('album media', () {
     test('picks up pictures, video and audio and skips everything else', () {
       final items = albumMediaFrom([

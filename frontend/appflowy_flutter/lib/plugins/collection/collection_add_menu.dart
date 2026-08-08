@@ -5,6 +5,7 @@ import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
+import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
@@ -64,6 +65,7 @@ class CollectionAddMail extends CollectionAddChoice {
 List<AppMenuEntry> collectionAddEntries(
   CollectionContentPolicy policy, {
   ValueChanged<CollectionAddChoice>? onSelected,
+  ValueChanged<ProviderServiceInfo>? onImportFromService,
 }) {
   AppMenuItem row(
     String label,
@@ -116,7 +118,10 @@ List<AppMenuEntry> collectionAddEntries(
       ),
     );
   }
-  for (final entry in workspaceFileKindEntries(kinds: policy.fileKinds)) {
+  for (final entry in workspaceFileKindEntries(
+    kinds: policy.fileKinds,
+    onImportFromService: onImportFromService,
+  )) {
     entries.add(
       switch (entry) {
         AppMenuItem(value: final WorkspaceFileMenuAction action) => row(
@@ -165,12 +170,16 @@ Future<CollectionAddChoice?> showCollectionAddMenu({
   required BuildContext context,
   required Offset globalPosition,
   required CollectionContentPolicy policy,
+  ValueChanged<ProviderServiceInfo>? onImportFromService,
 }) =>
     showAppMenu<CollectionAddChoice>(
       context: context,
       globalPosition: globalPosition,
       width: WorkspaceFileKindMenuStyle.width,
-      entries: collectionAddEntries(policy),
+      entries: collectionAddEntries(
+        policy,
+        onImportFromService: onImportFromService,
+      ),
     );
 
 /// Carries out [choice] under [parentId], and hands back what it made.

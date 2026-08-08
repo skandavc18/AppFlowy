@@ -55,8 +55,8 @@ class AlbumController extends ChangeNotifier {
       _items.where((item) => item.kind == AlbumMediaKind.audio).length;
 
   void setItems(List<AlbumMediaItem> items) {
-    final sameOrder = _items.length == items.length &&
-        !_items.indexed.any((entry) => entry.$2.id != items[entry.$1].id);
+    final unchanged = _items.length == items.length &&
+        !_items.indexed.any((entry) => entry.$2 != items[entry.$1]);
     _items = items;
     final pruned = _state.prunedTo([for (final item in items) item.id]);
     final changed = !identical(pruned, _state);
@@ -65,7 +65,7 @@ class AlbumController extends ChangeNotifier {
     if (changed) {
       _schedulePersist();
     }
-    if (!sameOrder || changed) {
+    if (!unchanged || changed) {
       _notify();
     }
   }

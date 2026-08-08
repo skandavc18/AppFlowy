@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_content_view.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
@@ -86,6 +87,17 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
     super.dispose();
   }
 
+  /// Signs in again, then reads the folder once more.
+  Future<void> _reconnect(ProviderController live) async {
+    final signedIn = await reconnectProviderAccount(
+      context,
+      info: widget.source.info,
+    );
+    if (signedIn && mounted) {
+      await live.refresh();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = CollectionPalette.of(context, widget.kind);
@@ -104,7 +116,7 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
             palette: palette,
             retryAfter: live.failure?.retryAfter,
             onRetry: () => unawaited(live.refresh()),
-            onReconnect: widget.onChangeSource,
+            onReconnect: () => unawaited(_reconnect(live)),
           );
         }
 
@@ -118,7 +130,7 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
                 info: widget.source.info,
                 palette: palette,
                 onRetry: () => unawaited(live.refresh(silent: true)),
-                onReconnect: widget.onChangeSource,
+                onReconnect: () => unawaited(_reconnect(live)),
               ),
             Expanded(
               child: ExternalContentView(
@@ -144,6 +156,15 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
               onTap: widget.onChangeSource,
             ),
             const Spacer(),
+            if (widget.source.readOnly) ...[
+              Icon(Icons.lock_rounded, size: 13, color: palette.textMuted),
+              const SizedBox(width: 5),
+              Text(
+                LocaleKeys.providers_mount_readOnly.tr(),
+                style: TextStyle(color: palette.textMuted, fontSize: 11.5),
+              ),
+              const SizedBox(width: 12),
+            ],
             for (final option in ExternalLayout.values) ...[
               _LayoutButton(
                 palette: palette,
@@ -169,10 +190,26 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
               PopupMenuButton<int>(
                 tooltip: LocaleKeys.providers_changeSource.tr(),
                 position: PopupMenuPosition.under,
-                onSelected: (value) => value == 0
-                    ? widget.onChangeSource?.call()
-                    : widget.onDisconnect?.call(),
+                onSelected: (value) => switch (value) {
+                  0 => widget.onChangeSource?.call(),
+                  1 => widget.onDisconnect?.call(),
+                  _ => widget.onSourceChanged(
+                      widget.source.copyWith(readOnly: !widget.source.readOnly),
+                    ),
+                },
                 itemBuilder: (context) => [
+                  PopupMenuItem<int>(
+                    value: 2,
+                    height: 34,
+                    child: _MenuRow(
+                      icon: widget.source.readOnly
+                          ? Icons.lock_open_rounded
+                          : Icons.lock_rounded,
+                      label: widget.source.readOnly
+                          ? LocaleKeys.providers_mount_allowChanges.tr()
+                          : LocaleKeys.providers_mount_readOnly.tr(),
+                    ),
+                  ),
                   if (widget.onChangeSource != null)
                     PopupMenuItem<int>(
                       value: 0,

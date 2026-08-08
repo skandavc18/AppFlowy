@@ -75,6 +75,49 @@ abstract class RemoteCollectionProvider extends CollectionProvider {
   /// services refuse a request that carries both.
   bool authenticatesMedia(String url) => url.startsWith(apiBase);
 
+  /// Which way round the media host actually wanted it, once one worked.
+  bool? _mediaAuthWorks;
+
+  /// Reads a media URL, trying the other way round if the host refuses.
+  ///
+  /// Whether a signed media URL wants the access token is a per-service
+  /// decision the documentation does not always get right, and being wrong
+  /// means every thumbnail in a collection silently fails. So the first
+  /// refusal is retried the other way and the answer is remembered.
+  Future<Uint8List> fetchMedia(
+    String url, {
+    int maxBytes = ProviderTransport.defaultMaxBytes,
+  }) async {
+    final preferred = _mediaAuthWorks ?? authenticatesMedia(url);
+    try {
+      final bytes = await transport.bytes(
+        url,
+        headers: mediaHeaders,
+        maxBytes: maxBytes,
+        authenticated: preferred,
+      );
+      _mediaAuthWorks = preferred;
+      return bytes;
+    } on ProviderFailure catch (failure) {
+      if (failure.status != ProviderStatus.permissionDenied &&
+          failure.status != ProviderStatus.authExpired) {
+        rethrow;
+      }
+      final bytes = await transport.bytes(
+        url,
+        headers: mediaHeaders,
+        maxBytes: maxBytes,
+        authenticated: !preferred,
+      );
+      Log.info(
+        'Media on ${Uri.parse(url).host} wants '
+        '${preferred ? 'no' : 'an'} access token.',
+      );
+      _mediaAuthWorks = !preferred;
+      return bytes;
+    }
+  }
+
   @override
   Future<Uint8List> readBytes(
     ProviderNode node, {
@@ -84,12 +127,7 @@ abstract class RemoteCollectionProvider extends CollectionProvider {
     if (url == null || url.isEmpty) {
       throw const ProviderFailure.notFound('This object has no content.');
     }
-    return transport.bytes(
-      url,
-      headers: mediaHeaders,
-      maxBytes: maxBytes,
-      authenticated: authenticatesMedia(url),
-    );
+    return fetchMedia(url, maxBytes: maxBytes);
   }
 
   @override
@@ -105,21 +143,21 @@ abstract class RemoteCollectionProvider extends CollectionProvider {
     }
 
     try {
-      final bytes = await transport.bytes(
+      final bytes = await fetchMedia(
         url,
-        headers: mediaHeaders,
         maxBytes: ProviderCache.maxThumbnailBytes,
-        authenticated: authenticatesMedia(url),
       );
       return _cache.writeThumbnail(_source.cacheKey, node.id, bytes);
     } on ProviderFailure catch (failure) {
-      // A missing thumbnail is not worth a state change; the card falls back
-      // to its own artwork.
       if (failure.status != ProviderStatus.notFound) {
-        Log.warn('Unable to read a thumbnail: ${failure.status.name}');
+        Log.warn(
+          'Unable to read a thumbnail from ${Uri.parse(url).host}: '
+          '${failure.status.name}',
+        );
       }
       return null;
-    } catch (_) {
+    } catch (error) {
+      Log.warn('Unable to read a thumbnail: $error');
       return null;
     }
   }

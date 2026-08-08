@@ -1,7 +1,8 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/plugins/collection/providers/external_picker.dart';
+import 'package:appflowy/plugins/collection/providers/external_import.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/selectable_svg_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/external/external_embed_block_component.dart';
+import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -39,14 +40,18 @@ SelectionMenuItem _item(ProviderServiceInfo info) => SelectionMenuItem(
         if (!context.mounted) {
           return;
         }
-        final picked = await showExternalPicker(context, info: info);
-        if (picked == null) {
+        // The picker is a dialog, and opening one takes focus off the editor,
+        // which clears the selection. Without remembering it here there is
+        // nowhere left to insert and the slash command does nothing at all.
+        final caret = editorState.selection;
+        final chosen = await chooseExternalObject(context, info: info);
+        if (chosen == null) {
           return;
         }
         await editorState.insertExternalEmbed(
-          service: info.service,
-          connectionId: picked.source.connectionId,
-          node: picked.node,
+          source: chosen.source,
+          node: chosen.node,
+          at: caret,
         );
       },
       nameBuilder: slashMenuItemNameBuilder,
@@ -90,13 +95,13 @@ List<String> _keywordsFor(ProviderService service) => switch (service) {
     };
 
 extension InsertExternalEmbed on EditorState {
-  /// Puts an external object on the page where the caret is.
+  /// Puts an external object on the page at [at], or where the caret is.
   Future<void> insertExternalEmbed({
-    required ProviderService service,
-    required String connectionId,
+    required CollectionSource source,
     required ProviderNode node,
+    Selection? at,
   }) async {
-    final selection = this.selection;
+    final selection = at ?? this.selection;
     if (selection == null || !selection.isCollapsed) {
       return;
     }
@@ -106,11 +111,7 @@ extension InsertExternalEmbed on EditorState {
       return;
     }
 
-    final block = externalEmbedNode(
-      service: service,
-      connectionId: connectionId,
-      node: node,
-    );
+    final block = externalEmbedNode(source: source, node: node);
 
     final transaction = this.transaction;
     // Replace the empty paragraph the slash was typed in, otherwise every

@@ -3,15 +3,18 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_chrome.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_context_menu.dart';
-import 'package:appflowy/plugins/collection/views/repository/repository_file_stage.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_host.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_views.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_block_chrome.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/notebook/notebook_markup.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_controller.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart' as intl;
+import 'package:path/path.dart' as p;
 
 /// The front page of a repository: what it is written in, what it holds, and
 /// the readme that explains it.
@@ -692,11 +695,83 @@ class _ReadmeCard extends StatelessWidget {
               ],
             ),
           ),
-          SizedBox(
-            height: 560,
-            child: RepoFileStage(entry: readme, theme: theme),
+          _ReadmeDocument(
+            entry: readme,
+            controller: controller,
+            theme: theme,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The readme, laid out at its true height.
+///
+/// A boxed viewer would scroll inside a page that also scrolls, so the
+/// document is built as widgets and the page's own scroll carries all of it.
+/// That is also why this does not go through `RepoFileStage`: the markdown
+/// preview is a web view, and a web view has no height of its own.
+class _ReadmeDocument extends StatelessWidget {
+  const _ReadmeDocument({
+    required this.entry,
+    required this.controller,
+    required this.theme,
+  });
+
+  final RepoEntry entry;
+  final RepositoryController controller;
+  final RepoTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = controller.textFor(entry);
+    if (source == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: RepoMetrics.space8),
+        child: Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+    if (source.trim().isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: RepoMetrics.space8),
+        child: Center(
+          child: Text(
+            LocaleKeys.collections_repository_noReadmeDescription.tr(),
+            style: theme.rowLabel.copyWith(color: theme.textFaint),
+          ),
+        ),
+      );
+    }
+
+    const padding = EdgeInsets.fromLTRB(
+      RepoMetrics.space4 + 2,
+      RepoMetrics.space3,
+      RepoMetrics.space4 + 2,
+      RepoMetrics.space4,
+    );
+    if (filePreviewKindFromName(entry.name) != FilePreviewKind.markdown) {
+      return Padding(
+        padding: padding,
+        child: SelectableText(
+          source,
+          style: theme.rowLabel.copyWith(height: 1.6),
+        ),
+      );
+    }
+    return Padding(
+      padding: padding,
+      child: NotebookMarkup(
+        source: source,
+        palette: CodeBlockPalette.resolve(context),
+        // Relative images in a readme point at the folder it sits in.
+        baseDirectory: p.dirname(entry.storageUrl),
       ),
     );
   }

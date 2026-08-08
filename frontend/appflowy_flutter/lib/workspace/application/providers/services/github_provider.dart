@@ -311,8 +311,10 @@ class GitHubRepositoryProvider extends RemoteCollectionProvider
   @override
   Future<Map<String, int>> languages() async {
     final languages = jsonMap(
-      await transport.json('$apiBase/repos/$fullName/languages',
-          headers: _headers,),
+      await transport.json(
+        '$apiBase/repos/$fullName/languages',
+        headers: _headers,
+      ),
     );
     return {
       for (final entry in languages.entries)

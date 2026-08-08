@@ -2,10 +2,10 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
-import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -42,6 +42,8 @@ List<AppMenuEntry> workspaceFileKindEntries({
   ValueChanged<WorkspaceFileMenuAction>? onSelected,
   ValueChanged<CollectionKind>? onCreateCollection,
   ValueChanged<WorkspaceTableKind>? onCreateDatabase,
+  ValueChanged<ProviderServiceInfo>? onImportFromService,
+  ValueChanged<ProviderServiceInfo>? onMountService,
   Set<WorkspaceFileKind>? kinds,
 }) {
   final entries = <AppMenuEntry>[];
@@ -64,6 +66,41 @@ List<AppMenuEntry> workspaceFileKindEntries({
         onSelected: onSelected == null ? null : () => onSelected(action),
       ),
     );
+  }
+  if (onImportFromService != null) {
+    final services = ProviderServices.importable();
+    if (services.isNotEmpty) {
+      entries
+        ..add(const AppMenuSeparator())
+        ..add(AppMenuHeader(LocaleKeys.providers_import_heading.tr()));
+      for (final info in services) {
+        entries.add(
+          AppMenuItem(
+            label: info.label,
+            icon: info.icon,
+            onSelected: () => onImportFromService(info),
+          ),
+        );
+      }
+    }
+  }
+  if (onMountService != null) {
+    final services = ProviderServices.mountable();
+    if (services.isNotEmpty) {
+      entries
+        ..add(const AppMenuSeparator())
+        ..add(AppMenuHeader(LocaleKeys.providers_mount_heading.tr()));
+      for (final info in services) {
+        entries.add(
+          AppMenuItem(
+            label: info.label,
+            icon: Icons.drive_folder_upload_rounded,
+            subtitle: LocaleKeys.providers_mount_subtitle.tr(),
+            onSelected: () => onMountService(info),
+          ),
+        );
+      }
+    }
   }
   if (onCreateDatabase != null) {
     entries
@@ -89,6 +126,8 @@ Future<WorkspaceFileMenuAction?> showWorkspaceFileKindMenu({
   required Offset globalPosition,
   ValueChanged<CollectionKind>? onCreateCollection,
   ValueChanged<WorkspaceTableKind>? onCreateDatabase,
+  ValueChanged<ProviderServiceInfo>? onImportFromService,
+  ValueChanged<ProviderServiceInfo>? onMountService,
   Set<WorkspaceFileKind>? kinds,
 }) =>
     showAppMenu<WorkspaceFileMenuAction>(
@@ -97,6 +136,8 @@ Future<WorkspaceFileMenuAction?> showWorkspaceFileKindMenu({
       entries: workspaceFileKindEntries(
         onCreateCollection: onCreateCollection,
         onCreateDatabase: onCreateDatabase,
+        onImportFromService: onImportFromService,
+        onMountService: onMountService,
         kinds: kinds,
       ),
       width: WorkspaceFileKindMenuStyle.width,
@@ -111,11 +152,15 @@ class WorkspaceFileAddAction extends PopoverActionCell {
     required this.onCreate,
     this.onCreateCollection,
     this.onCreateDatabase,
+    this.onImportFromService,
+    this.onMountService,
   });
 
   final void Function(WorkspaceFileMenuAction action) onCreate;
   final ValueChanged<CollectionKind>? onCreateCollection;
   final ValueChanged<WorkspaceTableKind>? onCreateDatabase;
+  final ValueChanged<ProviderServiceInfo>? onImportFromService;
+  final ValueChanged<ProviderServiceInfo>? onMountService;
 
   @override
   Widget? leftIcon(Color iconColor) => Icon(
@@ -156,6 +201,20 @@ class WorkspaceFileAddAction extends PopoverActionCell {
                     parentController.close();
                     onCreateDatabase!(kind);
                   },
+            onImportFromService: onImportFromService == null
+                ? null
+                : (info) {
+                    controller.close();
+                    parentController.close();
+                    onImportFromService!(info);
+                  },
+            onMountService: onMountService == null
+                ? null
+                : (info) {
+                    controller.close();
+                    parentController.close();
+                    onMountService!(info);
+                  },
           );
 }
 
@@ -166,11 +225,15 @@ class WorkspaceFileKindList extends StatelessWidget {
     required this.onSelected,
     this.onCreateCollection,
     this.onCreateDatabase,
+    this.onImportFromService,
+    this.onMountService,
   });
 
   final ValueChanged<WorkspaceFileMenuAction> onSelected;
   final ValueChanged<CollectionKind>? onCreateCollection;
   final ValueChanged<WorkspaceTableKind>? onCreateDatabase;
+  final ValueChanged<ProviderServiceInfo>? onImportFromService;
+  final ValueChanged<ProviderServiceInfo>? onMountService;
 
   @override
   Widget build(BuildContext context) {
@@ -178,6 +241,8 @@ class WorkspaceFileKindList extends StatelessWidget {
       workspaceFileKindEntries(
         onCreateCollection: onCreateCollection,
         onCreateDatabase: onCreateDatabase,
+        onImportFromService: onImportFromService,
+        onMountService: onMountService,
       ),
     );
     return SingleChildScrollView(
@@ -190,17 +255,22 @@ class WorkspaceFileKindList extends StatelessWidget {
               AppMenuSeparator() => const AppMenuSeparatorLine(),
               AppMenuHeader(:final label) => AppMenuSectionLabel(label: label),
               AppMenuCustom(:final builder) => Builder(builder: builder),
+              // A row that carries its own callback owns its answer; the rest
+              // are told apart by the type of the value they hold.
               AppMenuItem() => AppMenuRow(
                   label: entry.label,
                   icon: entry.icon,
                   tracksHover: true,
-                  onTap: () => switch (entry.value) {
-                    final WorkspaceFileMenuAction action => onSelected(action),
-                    final CollectionKind kind => onCreateCollection?.call(kind),
-                    final WorkspaceTableKind kind =>
-                      onCreateDatabase?.call(kind),
-                    _ => null,
-                  },
+                  onTap: entry.onSelected ??
+                      () => switch (entry.value) {
+                            final WorkspaceFileMenuAction action =>
+                              onSelected(action),
+                            final CollectionKind kind =>
+                              onCreateCollection?.call(kind),
+                            final WorkspaceTableKind kind =>
+                              onCreateDatabase?.call(kind),
+                            _ => null,
+                          },
                 ),
             },
         ],

@@ -1,10 +1,10 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
-import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -22,6 +22,8 @@ class ExplorerToolbar extends StatelessWidget {
     required this.onSearchChanged,
     required this.canPaste,
     required this.isSearching,
+    this.onImportFromService,
+    this.onMountService,
     this.trailing,
   });
 
@@ -36,6 +38,8 @@ class ExplorerToolbar extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final bool canPaste;
   final bool isSearching;
+  final ValueChanged<ProviderServiceInfo>? onImportFromService;
+  final ValueChanged<ProviderServiceInfo>? onMountService;
   final Widget? trailing;
 
   @override
@@ -47,6 +51,8 @@ class ExplorerToolbar extends StatelessWidget {
           onSelected: onNewFile,
           onCreateCollection: onCreateCollection,
           onCreateDatabase: onCreateDatabase,
+          onImportFromService: onImportFromService,
+          onMountService: onMountService,
         ),
         _ToolbarButton(
           icon: workspaceAddFolderIcon,
@@ -147,11 +153,15 @@ class _NewFileButton extends StatelessWidget {
     required this.onSelected,
     required this.onCreateCollection,
     required this.onCreateDatabase,
+    this.onImportFromService,
+    this.onMountService,
   });
 
   final ValueChanged<WorkspaceFileMenuAction> onSelected;
   final ValueChanged<CollectionKind> onCreateCollection;
   final ValueChanged<WorkspaceTableKind> onCreateDatabase;
+  final ValueChanged<ProviderServiceInfo>? onImportFromService;
+  final ValueChanged<ProviderServiceInfo>? onMountService;
 
   @override
   Widget build(BuildContext context) {
@@ -169,6 +179,8 @@ class _NewFileButton extends StatelessWidget {
             globalPosition: box.localToGlobal(Offset(0, box.size.height)),
             onCreateCollection: onCreateCollection,
             onCreateDatabase: onCreateDatabase,
+            onImportFromService: onImportFromService,
+            onMountService: onMountService,
           );
           if (action != null) {
             onSelected(action);

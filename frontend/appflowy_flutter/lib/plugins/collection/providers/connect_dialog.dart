@@ -32,6 +32,20 @@ Future<ProviderConnection?> showProviderConnectDialog(
       ),
     );
 
+/// Signs in to the account a binding already uses, again.
+///
+/// A lapsed token is not a reason to choose a different folder, which is all
+/// the source picker can offer. A connection's id is derived from the account,
+/// so signing in again replaces the stored credentials in place and every
+/// collection bound to that account starts working.
+Future<bool> reconnectProviderAccount(
+  BuildContext context, {
+  required ProviderServiceInfo info,
+}) async {
+  final connection = await showProviderConnectDialog(context, info: info);
+  return connection != null;
+}
+
 class _ConnectDialog extends StatefulWidget {
   const _ConnectDialog({
     required this.info,

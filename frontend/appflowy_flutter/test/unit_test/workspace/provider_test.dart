@@ -118,14 +118,18 @@ void main() {
     test('an extension is read off the end of the name only', () {
       expect(
         const ProviderNode(
-                id: '1', name: 'a.b.tar.gz', kind: ProviderNodeKind.archive,)
-            .extension,
+          id: '1',
+          name: 'a.b.tar.gz',
+          kind: ProviderNodeKind.archive,
+        ).extension,
         'gz',
       );
       expect(
         const ProviderNode(
-                id: '1', name: 'Makefile', kind: ProviderNodeKind.other,)
-            .extension,
+          id: '1',
+          name: 'Makefile',
+          kind: ProviderNodeKind.other,
+        ).extension,
         '',
       );
     });
@@ -218,7 +222,9 @@ void main() {
       );
       final item = factory.viewFor(node);
       expect(
-          WorkspaceItemMetadata.fromExtra(item.view.extra)?.isFolder, isTrue,);
+        WorkspaceItemMetadata.fromExtra(item.view.extra)?.isFolder,
+        isTrue,
+      );
       expect(item.item.isFolder, isTrue);
     });
 
@@ -465,7 +471,9 @@ theirs
 
     test('an error with no description still names the code', () {
       expect(
-          readOAuthError('{"error":"invalid_grant"}')?.code, 'invalid_grant',);
+        readOAuthError('{"error":"invalid_grant"}')?.code,
+        'invalid_grant',
+      );
     });
 
     test('a body that is not an error is not read as one', () {
@@ -665,7 +673,9 @@ theirs
       );
 
       expect(
-          repoEntryFor(view, parentPath: 'lib', depth: 1).isLocalFile, false,);
+        repoEntryFor(view, parentPath: 'lib', depth: 1).isLocalFile,
+        false,
+      );
     });
   });
 }

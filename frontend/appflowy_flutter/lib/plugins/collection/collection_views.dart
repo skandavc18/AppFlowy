@@ -30,6 +30,12 @@ import 'package:flutter/material.dart';
 /// A type that already shows its media visually turns [includeGallery] off:
 /// two card walls in one switcher is one too many. [galleryLabelKey] renames
 /// the wall for a type that has no competing view to be told apart from.
+/// The plain contents views every collection type carries.
+///
+/// These two are the only ones that are source aware in one step: they show
+/// whatever the collection holds with no opinion about it, so a service's
+/// listing can stand in for the workspace's. A type's own views know their
+/// subject and read the service themselves.
 List<CollectionViewDefinition> _contentViews({
   bool includeGallery = true,
   String galleryLabelKey = LocaleKeys.collections_views_files,
@@ -37,25 +43,30 @@ List<CollectionViewDefinition> _contentViews({
 }) =>
     [
       if (includeGallery)
+        _sourceAware(
+          CollectionViewDefinition(
+            id: CollectionViewIds.gallery,
+            labelKey: galleryLabelKey,
+            icon: Icons.grid_view_rounded,
+            builder: (context, collection) => CollectionContentsView(
+              collection: collection,
+              presentation: FolderExplorerPresentation.gallery,
+              onOpenObject: onOpenObject,
+            ),
+          ),
+        ),
+      _sourceAware(
         CollectionViewDefinition(
-          id: CollectionViewIds.gallery,
-          labelKey: galleryLabelKey,
-          icon: Icons.grid_view_rounded,
+          id: CollectionViewIds.list,
+          labelKey: LocaleKeys.collections_views_list,
+          icon: Icons.view_list_rounded,
           builder: (context, collection) => CollectionContentsView(
             collection: collection,
-            presentation: FolderExplorerPresentation.gallery,
+            presentation: FolderExplorerPresentation.tree,
             onOpenObject: onOpenObject,
           ),
         ),
-      CollectionViewDefinition(
-        id: CollectionViewIds.list,
-        labelKey: LocaleKeys.collections_views_list,
-        icon: Icons.view_list_rounded,
-        builder: (context, collection) => CollectionContentsView(
-          collection: collection,
-          presentation: FolderExplorerPresentation.tree,
-          onOpenObject: onOpenObject,
-        ),
+        layout: ExternalLayout.list,
       ),
     ];
 
@@ -123,16 +134,6 @@ CollectionViewDefinition _sourceAware(
       },
     );
 
-/// Every view of a type, made source aware in one step.
-List<CollectionViewDefinition> _sourceAwareAll(
-  List<CollectionViewDefinition> definitions, {
-  ExternalLayout layout = ExternalLayout.gallery,
-}) =>
-    [
-      for (final definition in definitions)
-        _sourceAware(definition, layout: layout),
-    ];
-
 void registerBuiltInCollections() {
   CollectionRegistry.register(
     CollectionTypeDefinition(
@@ -175,10 +176,13 @@ void registerBuiltInCollections() {
         'slideshow',
         'collection',
       ],
-      views: _sourceAwareAll([
+      views: [
+        // NOT source aware: `AlbumHost` feeds these from the service itself,
+        // so the wall, the masonry, the timeline and the places plot all work
+        // on a hosted album exactly as they do on a workspace one.
         ...albumCollectionViews(),
         ..._contentViews(includeGallery: false),
-      ]),
+      ],
     ),
   );
   CollectionRegistry.register(

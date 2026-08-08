@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
+import 'package:appflowy/plugins/collection/providers/external_import.dart';
+import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -169,6 +171,8 @@ class _FolderExplorerState extends State<FolderExplorer> {
             onCreateDatabase: (kind) => unawaited(
               _createDatabase(kind, parentId: controller.currentFolder.id),
             ),
+            onImportFromService: (info) => unawaited(_importFromService(info)),
+            onMountService: (info) => unawaited(_mountService(info)),
             onMore: (position) => unawaited(_showBackgroundMenu(position)),
           )
         : null;
@@ -423,6 +427,9 @@ class _FolderExplorerState extends State<FolderExplorer> {
               onPaste: controller.canPaste
                   ? () => unawaited(controller.paste())
                   : null,
+              onImportFromService: (info) =>
+                  unawaited(_importFromService(info)),
+              onMountService: (info) => unawaited(_mountService(info)),
               onRefresh: () {
                 previewCache.clear();
                 unawaited(controller.refresh());
@@ -433,13 +440,24 @@ class _FolderExplorerState extends State<FolderExplorer> {
               isSearching: controller.isSearching,
               trailing: widget.embedded
                   ? null
-                  : _ExplorerPresentationToggle(
-                      presentation: presentation,
-                      onChanged: (value) {
-                        if (presentation != value) {
-                          setState(() => presentation = value);
-                        }
-                      },
+                  : Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.onConnectSource != null) ...[
+                          _ConnectSourceButton(
+                            onPressed: widget.onConnectSource!,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        _ExplorerPresentationToggle(
+                          presentation: presentation,
+                          onChanged: (value) {
+                            if (presentation != value) {
+                              setState(() => presentation = value);
+                            }
+                          },
+                        ),
+                      ],
                     ),
             ),
             const SizedBox(height: 4),
@@ -625,6 +643,10 @@ class _FolderExplorerState extends State<FolderExplorer> {
       onCreateDatabase: policy != null && !policy.allowsTables
           ? null
           : (kind) => unawaited(_createDatabase(kind, parentId: item.id)),
+      onImportFromService: (info) =>
+          unawaited(_importFromService(info, parentId: item.id)),
+      onMountService: (info) =>
+          unawaited(_mountService(info, parentId: item.id)),
     );
     if (action == null || !mounted) {
       return;
@@ -642,6 +664,39 @@ class _FolderExplorerState extends State<FolderExplorer> {
     final view = await controller.createFileOfKind(action, parentId: parentId);
     if (view != null && mounted) {
       _openView(view);
+    }
+  }
+
+  /// Copies files out of a connected service into this folder.
+  Future<void> _importFromService(
+    ProviderServiceInfo info, {
+    String? parentId,
+  }) async {
+    final target = parentId ?? controller.currentFolder.id;
+    final imported = await importFromService(
+      context,
+      parentViewId: target,
+      info: info,
+    );
+    if (imported > 0 && mounted) {
+      previewCache.clear();
+      await controller.refresh();
+    }
+  }
+
+  /// Puts a folder from a service inside this one, as a folder of its own.
+  Future<void> _mountService(
+    ProviderServiceInfo info, {
+    String? parentId,
+  }) async {
+    final target = parentId ?? controller.currentFolder.id;
+    final mounted_ = await mountExternalFolder(
+      context,
+      parentViewId: target,
+      info: info,
+    );
+    if (mounted_ != null && mounted) {
+      await controller.refresh();
     }
   }
 
@@ -1078,6 +1133,71 @@ class _FolderExplorerState extends State<FolderExplorer> {
         WorkspaceExplorerItemKind.database =>
           LocaleKeys.workspaceFolderExplorer_database.tr(),
       };
+}
+
+/// Offers to back this folder with a service.
+///
+/// It sits on the toolbar rather than only in the background menu: a folder
+/// that can be a Google Drive folder has to say so where somebody looking at
+/// the folder will see it.
+class _ConnectSourceButton extends StatefulWidget {
+  const _ConnectSourceButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  State<_ConnectSourceButton> createState() => _ConnectSourceButtonState();
+}
+
+class _ConnectSourceButtonState extends State<_ConnectSourceButton> {
+  bool hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = FolderExplorerPalette.of(context);
+    return Tooltip(
+      message: LocaleKeys.providers_connectThisFolder.tr(),
+      waitDuration: const Duration(milliseconds: 450),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => hovered = true),
+        onExit: (_) => setState(() => hovered = false),
+        child: GestureDetector(
+          onTap: widget.onPressed,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            height: 28,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            decoration: BoxDecoration(
+              color: palette.hover.withValues(alpha: hovered ? 1 : 0.48),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: palette.border.withValues(alpha: 0.7)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.cloud_sync_rounded,
+                  size: 15,
+                  color: palette.textSecondary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  LocaleKeys.providers_connect.tr(),
+                  style: TextStyle(
+                    color: palette.textSecondary,
+                    fontSize: 12,
+                    fontVariations: const [FontVariation.weight(570)],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ExplorerPresentationToggle extends StatelessWidget {

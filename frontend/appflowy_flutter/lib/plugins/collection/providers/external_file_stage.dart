@@ -5,6 +5,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_media_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_document_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/workspace/application/providers/provider_controller.dart';
@@ -248,7 +249,9 @@ Widget externalFileRenderer({
   bool bare = true,
 }) {
   final file = File(path);
-  final name = node.name;
+  // A service names a file whatever a person typed, and every viewer picks
+  // itself from the name, so the declared type supplies the extension.
+  final name = providerFileNameFor(node);
 
   if (imgExtensionRegex.hasMatch(name) || node.kind == ProviderNodeKind.image) {
     return Center(
@@ -294,6 +297,16 @@ Widget externalFileRenderer({
       editable: false,
       metadata: const {},
       onMetadataChanged: (_) {},
+    );
+  }
+  if (isOfficeFile(name)) {
+    return OfficeDocumentView(
+      key: ValueKey('external-office-${node.id}'),
+      file: file,
+      name: name,
+      source: path,
+      editable: false,
+      fallbackBuilder: (context) => _Unsupported(node: node, palette: palette),
     );
   }
   if (kind == null) {

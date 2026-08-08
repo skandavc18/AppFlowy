@@ -54,7 +54,7 @@ void main() {
       expect(value, isNotNull);
       expect(
         DateTime.fromMillisecondsSinceEpoch((value! * 1000).round(),
-                isUtc: true)
+                isUtc: true,)
             .year,
         2026,
       );
@@ -278,7 +278,7 @@ void main() {
       final extra = ChartMetadata.newExtra();
       expect(ChartMetadata.fromExtra(extra), isNotNull);
       expect(ChartMetadata.fromExtra(ChartMetadata.removeFromExtra(extra)),
-          isNull);
+          isNull,);
     });
   });
 
@@ -320,7 +320,6 @@ void main() {
 
     test('a bar chart ignores an x column it cannot use', () {
       const spec = ChartSpec(
-        type: ChartType.bar,
         xColumn: 'Width',
         valueColumns: ['Height'],
       );

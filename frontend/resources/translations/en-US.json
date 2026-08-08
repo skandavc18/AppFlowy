@@ -2054,6 +2054,14 @@
         "addMathEquation": "Add a TeX equation",
         "editMathEquation": "Edit Math Equation"
       },
+      "pdf": {
+        "locked": "This PDF is protected",
+        "lockedBody": "A password is needed to open it.",
+        "askPassword": "Enter the password for \u201c{}\u201d.",
+        "wrongPassword": "That password was not accepted. Try again.",
+        "password": "Password",
+        "unlock": "Unlock"
+      },
       "optionAction": {
         "click": "Click",
         "toOpenMenu": " to open menu",
@@ -3906,8 +3914,34 @@
     "useThisFolder": "Use \u201c{}\u201d",
     "cannotOpen": "This file could not be fetched",
     "noViewer": "AppFlowy has no viewer for this file type yet",
+    "openIn": "Open in {}",
+    "open": "Open",
+    "copyLink": "Copy link",
+    "linkCopied": "Link copied",
+    "saveCopy": "Save a copy\u2026",
+    "savedCopy": "Copy saved",
+    "favourite": "Add to favourites",
+    "unfavourite": "Remove from favourites",
+    "uploadHere": "Upload files here\u2026",
+    "deleteBody": "\u201c{}\u201d will be deleted from {}. This cannot be undone from AppFlowy.",
     "changeSource": "Where this collection reads from",
     "connectThisFolder": "Connect this folder to a service\u2026",
+    "mount": {
+      "heading": "Mount a folder from a service",
+      "subtitle": "Read only until you allow changes",
+      "allowChanges": "Allow changes to this folder",
+      "readOnly": "Read only",
+      "readOnlyBody": "This folder is mounted read only. Allow changes to write back to {}."
+    },
+    "import": {
+      "heading": "Copy in from a service",
+      "pickHint": "Choose the files to copy in.",
+      "chosen": "{} chosen",
+      "add": "Copy in",
+      "working": "Copying from {}\u2026",
+      "done": "Copied {} in",
+      "nothing": "Nothing was copied in"
+    },
     "disconnectFolder": "Show this workspace's files again",
     "chooseSource": "Where does this read from?",
     "chooseSourceBody": "Pick the workspace, or a service you have connected.",

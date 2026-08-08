@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
@@ -12,6 +13,7 @@ import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -24,6 +26,7 @@ import 'package:printing/printing.dart';
 
 import 'pdf_page_raster_cache.dart';
 import 'pdf_page_turn.dart';
+import 'pdf_password_dialog.dart';
 import 'pdf_preview_sidebar.dart';
 import 'pdf_preview_scroll_physics.dart';
 import 'pdf_preview_theme.dart';
@@ -148,8 +151,20 @@ class PdfPreview extends StatefulWidget {
 }
 
 class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
-  late final PdfDocumentRef documentRef =
-      widget.sourceDocumentRef ?? PdfDocumentRefFile(widget.file.path);
+  late PdfDocumentRef documentRef = widget.sourceDocumentRef ?? _fileRef();
+
+  /// Whether a password has been asked for, and whether one was given.
+  bool passwordAsked = false;
+  bool passwordAccepted = false;
+
+  /// Bumped to open the document again after a refused password.
+  int passwordAttempt = 0;
+
+  PdfDocumentRef _fileRef() => PdfDocumentRefFile(
+        widget.file.path,
+        passwordProvider: _askForPassword,
+      );
+
   final viewerController = PdfViewerController();
   late final PdfTextSearcher textSearcher = PdfTextSearcher(viewerController);
   final searchController = TextEditingController();
@@ -527,6 +542,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           quarterTurns: quarterTurns,
           child: PdfViewer(
             documentRef,
+            key: ValueKey('pdf-$passwordAttempt-${widget.file.path}'),
             controller: viewerController,
             params: _viewerParams(),
           ),
@@ -739,8 +755,11 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       },
       onViewerReady: _onViewerReady,
       loadingBannerBuilder: (_, __, ___) => const _PdfLoadingSkeleton(),
-      errorBannerBuilder: (_, error, __, ___) =>
-          _PdfCanvasError(message: error.toString()),
+      errorBannerBuilder: (_, error, __, ___) => _PdfCanvasError(
+        message: error.toString(),
+        locked: passwordAsked && !passwordAccepted,
+        onUnlock: passwordAsked && !passwordAccepted ? _retryPassword : null,
+      ),
       linkHandlerParams: PdfLinkHandlerParams(onLinkTap: _handleLink),
       viewerOverlayBuilder: (_, __, ___) => quarterTurns == 0
           ? [
@@ -908,6 +927,38 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
         unawaited(_print());
         break;
     }
+  }
+
+  /// Supplies the password for an encrypted document.
+  ///
+  /// pdfrx calls this until it is given one that works or is given null, so
+  /// returning null on cancel is what stops it asking again and again.
+  Future<String?> _askForPassword() async {
+    if (!mounted) {
+      return null;
+    }
+    final retry = passwordAsked;
+    passwordAsked = true;
+    final entered = await showPdfPasswordDialog(
+      context,
+      name: widget.name,
+      retry: retry,
+    );
+    if (entered == null || entered.isEmpty) {
+      return null;
+    }
+    passwordAccepted = true;
+    return entered;
+  }
+
+  /// Opens the document again so the password can be entered a second time.
+  void _retryPassword() {
+    setState(() {
+      passwordAsked = false;
+      passwordAccepted = false;
+      passwordAttempt++;
+      documentRef = widget.sourceDocumentRef ?? _fileRef();
+    });
   }
 
   void _onViewerReady(PdfDocument document, PdfViewerController controller) {
@@ -2390,9 +2441,17 @@ class _SkeletonLine extends StatelessWidget {
 }
 
 class _PdfCanvasError extends StatelessWidget {
-  const _PdfCanvasError({required this.message});
+  const _PdfCanvasError({
+    required this.message,
+    this.locked = false,
+    this.onUnlock,
+  });
 
   final String message;
+
+  /// Whether the document is simply locked rather than broken.
+  final bool locked;
+  final VoidCallback? onUnlock;
 
   @override
   Widget build(BuildContext context) {
@@ -2403,10 +2462,16 @@ class _PdfCanvasError extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline_rounded, size: 28, color: palette.icon),
+            Icon(
+              locked ? Icons.lock_rounded : Icons.error_outline_rounded,
+              size: 28,
+              color: palette.icon,
+            ),
             const SizedBox(height: 10),
             Text(
-              'Unable to render this PDF',
+              locked
+                  ? LocaleKeys.document_plugins_pdf_locked.tr()
+                  : 'Unable to render this PDF',
               style: TextStyle(
                 color: palette.textPrimary,
                 fontFamily: 'Inter',
@@ -2416,7 +2481,9 @@ class _PdfCanvasError extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             Text(
-              message,
+              locked
+                  ? LocaleKeys.document_plugins_pdf_lockedBody.tr()
+                  : message,
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
@@ -2427,6 +2494,13 @@ class _PdfCanvasError extends StatelessWidget {
                 height: 1.35,
               ),
             ),
+            if (onUnlock != null) ...[
+              const SizedBox(height: 14),
+              FilledButton.tonal(
+                onPressed: onUnlock,
+                child: Text(LocaleKeys.document_plugins_pdf_unlock.tr()),
+              ),
+            ],
           ],
         ),
       ),

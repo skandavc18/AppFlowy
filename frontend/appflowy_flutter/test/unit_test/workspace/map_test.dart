@@ -9,7 +9,7 @@ import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 ViewPB _view(
-        {required String extra, ViewLayoutPB layout = ViewLayoutPB.Grid}) =>
+        {required String extra, ViewLayoutPB layout = ViewLayoutPB.Grid,}) =>
     ViewPB()
       ..id = 'view'
       ..name = 'Places'
@@ -56,7 +56,7 @@ void main() {
       const spec = MapSpec(style: MapStyleName.dark);
       expect(spec.copyWith(clearStyle: true).style, isNull);
       expect(
-          spec.copyWith(style: MapStyleName.light).style, MapStyleName.light);
+          spec.copyWith(style: MapStyleName.light).style, MapStyleName.light,);
     });
 
     test('an unknown provider or style falls back rather than throwing', () {

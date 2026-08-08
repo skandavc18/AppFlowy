@@ -200,4 +200,27 @@ abstract final class ProviderServices {
   /// Whether [kind] has anything to offer beyond the workspace itself.
   static bool hasRemoteOptions(CollectionKind kind) =>
       forKind(kind).any((info) => info.service.isRemote);
+
+  /// The services a folder can copy files out of.
+  ///
+  /// Wider than any one collection type: a plain folder holds anything, so it
+  /// can take a photo out of a library as readily as a document out of a drive.
+  static List<ProviderServiceInfo> importable() => [
+        for (final info in all)
+          if (info.service.isRemote &&
+              (info.kinds.contains(CollectionKind.folder) ||
+                  info.kinds.contains(CollectionKind.album)))
+            info,
+      ];
+
+  /// The services with folders that can be mounted inside a workspace folder.
+  ///
+  /// A photo library has no folders to mount, so it is not offered.
+  static List<ProviderServiceInfo> mountable() => [
+        for (final info in all)
+          if (info.service.isRemote &&
+              !info.picksExternally &&
+              info.kinds.contains(CollectionKind.folder))
+            info,
+      ];
 }

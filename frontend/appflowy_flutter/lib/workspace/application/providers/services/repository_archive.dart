@@ -331,8 +331,10 @@ class RepositoryTreeViews {
 
 /// Reads a file out of the unpacked tree, for anything that wants text rather
 /// than a path.
-Future<String?> readRepositoryFile(File file,
-    {int maxBytes = 512 * 1024,}) async {
+Future<String?> readRepositoryFile(
+  File file, {
+  int maxBytes = 512 * 1024,
+}) async {
   try {
     if (!file.existsSync()) {
       return null;

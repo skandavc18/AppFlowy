@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/collection/providers/external_content_view.dart
 import 'package:appflowy/plugins/collection/providers/external_file_stage.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
@@ -17,6 +18,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_e
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart' hide Overlay;
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// A file, folder or album from a connected service, living on a page.
@@ -37,26 +39,31 @@ class ExternalEmbedKeys {
   static const String kind = 'kind';
   static const String webUrl = 'web_url';
   static const String mimeType = 'mime_type';
+
+  /// Whatever else the binding needs to find this again — a Google Photos
+  /// picking session, for one, without which the embed can never resolve.
+  static const String options = 'options';
   static const String height = 'height';
   static const String width = 'width';
 }
 
 Node externalEmbedNode({
-  required ProviderService service,
-  required String connectionId,
+  required CollectionSource source,
   required ProviderNode node,
 }) =>
     Node(
       type: ExternalEmbedKeys.type,
       attributes: {
-        ExternalEmbedKeys.service: service.name,
-        ExternalEmbedKeys.connection: connectionId,
+        ExternalEmbedKeys.service: source.service.name,
+        ExternalEmbedKeys.connection: source.connectionId,
         ExternalEmbedKeys.nodeId: node.id,
-        if (node.parentId != null) ExternalEmbedKeys.parentId: node.parentId,
+        ExternalEmbedKeys.parentId: node.parentId ?? source.remoteId,
         ExternalEmbedKeys.name: node.name,
         ExternalEmbedKeys.kind: node.kind.name,
         if (node.webUrl != null) ExternalEmbedKeys.webUrl: node.webUrl,
         if (node.mimeType != null) ExternalEmbedKeys.mimeType: node.mimeType,
+        if (source.options.isNotEmpty)
+          ExternalEmbedKeys.options: source.options,
       },
     );
 
@@ -105,6 +112,7 @@ class _ExternalEmbedBlockComponentState
   @override
   BlockComponentConfiguration get configuration => widget.configuration;
 
+  late final EditorState editorState = context.read<EditorState>();
   ProviderController? controller;
   ProviderNode? remote;
   String? path;
@@ -130,6 +138,11 @@ class _ExternalEmbedBlockComponentState
         connectionId: _string(node.attributes[ExternalEmbedKeys.connection]),
         remoteId: _string(node.attributes[ExternalEmbedKeys.parentId]),
         remoteName: _string(node.attributes[ExternalEmbedKeys.name]),
+        options: switch (node.attributes[ExternalEmbedKeys.options]) {
+          final Map<String, dynamic> stored => stored,
+          final Map stored => Map<String, dynamic>.from(stored),
+          _ => const <String, dynamic>{},
+        },
       );
 
   Future<void> _load() async {
@@ -197,25 +210,31 @@ class _ExternalEmbedBlockComponentState
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
     final info = ProviderServices.of(_source.service);
+    final storedWidth = node.attributes[ExternalEmbedKeys.width];
 
-    Widget child = Container(
-      constraints: const BoxConstraints(minHeight: 120),
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: EditorSurfaceStyle.embedBorderRadius,
-        boxShadow: EditorSurfaceStyle.embedShadow(context),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _header(palette, info),
-          SizedBox(
-            height: _height,
-            child: _body(palette),
-          ),
-        ],
+    Widget child = ResizableMedia(
+      width: storedWidth is num ? storedWidth.toDouble() : double.infinity,
+      height: _height,
+      minHeight: 160,
+      maxHeight: 900,
+      alignment: Alignment.centerLeft,
+      editable: editorState.editable,
+      onResize: (value) => _persistSize(ExternalEmbedKeys.width, value),
+      onResizeHeight: (value) => _persistSize(ExternalEmbedKeys.height, value),
+      child: Container(
+        decoration: BoxDecoration(
+          color: palette.surface,
+          borderRadius: EditorSurfaceStyle.embedBorderRadius,
+          boxShadow: EditorSurfaceStyle.embedShadow(context),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _header(palette, info),
+            Expanded(child: _body(palette)),
+          ],
+        ),
       ),
     );
 
@@ -229,6 +248,12 @@ class _ExternalEmbedBlockComponentState
       );
     }
     return child;
+  }
+
+  Future<void> _persistSize(String key, double value) async {
+    final transaction = editorState.transaction
+      ..updateNode(node, {key: value.roundToDouble()});
+    await editorState.apply(transaction);
   }
 
   double get _height {

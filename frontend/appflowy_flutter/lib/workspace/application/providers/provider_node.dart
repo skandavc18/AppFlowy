@@ -293,6 +293,80 @@ ProviderNodeKind providerNodeKindFor({
   return _kindByExtension[extension] ?? ProviderNodeKind.other;
 }
 
+/// A file name for [node] that says what the thing actually is.
+///
+/// A service names a file whatever a person typed — a Drive document is
+/// called "10th Marks Card" with no extension at all — and every viewer in
+/// AppFlowy picks itself from the name. Without an extension the file opens
+/// as "no viewer for this file type", so the declared type supplies one.
+String providerFileNameFor(ProviderNode node) {
+  final raw = node.name.trim().isEmpty ? node.id : node.name.trim();
+  final cleaned = raw.replaceAll(RegExp(r'[\\/:*?"<>|\x00-\x1f]'), '_');
+  final dot = cleaned.lastIndexOf('.');
+  if (dot > 0 && dot < cleaned.length - 1) {
+    return cleaned;
+  }
+  return '$cleaned.${providerExtensionFor(node)}';
+}
+
+/// The extension [node] ought to carry, from its type then from its kind.
+String providerExtensionFor(ProviderNode node) =>
+    _extensionByMime[
+        (node.mimeType ?? '').toLowerCase().split(';').first.trim()] ??
+    switch (node.kind) {
+      ProviderNodeKind.image => 'jpg',
+      ProviderNodeKind.video => 'mp4',
+      ProviderNodeKind.audio => 'm4a',
+      ProviderNodeKind.pdf => 'pdf',
+      ProviderNodeKind.document => 'docx',
+      ProviderNodeKind.spreadsheet => 'xlsx',
+      ProviderNodeKind.presentation => 'pptx',
+      ProviderNodeKind.markup => 'md',
+      ProviderNodeKind.code => 'txt',
+      ProviderNodeKind.archive => 'zip',
+      _ => 'bin',
+    };
+
+const _extensionByMime = <String, String>{
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
+  'image/tiff': 'tif',
+  'image/bmp': 'bmp',
+  'image/svg+xml': 'svg',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/x-matroska': 'mkv',
+  'audio/mpeg': 'mp3',
+  'audio/mp4': 'm4a',
+  'audio/wav': 'wav',
+  'audio/x-wav': 'wav',
+  'audio/flac': 'flac',
+  'application/pdf': 'pdf',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'text/html': 'html',
+  'text/csv': 'csv',
+  'application/json': 'json',
+  'application/zip': 'zip',
+  'application/vnd.google-apps.script+json': 'json',
+  'application/msword': 'doc',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.ms-powerpoint': 'ppt',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+      'pptx',
+  'application/vnd.oasis.opendocument.text': 'odt',
+  'application/vnd.oasis.opendocument.spreadsheet': 'ods',
+  'application/vnd.oasis.opendocument.presentation': 'odp',
+};
+
 const _kindByExtension = <String, ProviderNodeKind>{
   'png': ProviderNodeKind.image,
   'jpg': ProviderNodeKind.image,

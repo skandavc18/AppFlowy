@@ -494,9 +494,10 @@ class _FolderGalleryState extends State<FolderGallery> {
   }
 
   void _open(WorkspaceExplorerItem item) {
-    // A collection is a folder with a purpose, so it opens as itself rather
-    // than being browsed into as plain contents.
-    if (item.isFolder && !item.isCollection) {
+    // A collection is a folder with a purpose, and a bound folder's contents
+    // live in a service, so both open as themselves rather than being browsed
+    // into as plain workspace contents.
+    if (item.isBrowsable) {
       widget.onNavigate(item.id);
       return;
     }
@@ -2941,8 +2942,10 @@ class _FolderGalleryDraftCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            SizedBox(
-              height: _galleryPreviewHeight,
+            // Takes whatever the grid left over, exactly as a real card does:
+            // the cell height is worked out from the card width now, so a
+            // fixed preview overflows as soon as a card is short.
+            Expanded(
               child: draft.kind == WorkspaceExplorerDraftKind.folder
                   ? FolderGalleryCollectionArtwork(item: item)
                   : DecoratedBox(

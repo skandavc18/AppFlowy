@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -39,6 +40,8 @@ class FolderGalleryHeader extends StatefulWidget {
     required this.onCreateCollection,
     required this.onCreateDatabase,
     required this.onMore,
+    this.onImportFromService,
+    this.onMountService,
     this.userProfile,
     this.workspace,
   });
@@ -51,6 +54,8 @@ class FolderGalleryHeader extends StatefulWidget {
   final ValueChanged<CollectionKind> onCreateCollection;
   final ValueChanged<WorkspaceTableKind> onCreateDatabase;
   final ValueChanged<Offset> onMore;
+  final ValueChanged<ProviderServiceInfo>? onImportFromService;
+  final ValueChanged<ProviderServiceInfo>? onMountService;
   final UserProfilePB? userProfile;
   final UserWorkspacePB? workspace;
 
@@ -401,6 +406,8 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
                     box.localToGlobal(Offset(0, box.size.height + 4)),
                 onCreateCollection: widget.onCreateCollection,
                 onCreateDatabase: widget.onCreateDatabase,
+                onImportFromService: widget.onImportFromService,
+                onMountService: widget.onMountService,
               );
               if (action != null) {
                 widget.onAddFile(action);

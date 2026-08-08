@@ -1,5 +1,6 @@
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
@@ -23,6 +24,7 @@ class WorkspaceExplorerItem {
     required this.lastEdited,
     this.collection,
     this.bookmark,
+    this.readsFromService = false,
   });
 
   factory WorkspaceExplorerItem.fromView(ViewPB view) {
@@ -42,6 +44,7 @@ class WorkspaceExplorerItem {
       metadata: metadata,
       collection: view.collection,
       bookmark: view.bookmark,
+      readsFromService: view.source.isRemote,
       hasChildren: view.childViews.isNotEmpty,
       lastEdited: backendLastEdited > 0
           ? DateTime.fromMillisecondsSinceEpoch(backendLastEdited * 1000)
@@ -60,6 +63,9 @@ class WorkspaceExplorerItem {
 
   /// Set when this item is a saved link rather than a file on disk.
   final BookmarkMetadata? bookmark;
+
+  /// Whether this container's contents live in a service rather than here.
+  final bool readsFromService;
   final bool hasChildren;
   final DateTime? lastEdited;
 
@@ -67,6 +73,12 @@ class WorkspaceExplorerItem {
   bool get isFile => kind == WorkspaceExplorerItemKind.file;
   bool get isCollection => collection != null;
   bool get isBookmark => bookmark != null;
+
+  /// Whether browsing into this shows what it holds.
+  ///
+  /// A collection has a purpose of its own and a bound folder's contents are
+  /// somewhere else entirely, so both open as themselves instead.
+  bool get isBrowsable => isFolder && !isCollection && !readsFromService;
 }
 
 @immutable

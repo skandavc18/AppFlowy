@@ -4,7 +4,9 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_add_menu.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/providers/external_repository_view.dart';
+import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_collection_host.dart';
+import 'package:appflowy/plugins/collection/providers/external_import.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/collection/providers/source_picker.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
@@ -120,7 +122,7 @@ class _CollectionPageState extends State<CollectionPage> {
           child: ProviderSourceUpdate(
             onChanged: (source) => unawaited(_persistSource(source)),
             child: ProviderReconnectRequest(
-              onReconnect: (_) => unawaited(_changeSource()),
+              onReconnect: (source) => unawaited(_reconnect(source)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -412,6 +414,8 @@ class _CollectionPageState extends State<CollectionPage> {
       context: context,
       globalPosition: position,
       policy: CollectionContentPolicy.of(metadata.kind),
+      onImportFromService: (info) =>
+          unawaited(_importFromService(info, parentId: parentId)),
     );
     if (choice == null || !mounted) {
       return;
@@ -426,6 +430,32 @@ class _CollectionPageState extends State<CollectionPage> {
     );
     if (created != null && mounted && choice is CollectionAddTable) {
       _openView(created);
+    }
+  }
+
+  /// Signs in again to the account this collection reads through.
+  Future<void> _reconnect(CollectionSource source) async {
+    await reconnectProviderAccount(context, info: source.info);
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// Copies objects out of a connected service into this collection.
+  /// This is how an album takes more photos out of a library later: the
+  /// pictures become workspace files, so they outlive the picking session
+  /// that produced them.
+  Future<void> _importFromService(
+    ProviderServiceInfo info, {
+    required String parentId,
+  }) async {
+    final imported = await importFromService(
+      context,
+      parentViewId: parentId,
+      info: info,
+    );
+    if (imported > 0 && mounted) {
+      await controller.refresh();
     }
   }
 }

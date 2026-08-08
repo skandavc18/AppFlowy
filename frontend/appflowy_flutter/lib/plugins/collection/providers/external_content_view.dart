@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/providers/external_context_menu.dart';
 import 'package:appflowy/plugins/collection/providers/external_file_stage.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -95,29 +96,51 @@ class _ExternalContentViewState extends State<ExternalContentView> {
         ? controller.nodes
         : controller.childrenOf(containerId);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.header != null) widget.header!,
-        if (trail.isNotEmpty)
-          _Trail(
-            trail: trail,
-            palette: palette,
-            onSelect: (index) {
-              setState(() => trail.removeRange(index + 1, trail.length));
-            },
-            onRoot: () => setState(trail.clear),
-          ),
-        Expanded(
-          child: nodes.isEmpty
-              ? _empty(palette, controller)
-              : widget.layout.isGrid
-                  ? _grid(nodes, palette)
-                  : _list(nodes, palette),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onSecondaryTapDown: (details) => unawaited(
+        showExternalBackgroundMenu(
+          context,
+          controller: controller,
+          containerId: containerId,
+          position: details.globalPosition,
         ),
-      ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.header != null) widget.header!,
+          if (trail.isNotEmpty)
+            _Trail(
+              trail: trail,
+              palette: palette,
+              onSelect: (index) {
+                setState(() => trail.removeRange(index + 1, trail.length));
+              },
+              onRoot: () => setState(trail.clear),
+            ),
+          Expanded(
+            child: nodes.isEmpty
+                ? _empty(palette, controller)
+                : widget.layout.isGrid
+                    ? _grid(nodes, palette)
+                    : _list(nodes, palette),
+          ),
+        ],
+      ),
     );
   }
+
+  /// The menu a row or a card shows, so both offer exactly the same thing.
+  void _showItemMenu(ProviderNode node, Offset position) => unawaited(
+        showExternalItemMenu(
+          context,
+          controller: widget.controller,
+          node: node,
+          position: position,
+          onOpen: () => _open(node),
+        ),
+      );
 
   Widget _empty(CollectionPalette palette, ProviderController controller) {
     if (controller.isLoadingContainer(containerId)) {
@@ -171,6 +194,7 @@ class _ExternalContentViewState extends State<ExternalContentView> {
             palette: palette,
             showName: widget.layout == ExternalLayout.gallery,
             onTap: () => _open(nodes[index]),
+            onContextMenu: (position) => _showItemMenu(nodes[index], position),
           ),
         );
       },
@@ -189,6 +213,7 @@ class _ExternalContentViewState extends State<ExternalContentView> {
         palette: palette,
         compact: compact,
         onTap: () => _open(nodes[index]),
+        onContextMenu: (position) => _showItemMenu(nodes[index], position),
       ),
     );
   }
@@ -223,6 +248,7 @@ class _Card extends StatefulWidget {
     required this.palette,
     required this.showName,
     required this.onTap,
+    required this.onContextMenu,
   });
 
   final ProviderNode node;
@@ -230,6 +256,7 @@ class _Card extends StatefulWidget {
   final CollectionPalette palette;
   final bool showName;
   final VoidCallback onTap;
+  final ValueChanged<Offset> onContextMenu;
 
   @override
   State<_Card> createState() => _CardState();
@@ -250,6 +277,8 @@ class _CardState extends State<_Card> {
       onExit: (_) => setState(() => hovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
+        onSecondaryTapDown: (details) =>
+            widget.onContextMenu(details.globalPosition),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 160),
           curve: Curves.easeOutCubic,
@@ -376,6 +405,7 @@ class _Row extends StatefulWidget {
     required this.palette,
     required this.compact,
     required this.onTap,
+    required this.onContextMenu,
   });
 
   final ProviderNode node;
@@ -383,6 +413,7 @@ class _Row extends StatefulWidget {
   final CollectionPalette palette;
   final bool compact;
   final VoidCallback onTap;
+  final ValueChanged<Offset> onContextMenu;
 
   @override
   State<_Row> createState() => _RowState();
@@ -404,6 +435,8 @@ class _RowState extends State<_Row> {
       onExit: (_) => setState(() => hovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
+        onSecondaryTapDown: (details) =>
+            widget.onContextMenu(details.globalPosition),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,

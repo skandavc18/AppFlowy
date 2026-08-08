@@ -25,6 +25,15 @@ class ExternalPick {
   final ProviderNode node;
 }
 
+/// Several objects chosen out of one account.
+@immutable
+class ExternalSelection {
+  const ExternalSelection({required this.source, required this.nodes});
+
+  final CollectionSource source;
+  final List<ProviderNode> nodes;
+}
+
 /// Picks one file, folder or album out of a connected service.
 ///
 /// The same browser the collection binder uses, except it lists files as well
@@ -33,18 +42,128 @@ Future<ExternalPick?> showExternalPicker(
   BuildContext context, {
   required ProviderServiceInfo info,
   bool containersOnly = false,
+}) async {
+  final chosen = await showDialog<ExternalSelection>(
+    context: context,
+    builder: (context) => _ExternalPicker(
+      info: info,
+      containersOnly: containersOnly,
+      multiple: false,
+    ),
+  );
+  if (chosen == null || chosen.nodes.isEmpty) {
+    return null;
+  }
+  return ExternalPick(source: chosen.source, node: chosen.nodes.first);
+}
+
+/// Picks any number of files out of a connected service.
+Future<ExternalSelection?> showExternalFilePicker(
+  BuildContext context, {
+  required ProviderServiceInfo info,
 }) =>
-    showDialog<ExternalPick>(
+    showDialog<ExternalSelection>(
       context: context,
-      builder: (context) =>
-          _ExternalPicker(info: info, containersOnly: containersOnly),
+      builder: (context) => _ExternalPicker(
+        info: info,
+        containersOnly: false,
+        multiple: true,
+      ),
     );
 
+/// Picks one out of a list already in hand.
+///
+/// For a service that does its own choosing: the picking is over by the time
+/// this opens, so there is nothing to browse — only which of them to use.
+Future<ProviderNode?> showExternalNodePicker(
+  BuildContext context, {
+  required ProviderServiceInfo info,
+  required List<ProviderNode> nodes,
+}) =>
+    showDialog<ProviderNode>(
+      context: context,
+      builder: (context) => _ExternalNodePicker(info: info, nodes: nodes),
+    );
+
+class _ExternalNodePicker extends StatelessWidget {
+  const _ExternalNodePicker({required this.info, required this.nodes});
+
+  final ProviderServiceInfo info;
+  final List<ProviderNode> nodes;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = FolderExplorerPalette.of(context);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460, maxHeight: 520),
+        child: ViewerCard(
+          color: palette.floatingSurface,
+          reactsToPointer: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 16, 10, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        LocaleKeys.providers_embed_pick.tr(args: [info.label]),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.textPrimary,
+                          fontSize: 15,
+                          fontVariations: const [FontVariation.weight(620)],
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close_rounded, size: 17),
+                      color: palette.textSecondary,
+                      splashRadius: 15,
+                    ),
+                  ],
+                ),
+              ),
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.fromLTRB(10, 0, 10, 14),
+                  itemCount: nodes.length,
+                  itemBuilder: (context, index) => _PickerRow(
+                    node: nodes[index],
+                    palette: palette,
+                    accent: info.accent,
+                    onTap: () => Navigator.of(context).pop(nodes[index]),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ExternalPicker extends StatefulWidget {
-  const _ExternalPicker({required this.info, required this.containersOnly});
+  const _ExternalPicker({
+    required this.info,
+    required this.containersOnly,
+    required this.multiple,
+  });
 
   final ProviderServiceInfo info;
   final bool containersOnly;
+
+  /// Whether several files can be gathered before the dialog closes.
+  final bool multiple;
 
   @override
   State<_ExternalPicker> createState() => _ExternalPickerState();
@@ -56,6 +175,9 @@ class _ExternalPickerState extends State<_ExternalPicker> {
 
   List<ProviderNode> nodes = const <ProviderNode>[];
   final List<ProviderNode> trail = <ProviderNode>[];
+
+  /// Gathered across folders, so a selection survives browsing into one.
+  final Map<String, ProviderNode> gathered = <String, ProviderNode>{};
   bool loading = true;
   String? error;
   String query = '';
@@ -291,6 +413,9 @@ class _ExternalPickerState extends State<_ExternalPicker> {
                             node: visible[index],
                             palette: palette,
                             accent: widget.info.accent,
+                            selected: gathered.containsKey(visible[index].id),
+                            selectable:
+                                widget.multiple && !visible[index].isFolder,
                             onTap: () => _choose(visible[index]),
                             onOpen: visible[index].isFolder
                                 ? () => _descend(visible[index])
@@ -298,7 +423,33 @@ class _ExternalPickerState extends State<_ExternalPicker> {
                           ),
                         ),
                 ),
-                if (!widget.containersOnly)
+                if (widget.multiple)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 4, 18, 14),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            gathered.isEmpty
+                                ? LocaleKeys.providers_import_pickHint.tr()
+                                : LocaleKeys.providers_import_chosen
+                                    .tr(args: ['${gathered.length}']),
+                            style: TextStyle(
+                              color: palette.textMuted,
+                              fontSize: 11.5,
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        FilledButton(
+                          onPressed: gathered.isEmpty ? null : _confirm,
+                          child: Text(LocaleKeys.providers_import_add.tr()),
+                        ),
+                      ],
+                    ),
+                  )
+                else if (!widget.containersOnly)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 4, 20, 14),
                     child: Text(
@@ -323,15 +474,43 @@ class _ExternalPickerState extends State<_ExternalPicker> {
     if (account == null) {
       return;
     }
+    if (widget.multiple && !node.isFolder) {
+      setState(() {
+        if (gathered.remove(node.id) == null) {
+          gathered[node.id] = node;
+        }
+      });
+      return;
+    }
+    if (widget.multiple) {
+      unawaited(_descend(node));
+      return;
+    }
     Navigator.of(context).pop(
-      ExternalPick(
+      ExternalSelection(
         source: CollectionSource(
           service: account.service,
           connectionId: account.id,
           remoteId: node.isFolder ? node.id : (node.parentId ?? ''),
           remoteName: node.name,
         ),
-        node: node,
+        nodes: [node],
+      ),
+    );
+  }
+
+  void _confirm() {
+    final account = connection;
+    if (account == null || gathered.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(
+      ExternalSelection(
+        source: CollectionSource(
+          service: account.service,
+          connectionId: account.id,
+        ),
+        nodes: gathered.values.toList(),
       ),
     );
   }
@@ -365,6 +544,8 @@ class _PickerRow extends StatefulWidget {
     required this.accent,
     required this.onTap,
     this.onOpen,
+    this.selected = false,
+    this.selectable = false,
   });
 
   final ProviderNode node;
@@ -372,6 +553,8 @@ class _PickerRow extends StatefulWidget {
   final Color accent;
   final VoidCallback onTap;
   final VoidCallback? onOpen;
+  final bool selected;
+  final bool selectable;
 
   @override
   State<_PickerRow> createState() => _PickerRowState();
@@ -395,11 +578,23 @@ class _PickerRowState extends State<_PickerRow> {
           margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
           padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
           decoration: BoxDecoration(
-            color: palette.hover.withValues(alpha: hovered ? 1 : 0),
+            color: widget.selected
+                ? widget.accent.withValues(alpha: 0.14)
+                : palette.hover.withValues(alpha: hovered ? 1 : 0),
             borderRadius: BorderRadius.circular(9),
           ),
           child: Row(
             children: [
+              if (widget.selectable) ...[
+                Icon(
+                  widget.selected
+                      ? Icons.check_circle_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  size: 16,
+                  color: widget.selected ? widget.accent : palette.textMuted,
+                ),
+                const SizedBox(width: 9),
+              ],
               Icon(
                 providerNodeGlyph(node),
                 size: 16,

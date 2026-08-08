@@ -281,9 +281,10 @@ class _ExplorerTreeState extends State<ExplorerTree> {
   }
 
   void _open(WorkspaceExplorerItem item) {
-    // A collection is a folder with a purpose, so it opens as itself rather
-    // than being browsed into as plain contents.
-    if (item.isFolder && !item.isCollection) {
+    // A collection is a folder with a purpose, and a bound folder's contents
+    // live in a service, so both open as themselves rather than being browsed
+    // into as plain workspace contents.
+    if (item.isBrowsable) {
       widget.onNavigate(item.id);
       return;
     }

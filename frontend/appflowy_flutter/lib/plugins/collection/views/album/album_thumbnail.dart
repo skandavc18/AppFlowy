@@ -105,10 +105,14 @@ class _AlbumThumbnailState extends State<AlbumThumbnail> {
 
   Widget _buildPicture(BuildContext context, File file) {
     if (!widget.item.isLocal && widget.item.kind == AlbumMediaKind.image) {
-      return _AlbumTilePlaceholder(
-        palette: widget.palette,
-        icon: Icons.cloud_outlined,
-      );
+      // A picture the service refused is not coming; anything else is still
+      // on its way, and a cloud glyph there reads as "cannot be shown".
+      return widget.item.unavailable
+          ? _AlbumTilePlaceholder(
+              palette: widget.palette,
+              icon: Icons.cloud_off_rounded,
+            )
+          : _AlbumTilePlaceholder(palette: widget.palette, busy: true);
     }
     final ratio = MediaQuery.devicePixelRatioOf(context);
     final width = widget.decodeWidth;

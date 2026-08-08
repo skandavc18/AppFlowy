@@ -57,6 +57,7 @@ class ProviderController extends ChangeNotifier {
       <String, List<ProviderNode>>{};
   final Map<String, ProviderNode> _byId = <String, ProviderNode>{};
   final Map<String, String> _thumbnails = <String, String>{};
+  final Set<String> _refusedThumbnails = <String>{};
   final Set<String> _loadingContainers = <String>{};
 
   List<ProviderNode> _searchResults = const <ProviderNode>[];
@@ -74,9 +75,13 @@ class ProviderController extends ChangeNotifier {
   bool get hasFailed => _status.isFailure;
 
   /// What the interface may offer. A collection with no provider is local and
-  /// can do everything; a provider narrows this from what the account can do.
-  ProviderCapabilities get capabilities =>
-      _provider?.capabilities ?? ProviderCapabilities.full;
+  /// can do everything; a provider narrows this from what the account can do,
+  /// and a binding marked read only narrows it again — a mount must not be
+  /// able to write to somebody's Drive until they have said it may.
+  ProviderCapabilities get capabilities {
+    final allowed = _provider?.capabilities ?? ProviderCapabilities.full;
+    return _source.readOnly ? allowed.readOnlyCopy() : allowed;
+  }
 
   String get originLabel => _provider?.originLabel ?? _source.remoteName;
 
@@ -104,6 +109,12 @@ class ProviderController extends ChangeNotifier {
   }
 
   String? thumbnailFor(String nodeId) => _thumbnails[nodeId];
+
+  /// Whether a picture was asked for and could not be had.
+  ///
+  /// Told apart from "not asked yet" so a tile can stop waiting rather than
+  /// spinning for ever over something that is never going to arrive.
+  bool thumbnailRefused(String nodeId) => _refusedThumbnails.contains(nodeId);
 
   /// The current listing dressed as workspace items.
   List<ProviderItemView> itemsFor(String? containerId) => _factory.viewsFor(
@@ -433,8 +444,11 @@ class ProviderController extends ChangeNotifier {
         final path = paths[position++];
         if (path != null) {
           _thumbnails[node.id] = path;
-          changed = true;
+          _refusedThumbnails.remove(node.id);
+        } else {
+          _refusedThumbnails.add(node.id);
         }
+        changed = true;
       }
       if (changed && !_disposed) {
         notifyListeners();
