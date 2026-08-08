@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:appflowy_backend/log.dart';
 import 'package:flutter/foundation.dart';
 import 'package:local_notifier/local_notifier.dart';
 
@@ -15,12 +18,45 @@ const _localNotifierAppName = 'AppFlowy';
 ///  - Linux
 ///
 class NotificationService {
+  /// Whether the operating system can actually be asked to show a
+  /// notification.
+  ///
+  /// Windows answers no until the shortcut below exists; every `show()` is a
+  /// silent no-op in that state, so anything that must not go unheard needs
+  /// to announce itself another way.
+  static bool get isReady => _isReady;
+  static bool _isReady = true;
+
   static Future<void> initialize() async {
-    await localNotifier.setup(
-      appName: _localNotifierAppName,
-      // Don't create a shortcut on Windows, because the setup.exe will create a shortcut
-      shortcutPolicy: ShortcutPolicy.requireNoCreate,
+    // Windows shows nothing from a Win32 application until a Start Menu
+    // shortcut carries its AppUserModelID: WinToast refuses to initialise
+    // without one, and neither the plugin nor `show()` says so. Creating it
+    // is the library's default; opting out of that assumed the installer had
+    // left a suitable shortcut behind, and its shortcut carries no id.
+    await localNotifier.setup(appName: _localNotifierAppName);
+    _isReady = _hasNotificationShortcut();
+  }
+
+  static bool _hasNotificationShortcut() {
+    if (!Platform.isWindows) {
+      return true;
+    }
+    final appData = Platform.environment['APPDATA'];
+    if (appData == null || appData.isEmpty) {
+      return false;
+    }
+    final shortcut = File(
+      '$appData\\Microsoft\\Windows\\Start Menu\\Programs'
+      '\\$_localNotifierAppName.lnk',
     );
+    if (shortcut.existsSync()) {
+      return true;
+    }
+    Log.warn(
+      'Windows would not register AppFlowy for notifications, so nothing '
+      'will be shown outside the window.',
+    );
+    return false;
   }
 }
 

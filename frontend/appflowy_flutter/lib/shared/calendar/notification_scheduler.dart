@@ -71,6 +71,11 @@ class ReminderNotificationScheduler {
   /// can reach — currently iOS and Android. Set once, at startup.
   void Function(AppReminder, ReminderNotificationCopy)? fallbackPresenter;
 
+  /// False when the platform HAS a notification centre but this installation
+  /// cannot reach it — on Windows, when the shortcut carrying the app's
+  /// AppUserModelID is missing. The reminder still has to be announced.
+  bool systemNotificationsReachable = true;
+
   /// Notifications held so the plugin's listener keeps working; the plugin
   /// only dispatches callbacks to objects it still has a reference to.
   final Map<String, LocalNotification> _live = <String, LocalNotification>{};
@@ -119,7 +124,7 @@ class ReminderNotificationScheduler {
 
     final words = copy(reminder);
 
-    if (!_supported) {
+    if (!_supported || !systemNotificationsReachable) {
       fallbackPresenter?.call(reminder, words);
       return;
     }

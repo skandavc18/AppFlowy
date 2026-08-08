@@ -652,8 +652,10 @@ theirs
     // One browser round trip has to carry everything the account can do, or
     // "connected to Google" still means signing in four times.
     test('signing in to Google asks for every Google permission', () {
-      final scopes = OAuthServices.scopesForAccount(ProviderService.googleDrive);
-      expect(scopes, contains('https://www.googleapis.com/auth/drive.readonly'));
+      final scopes =
+          OAuthServices.scopesForAccount(ProviderService.googleDrive);
+      expect(
+          scopes, contains('https://www.googleapis.com/auth/drive.readonly'));
       expect(
         scopes,
         contains(
@@ -673,7 +675,8 @@ theirs
       expect(ProviderAccountFamily.microsoft.sharesOneGrant, isFalse);
       expect(ProviderAccountFamily.google.sharesOneGrant, isTrue);
       final scopes = OAuthServices.scopesForAccount(ProviderService.oneDrive);
-      expect(scopes, isNot(contains('https://outlook.office.com/IMAP.AccessAsUser.All')));
+      expect(scopes,
+          isNot(contains('https://outlook.office.com/IMAP.AccessAsUser.All')));
     });
 
     test('what the account covers is read from what was granted', () {
@@ -728,7 +731,8 @@ theirs
     // second permission must join that account rather than make a new one.
     test('an account keeps one id however many permissions it gains', () {
       expect(
-        ProviderConnections.idFor(ProviderService.googleDrive, account: 'sub-1'),
+        ProviderConnections.idFor(ProviderService.googleDrive,
+            account: 'sub-1'),
         ProviderConnections.idFor(ProviderService.gmail, account: 'sub-1'),
       );
     });

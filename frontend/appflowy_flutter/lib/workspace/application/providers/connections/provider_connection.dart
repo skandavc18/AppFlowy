@@ -99,8 +99,7 @@ class ProviderConnection {
         if (accountId.isNotEmpty) 'account_id': accountId,
         if (host.isNotEmpty) 'host': host,
         if (scopes.isNotEmpty) 'scopes': scopes,
-        if (covered.length > 1)
-          'services': [for (final s in covered) s.name],
+        if (covered.length > 1) 'services': [for (final s in covered) s.name],
         if (connectedAt != null)
           'connected_at': connectedAt!.millisecondsSinceEpoch,
         if (expiresAt != null) 'expires_at': expiresAt!.millisecondsSinceEpoch,

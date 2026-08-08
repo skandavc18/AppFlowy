@@ -133,8 +133,7 @@ class ProviderConnector {
     final connection = ProviderConnection(
       // Keep the id an account already has: every collection and page embed
       // bound to it names that id.
-      id: joined?.id ??
-          ProviderConnections.idFor(service, account: account.id),
+      id: joined?.id ?? ProviderConnections.idFor(service, account: account.id),
       service: joined?.service ?? service,
       accountLabel: account.label,
       accountId: account.id,

@@ -4,6 +4,7 @@ import 'package:appflowy/shared/calendar/notification_scheduler.dart';
 import 'package:appflowy/shared/calendar/reminder_store.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/reminder/reminder_bloc.dart';
+import 'package:appflowy/workspace/application/notification/notification_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -26,13 +27,15 @@ void startReminderNotifications() {
 
   ReminderNotificationScheduler.instance
     ..fallbackPresenter = _presentInApp
+    ..systemNotificationsReachable = NotificationService.isReady
     ..start(delegate: store, copy: _copyFor);
   store.start();
   Log.info('Reminder notifications are running.');
 }
 
-/// iOS and Android have no notification centre this build can reach, so a due
-/// reminder is announced inside the application instead of silently passing.
+/// Announced inside the application when the operating system cannot be asked
+/// — iOS and Android have no notification centre this build reaches, and
+/// Windows refuses until AppFlowy is registered for toasts.
 void _presentInApp(AppReminder reminder, ReminderNotificationCopy words) {
   showToastNotification(
     message: words.title,
