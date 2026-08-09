@@ -161,8 +161,7 @@ class _MailboxTileState extends State<MailboxTile> {
                   ),
                 if (!_editing && widget.isReady)
                   ConnectionTextButton(
-                    label:
-                        LocaleKeys.settings_accountsPage_forgetPassword.tr(),
+                    label: LocaleKeys.settings_accountsPage_forgetPassword.tr(),
                     onPressed: _forget,
                   ),
               ] else

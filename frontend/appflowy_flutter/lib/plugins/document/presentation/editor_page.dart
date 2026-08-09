@@ -373,53 +373,55 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
           editorState: widget.editorState,
           enabled: UniversalPlatform.isDesktopOrWeb,
           child: AppFlowyEditor(
-          editorState: widget.editorState,
-          editable: !isViewDeleted && isEditable,
-          disableSelectionService: UniversalPlatform.isMobile && !isEditable,
-          disableKeyboardService: UniversalPlatform.isMobile && !isEditable,
-          editorScrollController: editorScrollController,
-          // setup the auto focus parameters
-          autoFocus: widget.autoFocus ?? autoFocus,
-          focusedSelection: selection,
-          // setup the theme
-          editorStyle: styleCustomizer.style(),
-          // customize the block builders
-          blockComponentBuilders: buildBlockComponentBuilders(
-            slashMenuItemsBuilder: (editorState, node) => _customSlashMenuItems(
-              editorState: editorState,
-              node: node,
-            ),
-            context: context,
             editorState: widget.editorState,
-            styleCustomizer: widget.styleCustomizer,
-            showParagraphPlaceholder: widget.showParagraphPlaceholder,
-            placeholderText: widget.placeholderText,
-          ),
-          // customize the shortcuts
-          characterShortcutEvents: characterShortcutEvents,
-          commandShortcutEvents: commandShortcuts,
-          // The app-owned menu matches the rest of AppFlowy's menu surfaces.
-          contextMenuItems: const [],
-          // customize the header and footer.
-          header: widget.header,
-          autoScrollEdgeOffset: UniversalPlatform.isDesktopOrWeb
-              ? 250
-              : appFlowyEditorAutoScrollEdgeOffset,
-          footer: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () async {
-              // if the last one isn't a empty node, insert a new empty node.
-              await _focusOnLastEmptyParagraph();
-            },
-            child: SizedBox(
-              width: double.infinity,
-              height: UniversalPlatform.isDesktopOrWeb ? 600 : 400,
+            editable: !isViewDeleted && isEditable,
+            disableSelectionService: UniversalPlatform.isMobile && !isEditable,
+            disableKeyboardService: UniversalPlatform.isMobile && !isEditable,
+            editorScrollController: editorScrollController,
+            // setup the auto focus parameters
+            autoFocus: widget.autoFocus ?? autoFocus,
+            focusedSelection: selection,
+            // setup the theme
+            editorStyle: styleCustomizer.style(),
+            // customize the block builders
+            blockComponentBuilders: buildBlockComponentBuilders(
+              slashMenuItemsBuilder: (editorState, node) =>
+                  _customSlashMenuItems(
+                editorState: editorState,
+                node: node,
+              ),
+              context: context,
+              editorState: widget.editorState,
+              styleCustomizer: widget.styleCustomizer,
+              showParagraphPlaceholder: widget.showParagraphPlaceholder,
+              placeholderText: widget.placeholderText,
             ),
-          ),
-          dropTargetStyle: AppFlowyDropTargetStyle(
-            color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
-            margin: const EdgeInsets.only(left: 44),
-          ),
+            // customize the shortcuts
+            characterShortcutEvents: characterShortcutEvents,
+            commandShortcutEvents: commandShortcuts,
+            // The app-owned menu matches the rest of AppFlowy's menu surfaces.
+            contextMenuItems: const [],
+            // customize the header and footer.
+            header: widget.header,
+            autoScrollEdgeOffset: UniversalPlatform.isDesktopOrWeb
+                ? 250
+                : appFlowyEditorAutoScrollEdgeOffset,
+            footer: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () async {
+                // if the last one isn't a empty node, insert a new empty node.
+                await _focusOnLastEmptyParagraph();
+              },
+              child: SizedBox(
+                width: double.infinity,
+                height: UniversalPlatform.isDesktopOrWeb ? 600 : 400,
+              ),
+            ),
+            dropTargetStyle: AppFlowyDropTargetStyle(
+              color:
+                  Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+              margin: const EdgeInsets.only(left: 44),
+            ),
           ),
         ),
       ),

@@ -251,8 +251,10 @@ final List<_GrammarRule> _rules = [
   ),
   // "an book"
   _GrammarRule(
-    RegExp(r"\b(an)([ \t]+)([bcdfgjklmnpqrstvwxyz][A-Za-z']*)",
-        caseSensitive: false,),
+    RegExp(
+      r"\b(an)([ \t]+)([bcdfgjklmnpqrstvwxyz][A-Za-z']*)",
+      caseSensitive: false,
+    ),
     (text, match) {
       final word = match.group(3)!;
       if (_soundsLikeVowel.hasMatch(word)) {
@@ -288,7 +290,7 @@ final List<_GrammarRule> _rules = [
         text,
         match,
         '${match.group(1)}${match.group(2)}'
-        '${_likeOriginal(match.group(3)!, fix)}',
+            '${_likeOriginal(match.group(3)!, fix)}',
         'subject-verb',
         LocaleKeys.document_spellCheck_grammar_subjectVerb,
       );
@@ -318,7 +320,7 @@ final List<_GrammarRule> _rules = [
       text,
       match,
       '${_likeOriginal(match.group(1)!, "you're")}'
-      '${match.group(2)}${match.group(3)}',
+          '${match.group(2)}${match.group(3)}',
       'your-youre',
       LocaleKeys.document_spellCheck_grammar_yourYoure,
     ),
@@ -330,7 +332,7 @@ final List<_GrammarRule> _rules = [
       text,
       match,
       '${_likeOriginal(match.group(1)!, 'your')}'
-      '${match.group(2)}${match.group(3)}',
+          '${match.group(2)}${match.group(3)}',
       'your-youre',
       LocaleKeys.document_spellCheck_grammar_yourYoure,
     ),
@@ -345,7 +347,7 @@ final List<_GrammarRule> _rules = [
       text,
       match,
       '${_likeOriginal(match.group(1)!, 'there')}'
-      '${match.group(2)}${match.group(3)}',
+          '${match.group(2)}${match.group(3)}',
       'there-their',
       LocaleKeys.document_spellCheck_grammar_thereTheir,
     ),
@@ -357,7 +359,7 @@ final List<_GrammarRule> _rules = [
       text,
       match,
       '${_likeOriginal(match.group(1)!, 'their')}'
-      '${match.group(2)}${match.group(3)}',
+          '${match.group(2)}${match.group(3)}',
       'there-their',
       LocaleKeys.document_spellCheck_grammar_thereTheir,
     ),
@@ -388,7 +390,7 @@ final List<_GrammarRule> _rules = [
       text,
       match,
       "${_likeOriginal(match.group(1)!, "it's")}"
-      '${match.group(2)}${match.group(3)}',
+          '${match.group(2)}${match.group(3)}',
       'its-it-is',
       LocaleKeys.document_spellCheck_grammar_itsItIs,
     ),
@@ -400,7 +402,7 @@ final List<_GrammarRule> _rules = [
       text,
       match,
       '${_likeOriginal(match.group(1)!, 'its')}'
-      '${match.group(2)}${match.group(3)}',
+          '${match.group(2)}${match.group(3)}',
       'its-it-is',
       LocaleKeys.document_spellCheck_grammar_itsItIs,
     ),
@@ -415,7 +417,7 @@ final List<_GrammarRule> _rules = [
       text,
       match,
       '${_likeOriginal(match.group(1)!, 'too')}'
-      '${match.group(2)}${match.group(3)}',
+          '${match.group(2)}${match.group(3)}',
       'to-too',
       LocaleKeys.document_spellCheck_grammar_toToo,
     ),

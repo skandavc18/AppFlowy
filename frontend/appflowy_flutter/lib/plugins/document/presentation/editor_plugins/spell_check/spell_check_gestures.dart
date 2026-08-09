@@ -44,9 +44,8 @@ class _SpellCheckGestureRegionState extends State<SpellCheckGestureRegion> {
   Widget build(BuildContext context) {
     return Listener(
       onPointerDown: (event) {
-        _pressedAt = event.buttons & kPrimaryMouseButton != 0
-            ? event.position
-            : null;
+        _pressedAt =
+            event.buttons & kPrimaryMouseButton != 0 ? event.position : null;
         if (isSpellSuggestionOpen) {
           dismissSpellSuggestions();
           _pressedAt = null;

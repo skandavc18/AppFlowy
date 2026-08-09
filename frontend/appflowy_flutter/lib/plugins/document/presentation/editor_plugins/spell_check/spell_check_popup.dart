@@ -285,8 +285,7 @@ class _SpellSuggestionCardState extends State<SpellSuggestionCard>
                 width: SpellPopupMetrics.width,
                 decoration: BoxDecoration(
                   color: premium.floatingSurface,
-                  borderRadius:
-                      BorderRadius.circular(SpellPopupMetrics.radius),
+                  borderRadius: BorderRadius.circular(SpellPopupMetrics.radius),
                   border: Border.all(
                     color: premium.border.withValues(alpha: 0.5),
                     width: 0.6,

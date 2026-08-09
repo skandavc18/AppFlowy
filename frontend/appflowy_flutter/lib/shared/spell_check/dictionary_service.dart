@@ -9,7 +9,8 @@ import 'package:flutter/services.dart';
 
 /// Where the bundled English word lists live.
 const String englishWordListAsset = 'assets/dictionaries/en_us_words.txt.gz';
-const String englishCommonWordsAsset = 'assets/dictionaries/en_us_common.txt.gz';
+const String englishCommonWordsAsset =
+    'assets/dictionaries/en_us_common.txt.gz';
 
 /// The words AppFlowy accepts: the bundled language, plus everything the
 /// person writing has added.

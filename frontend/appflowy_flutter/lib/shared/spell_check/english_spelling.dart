@@ -234,8 +234,10 @@ class EnglishSpellEngine implements SpellEngine {
     }
 
     final ranked = candidates.keys.toList()
-      ..sort((a, b) => _score(b, normalized, candidates[b]!)
-          .compareTo(_score(a, normalized, candidates[a]!)),);
+      ..sort(
+        (a, b) => _score(b, normalized, candidates[b]!)
+            .compareTo(_score(a, normalized, candidates[a]!)),
+      );
 
     return [
       for (final candidate in ranked.take(limit))
@@ -252,11 +254,10 @@ class EnglishSpellEngine implements SpellEngine {
   double _score(String candidate, String word, double confidence) {
     final rank = _dictionary.rankOf(candidate);
     final commonness = rank == null ? 0.0 : 1 - (rank / 30000);
-    final sameStart = candidate.isNotEmpty &&
-            word.isNotEmpty &&
-            candidate[0] == word[0]
-        ? 0.35
-        : 0.0;
+    final sameStart =
+        candidate.isNotEmpty && word.isNotEmpty && candidate[0] == word[0]
+            ? 0.35
+            : 0.0;
     final lengthPenalty = (candidate.length - word.length).abs() * 0.03;
     return confidence * 2 + commonness + sameStart - lengthPenalty;
   }

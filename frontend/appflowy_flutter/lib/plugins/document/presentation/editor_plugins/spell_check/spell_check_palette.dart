@@ -46,8 +46,7 @@ class SpellCheckPalette {
     return PaperTheme.isEnabled(context) ? _paper : _light;
   }
 
-  Color colorFor(SpellIssueKind kind) =>
-      kind.isSpelling ? spelling : grammar;
+  Color colorFor(SpellIssueKind kind) => kind.isSpelling ? spelling : grammar;
 
   TextStyle styleFor(SpellIssueKind kind) => TextStyle(
         decoration: TextDecoration.underline,

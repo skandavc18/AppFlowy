@@ -239,8 +239,7 @@ class _ConnectionAddButtonState extends State<ConnectionAddButton> {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           decoration: BoxDecoration(
             color: accent.withValues(alpha: hovered ? 0.14 : 0.08),
-            borderRadius:
-                BorderRadius.circular(ConnectionsMetrics.cardRadius),
+            borderRadius: BorderRadius.circular(ConnectionsMetrics.cardRadius),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,

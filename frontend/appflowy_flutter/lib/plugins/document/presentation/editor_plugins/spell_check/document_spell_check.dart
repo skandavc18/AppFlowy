@@ -141,7 +141,8 @@ class DocumentSpellCheckController extends ChangeNotifier {
       // A delete leaves nothing at the path, so its neighbour and its parent
       // are read again instead.
       final parent = operation.path.length > 1
-          ? editorState.getNodeAtPath(operation.path.sublist(0, operation.path.length - 1))
+          ? editorState.getNodeAtPath(
+              operation.path.sublist(0, operation.path.length - 1))
           : null;
       if (parent != null) {
         _markDirty(parent);

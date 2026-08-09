@@ -108,8 +108,7 @@ class _SettingsConnectionAccountViewState
                   muted: true,
                 ),
                 title: LocaleKeys.providers_settings_removeAccount.tr(),
-                subtitle:
-                    LocaleKeys.providers_settings_removeAccountBody.tr(),
+                subtitle: LocaleKeys.providers_settings_removeAccountBody.tr(),
                 trailing: ConnectionTextButton(
                   label: LocaleKeys.providers_disconnect.tr(),
                   tone: palette.danger,
