@@ -29,6 +29,7 @@ export 'bookmark/bookmark_block_component.dart';
 export 'chart/chart_block_component.dart';
 export 'map/map_block_component.dart';
 export 'page_preview/page_preview_block_component.dart';
+export 'find_and_replace/document_find_menu.dart';
 export 'find_and_replace/find_and_replace_menu.dart';
 export 'font/customize_font_toolbar_item.dart';
 export 'header/cover_editor_bloc.dart';

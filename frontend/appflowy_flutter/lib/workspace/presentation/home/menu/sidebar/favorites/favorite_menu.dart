@@ -96,7 +96,7 @@ class _FavoriteGroupedViews extends StatelessWidget {
                       ),
                     ]
                   : [],
-              leftIconBuilder: (_, __) => const HSpace(4.0),
+              leftIconBuilder: (_, __) => null,
               includeDefaultMoreAction: true,
               rightIconsBuilder: (_, view) => [
                 FavoritePinAction(view: view),

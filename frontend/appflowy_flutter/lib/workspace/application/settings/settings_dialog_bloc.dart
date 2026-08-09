@@ -25,6 +25,7 @@ enum SettingsPage {
   notifications,
   cloud,
   documentEditing,
+  editor,
   maps,
   connections,
   member,

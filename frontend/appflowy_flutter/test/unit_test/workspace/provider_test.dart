@@ -714,6 +714,7 @@ theirs
         accountLabel: 'me@gmail.com',
         accountId: 'sub-1',
         services: {
+          ProviderService.googleDrive,
           ProviderService.googlePhotos,
           ProviderService.gmail,
         },
@@ -727,6 +728,41 @@ theirs
       expect(read?.covered, connection.covered);
     });
 
+    // A connection signed in for one thing only has never been narrowed, so
+    // the capability it was made for is the one it answers for.
+    test('a connection that was never narrowed covers what it signed in for',
+        () {
+      const connection = ProviderConnection(
+        id: 'github|me',
+        service: ProviderService.github,
+        accountLabel: 'me',
+        accountId: 'me',
+      );
+      expect(connection.covered, {ProviderService.github});
+      expect(
+        ProviderConnection.fromJson(connection.toJson())?.covered,
+        {ProviderService.github},
+      );
+    });
+
+    // Turning a capability off must survive a restart, which it cannot if the
+    // stored set is only written when it holds more than one thing.
+    test('a capability turned off stays off', () {
+      const connection = ProviderConnection(
+        id: 'google|sub-1',
+        service: ProviderService.googlePhotos,
+        accountLabel: 'me@gmail.com',
+        accountId: 'sub-1',
+        services: {ProviderService.googleDrive},
+      );
+
+      expect(connection.covers(ProviderService.googlePhotos), isFalse);
+      expect(
+        ProviderConnection.fromJson(connection.toJson())?.covered,
+        {ProviderService.googleDrive},
+      );
+    });
+
     // Every collection and page embed already names the connection's id, so a
     // second permission must join that account rather than make a new one.
     test('an account keeps one id however many permissions it gains', () {
@@ -734,6 +770,38 @@ theirs
         ProviderConnections.idFor(ProviderService.googleDrive,
             account: 'sub-1'),
         ProviderConnections.idFor(ProviderService.gmail, account: 'sub-1'),
+      );
+    });
+
+    // A second account of the same company is a second account, not a second
+    // permission on the first one.
+    test('two accounts of one family are two connections', () {
+      expect(
+        ProviderConnections.idFor(
+          ProviderService.googleDrive,
+          account: 'sub-1',
+        ),
+        isNot(
+          ProviderConnections.idFor(
+            ProviderService.googleDrive,
+            account: 'sub-2',
+          ),
+        ),
+      );
+    });
+
+    // ⚠️ Microsoft issues a token per resource, so OneDrive and Outlook mail
+    // are two tokens for one person. Sharing an id would seal them under the
+    // same key and each would erase the other.
+    test('a family that cannot grant together keeps one id per capability', () {
+      expect(
+        ProviderConnections.idFor(ProviderService.oneDrive, account: 'oid-1'),
+        isNot(
+          ProviderConnections.idFor(
+            ProviderService.outlookMail,
+            account: 'oid-1',
+          ),
+        ),
       );
     });
 
@@ -866,6 +934,88 @@ theirs
       await Future.wait([signIn, read]);
 
       expect(connections.all.length, 2);
+    });
+
+    // Each capability is set on its own, so turning one off must leave the
+    // account and everything else it does alone.
+    test('turning one capability off leaves the rest of the account', () async {
+      final storage = _MemoryKeyValue({});
+      final connections = ProviderConnections(storage: storage);
+      await connections.upsert(
+        const ProviderConnection(
+          id: 'google|sub-1',
+          service: ProviderService.googleDrive,
+          accountLabel: 'me@gmail.com',
+          accountId: 'sub-1',
+          services: {
+            ProviderService.googleDrive,
+            ProviderService.googlePhotos,
+            ProviderService.gmail,
+          },
+        ),
+        const ProviderCredentials(accessToken: 'token'),
+      );
+
+      await connections.setServices('google|sub-1', {
+        ProviderService.googleDrive,
+        ProviderService.gmail,
+      });
+
+      final connection = connections.byId('google|sub-1');
+      expect(connection, isNotNull);
+      expect(connection!.covers(ProviderService.googlePhotos), isFalse);
+      expect(connection.covers(ProviderService.gmail), isTrue);
+      // The token is untouched: nothing was revoked, only stopped being used.
+      expect(await connections.hasCredentials('google|sub-1'), isTrue);
+    });
+
+    // An account used for nothing is an account nobody asked to keep.
+    test('turning the last capability off removes the account', () async {
+      final connections = ProviderConnections(storage: _MemoryKeyValue({}));
+      await connections.upsert(
+        const ProviderConnection(
+          id: 'google|sub-1',
+          service: ProviderService.googleDrive,
+          accountLabel: 'me@gmail.com',
+          accountId: 'sub-1',
+        ),
+        const ProviderCredentials(accessToken: 'token'),
+      );
+
+      await connections.setServices('google|sub-1', <ProviderService>{});
+
+      expect(connections.byId('google|sub-1'), isNull);
+      expect(await connections.hasCredentials('google|sub-1'), isFalse);
+    });
+
+    // Two accounts of one company are two rows, and each is reached by its own
+    // key so opening one cannot show the other.
+    test('two accounts of one family each get their own page', () {
+      final groups = groupProviderAccounts([
+        const ProviderConnection(
+          id: 'google|sub-1',
+          service: ProviderService.googleDrive,
+          accountLabel: 'me@gmail.com',
+          accountId: 'sub-1',
+        ),
+        const ProviderConnection(
+          id: 'google|sub-2',
+          service: ProviderService.googleDrive,
+          accountLabel: 'work@example.com',
+          accountId: 'sub-2',
+        ),
+      ]);
+
+      expect(groups.length, 2);
+      expect(groups.first.key, isNot(groups.last.key));
+      expect(
+        groups.first.key,
+        providerAccountKeyFor(groups.first.primary),
+      );
+      expect(
+        groups.first.connectionFor(ProviderService.googleDrive)?.id,
+        'google|sub-1',
+      );
     });
   });
 

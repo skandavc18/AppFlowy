@@ -4,7 +4,9 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/font_colors.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_search_highlight.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/spell_check_decoration.dart';
 import 'package:appflowy/plugins/inline_actions/inline_actions_menu.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
@@ -415,6 +417,27 @@ class EditorStyleCustomizer {
   }
 
   InlineSpan customizeAttributeDecorator(
+    BuildContext context,
+    Node node,
+    int index,
+    TextInsert text,
+    TextSpan before,
+    TextSpan after,
+  ) =>
+      decorateWithSpellCheck(
+        context,
+        editorState,
+        node,
+        index,
+        decorateWithSearchHighlight(
+          context,
+          node,
+          index,
+          _decorateAttributes(context, node, index, text, before, after),
+        ),
+      );
+
+  InlineSpan _decorateAttributes(
     BuildContext context,
     Node node,
     int index,

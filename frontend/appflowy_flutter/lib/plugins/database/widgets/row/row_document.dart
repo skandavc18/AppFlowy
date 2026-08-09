@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/grid/application/row/row_document_bloc.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
@@ -31,6 +33,8 @@ class RowDocument extends StatelessWidget {
     required this.rowId,
     this.userProfile,
     this.showComments = false,
+    this.shrinkWrap = true,
+    this.contentInset = rowDetailContentInset,
   });
 
   final String viewId;
@@ -39,6 +43,14 @@ class RowDocument extends StatelessWidget {
 
   /// Whether the row's discussion is shown above its page.
   final bool showComments;
+
+  /// Whether the page takes its height from what is written on it. False makes
+  /// the editor scroll inside whatever box it is given, which is what a pane
+  /// beside a list needs.
+  final bool shrinkWrap;
+
+  /// The measure the page is set on.
+  final double contentInset;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +76,8 @@ class RowDocument extends StatelessWidget {
               view: state.viewPB!,
               userProfile: userProfile,
               showComments: showComments,
+              shrinkWrap: shrinkWrap,
+              contentInset: contentInset,
               onIsEmptyChanged: (isEmpty) => context
                   .read<RowDocumentBloc>()
                   .add(RowDocumentEvent.updateIsEmpty(isEmpty)),
@@ -81,12 +95,16 @@ class _RowEditor extends StatelessWidget {
     this.onIsEmptyChanged,
     this.userProfile,
     this.showComments = false,
+    this.shrinkWrap = true,
+    this.contentInset = rowDetailContentInset,
   });
 
   final ViewPB view;
   final void Function(bool)? onIsEmptyChanged;
   final UserProfilePB? userProfile;
   final bool showComments;
+  final bool shrinkWrap;
+  final double contentInset;
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +163,9 @@ class _RowEditor extends StatelessWidget {
                     viewId: view.id,
                     editorState: editorState,
                     isLocalMode: context.read<DocumentBloc>().isLocalMode,
-                    dropManagerState: context.read<EditorDropManagerState>(),
+                    // A host that keeps no drop state of its own lets the
+                    // handler make one rather than refusing to build.
+                    dropManagerState: context.read<EditorDropManagerState?>(),
                     child: EditorTransactionService(
                       viewId: view.id,
                       editorState: editorState,
@@ -154,7 +174,7 @@ class _RowEditor extends StatelessWidget {
                           horizontalPadding: 0,
                         ),
                         child: AppFlowyEditorPage(
-                          shrinkWrap: true,
+                          shrinkWrap: shrinkWrap,
                           autoFocus: false,
                           editorState: editorState,
                           // The thread rides in the editor's own header, so
@@ -162,10 +182,10 @@ class _RowEditor extends StatelessWidget {
                           // scrolls.
                           header: showComments
                               ? Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    rowDetailContentInset,
+                                  padding: EdgeInsets.fromLTRB(
+                                    contentInset,
                                     0,
-                                    rowDetailContentInset,
+                                    contentInset,
                                     18,
                                   ),
                                   child: Column(
@@ -189,10 +209,12 @@ class _RowEditor extends StatelessWidget {
                             // each block, so the page starts a gutter early to
                             // put them in the margin and the text on the
                             // measure.
-                            padding: const EdgeInsets.only(
-                              left: rowDetailContentInset -
-                                  BlockActionList.gutterWidth,
-                              right: rowDetailContentInset,
+                            padding: EdgeInsets.only(
+                              left: math.max(
+                                0,
+                                contentInset - BlockActionList.gutterWidth,
+                              ),
+                              right: contentInset,
                             ),
                           ),
                           showParagraphPlaceholder: (editorState, _) =>

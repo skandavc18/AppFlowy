@@ -5,6 +5,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/database/board/mobile_board_page.dart';
+import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
 import 'package:appflowy/plugins/database/board/application/board_actions_bloc.dart';
@@ -293,17 +294,19 @@ class _BoardContentState extends State<_BoardContent> {
   /// The wash the column for [columnData] wears, or null when its group has no
   /// colour to lend.
   Color? _washOf(BuildContext context, AppFlowyGroupData columnData) {
+    final color = _groupColorOf(context, columnData);
+    return color == null
+        ? null
+        : boardColumnWashColor(boardPaletteOf(context), color);
+  }
+
+  /// The colour the group itself was given, before any wash is mixed from it.
+  Color? _groupColorOf(BuildContext context, AppFlowyGroupData columnData) {
     final custom = columnData.customData;
     if (custom is! GroupData) {
       return null;
     }
-    final color = custom.group.groupOptionColor(databaseController);
-    return color == null
-        ? null
-        : boardColumnWashColor(
-            boardPaletteOf(context),
-            color.toColor(context),
-          );
+    return custom.group.groupOptionColor(databaseController)?.toColor(context);
   }
 
   DatabaseController get databaseController =>
@@ -319,9 +322,15 @@ class _BoardContentState extends State<_BoardContent> {
   Widget build(BuildContext context) {
     final palette = boardPaletteOf(context);
     final config = _configOf(palette);
-    final horizontalPadding =
-        context.read<DatabasePluginWidgetBuilderSize?>()?.horizontalPadding ??
-            0.0;
+    final builderSize = context.read<DatabasePluginWidgetBuilderSize?>();
+    final horizontalPadding = builderSize?.horizontalPadding ?? 0.0;
+    // On a full page the board rides the page's own scroll: the columns grow
+    // to the length of their contents and the cover and title travel with
+    // them, instead of each column scrolling inside a fixed viewport that ends
+    // wherever the window happens to.
+    final ridesPageScroll =
+        !widget.shrinkWrap && (builderSize?.coordinateVerticalScroll ?? false);
+    final columnsShrinkWrap = widget.shrinkWrap || ridesPageScroll;
     return MultiBlocListener(
       listeners: [
         BlocListener<BoardBloc, BoardState>(
@@ -377,20 +386,20 @@ class _BoardContentState extends State<_BoardContent> {
             child: ValueListenableBuilder(
               valueListenable: databaseController.compactModeNotifier,
               builder: (context, compactMode, _) {
-                return ScrollConfiguration(
+                final board = ScrollConfiguration(
                   behavior: const BoardScrollBehaviour(),
                   child: BoardColumnSurface(
                     child: AppFlowyBoard(
                       boardScrollController: scrollManager,
                       scrollController: scrollController,
-                      shrinkWrap: widget.shrinkWrap,
+                      shrinkWrap: columnsShrinkWrap,
                       controller: context.read<BoardBloc>().boardController,
                       groupConstraints: BoxConstraints.tightFor(
                         width: compactMode ? 196 : 256,
                       ),
                       config: config,
                       leading: HiddenGroupsColumn(
-                        shrinkWrap: widget.shrinkWrap,
+                        shrinkWrap: columnsShrinkWrap,
                         margin: config.groupHeaderPadding +
                             EdgeInsets.only(
                               left: widget.shrinkWrap ? horizontalPadding : 0.0,
@@ -461,6 +470,7 @@ class _BoardContentState extends State<_BoardContent> {
                                 groupItem: columnItem as GroupItem,
                                 boardConfig: config,
                                 columnWash: _washOf(context, column),
+                                groupColor: _groupColorOf(context, column),
                                 notifier: widget.focusScope,
                                 cellBuilder: cellBuilder,
                                 compactMode: compactMode,
@@ -477,6 +487,25 @@ class _BoardContentState extends State<_BoardContent> {
                         ),
                       ),
                     ),
+                  ),
+                );
+
+                if (!ridesPageScroll) {
+                  return board;
+                }
+
+                // The page owns the vertical axis, so the last card is never
+                // sliced by the window edge; the tail leaves room to breathe.
+                return SingleChildScrollView(
+                  controller: PrimaryScrollController.maybeOf(context),
+                  padding: const EdgeInsets.only(bottom: 56),
+                  // The board measures only as wide as its columns, and a
+                  // scroll view takes its child's width, so without this the
+                  // page's scrollbar is drawn beside the last column instead
+                  // of at the edge of the page.
+                  child: Align(
+                    alignment: AlignmentDirectional.topStart,
+                    child: board,
                   ),
                 );
               },
@@ -765,6 +794,7 @@ class _BoardCard extends StatefulWidget {
     required this.groupItem,
     required this.boardConfig,
     required this.columnWash,
+    required this.groupColor,
     required this.cellBuilder,
     required this.notifier,
     required this.compactMode,
@@ -775,6 +805,7 @@ class _BoardCard extends StatefulWidget {
   final GroupItem groupItem;
   final AppFlowyBoardConfig boardConfig;
   final Color? columnWash;
+  final Color? groupColor;
   final CardCellBuilder cellBuilder;
   final BoardFocusScope notifier;
   final bool compactMode;
@@ -907,47 +938,58 @@ class _BoardCardState extends State<_BoardCard> {
               ),
             );
           },
-          child: RowCard(
-            fieldController: databaseController.fieldController,
-            rowMeta: rowMeta,
-            viewId: boardBloc.viewId,
-            rowCache: rowCache,
-            groupingFieldId: widget.groupItem.fieldInfo.id,
-            isEditing: _isEditing,
-            cellBuilder: widget.cellBuilder,
-            onTap: (context) => widget.onOpenCard(
-              context.read<CardBloc>().rowController.rowMeta,
+          child: ValueListenableBuilder<CardPreviewMode>(
+            valueListenable: CardPreviewRegistry.instance.notifierFor(
+              databaseController.view,
             ),
-            onShiftTap: (_) {
-              Focus.of(context).requestFocus();
-              widget.notifier.toggle(
-                GroupedRowId(
-                  rowId: widget.groupItem.row.id,
-                  groupId: groupData.group.groupId,
-                ),
-              );
-            },
-            styleConfiguration: RowCardStyleConfiguration(
-              cellStyleMap: desktopBoardCardCellStyleMap(context),
-              cardPadding: widget.compactMode
-                  ? const EdgeInsets.fromLTRB(10, 8, 10, 9)
-                  : const EdgeInsets.fromLTRB(12, 10, 12, 11),
-              coverRadius: BoardMetrics.cardRadius,
-            ),
-            onStartEditing: () =>
-                context.read<BoardActionsCubit>().startEditingRow(
-                      GroupedRowId(
-                        groupId: groupData.group.groupId,
-                        rowId: rowMeta.id,
-                      ),
-                    ),
-            onEndEditing: () => context.read<BoardActionsCubit>().endEditing(
+            builder: (context, preview, _) => RowCard(
+              fieldController: databaseController.fieldController,
+              rowMeta: rowMeta,
+              viewId: boardBloc.viewId,
+              rowCache: rowCache,
+              groupingFieldId: widget.groupItem.fieldInfo.id,
+              isEditing: _isEditing,
+              cellBuilder: widget.cellBuilder,
+              onTap: (context) => widget.onOpenCard(
+                context.read<CardBloc>().rowController.rowMeta,
+              ),
+              onShiftTap: (_) {
+                Focus.of(context).requestFocus();
+                widget.notifier.toggle(
                   GroupedRowId(
+                    rowId: widget.groupItem.row.id,
                     groupId: groupData.group.groupId,
-                    rowId: rowMeta.id,
                   ),
+                );
+              },
+              styleConfiguration: RowCardStyleConfiguration(
+                cellStyleMap: desktopBoardCardCellStyleMap(context),
+                cardPadding: widget.compactMode
+                    ? const EdgeInsets.fromLTRB(10, 8, 10, 9)
+                    : const EdgeInsets.fromLTRB(12, 10, 12, 11),
+                coverRadius: BoardMetrics.cardRadius,
+                preview: preview,
+                previewTint: boardCardPreviewTint(
+                  boardPaletteOf(context),
+                  widget.groupColor,
+                  hovered: _hovered,
                 ),
-            userProfile: context.read<BoardBloc>().userProfile,
+              ),
+              onStartEditing: () =>
+                  context.read<BoardActionsCubit>().startEditingRow(
+                        GroupedRowId(
+                          groupId: groupData.group.groupId,
+                          rowId: rowMeta.id,
+                        ),
+                      ),
+              onEndEditing: () => context.read<BoardActionsCubit>().endEditing(
+                    GroupedRowId(
+                      groupId: groupData.group.groupId,
+                      rowId: rowMeta.id,
+                    ),
+                  ),
+              userProfile: context.read<BoardBloc>().userProfile,
+            ),
           ),
         ),
       ),

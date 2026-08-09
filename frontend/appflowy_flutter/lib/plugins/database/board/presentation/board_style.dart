@@ -40,13 +40,42 @@ abstract final class BoardMetrics {
 /// glance, never enough to fight the cards floating on it. A group with no
 /// colour of its own — a checkbox, a date, or the catch-all "No …" column —
 /// keeps the neutral sunken grey.
-Color boardColumnWashColor(BoardPalette palette, Color groupColor) {
-  // The well can be a translucent scrim, so settle it against the board before
-  // tinting; the wash is painted over that same scrim and must be opaque.
-  final well = Color.alphaBlend(palette.sunken, palette.canvas);
+Color boardColumnWashColor(BoardPalette palette, Color groupColor) =>
+    _boardTinted(palette, groupColor, deepened: false);
+
+/// The tint a card's page preview wears.
+///
+/// It borrows the wash of the column the card sits in, so the writing on a
+/// card reads as part of its group rather than as a grey slab dropped on it,
+/// and deepens in the group's OWN colour under the pointer — a neutral grey
+/// there would read as the card going dead rather than lighting up.
+Color boardCardPreviewTint(
+  BoardPalette palette,
+  Color? groupColor, {
+  required bool hovered,
+}) {
+  if (groupColor == null) {
+    final well = _boardWell(palette);
+    return hovered ? Color.alphaBlend(palette.hover, well) : well;
+  }
+  return _boardTinted(palette, groupColor, deepened: hovered);
+}
+
+// The well can be a translucent scrim, so settle it against the board before
+// tinting; a wash is painted over that same scrim and must be opaque.
+Color _boardWell(BoardPalette palette) =>
+    Color.alphaBlend(palette.sunken, palette.canvas);
+
+Color _boardTinted(
+  BoardPalette palette,
+  Color groupColor, {
+  required bool deepened,
+}) {
+  final strength =
+      palette.isDark ? (deepened ? 0.26 : 0.15) : (deepened ? 0.44 : 0.28);
   return Color.alphaBlend(
-    groupColor.withValues(alpha: palette.isDark ? 0.15 : 0.28),
-    well,
+    groupColor.withValues(alpha: strength),
+    _boardWell(palette),
   );
 }
 

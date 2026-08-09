@@ -1,7 +1,7 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -18,16 +18,10 @@ class FavoritePinAction extends StatelessWidget {
     final tooltip = view.isPinned
         ? LocaleKeys.favorite_removeFromSidebar.tr()
         : LocaleKeys.favorite_addToSidebar.tr();
-    final icon = FlowySvg(
-      view.isPinned
-          ? FlowySvgs.favorite_section_unpin_s
-          : FlowySvgs.favorite_section_pin_s,
-    );
     return FlowyTooltip(
       message: tooltip,
-      child: FlowyIconButton(
-        width: 24,
-        icon: icon,
+      child: SidebarIconButton(
+        icon: SidebarIcon.pin,
         onPressed: () {
           view.isPinned
               ? context.read<FavoriteBloc>().add(FavoriteEvent.unpin(view))

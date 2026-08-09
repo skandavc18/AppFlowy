@@ -8,6 +8,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_item_cli
 import 'package:appflowy/workspace/presentation/home/home_stack.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/folder/_folder_header.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_folder.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_root_icon.dart';
@@ -69,7 +70,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(selected, SidebarRootCreateKind.page);
 
-    await tester.tap(find.byType(FlowyIconButton));
+    await tester.tap(find.byType(SidebarIconButton));
     await tester.pumpAndSettle();
     expect(find.text('New folder'), findsOneWidget);
 
@@ -113,12 +114,10 @@ void main() {
       (widget) => widget is Text && widget.data == 'Personal',
     );
     final title = tester.widget<Text>(titleFinder);
-    expect(title.style?.fontSize, SidebarTypography.pageFontSize);
+    expect(title.style?.fontSize, SidebarTypography.headingFontSize);
     expect(
       title.style?.fontWeight,
-      SidebarTypography.fontWeightForPlatform(
-        Theme.of(tester.element(titleFinder)).platform,
-      ),
+      SidebarTypography.fontWeightForRole(SidebarTextRole.heading),
     );
 
     await tester.tap(find.text('Personal'));

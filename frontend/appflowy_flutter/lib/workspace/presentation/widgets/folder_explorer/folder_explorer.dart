@@ -3,8 +3,6 @@ import 'dart:async';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
-import 'package:appflowy/plugins/collection/providers/external_import.dart';
-import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -171,8 +169,6 @@ class _FolderExplorerState extends State<FolderExplorer> {
             onCreateDatabase: (kind) => unawaited(
               _createDatabase(kind, parentId: controller.currentFolder.id),
             ),
-            onImportFromService: (info) => unawaited(_importFromService(info)),
-            onMountService: (info) => unawaited(_mountService(info)),
             onMore: (position) => unawaited(_showBackgroundMenu(position)),
           )
         : null;
@@ -427,9 +423,6 @@ class _FolderExplorerState extends State<FolderExplorer> {
               onPaste: controller.canPaste
                   ? () => unawaited(controller.paste())
                   : null,
-              onImportFromService: (info) =>
-                  unawaited(_importFromService(info)),
-              onMountService: (info) => unawaited(_mountService(info)),
               onRefresh: () {
                 previewCache.clear();
                 unawaited(controller.refresh());
@@ -643,10 +636,6 @@ class _FolderExplorerState extends State<FolderExplorer> {
       onCreateDatabase: policy != null && !policy.allowsTables
           ? null
           : (kind) => unawaited(_createDatabase(kind, parentId: item.id)),
-      onImportFromService: (info) =>
-          unawaited(_importFromService(info, parentId: item.id)),
-      onMountService: (info) =>
-          unawaited(_mountService(info, parentId: item.id)),
     );
     if (action == null || !mounted) {
       return;
@@ -664,39 +653,6 @@ class _FolderExplorerState extends State<FolderExplorer> {
     final view = await controller.createFileOfKind(action, parentId: parentId);
     if (view != null && mounted) {
       _openView(view);
-    }
-  }
-
-  /// Copies files out of a connected service into this folder.
-  Future<void> _importFromService(
-    ProviderServiceInfo info, {
-    String? parentId,
-  }) async {
-    final target = parentId ?? controller.currentFolder.id;
-    final imported = await importFromService(
-      context,
-      parentViewId: target,
-      info: info,
-    );
-    if (imported > 0 && mounted) {
-      previewCache.clear();
-      await controller.refresh();
-    }
-  }
-
-  /// Puts a folder from a service inside this one, as a folder of its own.
-  Future<void> _mountService(
-    ProviderServiceInfo info, {
-    String? parentId,
-  }) async {
-    final target = parentId ?? controller.currentFolder.id;
-    final mounted_ = await mountExternalFolder(
-      context,
-      parentViewId: target,
-      info: info,
-    );
-    if (mounted_ != null && mounted) {
-      await controller.refresh();
     }
   }
 

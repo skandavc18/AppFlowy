@@ -2,6 +2,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/menu/menu_user_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/notifications/widgets/notification_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/user_avatar.dart';
@@ -40,71 +41,68 @@ class _SidebarUserState extends State<SidebarUser> {
       create: (_) => MenuUserBloc(widget.userProfile, workspaceId)
         ..add(const MenuUserEvent.initial()),
       child: BlocBuilder<MenuUserBloc, MenuUserState>(
-        builder: (context, state) => MouseRegion(
-          onEnter: (_) => setState(() => _isHovered = true),
-          onExit: (_) => setState(() => _isHovered = false),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: _isHovered
-                  ? Theme.of(context).colorScheme.secondary
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Row(
-              children: [
-                const HSpace(4),
-                UserAvatar(
-                  iconUrl: state.userProfile.iconUrl,
-                  name: state.userProfile.name,
-                  size: AFAvatarSize.s,
-                  decoration: ShapeDecoration(
-                    color: const Color(0xFFFBE8FB),
-                    shape: RoundedRectangleBorder(
-                      side: const BorderSide(
-                        width: 0.50,
-                        color: Color(0x19171717),
+        builder: (context, state) {
+          final palette = SidebarPalette.of(context);
+          return MouseRegion(
+            onEnter: (_) => setState(() => _isHovered = true),
+            onExit: (_) => setState(() => _isHovered = false),
+            child: AnimatedContainer(
+              duration: SidebarMetrics.hover,
+              curve: SidebarMetrics.curve,
+              decoration: BoxDecoration(
+                color: _isHovered ? palette.hover : palette.hoverAtRest,
+                borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
+              ),
+              child: Row(
+                children: [
+                  const HSpace(SidebarMetrics.space1),
+                  UserAvatar(
+                    iconUrl: state.userProfile.iconUrl,
+                    name: state.userProfile.name,
+                    size: AFAvatarSize.s,
+                    decoration: ShapeDecoration(
+                      color: const Color(0xFFFBE8FB),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                      borderRadius: BorderRadius.circular(6),
                     ),
                   ),
-                ),
-                const HSpace(8),
-                Expanded(child: _buildUserName(context, state)),
-                _hoverAction(
-                  UserSettingButton(isHover: _isHovered),
-                ),
-                const HSpace(4.0),
-                _hoverAction(
-                  NotificationButton(
-                    isHover: _isHovered,
-                    key: ValueKey(widget.userProfile.id),
+                  const HSpace(SidebarMetrics.space2),
+                  Expanded(child: _buildUserName(context, state)),
+                  AnimatedOpacity(
+                    duration: SidebarMetrics.reveal,
+                    curve: SidebarMetrics.curve,
+                    opacity: _isHovered ? 1 : 0,
+                    child: IgnorePointer(
+                      ignoring: !_isHovered,
+                      child: Row(
+                        children: [
+                          UserSettingButton(isHover: _isHovered),
+                          const HSpace(SidebarMetrics.space1),
+                          NotificationButton(
+                            isHover: _isHovered,
+                            key: ValueKey(widget.userProfile.id),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-                const HSpace(4.0),
-              ],
+                  const HSpace(SidebarMetrics.space1),
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
-    );
-  }
-
-  Widget _hoverAction(Widget child) {
-    return Visibility(
-      visible: _isHovered,
-      maintainAnimation: true,
-      maintainSize: true,
-      maintainState: true,
-      child: child,
     );
   }
 
   Widget _buildUserName(BuildContext context, MenuUserState state) {
     final String name = _userName(state.userProfile);
-    return SidebarText(
+    return SidebarText.heading(
       name,
       overflow: TextOverflow.ellipsis,
-      color: Theme.of(context).colorScheme.tertiary,
+      color: SidebarPalette.of(context).textPrimary,
     );
   }
 

@@ -15,6 +15,7 @@ import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_folder.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/folder/_folder_header.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/folder/_section_folder.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
@@ -36,7 +37,7 @@ class SidebarFolder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const sectionPadding = 10.0;
+    const sectionPadding = SidebarMetrics.space4;
     return ValueListenableBuilder(
       valueListenable: getIt<MenuSharedState>().notifier,
       builder: (context, value, child) {
@@ -44,7 +45,6 @@ class SidebarFolder extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const VSpace(4.0),
               // favorite
               BlocBuilder<FavoriteBloc, FavoriteState>(
                 builder: (context, state) {

@@ -86,9 +86,16 @@ class ProviderConnector {
   /// One round trip asks for everything the account can do, so signing in to
   /// Google covers Drive, Photos, Calendar and mail together. What comes back
   /// joins the account already signed in rather than standing beside it.
+  ///
+  /// [preferAccountId] names the account being added to. Null means whichever
+  /// account of this family is already signed in, which is what a plain
+  /// "sign in again" wants; an empty string means a NEW account, so it starts
+  /// from this service's own permissions instead of inheriting another
+  /// person's.
   Future<ProviderConnection> connectWithOAuth({
     required ProviderService service,
     bool requestWriteAccess = false,
+    String? preferAccountId,
   }) async {
     final endpoints = OAuthServices.forService(service);
     if (endpoints == null) {
@@ -108,7 +115,16 @@ class ProviderConnector {
 
     await _connections.ensureLoaded();
     final family = ProviderServices.of(service).family;
-    final existing = _connections.accountFor(family);
+    // A family that issues one token per capability keeps them in separate
+    // connections, so only the one holding this capability may be joined.
+    final scoped = family.sharesOneGrant ? null : service;
+    final existing = preferAccountId != null && preferAccountId.isEmpty
+        ? null
+        : _connections.accountFor(
+            family,
+            accountId: preferAccountId ?? '',
+            service: scoped,
+          );
 
     // Only ask for write access when somebody has said they want to write.
     // Asking for it up front is how an application ends up holding a
@@ -129,7 +145,11 @@ class ProviderConnector {
     );
 
     final account = await _identify(service, '', credentials);
-    final joined = _connections.accountFor(family, accountId: account.id);
+    final joined = _connections.accountFor(
+      family,
+      accountId: account.id,
+      service: scoped,
+    );
     final connection = ProviderConnection(
       // Keep the id an account already has: every collection and page embed
       // bound to it names that id.

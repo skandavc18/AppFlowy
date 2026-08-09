@@ -1,6 +1,5 @@
 import 'dart:math';
 
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -127,8 +126,8 @@ void main() {
       // tap next button, go back to beginning of document
       await tester.tapButton(
         find.descendant(
-          of: find.byType(FindMenu),
-          matching: find.byFlowySvg(FlowySvgs.arrow_down_s),
+          of: find.byType(FindAndReplaceMenuWidget),
+          matching: find.byKey(const ValueKey('findNextMatch')),
         ),
       );
 

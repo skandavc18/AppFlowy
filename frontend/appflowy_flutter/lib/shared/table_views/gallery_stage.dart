@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/table_views/row_page_preview.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/shared/table_views/table_property_view.dart';
 import 'package:appflowy/shared/table_views/table_view_chrome.dart';
@@ -320,6 +321,7 @@ class GalleryStageState extends State<GalleryStage> {
       };
 
   static String _faceLabel(GalleryCardFace face) => switch (face) {
+        GalleryCardFace.page => LocaleKeys.gallery_facePage.tr(),
         GalleryCardFace.cover => LocaleKeys.gallery_faceCover.tr(),
         GalleryCardFace.content => LocaleKeys.gallery_faceContent.tr(),
         GalleryCardFace.none => LocaleKeys.gallery_faceNone.tr(),
@@ -327,6 +329,7 @@ class GalleryStageState extends State<GalleryStage> {
       };
 
   static IconData _faceIcon(GalleryCardFace face) => switch (face) {
+        GalleryCardFace.page => Icons.sticky_note_2_rounded,
         GalleryCardFace.cover => Icons.image_rounded,
         GalleryCardFace.content => Icons.article_rounded,
         GalleryCardFace.none => Icons.notes_rounded,
@@ -418,19 +421,80 @@ class _GalleryCardState extends State<_GalleryCard> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(TableViewMetrics.cardRadius),
-              child: widget.face == GalleryCardFace.portrait
-                  ? _buildPortrait(palette, card)
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildCover(palette, card),
-                        Expanded(child: _buildBody(palette, card)),
-                      ],
-                    ),
+              child: switch (widget.face) {
+                GalleryCardFace.portrait => _buildPortrait(palette, card),
+                GalleryCardFace.page => _buildPage(palette, card),
+                _ => Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildCover(palette, card),
+                      Expanded(child: _buildBody(palette, card)),
+                    ],
+                  ),
+              },
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// The row's own page, with its name written underneath.
+  ///
+  /// A card that leads with the writing rather than with a picture: it is the
+  /// only thing on most rows that tells one from another at a glance.
+  Widget _buildPage(TableViewPalette palette, TableRowCard card) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          child: _PagePreview(
+            documentId: card.documentId,
+            palette: palette,
+            height: null,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            TableViewMetrics.space4,
+            TableViewMetrics.space3,
+            TableViewMetrics.space4,
+            TableViewMetrics.space4,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.only(right: 8, top: 1),
+                child: card.icon != null
+                    ? Text(
+                        card.icon!,
+                        style: const TextStyle(fontSize: 15, height: 1.2),
+                      )
+                    : Icon(
+                        Icons.description_outlined,
+                        size: 16,
+                        color: palette.textMuted,
+                      ),
+              ),
+              Expanded(
+                child: Text(
+                  card.title.trim().isEmpty ? '—' : card.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.32,
+                    letterSpacing: -0.2,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textPrimary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -658,37 +722,39 @@ class _PagePreview extends StatelessWidget {
 
   final String documentId;
   final TableViewPalette palette;
-  final double height;
+
+  /// Null fills whatever room the card gives it.
+  final double? height;
 
   @override
-  Widget build(BuildContext context) => RowPageTextView(
-        documentId: documentId,
-        builder: (context, read) {
-          final text = read?.trim() ?? '';
-          return Container(
-            height: height,
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-            color: palette.sunken.withValues(alpha: 0.6),
-            child: text.isEmpty
-                ? Align(
-                    alignment: Alignment.topLeft,
-                    child: Text(
-                      LocaleKeys.gallery_pageEmpty.tr(),
-                      style: TextStyle(fontSize: 12, color: palette.textMuted),
-                    ),
-                  )
-                : Text(
-                    text,
-                    maxLines: 6,
-                    overflow: TextOverflow.fade,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      height: 1.5,
-                      color: palette.textSecondary,
-                    ),
-                  ),
-          );
-        },
+  Widget build(BuildContext context) => Container(
+        height: height,
+        width: double.infinity,
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
+        color: palette.sunken.withValues(alpha: 0.6),
+        child: RowPagePreview(
+          documentId: documentId,
+          scale: 0.6,
+          emptyBuilder: (context) => Align(
+            alignment: Alignment.topLeft,
+            child: Text(
+              LocaleKeys.gallery_pageEmpty.tr(),
+              style: TextStyle(fontSize: 12, color: palette.textMuted),
+            ),
+          ),
+          textBuilder: (context, text) => Align(
+            alignment: Alignment.topLeft,
+            child: Text(
+              text ?? '',
+              maxLines: height == null ? null : 6,
+              overflow: TextOverflow.fade,
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.55,
+                color: palette.textSecondary,
+              ),
+            ),
+          ),
+        ),
       );
 }

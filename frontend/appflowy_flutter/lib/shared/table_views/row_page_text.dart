@@ -19,6 +19,10 @@ class RowPageText {
   /// it again.
   static final ValueNotifier<int> revision = ValueNotifier(0);
 
+  /// Run just before [revision] is bumped, so anything else holding a copy of
+  /// the same page drops it first.
+  static final Set<void Function(String? documentId)> onForget = {};
+
   static String? peek(String documentId) => _read[documentId];
 
   static Future<String> read(String documentId) {
@@ -54,6 +58,9 @@ class RowPageText {
       _read.clear();
     } else {
       _read.remove(documentId);
+    }
+    for (final drop in onForget) {
+      drop(documentId);
     }
     revision.value++;
   }

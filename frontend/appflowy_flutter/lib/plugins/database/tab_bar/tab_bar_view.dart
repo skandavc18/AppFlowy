@@ -200,7 +200,9 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
         widget.node != null;
     final coordinateVerticalScroll = widget.showPageDecoration &&
         !widget.shrinkWrap &&
-        (layout == ViewLayoutPB.Grid || layout == ViewLayoutPB.Calendar);
+        (layout == ViewLayoutPB.Grid ||
+            layout == ViewLayoutPB.Calendar ||
+            layout == ViewLayoutPB.Board);
     final Widget child = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,

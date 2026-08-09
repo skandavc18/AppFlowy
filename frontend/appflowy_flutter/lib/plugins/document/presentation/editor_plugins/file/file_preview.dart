@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
@@ -898,7 +899,19 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
     text: widget.initialCode,
     language: widget.language,
   );
+  final findSession = TextFindSession();
+  final codeFieldKey = GlobalKey();
+  final codeFocusNode = FocusNode();
+  bool findVisible = false;
   Timer? saveTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    findSession
+      ..setText(widget.initialCode)
+      ..addListener(_onFindChanged);
+  }
 
   @override
   void didUpdateWidget(covariant _EditableCodeFile oldWidget) {
@@ -911,6 +924,10 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
   @override
   void dispose() {
     _flushPendingSave();
+    findSession
+      ..removeListener(_onFindChanged)
+      ..dispose();
+    codeFocusNode.dispose();
     codeScrollController.dispose();
     lineNumberScrollController.dispose();
     controller.dispose();
@@ -933,6 +950,149 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
     saveTimer = null;
   }
 
+  /// Opens the find bar, seeded with whatever is selected, the way an editor
+  /// does. Ctrl+H opens it with the replace row already showing.
+  void _openFind({bool replace = false}) {
+    if (!mounted) {
+      return;
+    }
+    final selection = controller.selection;
+    final selected = selection.isValid && !selection.isCollapsed
+        ? selection.textInside(controller.text)
+        : '';
+    if (selected.isNotEmpty && !selected.contains('\n')) {
+      findSession.findController.text = selected;
+    }
+    findSession
+      ..replaceVisible = replace && widget.editable
+      ..setText(
+        controller.text,
+        caret: selection.isValid ? selection.start : 0,
+        keepPosition: false,
+      );
+    setState(() => findVisible = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      final node = replace && widget.editable
+          ? findSession.replaceFocusNode
+          : findSession.findFocusNode;
+      node.requestFocus();
+      findSession.findController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: findSession.findController.text.length,
+      );
+    });
+  }
+
+  void _closeFind() {
+    if (!findVisible) {
+      return;
+    }
+    setState(() => findVisible = false);
+    controller.updateFindHighlights(const [], null);
+    codeFocusNode.requestFocus();
+  }
+
+  void _onFindChanged() {
+    if (!mounted) {
+      return;
+    }
+    controller.updateFindHighlights(
+      findSession.ranges,
+      findSession.currentRange,
+    );
+    setState(() {});
+    _revealCurrentMatch();
+  }
+
+  void _revealCurrentMatch() {
+    final match = findSession.currentMatch;
+    if (match == null) {
+      return;
+    }
+    // The caret follows the match so closing the bar leaves the cursor where
+    // the reader was looking.
+    controller.selection = TextSelection(
+      baseOffset: match.start,
+      extentOffset: match.end,
+    );
+    _scrollToOffset(match.start);
+  }
+
+  /// Brings a character offset into view.
+  ///
+  /// A programmatic selection change does not scroll a text field, so the line
+  /// is measured with the same layout the field uses and the scroll position
+  /// is set directly.
+  void _scrollToOffset(int offset) {
+    final renderObject = codeFieldKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox ||
+        !renderObject.hasSize ||
+        !codeScrollController.hasClients) {
+      return;
+    }
+    final width = renderObject.size.width - _codeFileContentInset * 2;
+    if (width <= 0) {
+      return;
+    }
+    final painter = TextPainter(
+      text: controller.buildTextSpan(
+        context: context,
+        style: _codeFileTextStyle(
+          AppFlowyTheme.of(context).textColorScheme.primary,
+        ),
+        withComposing: false,
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: width);
+    final dy =
+        painter.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
+    painter.dispose();
+    final position = codeScrollController.position;
+    final target = dy + _codeFileContentInset - position.viewportDimension / 3;
+    codeScrollController.jumpTo(
+      target.clamp(position.minScrollExtent, position.maxScrollExtent),
+    );
+  }
+
+  void _replaceCurrent() {
+    final replaced = findSession.replaceCurrent();
+    if (replaced != null) {
+      _applyText(replaced);
+    }
+  }
+
+  void _replaceAll() {
+    final replaced = findSession.replaceAll();
+    if (replaced != null) {
+      _applyText(replaced);
+    }
+  }
+
+  /// Writes a rewritten file back through the same path an edit takes, so the
+  /// host and the debounced save both see it.
+  void _applyText(String value) {
+    final caret = controller.selection.baseOffset.clamp(0, value.length);
+    controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: caret),
+    );
+    widget.onChanged(value);
+    findSession.setText(value, keepPosition: false);
+    _scheduleSave(value);
+    setState(() {});
+  }
+
+  void _scheduleSave(String value) {
+    saveTimer?.cancel();
+    saveTimer = Timer(
+      const Duration(milliseconds: 400),
+      () => widget.file.writeAsString(value, flush: true),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final lineCount = '\n'.allMatches(controller.text).length + 1;
@@ -947,63 +1107,115 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
     final gutterStyle = _codeFileTextStyle(
       appFlowyTheme.textColorScheme.tertiary,
     );
-    return ColoredBox(
-      color: surfaceColor,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.showLineNumbers)
-            Container(
-              width: 26 + '$lineCount'.length * 9,
-              // The gutter is told apart by its muted numbers and the space
-              // beside them; a drawn rule reads as a table border.
-              color: surfaceColor,
-              child: SingleChildScrollView(
-                controller: lineNumberScrollController,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(top: 12, right: 8),
-                child: Text(
-                  List.generate(lineCount, (index) => '${index + 1}')
-                      .join('\n'),
-                  textAlign: TextAlign.right,
-                  style: gutterStyle,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            _openFind,
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
+        if (widget.editable) ...{
+          const SingleActivator(LogicalKeyboardKey.keyH, control: true): () =>
+              _openFind(replace: true),
+          const SingleActivator(LogicalKeyboardKey.keyH, meta: true): () =>
+              _openFind(replace: true),
+        },
+        const SingleActivator(LogicalKeyboardKey.f3): findSession.next,
+        const SingleActivator(LogicalKeyboardKey.f3, shift: true):
+            findSession.previous,
+      },
+      child: ColoredBox(
+        color: surfaceColor,
+        child: Stack(
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.showLineNumbers)
+                  Container(
+                    width: 26 + '$lineCount'.length * 9,
+                    // The gutter is told apart by its muted numbers and the
+                    // space beside them; a drawn rule reads as a table border.
+                    color: surfaceColor,
+                    child: SingleChildScrollView(
+                      controller: lineNumberScrollController,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(top: 12, right: 8),
+                      child: Text(
+                        List.generate(lineCount, (index) => '${index + 1}')
+                            .join('\n'),
+                        textAlign: TextAlign.right,
+                        style: gutterStyle,
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: TextField(
+                    key: codeFieldKey,
+                    controller: controller,
+                    focusNode: codeFocusNode,
+                    scrollController: codeScrollController,
+                    readOnly: !widget.editable,
+                    expands: true,
+                    maxLines: null,
+                    keyboardType: TextInputType.multiline,
+                    style: codeStyle,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.all(_codeFileContentInset),
+                      border: InputBorder.none,
+                      // The surrounding box already paints the sheet. A filled
+                      // field would blend Material's hover colour over it and
+                      // grey the whole editor out under the pointer.
+                      filled: false,
+                      hoverColor: Colors.transparent,
+                    ),
+                    onChanged: (value) {
+                      setState(() {});
+                      widget.onChanged(value);
+                      findSession.setText(
+                        value,
+                        caret: controller.selection.start,
+                      );
+                      _scheduleSave(value);
+                    },
+                  ),
+                ),
+              ],
+            ),
+            if (findVisible)
+              Positioned(
+                top: 8,
+                right: 16,
+                child: FindReplaceBar(
+                  findController: findSession.findController,
+                  findFocusNode: findSession.findFocusNode,
+                  options: findSession.options,
+                  onOptionsChanged: (value) => findSession.options = value,
+                  matchCount: findSession.matches.length,
+                  currentMatch: findSession.displayIndex,
+                  queryInvalid: findSession.invalid,
+                  onPrevious:
+                      findSession.matches.isEmpty ? null : findSession.previous,
+                  onNext: findSession.matches.isEmpty ? null : findSession.next,
+                  onClose: _closeFind,
+                  replaceController:
+                      widget.editable ? findSession.replaceController : null,
+                  replaceFocusNode: findSession.replaceFocusNode,
+                  showReplace: findSession.replaceVisible,
+                  onToggleReplace: () =>
+                      findSession.replaceVisible = !findSession.replaceVisible,
+                  onReplace: _replaceCurrent,
+                  onReplaceAll: _replaceAll,
                 ),
               ),
-            ),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              scrollController: codeScrollController,
-              readOnly: !widget.editable,
-              expands: true,
-              maxLines: null,
-              keyboardType: TextInputType.multiline,
-              style: codeStyle,
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.all(12),
-                border: InputBorder.none,
-                // The surrounding box already paints the sheet. A filled
-                // field would blend Material's hover colour over it and grey
-                // the whole editor out under the pointer.
-                filled: false,
-                hoverColor: Colors.transparent,
-              ),
-              onChanged: (value) {
-                setState(() {});
-                widget.onChanged(value);
-                saveTimer?.cancel();
-                saveTimer = Timer(
-                  const Duration(milliseconds: 400),
-                  () => widget.file.writeAsString(value, flush: true),
-                );
-              },
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
+
+/// The inset the source editor prints its text at. Shared with the scroll
+/// measurement, which has to reproduce the field's own layout.
+const _codeFileContentInset = 12.0;
 
 /// One metric for the code column and its line numbers.
 ///
@@ -1031,8 +1243,19 @@ class _CodeFileEditingController extends TextEditingController {
 
   String language;
 
+  List<TextRange> findRanges = const [];
+  TextRange? currentFindRange;
+
   void updateLanguage(String value) {
     language = normalizeCodeLanguage(value);
+    notifyListeners();
+  }
+
+  /// Marks what the open search found, so every hit is visible at once
+  /// instead of only the one being read.
+  void updateFindHighlights(List<TextRange> ranges, TextRange? current) {
+    findRanges = ranges;
+    currentFindRange = current;
     notifyListeners();
   }
 
@@ -1042,29 +1265,197 @@ class _CodeFileEditingController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
-    return buildSyntaxHighlightedTextSpan(
+    final span = buildSyntaxHighlightedTextSpan(
       code: text,
       language: language,
       brightness: Theme.of(context).brightness,
       isPaper: PaperTheme.isEnabled(context),
       style: style,
     );
+    if (findRanges.isEmpty) {
+      return span;
+    }
+    final brightness = Theme.of(context).brightness;
+    return applyFindHighlights(
+      span,
+      ranges: findRanges,
+      current: currentFindRange,
+      matchStyle: TextStyle(
+        backgroundColor: FindHighlightColors.match(brightness),
+      ),
+      currentStyle: TextStyle(
+        backgroundColor: FindHighlightColors.current(brightness),
+      ),
+    );
   }
 }
 
-class _TextPreview extends StatelessWidget {
+class _TextPreview extends StatefulWidget {
   const _TextPreview({required this.text});
 
   final String text;
 
   @override
+  State<_TextPreview> createState() => _TextPreviewState();
+}
+
+class _TextPreviewState extends State<_TextPreview> {
+  static const _padding = 16.0;
+
+  final findSession = TextFindSession();
+  final scrollController = ScrollController();
+  final contentKey = GlobalKey();
+  final focusNode = FocusNode();
+  bool findVisible = false;
+
+  @override
+  void initState() {
+    super.initState();
+    findSession
+      ..setText(widget.text)
+      ..addListener(_onFindChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _TextPreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text) {
+      findSession.setText(widget.text);
+    }
+  }
+
+  @override
+  void dispose() {
+    findSession
+      ..removeListener(_onFindChanged)
+      ..dispose();
+    scrollController.dispose();
+    focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: SelectableText(
-        text,
+    final brightness = Theme.of(context).brightness;
+    var span = TextSpan(
+      text: widget.text,
+      style: const TextStyle(fontFamily: 'monospace', height: 1.4),
+    );
+    span = applyFindHighlights(
+      span,
+      ranges: findSession.ranges,
+      current: findSession.currentRange,
+      matchStyle: TextStyle(
+        backgroundColor: FindHighlightColors.match(brightness),
+      ),
+      currentStyle: TextStyle(
+        backgroundColor: FindHighlightColors.current(brightness),
+      ),
+    );
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+            _openFind,
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
+        const SingleActivator(LogicalKeyboardKey.f3): findSession.next,
+        const SingleActivator(LogicalKeyboardKey.f3, shift: true):
+            findSession.previous,
+      },
+      child: Focus(
+        focusNode: focusNode,
+        child: Listener(
+          behavior: HitTestBehavior.translucent,
+          // Reading is the point here, so the pane only claims the keyboard
+          // once somebody has actually clicked into it.
+          onPointerDown: (_) => focusNode.requestFocus(),
+          child: Stack(
+            children: [
+              SingleChildScrollView(
+                controller: scrollController,
+                padding: const EdgeInsets.all(_padding),
+                child: SelectableText.rich(span, key: contentKey),
+              ),
+              if (findVisible)
+                Positioned(
+                  top: 8,
+                  right: 16,
+                  child: FindReplaceBar(
+                    findController: findSession.findController,
+                    findFocusNode: findSession.findFocusNode,
+                    options: findSession.options,
+                    onOptionsChanged: (value) => findSession.options = value,
+                    matchCount: findSession.matches.length,
+                    currentMatch: findSession.displayIndex,
+                    queryInvalid: findSession.invalid,
+                    onPrevious: findSession.matches.isEmpty
+                        ? null
+                        : findSession.previous,
+                    onNext:
+                        findSession.matches.isEmpty ? null : findSession.next,
+                    onClose: _closeFind,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openFind() {
+    setState(() => findVisible = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      findSession.findFocusNode.requestFocus();
+      findSession.findController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: findSession.findController.text.length,
+      );
+    });
+  }
+
+  void _closeFind() {
+    if (!findVisible) {
+      return;
+    }
+    setState(() => findVisible = false);
+    focusNode.requestFocus();
+  }
+
+  void _onFindChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+    final match = findSession.currentMatch;
+    if (match != null) {
+      _scrollToOffset(match.start);
+    }
+  }
+
+  void _scrollToOffset(int offset) {
+    final renderObject = contentKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox ||
+        !renderObject.hasSize ||
+        !scrollController.hasClients) {
+      return;
+    }
+    final painter = TextPainter(
+      text: TextSpan(
+        text: widget.text,
         style: const TextStyle(fontFamily: 'monospace', height: 1.4),
       ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: renderObject.size.width);
+    final dy =
+        painter.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
+    painter.dispose();
+    final position = scrollController.position;
+    final target = dy + _padding - position.viewportDimension / 3;
+    scrollController.jumpTo(
+      target.clamp(position.minScrollExtent, position.maxScrollExtent),
     );
   }
 }
@@ -1135,6 +1526,14 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   InAppWebViewController? webViewController;
   final List<_PendingWebViewScrollCommand> pendingScrollCommands = [];
   final webViewViewportKey = GlobalKey();
+  final findController = TextEditingController();
+  final findFocusNode = FocusNode();
+  final previewFocusNode = FocusNode();
+  FindOptions findOptions = const FindOptions();
+  WebViewFindResult findResult = WebViewFindResult.empty;
+  Timer? findDebounce;
+  bool findVisible = false;
+  bool findEngineReady = false;
   late String preparedHtml;
   Brightness? documentBrightness;
   Color? documentScrollbarThumbColor;
@@ -1146,6 +1545,12 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   Future<void>? rendererScrollInitialization;
   int documentRevision = 0;
   VelocityTracker? trackpadVelocityTracker;
+
+  @override
+  void initState() {
+    super.initState();
+    findController.addListener(_scheduleFind);
+  }
 
   @override
   void didChangeDependencies() {
@@ -1212,6 +1617,8 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     scrollReady = false;
     rendererScrollAvailable = false;
     rendererScrollInitialization = null;
+    findEngineReady = false;
+    findResult = WebViewFindResult.empty;
     webViewController = null;
     documentRevision++;
   }
@@ -1227,6 +1634,11 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   @override
   void dispose() {
     pendingScrollCommands.clear();
+    findDebounce?.cancel();
+    findController.removeListener(_scheduleFind);
+    findController.dispose();
+    findFocusNode.dispose();
+    previewFocusNode.dispose();
     super.dispose();
   }
 
@@ -1242,6 +1654,13 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         ),
         onWebViewCreated: (controller) {
           webViewController = controller;
+          controller.addJavaScriptHandler(
+            handlerName: webViewFindOpenHandlerName,
+            callback: (_) {
+              _openFind();
+              return null;
+            },
+          );
           _scheduleScroll();
         },
         onLoadStop: (controller, _) async {
@@ -1252,6 +1671,7 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
             return;
           }
           _scheduleScroll();
+          await _installFindEngine(controller);
         },
         initialSettings: InAppWebViewSettings(
           allowFileAccessFromFileURLs: true,
@@ -1281,7 +1701,151 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         child: child,
       ),
     );
-    return RepaintBoundary(child: guardedChild);
+    return RepaintBoundary(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+              _openFind,
+          const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
+        },
+        child: Focus(
+          focusNode: previewFocusNode,
+          child: Stack(
+            children: [
+              guardedChild,
+              if (findVisible)
+                Positioned(
+                  top: 8,
+                  right: 16,
+                  child: FindReplaceBar(
+                    findController: findController,
+                    findFocusNode: findFocusNode,
+                    options: findOptions,
+                    onOptionsChanged: (value) {
+                      setState(() => findOptions = value);
+                      _scheduleFind();
+                    },
+                    matchCount: findResult.count,
+                    currentMatch: findResult.index,
+                    queryInvalid: findResult.invalid,
+                    onPrevious: findResult.count == 0
+                        ? null
+                        : () => unawaited(_moveFind(forward: false)),
+                    onNext: findResult.count == 0
+                        ? null
+                        : () => unawaited(_moveFind(forward: true)),
+                    onClose: _closeFind,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A rendered document does its own searching: only the renderer knows
+  /// where a word ended up once the page was laid out.
+  Future<void> _installFindEngine(InAppWebViewController controller) async {
+    if (!Platform.isWindows || !mounted) {
+      return;
+    }
+    final palette = FindBarPalette.of(context);
+    final brightness = Theme.of(context).brightness;
+    try {
+      final installed = await controller.evaluateJavascript(
+        source: '''
+${buildWebViewFindEngineScript(
+          matchColor: _cssRgba(FindHighlightColors.match(brightness)),
+          currentColor: _cssRgba(FindHighlightColors.current(brightness)),
+          currentTextColor: _cssColor(palette.textPrimary),
+        )}
+${buildWebViewFindShortcutScript()}
+''',
+      );
+      findEngineReady = installed == true;
+      if (findEngineReady && findVisible) {
+        await _runFind();
+      }
+    } on PlatformException catch (error, stackTrace) {
+      Log.error('Failed to install the preview find engine', error, stackTrace);
+    }
+  }
+
+  void _openFind() {
+    if (!mounted) {
+      return;
+    }
+    setState(() => findVisible = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      findFocusNode.requestFocus();
+      findController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: findController.text.length,
+      );
+    });
+  }
+
+  void _closeFind() {
+    if (!findVisible) {
+      return;
+    }
+    findDebounce?.cancel();
+    setState(() {
+      findVisible = false;
+      findResult = WebViewFindResult.empty;
+    });
+    unawaited(
+      webViewController?.evaluateJavascript(
+        source: buildWebViewFindClearCommand(),
+      ),
+    );
+    previewFocusNode.requestFocus();
+  }
+
+  /// Marking a whole document costs a layout, so it waits for a pause in the
+  /// typing rather than running on every keystroke.
+  void _scheduleFind() {
+    findDebounce?.cancel();
+    findDebounce = Timer(
+      const Duration(milliseconds: 180),
+      () => unawaited(_runFind()),
+    );
+  }
+
+  Future<void> _runFind() async {
+    final controller = webViewController;
+    if (controller == null || !findEngineReady) {
+      return;
+    }
+    final result = await controller.evaluateJavascript(
+      source: buildWebViewFindCommand(findController.text, findOptions),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(
+      () => findResult = findController.text.isEmpty
+          ? WebViewFindResult.empty
+          : WebViewFindResult.fromJavaScript(result),
+    );
+  }
+
+  Future<void> _moveFind({required bool forward}) async {
+    final controller = webViewController;
+    if (controller == null || !findEngineReady) {
+      return;
+    }
+    final result = await controller.evaluateJavascript(
+      source: buildWebViewFindMoveCommand(forward: forward),
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => findResult = WebViewFindResult.fromJavaScript(result));
   }
 
   Future<bool> _ensureRendererScrollReady(

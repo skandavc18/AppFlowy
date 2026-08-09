@@ -2,12 +2,15 @@ import 'dart:ui' as ui;
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/background_color/theme_background_color.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/i18n/editor_i18n.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/document_spell_check.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/spell_check_gestures.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/plugins/inline_actions/handlers/child_page.dart';
 import 'package:appflowy/plugins/inline_actions/handlers/date_reference.dart';
@@ -23,6 +26,7 @@ import 'package:appflowy/workspace/presentation/home/af_focus_manager.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide QuoteBlockKeys;
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:collection/collection.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -92,6 +96,7 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
   late final List<CommandShortcutEvent> commandShortcuts = [
     ...commandShortcutEvents,
     ..._buildFindAndReplaceCommands(),
+    _buildSpellCheckCommand(),
   ];
 
   final List<ToolbarItem> toolbarItems = [
@@ -192,6 +197,11 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
     effectiveScrollController = widget.scrollController ?? ScrollController();
     // disable the color parse in the HTML decoder.
     DocumentHTMLDecoder.enableColorParse = false;
+
+    DocumentSpellCheck.attach(
+      editorState: widget.editorState,
+      viewId: documentBloc.documentId,
+    );
 
     editorScrollController = EditorScrollController(
       editorState: widget.editorState,
@@ -319,6 +329,7 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
       editorKeyboardInterceptor,
     );
     focusManager?.loseFocusNotifier.removeListener(_loseFocus);
+    DocumentSpellCheck.detach(widget.editorState);
 
     if (widget.useViewInfoBloc && !viewInfoBloc.isClosed) {
       viewInfoBloc.add(const ViewInfoEvent.unregisterEditorState());
@@ -358,7 +369,10 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
       child: EditorContextMenuRegion(
         editorState: widget.editorState,
         enabled: UniversalPlatform.isDesktopOrWeb,
-        child: AppFlowyEditor(
+        child: SpellCheckGestureRegion(
+          editorState: widget.editorState,
+          enabled: UniversalPlatform.isDesktopOrWeb,
+          child: AppFlowyEditor(
           editorState: widget.editorState,
           editable: !isViewDeleted && isEditable,
           disableSelectionService: UniversalPlatform.isMobile && !isEditable,
@@ -405,6 +419,7 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
           dropTargetStyle: AppFlowyDropTargetStyle(
             color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
             margin: const EdgeInsets.only(left: 44),
+          ),
           ),
         ),
       ),
@@ -525,33 +540,54 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
   }
 
   List<CommandShortcutEvent> _buildFindAndReplaceCommands() {
-    return findAndReplaceCommands(
-      context: context,
-      style: FindReplaceStyle(
-        findMenuBuilder: (
-          context,
-          editorState,
-          localizations,
-          style,
-          showReplaceMenu,
-          onDismiss,
-        ) =>
-            Material(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: FindAndReplaceMenuWidget(
-              showReplaceMenu: showReplaceMenu,
-              editorState: editorState,
-              onDismiss: onDismiss,
-            ),
-          ),
-        ),
+    // The editor package's own commands are not used: its menu service bails
+    // out unless a selection rectangle is on screen, so Ctrl+F did nothing on
+    // a page that had not been clicked into. The keys are kept so a
+    // customized shortcut still resolves.
+    return [
+      CommandShortcutEvent(
+        key: 'show the find dialog',
+        getDescription: () => AppFlowyEditorL10n.current.cmdOpenFind,
+        command: 'ctrl+f',
+        macOSCommand: 'cmd+f',
+        handler: _openFindMenu,
       ),
-    );
+      CommandShortcutEvent(
+        key: 'show the find and replace dialog',
+        getDescription: () => AppFlowyEditorL10n.current.cmdOpenFindAndReplace,
+        command: 'ctrl+h',
+        macOSCommand: 'cmd+h',
+        handler: (editorState) => _openFindMenu(editorState, replace: true),
+      ),
+    ];
   }
+
+  KeyEventResult _openFindMenu(
+    EditorState editorState, {
+    bool replace = false,
+  }) {
+    if (UniversalPlatform.isMobile || !mounted) {
+      return KeyEventResult.ignored;
+    }
+    DocumentFindMenu.show(context, editorState, replace: replace);
+    return KeyEventResult.handled;
+  }
+
+  /// Reaching the suggestions from the keyboard, for anybody who does not
+  /// want to leave the caret to use a pointer.
+  CommandShortcutEvent _buildSpellCheckCommand() => CommandShortcutEvent(
+        key: 'show spelling suggestions',
+        getDescription: () =>
+            LocaleKeys.document_spellCheck_showSuggestions.tr(),
+        command: 'ctrl+period',
+        macOSCommand: 'cmd+period',
+        handler: (editorState) {
+          if (UniversalPlatform.isMobile || !mounted) {
+            return KeyEventResult.ignored;
+          }
+          return showSpellSuggestionsForCaret(context, editorState);
+        },
+      );
 
   void _customizeBlockComponentBackgroundColorDecorator() {
     blockComponentBackgroundColorDecorator = (Node node, String colorString) {

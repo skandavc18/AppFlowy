@@ -1,6 +1,7 @@
 import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/widgets/draggable_item/draggable_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
@@ -47,7 +48,9 @@ class DraggableViewItem extends StatefulWidget {
 
 class _DraggableViewItemState extends State<DraggableViewItem> {
   DraggableHoverPosition position = DraggableHoverPosition.none;
-  final hoverColor = const Color(0xFF00C8FF);
+
+  Color _indicatorColor(BuildContext context) =>
+      SidebarPalette.of(context).dropIndicator;
 
   @override
   Widget build(BuildContext context) {
@@ -86,11 +89,40 @@ class _DraggableViewItemState extends State<DraggableViewItem> {
       },
       feedback: IntrinsicWidth(
         child: Opacity(
-          opacity: 0.5,
+          opacity: 0.92,
           child: widget.feedback?.call(context) ?? child,
         ),
       ),
-      child: child,
+      child: AnimatedOpacity(
+        duration: SidebarMetrics.hover,
+        curve: SidebarMetrics.curve,
+        opacity: position == DraggableHoverPosition.none ? 1 : 0.72,
+        child: child,
+      ),
+    );
+  }
+
+  /// A hairline the width of the row, rather than a Windows-style rule.
+  Widget _insertionIndicator(BuildContext context, {required bool active}) {
+    return SizedBox(
+      height: kDraggableViewItemDividerHeight,
+      child: AnimatedOpacity(
+        duration: SidebarMetrics.hover,
+        curve: SidebarMetrics.curve,
+        opacity: active ? 1 : 0,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: SidebarMetrics.rowInset,
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: _indicatorColor(context),
+              borderRadius: BorderRadius.circular(1),
+            ),
+            child: const SizedBox(width: double.infinity, height: 2),
+          ),
+        ),
+      ),
     );
   }
 
@@ -100,29 +132,25 @@ class _DraggableViewItemState extends State<DraggableViewItem> {
       children: [
         // only show the top border when the draggable item is the first child
         if (widget.isFirstChild)
-          Divider(
-            height: kDraggableViewItemDividerHeight,
-            thickness: kDraggableViewItemDividerHeight,
-            color: position == DraggableHoverPosition.top
-                ? widget.topHighlightColor ?? hoverColor
-                : Colors.transparent,
+          _insertionIndicator(
+            context,
+            active: position == DraggableHoverPosition.top,
           ),
-        DecoratedBox(
+        AnimatedContainer(
+          duration: SidebarMetrics.hover,
+          curve: SidebarMetrics.curve,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(6.0),
+            borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
             color: position == DraggableHoverPosition.center
                 ? widget.centerHighlightColor ??
-                    hoverColor.withValues(alpha: 0.5)
-                : Colors.transparent,
+                    _indicatorColor(context).withValues(alpha: 0.16)
+                : _indicatorColor(context).withValues(alpha: 0),
           ),
           child: widget.child,
         ),
-        Divider(
-          height: kDraggableViewItemDividerHeight,
-          thickness: kDraggableViewItemDividerHeight,
-          color: position == DraggableHoverPosition.bottom
-              ? widget.bottomHighlightColor ?? hoverColor
-              : Colors.transparent,
+        _insertionIndicator(
+          context,
+          active: position == DraggableHoverPosition.bottom,
         ),
       ],
     );

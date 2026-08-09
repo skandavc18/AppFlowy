@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_p
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_cut_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/custom_paste_command.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/simple_table/simple_table_context_menu_entries.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/spell_check_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -188,6 +189,12 @@ class _EditorContextMenuRegionState extends State<EditorContextMenuRegion> {
   List<AppMenuEntry> _entries(BuildContext context, EditorState editorState) {
     final platform = Theme.of(context).platform;
     final entries = <AppMenuEntry>[];
+
+    final selection = editorState.selection;
+    if (selection != null) {
+      // Corrections lead, because the right click was aimed at the word.
+      entries.addAll(spellCheckContextMenuEntries(editorState, selection));
+    }
 
     final groups = [
       ...editorContextMenuEntries,

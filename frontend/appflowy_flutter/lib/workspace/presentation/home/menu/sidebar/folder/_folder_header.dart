@@ -1,9 +1,8 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
-import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
@@ -35,6 +34,7 @@ class FolderHeader extends StatefulWidget {
     required this.onCreateCollection,
     required this.isExpanded,
     this.leading,
+    this.onToggleExpanded,
     this.onRename,
   });
 
@@ -47,6 +47,10 @@ class FolderHeader extends StatefulWidget {
   final ValueChanged<CollectionKind> onCreateCollection;
   final bool isExpanded;
   final Widget? leading;
+
+  /// Supplied when the header is a real root folder, so the chevron can hide
+  /// everything under it the way a page row does.
+  final VoidCallback? onToggleExpanded;
   final Future<bool> Function(String name)? onRename;
 
   @override
@@ -54,24 +58,23 @@ class FolderHeader extends StatefulWidget {
 }
 
 class _FolderHeaderState extends State<FolderHeader> {
-  final isHovered = ValueNotifier(false);
   final popoverController = PopoverController();
   final focusNode = FocusNode(debugLabel: 'workspace-root-header');
   bool isRenaming = false;
 
   @override
   void dispose() {
-    isHovered.dispose();
     focusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final palette = SidebarPalette.of(context);
     final rootStyle = SidebarTypography.textStyle(
       context,
-      color: Theme.of(context).colorScheme.onSecondary,
-      role: SidebarTextRole.page,
+      color: palette.textPrimary,
+      role: SidebarTextRole.heading,
     );
     return Focus(
       focusNode: focusNode,
@@ -104,56 +107,46 @@ class _FolderHeaderState extends State<FolderHeader> {
           }
           popover.close();
         },
-        buildChild: (popover) => SizedBox(
-          height: HomeSizes.workspaceSectionHeight,
-          child: MouseRegion(
-            onEnter: (_) => isHovered.value = true,
-            onExit: (_) => isHovered.value = false,
-            child: Listener(
-              behavior: HitTestBehavior.opaque,
-              onPointerDown: (event) {
-                if (event.buttons == kSecondaryMouseButton) {
-                  popover.showAt(event.position);
-                }
-              },
-              child: FlowyButton(
-                onTap: isRenaming
-                    ? null
-                    : () {
-                        focusNode.requestFocus();
-                        widget.onPressed();
-                      },
-                margin: const EdgeInsets.only(left: 6.0, right: 4.0),
-                leftIcon: widget.leading,
-                leftIconSize: widget.leading == null
-                    ? const Size.square(16)
-                    : const Size.square(22),
-                rightIcon: ValueListenableBuilder(
-                  valueListenable: isHovered,
-                  builder: (context, onHover, child) =>
-                      Opacity(opacity: onHover ? 1 : 0, child: child),
-                  child: FlowyIconButton(
-                    width: 24,
-                    iconPadding: const EdgeInsets.all(4.0),
-                    tooltipText: widget.addButtonTooltip,
-                    icon: const FlowySvg(FlowySvgs.view_item_add_s),
-                    onPressed: popover.show,
-                  ),
+        buildChild: (popover) => SidebarRow(
+          dimIcon: false,
+          icon: widget.leading,
+          leading: widget.onToggleExpanded == null
+              ? null
+              : SidebarDisclosure(
+                  expanded: widget.isExpanded,
+                  tooltip: widget.expandButtonTooltip,
+                  onTap: widget.onToggleExpanded!,
                 ),
-                text: widget.onRename == null
-                    ? SidebarText.section(widget.title)
-                    : WorkspaceInlineEditableText(
-                        key: const ValueKey('workspace-root-title'),
-                        text: widget.title,
-                        editing: isRenaming,
-                        onSubmitted: _submitRename,
-                        onCancelled: _cancelRename,
-                        onDoubleTap: _beginRename,
-                        style: rootStyle,
-                      ),
-              ),
+          onTap: isRenaming
+              ? null
+              : () {
+                  focusNode.requestFocus();
+                  widget.onPressed();
+                },
+          onSecondaryPointerDown: (event) {
+            if (event.buttons == kSecondaryMouseButton) {
+              popover.showAt(event.position);
+            }
+          },
+          trailingSlots: 1,
+          trailingBuilder: (_) => [
+            SidebarIconButton(
+              icon: SidebarIcon.add,
+              tooltip: widget.addButtonTooltip,
+              onPressed: popover.show,
             ),
-          ),
+          ],
+          label: widget.onRename == null
+              ? SidebarSectionLabel(widget.title)
+              : WorkspaceInlineEditableText(
+                  key: const ValueKey('workspace-root-title'),
+                  text: widget.title,
+                  editing: isRenaming,
+                  onSubmitted: _submitRename,
+                  onCancelled: _cancelRename,
+                  onDoubleTap: _beginRename,
+                  style: rootStyle,
+                ),
         ),
       ),
     );

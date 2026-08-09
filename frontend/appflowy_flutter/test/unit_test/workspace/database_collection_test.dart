@@ -25,7 +25,8 @@ void main() {
 
     test('names a table that has never been named', () {
       final table = DatabaseTable(
-          view: _view(id: '1', name: '', layout: ViewLayoutPB.Grid),);
+        view: _view(id: '1', name: '', layout: ViewLayoutPB.Grid),
+      );
       expect(table.name, untitledTableName);
     });
   });

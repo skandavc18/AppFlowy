@@ -1,4 +1,5 @@
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -91,8 +92,8 @@ class PdfPreviewPalette {
       iconDisabled: appFlowyTheme.iconColorScheme.quaternary,
       accent:
           isLightPaper ? PaperTheme.accent : materialTheme.colorScheme.primary,
-      searchMatch: const Color(0x73E0B84F),
-      activeSearchMatch: const Color(0xB3D8893D),
+      searchMatch: FindHighlightColors.match(brightness),
+      activeSearchMatch: FindHighlightColors.current(brightness),
       pageShadow: isDark
           ? const Color(0x52000000)
           : isLightPaper

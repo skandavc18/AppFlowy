@@ -1,5 +1,8 @@
 import 'dart:ui';
 
+import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/find_replace/find_replace.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -278,6 +281,12 @@ class PdfSearchToolbar extends StatelessWidget {
     required this.onPrevious,
     required this.onNext,
     required this.onClose,
+    this.options = const FindOptions(),
+    this.onOptionsChanged,
+    this.queryInvalid = false,
+    this.ocrEnabled = false,
+    this.onToggleOcr,
+    this.statusOverride,
   });
 
   final TextEditingController controller;
@@ -290,17 +299,32 @@ class PdfSearchToolbar extends StatelessWidget {
   final VoidCallback? onPrevious;
   final VoidCallback? onNext;
   final VoidCallback onClose;
+  final FindOptions options;
+  final ValueChanged<FindOptions>? onOptionsChanged;
+  final bool queryInvalid;
+
+  /// Whether the search is reading the pages themselves rather than the
+  /// document's text layer.
+  final bool ocrEnabled;
+  final VoidCallback? onToggleOcr;
+
+  /// Replaces the match count while there is something more useful to say,
+  /// such as how far the page scan has got.
+  final String? statusOverride;
 
   @override
   Widget build(BuildContext context) {
     final palette = PdfPreviewPalette.of(context);
-    final resultLabel = controller.text.isEmpty
-        ? 'Type to search'
-        : matchCount == 0
-            ? isSearching
-                ? 'Searching…'
-                : 'No results'
-            : '$currentMatch of $matchCount';
+    final resultLabel = statusOverride ??
+        (controller.text.isEmpty
+            ? 'Type to search'
+            : queryInvalid
+                ? LocaleKeys.findAndReplace_invalidRegex.tr()
+                : matchCount == 0
+                    ? isSearching
+                        ? 'Searching…'
+                        : 'No results'
+                    : '$currentMatch of $matchCount');
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
@@ -367,6 +391,36 @@ class PdfSearchToolbar extends StatelessWidget {
                   ),
                 ),
               ),
+            if (onOptionsChanged != null) ...[
+              _PdfSearchToggle(
+                palette: palette,
+                label: 'Aa',
+                tooltip: LocaleKeys.findAndReplace_caseSensitive.tr(),
+                selected: options.caseSensitive,
+                onPressed: () => onOptionsChanged!(
+                  options.copyWith(caseSensitive: !options.caseSensitive),
+                ),
+              ),
+              _PdfSearchToggle(
+                palette: palette,
+                label: 'ab',
+                underlined: true,
+                tooltip: LocaleKeys.findAndReplace_wholeWord.tr(),
+                selected: options.wholeWord,
+                onPressed: () => onOptionsChanged!(
+                  options.copyWith(wholeWord: !options.wholeWord),
+                ),
+              ),
+              _PdfSearchToggle(
+                palette: palette,
+                label: '.*',
+                tooltip: LocaleKeys.findAndReplace_useRegex.tr(),
+                selected: options.useRegex,
+                onPressed: () => onOptionsChanged!(
+                  options.copyWith(useRegex: !options.useRegex),
+                ),
+              ),
+            ],
             Semantics(
               container: true,
               liveRegion: true,
@@ -374,18 +428,31 @@ class PdfSearchToolbar extends StatelessWidget {
               excludeSemantics: true,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 7),
-                child: Text(
-                  resultLabel,
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontFamily: 'Geist Mono',
-                    fontFamilyFallback: const ['RobotoMono', 'monospace'],
-                    fontSize: 10.5,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 176),
+                  child: Text(
+                    resultLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color:
+                          queryInvalid ? palette.accent : palette.textSecondary,
+                      fontFamily: 'Geist Mono',
+                      fontFamilyFallback: const ['RobotoMono', 'monospace'],
+                      fontSize: 10.5,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
               ),
             ),
+            if (onToggleOcr != null)
+              FilePreviewToolbarButton(
+                tooltip: LocaleKeys.findAndReplace_scanPagesTooltip.tr(),
+                onPressed: onToggleOcr,
+                selected: ocrEnabled,
+                icon: Icons.document_scanner_rounded,
+              ),
             FilePreviewToolbarButton(
               tooltip: 'Previous match (Shift Enter)',
               onPressed: onPrevious,
@@ -402,6 +469,61 @@ class PdfSearchToolbar extends StatelessWidget {
               icon: Icons.close_rounded,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PdfSearchToggle extends StatelessWidget {
+  const _PdfSearchToggle({
+    required this.palette,
+    required this.label,
+    required this.tooltip,
+    required this.selected,
+    required this.onPressed,
+    this.underlined = false,
+  });
+
+  final PdfPreviewPalette palette;
+  final String label;
+  final String tooltip;
+  final bool selected;
+  final VoidCallback onPressed;
+  final bool underlined;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = selected ? palette.accent : palette.icon;
+    return Tooltip(
+      message: tooltip,
+      waitDuration: const Duration(milliseconds: 400),
+      child: SizedBox.square(
+        dimension: PdfPreviewGeometry.buttonSize,
+        child: Material(
+          color: selected
+              ? palette.accent.withValues(alpha: 0.16)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          child: InkWell(
+            onTap: onPressed,
+            borderRadius: BorderRadius.circular(6),
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                  decoration: underlined
+                      ? TextDecoration.underline
+                      : TextDecoration.none,
+                  decorationColor: color,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

@@ -5,9 +5,9 @@ import 'package:appflowy/shared/feature_flags.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
-import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/footer/sidebar_toast.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/settings/widgets/setting_appflowy_cloud.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -29,27 +29,10 @@ class SidebarFooter extends StatelessWidget {
           ),
         const Column(
           children: [
-            SidebarTemplateButton(),
             SidebarTrashButton(),
           ],
         ),
       ],
-    );
-  }
-}
-
-class SidebarTemplateButton extends StatelessWidget {
-  const SidebarTemplateButton({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return SidebarFooterButton(
-      leftIcon: const FlowySvg(
-        FlowySvgs.icon_template_s,
-        size: Size.square(HomeSizes.sidebarActionIconSize),
-      ),
-      text: LocaleKeys.template_label.tr(),
-      onTap: () => afLaunchUrlString('https://appflowy.com/templates'),
     );
   }
 }
@@ -63,10 +46,7 @@ class SidebarTrashButton extends StatelessWidget {
       valueListenable: getIt<MenuSharedState>().notifier,
       builder: (context, value, child) {
         return SidebarFooterButton(
-          leftIcon: const FlowySvg(
-            FlowySvgs.icon_delete_s,
-            size: Size.square(HomeSizes.sidebarActionIconSize),
-          ),
+          icon: SidebarIcon.trash,
           text: LocaleKeys.trash_text.tr(),
           onTap: () {
             getIt<MenuSharedState>().latestOpenView = null;

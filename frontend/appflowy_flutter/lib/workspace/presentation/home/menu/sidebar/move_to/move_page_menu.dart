@@ -156,7 +156,7 @@ class _MovePageGroupedViews extends StatelessWidget {
                 isFeedback: false,
                 isDraggable: false,
                 shouldRenderChildren: false,
-                leftIconBuilder: (_, __) => const HSpace(0.0),
+                leftIconBuilder: (_, __) => null,
                 rightIconsBuilder: (_, view) => [],
               ),
             )

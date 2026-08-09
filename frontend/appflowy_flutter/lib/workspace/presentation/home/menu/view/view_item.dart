@@ -1,20 +1,26 @@
 import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_bloc.dart';
+import 'package:appflowy/workspace/application/maps/map_metadata.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/rename_view/rename_view_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy/workspace/application/slides/slide_metadata.dart';
+import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/prelude.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_transfer_service.dart';
@@ -22,7 +28,7 @@ import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/move_to/workspace_destination_picker.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/draggable_view_item.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
@@ -32,6 +38,7 @@ import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_thumbnail.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
@@ -39,14 +46,13 @@ import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 typedef ViewItemOnSelected = void Function(BuildContext context, ViewPB view);
-typedef ViewItemLeftIconBuilder = Widget Function(
+typedef ViewItemLeftIconBuilder = Widget? Function(
   BuildContext context,
   ViewPB view,
 );
@@ -404,32 +410,45 @@ class _InnerViewItemState extends State<InnerViewItem> {
                   to.parentViewId,
                 )
             : null,
-        feedback: (context) => Container(
-          width: 250,
-          decoration: BoxDecoration(
-            color: Brightness.light == Theme.of(context).brightness
-                ? Colors.white
-                : Colors.black54,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: ViewItem(
-            view: widget.view,
-            parentView: widget.parentView,
-            spaceType: widget.spaceType,
-            level: widget.level,
-            onSelected: widget.onSelected,
-            onTertiarySelected: widget.onTertiarySelected,
-            isDraggable: false,
-            leftPadding: widget.leftPadding,
-            isFeedback: true,
-            enableRightClickContext: widget.enableRightClickContext,
-            leftIconBuilder: widget.leftIconBuilder,
-            rightIconsBuilder: widget.rightIconsBuilder,
-            includeDefaultMoreAction: widget.includeDefaultMoreAction,
-            extendBuilder: widget.extendBuilder,
-            shouldIgnoreView: widget.shouldIgnoreView,
-          ),
-        ),
+        feedback: (context) {
+          final palette = SidebarPalette.of(context);
+          return Container(
+            width: 240,
+            decoration: BoxDecoration(
+              color: palette.isDark
+                  ? const Color(0xFF2A2A2A)
+                  : const Color(0xFFFFFFFF),
+              borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
+              boxShadow: [
+                BoxShadow(
+                  color: palette.isDark
+                      ? const Color(0x66000000)
+                      : const Color(0x1F16150F),
+                  blurRadius: 18,
+                  offset: const Offset(0, 8),
+                  spreadRadius: -6,
+                ),
+              ],
+            ),
+            child: ViewItem(
+              view: widget.view,
+              parentView: widget.parentView,
+              spaceType: widget.spaceType,
+              level: 0,
+              onSelected: widget.onSelected,
+              onTertiarySelected: widget.onTertiarySelected,
+              isDraggable: false,
+              leftPadding: widget.leftPadding,
+              isFeedback: true,
+              enableRightClickContext: widget.enableRightClickContext,
+              leftIconBuilder: widget.leftIconBuilder,
+              rightIconsBuilder: widget.rightIconsBuilder,
+              includeDefaultMoreAction: widget.includeDefaultMoreAction,
+              extendBuilder: widget.extendBuilder,
+              shouldIgnoreView: widget.shouldIgnoreView,
+            ),
+          );
+        },
         child: child,
       );
     } else {
@@ -630,28 +649,14 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       return const SizedBox(height: 4, width: double.infinity);
     }
 
-    if (widget.isFeedback || !widget.isHoverEnabled) {
-      return _buildViewItem(false);
-    }
-
-    return FlowyHover(
-      style: HoverStyle(
-        hoverColor: isSelected || widget.showActions
-            ? SidebarStyle.selectedBackground(context)
-            : Theme.of(context).colorScheme.secondary,
-      ),
-      resetHoverOnRebuild: widget.showActions || !isIconPickerOpened,
-      buildWhenOnHover: () =>
-          !widget.showActions && !_isDragging && !isIconPickerOpened,
-      isSelected: () => widget.showActions || isSelected,
-      builder: (_, onHover) => _buildViewItem(onHover),
-    );
+    return _buildViewItem(isSelected);
   }
 
-  Widget _buildViewItem(bool onHover) {
+  Widget _buildViewItem(bool isSelected) {
+    final palette = SidebarPalette.of(context);
     final nameStyle = SidebarTypography.textStyle(
       context,
-      color: Theme.of(context).colorScheme.onSecondary,
+      color: isSelected ? palette.textPrimary : palette.textBody,
       role: SidebarTextRole.page,
     );
     final name = WorkspaceInlineEditableText(
@@ -664,94 +669,41 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       selectFileStem: widget.view.isWorkspaceFile,
       style: nameStyle,
     );
-    final children = [
-      const HSpace(HomeSpaceViewSizes.viewLeadingSpacing),
-      // expand icon or placeholder
-      widget.leftIconBuilder?.call(context, widget.view) ?? _buildLeftIcon(),
-      const HSpace(HomeSpaceViewSizes.viewDisclosureIconSpacing),
-      // icon
-      _buildViewIconButton(),
-      const HSpace(HomeSpaceViewSizes.viewIconTextSpacing),
-      // title
-      Expanded(
-        child: widget.extendBuilder != null && !isRenaming
-            ? Row(
-                children: [
-                  Flexible(child: name),
-                  ...widget.extendBuilder!(widget.view),
-                ],
-              )
-            : name,
-      ),
-    ];
+    final label = widget.extendBuilder != null && !isRenaming
+        ? Row(
+            children: [
+              Flexible(child: name),
+              ...widget.extendBuilder!(widget.view),
+            ],
+          )
+        : name;
 
-    // hover action
-    if (widget.showActions || onHover) {
-      if (widget.rightIconsBuilder != null) {
-        if (widget.includeDefaultMoreAction) {
-          children.add(
-            _buildViewMoreActionButton(
-              context,
-              viewMoreActionController,
-              (_) => FlowyTooltip(
-                message: LocaleKeys.menuAppHeader_moreButtonToolTip.tr(),
-                child: FlowyIconButton(
-                  width: 24,
-                  icon: const FlowySvg(FlowySvgs.workspace_three_dots_s),
-                  onPressed: viewMoreActionController.show,
-                ),
-              ),
-            ),
-          );
-          children.add(const HSpace(8.0));
-        }
-        children.addAll(widget.rightIconsBuilder!(context, widget.view));
-      } else {
-        // ··· more action button
-        children.add(
-          _buildViewMoreActionButton(
-            context,
-            viewMoreActionController,
-            (_) => FlowyTooltip(
-              message: LocaleKeys.menuAppHeader_moreButtonToolTip.tr(),
-              child: FlowyIconButton(
-                width: 24,
-                icon: const FlowySvg(FlowySvgs.workspace_three_dots_s),
-                onPressed: viewMoreActionController.show,
-              ),
-            ),
-          ),
-        );
-        children.add(const HSpace(8.0));
-        children.add(_buildViewAddButton(context));
-        children.add(const HSpace(4.0));
-      }
-    }
-
-    final child = GestureDetector(
-      behavior: HitTestBehavior.translucent,
+    final row = SidebarRow(
+      height: widget.height,
+      indent: widget.level * widget.leftPadding,
+      selected: isSelected,
+      active: widget.showActions || isIconPickerOpened,
+      hoverEnabled: !widget.isFeedback && widget.isHoverEnabled && !_isDragging,
+      leading: widget.leftIconBuilder == null
+          ? _buildLeftIcon()
+          : widget.leftIconBuilder!(context, widget.view),
+      icon: _buildViewIconButton(),
+      label: label,
+      trailingSlots: _trailingSlots,
+      trailingBuilder: widget.isFeedback ? null : _buildTrailingActions,
       onTap: isRenaming ? null : _handleViewTap,
       onTertiaryTapDown: (_) =>
           widget.onTertiarySelected?.call(context, widget.view),
-      child: SizedBox(
-        height: widget.height,
-        child: Padding(
-          padding: EdgeInsets.only(left: widget.level * widget.leftPadding),
-          child: Listener(
-            onPointerDown: (event) {
-              if (event.buttons == kSecondaryMouseButton &&
-                  widget.enableRightClickContext) {
+      onSecondaryPointerDown: widget.enableRightClickContext
+          ? (event) {
+              if (event.buttons == kSecondaryMouseButton) {
                 viewMoreActionController.showAt(
                   // We add some horizontal offset
                   event.position + const Offset(4, 0),
                 );
               }
-            },
-            behavior: HitTestBehavior.opaque,
-            child: Row(children: children),
-          ),
-        ),
-      ),
+            }
+          : null,
     );
 
     return Focus(
@@ -769,18 +721,47 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
         }
         return KeyEventResult.ignored;
       },
-      child: child,
+      child: row,
     );
+  }
+
+  int get _trailingSlots {
+    if (widget.rightIconsBuilder == null) {
+      return 2;
+    }
+    return widget.includeDefaultMoreAction ? 2 : 1;
+  }
+
+  List<Widget> _buildTrailingActions(BuildContext context) {
+    final moreButton = _buildViewMoreActionButton(
+      context,
+      viewMoreActionController,
+      (_) => SidebarIconButton(
+        icon: SidebarIcon.more,
+        tooltip: LocaleKeys.menuAppHeader_moreButtonToolTip.tr(),
+        onPressed: viewMoreActionController.show,
+      ),
+    );
+
+    if (widget.rightIconsBuilder != null) {
+      return [
+        if (widget.includeDefaultMoreAction) ...[
+          moreButton,
+          const SizedBox(width: SidebarMetrics.actionGap),
+        ],
+        ...widget.rightIconsBuilder!(context, widget.view),
+      ];
+    }
+
+    return [
+      moreButton,
+      const SizedBox(width: SidebarMetrics.actionGap),
+      _buildViewAddButton(context),
+    ];
   }
 
   Widget _buildViewIconButton() {
     final iconData = widget.view.icon.toEmojiIconData();
-    // A picture or a clip previews itself; dimming a thumbnail the way an icon
-    // is dimmed would only make it muddy.
-    final showsThumbnail = WorkspaceItemIcon.showsThumbnail(widget.view);
-    final defaultIcon = widget.view.defaultIcon(
-      size: const Size.square(HomeSpaceViewSizes.viewIconSize),
-    );
     final icon = iconData.isNotEmpty
         ? RawEmojiIconWidget(
             emoji: iconData,
@@ -788,12 +769,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
             lineHeight: HomeSpaceViewSizes.viewIconLineHeight /
                 HomeSpaceViewSizes.viewIconSize,
           )
-        : showsThumbnail
-            ? defaultIcon
-            : Opacity(
-                opacity: HomeSpaceViewSizes.viewIconOpacity,
-                child: defaultIcon,
-              );
+        : sidebarViewGlyph(context, widget.view);
 
     final Widget child = AppFlowyPopover(
       offset: const Offset(20, 0),
@@ -809,7 +785,12 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
           message: LocaleKeys.document_plugins_cover_changeIcon.tr(),
           child: SizedBox.square(
             dimension: HomeSpaceViewSizes.viewIconSize,
-            child: icon,
+            child: WorkspaceItemIcon.showsThumbnail(widget.view)
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: icon,
+                  )
+                : icon,
           ),
         ),
       ),
@@ -843,16 +824,20 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     return child;
   }
 
-  // > button or · button
-  // show > if the view is expandable.
-  // show · if the view can't contain child views.
-  Widget _buildLeftIcon() {
-    return ViewItemDefaultLeftIcon(
-      view: widget.view,
-      parentView: widget.parentView,
-      isExpanded: widget.isExpanded,
-      leftPadding: widget.leftPadding,
-      isHovered: widget.isHovered,
+  // The chevron shares the icon's slot, so it is only supplied for a row that
+  // really has something under it.
+  Widget? _buildLeftIcon() {
+    if (isReferencedDatabaseView(widget.view, widget.parentView)) {
+      return null;
+    }
+    if (context.read<ViewBloc>().state.view.childViews.isEmpty) {
+      return null;
+    }
+    return SidebarDisclosure(
+      expanded: widget.isExpanded,
+      onTap: () => context
+          .read<ViewBloc>()
+          .add(ViewEvent.setIsExpanded(!widget.isExpanded)),
     );
   }
 
@@ -1063,23 +1048,104 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
   }
 }
 
-class _DotIconWidget extends StatelessWidget {
-  const _DotIconWidget();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(6.0),
-      child: Container(
-        width: 4,
-        height: 4,
-        decoration: BoxDecoration(
-          color: Theme.of(context).iconTheme.color,
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-    );
+/// One icon family for the sidebar: the bundled Phosphor line set.
+Widget sidebarViewGlyph(BuildContext context, ViewPB view) {
+  final item = WorkspaceExplorerItem.fromView(view);
+  final source = WorkspaceItemThumbnail.localSourceFor(item);
+  final glyph = SidebarGlyph(sidebarViewIcon(view));
+  if (source == null) {
+    return glyph;
   }
+  return WorkspaceItemThumbnail(
+    path: source,
+    isVideo: WorkspaceItemThumbnail.isVideoName(item.name),
+    size: HomeSpaceViewSizes.viewIconSize,
+    fallback: glyph,
+  );
+}
+
+SidebarIcon sidebarViewIcon(ViewPB view) {
+  final kind = view.collection?.kind;
+  if (kind != null) {
+    return switch (kind) {
+      CollectionKind.book => SidebarIcon.book,
+      CollectionKind.album => SidebarIcon.album,
+      CollectionKind.repository => SidebarIcon.repository,
+      CollectionKind.database => SidebarIcon.database,
+      CollectionKind.bookmark => SidebarIcon.link,
+      CollectionKind.email => SidebarIcon.mailbox,
+      CollectionKind.folder => SidebarIcon.folder,
+    };
+  }
+  if (view.isBookmark) {
+    return SidebarIcon.link;
+  }
+  if (view.isWorkspaceFolder) {
+    return SidebarIcon.folder;
+  }
+  if (view.isWorkspaceFile) {
+    return sidebarFileIcon(view.name);
+  }
+  if (view.isChart) {
+    return SidebarIcon.chart;
+  }
+  if (view.isMap) {
+    return SidebarIcon.atlas;
+  }
+  if (view.isSlideDeck) {
+    return SidebarIcon.slides;
+  }
+  final tableKind = view.tableViewKind;
+  if (tableKind != null) {
+    return switch (tableKind) {
+      TableViewKind.timeline => SidebarIcon.timeline,
+      TableViewKind.feed => SidebarIcon.feed,
+      TableViewKind.form => SidebarIcon.form,
+      TableViewKind.gallery => SidebarIcon.gallery,
+      TableViewKind.mailbox => SidebarIcon.mailbox,
+    };
+  }
+  return switch (view.layout) {
+    ViewLayoutPB.Board => SidebarIcon.board,
+    ViewLayoutPB.Calendar => SidebarIcon.calendar,
+    ViewLayoutPB.Grid => SidebarIcon.grid,
+    ViewLayoutPB.Chat => SidebarIcon.chat,
+    _ => SidebarIcon.document,
+  };
+}
+
+SidebarIcon sidebarFileIcon(String name) {
+  final dot = name.lastIndexOf('.');
+  final extension = dot <= 0 ? '' : name.substring(dot + 1).toLowerCase();
+  return switch (extension) {
+    'pdf' => SidebarIcon.pdf,
+    'doc' || 'docx' || 'odt' || 'rtf' => SidebarIcon.word,
+    'xls' || 'xlsx' || 'ods' => SidebarIcon.sheet,
+    'ppt' || 'pptx' || 'odp' => SidebarIcon.deck,
+    'csv' || 'tsv' => SidebarIcon.csv,
+    'zip' ||
+    'tar' ||
+    'gz' ||
+    'bz2' ||
+    'xz' ||
+    '7z' ||
+    'rar' =>
+      SidebarIcon.archive,
+    'md' || 'markdown' || 'txt' || 'html' || 'htm' => SidebarIcon.document,
+    'png' ||
+    'jpg' ||
+    'jpeg' ||
+    'gif' ||
+    'webp' ||
+    'bmp' ||
+    'svg' ||
+    'heic' =>
+      SidebarIcon.image,
+    'mp4' || 'mov' || 'mkv' || 'webm' || 'avi' => SidebarIcon.video,
+    'mp3' || 'wav' || 'flac' || 'm4a' || 'ogg' => SidebarIcon.audio,
+    '' => SidebarIcon.file,
+    _ => SidebarIcon.code,
+  };
 }
 
 // workaround: we should use view.isEndPoint or something to check if the view can contain child views. But currently, we don't have that field.
@@ -1140,36 +1206,15 @@ class ViewItemDefaultLeftIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isReferencedDatabaseView(view, parentView)) {
-      return const _DotIconWidget();
+    if (isReferencedDatabaseView(view, parentView) ||
+        context.read<ViewBloc>().state.view.childViews.isEmpty) {
+      return const SizedBox.shrink();
     }
 
-    if (context.read<ViewBloc>().state.view.childViews.isEmpty) {
-      return HSpace(leftPadding);
-    }
-
-    final child = FlowyHover(
-      child: GestureDetector(
-        child: FlowySvg(
-          isExpanded
-              ? FlowySvgs.view_item_expand_s
-              : FlowySvgs.view_item_unexpand_s,
-          size: const Size.square(16.0),
-        ),
-        onTap: () =>
-            context.read<ViewBloc>().add(ViewEvent.setIsExpanded(!isExpanded)),
-      ),
+    return SidebarDisclosure(
+      expanded: isExpanded,
+      onTap: () =>
+          context.read<ViewBloc>().add(ViewEvent.setIsExpanded(!isExpanded)),
     );
-
-    if (isHovered != null) {
-      return ValueListenableBuilder<bool>(
-        valueListenable: isHovered!,
-        builder: (_, isHovered, child) =>
-            Opacity(opacity: isHovered ? 1.0 : 0.0, child: child),
-        child: child,
-      );
-    }
-
-    return child;
   }
 }

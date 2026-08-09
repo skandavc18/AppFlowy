@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/database/widgets/row/row_document.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/table_views/row_page_preview.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/shared/table_views/table_property_view.dart';
 import 'package:appflowy/shared/table_views/table_view_chrome.dart';
@@ -466,10 +468,15 @@ class MailboxStageState extends State<MailboxStage> {
     }
     return _MailboxReader(
       key: ValueKey(card.rowId),
+      viewId: widget.viewId,
       card: card,
       palette: palette,
       sender: _senderOf(card),
       when: _dateOf(card),
+      editing: widget.spec.editPage,
+      onEditingChanged: (editing) => widget.onSpecChanged(
+        widget.spec.copyWith(editPage: editing),
+      ),
       onOpen:
           widget.onOpenRow == null ? null : () => widget.onOpenRow!(card.rowId),
     );
@@ -522,6 +529,15 @@ class MailboxStageState extends State<MailboxStage> {
           selected: widget.spec.groupByDate,
           onSelected: () => widget.onSpecChanged(
             widget.spec.copyWith(groupByDate: !widget.spec.groupByDate),
+          ),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.mailbox_editPage.tr(),
+          icon: Icons.edit_note_rounded,
+          selected: widget.spec.editPage,
+          enabled: widget.spec.showReader,
+          onSelected: () => widget.onSpecChanged(
+            widget.spec.copyWith(editPage: !widget.spec.editPage),
           ),
         ),
         const AppMenuSeparator(),
@@ -749,21 +765,29 @@ class _Snippet extends StatelessWidget {
   }
 }
 
-/// The open row, read beside the list.
+/// The open row, read — and written on — beside the list.
 class _MailboxReader extends StatelessWidget {
   const _MailboxReader({
     super.key,
+    required this.viewId,
     required this.card,
     required this.palette,
     required this.sender,
     required this.when,
+    required this.editing,
+    required this.onEditingChanged,
     this.onOpen,
   });
 
+  final String viewId;
   final TableRowCard card;
   final TableViewPalette palette;
   final String sender;
   final DateTime? when;
+
+  /// Whether the page below the envelope is the row's own, open for writing.
+  final bool editing;
+  final ValueChanged<bool> onEditingChanged;
   final VoidCallback? onOpen;
 
   @override
@@ -783,117 +807,216 @@ class _MailboxReader extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(TableViewMetrics.cardRadius),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            TableViewMetrics.space5,
-            TableViewMetrics.space5,
-            TableViewMetrics.space5,
-            TableViewMetrics.space6,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: SelectableText(
-                      subject,
-                      style: TextStyle(
-                        fontSize: 19,
-                        height: 1.28,
-                        fontWeight: FontWeight.w700,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                  ),
-                  if (onOpen != null) ...[
-                    const SizedBox(width: TableViewMetrics.space3),
-                    TableViewButton(
-                      palette: palette,
-                      icon: Icons.open_in_full_rounded,
-                      tooltip: LocaleKeys.mailbox_openRow.tr(),
-                      onTap: onOpen!,
-                    ),
-                  ],
-                ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final head = Padding(
+              padding: const EdgeInsets.fromLTRB(
+                TableViewMetrics.space5,
+                TableViewMetrics.space5,
+                TableViewMetrics.space5,
+                TableViewMetrics.space4,
               ),
-              const SizedBox(height: TableViewMetrics.space4),
-              Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  _Avatar(
-                    label: card.icon ?? from,
-                    isEmoji: card.icon != null,
-                    colour: palette.swatchFor(
-                      card.accent.isNotEmpty ? card.accent : from,
-                    ),
-                    size: 34,
-                  ),
-                  const SizedBox(width: TableViewMetrics.space3),
-                  Expanded(
-                    child: Text(
-                      from,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: palette.textPrimary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: TableViewMetrics.space3),
-                  Text(
-                    mailboxFullDateLabel(when),
-                    style: TextStyle(fontSize: 11.5, color: palette.textMuted),
-                  ),
-                ],
-              ),
-              if (properties.isNotEmpty) ...[
-                const SizedBox(height: TableViewMetrics.space4),
-                Wrap(
-                  spacing: TableViewMetrics.space5,
-                  runSpacing: TableViewMetrics.space3,
-                  children: [
-                    for (final property in properties)
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 320),
-                        child: TablePropertyView(
-                          property: property,
-                          palette: palette,
-                          live: true,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: SelectableText(
+                          subject,
+                          style: TextStyle(
+                            fontSize: 19,
+                            height: 1.28,
+                            fontWeight: FontWeight.w700,
+                            color: palette.textPrimary,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: TableViewMetrics.space3),
+                      TableViewButton(
+                        palette: palette,
+                        icon: Icons.edit_note_rounded,
+                        tooltip: LocaleKeys.mailbox_editPage.tr(),
+                        active: editing,
+                        onTap: () => onEditingChanged(!editing),
+                      ),
+                      if (onOpen != null) ...[
+                        const SizedBox(width: TableViewMetrics.controlGap),
+                        TableViewButton(
+                          palette: palette,
+                          icon: Icons.open_in_full_rounded,
+                          tooltip: LocaleKeys.mailbox_openRow.tr(),
+                          onTap: onOpen!,
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: TableViewMetrics.space4),
+                  Row(
+                    children: [
+                      _Avatar(
+                        label: card.icon ?? from,
+                        isEmoji: card.icon != null,
+                        colour: palette.swatchFor(
+                          card.accent.isNotEmpty ? card.accent : from,
+                        ),
+                        size: 34,
+                      ),
+                      const SizedBox(width: TableViewMetrics.space3),
+                      Expanded(
+                        child: Text(
+                          from,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: palette.textPrimary,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: TableViewMetrics.space3),
+                      Text(
+                        mailboxFullDateLabel(when),
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: palette.textMuted,
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (properties.isNotEmpty) ...[
+                    const SizedBox(height: TableViewMetrics.space4),
+                    Wrap(
+                      spacing: TableViewMetrics.space5,
+                      runSpacing: TableViewMetrics.space3,
+                      children: [
+                        for (final property in properties)
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 320),
+                            child: TablePropertyView(
+                              property: property,
+                              palette: palette,
+                              live: true,
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
+                ],
+              ),
+            );
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // The envelope keeps to its own share, so a row carrying a
+                // dozen properties cannot squeeze the page out of the pane.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: constraints.hasBoundedHeight
+                        ? constraints.maxHeight * 0.5
+                        : double.infinity,
+                  ),
+                  child: SingleChildScrollView(child: head),
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      // The page brings its own measure, and its + and ::
+                      // handles need the margin the pane would otherwise take.
+                      editing ? 0 : TableViewMetrics.space5,
+                      0,
+                      editing ? 0 : TableViewMetrics.space5,
+                      editing ? 0 : TableViewMetrics.space6,
+                    ),
+                    child: editing
+                        ? _MailboxPage(
+                            viewId: viewId,
+                            rowId: card.rowId,
+                            documentId: card.documentId,
+                          )
+                        : RowPagePreview(
+                            documentId: card.documentId,
+                            scale: 1,
+                            interactive: true,
+                            emptyBuilder: (context) => Align(
+                              alignment: Alignment.topLeft,
+                              child: Text(
+                                LocaleKeys.mailbox_pageEmpty.tr(),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: palette.textMuted,
+                                ),
+                              ),
+                            ),
+                            textBuilder: (context, text) =>
+                                SingleChildScrollView(
+                              child: SelectableText(
+                                text ?? '',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  height: 1.62,
+                                  color: palette.textSecondary,
+                                ),
+                              ),
+                            ),
+                          ),
+                  ),
                 ),
               ],
-              const SizedBox(height: TableViewMetrics.space5),
-              RowPageTextView(
-                documentId: card.documentId,
-                builder: (context, text) {
-                  final body = text?.trim() ?? '';
-                  if (body.isEmpty) {
-                    return Text(
-                      LocaleKeys.mailbox_pageEmpty.tr(),
-                      style: TextStyle(fontSize: 13, color: palette.textMuted),
-                    );
-                  }
-                  return SelectableText(
-                    body,
-                    style: TextStyle(
-                      fontSize: 14,
-                      height: 1.62,
-                      color: palette.textSecondary,
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
+            );
+          },
         ),
       ),
     );
   }
+}
+
+/// The open row's own page, opened for writing.
+///
+/// The reader otherwise shows a copy of the page taken when it was last read;
+/// this is the page itself, so what is typed here is what the row keeps. A row
+/// whose page has never been written on has none yet — [RowDocument] makes it.
+class _MailboxPage extends StatefulWidget {
+  const _MailboxPage({
+    required this.viewId,
+    required this.rowId,
+    required this.documentId,
+  });
+
+  final String viewId;
+  final String rowId;
+  final String documentId;
+
+  @override
+  State<_MailboxPage> createState() => _MailboxPageState();
+}
+
+class _MailboxPageState extends State<_MailboxPage> {
+  @override
+  void dispose() {
+    // The list and the reading pane are both showing what this page said when
+    // it was last read, so they have to read it again. A page made during the
+    // visit had no id to forget, which is what forgetting all of them covers.
+    final documentId = widget.documentId;
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => RowPageText.forget(documentId.isEmpty ? null : documentId),
+    );
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RowDocument(
+        viewId: widget.viewId,
+        rowId: widget.rowId,
+        // The pane is a box of its own, so the page scrolls inside it rather
+        // than growing past it.
+        shrinkWrap: false,
+        contentInset: TableViewMetrics.space5,
+      );
 }
 
 class _Avatar extends StatelessWidget {

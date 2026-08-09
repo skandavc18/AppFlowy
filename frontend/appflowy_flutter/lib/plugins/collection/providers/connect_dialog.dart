@@ -20,16 +20,21 @@ import 'package:url_launcher/url_launcher.dart';
 /// Three shapes, one dialog, because they differ only in what they ask for:
 /// a self-hosted server wants an address and a key, a code host wants a token,
 /// and the rest sign in through a browser.
+///
+/// [preferAccountId] names the account being signed in for: null for whichever
+/// one is already there, an empty string for a new account beside it.
 Future<ProviderConnection?> showProviderConnectDialog(
   BuildContext context, {
   required ProviderServiceInfo info,
   bool requestWriteAccess = false,
+  String? preferAccountId,
 }) =>
     showDialog<ProviderConnection>(
       context: context,
       builder: (context) => _ConnectDialog(
         info: info,
         requestWriteAccess: requestWriteAccess,
+        preferAccountId: preferAccountId,
       ),
     );
 
@@ -80,10 +85,12 @@ class _ConnectDialog extends StatefulWidget {
   const _ConnectDialog({
     required this.info,
     required this.requestWriteAccess,
+    this.preferAccountId,
   });
 
   final ProviderServiceInfo info;
   final bool requestWriteAccess;
+  final String? preferAccountId;
 
   @override
   State<_ConnectDialog> createState() => _ConnectDialogState();
@@ -397,6 +404,7 @@ class _ConnectDialogState extends State<_ConnectDialog> {
         final connection = await connector.connectWithOAuth(
           service: info.service,
           requestWriteAccess: widget.requestWriteAccess,
+          preferAccountId: widget.preferAccountId,
         );
         if (mounted) {
           Navigator.of(context).pop(connection);

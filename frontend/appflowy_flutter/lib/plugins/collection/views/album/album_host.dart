@@ -138,9 +138,7 @@ class _AlbumHostState extends State<AlbumHost> {
     for (final item in items) {
       controller.metadata.seed(item.id, albumMetadataOfProviderNode(item.node));
     }
-    controller.setItems(
-      albumMediaFromProvider(items, refused: live.thumbnailRefused),
-    );
+    controller.setItems(albumMediaFromProvider(items));
   }
 
   void _syncItems() {

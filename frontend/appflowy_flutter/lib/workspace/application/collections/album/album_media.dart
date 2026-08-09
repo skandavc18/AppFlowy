@@ -27,7 +27,6 @@ class AlbumMediaItem {
     required this.index,
     this.byteSize,
     this.modifiedAt,
-    this.unavailable = false,
   });
 
   final ViewPB view;
@@ -40,9 +39,6 @@ class AlbumMediaItem {
   final int index;
   final int? byteSize;
   final DateTime? modifiedAt;
-
-  /// Set when the service was asked for this and would not give it.
-  final bool unavailable;
 
   String get id => view.id;
   String get name => view.name;
@@ -63,8 +59,7 @@ class AlbumMediaItem {
           other.path == path &&
           other.index == index &&
           other.byteSize == byteSize &&
-          other.modifiedAt == modifiedAt &&
-          other.unavailable == unavailable;
+          other.modifiedAt == modifiedAt;
 
   @override
   int get hashCode => Object.hash(
@@ -75,7 +70,6 @@ class AlbumMediaItem {
         index,
         byteSize,
         modifiedAt,
-        unavailable,
       );
 }
 
@@ -127,10 +121,7 @@ List<AlbumMediaItem> albumMediaFrom(Iterable<ViewPB> views) {
 /// The kind comes from what the service says a thing is, not from its name: a
 /// photo library item is often called `IMG_0042` with no extension at all, and
 /// reading the name would silently drop the whole album.
-List<AlbumMediaItem> albumMediaFromProvider(
-  Iterable<ProviderItemView> items, {
-  bool Function(String nodeId)? refused,
-}) {
+List<AlbumMediaItem> albumMediaFromProvider(Iterable<ProviderItemView> items) {
   final media = <AlbumMediaItem>[];
   for (final item in items) {
     final kind = switch (item.node.kind) {
@@ -150,7 +141,6 @@ List<AlbumMediaItem> albumMediaFromProvider(
         index: media.length,
         byteSize: item.node.byteSize,
         modifiedAt: item.node.createdAt ?? item.node.modifiedAt,
-        unavailable: refused?.call(item.node.id) ?? false,
       ),
     );
   }

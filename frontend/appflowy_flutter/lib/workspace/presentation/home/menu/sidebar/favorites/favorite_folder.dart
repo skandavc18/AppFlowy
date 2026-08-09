@@ -1,4 +1,3 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
@@ -7,7 +6,7 @@ import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_menu.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/favorites/favorite_pin_action.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -123,7 +122,7 @@ class _FavoriteFolderState extends State<FavoriteFolder> {
       view: view,
       enableRightClickContext: true,
       leftPadding: HomeSpaceViewSizes.leftPadding,
-      leftIconBuilder: (_, __) => const HSpace(HomeSpaceViewSizes.leftPadding),
+      leftIconBuilder: (_, __) => null,
       level: 0,
       isHovered: isHovered,
       includeDefaultMoreAction: true,
@@ -134,7 +133,6 @@ class _FavoriteFolderState extends State<FavoriteFolder> {
             context.read<ViewBloc>().add(const ViewEvent.setIsEditing(true));
           },
         ),
-        const HSpace(4.0),
       ],
       shouldRenderChildren: false,
       shouldLoadChildViews: false,
@@ -157,15 +155,9 @@ class FavoriteHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: HomeSizes.workspaceSectionHeight,
-      child: FlowyButton(
-        text: SidebarText.section(
-          LocaleKeys.sideBar_favorites.tr(),
-        ),
-        margin: const EdgeInsets.only(left: 6.0, right: 4.0),
-        onTap: onPressed,
-      ),
+    return SidebarRow(
+      onTap: onPressed,
+      label: SidebarSectionLabel(LocaleKeys.sideBar_favorites.tr()),
     );
   }
 }
@@ -196,12 +188,10 @@ class FavoriteMoreButton extends StatelessWidget {
         child: const FavoriteMenu(minWidth: minWidth),
       ),
       margin: EdgeInsets.zero,
-      child: FlowyButton(
-        margin: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 7.0),
-        leftIcon: const FlowySvg(FlowySvgs.workspace_three_dots_s),
-        text: SidebarText(
-          LocaleKeys.button_more.tr(),
-        ),
+      child: SidebarNavItem(
+        icon: SidebarIcon.more,
+        label: LocaleKeys.button_more.tr(),
+        height: SidebarMetrics.rowHeight,
       ),
     );
   }

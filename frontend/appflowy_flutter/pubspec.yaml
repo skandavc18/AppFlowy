@@ -337,6 +337,8 @@ flutter:
     - assets/icons/phosphor_bold.json
     - assets/icons/phosphor_fill.json
     - assets/icons/phosphor_duotone.json
+    - assets/dictionaries/en_us_words.txt.gz
+    - assets/dictionaries/en_us_common.txt.gz
     - assets/fonts/
     - assets/built_in_prompts.json
 

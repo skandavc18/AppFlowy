@@ -1,11 +1,13 @@
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/object_type_typography.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/util/font_family_extension.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/mobile_appearance.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -177,19 +179,17 @@ void main() {
     });
 
     test('uses Notion sidebar geometry and neutral palette', () {
-      expect(HomeSizes.minimumSidebarWidth, 240);
-      expect(HomeSizes.workspaceSectionHeight, 30);
-      expect(HomeSizes.sidebarHorizontalInset, 6);
-      expect(HomeSizes.sidebarButtonHorizontalMargin, 4);
-      expect(HomeSizes.sidebarActionIconSize, 22);
-      expect(HomeSizes.sidebarActionIconTextSpacing, 8);
-      expect(HomeSpaceViewSizes.viewHeight, 32);
-      expect(HomeSpaceViewSizes.viewIconSize, 18);
-      expect(HomeSpaceViewSizes.viewIconTextSpacing, 10);
-      expect(HomeSpaceViewSizes.viewListLeftPadding, 2);
-      expect(HomeSpaceViewSizes.viewLeadingSpacing, 0);
-      expect(HomeSpaceViewSizes.viewDisclosureIconSpacing, 2);
-      expect(HomeSpaceViewSizes.viewIconOpacity, 0.82);
+      expect(HomeSizes.minimumSidebarWidth, 260);
+      expect(HomeSizes.workspaceSectionHeight, 32);
+      expect(HomeSizes.sidebarHorizontalInset, SidebarMetrics.gutter);
+      expect(HomeSizes.sidebarActionIconSize, SidebarMetrics.iconSize);
+      expect(
+        HomeSizes.sidebarActionIconTextSpacing,
+        SidebarMetrics.iconGap,
+      );
+      expect(HomeSpaceViewSizes.viewHeight, SidebarMetrics.rowHeight);
+      expect(HomeSpaceViewSizes.viewIconSize, SidebarMetrics.iconSize);
+      expect(HomeSpaceViewSizes.leftPadding, SidebarMetrics.indent);
       expect(
         SidebarStyle.backgroundFor(Brightness.light),
         SidebarStyle.defaultLightBackground,
@@ -199,32 +199,21 @@ void main() {
           Brightness.light,
           isPaper: true,
         ),
-        const Color(0xFFF8F3E8),
+        PaperTheme.sidebarBackground,
       );
       expect(
         SidebarStyle.backgroundFor(Brightness.dark),
-        const Color(0xFF202020),
+        const Color(0xFF1F1F1F),
       );
       expect(
         SidebarStyle.selectedBackgroundFor(Brightness.light),
-        const Color(0x1437352F),
-      );
-      expect(
-        SidebarStyle.iconColorFor(Brightness.light),
-        const Color(0xD137352F),
-      );
-      expect(
-        SidebarStyle.iconColorFor(Brightness.dark),
-        const Color(0xCFFFFFFF),
-      );
-      expect(
-        SidebarStyle.searchIconColorFor(Brightness.light),
-        const Color(0xFF403E39),
+        const Color(0x1416150F),
       );
       expect(SidebarSearchIcon.iconData, Icons.search_rounded);
     });
 
-    testWidgets('uses Notion desktop sidebar typography', (tester) async {
+    testWidgets('sets navigation copy at medium, never the editor semibold',
+        (tester) async {
       late TextStyle style;
       await tester.pumpWidget(
         MaterialApp(
@@ -245,11 +234,19 @@ void main() {
           TargetPlatform.windows,
         ),
       );
-      expect(style.fontSize, 14);
-      expect(style.fontWeight, FontWeight.w600);
+      expect(style.fontSize, SidebarTypography.fontSize);
+      expect(style.fontWeight, FontWeight.w500);
+      expect(
+        style.fontWeight!.index,
+        lessThan(
+          ObjectTypeTypography.fontWeightForPlatform(
+            TargetPlatform.windows,
+          ).index,
+        ),
+      );
       expect(style.fontVariations, isEmpty);
-      expect(style.height, closeTo(20 / 14, 0.0001));
-      expect(style.letterSpacing, closeTo(-0.14, 0.0001));
+      expect(style.height, closeTo(18 / 13.5, 0.0001));
+      expect(style.letterSpacing, closeTo(-0.135, 0.0001));
     });
 
     testWidgets('uses compact muted section-label typography', (tester) async {
@@ -270,31 +267,40 @@ void main() {
       );
 
       expect(style.fontFamily, 'Segoe UI');
-      expect(style.fontSize, 11);
-      expect(style.fontWeight, FontWeight.w600);
+      expect(style.fontSize, 11.5);
+      expect(style.fontWeight, FontWeight.w500);
       expect(style.fontVariations, isEmpty);
-      expect(style.height, closeTo(16 / 11, 0.0001));
-      expect(style.letterSpacing, 0.5);
+      expect(style.height, closeTo(16 / 11.5, 0.0001));
+      expect(style.letterSpacing, 0.35);
     });
 
-    testWidgets('renders larger page labels at the shared selected weight',
+    testWidgets('keeps page names lighter than the section heading above them',
         (tester) async {
       await tester.pumpWidget(
         MaterialApp(
           theme: ThemeData(platform: TargetPlatform.windows),
-          home: const SidebarText.page(
-            'Selected',
+          home: const Column(
+            children: [
+              SidebarText.page('Selected'),
+              SidebarText.heading('My workspace'),
+            ],
           ),
         ),
       );
 
-      final text = tester.widget<Text>(find.text('Selected'));
-      expect(text.style?.fontFamily, 'Segoe UI');
-      expect(text.style?.fontSize, 15);
-      expect(text.style?.fontWeight, FontWeight.w600);
-      expect(text.style?.fontVariations, isEmpty);
-      expect(text.style?.height, closeTo(21 / 15, 0.0001));
-      expect(text.style?.letterSpacing, closeTo(-0.15, 0.0001));
+      final page = tester.widget<Text>(find.text('Selected'));
+      expect(page.style?.fontFamily, 'Segoe UI');
+      expect(page.style?.fontSize, SidebarTypography.pageFontSize);
+      expect(page.style?.fontWeight, FontWeight.w500);
+      expect(page.style?.fontVariations, isEmpty);
+      expect(page.style?.height, closeTo(18 / 13.5, 0.0001));
+
+      final heading = tester.widget<Text>(find.text('My workspace'));
+      expect(heading.style?.fontWeight, FontWeight.w600);
+      expect(
+        heading.style!.fontWeight!.index,
+        greaterThan(page.style!.fontWeight!.index),
+      );
     });
 
     test('uses a crisp global underprint only in light mode', () {

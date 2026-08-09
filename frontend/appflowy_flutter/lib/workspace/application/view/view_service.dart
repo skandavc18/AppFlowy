@@ -66,6 +66,7 @@ class ViewBackendService {
               theme: automaticCoverSettings.theme,
               name: name,
               layout: layoutType,
+              set: automaticCoverSettings.set,
             ),
           );
         }

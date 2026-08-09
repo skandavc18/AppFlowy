@@ -1,16 +1,20 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/mobile/presentation/database/card/card.dart';
+import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/plugins/database/application/field/field_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_cache.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/row/action.dart';
 import 'package:appflowy/shared/af_image.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
+import 'package:appflowy/shared/table_views/row_page_preview.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:collection/collection.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flowy_infra_ui/style_widget/hover.dart';
@@ -232,12 +236,20 @@ class _CardContent extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       mainAxisSize: MainAxisSize.min,
       children: [
-        CardCover(
-          cover: rowMeta.cover,
-          userProfile: userProfile,
-          isCompact: isCompact,
-          radius: styleConfiguration.coverRadius,
-        ),
+        if (styleConfiguration.preview == CardPreviewMode.pageContent)
+          CardPagePreview(
+            documentId: rowMeta.documentId,
+            radius: styleConfiguration.coverRadius,
+            isCompact: isCompact,
+            tint: styleConfiguration.previewTint,
+          )
+        else if (styleConfiguration.preview == CardPreviewMode.cover)
+          CardCover(
+            cover: rowMeta.cover,
+            userProfile: userProfile,
+            isCompact: isCompact,
+            radius: styleConfiguration.coverRadius,
+          ),
         Padding(
           padding: styleConfiguration.cardPadding,
           child: Column(
@@ -423,9 +435,63 @@ class CardCover extends StatelessWidget {
   }
 }
 
+/// The opening of a row's own page, standing where a cover would.
+class CardPagePreview extends StatelessWidget {
+  const CardPagePreview({
+    super.key,
+    required this.documentId,
+    this.isCompact = false,
+    this.radius = 4,
+    this.tint,
+  });
+
+  final String documentId;
+  final bool isCompact;
+  final double radius;
+
+  /// The band the writing is set on. Defaults to a neutral wash.
+  final Color? tint;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = AFThemeExtension.of(context).textColor.withValues(alpha: 0.7);
+    final faint = theme.hintColor;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
+      curve: Curves.easeOutCubic,
+      constraints: BoxConstraints(minHeight: isCompact ? 54 : 84),
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(12, isCompact ? 9 : 12, 12, 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(radius),
+          topRight: Radius.circular(radius),
+        ),
+        color: tint ?? AFThemeExtension.of(context).greyHover,
+      ),
+      child: RowPagePreview(
+        documentId: documentId,
+        height: isCompact ? 86 : 132,
+        scale: isCompact ? 0.52 : 0.58,
+        emptyBuilder: (context) => Text(
+          LocaleKeys.cardPreview_pageEmpty.tr(),
+          style: TextStyle(fontSize: 12, color: faint),
+        ),
+        textBuilder: (context, text) => Text(
+          text ?? '',
+          maxLines: isCompact ? 4 : 7,
+          overflow: TextOverflow.fade,
+          style: TextStyle(fontSize: 12.5, height: 1.5, color: muted),
+        ),
+      ),
+    );
+  }
+}
+
 class EditCardAccessory extends StatelessWidget with CardAccessory {
   const EditCardAccessory({super.key});
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -465,6 +531,8 @@ class RowCardStyleConfiguration {
     this.showAccessory = true,
     this.cardPadding = const EdgeInsets.all(4),
     this.coverRadius = 4,
+    this.preview = CardPreviewMode.cover,
+    this.previewTint,
     this.hoverStyle,
   });
 
@@ -472,5 +540,12 @@ class RowCardStyleConfiguration {
   final bool showAccessory;
   final EdgeInsets cardPadding;
   final double coverRadius;
+
+  /// What the card shows above its title.
+  final CardPreviewMode preview;
+
+  /// The band a page preview is set on, when the host has a colour to lend.
+  final Color? previewTint;
+
   final HoverStyle? hoverStyle;
 }

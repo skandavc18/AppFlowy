@@ -16,6 +16,7 @@ import 'package:appflowy/workspace/application/settings/date_time/date_format_ex
 import 'package:appflowy/workspace/application/settings/date_time/time_format_ext.dart';
 import 'package:appflowy/workspace/application/settings/workspace/workspace_settings_bloc.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/shared_widget.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
@@ -602,6 +603,11 @@ class _AutomaticCoverSettingState extends State<AutomaticCoverSetting> {
                   padding: const EdgeInsets.only(top: 16),
                   child: Column(
                     children: [
+                      _CoverSetChoice(
+                        selected: settings.set,
+                        onChanged: _setCoverSet,
+                      ),
+                      const VSpace(16),
                       SettingsInputField(
                         label: LocaleKeys
                             .settings_appearance_automaticCovers_themeLabel
@@ -648,6 +654,16 @@ class _AutomaticCoverSettingState extends State<AutomaticCoverSetting> {
       return;
     }
     final updated = current.copyWith(enabled: enabled);
+    setState(() => settings = updated);
+    await AutomaticViewCoverPreferences.save(updated);
+  }
+
+  Future<void> _setCoverSet(ViewCoverSet set) async {
+    final current = settings;
+    if (current == null || current.set == set) {
+      return;
+    }
+    final updated = current.copyWith(set: set);
     setState(() => settings = updated);
     await AutomaticViewCoverPreferences.save(updated);
   }
@@ -739,6 +755,7 @@ class _AutomaticCoverSettingState extends State<AutomaticCoverSetting> {
       updates = AutomaticViewCover.updatesForExistingViews(
         views: loaded.$1!,
         theme: saved.theme,
+        set: saved.set,
       );
     } on FormatException catch (error) {
       if (mounted) {
@@ -792,6 +809,102 @@ class _AutomaticCoverSettingState extends State<AutomaticCoverSetting> {
       settings = saved;
       isApplying = false;
     });
+  }
+}
+
+/// Which pictures new pages are given.
+class _CoverSetChoice extends StatelessWidget {
+  const _CoverSetChoice({required this.selected, required this.onChanged});
+
+  final ViewCoverSet selected;
+  final ValueChanged<ViewCoverSet> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FlowyText.regular(
+            LocaleKeys.settings_appearance_automaticCovers_setLabel.tr(),
+            fontSize: 13,
+            color: AFThemeExtension.of(context).secondaryTextColor,
+          ),
+          const VSpace(8),
+          Row(
+            children: [
+              for (final set in ViewCoverSet.values) ...[
+                if (set != ViewCoverSet.nature) const HSpace(10),
+                Expanded(
+                  child: _CoverSetSample(
+                    key: ValueKey('automatic-cover-set-${set.id}'),
+                    set: set,
+                    selected: set == selected,
+                    onTap: () => onChanged(set),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      );
+}
+
+class _CoverSetSample extends StatelessWidget {
+  const _CoverSetSample({
+    super.key,
+    required this.set,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ViewCoverSet set;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            height: 64,
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: selected ? accent : Theme.of(context).dividerColor,
+                width: selected ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                for (final value in set.coverValues.take(3))
+                  Expanded(
+                    child: Image.asset(
+                      PageStyleCoverImageType.builtInImagePath(value),
+                      fit: BoxFit.cover,
+                      height: double.infinity,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const VSpace(6),
+          FlowyText.regular(
+            set == ViewCoverSet.nature
+                ? LocaleKeys.settings_appearance_automaticCovers_setNature.tr()
+                : LocaleKeys.settings_appearance_automaticCovers_setAbstract
+                    .tr(),
+            fontSize: 12,
+            color: selected
+                ? accent
+                : AFThemeExtension.of(context).secondaryTextColor,
+          ),
+        ],
+      ),
+    );
   }
 }
 

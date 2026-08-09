@@ -1,11 +1,10 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/password/password_bloc.dart';
 import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
-import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/af_focus_manager.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
 import 'package:appflowy/workspace/presentation/settings/settings_dialog.dart';
@@ -86,24 +85,17 @@ class _UserSettingButtonState extends State<UserSettingButton> {
   @override
   Widget build(BuildContext context) {
     return SizedBox.square(
-      dimension: 28.0,
+      dimension: SidebarMetrics.actionSlot,
       child: FlowyTooltip(
         message: LocaleKeys.settings_menu_open.tr(),
         child: BlocProvider.value(
           value: _passwordBloc,
-          child: FlowyButton(
-            onTap: () => showSettingsDialog(
+          child: SidebarIconButton(
+            icon: SidebarIcon.settings,
+            onPressed: () => showSettingsDialog(
               context,
               userWorkspaceBloc: _userWorkspaceBloc,
               passwordBloc: _passwordBloc,
-            ),
-            margin: EdgeInsets.zero,
-            text: FlowySvg(
-              FlowySvgs.settings_s,
-              size: const Size.square(HomeSizes.sidebarActionIconSize),
-              color: widget.isHover
-                  ? Theme.of(context).colorScheme.onSurface
-                  : null,
             ),
           ),
         ),

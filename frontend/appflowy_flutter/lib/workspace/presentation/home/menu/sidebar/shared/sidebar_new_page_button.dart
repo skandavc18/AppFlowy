@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -14,7 +13,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_file_kin
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
@@ -49,62 +48,50 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: HomeSizes.sidebarHorizontalInset,
-      ),
+    return SizedBox(
       height: HomeSizes.newPageSectionHeight,
-      child: Row(
+      child: Stack(
+        fit: StackFit.expand,
         children: [
-          Expanded(
-            child: FlowyButton(
-              onTap: () async => _createNewPage(),
-              leftIcon: FlowySvg(
-                FlowySvgs.edit_s,
-                color: Theme.of(context).iconTheme.color,
-                size: const Size.square(HomeSizes.sidebarActionIconSize),
-              ),
-              leftIconSize: const Size.square(HomeSizes.sidebarActionIconSize),
-              iconPadding: HomeSizes.sidebarActionIconTextSpacing,
-              margin: const EdgeInsets.symmetric(
-                horizontal: HomeSizes.sidebarButtonHorizontalMargin,
-              ),
-              text: SidebarText(
-                LocaleKeys.newPageText.tr(),
-              ),
-            ),
+          SidebarNavItem(
+            icon: SidebarIcon.newPage,
+            label: LocaleKeys.newPageText.tr(),
+            reserveTrailing: 1,
+            onTap: () async => _createNewPage(),
           ),
-          PopoverActionList<PopoverAction>(
-            direction: PopoverDirection.bottomWithRightAligned,
-            offset: const Offset(0, 6),
-            constraints: const BoxConstraints(minWidth: 200),
-            actions: [
-              WorkspaceItemAddAction(WorkspaceItemAddKind.folder),
-              WorkspaceFileAddAction(
-                onCreate: (action) =>
-                    unawaited(_createWorkspaceRootFile(action)),
-                onCreateCollection: (kind) =>
-                    unawaited(_createWorkspaceRootCollection(kind)),
+          PositionedDirectional(
+            end: SidebarMetrics.rowInset,
+            top: 0,
+            bottom: 0,
+            child: Center(
+              child: PopoverActionList<PopoverAction>(
+                direction: PopoverDirection.bottomWithRightAligned,
+                offset: const Offset(0, 6),
+                constraints: const BoxConstraints(minWidth: 200),
+                actions: [
+                  WorkspaceItemAddAction(WorkspaceItemAddKind.folder),
+                  WorkspaceFileAddAction(
+                    onCreate: (action) =>
+                        unawaited(_createWorkspaceRootFile(action)),
+                    onCreateCollection: (kind) =>
+                        unawaited(_createWorkspaceRootCollection(kind)),
+                  ),
+                ],
+                buildChild: (popover) => SidebarIconButton(
+                  icon: SidebarIcon.dropDown,
+                  tooltip: LocaleKeys
+                      .workspaceFolderExplorer_createWorkspaceItem
+                      .tr(),
+                  onPressed: popover.show,
+                ),
+                onSelected: (action, popover) {
+                  popover.close();
+                  if (action is WorkspaceItemAddAction) {
+                    unawaited(_createWorkspaceRootFolder());
+                  }
+                },
               ),
-            ],
-            buildChild: (popover) => FlowyIconButton(
-              width: 24,
-              iconPadding: const EdgeInsets.all(3),
-              tooltipText:
-                  LocaleKeys.workspaceFolderExplorer_createWorkspaceItem.tr(),
-              icon: Icon(
-                Icons.keyboard_arrow_down_rounded,
-                size: 17,
-                color: Theme.of(context).iconTheme.color,
-              ),
-              onPressed: popover.show,
             ),
-            onSelected: (action, popover) {
-              popover.close();
-              if (action is WorkspaceItemAddAction) {
-                unawaited(_createWorkspaceRootFolder());
-              }
-            },
           ),
         ],
       ),

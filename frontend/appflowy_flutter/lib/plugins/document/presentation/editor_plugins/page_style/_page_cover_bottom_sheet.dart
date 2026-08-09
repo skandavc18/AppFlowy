@@ -223,7 +223,7 @@ class PageCoverBottomSheet extends StatelessWidget {
     BuildContext context,
     DocumentPageStyleState state,
   ) {
-    final imageNames = ['1', '2', '3', '4', '5', '6'];
+    final imageNames = builtInCoverValues;
     return GridView.builder(
       shrinkWrap: true,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(

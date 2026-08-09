@@ -2,88 +2,30 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/collections/email/connected_accounts.dart';
 import 'package:appflowy/workspace/application/collections/email/mail_secret_store.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
-import 'package:appflowy/workspace/presentation/settings/shared/settings_category.dart';
+import 'package:appflowy/workspace/application/providers/provider_service.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/connections/connections_chrome.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
-/// The mailboxes AppFlowy reads, and what each one signs in with.
+/// Whose account a password mailbox actually belongs to.
 ///
-/// A section rather than a page: a mailbox is not a separate kind of account,
-/// it is one more thing an already connected account is used for. Gmail and
-/// Outlook are shown as the account they belong to; only a server with no
-/// other way in still has a password of its own to manage.
-class MailboxesSection extends StatefulWidget {
-  const MailboxesSection({super.key});
-
-  @override
-  State<MailboxesSection> createState() => _MailboxesSectionState();
+/// An app password is not a different kind of account, it is a different way
+/// into the same one — so a Gmail mailbox signed in that way belongs under
+/// Google beside the browser sign in, not in a list of its own. A server with
+/// no account behind it (a self-hosted IMAP box, iCloud, Fastmail) answers
+/// null and is listed on its own.
+ProviderAccountFamily? mailboxAccountFamily(ConnectedAccount mailbox) {
+  final service = mailbox.provider.oauthService;
+  return service == null ? null : ProviderServices.of(service).family;
 }
 
-class _MailboxesSectionState extends State<MailboxesSection> {
-  final ConnectedAccountRegistry _registry = const ConnectedAccountRegistry();
-  final MailSecretStore _secrets = MailSecretStore();
-
-  List<ConnectedAccount> _mailboxes = const <ConnectedAccount>[];
-  Set<String> _ready = const <String>{};
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    await ProviderConnections.instance.ensureLoaded();
-    // A mailbox read with a connected account has nothing to manage here: it
-    // is that account's row. Only a server with a password of its own does.
-    final mailboxes = [
-      for (final mailbox in await _registry.all())
-        if (mailbox.connectionId.isEmpty) mailbox,
-    ];
-    final ready = <String>{};
-    for (final mailbox in mailboxes) {
-      if (await _secrets.has(mailbox.id)) {
-        ready.add(mailbox.id);
-      }
-    }
-    if (mounted) {
-      setState(() {
-        _mailboxes = mailboxes;
-        _ready = ready;
-        _loading = false;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading || _mailboxes.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    return SettingsCategory(
-      title: LocaleKeys.settings_accountsPage_mail.tr(),
-      children: [
-        for (final mailbox in _mailboxes)
-          _MailboxTile(
-            key: ValueKey(mailbox.id),
-            mailbox: mailbox,
-            isReady: _ready.contains(mailbox.id),
-            secrets: _secrets,
-            onChanged: _load,
-            onRemove: () async {
-              await _secrets.forget(mailbox.id);
-              await _registry.remove(mailbox.id);
-              await _load();
-            },
-          ),
-      ],
-    );
-  }
-}
-
-class _MailboxTile extends StatefulWidget {
-  const _MailboxTile({
+/// One mailbox, and the password it signs in with.
+///
+/// Only a mailbox with a password of its own has anything to manage here: one
+/// read through a connected account is that account's business, and says so.
+class MailboxTile extends StatefulWidget {
+  const MailboxTile({
     super.key,
     required this.mailbox,
     required this.isReady,
@@ -99,10 +41,10 @@ class _MailboxTile extends StatefulWidget {
   final Future<void> Function() onRemove;
 
   @override
-  State<_MailboxTile> createState() => _MailboxTileState();
+  State<MailboxTile> createState() => _MailboxTileState();
 }
 
-class _MailboxTileState extends State<_MailboxTile> {
+class _MailboxTileState extends State<MailboxTile> {
   final TextEditingController _secret = TextEditingController();
   bool _editing = false;
   String _note = '';
@@ -149,61 +91,32 @@ class _MailboxTileState extends State<_MailboxTile> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final palette = FolderExplorerPalette.of(context);
     final mailbox = widget.mailbox;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(10),
+    final family = mailboxAccountFamily(mailbox);
+
+    return ConnectionCard(
+      palette: palette,
+      leading: ConnectionGlyph(
+        icon: Icons.alternate_email_rounded,
+        accent: family?.accent ?? palette.accent,
+        muted: !widget.isReady,
       ),
-      child: Column(
+      title: mailbox.username.isEmpty ? mailbox.host : mailbox.username,
+      subtitle: _subtitle(mailbox),
+      trailing: _StateChip(
+        label: widget.isReady
+            ? LocaleKeys.settings_accountsPage_signedIn.tr()
+            : _hasOwnPassword
+                ? LocaleKeys.settings_accountsPage_needsPassword.tr()
+                : LocaleKeys.settings_accountsPage_needsSignIn.tr(),
+        tone: widget.isReady ? palette.accent : palette.danger,
+      ),
+      footer: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.alternate_email_rounded,
-                size: 18,
-                color: theme.colorScheme.primary,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      mailbox.username.isEmpty
-                          ? mailbox.host
-                          : mailbox.username,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _subtitle(mailbox),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.hintColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              _StateChip(
-                label: widget.isReady
-                    ? LocaleKeys.settings_accountsPage_signedIn.tr()
-                    : _hasOwnPassword
-                        ? LocaleKeys.settings_accountsPage_needsPassword.tr()
-                        : LocaleKeys.settings_accountsPage_needsSignIn.tr(),
-                tone: widget.isReady
-                    ? theme.colorScheme.primary
-                    : theme.colorScheme.error,
-              ),
-            ],
-          ),
           if (_editing) ...[
-            const SizedBox(height: 12),
             TextField(
               controller: _secret,
               obscureText: true,
@@ -217,43 +130,40 @@ class _MailboxTileState extends State<_MailboxTile> {
                     : LocaleKeys.settings_accountsPage_passwordHint.tr(),
               ),
             ),
+            const SizedBox(height: 8),
           ],
           if (_note.isNotEmpty) ...[
-            const SizedBox(height: 8),
             Text(
               _note,
               style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.primary,
+                color: palette.accent,
               ),
             ),
+            const SizedBox(height: 6),
           ],
-          const SizedBox(height: 10),
           Row(
             children: [
               if (_hasOwnPassword) ...[
-                TextButton(
+                ConnectionTextButton(
+                  label: _editing
+                      ? LocaleKeys.settings_accountsPage_save.tr()
+                      : LocaleKeys.settings_accountsPage_changePassword.tr(),
                   onPressed:
                       _editing ? _save : () => setState(() => _editing = true),
-                  child: Text(
-                    _editing
-                        ? LocaleKeys.settings_accountsPage_save.tr()
-                        : LocaleKeys.settings_accountsPage_changePassword.tr(),
-                  ),
                 ),
                 if (_editing)
-                  TextButton(
+                  ConnectionTextButton(
+                    label: LocaleKeys.button_cancel.tr(),
                     onPressed: () => setState(() {
                       _editing = false;
                       _secret.clear();
                     }),
-                    child: Text(LocaleKeys.button_cancel.tr()),
                   ),
                 if (!_editing && widget.isReady)
-                  TextButton(
+                  ConnectionTextButton(
+                    label:
+                        LocaleKeys.settings_accountsPage_forgetPassword.tr(),
                     onPressed: _forget,
-                    child: Text(
-                      LocaleKeys.settings_accountsPage_forgetPassword.tr(),
-                    ),
                   ),
               ] else
                 Padding(
@@ -261,17 +171,15 @@ class _MailboxTileState extends State<_MailboxTile> {
                   child: Text(
                     LocaleKeys.settings_accountsPage_managedByAccount.tr(),
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.hintColor,
+                      color: palette.textMuted,
                     ),
                   ),
                 ),
               const Spacer(),
-              TextButton(
+              ConnectionTextButton(
+                label: LocaleKeys.settings_accountsPage_remove.tr(),
+                tone: palette.danger,
                 onPressed: () => widget.onRemove(),
-                style: TextButton.styleFrom(
-                  foregroundColor: theme.colorScheme.error,
-                ),
-                child: Text(LocaleKeys.settings_accountsPage_remove.tr()),
               ),
             ],
           ),
@@ -285,7 +193,12 @@ class _MailboxTileState extends State<_MailboxTile> {
         ? null
         : ProviderConnections.instance.byId(mailbox.connectionId);
     return <String>[
-      mailbox.provider.label,
+      // An app password is the alternative to the browser sign in above it, so
+      // the row has to say which route this mailbox took.
+      if (account == null && mailbox.provider.signsInWithAccount)
+        LocaleKeys.providers_settings_appPasswordMailbox.tr()
+      else
+        mailbox.provider.label,
       if (account != null)
         LocaleKeys.settings_accountsPage_viaAccount
             .tr(args: [account.accountLabel])

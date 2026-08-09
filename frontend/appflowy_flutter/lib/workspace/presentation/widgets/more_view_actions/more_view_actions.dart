@@ -12,6 +12,7 @@ import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/common_view_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/font_size_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
+import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/spell_check_page_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/view_meta_info.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
@@ -143,6 +144,7 @@ class _MoreViewActionsState extends State<MoreViewActions> {
       ...widget.customActions,
       if (widget.view.isDocument) ...[
         const FontSizeAction(),
+        SpellCheckPageAction(view: view),
         ViewAction(
           type: ViewMoreActionType.divider,
           view: view,

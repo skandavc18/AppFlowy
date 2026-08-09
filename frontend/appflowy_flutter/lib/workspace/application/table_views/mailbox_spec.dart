@@ -42,6 +42,7 @@ class MailboxSpec {
     this.density = MailboxDensity.comfortable,
     this.showReader = true,
     this.groupByDate = true,
+    this.editPage = false,
   });
 
   /// The line a row is known by. Empty means the table's own primary column.
@@ -71,6 +72,9 @@ class MailboxSpec {
   /// Whether the list breaks into Today, Yesterday, and so on.
   final bool groupByDate;
 
+  /// Whether the open row's page is written on here, rather than only read.
+  final bool editPage;
+
   TableReadSpec get readSpec => TableReadSpec(
         titleColumn: subjectColumn,
         propertyColumns: propertyColumns,
@@ -87,6 +91,7 @@ class MailboxSpec {
     MailboxDensity? density,
     bool? showReader,
     bool? groupByDate,
+    bool? editPage,
   }) =>
       MailboxSpec(
         subjectColumn: subjectColumn ?? this.subjectColumn,
@@ -98,6 +103,7 @@ class MailboxSpec {
         density: density ?? this.density,
         showReader: showReader ?? this.showReader,
         groupByDate: groupByDate ?? this.groupByDate,
+        editPage: editPage ?? this.editPage,
       );
 
   Map<String, dynamic> toJson() => {
@@ -110,6 +116,7 @@ class MailboxSpec {
         if (density != MailboxDensity.comfortable) 'density': density.id,
         if (!showReader) 'reader': false,
         if (!groupByDate) 'grouped': false,
+        if (editPage) 'edit': true,
       };
 
   static MailboxSpec fromJson(Map<String, dynamic> values) => MailboxSpec(
@@ -122,6 +129,7 @@ class MailboxSpec {
         density: MailboxDensity.fromId(values['density'] as String?),
         showReader: values['reader'] != false,
         groupByDate: values['grouped'] != false,
+        editPage: values['edit'] == true,
       );
 
   static List<String> _strings(Object? value) => value is List
@@ -139,7 +147,8 @@ class MailboxSpec {
       listEquals(other.hiddenColumns, hiddenColumns) &&
       other.density == density &&
       other.showReader == showReader &&
-      other.groupByDate == groupByDate;
+      other.groupByDate == groupByDate &&
+      other.editPage == editPage;
 
   @override
   int get hashCode => Object.hash(
@@ -152,6 +161,7 @@ class MailboxSpec {
         density,
         showReader,
         groupByDate,
+        editPage,
       );
 }
 

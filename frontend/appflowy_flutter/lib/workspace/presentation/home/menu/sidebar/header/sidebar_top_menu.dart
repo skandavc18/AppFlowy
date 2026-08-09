@@ -1,14 +1,12 @@
 import 'dart:io' show Platform;
 
 import 'package:appflowy/core/frameless_window.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/application/menu/sidebar_sections_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flowy_infra_ui/widget/flowy_tooltip.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -62,28 +60,23 @@ class SidebarTopMenu extends StatelessWidget {
           ),
       ],
     );
-    final theme = AppFlowyTheme.of(context);
-
     return ValueListenableBuilder(
       valueListenable: isSidebarOnHover,
-      builder: (_, value, ___) => Opacity(
+      builder: (_, value, ___) => AnimatedOpacity(
+        duration: SidebarMetrics.reveal,
+        curve: SidebarMetrics.curve,
         opacity: value ? 1 : 0,
         child: Padding(
-          padding: const EdgeInsets.only(top: 6.0),
+          padding: const EdgeInsets.only(top: SidebarMetrics.space2),
           child: FlowyTooltip(
             richMessage: textSpan,
             child: Listener(
               behavior: HitTestBehavior.translucent,
               onPointerDown: (_) =>
                   context.read<HomeSettingBloc>().collapseMenu(),
-              child: FlowyHover(
-                child: SizedBox(
-                  width: 24,
-                  child: FlowySvg(
-                    FlowySvgs.double_back_arrow_m,
-                    color: theme.iconColorScheme.secondary,
-                  ),
-                ),
+              child: SidebarIconButton(
+                icon: SidebarIcon.collapse,
+                onPressed: () {},
               ),
             ),
           ),

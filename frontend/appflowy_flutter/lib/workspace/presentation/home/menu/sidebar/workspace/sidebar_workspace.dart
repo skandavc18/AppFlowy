@@ -1,12 +1,13 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/loading.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
+import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_menu.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/workspace_notifier.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/notifications/widgets/notification_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -67,12 +68,13 @@ class _SidebarWorkspaceState extends State<SidebarWorkspace> {
           child: ValueListenableBuilder(
             valueListenable: onHover,
             builder: (_, onHover, child) {
-              return DecoratedBox(
+              final palette = SidebarPalette.of(context);
+              return AnimatedContainer(
+                duration: SidebarMetrics.hover,
+                curve: SidebarMetrics.curve,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6.0),
-                  color: onHover
-                      ? Theme.of(context).colorScheme.secondary
-                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
+                  color: onHover ? palette.hover : palette.hoverAtRest,
                 ),
                 child: Row(
                   children: [
@@ -83,27 +85,25 @@ class _SidebarWorkspaceState extends State<SidebarWorkspace> {
                         isHover: onHover,
                       ),
                     ),
-                    Visibility(
-                      visible: onHover,
-                      maintainAnimation: true,
-                      maintainSize: true,
-                      maintainState: true,
-                      child: UserSettingButton(
-                        isHover: onHover,
+                    AnimatedOpacity(
+                      duration: SidebarMetrics.reveal,
+                      curve: SidebarMetrics.curve,
+                      opacity: onHover ? 1 : 0,
+                      child: IgnorePointer(
+                        ignoring: !onHover,
+                        child: Row(
+                          children: [
+                            UserSettingButton(isHover: onHover),
+                            const HSpace(SidebarMetrics.space1),
+                            NotificationButton(
+                              isHover: onHover,
+                              key: ValueKey(currentWorkspace.workspaceId),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const HSpace(4.0),
-                    Visibility(
-                      visible: onHover,
-                      maintainAnimation: true,
-                      maintainSize: true,
-                      maintainState: true,
-                      child: NotificationButton(
-                        isHover: onHover,
-                        key: ValueKey(currentWorkspace.workspaceId),
-                      ),
-                    ),
-                    const HSpace(4.0),
+                    const HSpace(SidebarMetrics.space1),
                   ],
                 ),
               );
@@ -371,6 +371,7 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final palette = SidebarPalette.of(context);
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
@@ -382,20 +383,20 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
         },
         behavior: HitTestBehavior.opaque,
         child: SizedBox(
-          height: 30,
+          height: HomeSizes.workspaceSectionHeight,
           child: Row(
             children: [
-              const HSpace(4.0),
+              const HSpace(SidebarMetrics.space1),
               WorkspaceIcon(
                 workspaceIcon: currentWorkspace.icon,
                 workspaceName: currentWorkspace.name,
-                iconSize: 22,
-                fontSize: 14,
-                emojiSize: 16,
+                iconSize: 20,
+                fontSize: 12,
+                emojiSize: 14,
                 isEditable: false,
                 showBorder: false,
-                borderRadius: 5.0,
-                figmaLineHeight: 16.0,
+                borderRadius: 6.0,
+                figmaLineHeight: 14.0,
                 onSelected: (result) => context.read<UserWorkspaceBloc>().add(
                       UserWorkspaceEvent.updateWorkspaceIcon(
                         workspaceId: currentWorkspace.workspaceId,
@@ -403,24 +404,26 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
                       ),
                     ),
               ),
-              const HSpace(6),
+              const HSpace(SidebarMetrics.space2),
               Flexible(
-                child: SidebarText.page(
+                child: SidebarText.heading(
                   currentWorkspace.name,
-                  color:
-                      isHover ? Theme.of(context).colorScheme.onSurface : null,
+                  color: palette.textPrimary,
                   overflow: TextOverflow.ellipsis,
                   withTooltip: true,
                 ),
               ),
-              if (isHover) ...[
-                const HSpace(4),
-                FlowySvg(
-                  FlowySvgs.workspace_drop_down_menu_show_s,
-                  color:
-                      isHover ? Theme.of(context).colorScheme.onSurface : null,
+              const HSpace(SidebarMetrics.space1),
+              AnimatedOpacity(
+                duration: SidebarMetrics.reveal,
+                curve: SidebarMetrics.curve,
+                opacity: isHover ? 1 : 0,
+                child: SidebarGlyph(
+                  SidebarIcon.switcher,
+                  size: 13,
+                  color: palette.textTertiary,
                 ),
-              ],
+              ),
             ],
           ),
         ),

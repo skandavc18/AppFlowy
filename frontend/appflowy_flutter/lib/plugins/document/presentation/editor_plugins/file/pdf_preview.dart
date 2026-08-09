@@ -10,6 +10,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/imag
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -26,6 +27,7 @@ import 'package:printing/printing.dart';
 
 import 'pdf_page_raster_cache.dart';
 import 'pdf_page_turn.dart';
+import 'pdf_ocr_search.dart';
 import 'pdf_password_dialog.dart';
 import 'pdf_preview_sidebar.dart';
 import 'pdf_preview_scroll_physics.dart';
@@ -169,6 +171,17 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   late final PdfTextSearcher textSearcher = PdfTextSearcher(viewerController);
   final searchController = TextEditingController();
   final searchFocusNode = FocusNode();
+  FindOptions searchOptions = const FindOptions();
+
+  /// Set while a regular expression is being typed and does not compile yet.
+  bool searchPatternInvalid = false;
+
+  /// A scanned document has no text layer, so the search reads the pages
+  /// themselves instead. Off until it is asked for — it renders every page.
+  bool ocrSearchEnabled = false;
+  PdfOcrSearchIndex? ocrIndex;
+  List<PdfOcrMatch> ocrMatches = const [];
+  int ocrMatchIndex = -1;
   final viewerFocusNode = FocusNode(debugLabel: 'PDF viewer');
   late final Listenable searchListenable =
       Listenable.merge([textSearcher, searchController]);
@@ -288,6 +301,10 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     outlineScrollController.dispose();
     wheelScrollPhysics.dispose();
     textSearcher.dispose();
+    ocrIndex
+      ?..cancel()
+      ..removeListener(_onScanned)
+      ..dispose();
     searchController.dispose();
     searchFocusNode.dispose();
     viewerFocusNode.dispose();
@@ -471,6 +488,38 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           14 +
           (searchVisible ? PdfPreviewGeometry.searchHeight + 6 : 0);
 
+  bool get _hasSearchMatches =>
+      ocrSearchEnabled ? ocrMatches.isNotEmpty : textSearcher.hasMatches;
+
+  double? get _scanProgress {
+    final index = ocrIndex;
+    if (index == null || index.totalPages == 0) {
+      return null;
+    }
+    return index.scannedPages / index.totalPages;
+  }
+
+  /// What the search bar says while the pages are being read, instead of the
+  /// match count it has nothing to count yet.
+  String? get _searchStatusOverride {
+    final index = ocrIndex;
+    if (!ocrSearchEnabled || index == null) {
+      return null;
+    }
+    if (index.failure case final failure?) {
+      return failure;
+    }
+    if (index.isScanning) {
+      return LocaleKeys.findAndReplace_scanningPages.tr(
+        args: ['${index.scannedPages}', '${index.totalPages}'],
+      );
+    }
+    if (!index.hasPages) {
+      return LocaleKeys.findAndReplace_scanPages.tr();
+    }
+    return null;
+  }
+
   /// The toolbar and the search bar float over the canvas so they can slide
   /// away once the reader stops interacting with the document.
   Widget _buildChrome() {
@@ -506,19 +555,30 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
                           builder: (_, __) => PdfSearchToolbar(
                             controller: searchController,
                             focusNode: searchFocusNode,
-                            currentMatch: textSearcher.currentIndex == null
-                                ? 0
-                                : textSearcher.currentIndex! + 1,
-                            matchCount: textSearcher.matches.length,
-                            searchProgress: textSearcher.searchProgress,
-                            isSearching: textSearcher.isSearching,
+                            currentMatch: ocrSearchEnabled
+                                ? ocrMatchIndex + 1
+                                : textSearcher.currentIndex == null
+                                    ? 0
+                                    : textSearcher.currentIndex! + 1,
+                            matchCount: ocrSearchEnabled
+                                ? ocrMatches.length
+                                : textSearcher.matches.length,
+                            searchProgress: ocrSearchEnabled
+                                ? _scanProgress
+                                : textSearcher.searchProgress,
+                            isSearching: ocrSearchEnabled
+                                ? (ocrIndex?.isScanning ?? false)
+                                : textSearcher.isSearching,
+                            options: searchOptions,
+                            onOptionsChanged: _setSearchOptions,
+                            queryInvalid: searchPatternInvalid,
+                            ocrEnabled: ocrSearchEnabled,
+                            onToggleOcr: _toggleOcrSearch,
+                            statusOverride: _searchStatusOverride,
                             onChanged: _search,
-                            onPrevious: textSearcher.hasMatches
-                                ? _previousSearchMatch
-                                : null,
-                            onNext: textSearcher.hasMatches
-                                ? _nextSearchMatch
-                                : null,
+                            onPrevious:
+                                _hasSearchMatches ? _previousSearchMatch : null,
+                            onNext: _hasSearchMatches ? _nextSearchMatch : null,
                             onClose: _closeSearch,
                           ),
                         )
@@ -554,36 +614,44 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     final stage = Stack(
       children: [
         Positioned.fill(
-          child: AnimatedPadding(
-            duration: _chromeFadeDuration,
-            curve: Curves.easeOutCubic,
-            // The chrome always sits above the pages. Letting it float over
-            // them hid whatever was at the top of the document.
-            padding: EdgeInsets.only(top: _chromeHeight),
-            child: Stack(
-              children: [
-                Positioned.fill(child: _wrapPageTransition(viewer)),
-                // The turning leaf is a sibling of the viewer, never a wrapper
-                // around it, so pdfrx is never re-parented mid animation.
-                if (scene != null)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: RepaintBoundary(
-                        child: AnimatedBuilder(
-                          animation: pageTransitionController,
-                          builder: (_, __) => CustomPaint(
-                            painter: PageTurnPainter(
-                              scene: scene,
-                              progress: pageTransitionController.value,
+          // pdfrx claims the tap for its own text selection, so the keyboard
+          // is claimed on the raw pointer instead — otherwise Ctrl+F never
+          // reaches the viewer and the search bar looks broken.
+          child: Listener(
+            behavior: HitTestBehavior.translucent,
+            onPointerDown: (_) => _handleCanvasTap(),
+            child: AnimatedPadding(
+              duration: _chromeFadeDuration,
+              curve: Curves.easeOutCubic,
+              // The chrome always sits above the pages. Letting it float over
+              // them hid whatever was at the top of the document.
+              padding: EdgeInsets.only(top: _chromeHeight),
+              child: Stack(
+                children: [
+                  Positioned.fill(child: _wrapPageTransition(viewer)),
+                  // The turning leaf is a sibling of the viewer, never a
+                  // wrapper around it, so pdfrx is never re-parented mid
+                  // animation.
+                  if (scene != null)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: RepaintBoundary(
+                          child: AnimatedBuilder(
+                            animation: pageTransitionController,
+                            builder: (_, __) => CustomPaint(
+                              painter: PageTurnPainter(
+                                scene: scene,
+                                progress: pageTransitionController.value,
+                              ),
+                              size: Size.infinite,
                             ),
-                            size: Size.infinite,
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ..._buildPageTurnHandles(),
-              ],
+                  ..._buildPageTurnHandles(),
+                ],
+              ),
             ),
           ),
         ),
@@ -782,6 +850,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       // over the document.
       pagePaintCallbacks: [
         textSearcher.pageTextMatchPaintCallback,
+        _paintOcrMatches,
         _paintHighlights,
       ],
     );
@@ -1986,7 +2055,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
     File? temporary;
     try {
-      final bytes = await _renderPagePng(document.pages[pageNumber - 1]);
+      final bytes = await renderPdfPagePng(document.pages[pageNumber - 1]);
       final directory = await getTemporaryDirectory();
       temporary = File(
         p.join(
@@ -2021,40 +2090,6 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     }
   }
 
-  Future<Uint8List> _renderPagePng(PdfPage page) async {
-    // OCR engines read small print far better at roughly 200 DPI, but the
-    // bitmap still has to stay within what the engines accept.
-    final scale = math
-        .min(3200 / page.width, 3200 / page.height)
-        .clamp(1.0, 3.0)
-        .toDouble();
-    final rendered = await page.render(
-      fullWidth: page.width * scale,
-      fullHeight: page.height * scale,
-      backgroundColor: const Color(0xFFFFFFFF),
-    );
-    if (rendered == null) {
-      throw StateError('the page could not be rendered');
-    }
-
-    ui.Image image;
-    try {
-      image = await rendered.createImage();
-    } finally {
-      rendered.dispose();
-    }
-
-    try {
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (data == null) {
-        throw StateError('the page image could not be encoded');
-      }
-      return data.buffer.asUint8List();
-    } finally {
-      image.dispose();
-    }
-  }
-
   void _toggleSearch() => searchVisible ? _closeSearch() : _openSearch();
 
   void _openSearch() {
@@ -2079,21 +2114,182 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     }
     textSearcher.resetTextSearch();
     searchController.clear();
-    setState(() => searchVisible = false);
+    ocrIndex?.cancel();
+    setState(() {
+      searchVisible = false;
+      searchPatternInvalid = false;
+      ocrMatches = const [];
+      ocrMatchIndex = -1;
+    });
     viewerFocusNode.requestFocus();
     _scheduleChromeHide();
   }
 
   void _search(String query) {
-    textSearcher.startTextSearch(query);
+    if (ocrSearchEnabled) {
+      _searchScannedText(query);
+      return;
+    }
+    if (query.isEmpty) {
+      searchPatternInvalid = false;
+      textSearcher.resetTextSearch();
+      return;
+    }
+    try {
+      // pdfrx takes the case sensitivity from the expression itself, so the
+      // switches only have to reach the pattern.
+      final pattern = RegExp(
+        findPatternSource(query, searchOptions),
+        caseSensitive: searchOptions.caseSensitive,
+      );
+      searchPatternInvalid = false;
+      textSearcher.startTextSearch(
+        pattern,
+        caseInsensitive: !searchOptions.caseSensitive,
+      );
+    } on FormatException {
+      searchPatternInvalid = true;
+      textSearcher.resetTextSearch();
+    }
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _setSearchOptions(FindOptions options) {
+    setState(() => searchOptions = options);
+    _search(searchController.text);
+  }
+
+  /// Turns the page scan on or off.
+  ///
+  /// Scanning renders every page and reads it, so it only starts when it is
+  /// asked for — but once a page is read it stays read for this session.
+  void _toggleOcrSearch() {
+    final next = !ocrSearchEnabled;
+    setState(() {
+      ocrSearchEnabled = next;
+      ocrMatches = const [];
+      ocrMatchIndex = -1;
+    });
+    if (!next) {
+      ocrIndex?.cancel();
+      _search(searchController.text);
+      return;
+    }
+    textSearcher.resetTextSearch();
+    var index = ocrIndex;
+    if (index == null) {
+      index = PdfOcrSearchIndex();
+      index.addListener(_onScanned);
+      ocrIndex = index;
+    }
+    final document = this.document;
+    if (document != null && !index.isScanning) {
+      unawaited(index.scan(document));
+    }
+    _searchScannedText(searchController.text);
+  }
+
+  void _onScanned() {
+    if (!mounted) {
+      return;
+    }
+    _searchScannedText(searchController.text);
+  }
+
+  void _searchScannedText(String query) {
+    final index = ocrIndex;
+    if (index == null) {
+      return;
+    }
+    final previous = ocrMatchIndex >= 0 && ocrMatchIndex < ocrMatches.length
+        ? ocrMatches[ocrMatchIndex]
+        : null;
+    final matches = query.isEmpty
+        ? const <PdfOcrMatch>[]
+        : index.search(query, searchOptions);
+    var selected = matches.isEmpty ? -1 : 0;
+    if (previous != null && matches.isNotEmpty) {
+      // Keep the reader where they were as later pages finish scanning.
+      final kept = matches.indexWhere(
+        (match) =>
+            match.pageNumber == previous.pageNumber &&
+            match.rects.first == previous.rects.first,
+      );
+      if (kept != -1) {
+        selected = kept;
+      }
+    }
+    setState(() {
+      searchPatternInvalid = !isFindQueryValid(query, searchOptions);
+      ocrMatches = matches;
+      ocrMatchIndex = selected;
+    });
   }
 
   void _nextSearchMatch() {
+    if (ocrSearchEnabled) {
+      _moveToScannedMatch(forward: true);
+      return;
+    }
     unawaited(_moveToSearchMatch(forward: true));
   }
 
   void _previousSearchMatch() {
+    if (ocrSearchEnabled) {
+      _moveToScannedMatch(forward: false);
+      return;
+    }
     unawaited(_moveToSearchMatch(forward: false));
+  }
+
+  void _moveToScannedMatch({required bool forward}) {
+    if (ocrMatches.isEmpty) {
+      return;
+    }
+    final next = ocrMatchIndex < 0
+        ? 0
+        : forward
+            ? (ocrMatchIndex + 1) % ocrMatches.length
+            : (ocrMatchIndex - 1 + ocrMatches.length) % ocrMatches.length;
+    wheelScrollPhysics.stop();
+    setState(() => ocrMatchIndex = next);
+    unawaited(
+      _awaitViewerMove(
+        viewerController.goToPage(pageNumber: ocrMatches[next].pageNumber),
+        const Duration(milliseconds: 300),
+      ),
+    );
+  }
+
+  /// Paints what the page scan found, since pdfrx knows nothing about it.
+  void _paintOcrMatches(ui.Canvas canvas, Rect pageRect, PdfPage page) {
+    if (!ocrSearchEnabled || ocrMatches.isEmpty) {
+      return;
+    }
+    final palette = PdfPreviewPalette.of(context);
+    for (var index = 0; index < ocrMatches.length; index++) {
+      final match = ocrMatches[index];
+      if (match.pageNumber != page.pageNumber) {
+        continue;
+      }
+      final paint = Paint()
+        ..color = index == ocrMatchIndex
+            ? palette.activeSearchMatch
+            : palette.searchMatch;
+      for (final rect in match.rects) {
+        canvas.drawRect(
+          Rect.fromLTWH(
+            pageRect.left + rect.left * pageRect.width,
+            pageRect.top + rect.top * pageRect.height,
+            rect.width * pageRect.width,
+            rect.height * pageRect.height,
+          ),
+          paint,
+        );
+      }
+    }
   }
 
   Future<void> _moveToSearchMatch({required bool forward}) async {

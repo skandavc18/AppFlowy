@@ -53,9 +53,10 @@ void main() {
       final value = parseChartNumber('2026-08-01T00:00:00Z');
       expect(value, isNotNull);
       expect(
-        DateTime.fromMillisecondsSinceEpoch((value! * 1000).round(),
-                isUtc: true,)
-            .year,
+        DateTime.fromMillisecondsSinceEpoch(
+          (value! * 1000).round(),
+          isUtc: true,
+        ).year,
         2026,
       );
     });
@@ -277,8 +278,10 @@ void main() {
     test('can be taken off, leaving the table it always was', () {
       final extra = ChartMetadata.newExtra();
       expect(ChartMetadata.fromExtra(extra), isNotNull);
-      expect(ChartMetadata.fromExtra(ChartMetadata.removeFromExtra(extra)),
-          isNull,);
+      expect(
+        ChartMetadata.fromExtra(ChartMetadata.removeFromExtra(extra)),
+        isNull,
+      );
     });
   });
 

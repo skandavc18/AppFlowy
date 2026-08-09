@@ -1,7 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/slides/slide_property_view.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
-import 'package:appflowy/shared/table_views/row_page_text.dart';
+import 'package:appflowy/shared/table_views/row_page_preview.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -159,35 +159,31 @@ class _SlideCardState extends State<SlideCard> {
                   color: palette.sunken.withValues(alpha: 0.6),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: RowPageTextView(
+                child: RowPagePreview(
                   documentId: widget.card.documentId,
-                  builder: (context, read) {
-                    final text = read?.trim() ?? '';
-                    if (text.isEmpty) {
-                      return Align(
-                        alignment: Alignment.topLeft,
-                        child: Text(
-                          LocaleKeys.slides_pageEmpty.tr(),
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: palette.textMuted,
-                          ),
-                        ),
-                      );
-                    }
-                    return Align(
-                      alignment: Alignment.topLeft,
-                      child: Text(
-                        text,
-                        overflow: TextOverflow.fade,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          height: 1.62,
-                          color: palette.textSecondary,
-                        ),
+                  scale: 0.72,
+                  emptyBuilder: (context) => Align(
+                    alignment: Alignment.topLeft,
+                    child: Text(
+                      LocaleKeys.slides_pageEmpty.tr(),
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: palette.textMuted,
                       ),
-                    );
-                  },
+                    ),
+                  ),
+                  textBuilder: (context, text) => Align(
+                    alignment: Alignment.topLeft,
+                    child: Text(
+                      text ?? '',
+                      overflow: TextOverflow.fade,
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        height: 1.62,
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),

@@ -27,6 +27,9 @@ enum GalleryCardScale {
 
 /// How much of a row a card shows.
 enum GalleryCardFace {
+  /// The opening of the row's own page, with its name written underneath.
+  page('page'),
+
   /// The row's cover leads, with its properties beneath.
   cover('picture'),
 
@@ -53,7 +56,7 @@ enum GalleryCardFace {
         return face;
       }
     }
-    return GalleryCardFace.cover;
+    return GalleryCardFace.page;
   }
 }
 
@@ -66,7 +69,7 @@ class GallerySpec {
     this.propertyColumns = const [],
     this.hiddenColumns = const [],
     this.scale = GalleryCardScale.medium,
-    this.face = GalleryCardFace.cover,
+    this.face = GalleryCardFace.page,
     this.showCoverPlaceholder = true,
   });
 
@@ -113,7 +116,7 @@ class GallerySpec {
         if (propertyColumns.isNotEmpty) 'properties': propertyColumns,
         if (hiddenColumns.isNotEmpty) 'hidden': hiddenColumns,
         if (scale != GalleryCardScale.medium) 'scale': scale.id,
-        if (face != GalleryCardFace.cover) 'face': face.id,
+        if (face != GalleryCardFace.page) 'face': face.id,
         if (!showCoverPlaceholder) 'placeholder': false,
       };
 

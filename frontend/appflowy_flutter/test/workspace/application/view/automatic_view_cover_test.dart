@@ -14,20 +14,41 @@ void main() {
 
   test('persists automatic cover preferences', () async {
     final defaults = await AutomaticViewCoverPreferences.load();
-    expect(defaults.enabled, isFalse);
+    expect(defaults.enabled, isTrue, reason: 'a new page arrives dressed');
     expect(defaults.theme, AutomaticViewCoverSettings.defaultTheme);
+    expect(defaults.set, ViewCoverSet.nature);
 
     await AutomaticViewCoverPreferences.save(
       const AutomaticViewCoverSettings(
-        enabled: true,
+        enabled: false,
         theme: '  warm minimal  ',
+        set: ViewCoverSet.abstract,
       ),
     );
     AutomaticViewCoverPreferences.resetCache();
 
     final saved = await AutomaticViewCoverPreferences.load();
-    expect(saved.enabled, isTrue);
+    expect(saved.enabled, isFalse);
     expect(saved.theme, 'warm minimal');
+    expect(saved.set, ViewCoverSet.abstract);
+  });
+
+  test('resolves both picture sets to files that ship with the app', () {
+    expect(natureCoverValues, hasLength(builtInCoverCount));
+    expect(abstractCoverValues, hasLength(builtInCoverCount));
+    expect(
+      builtInCoverValues,
+      orderedEquals([...natureCoverValues, ...abstractCoverValues]),
+    );
+    expect(
+      PageStyleCoverImageType.builtInImagePath('n3'),
+      'assets/images/built_in_cover_images/nature_cover_image_3.png',
+    );
+    expect(
+      PageStyleCoverImageType.builtInImagePath('3'),
+      'assets/images/built_in_cover_images/m_cover_image_3.png',
+      reason: 'pages already wearing an abstract cover keep it',
+    );
   });
 
   test('creates deterministic bundled photo covers', () {
@@ -44,7 +65,15 @@ void main() {
 
     expect(first, second);
     expect(first.type, PageStyleCoverImageType.builtInImage);
-    expect(int.parse(first.value), inInclusiveRange(1, 6));
+    expect(natureCoverValues, contains(first.value));
+
+    final abstractCover = AutomaticViewCover.forNewView(
+      theme: 'calm nature',
+      name: 'Roadmap',
+      layout: ViewLayoutPB.Grid,
+      set: ViewCoverSet.abstract,
+    );
+    expect(abstractCoverValues, contains(abstractCover.value));
   });
 
   test('creates a deterministic default workspace cover', () {
@@ -53,7 +82,7 @@ void main() {
 
     expect(first, second);
     expect(first.type, PageStyleCoverImageType.builtInImage);
-    expect(int.parse(first.value), inInclusiveRange(1, 6));
+    expect(natureCoverValues, contains(first.value));
   });
 
   test('targets pages and folders, never tables', () {

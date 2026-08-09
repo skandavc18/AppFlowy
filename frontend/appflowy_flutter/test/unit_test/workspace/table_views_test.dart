@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/workspace/application/table_views/form_spec.dart';
 import 'package:appflowy/workspace/application/table_views/gallery_spec.dart';
 import 'package:appflowy/workspace/application/table_views/mailbox_spec.dart';
@@ -345,6 +348,65 @@ void main() {
       for (final layout in [small, large]) {
         expect(layout.cardHeight - layout.coverHeight, greaterThan(110));
       }
+    });
+
+    test('a card leads with the page it stands for', () {
+      const spec = GallerySpec();
+      expect(spec.face, GalleryCardFace.page);
+      expect(spec.face.showsCover, isFalse);
+      expect(
+        spec.toJson(),
+        isEmpty,
+        reason: 'the default is written by leaving it out',
+      );
+      expect(
+        GallerySpec.fromJson(const {}).face,
+        GalleryCardFace.page,
+      );
+      expect(GalleryCardFace.fromId('picture'), GalleryCardFace.cover);
+      expect(GalleryCardFace.fromId('nonsense'), GalleryCardFace.page);
+      expect(
+        GallerySpec.fromJson(
+          const GallerySpec(face: GalleryCardFace.portrait).toJson(),
+        ).face,
+        GalleryCardFace.portrait,
+      );
+    });
+  });
+
+  group('what a card is asked to show', () {
+    test('an unread view shows its cover', () {
+      expect(CardPreviewSetting.fromExtra('').mode, CardPreviewMode.cover);
+      expect(CardPreviewSetting.fromExtra('{oops').mode, CardPreviewMode.cover);
+      expect(CardPreviewMode.fromId(null), CardPreviewMode.cover);
+      expect(CardPreviewMode.fromId('nonsense'), CardPreviewMode.cover);
+      expect(CardPreviewMode.fromId('page'), CardPreviewMode.pageContent);
+    });
+
+    test('the choice survives a trip through the view extra', () {
+      for (final mode in CardPreviewMode.values) {
+        final extra = CardPreviewSetting(mode: mode).mergeIntoExtra('');
+        expect(CardPreviewSetting.fromExtra(extra).mode, mode);
+      }
+    });
+
+    test('it sits beside the other marks rather than over them', () {
+      const mark = TableViewMark(kind: TableViewKind.gallery);
+      final extra = const CardPreviewSetting(mode: CardPreviewMode.pageContent)
+          .mergeIntoExtra(mark.mergeIntoExtra(''));
+
+      expect(TableViewMark.fromExtra(extra, TableViewKind.gallery), isNotNull);
+      expect(
+        CardPreviewSetting.fromExtra(extra).mode,
+        CardPreviewMode.pageContent,
+      );
+    });
+
+    test('a reading from a later version is not guessed at', () {
+      final extra = jsonEncode({
+        CardPreviewSetting.envelopeKey: {'version': 99, 'mode': 'page'},
+      });
+      expect(CardPreviewSetting.fromExtra(extra).mode, CardPreviewMode.cover);
     });
   });
 

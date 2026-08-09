@@ -1,4 +1,5 @@
 import 'package:appflowy/plugins/database/application/database_controller.dart';
+import 'package:appflowy/plugins/database/board/presentation/toolbar/card_preview_button.dart';
 import 'package:appflowy/plugins/database/grid/application/filter/filter_editor_bloc.dart';
 import 'package:appflowy/plugins/database/grid/presentation/grid_page.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/toolbar/filter_button.dart';
@@ -43,6 +44,8 @@ class BoardSettingBar extends StatelessWidget {
                 FilterButton(
                   toggleExtension: toggleExtension,
                 ),
+                const HSpace(2),
+                CardPreviewButton(view: databaseController.view),
                 if (isReference) ...[
                   const HSpace(2),
                   ViewDatabaseButton(view: databaseController.view),

@@ -60,8 +60,13 @@ class ProviderConnection {
 
   ProviderAccountFamily get family => info.family;
 
-  /// Everything this account can be used for, the first one included.
-  Set<ProviderService> get covered => {service, ...services};
+  /// Everything this account is actually used for.
+  ///
+  /// [services] is authoritative once it has been written, so a capability can
+  /// be turned off again; an empty set means nothing has ever narrowed it and
+  /// the account stands for the one thing it was signed in for.
+  Set<ProviderService> get covered =>
+      services.isEmpty ? {service} : services;
 
   bool covers(ProviderService service) => covered.contains(service);
 
@@ -99,7 +104,9 @@ class ProviderConnection {
         if (accountId.isNotEmpty) 'account_id': accountId,
         if (host.isNotEmpty) 'host': host,
         if (scopes.isNotEmpty) 'scopes': scopes,
-        if (covered.length > 1) 'services': [for (final s in covered) s.name],
+        // Always written, because the set can be narrower than the service the
+        // account was signed in for once a capability is turned off.
+        'services': [for (final s in covered) s.name],
         if (connectedAt != null)
           'connected_at': connectedAt!.millisecondsSinceEpoch,
         if (expiresAt != null) 'expires_at': expiresAt!.millisecondsSinceEpoch,
@@ -304,13 +311,22 @@ class ProviderConnections extends ChangeNotifier {
   /// Used to join a new permission to an existing sign in rather than stacking
   /// a second account beside it — and to keep that account's ID, because every
   /// collection and page embed already names it.
+  ///
+  /// [service] narrows the search to the connection that holds that
+  /// capability, which is what a family whose token endpoint will only serve
+  /// one resource at a time needs: OneDrive and Outlook mail are the same
+  /// person but two tokens, so they must not be joined into one connection.
   ProviderConnection? accountFor(
     ProviderAccountFamily family, {
     String accountId = '',
     String host = '',
+    ProviderService? service,
   }) {
     for (final connection in _connections) {
       if (connection.family != family || connection.host != host) {
+        continue;
+      }
+      if (service != null && !connection.covers(service)) {
         continue;
       }
       if (accountId.isEmpty || connection.accountId == accountId) {
@@ -318,6 +334,30 @@ class ProviderConnections extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// Records what an account is used for, without touching its token.
+  ///
+  /// This is how a capability is turned off: the grant on the service is left
+  /// alone — only AppFlowy stops reaching for it. Handing an empty set is the
+  /// same as removing the account, since an account used for nothing is an
+  /// account nobody asked to keep.
+  Future<void> setServices(
+    String connectionId,
+    Set<ProviderService> services,
+  ) async {
+    await ensureLoaded();
+    if (services.isEmpty) {
+      await remove(connectionId);
+      return;
+    }
+    final index = _connections.indexWhere((c) => c.id == connectionId);
+    if (index < 0) {
+      return;
+    }
+    _connections[index] = _connections[index].copyWith(services: services);
+    await _write();
+    notifyListeners();
   }
 
   ProviderConnection? byId(String id) {
@@ -402,13 +442,20 @@ class ProviderConnections extends ChangeNotifier {
   /// Keyed on the account FAMILY, because one sign in covers everything that
   /// account can do. An id stored before that was true is reused as it is —
   /// see [accountFor] — since collections and page embeds already name it.
+  ///
+  /// ⚠️ A family that cannot grant its capabilities together holds one token
+  /// per capability, so the service is part of the id there. Without it a
+  /// OneDrive sign in and an Outlook mail sign in would seal their tokens
+  /// under the same key and each would erase the other.
   static String idFor(
     ProviderService service, {
     String host = '',
     String account = '',
   }) {
+    final family = ProviderServices.of(service).family;
     final parts = [
-      ProviderServices.of(service).family.name,
+      family.name,
+      if (!family.sharesOneGrant) service.name,
       if (host.isNotEmpty) Uri.tryParse(host)?.host ?? host,
       if (account.isNotEmpty) account,
     ];
@@ -424,11 +471,17 @@ class ProviderConnections extends ChangeNotifier {
 @immutable
 class ProviderAccountGroup {
   const ProviderAccountGroup({
+    required this.key,
     required this.family,
     required this.label,
     required this.host,
     required this.connections,
   });
+
+  /// Identifies the account across a refresh, so a page opened on it stays
+  /// open when a capability is added or dropped and the connections beneath
+  /// it are rebuilt.
+  final String key;
 
   final ProviderAccountFamily family;
   final String label;
@@ -437,9 +490,24 @@ class ProviderAccountGroup {
 
   ProviderConnection get primary => connections.first;
 
+  String get accountId => primary.accountId;
+
   Set<ProviderService> get services => {
         for (final connection in connections) ...connection.covered,
       };
+
+  bool covers(ProviderService service) => services.contains(service);
+
+  /// The connection holding [service], which for a family that signs in once
+  /// is the only connection there is.
+  ProviderConnection? connectionFor(ProviderService service) {
+    for (final connection in connections) {
+      if (connection.covers(service)) {
+        return connection;
+      }
+    }
+    return null;
+  }
 
   /// The services this family offers that this account is not signed in for.
   List<ProviderServiceInfo> get missing => [
@@ -461,11 +529,20 @@ class ProviderAccountGroup {
   }
 }
 
-/// Gathers connections into the accounts they actually belong to.
+/// The account a connection belongs to.
 ///
 /// Two connections are the same account when they are the same family, the
 /// same server and the same person — which is the service's own id when it
 /// gives one, and the label it answered with when it does not.
+String providerAccountKeyFor(ProviderConnection connection) {
+  final identity = connection.accountId.isNotEmpty
+      ? connection.accountId
+      : connection.accountLabel;
+  final family = connection.info.family;
+  return '${family.name}|${connection.host}|$identity'.toLowerCase();
+}
+
+/// Gathers connections into the accounts they actually belong to.
 List<ProviderAccountGroup> groupProviderAccounts(
   List<ProviderConnection> connections,
 ) {
@@ -473,12 +550,7 @@ List<ProviderAccountGroup> groupProviderAccounts(
   final groups = <String, List<ProviderConnection>>{};
 
   for (final connection in connections) {
-    final info = connection.info;
-    final identity = connection.accountId.isNotEmpty
-        ? connection.accountId
-        : connection.accountLabel;
-    final key =
-        '${info.family.name}|${connection.host}|$identity'.toLowerCase();
+    final key = providerAccountKeyFor(connection);
     if (!groups.containsKey(key)) {
       order.add(key);
       groups[key] = <ProviderConnection>[];
@@ -489,6 +561,7 @@ List<ProviderAccountGroup> groupProviderAccounts(
   return [
     for (final key in order)
       ProviderAccountGroup(
+        key: key,
         family: groups[key]!.first.info.family,
         label: groups[key]!.first.accountLabel,
         host: groups[key]!.first.host,

@@ -7,25 +7,51 @@ import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Which pictures a cover is invented from.
+enum ViewCoverSet {
+  nature('nature'),
+  abstract('abstract');
+
+  const ViewCoverSet(this.id);
+
+  final String id;
+
+  List<String> get coverValues =>
+      this == ViewCoverSet.nature ? natureCoverValues : abstractCoverValues;
+
+  static ViewCoverSet fromId(String? id) {
+    for (final set in ViewCoverSet.values) {
+      if (set.id == id) {
+        return set;
+      }
+    }
+    return ViewCoverSet.nature;
+  }
+}
+
 @immutable
 class AutomaticViewCoverSettings {
   const AutomaticViewCoverSettings({
     required this.enabled,
     required this.theme,
+    this.set = ViewCoverSet.nature,
   });
 
   static const defaultTheme = 'calm editorial';
 
   final bool enabled;
   final String theme;
+  final ViewCoverSet set;
 
   AutomaticViewCoverSettings copyWith({
     bool? enabled,
     String? theme,
+    ViewCoverSet? set,
   }) =>
       AutomaticViewCoverSettings(
         enabled: enabled ?? this.enabled,
         theme: theme ?? this.theme,
+        set: set ?? this.set,
       );
 }
 
@@ -34,6 +60,8 @@ abstract final class AutomaticViewCoverPreferences {
       'io.appflowy.appflowy_flutter.automatic_view_cover_enabled';
   static const _themeKey =
       'io.appflowy.appflowy_flutter.automatic_view_cover_theme';
+  static const _setKey =
+      'io.appflowy.appflowy_flutter.automatic_view_cover_set';
 
   static AutomaticViewCoverSettings? _cached;
 
@@ -45,8 +73,10 @@ abstract final class AutomaticViewCoverPreferences {
 
     final preferences = await SharedPreferences.getInstance();
     final settings = AutomaticViewCoverSettings(
-      enabled: preferences.getBool(_enabledKey) ?? false,
+      // A new page arrives with a picture unless somebody says otherwise.
+      enabled: preferences.getBool(_enabledKey) ?? true,
       theme: _normalizeTheme(preferences.getString(_themeKey)),
+      set: ViewCoverSet.fromId(preferences.getString(_setKey)),
     );
     _cached = settings;
     return settings;
@@ -59,6 +89,7 @@ abstract final class AutomaticViewCoverPreferences {
     await Future.wait([
       preferences.setBool(_enabledKey, normalized.enabled),
       preferences.setString(_themeKey, normalized.theme),
+      preferences.setString(_setKey, normalized.set.id),
     ]);
     _cached = normalized;
   }
@@ -75,8 +106,6 @@ abstract final class AutomaticViewCoverPreferences {
 }
 
 abstract final class AutomaticViewCover {
-  static const _builtInCoverCount = 6;
-
   static PageStyleCover forWorkspace({required String name}) => forNewView(
         theme: AutomaticViewCoverSettings.defaultTheme,
         name: name,
@@ -105,19 +134,21 @@ abstract final class AutomaticViewCover {
     required String theme,
     required String name,
     required ViewLayoutPB layout,
+    ViewCoverSet set = ViewCoverSet.nature,
   }) {
     final seed = '${theme.trim().toLowerCase()}|'
         '${name.trim().toLowerCase()}|${layout.value}';
-    final image = (_stableHash(seed) % _builtInCoverCount) + 1;
+    final values = set.coverValues;
     return PageStyleCover(
       type: PageStyleCoverImageType.builtInImage,
-      value: image.toString(),
+      value: values[_stableHash(seed) % values.length],
     );
   }
 
   static List<AutomaticViewCoverUpdate> updatesForExistingViews({
     required Iterable<ViewPB> views,
     required String theme,
+    ViewCoverSet set = ViewCoverSet.nature,
   }) {
     final updates = <AutomaticViewCoverUpdate>[];
     for (final view in views) {
@@ -139,6 +170,7 @@ abstract final class AutomaticViewCover {
               theme: theme,
               name: view.name,
               layout: view.layout,
+              set: set,
             ),
           ),
         ),

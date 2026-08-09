@@ -10,6 +10,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/widgets
 import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/document_immersive_cover.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/shared_context/shared_context.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/spell_check_page_settings.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/transaction_handler/editor_transaction_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/flowy_error_page.dart';
@@ -61,6 +62,9 @@ class _DocumentPageState extends State<DocumentPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // What this page has said about checking its writing travels in the view,
+    // and the editor is built before anything else reads it.
+    SpellCheckPageSettings.instance.adopt(widget.view);
   }
 
   @override

@@ -15,9 +15,13 @@ import 'package:flutter/material.dart';
 /// Which Google calendars are shown inside AppFlowy.
 ///
 /// It appears only once an account is connected — an empty picker for a
-/// service nobody has signed into is just noise.
+/// service nobody has signed into is just noise. [connectionIds] narrows it to
+/// one account, so it can sit on that account's own page instead of listing
+/// everybody's calendars together.
 class GoogleCalendarSection extends StatefulWidget {
-  const GoogleCalendarSection({super.key});
+  const GoogleCalendarSection({super.key, this.connectionIds});
+
+  final Set<String>? connectionIds;
 
   @override
   State<GoogleCalendarSection> createState() => _GoogleCalendarSectionState();
@@ -55,7 +59,10 @@ class _GoogleCalendarSectionState extends State<GoogleCalendarSection> {
     // Ask each account for its calendars with nothing selected, so every
     // calendar is offered rather than only the ones already being shown.
     for (final connection in ProviderConnections.instance.all) {
-      if (connection.service != ProviderService.googleCalendar) {
+      if (!connection.covers(ProviderService.googleCalendar)) {
+        continue;
+      }
+      if (widget.connectionIds?.contains(connection.id) == false) {
         continue;
       }
       final probe = GoogleCalendarProvider(
@@ -115,8 +122,13 @@ class _GoogleCalendarSectionState extends State<GoogleCalendarSection> {
 
   @override
   Widget build(BuildContext context) {
+    final chosen = widget.connectionIds;
     final accounts = ProviderConnections.instance.all
-        .where((c) => c.service == ProviderService.googleCalendar)
+        .where(
+          (c) =>
+              c.covers(ProviderService.googleCalendar) &&
+              (chosen == null || chosen.contains(c.id)),
+        )
         .toList();
     if (accounts.isEmpty) {
       return const SizedBox.shrink();

@@ -555,6 +555,10 @@
   },
   "settings": {
     "title": "Settings",
+    "editorPage": {
+      "menuLabel": "Editor",
+      "description": "How AppFlowy reads and helps with the words you write."
+    },
     "popupMenuItem": {
       "settings": "Settings",
       "members": "Members",
@@ -1319,6 +1323,9 @@
       "automaticCovers": {
         "label": "Automatically add covers",
         "hint": "Give every new page, folder, and table a coordinated cover image.",
+        "setLabel": "Pictures",
+        "setNature": "Nature",
+        "setAbstract": "Abstract",
         "themeLabel": "Cover theme",
         "themeHint": "For example: calm nature, warm minimal, abstract",
         "applyExistingLabel": "Apply to existing pages",
@@ -1859,6 +1866,43 @@
   },
   "document": {
     "menuName": "Document",
+    "spellCheck": {
+      "title": "Spell check",
+      "spelling": "Spelling",
+      "pageOption": "Spell check",
+      "enable": "Enable spell check",
+      "enableHint": "Underline misspelled words as you write. This is the default for new pages; each page can say otherwise.",
+      "enableGrammar": "Grammar suggestions",
+      "enableGrammarHint": "Also mark grammar that is plainly wrong, such as a subject and a verb that do not agree.",
+      "privacyNote": "Everything is checked on this computer. No text ever leaves AppFlowy, and code, embeds and links are never read.",
+      "ignore": "Ignore",
+      "ignoreAll": "Ignore all",
+      "ignoreOnPage": "Ignore on this page",
+      "addToDictionary": "Add to dictionary",
+      "replaceWith": "Replace with \"{}\"",
+      "noSuggestions": "No suggestions",
+      "showSuggestions": "Show spelling suggestions",
+      "dictionaryTitle": "Personal dictionary",
+      "dictionaryHint": "Names, companies, project words — anything here is never flagged anywhere in AppFlowy.",
+      "dictionaryAddHint": "Add a word",
+      "dictionarySearchHint": "Search your dictionary",
+      "dictionaryEmpty": "Nothing here yet. Words you add from a page appear in this list.",
+      "dictionaryNoMatch": "No word matches that.",
+      "grammar": {
+        "title": "Grammar",
+        "repeatedWord": "This word is written twice.",
+        "article": "The article does not match the word that follows it.",
+        "subjectVerb": "Subject and verb do not agree.",
+        "wouldOf": "This should be \"have\", not \"of\".",
+        "yourYoure": "\"You're\" is short for \"you are\"; \"your\" shows possession.",
+        "thereTheir": "\"There\" is a place; \"their\" shows possession.",
+        "thenThan": "A comparison takes \"than\".",
+        "itsItIs": "\"It's\" is short for \"it is\"; \"its\" shows possession.",
+        "toToo": "\"Too\" means excessively.",
+        "capitalI": "The pronoun \"I\" is always capitalised.",
+        "sentenceCapital": "A sentence begins with a capital letter."
+      }
+    },
     "date": {
       "timeHintTextInTwelveHour": "01:00 PM",
       "timeHintTextInTwentyFourHour": "13:00"
@@ -2785,7 +2829,18 @@
     "replaceAll": "Replace all",
     "noResult": "No results",
     "caseSensitive": "Case sensitive",
-    "searchMore": "Search to find more results"
+    "searchMore": "Search to find more results",
+    "wholeWord": "Match whole word",
+    "useRegex": "Use regular expression",
+    "invalidRegex": "Invalid expression",
+    "searching": "Searching…",
+    "matchOfTotal": "{} of {}",
+    "showReplace": "Show replace",
+    "hideReplace": "Hide replace",
+    "findInFile": "Find in file",
+    "scanPages": "Scan the pages to search this document",
+    "scanPagesTooltip": "Search scanned pages (text recognition)",
+    "scanningPages": "Scanning page {} of {}…"
   },
   "error": {
     "weAreSorry": "We're sorry",
@@ -3861,6 +3916,14 @@
     "columnEmpty": "No row has anything in {name} yet — add one",
     "couldNotPlace": "{count} rows hold a place nobody could find — try again"
   },
+  "cardPreview": {
+    "title": "Card preview",
+    "tooltip": "What the cards show",
+    "cover": "Cover image",
+    "pageContent": "Page content",
+    "none": "None",
+    "pageEmpty": "This page is empty"
+  },
   "tableViews": {
     "search": "Search",
     "searchHint": "Search these rows",
@@ -3901,14 +3964,14 @@
     "faceWriting": "Writing first",
     "preview": "Card preview",
     "faceCover": "Cover image",
+    "facePage": "Page and title",
     "faceContent": "Page preview",
     "faceNone": "No cover",
     "facePortrait": "Full cover",
     "pageEmpty": "This page is empty"
   },
   "mailbox": {
-    "name": "Mailbox",
-    "rowCount": "{count} rows",
+    "name": "Mailbox",    "rowCount": "{count} rows",
     "empty": "Nothing has arrived yet",
     "emptyDetail": "Every row is read here the way a message is.",
     "addFirst": "Add the first row",
@@ -3918,6 +3981,7 @@
     "nothingOpenDetail": "Choose a row on the left to read it here.",
     "pageEmpty": "This row's page is empty",
     "readingPane": "Reading pane",
+    "editPage": "Write on the page here",
     "density": "Density",
     "comfortable": "Comfortable",
     "compact": "Compact",
@@ -4264,8 +4328,32 @@
       "confirmDisconnectTitle": "Disconnect {}?",
       "confirmDisconnectBody": "Collections that read from this account will stop until it is connected again. Nothing on the service is changed.",
       "alsoUseFor": "Also available for",
-      "anotherAccount": "Connect another {} account",
-      "signInOnce": "Sign in to {} once"
+      "anotherAccount": "Add another {} account",
+      "connectAccount": "Connect a {} account",
+      "signInOnce": "Sign in to {} once",
+      "manage": "Manage",
+      "usedForNothing": "Not used for anything yet",
+      "usedForTitle": "What this account is used for",
+      "usedForBody": "Turn on only what AppFlowy should reach with this account. Each one is set on its own, and turning one off changes nothing on the service itself.",
+      "needsBrowser": "Signing in through your browser turns this on",
+      "alreadyGranted": "Already permitted \u2014 turn on to start using it",
+      "turnOffLastBody": "This is the last thing the account is used for, so the account is removed. Nothing on the service is changed.",
+      "readOnly": "Read only",
+      "writeAllowed": "Changes allowed",
+      "accountTitle": "Account",
+      "signInAgainBody": "Renew this account's permissions without changing anything else.",
+      "removeAccount": "Remove this account",
+      "removeAccountBody": "AppFlowy forgets the account and stops reading from it. Nothing on the service is changed.",
+      "appPasswordMailbox": "Mailbox, signed in with an app password",
+      "otherMailboxes": "Other mailboxes",
+      "otherMailboxesBody": "Mail servers that sign in with a password of their own rather than through one of the accounts above.",
+      "purpose": {
+        "files": "Files and folders",
+        "photos": "Photo library",
+        "calendar": "Calendars and events",
+        "mail": "Mailbox",
+        "code": "Repositories and issues"
+      }
     }
   },
   "collections": {

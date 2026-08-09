@@ -1,18 +1,13 @@
 import 'dart:ui';
 
+import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 
 const String kLocalImagesKey = 'local_images';
 
-List<String> get builtInAssetImages => [
-      'assets/images/built_in_cover_images/m_cover_image_1.jpg',
-      'assets/images/built_in_cover_images/m_cover_image_2.jpg',
-      'assets/images/built_in_cover_images/m_cover_image_3.jpg',
-      'assets/images/built_in_cover_images/m_cover_image_4.jpg',
-      'assets/images/built_in_cover_images/m_cover_image_5.jpg',
-      'assets/images/built_in_cover_images/m_cover_image_6.jpg',
-    ];
+List<String> get builtInAssetImages =>
+    builtInCoverValues.map(PageStyleCoverImageType.builtInImagePath).toList();
 
 class ColorOption {
   const ColorOption({

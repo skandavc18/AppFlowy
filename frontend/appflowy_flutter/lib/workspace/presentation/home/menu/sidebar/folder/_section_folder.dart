@@ -15,6 +15,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_item_ser
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/folder/_folder_header.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_item.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -98,12 +99,12 @@ class _SectionFolderState extends State<SectionFolder> {
           ? WorkspaceIcon(
               workspaceIcon: workspace.icon,
               workspaceName: workspace.name,
-              iconSize: 22,
+              iconSize: SidebarMetrics.iconSlot,
               isEditable: true,
-              fontSize: 12,
-              emojiSize: 18,
+              fontSize: 11,
+              emojiSize: 15,
               borderRadius: 6,
-              figmaLineHeight: 18,
+              figmaLineHeight: 16,
               showBorder: false,
               onSelected: (result) => context.read<UserWorkspaceBloc>().add(
                     UserWorkspaceEvent.updateWorkspaceIcon(
@@ -112,6 +113,11 @@ class _SectionFolderState extends State<SectionFolder> {
                     ),
                   ),
             )
+          : null,
+      onToggleExpanded: widget.isWorkspaceRoot
+          ? () => context
+              .read<FolderBloc>()
+              .add(const FolderEvent.expandOrUnExpand())
           : null,
       onRename: widget.isWorkspaceRoot ? _renameWorkspace : null,
     );
@@ -132,9 +138,6 @@ class _SectionFolderState extends State<SectionFolder> {
       );
       return;
     }
-    context
-        .read<FolderBloc>()
-        .add(const FolderEvent.expandOrUnExpand(isExpanded: true));
     context.read<TabsBloc>().openPlugin(
           workspaceRootFolderView(
             workspaceId: workspace.workspaceId,
@@ -249,7 +252,9 @@ class _SectionFolderState extends State<SectionFolder> {
         engagedInExpanding: true,
         isFirstChild: view.id == widget.views.first.id,
         view: view,
-        level: 0,
+        // The workspace header is the root of the tree, so its contents are
+        // nested under it rather than sharing its measure.
+        level: widget.isWorkspaceRoot ? 1 : 0,
         leftPadding: HomeSpaceViewSizes.leftPadding,
         isFeedback: false,
         isHovered: isHovered,
@@ -277,7 +282,7 @@ class _SectionFolderState extends State<SectionFolder> {
     return ViewItem(
       spaceType: widget.spaceType,
       view: ViewPB(parentViewId: parentViewId ?? ''),
-      level: 0,
+      level: widget.isWorkspaceRoot ? 1 : 0,
       leftPadding: HomeSpaceViewSizes.leftPadding,
       isFeedback: false,
       onSelected: (_, __) {},

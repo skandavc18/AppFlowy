@@ -10,6 +10,7 @@ import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/manage_s
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/shared_widget.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/space_action_type.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/space_more_popup.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialog_v2.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -71,11 +72,14 @@ class _SidebarSpaceHeaderState extends State<SidebarSpaceHeader> {
   }
 
   Widget _buildSpaceName(bool isHovered) {
-    return Container(
+    final palette = SidebarPalette.of(context);
+    return AnimatedContainer(
+      duration: SidebarMetrics.hover,
+      curve: SidebarMetrics.curve,
       height: HomeSizes.workspaceSectionHeight,
       decoration: BoxDecoration(
-        borderRadius: const BorderRadius.all(Radius.circular(6)),
-        color: isHovered ? Theme.of(context).colorScheme.secondary : null,
+        borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
+        color: isHovered ? palette.hover : palette.hoverAtRest,
       ),
       child: Stack(
         alignment: Alignment.center,
@@ -83,18 +87,18 @@ class _SidebarSpaceHeaderState extends State<SidebarSpaceHeader> {
           ValueListenableBuilder(
             valueListenable: onEditing,
             builder: (context, onEditing, child) => Positioned(
-              left: 3,
+              left: SidebarMetrics.rowInset,
               top: 3,
               bottom: 3,
-              right: isHovered || onEditing ? 88 : 0,
+              right: isHovered || onEditing ? 60 : 0,
               child: SpacePopup(
                 showCreateButton: true,
                 child: _buildChild(isHovered),
               ),
             ),
           ),
-          Positioned(
-            right: 4,
+          PositionedDirectional(
+            end: SidebarMetrics.rowInset,
             child: _buildRightIcon(isHovered),
           ),
         ],
@@ -129,43 +133,48 @@ class _SidebarSpaceHeaderState extends State<SidebarSpaceHeader> {
   Widget _buildRightIcon(bool isHovered) {
     return ValueListenableBuilder(
       valueListenable: onEditing,
-      builder: (context, onEditing, child) => Opacity(
+      builder: (context, onEditing, child) => AnimatedOpacity(
+        duration: SidebarMetrics.reveal,
+        curve: SidebarMetrics.curve,
         opacity: isHovered || onEditing ? 1 : 0,
-        child: Row(
-          children: [
-            SpaceMorePopup(
-              space: widget.space,
-              onEditing: (value) => this.onEditing.value = value,
-              onAction: _onAction,
-              isHovered: isHovered,
-            ),
-            const HSpace(8.0),
-            FlowyTooltip(
-              message: LocaleKeys.sideBar_addAPage.tr(),
-              child: ViewAddButton(
-                parentViewId: widget.space.id,
-                sourceView: widget.space,
-                onEditing: (_) {},
-                onTransfer: (_) {},
-                showTransferActions: false,
-                onSelected: (
-                  pluginBuilder,
-                  name,
-                  initialDataBytes,
-                  openAfterCreated,
-                  createNewView,
-                ) {
-                  if (pluginBuilder.layoutType == ViewLayoutPB.Document) {
-                    name = '';
-                  }
-                  if (createNewView) {
-                    widget.onAdded(pluginBuilder.layoutType!);
-                  }
-                },
+        child: IgnorePointer(
+          ignoring: !(isHovered || onEditing),
+          child: Row(
+            children: [
+              SpaceMorePopup(
+                space: widget.space,
+                onEditing: (value) => this.onEditing.value = value,
+                onAction: _onAction,
                 isHovered: isHovered,
               ),
-            ),
-          ],
+              const HSpace(SidebarMetrics.actionGap),
+              FlowyTooltip(
+                message: LocaleKeys.sideBar_addAPage.tr(),
+                child: ViewAddButton(
+                  parentViewId: widget.space.id,
+                  sourceView: widget.space,
+                  onEditing: (_) {},
+                  onTransfer: (_) {},
+                  showTransferActions: false,
+                  onSelected: (
+                    pluginBuilder,
+                    name,
+                    initialDataBytes,
+                    openAfterCreated,
+                    createNewView,
+                  ) {
+                    if (pluginBuilder.layoutType == ViewLayoutPB.Document) {
+                      name = '';
+                    }
+                    if (createNewView) {
+                      widget.onAdded(pluginBuilder.layoutType!);
+                    }
+                  },
+                  isHovered: isHovered,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

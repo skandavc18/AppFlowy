@@ -66,20 +66,6 @@ void main() {
 
       expect(notified, 0);
     });
-
-    test('a picture the service refused is not the same as one still coming',
-        () {
-      final waiting = at('a', 'https://photos/a');
-      final refused = AlbumMediaItem(
-        view: _file('a', 'a.jpg'),
-        kind: AlbumMediaKind.image,
-        path: 'https://photos/a',
-        index: 0,
-        unavailable: true,
-      );
-
-      expect(waiting == refused, isFalse);
-    });
   });
 
   group('album media', () {

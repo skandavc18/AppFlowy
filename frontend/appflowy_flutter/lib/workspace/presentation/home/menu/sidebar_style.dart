@@ -1,28 +1,28 @@
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:flutter/material.dart';
 
 import '../../../../shared/paper_theme.dart';
-import '../../../../shared/premium_theme.dart';
 
 abstract final class SidebarStyle {
   static const defaultLightBackground = Color(0xFFFAF9F6);
   static const lightBackground = PaperTheme.sidebarBackground;
-  static const darkBackground = Color(0xFF202020);
-  static const lightPrimaryText = Color(0xFF37352F);
-  static const darkPrimaryText = Color(0xCFFFFFFF);
-  static const lightSecondaryText = Color(0xA637352F);
-  static const darkSecondaryText = Color(0x8FFFFFFF);
-  static const lightIcon = Color(0xD137352F);
-  static const darkIcon = Color(0xCFFFFFFF);
-  static const lightSearchIcon = Color(0xFF403E39);
-  static const darkSearchIcon = Color(0xE6FFFFFF);
-  static const lightHover = Color(0x0D37352F);
-  static const darkHover = Color(0x0DFFFFFF);
-  static const lightSelected = Color(0x1437352F);
-  static const darkSelected = Color(0x14FFFFFF);
-  static const lightEdge = Color(0x1437352F);
-  static const darkEdge = Color(0x1AFFFFFF);
+  static const darkBackground = Color(0xFF1F1F1F);
+  static const lightPrimaryText = Color(0xFF2B2A28);
+  static const darkPrimaryText = Color(0xE8FFFFFF);
+  static const lightSecondaryText = Color(0xFF6B6963);
+  static const darkSecondaryText = Color(0x9EFFFFFF);
+  static const lightIcon = Color(0xFF6F6C66);
+  static const darkIcon = Color(0xAEFFFFFF);
+  static const lightSearchIcon = Color(0xFF6F6C66);
+  static const darkSearchIcon = Color(0xAEFFFFFF);
+  static const lightHover = Color(0x0A16150F);
+  static const darkHover = Color(0x0FFFFFFF);
+  static const lightSelected = Color(0x1416150F);
+  static const darkSelected = Color(0x1FFFFFFF);
+  static const lightEdge = Color(0x0F16150F);
+  static const darkEdge = Color(0x14FFFFFF);
 
   static Color backgroundFor(
     Brightness brightness, {
@@ -48,8 +48,7 @@ abstract final class SidebarStyle {
       brightness == Brightness.light ? lightSearchIcon : darkSearchIcon;
 
   static Color searchIconColor(BuildContext context) =>
-      PremiumThemeExtension.maybeOf(context)?.textSecondary ??
-      searchIconColorFor(Theme.of(context).brightness);
+      SidebarPalette.of(context).icon;
 
   static Color hoverBackgroundFor(Brightness brightness) =>
       brightness == Brightness.light ? lightHover : darkHover;
@@ -60,47 +59,37 @@ abstract final class SidebarStyle {
   static Color edgeBorderFor(Brightness brightness) =>
       brightness == Brightness.light ? lightEdge : darkEdge;
 
-  static Color background(BuildContext context) => backgroundFor(
-        Theme.of(context).brightness,
-        isPaper: PaperTheme.isEnabled(context),
-        lightFallback: PremiumThemeExtension.maybeOf(context)?.sidebar ??
-            Theme.of(context).colorScheme.surfaceContainerHighest,
-      );
+  static Color background(BuildContext context) =>
+      SidebarPalette.of(context).background;
 
   static Color selectedBackground(BuildContext context) =>
-      PremiumThemeExtension.maybeOf(context)?.selected ??
-      selectedBackgroundFor(Theme.of(context).brightness);
+      SidebarPalette.of(context).selected;
 
   static Color edgeBorder(BuildContext context) =>
-      PremiumThemeExtension.maybeOf(context)?.border ??
-      edgeBorderFor(Theme.of(context).brightness);
+      SidebarPalette.of(context).edge;
 
   static ThemeData themeData(BuildContext context) {
-    final brightness = Theme.of(context).brightness;
     final base = SidebarTypography.themeData(context);
-    final palette = PremiumThemeExtension.maybeOf(context);
-    final primaryText = palette?.textPrimary ?? primaryTextFor(brightness);
-    final secondaryText =
-        palette?.textSecondary ?? secondaryTextFor(brightness);
+    final palette = SidebarPalette.of(context);
 
     return base.copyWith(
       colorScheme: base.colorScheme.copyWith(
-        secondary: palette?.hoverOverlay ?? hoverBackgroundFor(brightness),
-        onSecondary: primaryText,
-        tertiary: primaryText,
-        onSurface: primaryText,
-        surfaceContainerHighest: palette?.sidebar ?? backgroundFor(brightness),
+        secondary: palette.hover,
+        onSecondary: palette.textPrimary,
+        tertiary: palette.textPrimary,
+        onSurface: palette.textPrimary,
+        surfaceContainerHighest: palette.background,
       ),
-      dividerColor: palette?.border ?? edgeBorderFor(brightness),
-      hintColor: secondaryText,
+      dividerColor: palette.edge,
+      hintColor: palette.textTertiary,
       iconTheme: base.iconTheme.copyWith(
-        color: palette?.textSecondary ?? iconColorFor(brightness),
+        color: palette.icon,
         size: HomeSizes.sidebarActionIconSize,
       ),
       textTheme: base.textTheme.copyWith(
         bodyMedium: SidebarTypography.textStyle(
           context,
-          color: primaryText,
+          color: palette.textPrimary,
         ),
       ),
     );
