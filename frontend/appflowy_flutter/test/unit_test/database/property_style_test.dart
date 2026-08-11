@@ -487,7 +487,8 @@ void main() {
       final labels = labelsOf(entries);
 
       expect(labels, contains(LocaleKeys.interactive_property_maximum.tr()));
-      expect(labels, contains(LocaleKeys.interactive_progress_showPercent.tr()));
+      expect(
+          labels, contains(LocaleKeys.interactive_progress_showPercent.tr()));
       expect(
         labels,
         isNot(contains(LocaleKeys.interactive_property_step.tr())),
@@ -527,7 +528,8 @@ void main() {
         fieldInfo: fieldOf(),
         style: const PropertyStyle(kind: PropertyStyleKind.progress),
       );
-      final type = itemNamed(entries, LocaleKeys.interactive_property_type.tr());
+      final type =
+          itemNamed(entries, LocaleKeys.interactive_property_type.tr());
 
       expect(type.shortcut, isNotNull);
       expect(
@@ -547,9 +549,10 @@ void main() {
     test('an override rides in the same envelope and merges over the column',
         () {
       const styles = PropertyStyles(byField: {'f1': column});
-      final extra = styles
-          .withCell('f1', 'r1', {'target': 'page-2', 'target_name': 'Notes'})
-          .mergeIntoExtra('{"appflowy_chart":{"version":1}}');
+      final extra = styles.withCell('f1', 'r1', {
+        'target': 'page-2',
+        'target_name': 'Notes'
+      }).mergeIntoExtra('{"appflowy_chart":{"version":1}}');
 
       final read = PropertyStyles.fromExtra(extra);
       expect(jsonDecode(extra)['appflowy_chart'], isNotNull);
@@ -610,7 +613,8 @@ void main() {
       // A different kind means those settings mean nothing any more.
       expect(
         styles
-            .withField('f1', const PropertyStyle(kind: PropertyStyleKind.counter))
+            .withField(
+                'f1', const PropertyStyle(kind: PropertyStyleKind.counter))
             .byCell,
         isEmpty,
       );

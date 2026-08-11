@@ -125,8 +125,8 @@ Future<void> showInteractiveOptionPicker({
     _OptionPickerRoute(
       anchor: anchor,
       width: width,
-      capturedThemes:
-          InheritedTheme.capture(from: context, to: Navigator.of(context).context),
+      capturedThemes: InheritedTheme.capture(
+          from: context, to: Navigator.of(context).context),
       builder: (context) => _OptionPicker(
         options: options,
         selected: selected,
@@ -224,19 +224,19 @@ class _OptionPickerLayout extends SingleChildLayoutDelegate {
 
   @override
   Offset getPositionForChild(Size size, Size childSize) {
-    final opensDown = anchor.bottom + _gap + childSize.height <=
-        size.height - _margin ||
-        anchor.top - _gap - childSize.height < _margin;
-    final dy = opensDown
-        ? anchor.bottom + _gap
-        : anchor.top - _gap - childSize.height;
+    final opensDown =
+        anchor.bottom + _gap + childSize.height <= size.height - _margin ||
+            anchor.top - _gap - childSize.height < _margin;
+    final dy =
+        opensDown ? anchor.bottom + _gap : anchor.top - _gap - childSize.height;
     final dx = anchor.left.clamp(
       _margin,
       math.max(_margin, size.width - childSize.width - _margin),
     );
     return Offset(
       dx.toDouble(),
-      dy.clamp(_margin, math.max(_margin, size.height - childSize.height - _margin)),
+      dy.clamp(
+          _margin, math.max(_margin, size.height - childSize.height - _margin)),
     );
   }
 
@@ -695,7 +695,8 @@ class _CreateRowState extends State<_CreateRow> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  LocaleKeys.interactive_selector_create.tr(args: [widget.label]),
+                  LocaleKeys.interactive_selector_create
+                      .tr(args: [widget.label]),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: InteractiveType.body(palette).copyWith(fontSize: 13),

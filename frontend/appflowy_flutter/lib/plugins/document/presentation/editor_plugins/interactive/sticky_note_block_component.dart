@@ -202,13 +202,15 @@ class StickyNoteBlockComponentState extends State<StickyNoteBlockComponent>
         // so the note sits a little above the page without a drop shadow.
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: palette.isDark ? 0.32 : 0.055),
+            color:
+                Colors.black.withValues(alpha: palette.isDark ? 0.32 : 0.055),
             blurRadius: 22,
             offset: const Offset(0, 9),
             spreadRadius: -12,
           ),
           BoxShadow(
-            color: Colors.black.withValues(alpha: palette.isDark ? 0.20 : 0.035),
+            color:
+                Colors.black.withValues(alpha: palette.isDark ? 0.20 : 0.035),
             blurRadius: 5,
             offset: const Offset(0, 2),
             spreadRadius: -3,

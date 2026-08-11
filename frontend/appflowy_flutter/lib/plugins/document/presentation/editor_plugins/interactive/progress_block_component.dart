@@ -174,8 +174,9 @@ class ProgressBlockComponentState extends State<ProgressBlockComponent>
       ? '${(_fraction * 100).round()}%'
       : '${_trim(_value)} / ${_trim(_maximum)}';
 
-  static String _trim(double value) =>
-      value == value.roundToDouble() ? value.round().toString() : value.toStringAsFixed(1);
+  static String _trim(double value) => value == value.roundToDouble()
+      ? value.round().toString()
+      : value.toStringAsFixed(1);
 
   void _setFromLocal(double dx, double width) {
     if (!editable || width <= 0) {

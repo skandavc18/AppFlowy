@@ -242,8 +242,8 @@ class PropertyStyleEditor extends StatelessWidget {
   /// The panel is a list of rows, so the action cycles rather than opening a
   /// second popover inside the field editor's own.
   static PropertyButtonAction _nextAction(PropertyButtonAction action) =>
-      PropertyButtonAction.values[
-          (action.index + 1) % PropertyButtonAction.values.length];
+      PropertyButtonAction
+          .values[(action.index + 1) % PropertyButtonAction.values.length];
 }
 
 class _Row extends StatelessWidget {

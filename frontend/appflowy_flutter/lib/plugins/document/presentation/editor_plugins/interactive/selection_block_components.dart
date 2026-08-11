@@ -115,7 +115,9 @@ mixin _SelectionBlockMixin<T extends StatefulWidget>
     }
     await writeOptions([
       for (final current in options)
-        current.id == option.id ? current.copyWith(label: answer.trim()) : current,
+        current.id == option.id
+            ? current.copyWith(label: answer.trim())
+            : current,
     ]);
   }
 
@@ -486,7 +488,8 @@ class _RadioRowState extends State<_RadioRow> {
                 child: Text(
                   widget.option.label,
                   style: InteractiveType.body(palette).copyWith(
-                    color: widget.selected ? palette.text : palette.textSecondary,
+                    color:
+                        widget.selected ? palette.text : palette.textSecondary,
                   ),
                 ),
               ),

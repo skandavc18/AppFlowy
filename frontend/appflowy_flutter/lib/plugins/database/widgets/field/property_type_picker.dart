@@ -365,8 +365,7 @@ Future<void> applyPropertyType({
   }
 
   // Alignment belongs to the column, not to the type it happens to wear.
-  final align =
-      PropertyStyleRegistry.instance.styleFor(viewId, fieldId)?.align;
+  final align = PropertyStyleRegistry.instance.styleFor(viewId, fieldId)?.align;
   var style = chosen.style;
   if (align != null) {
     style = (style ?? const PropertyStyle(kind: PropertyStyleKind.plain))
@@ -504,8 +503,7 @@ class _PropertyTypePickerState extends State<PropertyTypePicker> {
                           isCollapsed: true,
                           border: InputBorder.none,
                           filled: false,
-                          hintText:
-                              LocaleKeys.interactive_property_search.tr(),
+                          hintText: LocaleKeys.interactive_property_search.tr(),
                           hintStyle: InteractiveType.caption(palette),
                         ),
                       ),

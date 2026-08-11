@@ -61,7 +61,8 @@ List<AppMenuEntry> columnHeadingMenuEntries({
   final service = FieldBackendService(viewId: viewId, fieldId: fieldId);
   final hidden = fieldInfo.visibility == FieldVisibility.AlwaysHidden;
 
-  return normalizeAppMenuEntries([
+  return normalizeAppMenuEntries(
+    [
       AppMenuItem(
         label: LocaleKeys.disclosureAction_rename.tr(),
         icon: Icons.text_fields_rounded,

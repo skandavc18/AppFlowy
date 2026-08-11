@@ -166,7 +166,8 @@ class _TextCellState extends State<TextCardCell> {
       rowId: cellBloc.cellController.rowId,
       controller: _textEditingController,
       bloc: cellBloc,
-      childBuilder: (context, align) => BlocBuilder<TextCellBloc, TextCellState>(
+      childBuilder: (context, align) =>
+          BlocBuilder<TextCellBloc, TextCellState>(
         builder: (context, state) {
           final content = state.content ?? "";
 

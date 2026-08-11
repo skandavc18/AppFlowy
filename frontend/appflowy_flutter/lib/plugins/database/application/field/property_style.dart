@@ -191,10 +191,9 @@ class PropertyStyle {
   }
 
   /// The same column, as one cell asked for it.
-  PropertyStyle withOverride(Map<String, Object?> override) =>
-      override.isEmpty
-          ? this
-          : PropertyStyle(kind: kind, settings: {...settings, ...override});
+  PropertyStyle withOverride(Map<String, Object?> override) => override.isEmpty
+      ? this
+      : PropertyStyle(kind: kind, settings: {...settings, ...override});
 
   double doubleSetting(String key, {required double fallback}) {
     final value = settings[key];

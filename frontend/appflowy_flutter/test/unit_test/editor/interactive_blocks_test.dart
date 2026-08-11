@@ -311,9 +311,12 @@ void main() {
       expect(node.attributes[CounterBlockKeys.step], 1);
     });
 
-    test('a selection block starts with usable options and nothing chosen',
-        () {
-      for (final node in [selectorNode(), radioGroupNode(), multiSelectNode()]) {
+    test('a selection block starts with usable options and nothing chosen', () {
+      for (final node in [
+        selectorNode(),
+        radioGroupNode(),
+        multiSelectNode()
+      ]) {
         expect(
           decodeInteractiveOptions(
             node.attributes[SelectionBlockKeys.options],
@@ -449,8 +452,7 @@ void main() {
       expect(removed, isTrue);
     });
 
-    testWidgets('a colour reads differently in light and dark',
-        (tester) async {
+    testWidgets('a colour reads differently in light and dark', (tester) async {
       late InteractiveTone light;
       late InteractiveTone dark;
 
@@ -458,8 +460,8 @@ void main() {
         host(
           Builder(
             builder: (context) {
-              light = InteractiveAccent.blue
-                  .resolve(interactivePaletteOf(context));
+              light =
+                  InteractiveAccent.blue.resolve(interactivePaletteOf(context));
               return const SizedBox.shrink();
             },
           ),
@@ -469,8 +471,8 @@ void main() {
         host(
           Builder(
             builder: (context) {
-              dark = InteractiveAccent.blue
-                  .resolve(interactivePaletteOf(context));
+              dark =
+                  InteractiveAccent.blue.resolve(interactivePaletteOf(context));
               return const SizedBox.shrink();
             },
           ),

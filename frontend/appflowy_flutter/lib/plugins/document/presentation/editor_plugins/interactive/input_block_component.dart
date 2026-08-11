@@ -454,16 +454,15 @@ class InputBlockComponentState extends State<InputBlockComponent>
                             Icon(
                               Icons.error_outline_rounded,
                               size: 13,
-                              color: InteractiveAccent.red
-                                  .resolve(palette)
-                                  .strong,
+                              color:
+                                  InteractiveAccent.red.resolve(palette).strong,
                             ),
                             const SizedBox(width: 6),
                             Expanded(
                               child: Text(
                                 error,
-                                style: InteractiveType.caption(palette)
-                                    .copyWith(
+                                style:
+                                    InteractiveType.caption(palette).copyWith(
                                   color: InteractiveAccent.red
                                       .resolve(palette)
                                       .strong,

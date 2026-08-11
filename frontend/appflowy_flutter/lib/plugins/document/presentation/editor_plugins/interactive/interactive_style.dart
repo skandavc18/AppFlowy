@@ -331,7 +331,8 @@ class InteractiveButton extends StatefulWidget {
   final InteractiveShape shape;
 
   InteractiveControlSize get resolvedSize =>
-      size ?? (dense ? InteractiveControlSize.small : InteractiveControlSize.medium);
+      size ??
+      (dense ? InteractiveControlSize.small : InteractiveControlSize.medium);
 
   @override
   State<InteractiveButton> createState() => _InteractiveButtonState();
@@ -355,7 +356,8 @@ class _InteractiveButtonState extends State<InteractiveButton> {
 
     final (background, foreground, border) = _colours(palette, accent, enabled);
     final metrics = widget.resolvedSize;
-    final radius = BorderRadius.circular(widget.shape.radiusFor(metrics.height));
+    final radius =
+        BorderRadius.circular(widget.shape.radiusFor(metrics.height));
 
     Widget content = Row(
       mainAxisSize: widget.expand ? MainAxisSize.max : MainAxisSize.min,
@@ -462,8 +464,7 @@ class _InteractiveButtonState extends State<InteractiveButton> {
           behavior: HitTestBehavior.opaque,
           onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
           onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-          onTapCancel:
-              enabled ? () => setState(() => _pressed = false) : null,
+          onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
           onTap: widget.onPressed,
           child: content,
         ),

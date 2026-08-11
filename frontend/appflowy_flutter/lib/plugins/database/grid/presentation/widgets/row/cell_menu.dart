@@ -190,7 +190,8 @@ List<AppMenuEntry> _settingEntries({
           icon: style.showPercent
               ? Icons.check_box_rounded
               : Icons.check_box_outline_blank_rounded,
-          onSelected: () => unawaited(write({'show_percent': !style.showPercent})),
+          onSelected: () =>
+              unawaited(write({'show_percent': !style.showPercent})),
         ),
       ],
     PropertyStyleKind.counter => [
@@ -221,8 +222,9 @@ List<AppMenuEntry> _settingEntries({
         AppMenuItem(
           label: LocaleKeys.interactive_counter_setMaximum.tr(),
           icon: Icons.north_rounded,
-          shortcut:
-              style.counterMaximum == null ? null : _trim(style.counterMaximum!),
+          shortcut: style.counterMaximum == null
+              ? null
+              : _trim(style.counterMaximum!),
           onSelected: () => unawaited(
             askNumber(
               'maximum',
@@ -238,7 +240,8 @@ List<AppMenuEntry> _settingEntries({
           icon: style.showThumbnail
               ? Icons.check_box_rounded
               : Icons.check_box_outline_blank_rounded,
-          onSelected: () => unawaited(write({'thumbnail': !style.showThumbnail})),
+          onSelected: () =>
+              unawaited(write({'thumbnail': !style.showThumbnail})),
         ),
       ],
     PropertyStyleKind.media => [

@@ -30,8 +30,7 @@ class RichTextTypeOptionEditorFactory implements TypeOptionEditorFactory {
             );
           }
           return ValueListenableBuilder<PropertyStyles>(
-            valueListenable:
-                PropertyStyleRegistry.instance.listenable(viewId),
+            valueListenable: PropertyStyleRegistry.instance.listenable(viewId),
             builder: (context, styles, _) {
               final style = styles[field.id];
               if (style != null && style.kind != PropertyStyleKind.plain) {

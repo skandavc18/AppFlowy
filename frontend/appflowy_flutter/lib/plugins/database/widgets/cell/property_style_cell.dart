@@ -601,9 +601,8 @@ class _ReminderCell extends StatelessWidget {
 String formatCellMoment(DateTime at, {DateTime? now}) {
   final today = now ?? DateTime.now();
   final startOfToday = DateTime(today.year, today.month, today.day);
-  final days = DateTime(at.year, at.month, at.day)
-      .difference(startOfToday)
-      .inDays;
+  final days =
+      DateTime(at.year, at.month, at.day).difference(startOfToday).inDays;
   final time = '${at.hour.toString().padLeft(2, '0')}:'
       '${at.minute.toString().padLeft(2, '0')}';
   final day = switch (days) {

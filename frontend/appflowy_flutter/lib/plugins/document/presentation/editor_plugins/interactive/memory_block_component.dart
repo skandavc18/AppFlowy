@@ -74,7 +74,10 @@ class MemoryBlockComponent extends BlockComponentStatefulWidget {
 }
 
 class MemoryBlockComponentState extends State<MemoryBlockComponent>
-    with BlockComponentConfigurable, InteractiveBlockMixin, TickerProviderStateMixin {
+    with
+        BlockComponentConfigurable,
+        InteractiveBlockMixin,
+        TickerProviderStateMixin {
   @override
   BlockComponentConfiguration get configuration => widget.configuration;
 

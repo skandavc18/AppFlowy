@@ -126,8 +126,9 @@ Node buttonNode({
     Node(
       type: ButtonBlockKeys.type,
       attributes: {
-        ButtonBlockKeys.label:
-            label.isEmpty ? LocaleKeys.interactive_button_defaultLabel.tr() : label,
+        ButtonBlockKeys.label: label.isEmpty
+            ? LocaleKeys.interactive_button_defaultLabel.tr()
+            : label,
         ButtonBlockKeys.style: style.name,
         ButtonBlockKeys.action: action.name,
         ButtonBlockKeys.icon: 'arrow',
@@ -191,8 +192,8 @@ class ButtonBlockComponentState extends State<ButtonBlockComponent>
         orElse: () => InteractiveEmphasis.primary,
       );
 
-  InteractiveButtonAction get _action =>
-      InteractiveButtonAction.fromValue(node.attributes[ButtonBlockKeys.action]);
+  InteractiveButtonAction get _action => InteractiveButtonAction.fromValue(
+      node.attributes[ButtonBlockKeys.action]);
 
   IconData? get _icon =>
       interactiveButtonIcons[stringAttribute(ButtonBlockKeys.icon)];
@@ -379,8 +380,7 @@ class ButtonBlockComponentState extends State<ButtonBlockComponent>
                 AppMenuItem(
                   label: entry.key,
                   icon: entry.value,
-                  selected:
-                      entry.key == stringAttribute(ButtonBlockKeys.icon),
+                  selected: entry.key == stringAttribute(ButtonBlockKeys.icon),
                   enabled: editable,
                   onSelected: () => unawaited(
                     writeAttributes({ButtonBlockKeys.icon: entry.key}),

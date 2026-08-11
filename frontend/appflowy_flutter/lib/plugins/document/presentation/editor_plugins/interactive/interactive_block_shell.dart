@@ -217,7 +217,8 @@ class InteractiveAccentDot extends StatelessWidget {
         decoration: BoxDecoration(
           color: tone.surface,
           shape: BoxShape.circle,
-          border: Border.all(color: tone.strong.withValues(alpha: 0.7), width: 1.4),
+          border:
+              Border.all(color: tone.strong.withValues(alpha: 0.7), width: 1.4),
         ),
       ),
     );
@@ -327,14 +328,12 @@ class _InteractiveBlockShellState extends State<InteractiveBlockShell> {
                     Builder(
                       builder: (context) => InteractiveIconButton(
                         icon: Icons.more_horiz_rounded,
-                        tooltip: LocaleKeys
-                            .document_plugins_optionAction_more
-                            .tr(),
+                        tooltip:
+                            LocaleKeys.document_plugins_optionAction_more.tr(),
                         palette: palette,
                         selected: _menuOpen,
                         onPressed: () {
-                          final box =
-                              context.findRenderObject() as RenderBox?;
+                          final box = context.findRenderObject() as RenderBox?;
                           final origin = box == null
                               ? Offset.zero
                               : box.localToGlobal(

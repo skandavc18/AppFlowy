@@ -120,9 +120,7 @@ class ReminderBlockComponentState extends State<ReminderBlockComponent>
 
   Future<void> _toggleDone(AppReminder reminder) async {
     await _store.save(
-      reminder.isDone
-          ? reminder.copyWith(isDone: false)
-          : reminder.complete(),
+      reminder.isDone ? reminder.copyWith(isDone: false) : reminder.complete(),
     );
   }
 
@@ -241,8 +239,8 @@ class ReminderBlockComponentState extends State<ReminderBlockComponent>
   }
 
   Widget _buildReminder(InteractivePalette palette, AppReminder reminder) {
-    final overdue = !reminder.isDone &&
-        reminder.firesAt.isBefore(DateTime.now());
+    final overdue =
+        !reminder.isDone && reminder.firesAt.isBefore(DateTime.now());
     final tone = (overdue ? InteractiveAccent.red : InteractiveAccent.blue)
         .resolve(palette);
 

@@ -71,8 +71,8 @@ final SelectionMenuItem buttonSlashMenuItem = _interactiveItem(
   keywords: const ['button', 'action', 'cta', 'press', 'click', 'run'],
   icon: Icons.smart_button_rounded,
   node: buttonNode,
-  updateSelection:
-      _openAfterInsert<ButtonBlockComponentState>((state) => state.beginRename()),
+  updateSelection: _openAfterInsert<ButtonBlockComponentState>(
+      (state) => state.beginRename()),
 );
 
 /// `/progress`
@@ -94,7 +94,14 @@ final SelectionMenuItem progressSlashMenuItem = _interactiveItem(
 /// `/counter`
 final SelectionMenuItem counterSlashMenuItem = _interactiveItem(
   getName: () => LocaleKeys.interactive_counter_name.tr(),
-  keywords: const ['counter', 'count', 'number', 'tally', 'increment', 'stepper'],
+  keywords: const [
+    'counter',
+    'count',
+    'number',
+    'tally',
+    'increment',
+    'stepper'
+  ],
   icon: Icons.exposure_plus_1_rounded,
   node: counterNode,
 );
@@ -118,7 +125,14 @@ final SelectionMenuItem memorySlashMenuItem = _interactiveItem(
 /// `/input`
 final SelectionMenuItem inputSlashMenuItem = _interactiveItem(
   getName: () => LocaleKeys.interactive_input_name.tr(),
-  keywords: const ['input', 'input bar', 'field', 'text field', 'entry', 'form'],
+  keywords: const [
+    'input',
+    'input bar',
+    'field',
+    'text field',
+    'entry',
+    'form'
+  ],
   icon: Icons.edit_note_rounded,
   node: inputNode,
   updateSelection:
@@ -131,8 +145,8 @@ final SelectionMenuItem searchSlashMenuItem = _interactiveItem(
   keywords: const ['search', 'search bar', 'find', 'filter', 'lookup'],
   icon: Icons.search_rounded,
   node: searchNode,
-  updateSelection:
-      _openAfterInsert<SearchBlockComponentState>((state) => state.focusField()),
+  updateSelection: _openAfterInsert<SearchBlockComponentState>(
+      (state) => state.focusField()),
 );
 
 /// `/select`
@@ -153,7 +167,13 @@ final SelectionMenuItem selectorSlashMenuItem = _interactiveItem(
 /// `/radio`
 final SelectionMenuItem radioGroupSlashMenuItem = _interactiveItem(
   getName: () => LocaleKeys.interactive_radio_name.tr(),
-  keywords: const ['radio', 'radio group', 'choice', 'single choice', 'options'],
+  keywords: const [
+    'radio',
+    'radio group',
+    'choice',
+    'single choice',
+    'options'
+  ],
   icon: Icons.radio_button_checked_rounded,
   node: radioGroupNode,
 );
