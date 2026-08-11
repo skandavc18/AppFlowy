@@ -1,0 +1,19 @@
+{
+  "name": "appflowy-excalidraw-host",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The Excalidraw editor AppFlowy embeds. Built from the excalidraw monorepo and shipped as static assets.",
+  "dependencies": {
+    "@excalidraw/excalidraw": "*",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "vite": "5.0.12"
+  },
+  "scripts": {
+    "build": "vite build",
+    "start": "vite"
+  }
+}

@@ -143,5 +143,9 @@ MobileSelectionMenuItem advancedMobileSlashMenuItem = MobileSelectionMenuItem(
   children: [
     codeBlockSlashMenuItem,
     mathEquationSlashMenuItem,
+    // Drawing is left out: its editor needs a web view, which mobile does
+    // not carry yet. The other three are Flutter all the way down.
+    mermaidSlashMenuItem,
+    mindMapSlashMenuItem,
   ],
 );

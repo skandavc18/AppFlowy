@@ -45,6 +45,9 @@ Future<String> customDocumentToMarkdown(
       lineBreak: lineBreak,
       customParsers: [
         const MathEquationNodeParser(),
+        const MermaidNodeParser(),
+        const MindMapNodeParser(),
+        const DrawingNodeParser(),
         const CalloutNodeParser(),
         const ToggleListNodeParser(),
         CustomImageNodeFileParser(fileFutures, dirName),

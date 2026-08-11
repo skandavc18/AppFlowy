@@ -2,6 +2,7 @@ export 'callout_node_parser.dart';
 export 'custom_image_node_parser.dart';
 export 'custom_paragraph_node_parser.dart';
 export 'database_node_parser.dart';
+export 'diagram_node_parsers.dart';
 export 'file_block_node_parser.dart';
 export 'folder_explorer_node_parser.dart';
 export 'link_preview_node_parser.dart';

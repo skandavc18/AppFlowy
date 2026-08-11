@@ -418,6 +418,15 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
       context,
       configuration,
     ),
+    MermaidBlockKeys.type: MermaidBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    MindMapBlockKeys.type: MindMapBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    DrawingBlockKeys.type: DrawingBlockComponentBuilder(
+      configuration: configuration,
+    ),
     CodeBlockKeys.type: _buildCodeBlockComponentBuilder(
       context,
       configuration,

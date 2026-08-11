@@ -67,6 +67,9 @@ enum EditorOptionActionType {
           PagePreviewBlockKeys.type,
           BookmarkBlockKeys.type,
           FolderExplorerBlockKeys.type,
+          MermaidBlockKeys.type,
+          MindMapBlockKeys.type,
+          DrawingBlockKeys.type,
         };
       case EditorOptionActionType.depth:
         return {

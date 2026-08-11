@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <title>Excalidraw</title>
+    <script>
+      // Fonts and worker chunks are resolved against this, and it must be an
+      // absolute URL. Taking it from the page's own address keeps the editor
+      // entirely offline: nothing is ever fetched from a CDN.
+      window.EXCALIDRAW_ASSET_PATH = new URL("./", window.location.href).href;
+    </script>
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      .excalidraw .App-menu_top .buttonList {
+        box-shadow: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+The typefaces in this folder are the ones the bundled Excalidraw editor draws
+with. They are the same files that ship inside assets/excalidraw/excalidraw_host.zip,
+converted from WOFF2 to TrueType so that Flutter can render a drawing preview in
+the same hand it is drawn in.
+
+Source: https://github.com/excalidraw/excalidraw (packages/excalidraw/fonts)
+
+Excalifont-Regular.ttf
+  Copyright (c) 2024 Excalidraw.
+  Based on Virgil by Your Own Font Foundry; Excalifont modifications by
+  Jan Filipek / DizajnDesign.
+
+ComicShanns-Regular.ttf
+  MIT License. Copyright (c) 2018 Shannon Miwa, (c) 2023 Jesus Gonzalez,
+  (c) 2023 Rodrigo Batista de Moraes, (c) 2024 Fini Jastrow,
+  (c) 2024 Kyle Beechly.
+
+Nunito-Regular.ttf
+  SIL Open Font License, Version 1.1. Copyright the Nunito Project Authors.
+
+Only the Latin subset of each family is shipped; the editor itself still serves
+the complete set from its own bundle.

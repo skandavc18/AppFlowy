@@ -110,6 +110,11 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       },
     ),
     SlashMenuSectionItems(
+      section: SlashMenuSection.diagrams,
+      items: diagramSlashMenuItems(),
+      descriptions: diagramSlashMenuDescriptions(),
+    ),
+    SlashMenuSectionItems(
       section: SlashMenuSection.media,
       items: [
         imageSlashMenuItem,
@@ -160,7 +165,6 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         fourColumnsSlashMenuItem,
         calloutSlashMenuItem,
         outlineSlashMenuItem,
-        mathEquationSlashMenuItem,
         codeBlockSlashMenuItem,
         toggleHeading1SlashMenuItem,
         toggleHeading2SlashMenuItem,
@@ -205,6 +209,11 @@ List<SelectionMenuItem> _simpleTableSlashMenuItems() {
       },
     ),
     SlashMenuSectionItems(
+      section: SlashMenuSection.diagrams,
+      items: diagramSlashMenuItems(),
+      descriptions: diagramSlashMenuDescriptions(),
+    ),
+    SlashMenuSectionItems(
       section: SlashMenuSection.media,
       items: [
         imageSlashMenuItem,
@@ -235,7 +244,6 @@ List<SelectionMenuItem> _simpleTableSlashMenuItems() {
         dividerSlashMenuItem,
         quoteSlashMenuItem,
         calloutSlashMenuItem,
-        mathEquationSlashMenuItem,
         codeBlockSlashMenuItem,
         toggleHeading1SlashMenuItem,
         toggleHeading2SlashMenuItem,

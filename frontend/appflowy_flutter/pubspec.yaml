@@ -311,6 +311,16 @@ flutter:
         - asset: assets/google_fonts/Roboto_Mono/RobotoMono-Regular.ttf
         - asset: assets/google_fonts/Roboto_Mono/RobotoMono-Italic.ttf
           style: italic
+    # The Excalidraw typefaces, so a drawing preview reads like the editor.
+    - family: Excalifont
+      fonts:
+        - asset: assets/fonts/excalidraw/Excalifont-Regular.ttf
+    - family: ComicShanns
+      fonts:
+        - asset: assets/fonts/excalidraw/ComicShanns-Regular.ttf
+    - family: Nunito
+      fonts:
+        - asset: assets/fonts/excalidraw/Nunito-Regular.ttf
     # White-label font configuration will be added here
     # BEGIN: WHITE_LABEL_FONT
     # END: WHITE_LABEL_FONT
@@ -339,6 +349,8 @@ flutter:
     - assets/icons/phosphor_duotone.json
     - assets/dictionaries/en_us_words.txt.gz
     - assets/dictionaries/en_us_common.txt.gz
+    # The Excalidraw editor, shipped as one archive and unpacked on first use.
+    - assets/excalidraw/excalidraw_host.zip
     - assets/fonts/
     - assets/built_in_prompts.json
 

@@ -1,8 +1,9 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/math_equation/math_source_editor.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flowy_infra_ui/style_widget/text_input.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:provider/provider.dart';
@@ -36,6 +37,9 @@ class _InlineMathEquationState extends State<InlineMathEquation> {
 
   @override
   Widget build(BuildContext context) {
+    // Captured here: the popover is built under the overlay, where the
+    // document's providers are out of reach.
+    final editorState = context.read<EditorState>();
     return _IgnoreParentPointer(
       child: AppFlowyPopover(
         controller: popoverController,
@@ -43,12 +47,12 @@ class _InlineMathEquationState extends State<InlineMathEquation> {
         popupBuilder: (_) {
           return MathInputTextField(
             initialText: widget.formula,
+            editorState: editorState,
             onSubmit: (value) async {
               popoverController.close();
               if (value == widget.formula) {
                 return;
               }
-              final editorState = context.read<EditorState>();
               final transaction = editorState.transaction
                 ..formatText(widget.node, widget.index, 1, {
                   InlineMathEquationKeys.formula: value,
@@ -100,62 +104,70 @@ class MathInputTextField extends StatefulWidget {
     super.key,
     required this.initialText,
     required this.onSubmit,
+    this.editorState,
   });
 
   final String initialText;
   final void Function(String value) onSubmit;
+  final EditorState? editorState;
 
   @override
   State<MathInputTextField> createState() => _MathInputTextFieldState();
 }
 
 class _MathInputTextFieldState extends State<MathInputTextField> {
-  late final TextEditingController textEditingController;
-
-  @override
-  void initState() {
-    super.initState();
-
-    textEditingController = TextEditingController(
-      text: widget.initialText,
-    );
-    textEditingController.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: widget.initialText.length,
-    );
-  }
-
-  @override
-  void dispose() {
-    textEditingController.dispose();
-    super.dispose();
-  }
+  late String _latex = widget.initialText;
 
   @override
   Widget build(BuildContext context) {
+    final palette = VisualBlockPalette.of(context);
     return SizedBox(
-      width: 240,
-      child: Row(
+      width: 360,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: FlowyFormTextInput(
-              autoFocus: true,
-              textAlign: TextAlign.left,
-              controller: textEditingController,
-              contentPadding: const EdgeInsets.symmetric(
-                vertical: 8.0,
-                horizontal: 4.0,
-              ),
-              onEditingComplete: () =>
-                  widget.onSubmit(textEditingController.text),
+          // The rendered equation leads: the source is what produced it, not
+          // what is being looked at.
+          Container(
+            constraints: const BoxConstraints(minHeight: 48),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: _latex.trim().isEmpty
+                  ? Text(
+                      LocaleKeys.diagrams_math_placeholderTitle.tr(),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: palette.textMuted,
+                      ),
+                    )
+                  : Math.tex(
+                      _latex,
+                      mathStyle: MathStyle.text,
+                      textStyle: TextStyle(fontSize: 20, color: palette.text),
+                      onErrorFallback: (error) => Text(
+                        error.messageWithType,
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: palette.textMuted,
+                        ),
+                      ),
+                    ),
             ),
           ),
-          const HSpace(4.0),
-          FlowyButton(
-            text: FlowyText(LocaleKeys.button_done.tr()),
-            useIntrinsicWidth: true,
-            onTap: () => widget.onSubmit(textEditingController.text),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: MathSourceEditor(
+              latex: widget.initialText,
+              editorState: widget.editorState,
+              hint: r'\pi r^2',
+              showLabel: false,
+              onChanged: (value) => setState(() => _latex = value),
+              onSubmit: widget.onSubmit,
+              onClose: () => widget.onSubmit(_latex),
+            ),
           ),
         ],
       ),

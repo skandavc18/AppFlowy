@@ -1864,6 +1864,78 @@
       "embedLink": "Embed file link"
     }
   },
+  "diagrams": {
+    "sectionName": "Diagrams & math",
+    "common": {
+      "more": "More",
+      "edit": "Edit",
+      "preview": "Preview",
+      "fullscreen": "Fullscreen",
+      "export": "Export",
+      "exportPng": "PNG image",
+      "exportSvg": "SVG vector",
+      "exportSource": "Source text",
+      "exportJson": "Data (JSON)",
+      "copySource": "Copy source",
+      "copied": "Copied to the clipboard",
+      "exported": "Saved",
+      "exportFailed": "That could not be saved",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "resetZoom": "Reset zoom",
+      "fitToScreen": "Fit to screen",
+      "centre": "Centre"
+    },
+    "mermaid": {
+      "name": "Mermaid",
+      "description": "Create flowcharts, sequence diagrams and more",
+      "placeholderTitle": "Add a Mermaid diagram",
+      "placeholderBody": "Flowcharts, sequence and class diagrams, timelines, pies and more",
+      "editSource": "Edit source",
+      "sourcePlaceholder": "flowchart TD\n    A[Start] --> B[Done]"
+    },
+    "mindMap": {
+      "name": "Mind map",
+      "description": "Create and organize ideas visually",
+      "nodeCount": "{} nodes",
+      "collapseAll": "Collapse everything",
+      "expandAll": "Expand everything",
+      "copyOutline": "Copy as an outline",
+      "exportMermaid": "Mermaid source",
+      "addChild": "Add child",
+      "addSibling": "Add sibling",
+      "rename": "Rename",
+      "colour": "Colour",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "delete": "Delete"
+    },
+    "math": {
+      "name": "Math",
+      "description": "Write mathematical expressions with LaTeX",
+      "placeholderTitle": "Add an equation",
+      "placeholderBody": "Write it in LaTeX and it is typeset as you go",
+      "editEquation": "Edit equation",
+      "copyLatex": "Copy LaTeX",
+      "exportLatex": "LaTeX source",
+      "source": "LaTeX"
+    },
+    "drawing": {
+      "name": "Excalidraw",
+      "description": "Create freehand diagrams and sketches",
+      "placeholderTitle": "Start a drawing",
+      "placeholderBody": "Sketch shapes, arrows and notes by hand",
+      "openEditor": "Open the drawing editor",
+      "poweredBy": "Excalidraw",
+      "shapeCount": "{} shapes",
+      "copyScene": "Copy the drawing data",
+      "copiedScene": "The drawing was copied",
+      "exportScene": "Excalidraw file",
+      "saving": "Saving…",
+      "saved": "All changes saved",
+      "editorUnavailable": "The drawing editor could not be started on this device."
+    }
+  },
   "document": {
     "menuName": "Document",
     "spellCheck": {
@@ -2114,6 +2186,7 @@
         "toOpenMenu": " to open menu",
         "drag": "Drag",
         "toMove": " to move",
+        "more": "More",
         "delete": "Delete",
         "duplicate": "Duplicate",
         "turnInto": "Turn into",

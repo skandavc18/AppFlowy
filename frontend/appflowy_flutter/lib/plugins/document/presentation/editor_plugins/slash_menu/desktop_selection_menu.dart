@@ -301,6 +301,7 @@ class _AppFlowyDesktopSelectionMenuWidgetState
           key: _itemKeys.putIfAbsent(item, GlobalKey.new),
           child: AppMenuRow(
             label: item.name,
+            subtitle: metadata.description,
             highlighted: isSelected,
             iconWidget: item.icon(
               widget.editorState,
@@ -339,6 +340,7 @@ class _AppFlowyDesktopSelectionMenuWidgetState
           LocaleKeys.document_slashMenu_name_fileAndMedia.tr(),
         SlashMenuSection.collections => LocaleKeys.collections_plural.tr(),
         SlashMenuSection.database => LocaleKeys.importPanel_database.tr(),
+        SlashMenuSection.diagrams => LocaleKeys.diagrams_sectionName.tr(),
         SlashMenuSection.advanced =>
           LocaleKeys.document_slashMenu_name_advanced.tr(),
       },
