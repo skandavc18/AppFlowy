@@ -54,6 +54,7 @@ export 'math_equation/mobile_math_equation_toolbar_item.dart';
 export 'mermaid/mermaid_block_component.dart';
 export 'mind_map/mind_map_block_component.dart';
 export 'drawing/drawing_block_component.dart';
+export 'interactive/interactive_blocks.dart';
 export 'visual_block/visual_block.dart';
 export 'mention/mention_block.dart';
 export 'mobile_floating_toolbar/custom_mobile_floating_toolbar.dart';

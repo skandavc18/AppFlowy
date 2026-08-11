@@ -2,6 +2,8 @@ import 'package:appflowy/plugins/database/application/cell/cell_controller.dart'
 import 'package:appflowy/plugins/database/application/cell/cell_controller_builder.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/cell/bloc/url_cell_bloc.dart';
+import 'package:appflowy/plugins/database/application/field/property_style.dart';
+import 'package:appflowy/plugins/database/widgets/cell/property_style_cell.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -49,13 +51,33 @@ class _URLCellState extends State<URLCardCell> {
           if (state.content.isEmpty) {
             return const SizedBox.shrink();
           }
-          return Container(
-            alignment: AlignmentDirectional.centerStart,
-            padding: widget.style.padding,
-            child: Text(
-              state.content,
-              style: widget.style.textStyle,
+          return ValueListenableBuilder<PropertyStyles>(
+            valueListenable: PropertyStyleRegistry.instance.listenable(
+              widget.databaseController.viewId,
             ),
+            builder: (context, styles, _) {
+              final style = styles.cellStyle(
+                widget.cellContext.fieldId,
+                widget.cellContext.rowId,
+              );
+              if (style != null && style.kind == PropertyStyleKind.link) {
+                return Padding(
+                  padding: widget.style.padding,
+                  child: BookmarkChip(
+                    url: state.content.trim(),
+                    thumbnail: style.showThumbnail,
+                  ),
+                );
+              }
+              return Container(
+                alignment: AlignmentDirectional.centerStart,
+                padding: widget.style.padding,
+                child: Text(
+                  state.content,
+                  style: widget.style.textStyle,
+                ),
+              );
+            },
           );
         },
       ),

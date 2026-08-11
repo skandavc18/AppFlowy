@@ -423,9 +423,7 @@ class MathEquationBlockComponentWidgetState
             children: [
               if (_editable)
                 VisualBlockButton(
-                  icon: _editing
-                      ? Icons.check_rounded
-                      : Icons.edit_outlined,
+                  icon: _editing ? Icons.check_rounded : Icons.edit_outlined,
                   tooltip: _editing
                       ? LocaleKeys.button_done.tr()
                       : LocaleKeys.diagrams_math_editEquation.tr(),
@@ -443,14 +441,12 @@ class MathEquationBlockComponentWidgetState
               Builder(
                 builder: (buttonContext) => VisualBlockButton(
                   icon: Icons.more_horiz_rounded,
-                  tooltip:
-                      LocaleKeys.document_plugins_optionAction_more.tr(),
+                  tooltip: LocaleKeys.document_plugins_optionAction_more.tr(),
                   palette: palette,
                   size: 24,
                   selected: _menuOpen,
                   onTap: () {
-                    final box =
-                        buttonContext.findRenderObject() as RenderBox?;
+                    final box = buttonContext.findRenderObject() as RenderBox?;
                     final origin = box == null
                         ? Offset.zero
                         : box.localToGlobal(Offset(0, box.size.height + 4));
@@ -814,7 +810,8 @@ class _TextActionState extends State<_TextAction> {
     if (widget.primary) {
       fill = palette.accent.withValues(alpha: _hovered ? 0.20 : 0.12);
     } else {
-      fill = _hovered ? palette.hover.withValues(alpha: 0.8) : palette.hoverBase;
+      fill =
+          _hovered ? palette.hover.withValues(alpha: 0.8) : palette.hoverBase;
     }
     return MouseRegion(
       cursor: SystemMouseCursors.click,

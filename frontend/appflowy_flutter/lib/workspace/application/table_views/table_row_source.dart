@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/plugins/database/application/field/property_style.dart';
 import 'package:appflowy/plugins/database/domain/field_service.dart';
 import 'package:appflowy/plugins/database/domain/location_service.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
@@ -73,6 +74,9 @@ class TableReadSpec {
 class TableRowSource extends ChangeNotifier {
   TableRowSource({required this.viewId, this.settle = _settle}) {
     LocationFieldRegistry.instance.revision.addListener(_onMarkedChanged);
+    PropertyStyleRegistry.instance
+      ..listenable(viewId)
+      ..revision.addListener(_onMarkedChanged);
   }
 
   final String viewId;
@@ -242,16 +246,24 @@ class TableRowSource extends ChangeNotifier {
         if (field == null) {
           continue;
         }
-        final value = cell(row, id);
-        if (value.trim().isEmpty && !_spec.showEmptyProperties) {
+        final raw = cell(row, id);
+        if (raw.trim().isEmpty && !_spec.showEmptyProperties) {
           continue;
         }
         final columnFacts = facts[id] ?? const TableColumnFacts();
+        final style = PropertyStyleRegistry.instance.cellStyleFor(
+          viewId,
+          id,
+          row.rowId,
+        );
+        final styleKind = style?.kind.name;
+        final value = tableValueForStyle(raw, styleKind);
         final kind = classifyTableProperty(
           field: field,
           value: value,
           isLocation: _marked.contains(id),
           facts: columnFacts,
+          styleKind: styleKind,
         );
         properties.add(
           TableProperty(
@@ -264,6 +276,7 @@ class TableRowSource extends ChangeNotifier {
                     field: field,
                     value: value,
                     facts: columnFacts,
+                    maximum: styleKind == 'progress' ? style?.maximum : null,
                   )
                 : null,
             rating:
@@ -446,6 +459,7 @@ class TableRowSource extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     LocationFieldRegistry.instance.revision.removeListener(_onMarkedChanged);
+    PropertyStyleRegistry.instance.revision.removeListener(_onMarkedChanged);
     _timer?.cancel();
     super.dispose();
   }

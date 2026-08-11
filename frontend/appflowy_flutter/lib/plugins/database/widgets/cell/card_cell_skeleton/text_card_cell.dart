@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/database/application/cell/bloc/text_cell_bloc.d
 import 'package:appflowy/plugins/database/application/cell/cell_controller.dart';
 import 'package:appflowy/plugins/database/application/cell/cell_controller_builder.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
+import 'package:appflowy/plugins/database/widgets/cell/property_style_cell.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -159,22 +160,30 @@ class _TextCellState extends State<TextCardCell> {
   }
 
   Widget _buildText() {
-    return BlocBuilder<TextCellBloc, TextCellState>(
-      builder: (context, state) {
-        final content = state.content ?? "";
+    return PropertyStyledTextCell(
+      viewId: cellBloc.cellController.viewId,
+      fieldId: cellBloc.cellController.fieldId,
+      rowId: cellBloc.cellController.rowId,
+      controller: _textEditingController,
+      bloc: cellBloc,
+      childBuilder: (context, align) => BlocBuilder<TextCellBloc, TextCellState>(
+        builder: (context, state) {
+          final content = state.content ?? "";
 
-        return content.isEmpty
-            ? const SizedBox.shrink()
-            : Container(
-                padding: widget.style.padding,
-                alignment: AlignmentDirectional.centerStart,
-                child: Text(
-                  content,
-                  style: widget.style.textStyle,
-                  maxLines: widget.style.maxLines,
-                ),
-              );
-      },
+          return content.isEmpty
+              ? const SizedBox.shrink()
+              : Container(
+                  padding: widget.style.padding,
+                  alignment: AlignmentDirectional.centerStart,
+                  child: Text(
+                    content,
+                    style: widget.style.textStyle,
+                    maxLines: widget.style.maxLines,
+                    textAlign: align,
+                  ),
+                );
+        },
+      ),
     );
   }
 

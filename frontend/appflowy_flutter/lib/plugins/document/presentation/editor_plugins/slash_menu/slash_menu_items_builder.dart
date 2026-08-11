@@ -110,6 +110,11 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       },
     ),
     SlashMenuSectionItems(
+      section: SlashMenuSection.interactive,
+      items: interactiveSlashMenuItems(),
+      descriptions: interactiveSlashMenuDescriptions(),
+    ),
+    SlashMenuSectionItems(
       section: SlashMenuSection.diagrams,
       items: diagramSlashMenuItems(),
       descriptions: diagramSlashMenuDescriptions(),

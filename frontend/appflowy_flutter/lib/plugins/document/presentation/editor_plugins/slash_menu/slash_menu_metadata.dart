@@ -3,6 +3,7 @@ import 'package:appflowy_editor/appflowy_editor.dart';
 enum SlashMenuSection {
   suggestions,
   basicBlocks,
+  interactive,
   diagrams,
   media,
   collections,

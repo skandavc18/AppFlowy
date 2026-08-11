@@ -70,6 +70,17 @@ enum EditorOptionActionType {
           MermaidBlockKeys.type,
           MindMapBlockKeys.type,
           DrawingBlockKeys.type,
+          StickyNoteBlockKeys.type,
+          ButtonBlockKeys.type,
+          ProgressBlockKeys.type,
+          CounterBlockKeys.type,
+          MemoryBlockKeys.type,
+          InputBlockKeys.type,
+          SearchBlockKeys.type,
+          SelectorBlockKeys.type,
+          RadioGroupBlockKeys.type,
+          MultiSelectBlockKeys.type,
+          ReminderBlockKeys.type,
         };
       case EditorOptionActionType.depth:
         return {

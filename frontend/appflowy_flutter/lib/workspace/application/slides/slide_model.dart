@@ -159,14 +159,27 @@ class SlideColumnFacts {
 }
 
 /// Works out how a cell should be read.
+///
+/// [styleKind] is the name of the column's property style, if it wears one.
 SlidePropertyKind classifySlideProperty({
   required FieldPB field,
   required String value,
   bool isLocation = false,
   SlideColumnFacts facts = const SlideColumnFacts(),
+  String? styleKind,
 }) {
   if (isLocation) {
     return SlidePropertyKind.location;
+  }
+  switch (styleKind) {
+    case 'progress':
+      return SlidePropertyKind.progress;
+    case 'counter':
+      return SlidePropertyKind.number;
+    case 'reminder':
+      return SlidePropertyKind.date;
+    case 'link':
+      return SlidePropertyKind.link;
   }
   final heading = field.name.toLowerCase();
   final trimmed = value.trim();
@@ -217,15 +230,26 @@ SlidePropertyKind classifySlideProperty({
   return SlidePropertyKind.text;
 }
 
+/// What a styled cell actually says, once the bookkeeping is taken off.
+String slideValueForStyle(String value, String? styleKind) =>
+    styleKind == 'reminder' ? value.split('|').first.trim() : value;
+
 /// How full a progress bar should be for a cell, if it can be worked out.
 double? slideFractionOf({
   required FieldPB field,
   required String value,
   SlideColumnFacts facts = const SlideColumnFacts(),
+  double? maximum,
 }) {
   final trimmed = value.trim();
   if (trimmed.isEmpty) {
     return null;
+  }
+  if (maximum != null && maximum > 0) {
+    final number = double.tryParse(trimmed.replaceAll('%', ''));
+    if (number != null) {
+      return (number / maximum).clamp(0.0, 1.0);
+    }
   }
   if (field.fieldType == FieldType.Checklist) {
     return slideRatioOf(trimmed);

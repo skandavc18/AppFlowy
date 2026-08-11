@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/plugins/database/application/field/property_style.dart';
 import 'package:appflowy/plugins/database/domain/field_service.dart';
 import 'package:appflowy/plugins/database/domain/location_service.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
@@ -22,6 +23,9 @@ const _settle = Duration(milliseconds: 350);
 class SlideSource extends ChangeNotifier {
   SlideSource({required this.viewId, this.settle = _settle}) {
     LocationFieldRegistry.instance.revision.addListener(_onMarkedChanged);
+    PropertyStyleRegistry.instance
+      ..listenable(viewId)
+      ..revision.addListener(_onMarkedChanged);
   }
 
   final String viewId;
@@ -181,15 +185,23 @@ class SlideSource extends ChangeNotifier {
         if (field == null) {
           continue;
         }
-        final value = cell(row, id);
-        if (value.trim().isEmpty && !_spec.showEmptyProperties) {
+        final raw = cell(row, id);
+        if (raw.trim().isEmpty && !_spec.showEmptyProperties) {
           continue;
         }
+        final style = PropertyStyleRegistry.instance.cellStyleFor(
+          viewId,
+          id,
+          row.rowId,
+        );
+        final styleKind = style?.kind.name;
+        final value = slideValueForStyle(raw, styleKind);
         final kind = classifySlideProperty(
           field: field,
           value: value,
           isLocation: _marked.contains(id),
           facts: facts[id] ?? const SlideColumnFacts(),
+          styleKind: styleKind,
         );
         properties.add(
           SlideProperty(
@@ -202,6 +214,7 @@ class SlideSource extends ChangeNotifier {
                     field: field,
                     value: value,
                     facts: facts[id] ?? const SlideColumnFacts(),
+                    maximum: styleKind == 'progress' ? style?.maximum : null,
                   )
                 : null,
           ),
@@ -337,6 +350,7 @@ class SlideSource extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     LocationFieldRegistry.instance.revision.removeListener(_onMarkedChanged);
+    PropertyStyleRegistry.instance.revision.removeListener(_onMarkedChanged);
     _timer?.cancel();
     super.dispose();
   }

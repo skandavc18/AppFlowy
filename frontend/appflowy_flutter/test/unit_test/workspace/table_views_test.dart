@@ -107,6 +107,56 @@ void main() {
       );
     });
 
+    test('a styled column is read as what it was made, not as text', () {
+      final text = _field('f', 'Done', FieldType.RichText);
+
+      // Without the style it is a plain text column, which is the bug this
+      // guards: a progress column read as "60".
+      expect(
+        classifyTableProperty(field: text, value: '60'),
+        TablePropertyKind.text,
+      );
+      expect(
+        classifyTableProperty(field: text, value: '60', styleKind: 'progress'),
+        TablePropertyKind.progress,
+      );
+      expect(
+        classifyTableProperty(field: text, value: '3', styleKind: 'counter'),
+        TablePropertyKind.number,
+      );
+      expect(
+        classifyTableProperty(field: text, value: '', styleKind: 'reminder'),
+        TablePropertyKind.date,
+      );
+      expect(
+        classifyTableProperty(field: text, value: 'x', styleKind: 'link'),
+        TablePropertyKind.link,
+      );
+    });
+
+    test('a bar is filled against the maximum its column was given', () {
+      final text = _field('f', 'Done', FieldType.RichText);
+      expect(
+        tableFractionOf(field: text, value: '60', maximum: 100),
+        closeTo(0.6, 0.001),
+      );
+      expect(
+        tableFractionOf(field: text, value: '3', maximum: 8),
+        closeTo(0.375, 0.001),
+      );
+      // Past the end is full, never more.
+      expect(tableFractionOf(field: text, value: '99', maximum: 8), 1);
+    });
+
+    test('a reminder shows the moment, not the reminder it made', () {
+      expect(
+        tableValueForStyle('2026-08-12T10:30:00Z|rem-1', 'reminder'),
+        '2026-08-12T10:30:00Z',
+      );
+      expect(tableValueForStyle('kept', 'progress'), 'kept');
+      expect(tableValueForStyle('kept|whole', null), 'kept|whole');
+    });
+
     test('a score out of ten is halved rather than clipped', () {
       expect(tableRatingOf('9'), 5);
       expect(tableRatingOf('7'), 4);

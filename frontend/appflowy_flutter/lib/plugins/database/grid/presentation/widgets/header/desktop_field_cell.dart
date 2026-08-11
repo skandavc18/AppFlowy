@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/database/application/field/field_cell_bloc.dart';
 import 'package:appflowy/plugins/database/application/field/field_controller.dart';
 import 'package:appflowy/plugins/database/application/field/field_info.dart';
+import 'package:appflowy/plugins/database/application/field/property_style.dart';
+import 'package:appflowy/plugins/database/grid/presentation/widgets/header/column_heading_menu.dart';
 import 'package:appflowy/plugins/database/widgets/field/field_editor.dart';
+import 'package:appflowy/plugins/database/widgets/field/property_type_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/util/field_type_extension.dart';
 import 'package:appflowy/util/theme_extension.dart';
@@ -10,6 +15,7 @@ import 'package:appflowy_backend/protobuf/flowy-database2/field_entities.pb.dart
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flowy_infra_ui/style_widget/hover.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -109,6 +115,7 @@ class _GridFieldCellState extends State<GridFieldCell> {
                 height: GridSize.headerHeight,
                 child: FieldCellButton(
                   field: widget.fieldInfo.field,
+                  viewId: widget.viewId,
                   onTap: widget.onTap,
                   fontSize: DesktopGridHeaderStyle.fieldNameFontSize,
                   fontWeight: DesktopGridHeaderStyle.fieldNameFontWeight,
@@ -128,9 +135,27 @@ class _GridFieldCellState extends State<GridFieldCell> {
 
           return _GridHeaderCellContainer(
             width: state.width,
-            child: Stack(
-              alignment: Alignment.centerRight,
-              children: [button, line],
+            // A Listener, not a GestureDetector: the header is inside a
+            // ReorderableRow whose drag recognizer claims every button.
+            child: Listener(
+              onPointerDown: (event) {
+                if (event.buttons & kSecondaryMouseButton == 0) {
+                  return;
+                }
+                unawaited(
+                  showColumnHeadingMenu(
+                    context: context,
+                    globalPosition: event.position,
+                    viewId: widget.viewId,
+                    fieldInfo: state.fieldInfo,
+                    onEditProperty: popoverController.show,
+                  ),
+                );
+              },
+              child: Stack(
+                alignment: Alignment.centerRight,
+                children: [button, line],
+              ),
             ),
           );
         },
@@ -219,6 +244,7 @@ class FieldCellButton extends StatelessWidget {
     super.key,
     required this.field,
     required this.onTap,
+    this.viewId,
     this.maxLines = 1,
     this.radius = BorderRadius.zero,
     this.margin,
@@ -228,6 +254,10 @@ class FieldCellButton extends StatelessWidget {
   });
 
   final FieldPB field;
+
+  /// Named so the glyph can say what the column really is — a Progress column
+  /// is a text column underneath, and would otherwise wear the text glyph.
+  final String? viewId;
   final VoidCallback onTap;
   final int? maxLines;
   final BorderRadius? radius;
@@ -243,6 +273,7 @@ class FieldCellButton extends StatelessWidget {
       onTap: onTap,
       leftIcon: FieldIcon(
         fieldInfo: FieldInfo.initial(field),
+        viewId: viewId,
       ),
       rightIcon: field.fieldType.rightIcon != null
           ? FlowySvg(
@@ -271,13 +302,45 @@ class FieldIcon extends StatelessWidget {
     super.key,
     required this.fieldInfo,
     this.dimension = 16.0,
+    this.viewId,
   });
 
   final FieldInfo fieldInfo;
   final double dimension;
+  final String? viewId;
 
   @override
   Widget build(BuildContext context) {
+    final view = viewId;
+    if (view != null && fieldInfo.icon.isEmpty) {
+      return ValueListenableBuilder<PropertyStyles>(
+        valueListenable: PropertyStyleRegistry.instance.listenable(view),
+        builder: (context, styles, _) {
+          final entry = propertyTypeEntryFor(
+            fieldType: fieldInfo.fieldType,
+            style: styles[fieldInfo.id],
+          );
+          if (entry == null || styles[fieldInfo.id] == null) {
+            return _buildDefault(context);
+          }
+          return SizedBox.square(
+            dimension: dimension,
+            child: Icon(
+              entry.icon,
+              size: dimension,
+              color: (Theme.of(context).isLightMode
+                      ? const Color(0xFF171717)
+                      : Colors.white)
+                  .withValues(alpha: 0.6),
+            ),
+          );
+        },
+      );
+    }
+    return _buildDefault(context);
+  }
+
+  Widget _buildDefault(BuildContext context) {
     final svgContent = kIconGroups?.findSvgContent(
       fieldInfo.icon,
     );

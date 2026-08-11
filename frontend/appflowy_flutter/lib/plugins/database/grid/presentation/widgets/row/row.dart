@@ -278,6 +278,9 @@ class RowContent extends StatelessWidget {
         return CellContainer(
           width: fieldInfo.width!.toDouble(),
           isPrimary: fieldInfo.field.isPrimary,
+          viewId: cellBuilder.databaseController.viewId,
+          fieldId: cellContext.fieldId,
+          rowId: cellContext.rowId,
           accessoryBuilder: (buildContext) {
             final builder = child.accessoryBuilder;
             final List<GridCellAccessoryBuilder> accessories = [];

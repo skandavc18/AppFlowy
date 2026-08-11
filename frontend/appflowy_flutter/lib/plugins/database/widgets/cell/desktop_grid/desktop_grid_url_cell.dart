@@ -2,6 +2,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/cell/bloc/url_cell_bloc.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
+import 'package:appflowy/plugins/database/widgets/cell/property_style_cell.dart';
 import 'package:appflowy/plugins/database/widgets/row/accessory/cell_accessory.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
@@ -35,28 +36,36 @@ class DesktopGridURLSkin extends IEditableURLCellSkin {
           final padding = compactMode
               ? GridSize.compactCellContentInsets
               : GridSize.cellContentInsets;
-          return TextField(
+          return PropertyStyledUrlCell(
+            viewId: bloc.cellController.viewId,
+            fieldId: bloc.cellController.fieldId,
+            rowId: bloc.cellController.rowId,
             controller: textEditingController,
-            focusNode: focusNode,
-            maxLines: wrap ? null : 1,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.primary,
-                  decoration: TextDecoration.underline,
-                ),
-            decoration: InputDecoration(
-              contentPadding: padding,
-              border: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              errorBorder: InputBorder.none,
-              disabledBorder: InputBorder.none,
-              hintStyle: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: Theme.of(context).hintColor),
-              isDense: true,
+            bloc: bloc,
+            childBuilder: (context, align) => TextField(
+              controller: textEditingController,
+              focusNode: focusNode,
+              maxLines: wrap ? null : 1,
+              textAlign: align,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.primary,
+                    decoration: TextDecoration.underline,
+                  ),
+              decoration: InputDecoration(
+                contentPadding: padding,
+                border: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                errorBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                hintStyle: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: Theme.of(context).hintColor),
+                isDense: true,
+              ),
+              onTapOutside: (_) => focusNode.unfocus(),
             ),
-            onTapOutside: (_) => focusNode.unfocus(),
           );
         },
       ),

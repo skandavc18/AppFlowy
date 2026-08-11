@@ -427,6 +427,39 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
     DrawingBlockKeys.type: DrawingBlockComponentBuilder(
       configuration: configuration,
     ),
+    StickyNoteBlockKeys.type: StickyNoteBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    ButtonBlockKeys.type: ButtonBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    ProgressBlockKeys.type: ProgressBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    CounterBlockKeys.type: CounterBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    MemoryBlockKeys.type: MemoryBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    InputBlockKeys.type: InputBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    SearchBlockKeys.type: SearchBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    SelectorBlockKeys.type: SelectorBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    RadioGroupBlockKeys.type: RadioGroupBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    MultiSelectBlockKeys.type: MultiSelectBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    ReminderBlockKeys.type: ReminderBlockComponentBuilder(
+      configuration: configuration,
+    ),
     CodeBlockKeys.type: _buildCodeBlockComponentBuilder(
       context,
       configuration,

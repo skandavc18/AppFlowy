@@ -18,6 +18,7 @@ export 'map_item.dart';
 export 'page_preview_item.dart';
 export 'heading_items.dart';
 export 'image_item.dart';
+export 'interactive_items.dart';
 export 'linked_items.dart';
 export 'math_equation_item.dart';
 export 'numbered_list_item.dart';

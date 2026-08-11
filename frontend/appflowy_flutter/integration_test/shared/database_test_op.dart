@@ -56,7 +56,7 @@ import 'package:appflowy/plugins/database/widgets/cell_editor/select_option_cell
 import 'package:appflowy/plugins/database/widgets/cell_editor/select_option_text_field.dart';
 import 'package:appflowy/plugins/database/widgets/database_layout_ext.dart';
 import 'package:appflowy/plugins/database/widgets/field/field_editor.dart';
-import 'package:appflowy/plugins/database/widgets/field/field_type_list.dart';
+import 'package:appflowy/plugins/database/widgets/field/property_type_picker.dart';
 import 'package:appflowy/plugins/database/widgets/field/type_option_editor/date/date_time_format.dart';
 import 'package:appflowy/plugins/database/widgets/field/type_option_editor/number.dart';
 import 'package:appflowy/plugins/database/widgets/row/accessory/cell_accessory.dart';
@@ -864,14 +864,11 @@ extension AppFlowyDatabaseTest on WidgetTester {
 
   /// Must call [tapSwitchFieldTypeButton] first.
   Future<void> selectFieldType(FieldType fieldType) async {
-    final fieldTypeCell = find.byType(FieldTypeCell);
-    final fieldTypeButton = find.descendant(
-      of: fieldTypeCell,
-      matching: find.byWidgetPredicate(
-        (widget) => widget is FlowyText && widget.text == fieldType.i18n,
-      ),
+    final row = find.descendant(
+      of: find.byType(PropertyTypePicker),
+      matching: find.text(fieldType.i18n),
     );
-    await tapButton(fieldTypeButton);
+    await tapButton(row.first);
   }
 
   // Use in edit mode of FieldEditor

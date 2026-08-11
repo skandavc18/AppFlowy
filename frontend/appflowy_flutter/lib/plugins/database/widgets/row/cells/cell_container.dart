@@ -1,4 +1,9 @@
+import 'dart:async';
+
+import 'package:appflowy/plugins/database/application/field/property_style.dart';
+import 'package:appflowy/plugins/database/grid/presentation/widgets/row/cell_menu.dart';
 import 'package:flowy_infra/theme_extension.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:styled_widget/styled_widget.dart';
@@ -16,12 +21,22 @@ class CellContainer extends StatelessWidget {
     required this.width,
     required this.isPrimary,
     this.accessoryBuilder,
+    this.viewId,
+    this.fieldId,
+    this.rowId,
   });
 
   final EditableCellWidget child;
   final AccessoryBuilder? accessoryBuilder;
   final double width;
   final bool isPrimary;
+
+  /// Named so the cell can be laid out the way the column asked for, and so a
+  /// right click can reach this one cell's settings. Absent on surfaces that
+  /// have no column of their own.
+  final String? viewId;
+  final String? fieldId;
+  final String? rowId;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +45,7 @@ class CellContainer extends StatelessWidget {
       child: Selector<CellContainerNotifier, bool>(
         selector: (context, notifier) => notifier.isFocus,
         builder: (providerContext, isFocus, _) {
-          Widget container = Center(child: GridCellShortcuts(child: child));
+          Widget container = _aligned(GridCellShortcuts(child: child));
 
           if (accessoryBuilder != null) {
             final accessories = accessoryBuilder!.call(
@@ -56,14 +71,57 @@ class CellContainer extends StatelessWidget {
                 child.requestFocus.notify();
               }
             },
-            child: Container(
-              constraints: BoxConstraints(maxWidth: width, minHeight: 32),
-              decoration: _makeBoxDecoration(context, isFocus),
-              child: container,
+            child: Listener(
+              onPointerDown: (event) => _openMenu(providerContext, event),
+              child: Container(
+                constraints: BoxConstraints(maxWidth: width, minHeight: 32),
+                decoration: _makeBoxDecoration(context, isFocus),
+                child: container,
+              ),
             ),
           );
         },
       ),
+    );
+  }
+
+  /// A Listener, not a gesture: a grid cell sits inside a scrollable that
+  /// claims drags, and a right click must not have to win that arena.
+  void _openMenu(BuildContext context, PointerDownEvent event) {
+    final view = viewId;
+    final field = fieldId;
+    final row = rowId;
+    if (view == null || field == null || row == null) {
+      return;
+    }
+    if (event.buttons & kSecondaryMouseButton == 0) {
+      return;
+    }
+    unawaited(
+      showCellStyleMenu(
+        context: context,
+        globalPosition: event.position,
+        viewId: view,
+        fieldId: field,
+        rowId: row,
+      ),
+    );
+  }
+
+  /// Centred is what a cell has always been; an explicit choice overrides it.
+  Widget _aligned(Widget content) {
+    final view = viewId;
+    final field = fieldId;
+    if (view == null || field == null) {
+      return Center(child: content);
+    }
+    return ValueListenableBuilder<PropertyStyles>(
+      valueListenable: PropertyStyleRegistry.instance.listenable(view),
+      builder: (context, styles, child) => Align(
+        alignment: styles[field]?.align?.alignment ?? Alignment.center,
+        child: child,
+      ),
+      child: content,
     );
   }
 

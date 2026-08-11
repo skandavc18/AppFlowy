@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet_media_upload.dart';
 import 'package:appflowy/plugins/database/application/cell/bloc/media_cell_bloc.dart';
+import 'package:appflowy/plugins/database/application/field/property_style.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_skeleton/media.dart';
 import 'package:appflowy/plugins/database/widgets/cell_editor/media_cell_editor.dart';
 import 'package:appflowy/plugins/database/widgets/cell_editor/mobile_media_cell_editor.dart';
@@ -41,60 +42,74 @@ class GridMediaCellSkin extends IEditableMediaCellSkin {
     Widget child = BlocBuilder<MediaCellBloc, MediaCellState>(
       builder: (context, state) {
         final wrapContent = context.read<MediaCellBloc>().wrapContent;
-        final List<Widget> children = state.files
-            .map<Widget>(
-              (file) => GestureDetector(
-                onTap: () => _openOrExpandFile(context, file, state.files),
-                child: Padding(
-                  padding: wrapContent
-                      ? const EdgeInsets.only(right: 4)
-                      : EdgeInsets.zero,
-                  child: _FilePreviewRender(file: file),
+        final viewId = context.read<MediaCellBloc>().cellController.viewId;
+        final fieldId = context.read<MediaCellBloc>().cellController.fieldId;
+        final rowId = context.read<MediaCellBloc>().cellController.rowId;
+
+        return ValueListenableBuilder<PropertyStyles>(
+          valueListenable: PropertyStyleRegistry.instance.listenable(viewId),
+          builder: (context, styles, _) {
+            final style = styles.cellStyle(fieldId, rowId);
+            final extent =
+                (style?.thumbnailSize ?? PropertyThumbnailSize.medium).extent;
+            final align = style?.align ?? PropertyAlign.center;
+
+            final List<Widget> children = state.files
+                .map<Widget>(
+                  (file) => GestureDetector(
+                    onTap: () => _openOrExpandFile(context, file, state.files),
+                    child: Padding(
+                      padding: wrapContent
+                          ? const EdgeInsets.only(right: 4)
+                          : EdgeInsets.zero,
+                      child: _FilePreviewRender(file: file, extent: extent),
+                    ),
+                  ),
+                )
+                .toList();
+
+            if (isMobileRowDetail && state.files.isEmpty) {
+              children.add(
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Text(
+                    LocaleKeys.grid_row_textPlaceholder.tr(),
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: 16,
+                          color: Theme.of(context).hintColor,
+                        ),
+                  ),
+                ),
+              );
+            }
+
+            if (!isMobile && wrapContent) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Wrap(
+                    runSpacing: 4,
+                    alignment: align.wrapAlignment,
+                    children: children,
+                  ),
+                ),
+              );
+            }
+
+            // No forced full width: the strip shrink-wraps, so the cell's own
+            // alignment is what places it.
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SeparatedRow(
+                  separatorBuilder: () => const HSpace(4),
+                  children: children,
                 ),
               ),
-            )
-            .toList();
-
-        if (isMobileRowDetail && state.files.isEmpty) {
-          children.add(
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Text(
-                LocaleKeys.grid_row_textPlaceholder.tr(),
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontSize: 16,
-                      color: Theme.of(context).hintColor,
-                    ),
-              ),
-            ),
-          );
-        }
-
-        if (!isMobile && wrapContent) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: SizedBox(
-              width: double.infinity,
-              child: Wrap(
-                runSpacing: 4,
-                children: children,
-              ),
-            ),
-          );
-        }
-
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: SizedBox(
-            width: double.infinity,
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SeparatedRow(
-                separatorBuilder: () => const HSpace(4),
-                children: children..add(const SizedBox(width: 16)),
-              ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -220,46 +235,43 @@ class GridMediaCellSkin extends IEditableMediaCellSkin {
 }
 
 class _FilePreviewRender extends StatelessWidget {
-  const _FilePreviewRender({required this.file});
+  const _FilePreviewRender({required this.file, required this.extent});
 
   final MediaFilePB file;
 
+  /// The side of the square the preview is drawn in.
+  final double extent;
+
   @override
   Widget build(BuildContext context) {
-    if (file.fileType != MediaFileTypePB.Image) {
-      return FlowyTooltip(
-        message: file.name,
-        child: Container(
-          height: 28,
-          width: 28,
-          clipBehavior: Clip.antiAlias,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          decoration: BoxDecoration(
-            color: AFThemeExtension.of(context).greyHover,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: FlowySvg(
-            file.fileType.icon,
-            size: const Size.square(12),
-            color: AFThemeExtension.of(context).textColor,
-          ),
-        ),
-      );
-    }
+    final Widget tile = file.fileType != MediaFileTypePB.Image
+        ? Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: AFThemeExtension.of(context).greyHover,
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Center(
+              child: FlowySvg(
+                file.fileType.icon,
+                size: Size.square((extent * 0.36).clamp(12, 26)),
+                color: AFThemeExtension.of(context).textColor,
+              ),
+            ),
+          )
+        : Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
+            child: AFImage(
+              url: file.url,
+              uploadType: file.uploadType,
+              userProfile: context.read<MediaCellBloc>().state.userProfile,
+            ),
+          );
 
     return FlowyTooltip(
       message: file.name,
-      child: Container(
-        height: 28,
-        width: 28,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(borderRadius: BorderRadius.circular(4)),
-        child: AFImage(
-          url: file.url,
-          uploadType: file.uploadType,
-          userProfile: context.read<MediaCellBloc>().state.userProfile,
-        ),
-      ),
+      child: SizedBox(height: extent, width: extent, child: tile),
     );
   }
 }

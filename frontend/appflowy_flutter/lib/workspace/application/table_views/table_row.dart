@@ -260,14 +260,28 @@ class TableColumnFacts {
 }
 
 /// Works out how a cell should be read.
+///
+/// [styleKind] is the name of the column's property style, if it wears one —
+/// a plain string so the model stays free of the database plugin.
 TablePropertyKind classifyTableProperty({
   required FieldPB field,
   required String value,
   bool isLocation = false,
   TableColumnFacts facts = const TableColumnFacts(),
+  String? styleKind,
 }) {
   if (isLocation) {
     return TablePropertyKind.location;
+  }
+  switch (styleKind) {
+    case 'progress':
+      return TablePropertyKind.progress;
+    case 'counter':
+      return TablePropertyKind.number;
+    case 'reminder':
+      return TablePropertyKind.date;
+    case 'link':
+      return TablePropertyKind.link;
   }
   final heading = field.name.toLowerCase();
   final trimmed = value.trim();
@@ -321,15 +335,34 @@ TablePropertyKind classifyTableProperty({
   return TablePropertyKind.text;
 }
 
+/// What a styled cell actually says, once the bookkeeping is taken off.
+///
+/// A reminder cell stores the moment and the reminder it created; only the
+/// moment is worth reading.
+String tableValueForStyle(String value, String? styleKind) {
+  if (styleKind == 'reminder') {
+    final at = value.split('|').first.trim();
+    return at;
+  }
+  return value;
+}
+
 /// How full a bar should be for a cell, if it can be worked out.
 double? tableFractionOf({
   required FieldPB field,
   required String value,
   TableColumnFacts facts = const TableColumnFacts(),
+  double? maximum,
 }) {
   final trimmed = value.trim();
   if (trimmed.isEmpty) {
     return null;
+  }
+  if (maximum != null && maximum > 0) {
+    final number = double.tryParse(trimmed.replaceAll('%', ''));
+    if (number != null) {
+      return (number / maximum).clamp(0.0, 1.0);
+    }
   }
   if (field.fieldType == FieldType.Checklist) {
     return tableRatioOf(trimmed);
