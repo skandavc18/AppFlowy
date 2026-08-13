@@ -7,6 +7,7 @@ import 'package:appflowy/shared/maps/app_map_view.dart';
 import 'package:appflowy/shared/maps/map_geocoder.dart';
 import 'package:appflowy/shared/maps/map_location.dart';
 import 'package:appflowy/shared/maps/map_marker.dart';
+import 'package:appflowy/shared/table_views/row_media.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
 import 'package:flowy_infra/theme_extension.dart';
@@ -26,6 +27,8 @@ class TablePropertyView extends StatelessWidget {
     this.live = false,
     this.showLabel = true,
     this.compact = false,
+    this.viewId = '',
+    this.rowId = '',
   });
 
   final TableProperty property;
@@ -39,6 +42,18 @@ class TablePropertyView extends StatelessWidget {
 
   /// A tighter cut, for a card that has little room.
   final bool compact;
+
+  /// Which row this cell belongs to.
+  ///
+  /// A media cell reads as its file names alone, so without knowing the cell
+  /// it came from the pictures behind it cannot be fetched — and a picture
+  /// column then draws as an empty box. A view that leaves these blank simply
+  /// keeps the older, wordier reading.
+  final String viewId;
+  final String rowId;
+
+  bool get _canReadMedia =>
+      property.isMedia && viewId.isNotEmpty && rowId.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -319,17 +334,104 @@ class TablePropertyView extends StatelessWidget {
         ],
       );
 
-  Widget _files() => Wrap(
-        spacing: 6,
-        runSpacing: 6,
-        children: [
-          for (final name in tablePartsOf(property.value))
-            _chip(
-              fileIconForName(tableFileNameOf(name)),
-              tableFileNameOf(name),
-              palette.accent,
-            ),
-        ],
+  Widget _files() {
+    if (_canReadMedia) {
+      return _mediaCell();
+    }
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: [
+        for (final name in tablePartsOf(property.value))
+          _chip(
+            fileIconForName(tableFileNameOf(name)),
+            tableFileNameOf(name),
+            palette.accent,
+          ),
+      ],
+    );
+  }
+
+  /// A media cell drawn from what it actually holds.
+  ///
+  /// The files arrive a moment after the row does, so the box keeps its place
+  /// while they are on their way rather than shifting the page when they land.
+  Widget _mediaCell() => RowMediaView(
+        viewId: viewId,
+        fieldId: property.fieldId,
+        rowId: rowId,
+        builder: (context, files) {
+          if (files == null) {
+            return _pictureFrame(const SizedBox.shrink());
+          }
+          final pictures = files.where((file) => file.isImage).toList();
+          final rest = files.where((file) => !file.isImage).toList();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (pictures.isNotEmpty)
+                _pictureFrame(
+                  live
+                      ? RowMediaImage(
+                          file: pictures.first,
+                          placeholder: ColoredBox(color: palette.raised),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              if (pictures.length > 1) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final picture in pictures.skip(1))
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: live
+                              ? RowMediaImage(
+                                  file: picture,
+                                  placeholder:
+                                      ColoredBox(color: palette.raised),
+                                )
+                              : ColoredBox(color: palette.raised),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+              if (rest.isNotEmpty) ...[
+                if (pictures.isNotEmpty) const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final file in rest)
+                      _chip(
+                        fileIconForName(file.name),
+                        file.name,
+                        palette.accent,
+                      ),
+                  ],
+                ),
+              ],
+            ],
+          );
+        },
+      );
+
+  Widget _pictureFrame(Widget child) => ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          height: compact
+              ? TableViewMetrics.imagePreviewHeight * 0.7
+              : TableViewMetrics.imagePreviewHeight,
+          width: double.infinity,
+          child: ColoredBox(color: palette.raised, child: child),
+        ),
       );
 
   Widget _chip(IconData icon, String label, Color tint) => Container(
@@ -359,19 +461,15 @@ class TablePropertyView extends StatelessWidget {
   // --------------------------------------------------------------- pictures
 
   Widget _image() {
+    if (_canReadMedia) {
+      return _mediaCell();
+    }
     final source = tablePartsOf(property.value)
         .firstWhere(looksLikeTableImage, orElse: () => property.value.trim());
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        height: compact
-            ? TableViewMetrics.imagePreviewHeight * 0.7
-            : TableViewMetrics.imagePreviewHeight,
-        width: double.infinity,
-        child: live
-            ? TablePicture(url: source, palette: palette)
-            : ColoredBox(color: palette.raised),
-      ),
+    return _pictureFrame(
+      live
+          ? TablePicture(url: source, palette: palette)
+          : const SizedBox.shrink(),
     );
   }
 
@@ -434,13 +532,6 @@ class TablePropertyView extends StatelessWidget {
       ],
     );
   }
-}
-
-/// The name at the end of a path or a link.
-String tableFileNameOf(String value) {
-  final path = value.split('?').first;
-  final parts = path.split(RegExp(r'[\\/]'));
-  return parts.isEmpty || parts.last.isEmpty ? value : parts.last;
 }
 
 /// A coloured label — a status, a tag, a group heading.

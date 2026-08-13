@@ -117,11 +117,13 @@ void main() {
 
     test('light editor surfaces use warm paper colors', () {
       const darkFallback = Color(0xFF252525);
+      const lightFallback = Color(0xFFF1F1F1);
 
       expect(
         EditorSurfaceStyle.codeBlockBackgroundFor(
           Brightness.light,
           darkFallback,
+          isPaper: true,
         ),
         EditorSurfaceStyle.lightCodeBlockBackground,
       );
@@ -129,6 +131,7 @@ void main() {
         EditorSurfaceStyle.calloutBackgroundFor(
           Brightness.light,
           darkFallback,
+          isPaper: true,
         ),
         EditorSurfaceStyle.lightCalloutBackground,
       );
@@ -138,6 +141,22 @@ void main() {
           darkFallback,
         ),
         darkFallback,
+      );
+      // A light theme that is not paper keeps its own surfaces; the warm
+      // stationery belongs to paper mode alone.
+      expect(
+        EditorSurfaceStyle.codeBlockBackgroundFor(
+          Brightness.light,
+          lightFallback,
+        ),
+        lightFallback,
+      );
+      expect(
+        EditorSurfaceStyle.calloutBackgroundFor(
+          Brightness.light,
+          lightFallback,
+        ),
+        lightFallback,
       );
     });
   });

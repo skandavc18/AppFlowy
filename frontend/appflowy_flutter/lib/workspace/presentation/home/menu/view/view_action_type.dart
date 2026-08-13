@@ -20,6 +20,7 @@ enum ViewMoreActionType {
   lastModified,
   created,
   lockPage,
+  turnIntoDashboard,
   leaveSharedPage;
 
   static const disableInLockedView = [
@@ -63,6 +64,8 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
         return LocaleKeys.disclosureAction_collapseAllPages.tr();
       case ViewMoreActionType.lockPage:
         return LocaleKeys.disclosureAction_lockPage.tr();
+      case ViewMoreActionType.turnIntoDashboard:
+        return LocaleKeys.dashboard_turnInto.tr();
       case ViewMoreActionType.leaveSharedPage:
         return 'Leave';
       case ViewMoreActionType.divider:
@@ -102,6 +105,8 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
         return Icons.unfold_less_rounded;
       case ViewMoreActionType.lockPage:
         return Icons.lock_outline_rounded;
+      case ViewMoreActionType.turnIntoDashboard:
+        return Icons.dashboard_rounded;
       case ViewMoreActionType.leaveSharedPage:
         return Icons.logout_rounded;
       case ViewMoreActionType.divider:
@@ -131,6 +136,7 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
       case ViewMoreActionType.lastModified:
       case ViewMoreActionType.created:
       case ViewMoreActionType.lockPage:
+      case ViewMoreActionType.turnIntoDashboard:
       case ViewMoreActionType.leaveSharedPage:
         return const SizedBox.shrink();
     }

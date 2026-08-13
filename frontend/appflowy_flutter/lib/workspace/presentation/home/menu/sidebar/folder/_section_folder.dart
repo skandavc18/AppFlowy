@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
@@ -68,15 +70,18 @@ class _SectionFolderState extends State<SectionFolder> {
         create: (_) => FolderBloc(type: widget.spaceType)
           ..add(const FolderEvent.initial()),
         child: BlocBuilder<FolderBloc, FolderState>(
-          builder: (context, state) => Column(
-            children: [
-              _buildHeader(context),
-              // Pages
-              const VSpace(2.0),
-              ..._buildViews(context, state, isHovered),
-              // Add a placeholder if there are no views
-              _buildDraggablePlaceholder(context),
-            ],
+          builder: (context, state) => ListenableBuilder(
+            listenable: DashboardHome.instance,
+            builder: (context, _) => Column(
+              children: [
+                _buildHeader(context),
+                // Pages
+                const VSpace(2.0),
+                ..._buildViews(context, state, isHovered),
+                // Add a placeholder if there are no views
+                _buildDraggablePlaceholder(context),
+              ],
+            ),
           ),
         ),
       ),
@@ -245,12 +250,13 @@ class _SectionFolderState extends State<SectionFolder> {
       return [];
     }
 
-    return widget.views.map(
+    final views = withoutHomeDashboard(widget.views);
+    return views.map(
       (view) => ViewItem(
         key: ValueKey('${widget.spaceType.name} ${view.id}'),
         spaceType: widget.spaceType,
         engagedInExpanding: true,
-        isFirstChild: view.id == widget.views.first.id,
+        isFirstChild: view.id == views.first.id,
         view: view,
         // The workspace header is the root of the tree, so its contents are
         // nested under it rather than sharing its measure.
@@ -319,6 +325,13 @@ Future<ViewPB?> createSidebarRootItem(
         parentViewId: workspaceId,
         name: '',
         section: section,
+      ),
+    SidebarRootCreateKind.dashboard => ViewBackendService.createView(
+        layoutType: ViewLayoutPB.Document,
+        parentViewId: workspaceId,
+        name: LocaleKeys.dashboard_defaultName.tr(),
+        section: section,
+        extra: DashboardMetadata.newExtra(),
       ),
     SidebarRootCreateKind.table => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Grid,

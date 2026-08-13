@@ -114,6 +114,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       items: interactiveSlashMenuItems(),
       descriptions: interactiveSlashMenuDescriptions(),
     ),
+    if (documentBloc != null) _dashboardSection(documentBloc),
     SlashMenuSectionItems(
       section: SlashMenuSection.diagrams,
       items: diagramSlashMenuItems(),
@@ -180,6 +181,19 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       ],
     ),
   ]);
+}
+
+/// `/dashboard`, and one entry per template.
+///
+/// It needs the document's own id to create the dashboard underneath it, so
+/// it is only offered where that is known.
+SlashMenuSectionItems _dashboardSection(DocumentBloc documentBloc) {
+  final items = dashboardSlashMenuItems(documentBloc);
+  return SlashMenuSectionItems(
+    section: SlashMenuSection.dashboards,
+    items: items,
+    descriptions: dashboardSlashMenuDescriptions(items),
+  );
 }
 
 /// The slash menu items in the simple table block.

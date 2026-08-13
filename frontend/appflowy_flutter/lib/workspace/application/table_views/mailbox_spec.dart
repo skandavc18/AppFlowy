@@ -42,7 +42,7 @@ class MailboxSpec {
     this.density = MailboxDensity.comfortable,
     this.showReader = true,
     this.groupByDate = true,
-    this.editPage = false,
+    this.editPage = true,
   });
 
   /// The line a row is known by. Empty means the table's own primary column.
@@ -116,7 +116,7 @@ class MailboxSpec {
         if (density != MailboxDensity.comfortable) 'density': density.id,
         if (!showReader) 'reader': false,
         if (!groupByDate) 'grouped': false,
-        if (editPage) 'edit': true,
+        if (!editPage) 'edit': false,
       };
 
   static MailboxSpec fromJson(Map<String, dynamic> values) => MailboxSpec(
@@ -129,7 +129,7 @@ class MailboxSpec {
         density: MailboxDensity.fromId(values['density'] as String?),
         showReader: values['reader'] != false,
         groupByDate: values['grouped'] != false,
-        editPage: values['edit'] == true,
+        editPage: values['edit'] != false,
       );
 
   static List<String> _strings(Object? value) => value is List

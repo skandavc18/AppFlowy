@@ -76,6 +76,7 @@ abstract final class SidebarMetrics {
 enum SidebarIcon {
   search('editor', 'magnifying-glass'),
   newPage('office', 'note-pencil'),
+  home('maps_travel', 'house'),
   add('technology_development', 'plus'),
   more('system', 'dots-three'),
   disclosure('arrows', 'caret-right'),

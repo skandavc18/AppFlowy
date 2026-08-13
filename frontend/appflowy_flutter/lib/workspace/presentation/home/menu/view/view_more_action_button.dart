@@ -8,6 +8,7 @@ import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -156,6 +157,14 @@ class ViewMoreActionPopover extends StatelessWidget {
           ViewMoreActionType.changeIcon,
           ViewMoreActionType.duplicate,
         ]);
+      }
+
+      // An ordinary page can be laid out as a dashboard instead. Turning one
+      // back is offered on the dashboard itself, where it is unambiguous.
+      if (view.layout == ViewLayoutPB.Document &&
+          !view.isWorkspaceItem &&
+          !view.isDashboard) {
+        actionTypes.add(ViewMoreActionType.turnIntoDashboard);
       }
 
       actionTypes.addAll([

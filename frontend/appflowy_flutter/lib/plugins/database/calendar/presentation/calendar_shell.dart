@@ -33,6 +33,7 @@ class CalendarShell extends StatefulWidget {
     this.onConnectCalendar,
     this.hasDateField = true,
     this.compact = false,
+    this.quiet = false,
   });
 
   final CalendarWorkspace workspace;
@@ -52,6 +53,10 @@ class CalendarShell extends StatefulWidget {
   /// A phone: the same readings, stacked into two short rows instead of one
   /// long one, and search behind a button.
   final bool compact;
+
+  /// Embedded on a page or a dashboard: navigation and the views, nothing
+  /// else. Searching and filtering belong to the calendar's own page.
+  final bool quiet;
 
   @override
   State<CalendarShell> createState() => CalendarShellState();
@@ -215,11 +220,11 @@ class CalendarShellState extends State<CalendarShell> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 16,
+                        fontSize: 17,
                         height: 1,
-                        letterSpacing: -0.3,
+                        letterSpacing: -0.4,
                         color: palette.textPrimary,
-                        fontVariations: const [FontVariation.weight(680)],
+                        fontVariations: const [FontVariation.weight(700)],
                       ),
                     ),
                   ),
@@ -254,14 +259,16 @@ class CalendarShellState extends State<CalendarShell> {
                     ),
                   ),
                   const SizedBox(width: CalendarMetrics.space1),
-                  CalendarControlButton(
-                    icon: Icons.search_rounded,
-                    tooltip: LocaleKeys.calendarView_search.tr(),
-                    active: widget.workspace.filter.query.isNotEmpty,
-                    onPressed: _openSearchSheet,
-                  ),
-                  CalendarFilterButton(workspace: widget.workspace),
-                  CalendarSyncIndicator(workspace: widget.workspace),
+                  if (!widget.quiet) ...[
+                    CalendarControlButton(
+                      icon: Icons.search_rounded,
+                      tooltip: LocaleKeys.calendarView_search.tr(),
+                      active: widget.workspace.filter.query.isNotEmpty,
+                      onPressed: _openSearchSheet,
+                    ),
+                    CalendarFilterButton(workspace: widget.workspace),
+                    CalendarSyncIndicator(workspace: widget.workspace),
+                  ],
                 ],
               ),
             ),
@@ -344,46 +351,56 @@ class CalendarShellState extends State<CalendarShell> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      fontSize: 15,
+                      fontSize: 18,
                       height: 1,
-                      letterSpacing: -0.25,
+                      letterSpacing: -0.45,
                       color: palette.textPrimary,
-                      fontVariations: const [FontVariation.weight(660)],
+                      fontVariations: const [FontVariation.weight(700)],
                     ),
                   ),
                 ),
               ),
               const SizedBox(width: CalendarMetrics.space3),
-              if (_searching)
-                _SearchField(
-                  controller: _search,
-                  onChanged: (value) => widget.workspace.setFilter(
-                    widget.workspace.filter.copyWith(query: value),
+              if (!widget.quiet) ...[
+                if (_searching)
+                  _SearchField(
+                    controller: _search,
+                    onChanged: (value) => widget.workspace.setFilter(
+                      widget.workspace.filter.copyWith(query: value),
+                    ),
+                    onClose: () {
+                      setState(() => _searching = false);
+                      _search.clear();
+                      widget.workspace.setFilter(
+                        widget.workspace.filter.copyWith(query: ''),
+                      );
+                    },
+                  )
+                else
+                  CalendarControlButton(
+                    icon: Icons.search_rounded,
+                    tooltip: LocaleKeys.calendarView_search.tr(),
+                    onPressed: () => setState(() => _searching = true),
                   ),
-                  onClose: () {
-                    setState(() => _searching = false);
-                    _search.clear();
-                    widget.workspace.setFilter(
-                      widget.workspace.filter.copyWith(query: ''),
-                    );
-                  },
-                )
-              else
-                CalendarControlButton(
-                  icon: Icons.search_rounded,
-                  tooltip: LocaleKeys.calendarView_search.tr(),
-                  onPressed: () => setState(() => _searching = true),
+                const SizedBox(width: 2),
+                CalendarFilterButton(workspace: widget.workspace),
+                const SizedBox(width: CalendarMetrics.space2),
+                CalendarSyncIndicator(workspace: widget.workspace),
+                const SizedBox(width: CalendarMetrics.space2),
+              ],
+              // At a middle width the switcher is what runs out of room, so
+              // it scrolls rather than overflowing the toolbar.
+              Flexible(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  reverse: true,
+                  child: CalendarViewSwitcher(
+                    mode: _mode,
+                    onChanged: setMode,
+                    labels: _labelFor,
+                    available: _availableModes,
+                  ),
                 ),
-              const SizedBox(width: 2),
-              CalendarFilterButton(workspace: widget.workspace),
-              const SizedBox(width: CalendarMetrics.space2),
-              CalendarSyncIndicator(workspace: widget.workspace),
-              const SizedBox(width: CalendarMetrics.space2),
-              CalendarViewSwitcher(
-                mode: _mode,
-                onChanged: setMode,
-                labels: _labelFor,
-                available: _availableModes,
               ),
               if (widget.toolbarTrailing != null) ...[
                 const SizedBox(width: CalendarMetrics.space2),

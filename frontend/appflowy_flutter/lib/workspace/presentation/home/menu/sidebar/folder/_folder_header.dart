@@ -16,6 +16,7 @@ import 'package:flutter/services.dart';
 enum SidebarRootCreateKind {
   folder,
   page,
+  dashboard,
   table,
   board,
   calendar,
@@ -206,6 +207,7 @@ class SidebarRootCreateAction extends SidebarRootAction {
         switch (kind) {
           SidebarRootCreateKind.folder => workspaceAddFolderIcon,
           SidebarRootCreateKind.page => Icons.description_rounded,
+          SidebarRootCreateKind.dashboard => Icons.dashboard_rounded,
           SidebarRootCreateKind.table => Icons.table_chart_rounded,
           SidebarRootCreateKind.board => Icons.view_kanban_rounded,
           SidebarRootCreateKind.calendar => Icons.calendar_month_rounded,
@@ -221,6 +223,8 @@ class SidebarRootCreateAction extends SidebarRootAction {
           LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
         SidebarRootCreateKind.page =>
           LocaleKeys.workspaceFolderExplorer_newPage.tr(),
+        SidebarRootCreateKind.dashboard =>
+          LocaleKeys.dashboard_newDashboard.tr(),
         SidebarRootCreateKind.table =>
           LocaleKeys.workspaceFolderExplorer_newTable.tr(),
         SidebarRootCreateKind.board => LocaleKeys.board_menuName.tr(),

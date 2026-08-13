@@ -44,9 +44,9 @@ abstract final class ChartMetrics {
   static const axisTitleSize = 10.5;
   static const axisGap = 10.0;
 
-  static const revealDuration = Duration(milliseconds: 620);
-  static const hoverDuration = Duration(milliseconds: 150);
-  static const morphDuration = Duration(milliseconds: 420);
+  static const revealDuration = Duration(milliseconds: 900);
+  static const hoverDuration = Duration(milliseconds: 220);
+  static const morphDuration = Duration(milliseconds: 620);
 
   static const hoverCurve = Curves.easeOutCubic;
   static const revealCurve = Curves.easeOutCubic;

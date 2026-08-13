@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
@@ -188,21 +189,23 @@ class _WorkspaceViewPickerMenuState extends State<WorkspaceViewPickerMenu> {
                   ),
                   const SizedBox(width: 7),
                   Expanded(
-                    child: TextField(
-                      controller: searchController,
-                      autofocus: UniversalPlatform.isDesktopOrWeb,
-                      onChanged: (_) => setState(() {}),
-                      style: TextStyle(
-                        color: palette.textPrimary,
-                        fontFamily: 'Inter',
-                        fontSize: 13,
-                      ),
-                      decoration: InputDecoration.collapsed(
-                        hintText: widget.searchHint,
-                        hintStyle: TextStyle(
-                          color: palette.textMuted,
+                    child: TextEntryShortcuts(
+                      child: TextField(
+                        controller: searchController,
+                        autofocus: UniversalPlatform.isDesktopOrWeb,
+                        onChanged: (_) => setState(() {}),
+                        style: TextStyle(
+                          color: palette.textPrimary,
                           fontFamily: 'Inter',
                           fontSize: 13,
+                        ),
+                        decoration: InputDecoration.collapsed(
+                          hintText: widget.searchHint,
+                          hintStyle: TextStyle(
+                            color: palette.textMuted,
+                            fontFamily: 'Inter',
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ),

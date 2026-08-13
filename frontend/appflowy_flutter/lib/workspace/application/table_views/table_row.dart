@@ -84,6 +84,7 @@ class TableProperty {
     required this.kind,
     this.fraction,
     this.rating,
+    this.isMedia = false,
   });
 
   final String fieldId;
@@ -96,6 +97,12 @@ class TableProperty {
 
   /// How many marks are filled, when the kind is a rating.
   final int? rating;
+
+  /// Whether the column holds attached files rather than words.
+  ///
+  /// ⚠️ A media cell reads as its file NAMES alone, so the addresses behind it
+  /// have to be asked for separately. This is what says the asking is worth it.
+  final bool isMedia;
 
   bool get isEmpty => value.trim().isEmpty;
 
@@ -117,10 +124,12 @@ class TableProperty {
       other.value == value &&
       other.kind == kind &&
       other.fraction == fraction &&
-      other.rating == rating;
+      other.rating == rating &&
+      other.isMedia == isMedia;
 
   @override
-  int get hashCode => Object.hash(fieldId, name, value, kind, fraction, rating);
+  int get hashCode =>
+      Object.hash(fieldId, name, value, kind, fraction, rating, isMedia);
 }
 
 /// What a row's cover is made of.

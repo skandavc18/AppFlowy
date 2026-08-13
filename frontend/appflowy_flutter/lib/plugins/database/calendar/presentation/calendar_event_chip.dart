@@ -62,6 +62,26 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
 
   @override
   Widget build(BuildContext context) {
+    final chip = _buildChip(context);
+    if (widget.density != CalendarChipDensity.compact) {
+      return chip;
+    }
+    // A month cell is narrower than most titles, so the whole of one is only
+    // ever a hover away.
+    return Tooltip(
+      message: _description(context),
+      waitDuration: const Duration(milliseconds: 400),
+      child: chip,
+    );
+  }
+
+  String _description(BuildContext context) {
+    final event = widget.event;
+    final title = event.title.isEmpty ? _untitled(context) : event.title;
+    return event.isAllDay ? title : '${_shortTime(event.start.local)}  $title';
+  }
+
+  Widget _buildChip(BuildContext context) {
     final palette = calendarPaletteOf(context);
     final colour = widget.color;
     final raised = _hovered || widget.selected;
@@ -98,11 +118,6 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
           child: AnimatedContainer(
             duration: CalendarMetrics.hover,
             curve: CalendarMetrics.hoverCurve,
-            transform: Matrix4.translationValues(
-              0,
-              raised && widget.density != CalendarChipDensity.block ? -1 : 0,
-              0,
-            ),
             decoration: BoxDecoration(
               color: raised
                   ? palette.eventSurfaceHovered(colour)
@@ -117,7 +132,7 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
                   : CrossAxisAlignment.center,
               children: [
                 if (!widget.continuesBefore)
-                  Container(width: 2.5, color: palette.eventAccent(colour)),
+                  Container(width: 3, color: palette.eventAccent(colour)),
                 Expanded(child: _buildBody(palette, colour)),
               ],
             ),
@@ -142,28 +157,28 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
   Widget _compact(CalendarPalette palette, Color ink) {
     final event = widget.event;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Row(
         children: [
           if (event.kind == CalendarEventKind.reminder) ...[
-            Icon(Icons.notifications_rounded, size: 10, color: ink),
-            const SizedBox(width: 3),
+            Icon(Icons.notifications_rounded, size: 11, color: ink),
+            const SizedBox(width: 4),
           ] else if (event.hasReminder) ...[
-            Icon(Icons.notifications_none_rounded, size: 10, color: ink),
-            const SizedBox(width: 3),
+            Icon(Icons.notifications_none_rounded, size: 11, color: ink),
+            const SizedBox(width: 4),
           ],
           if (widget.showTime && !event.isAllDay) ...[
             Text(
               _shortTime(event.start.local),
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 10.5,
                 height: 1,
                 color: ink.withValues(alpha: 0.78),
                 fontVariations: const [FontVariation.weight(600)],
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
-            const SizedBox(width: 4),
+            const SizedBox(width: 5),
           ],
           Expanded(
             child: Text(
@@ -171,7 +186,7 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 11,
+                fontSize: 11.5,
                 height: 1,
                 letterSpacing: -0.1,
                 color: ink,

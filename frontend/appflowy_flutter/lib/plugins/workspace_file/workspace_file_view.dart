@@ -525,46 +525,65 @@ class _WorkspaceFileMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
-        child: ViewerCard(
-          color: theme.fillColorScheme.content,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 34, color: theme.iconColorScheme.secondary),
-                const SizedBox(height: 14),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: theme.textColorScheme.primary,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The same message has to fit a whole window and a dashboard card.
+        final tight = constraints.maxHeight < 260;
+        return Center(
+          child: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: ViewerCard(
+                color: theme.fillColorScheme.content,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: tight ? 16 : 28,
+                    vertical: tight ? 16 : 32,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        icon,
+                        size: tight ? 24 : 34,
+                        color: theme.iconColorScheme.secondary,
+                      ),
+                      SizedBox(height: tight ? 8 : 14),
+                      Text(
+                        title,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: tight ? 13.5 : 15,
+                          fontWeight: FontWeight.w600,
+                          color: theme.textColorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        message,
+                        textAlign: TextAlign.center,
+                        maxLines: tight ? 2 : 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: tight ? 12 : 13,
+                          height: 18 / 13,
+                          color: theme.textColorScheme.secondary,
+                        ),
+                      ),
+                      if (action != null) ...[
+                        SizedBox(height: tight ? 12 : 18),
+                        action!,
+                      ],
+                    ],
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 13,
-                    height: 18 / 13,
-                    color: theme.textColorScheme.secondary,
-                  ),
-                ),
-                if (action != null) ...[
-                  const SizedBox(height: 18),
-                  action!,
-                ],
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

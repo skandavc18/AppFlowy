@@ -147,27 +147,19 @@ class _AppMenuRowState extends State<AppMenuRow> {
     final active =
         enabled && (widget.highlighted || (widget.tracksHover && _hovered));
 
+    // A row answers the pointer with its background and nothing else. Moving
+    // the label and the icon to a stronger ink at the same time reads as the
+    // whole row changing, which is louder than a hover should ever be.
     final labelColor = widget.labelColor ??
-        (active
-            ? style.labelEmphasisFor(
-                enabled: enabled,
-                destructive: widget.destructive,
-              )
-            : style.labelColorFor(
-                enabled: enabled,
-                destructive: widget.destructive,
-              ));
-    final iconColor = active
-        ? style.iconEmphasisFor(
-            enabled: enabled,
-            destructive: widget.destructive,
-            selected: widget.selected,
-          )
-        : style.iconColorFor(
-            enabled: enabled,
-            destructive: widget.destructive,
-            selected: widget.selected,
-          );
+        style.labelColorFor(
+          enabled: enabled,
+          destructive: widget.destructive,
+        );
+    final iconColor = style.iconColorFor(
+      enabled: enabled,
+      destructive: widget.destructive,
+      selected: widget.selected,
+    );
 
     // Every resting colour keeps the hover colour's own channels, because a
     // tween that starts at [Colors.transparent] passes through transparent

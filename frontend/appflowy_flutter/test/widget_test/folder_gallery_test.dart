@@ -424,9 +424,15 @@ void main() {
     final previewStages =
         find.byKey(const ValueKey('folder-gallery-preview-stage'));
     expect(previewStages, findsNWidgets(3));
-    for (final element in previewStages.evaluate()) {
-      expect((element.renderObject! as RenderBox).size.height, 260);
-    }
+    // The stage fills whatever height the card is given, so what matters is
+    // that a page, a folder and a table all end up on the same line — not the
+    // particular figure, which follows the card width.
+    final heights = <double>[
+      for (final element in previewStages.evaluate())
+        (element.renderObject! as RenderBox).size.height,
+    ];
+    expect(heights.first, greaterThan(0));
+    expect(heights.every((height) => height == heights.first), isTrue);
     expect(find.text('Task'), findsOneWidget);
     expect(find.text('Owner'), findsOneWidget);
     expect(find.text('Launch website'), findsOneWidget);

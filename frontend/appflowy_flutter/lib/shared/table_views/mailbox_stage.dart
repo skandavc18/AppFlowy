@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_document.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/table_views/row_media.dart';
 import 'package:appflowy/shared/table_views/row_page_preview.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/shared/table_views/table_property_view.dart';
@@ -429,6 +430,7 @@ class MailboxStageState extends State<MailboxStage> {
           for (final card in section.rows)
             _MailboxRow(
               key: ValueKey(card.rowId),
+              viewId: widget.viewId,
               card: card,
               palette: palette,
               sender: _senderOf(card),
@@ -570,6 +572,7 @@ class MailboxStageState extends State<MailboxStage> {
 class _MailboxRow extends StatefulWidget {
   const _MailboxRow({
     super.key,
+    required this.viewId,
     required this.card,
     required this.palette,
     required this.sender,
@@ -583,6 +586,7 @@ class _MailboxRow extends StatefulWidget {
     this.onContextMenu,
   });
 
+  final String viewId;
   final TableRowCard card;
   final TableViewPalette palette;
   final String sender;
@@ -600,6 +604,9 @@ class _MailboxRow extends StatefulWidget {
 }
 
 class _MailboxRowState extends State<_MailboxRow> {
+  /// The line the sender and the date are both set on.
+  static const _headLine = 16.0;
+
   bool _hovered = false;
 
   @override
@@ -664,29 +671,16 @@ class _MailboxRowState extends State<_MailboxRow> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              sender,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                color: palette.textPrimary,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: TableViewMetrics.space2),
-                          Text(
-                            mailboxDateLabel(widget.when),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: palette.textMuted,
-                            ),
-                          ),
-                        ],
+                      Text(
+                        sender,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          height: _headLine / 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: palette.textPrimary,
+                        ),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -708,6 +702,32 @@ class _MailboxRowState extends State<_MailboxRow> {
                         ),
                       ],
                     ],
+                  ),
+                ),
+                // Whatever picture the row carries — filed against a column,
+                // worn as its cover, or written into its own page — stands
+                // beside it, so the list reads like a contact sheet.
+                RowThumbnail(
+                  viewId: widget.viewId,
+                  card: card,
+                  background: palette.raised,
+                  size: widget.density.showsSnippet ? 46 : 30,
+                  padding: const EdgeInsets.only(
+                    left: TableViewMetrics.space3,
+                  ),
+                ),
+                Padding(
+                  padding:
+                      const EdgeInsets.only(left: TableViewMetrics.space2),
+                  child: Text(
+                    mailboxDateLabel(widget.when),
+                    style: TextStyle(
+                      fontSize: 11,
+                      // Set on the same line as the sender it sits beside, so
+                      // the two share a baseline despite their different sizes.
+                      height: _headLine / 11,
+                      color: palette.textMuted,
+                    ),
                   ),
                 ),
               ],
@@ -900,6 +920,8 @@ class _MailboxReader extends StatelessWidget {
                               property: property,
                               palette: palette,
                               live: true,
+                              viewId: viewId,
+                              rowId: card.rowId,
                             ),
                           ),
                       ],

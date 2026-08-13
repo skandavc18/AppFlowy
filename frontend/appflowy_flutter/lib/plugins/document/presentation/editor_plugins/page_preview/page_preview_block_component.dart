@@ -438,6 +438,7 @@ class PagePreviewCard extends StatefulWidget {
     this.previewMode = ViewPreviewMode.cover,
     this.onPreviewModeChanged,
     this.onChangePage,
+    this.thumbnailHeight = 224,
   });
 
   final ViewPB view;
@@ -447,6 +448,10 @@ class PagePreviewCard extends StatefulWidget {
   final ViewPreviewMode previewMode;
   final ValueChanged<ViewPreviewMode>? onPreviewModeChanged;
   final VoidCallback? onChangePage;
+
+  /// How tall the picture above the name is. A card on a dashboard is given
+  /// whatever height the widget has, not the editor's fixed measure.
+  final double thumbnailHeight;
 
   @override
   State<PagePreviewCard> createState() => _PagePreviewCardState();
@@ -490,94 +495,113 @@ class _PagePreviewCardState extends State<PagePreviewCard> {
             elevation: hovered
                 ? ViewerCardElevation.raised
                 : ViewerCardElevation.resting,
-            child: Stack(
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+            child: LayoutBuilder(
+              // Hosts that hand the card a height — a dashboard widget, a
+              // narrow embed — get a picture that fits it instead of one that
+              // spills past the bottom.
+              builder: (context, constraints) {
+                const footer = 66.0;
+                final picture = constraints.hasBoundedHeight
+                    ? (constraints.maxHeight - footer)
+                        .clamp(48.0, widget.thumbnailHeight)
+                    : widget.thumbnailHeight;
+                return Stack(
                   children: [
-                    FolderGalleryPreviewThumbnail(
-                      item: item,
-                      view: widget.view,
-                      preview: widget.previewCache.previewFor(
-                        view: widget.view,
-                        item: item,
-                      ),
-                      userProfile: widget.userProfile,
-                      height: 224,
-                      compact: true,
-                      borderRadius: BorderRadius.zero,
-                      previewMode: widget.previewMode,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(17, 14, 17, 15),
-                      child: Row(
-                        children: [
-                          _PageIdentityIcon(view: widget.view),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        FolderGalleryPreviewThumbnail(
+                          item: item,
+                          view: widget.view,
+                          preview: widget.previewCache.previewFor(
+                            view: widget.view,
+                            item: item,
+                          ),
+                          userProfile: widget.userProfile,
+                          height: picture,
+                          compact: true,
+                          borderRadius: BorderRadius.zero,
+                          previewMode: widget.previewMode,
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(17, 12, 17, 12),
+                            child: Row(
                               children: [
-                                Text(
-                                  widget.view.nameOrDefault,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: palette.textPrimary,
-                                    fontFamily: 'Inter',
-                                    fontSize: 15,
-                                    height: 1.2,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: -0.22,
+                                _PageIdentityIcon(view: widget.view),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        widget.view.nameOrDefault,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: palette.textPrimary,
+                                          fontFamily: 'Inter',
+                                          fontSize: 15,
+                                          height: 1.2,
+                                          fontWeight: FontWeight.w600,
+                                          letterSpacing: -0.22,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 3),
+                                      Text(
+                                        LocaleKeys.commandPalette_pagePreview
+                                            .tr(),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: palette.textMuted,
+                                          fontFamily: 'Inter',
+                                          fontSize: 10.5,
+                                          height: 1.2,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  LocaleKeys.commandPalette_pagePreview.tr(),
-                                  style: TextStyle(
+                                AnimatedOpacity(
+                                  opacity: hovered ? 1 : 0,
+                                  duration: const Duration(milliseconds: 140),
+                                  child: Icon(
+                                    Icons.arrow_outward_rounded,
                                     color: palette.textMuted,
-                                    fontFamily: 'Inter',
-                                    fontSize: 10.5,
-                                    height: 1.2,
+                                    size: 17,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          AnimatedOpacity(
+                        ),
+                      ],
+                    ),
+                    if (widget.onPreviewModeChanged != null ||
+                        widget.onChangePage != null)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: IgnorePointer(
+                          ignoring: !hovered,
+                          child: AnimatedOpacity(
                             opacity: hovered ? 1 : 0,
                             duration: const Duration(milliseconds: 140),
-                            child: Icon(
-                              Icons.arrow_outward_rounded,
-                              color: palette.textMuted,
-                              size: 17,
+                            child: _PagePreviewMenu(
+                              previewMode: widget.previewMode,
+                              onOpen: widget.onOpen,
+                              onChangePage: widget.onChangePage,
+                              onPreviewModeChanged: widget.onPreviewModeChanged,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (widget.onPreviewModeChanged != null ||
-                    widget.onChangePage != null)
-                  Positioned(
-                    top: 10,
-                    right: 10,
-                    child: IgnorePointer(
-                      ignoring: !hovered,
-                      child: AnimatedOpacity(
-                        opacity: hovered ? 1 : 0,
-                        duration: const Duration(milliseconds: 140),
-                        child: _PagePreviewMenu(
-                          previewMode: widget.previewMode,
-                          onOpen: widget.onOpen,
-                          onChangePage: widget.onChangePage,
-                          onPreviewModeChanged: widget.onPreviewModeChanged,
                         ),
                       ),
-                    ),
-                  ),
-              ],
+                  ],
+                );
+              },
             ),
           ),
         ),

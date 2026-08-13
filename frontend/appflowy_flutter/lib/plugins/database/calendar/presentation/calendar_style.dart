@@ -34,14 +34,19 @@ abstract final class CalendarMetrics {
   static const double controlGap = 6;
 
   /// Weekday names above the month grid.
-  static const double weekdayStripHeight = 30;
+  static const double weekdayStripHeight = 34;
 
   /// One event line inside a month cell, and the gap under it.
-  static const double monthChipHeight = 21;
-  static const double monthChipGap = 3;
+  static const double monthChipHeight = 23;
+  static const double monthChipGap = 4;
 
   /// The date number's own band at the top of a month cell.
-  static const double monthDateBandHeight = 26;
+  static const double monthDateBandHeight = 30;
+
+  /// The inset a day cell's highlight is drawn within, so a hovered or
+  /// selected day reads as a rounded tile rather than a filled table cell.
+  static const double monthCellInset = 2;
+  static const double monthCellRadius = 10;
 
   /// The smallest a month cell may become before the grid starts scrolling
   /// instead of squashing further. Low enough that six weeks still fit a
@@ -76,8 +81,9 @@ abstract final class CalendarMetrics {
   static const double agendaRowMinHeight = 44;
 
   // Motion. Small interactions are quick; changing what you are looking at
-  // takes long enough to follow.
-  static const Duration hover = Duration(milliseconds: 150);
+  // takes long enough to follow. A hover is a fade, not a flick — long enough
+  // that the eye never catches it starting.
+  static const Duration hover = Duration(milliseconds: 220);
   static const Duration press = Duration(milliseconds: 120);
   static const Duration change = Duration(milliseconds: 180);
   static const Duration navigate = Duration(milliseconds: 280);
@@ -94,15 +100,15 @@ abstract final class CalendarMetrics {
 extension CalendarPaletteX on CalendarPalette {
   /// The faintest possible line — a calendar is defined by its whitespace, so
   /// a grid line must be barely there.
-  Color get gridLine => border.withValues(alpha: isDark ? 0.30 : 0.34);
+  Color get gridLine => border.withValues(alpha: isDark ? 0.20 : 0.16);
 
   /// The line between weeks, one step stronger than between days.
-  Color get weekLine => border.withValues(alpha: isDark ? 0.42 : 0.48);
+  Color get weekLine => border.withValues(alpha: isDark ? 0.26 : 0.22);
 
   /// Saturday and Sunday, tinted rather than boxed.
   Color get weekendWash => isPaper
-      ? sunken.withValues(alpha: 0.5)
-      : sunken.withValues(alpha: isDark ? 0.35 : 0.55);
+      ? sunken.withValues(alpha: 0.32)
+      : sunken.withValues(alpha: isDark ? 0.22 : 0.36);
 
   /// A day belonging to the month either side.
   Color get outsideMonthText => textMuted.withValues(alpha: 0.62);
@@ -114,6 +120,15 @@ extension CalendarPaletteX on CalendarPalette {
 
   /// A very light wash over the whole of today's column or cell.
   Color get todayWash => accent.withValues(alpha: isDark ? 0.10 : 0.055);
+
+  /// A day under the pointer. Barely there on purpose: a hover says "this
+  /// one", it does not announce itself.
+  Color get dayHover => hover.withValues(alpha: isDark ? 0.22 : 0.3);
+
+  /// The day that was clicked, which is a different thing from today.
+  Color get daySelected => accent.withValues(alpha: isDark ? 0.17 : 0.09);
+
+  Color get daySelectedEdge => accent.withValues(alpha: isDark ? 0.55 : 0.42);
 
   /// The current-time line.
   Color get nowLine => const Color(0xFFEF4444);
@@ -127,8 +142,8 @@ extension CalendarPaletteX on CalendarPalette {
       : Color.alphaBlend(colour.withValues(alpha: 0.14), surface);
 
   Color eventSurfaceHovered(Color colour) => isDark
-      ? Color.alphaBlend(colour.withValues(alpha: 0.42), surface)
-      : Color.alphaBlend(colour.withValues(alpha: 0.22), surface);
+      ? Color.alphaBlend(colour.withValues(alpha: 0.34), surface)
+      : Color.alphaBlend(colour.withValues(alpha: 0.17), surface);
 
   /// The words on an event: the event's own colour, darkened enough to read.
   Color eventInk(Color colour) {
@@ -149,11 +164,11 @@ extension CalendarPaletteX on CalendarPalette {
   List<BoxShadow> eventShadow({bool raised = false}) => [
         BoxShadow(
           color: shadow.withValues(
-            alpha: (isDark ? 0.40 : 0.11) * (raised ? 1.6 : 1),
+            alpha: (isDark ? 0.30 : 0.08) * (raised ? 1.4 : 1),
           ),
-          blurRadius: raised ? 14 : 7,
+          blurRadius: raised ? 10 : 6,
           spreadRadius: -3,
-          offset: Offset(0, raised ? 5 : 2),
+          offset: Offset(0, raised ? 3 : 2),
         ),
       ];
 

@@ -20,6 +20,7 @@ import 'package:appflowy/workspace/application/table_views/table_view_mark.dart'
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/prelude.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
@@ -926,6 +927,9 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
             break;
           case ViewMoreActionType.openInNewTab:
             context.read<TabsBloc>().openTab(widget.view);
+            break;
+          case ViewMoreActionType.turnIntoDashboard:
+            await DashboardService.convert(widget.view);
             break;
           case ViewMoreActionType.collapseAllPages:
             context.read<ViewBloc>().add(const ViewEvent.collapseAllPages());

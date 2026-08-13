@@ -243,8 +243,22 @@ class _AlbumCoverStage extends StatelessWidget {
                   ),
                 ),
                 if (hovered)
-                  const Center(
-                    child: _OpenAlbumBadge(),
+                  Center(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _AlbumBadge(
+                          icon: Icons.auto_stories_rounded,
+                          labelKey: LocaleKeys.collections_embed_openAlbum,
+                        ),
+                        const SizedBox(width: 8),
+                        _AlbumBadge(
+                          icon: Icons.open_in_new_rounded,
+                          labelKey: LocaleKeys.collections_book_openInWorkspace,
+                          onTap: embed.onOpenCollection,
+                        ),
+                      ],
+                    ),
                   ),
               ],
             ),
@@ -260,29 +274,51 @@ class _AlbumCoverStage extends StatelessWidget {
   }
 }
 
-class _OpenAlbumBadge extends StatelessWidget {
-  const _OpenAlbumBadge();
+class _AlbumBadge extends StatelessWidget {
+  const _AlbumBadge({
+    required this.icon,
+    required this.labelKey,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String labelKey;
+
+  /// Null means the cover's own tap handles it — the album opens.
+  final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.46),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.auto_stories_rounded,
-                size: 14, color: Colors.white),
-            const SizedBox(width: 6),
-            Text(
-              LocaleKeys.collections_embed_openAlbum.tr(),
-              style: const TextStyle(color: Colors.white, fontSize: 11.5),
-            ),
-          ],
-        ),
-      );
+  Widget build(BuildContext context) {
+    final badge = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.46),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.white),
+          const SizedBox(width: 6),
+          Text(
+            labelKey.tr(),
+            style: const TextStyle(color: Colors.white, fontSize: 11.5),
+          ),
+        ],
+      ),
+    );
+    if (onTap == null) {
+      return badge;
+    }
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: badge,
+      ),
+    );
+  }
 }
 
 class _AlbumPages extends StatelessWidget {

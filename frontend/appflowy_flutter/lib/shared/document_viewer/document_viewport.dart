@@ -75,6 +75,8 @@ class _DocumentViewportState extends State<DocumentViewport>
     duration: AppFlowyMotion.deliberate,
   )..forward();
 
+  bool hovered = false;
+
   @override
   void didUpdateWidget(covariant DocumentViewport oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -112,6 +114,7 @@ class _DocumentViewportState extends State<DocumentViewport>
           child: DocumentViewportHeader(
             identity: widget.identity,
             actions: widget.actions,
+            showActions: hovered,
             leading: widget.leading,
           ),
         ),
@@ -132,7 +135,6 @@ class _DocumentViewportState extends State<DocumentViewport>
       color: widget.background ?? style.canvas,
       child: content,
     );
-
     final framed = widget.framed
         ? ViewerCard(
             borderRadius: DocumentViewportStyle.borderRadius,
@@ -144,11 +146,15 @@ class _DocumentViewportState extends State<DocumentViewport>
       parent: reveal,
       curve: AppFlowyMotion.enterCurve,
     );
-    return FadeTransition(
-      opacity: curved,
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.99, end: 1).animate(curved),
-        child: framed,
+    return MouseRegion(
+      onEnter: (_) => setState(() => hovered = true),
+      onExit: (_) => setState(() => hovered = false),
+      child: FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.99, end: 1).animate(curved),
+          child: framed,
+        ),
       ),
     );
   }
@@ -160,11 +166,17 @@ class DocumentViewportHeader extends StatelessWidget {
     super.key,
     required this.identity,
     this.actions = const [],
+    this.showActions = true,
     this.leading,
   });
 
   final DocumentIdentity identity;
   final List<Widget> actions;
+
+  /// Tools are for when they are wanted: the header names the document at all
+  /// times and offers its controls only while the pointer is on it.
+  final bool showActions;
+
   final Widget? leading;
 
   @override
@@ -238,7 +250,18 @@ class DocumentViewportHeader extends StatelessWidget {
                   ),
                   if (actions.isNotEmpty) ...[
                     const SizedBox(width: 8),
-                    Row(mainAxisSize: MainAxisSize.min, children: actions),
+                    AnimatedOpacity(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      opacity: showActions ? 1 : 0,
+                      child: IgnorePointer(
+                        ignoring: !showActions,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: actions,
+                        ),
+                      ),
+                    ),
                   ],
                 ],
               ),

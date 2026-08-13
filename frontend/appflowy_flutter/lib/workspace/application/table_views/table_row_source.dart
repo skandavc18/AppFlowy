@@ -281,6 +281,7 @@ class TableRowSource extends ChangeNotifier {
                 : null,
             rating:
                 kind == TablePropertyKind.rating ? tableRatingOf(value) : null,
+            isMedia: field.fieldType == FieldType.Media,
           ),
         );
       }

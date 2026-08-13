@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
@@ -624,32 +625,43 @@ class SpacePages extends StatelessWidget {
                 .where((v) => shouldIgnoreView!(v) != IgnoreViewType.hide)
                 .toList();
           }
-          return Column(
-            mainAxisSize: MainAxisSize.min,
-            children: childViews
-                .map(
-                  (view) => ViewItem(
-                    key: ValueKey('${space.id} ${view.id}'),
-                    spaceType:
-                        space.spacePermission == SpacePermission.publicToAll
-                            ? FolderSpaceType.public
-                            : FolderSpaceType.private,
-                    isFirstChild: view.id == childViews.first.id,
-                    view: view,
-                    level: 0,
-                    leftPadding: HomeSpaceViewSizes.leftPadding,
-                    isFeedback: false,
-                    isHovered: isHovered,
-                    enableRightClickContext: !disableSelectedStatus,
-                    disableSelectedStatus: disableSelectedStatus,
-                    isExpandedNotifier: isExpandedNotifier,
-                    rightIconsBuilder: rightIconsBuilder,
-                    onSelected: onSelected,
-                    onTertiarySelected: onTertiarySelected,
-                    shouldIgnoreView: shouldIgnoreView,
-                  ),
-                )
-                .toList(),
+          return ListenableBuilder(
+            listenable: DashboardHome.instance,
+            builder: (context, _) {
+              // The home dashboard has its own entry at the top of the
+              // sidebar; showing it here as well reads as a duplicate.
+              final views = withoutHomeDashboard(childViews);
+              if (views.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: views
+                    .map(
+                      (view) => ViewItem(
+                        key: ValueKey('${space.id} ${view.id}'),
+                        spaceType:
+                            space.spacePermission == SpacePermission.publicToAll
+                                ? FolderSpaceType.public
+                                : FolderSpaceType.private,
+                        isFirstChild: view.id == views.first.id,
+                        view: view,
+                        level: 0,
+                        leftPadding: HomeSpaceViewSizes.leftPadding,
+                        isFeedback: false,
+                        isHovered: isHovered,
+                        enableRightClickContext: !disableSelectedStatus,
+                        disableSelectedStatus: disableSelectedStatus,
+                        isExpandedNotifier: isExpandedNotifier,
+                        rightIconsBuilder: rightIconsBuilder,
+                        onSelected: onSelected,
+                        onTertiarySelected: onTertiarySelected,
+                        shouldIgnoreView: shouldIgnoreView,
+                      ),
+                    )
+                    .toList(),
+              );
+            },
           );
         },
       ),

@@ -22,6 +22,8 @@ Future<AppReminder?> showReminderComposer(
   String pageId = '',
   String objectId = '',
   ReminderKind kind = ReminderKind.standalone,
+  DateTime? initialWhen,
+  bool initialHasTime = true,
 }) =>
     showDialog<AppReminder>(
       context: context,
@@ -31,6 +33,8 @@ Future<AppReminder?> showReminderComposer(
         pageId: pageId,
         objectId: objectId,
         kind: kind,
+        initialWhen: initialWhen,
+        initialHasTime: initialHasTime,
       ),
     );
 
@@ -40,12 +44,19 @@ class _ReminderComposer extends StatefulWidget {
     required this.pageId,
     required this.objectId,
     required this.kind,
+    this.initialWhen,
+    this.initialHasTime = true,
   });
 
   final String initialText;
   final String pageId;
   final String objectId;
   final ReminderKind kind;
+
+  /// The moment the composer opens on — a day clicked in a calendar, rather
+  /// than a date the person has to say again in words.
+  final DateTime? initialWhen;
+  final bool initialHasTime;
 
   @override
   State<_ReminderComposer> createState() => _ReminderComposerState();
@@ -71,6 +82,11 @@ class _ReminderComposerState extends State<_ReminderComposer> {
   void initState() {
     super.initState();
     _reparse(widget.initialText, adopt: true);
+    final when = widget.initialWhen;
+    if (when != null) {
+      _when = when;
+      _hasTime = widget.initialHasTime;
+    }
     unawaited(_checkGoogle());
   }
 

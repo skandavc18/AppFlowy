@@ -153,7 +153,8 @@ class _CalendarStageState extends State<CalendarStage> {
     }
   }
 
-  void _showDay(DateTime day) => _shell.currentState?.showDay(day);
+  void _showDay(DateTime day, Offset position) =>
+      _shell.currentState?.showDay(day);
 
   Future<void> _create(DateTime at, {bool hasTime = false}) async {
     await _workspace.create(

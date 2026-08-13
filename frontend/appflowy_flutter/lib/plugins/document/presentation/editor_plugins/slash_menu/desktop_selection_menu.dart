@@ -337,6 +337,7 @@ class _AppFlowyDesktopSelectionMenuWidgetState
           LocaleKeys.document_toolbar_suggestions.tr(),
         SlashMenuSection.basicBlocks => 'Basic blocks',
         SlashMenuSection.interactive => LocaleKeys.interactive_sectionName.tr(),
+        SlashMenuSection.dashboards => LocaleKeys.dashboard_sectionName.tr(),
         SlashMenuSection.media =>
           LocaleKeys.document_slashMenu_name_fileAndMedia.tr(),
         SlashMenuSection.collections => LocaleKeys.collections_plural.tr(),

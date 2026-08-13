@@ -57,7 +57,7 @@ class _CalendarControlButtonState extends State<CalendarControlButton> {
             color: widget.active
                 ? palette.accent.withValues(alpha: 0.12)
                 : palette.hover.withValues(alpha: _hovered && enabled ? 1 : 0),
-            borderRadius: BorderRadius.circular(CalendarMetrics.controlRadius),
+            shape: BoxShape.circle,
           ),
           alignment: Alignment.center,
           child: Icon(widget.icon, size: 17, color: tint),

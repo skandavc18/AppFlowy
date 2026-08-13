@@ -1,12 +1,13 @@
 import 'dart:math' as math;
 
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_chrome.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_event_chip.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_style.dart';
 import 'package:appflowy/shared/calendar/calendar_event.dart';
 import 'package:appflowy/shared/calendar/calendar_layout.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 /// What the calendar hands each view so it can draw and act.
 ///
@@ -21,6 +22,7 @@ class CalendarViewDelegate {
     this.onReschedule,
     this.onToggleComplete,
     this.onShowMore,
+    this.onDayMenu,
     this.canEdit = true,
   });
 
@@ -40,8 +42,11 @@ class CalendarViewDelegate {
 
   final void Function(CalendarEvent)? onToggleComplete;
 
-  /// "+3 more" was clicked.
-  final void Function(DateTime day)? onShowMore;
+  /// "+3 more" was clicked, and where.
+  final void Function(DateTime day, Offset globalPosition)? onShowMore;
+
+  /// A day was right-clicked.
+  final void Function(DateTime day, Offset globalPosition)? onDayMenu;
 
   final bool canEdit;
 }
@@ -128,33 +133,40 @@ class _CalendarMonthViewState extends State<CalendarMonthView> {
               // re-parents the whole grid between frames, and it is also why a
               // squashed month could not be scrolled at all.
               return CalendarScrollScope(
-                child: SingleChildScrollView(
-                  primary: calendarDrivesPageScroll(context) ? true : null,
-                  child: SizedBox(
-                    height: math.max(rowHeight * rows, constraints.maxHeight),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (var row = 0; row < rows; row++)
-                          SizedBox(
-                            height: rowHeight,
-                            child: _WeekRow(
-                              days: days
-                                  .skip(row * columns)
-                                  .take(columns)
-                                  .toList(growable: false),
-                              events: widget.events,
-                              month: widget.month,
-                              delegate: widget.delegate,
-                              palette: palette,
-                              rowHeight: rowHeight,
-                              showWeekNumbers: widget.showWeekNumbers,
-                              selectedDay: widget.selectedDay,
-                              onSelectDay: widget.onSelectDay,
-                              drag: _drag,
+                // No platform scrollbar over the grid: it lands on top of the
+                // last column and the last week, which is exactly where the
+                // dates are.
+                child: ScrollConfiguration(
+                  behavior: ScrollConfiguration.of(context)
+                      .copyWith(scrollbars: false),
+                  child: SingleChildScrollView(
+                    primary: calendarDrivesPageScroll(context) ? true : null,
+                    child: SizedBox(
+                      height: math.max(rowHeight * rows, constraints.maxHeight),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (var row = 0; row < rows; row++)
+                            SizedBox(
+                              height: rowHeight,
+                              child: _WeekRow(
+                                days: days
+                                    .skip(row * columns)
+                                    .take(columns)
+                                    .toList(growable: false),
+                                events: widget.events,
+                                month: widget.month,
+                                delegate: widget.delegate,
+                                palette: palette,
+                                rowHeight: rowHeight,
+                                showWeekNumbers: widget.showWeekNumbers,
+                                selectedDay: widget.selectedDay,
+                                onSelectDay: widget.onSelectDay,
+                                drag: _drag,
+                              ),
                             ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -259,7 +271,7 @@ class _WeekRow extends StatelessWidget {
     return DecoratedBox(
       decoration: BoxDecoration(
         border: Border(
-          top: BorderSide(color: palette.weekLine, width: 0.7),
+          top: BorderSide(color: palette.gridLine),
         ),
       ),
       child: Row(
@@ -298,7 +310,6 @@ class _WeekRow extends StatelessWidget {
                               month: month,
                               palette: palette,
                               delegate: delegate,
-                              isFirstColumn: i == 0,
                               selected: selectedDay != null &&
                                   isSameDay(selectedDay!, days[i]),
                               overflow: finalLayout.overflowAt(i),
@@ -310,8 +321,8 @@ class _WeekRow extends StatelessWidget {
                     ),
                     for (final bar in finalLayout.bars)
                       Positioned(
-                        left: bar.startColumn * columnWidth + 2,
-                        width: bar.columnSpan * columnWidth - 4,
+                        left: bar.startColumn * columnWidth + 5,
+                        width: bar.columnSpan * columnWidth - 10,
                         top: CalendarMetrics.monthDateBandHeight +
                             bar.lane *
                                 (CalendarMetrics.monthChipHeight +
@@ -437,7 +448,6 @@ class _DayCell extends StatefulWidget {
     required this.month,
     required this.palette,
     required this.delegate,
-    required this.isFirstColumn,
     required this.selected,
     required this.overflow,
     required this.onSelect,
@@ -448,7 +458,6 @@ class _DayCell extends StatefulWidget {
   final DateTime month;
   final CalendarPalette palette;
   final CalendarViewDelegate delegate;
-  final bool isFirstColumn;
   final bool selected;
   final int overflow;
   final ValueChanged<DateTime>? onSelect;
@@ -500,29 +509,49 @@ class _DayCellState extends State<_DayCell> {
             onDoubleTap: widget.delegate.onCreateAt == null
                 ? null
                 : () => widget.delegate.onCreateAt!(day, hasTime: false),
+            onSecondaryTapDown: widget.delegate.onDayMenu == null
+                ? null
+                : (details) => widget.delegate.onDayMenu!(
+                      day,
+                      details.globalPosition,
+                    ),
             child: ValueListenableBuilder<_MonthDrag?>(
               valueListenable: widget.drag,
               builder: (context, drag, child) {
                 final isDropTarget = drag != null && isSameDay(drag.day, day);
-                return AnimatedContainer(
-                  duration: CalendarMetrics.hover,
-                  curve: CalendarMetrics.hoverCurve,
-                  decoration: BoxDecoration(
-                    color: isDropTarget
-                        ? palette.dropTarget
-                        : today
-                            ? palette.todayWash
-                            : isWeekend(day)
-                                ? palette.weekendWash
-                                : Colors.transparent,
-                    border: widget.isFirstColumn
-                        ? null
-                        : Border(
-                            left:
-                                BorderSide(color: palette.gridLine, width: 0.7),
-                          ),
+                // A cell is not a box: today, a hovered day and a selected day
+                // are rounded tiles inset from the grid, so the month reads as
+                // whitespace with marks on it rather than as a table.
+                final Color fill;
+                if (isDropTarget) {
+                  fill = palette.dropTarget;
+                } else if (widget.selected) {
+                  fill = palette.daySelected;
+                } else if (today) {
+                  fill = palette.todayWash;
+                } else if (_hovered) {
+                  fill = palette.dayHover;
+                } else if (isWeekend(day)) {
+                  fill = palette.weekendWash;
+                } else {
+                  fill = Colors.transparent;
+                }
+                return Padding(
+                  padding: const EdgeInsets.all(CalendarMetrics.monthCellInset),
+                  child: AnimatedContainer(
+                    duration: CalendarMetrics.hover,
+                    curve: CalendarMetrics.hoverCurve,
+                    decoration: BoxDecoration(
+                      color: fill,
+                      borderRadius: BorderRadius.circular(
+                        CalendarMetrics.monthCellRadius,
+                      ),
+                      border: widget.selected
+                          ? Border.all(color: palette.daySelectedEdge)
+                          : null,
+                    ),
+                    child: child,
                   ),
-                  child: child,
                 );
               },
               child: Column(
@@ -559,7 +588,8 @@ class _DayCellState extends State<_DayCell> {
                   if (widget.overflow > 0)
                     _MoreRow(
                       count: widget.overflow,
-                      onTap: () => widget.delegate.onShowMore?.call(day),
+                      onTap: (position) =>
+                          widget.delegate.onShowMore?.call(day, position),
                     ),
                   const SizedBox(height: 2),
                 ],
@@ -591,26 +621,26 @@ class _DateBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     // The first day of a month names itself, which is what stops a grid of
     // bare numbers reading as a spreadsheet.
-    final label = day.day == 1 ? DateFormat.MMMd().format(day) : '${day.day}';
+    final named = day.day == 1;
+    final label = named ? DateFormat.MMMd().format(day) : '${day.day}';
 
     return AnimatedContainer(
       duration: CalendarMetrics.change,
       curve: CalendarMetrics.hoverCurve,
-      height: 19,
-      padding: EdgeInsets.symmetric(horizontal: today || selected ? 7 : 2),
+      height: 22,
+      width: named ? null : 22,
+      padding: named ? const EdgeInsets.symmetric(horizontal: 8) : null,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: today
-            ? palette.todayBadge
-            : selected
-                ? palette.accent.withValues(alpha: 0.14)
-                : Colors.transparent,
-        borderRadius: BorderRadius.circular(CalendarMetrics.pillRadius),
+        color: today ? palette.todayBadge : Colors.transparent,
+        shape: named ? BoxShape.rectangle : BoxShape.circle,
+        borderRadius:
+            named ? BorderRadius.circular(CalendarMetrics.pillRadius) : null,
       ),
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 12,
+          fontSize: 12.5,
           height: 1,
           letterSpacing: -0.1,
           color: today
@@ -619,7 +649,7 @@ class _DateBadge extends StatelessWidget {
                   ? palette.textPrimary
                   : palette.outsideMonthText,
           fontVariations: [
-            FontVariation.weight(today || day.day == 1 ? 660 : 570),
+            FontVariation.weight(today || selected || named ? 660 : 550),
           ],
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -660,7 +690,7 @@ class _MoreRow extends StatefulWidget {
   const _MoreRow({required this.count, required this.onTap});
 
   final int count;
-  final VoidCallback onTap;
+  final ValueChanged<Offset> onTap;
 
   @override
   State<_MoreRow> createState() => _MoreRowState();
@@ -668,6 +698,15 @@ class _MoreRow extends StatefulWidget {
 
 class _MoreRowState extends State<_MoreRow> {
   bool _hovered = false;
+
+  void _report() {
+    final box = context.findRenderObject() as RenderBox?;
+    widget.onTap(
+      box == null || !box.hasSize
+          ? Offset.zero
+          : box.localToGlobal(box.size.bottomLeft(Offset.zero)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -677,7 +716,7 @@ class _MoreRowState extends State<_MoreRow> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: _report,
         behavior: HitTestBehavior.opaque,
         child: Container(
           height: CalendarMetrics.monthChipHeight - 3,
@@ -689,9 +728,9 @@ class _MoreRowState extends State<_MoreRow> {
             borderRadius: BorderRadius.circular(CalendarMetrics.chipRadius),
           ),
           child: Text(
-            '+${widget.count}',
+            LocaleKeys.calendarView_more.tr(args: ['${widget.count}']),
             style: TextStyle(
-              fontSize: 10.5,
+              fontSize: 11,
               height: 1,
               color: palette.textMuted,
               fontVariations: const [FontVariation.weight(620)],

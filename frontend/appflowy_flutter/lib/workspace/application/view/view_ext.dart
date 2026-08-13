@@ -11,6 +11,7 @@ import 'package:appflowy/plugins/collection/collection_plugin.dart';
 import 'package:appflowy/plugins/collection/map_plugin.dart';
 import 'package:appflowy/plugins/collection/slide_plugin.dart';
 import 'package:appflowy/plugins/collection/table_view_plugin.dart';
+import 'package:appflowy/plugins/dashboard/dashboard_plugin.dart';
 import 'package:appflowy/plugins/database/board/presentation/board_page.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_page.dart';
 import 'package:appflowy/plugins/database/grid/presentation/grid_page.dart';
@@ -28,6 +29,7 @@ import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/maps/map_metadata.dart';
 import 'package:appflowy/workspace/application/slides/slide_metadata.dart';
@@ -180,6 +182,12 @@ extension ViewExtension on ViewPB {
     final tableView = tableViewKind;
     if (tableView != null) {
       return TableViewPlugin(view: this, kind: tableView);
+    }
+    // A dashboard is a page that has been laid out as a workspace rather than
+    // as a document. It is deliberately NOT a database view: its layout, its
+    // widgets and its state are its own, and a source is optional.
+    if (isDashboard) {
+      return DashboardPlugin(view: this);
     }
     switch (layout) {
       case ViewLayoutPB.Board:
