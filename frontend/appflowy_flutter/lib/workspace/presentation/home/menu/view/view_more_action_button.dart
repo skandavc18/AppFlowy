@@ -8,6 +8,7 @@ import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
@@ -165,6 +166,15 @@ class ViewMoreActionPopover extends StatelessWidget {
           !view.isWorkspaceItem &&
           !view.isDashboard) {
         actionTypes.add(ViewMoreActionType.turnIntoDashboard);
+      }
+
+      // The same for a canvas: a page whose ideas turned out to be spatial
+      // rather than linear should not have to be recreated.
+      if (view.layout == ViewLayoutPB.Document &&
+          !view.isWorkspaceItem &&
+          !view.isDashboard &&
+          !view.isCanvas) {
+        actionTypes.add(ViewMoreActionType.turnIntoCanvas);
       }
 
       actionTypes.addAll([

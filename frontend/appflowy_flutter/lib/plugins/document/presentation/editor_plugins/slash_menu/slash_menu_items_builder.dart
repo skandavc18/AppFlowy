@@ -114,6 +114,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       items: interactiveSlashMenuItems(),
       descriptions: interactiveSlashMenuDescriptions(),
     ),
+    if (documentBloc != null) _canvasSection(documentBloc),
     if (documentBloc != null) _dashboardSection(documentBloc),
     SlashMenuSectionItems(
       section: SlashMenuSection.diagrams,
@@ -181,6 +182,19 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       ],
     ),
   ]);
+}
+
+/// `/canvas`, `/embed canvas`, and one entry per template.
+///
+/// Like the dashboard section it needs the document's own id, because a new
+/// canvas is created underneath the page that asked for it.
+SlashMenuSectionItems _canvasSection(DocumentBloc documentBloc) {
+  final items = canvasSlashMenuItems(documentBloc);
+  return SlashMenuSectionItems(
+    section: SlashMenuSection.canvas,
+    items: items,
+    descriptions: canvasSlashMenuDescriptions(items),
+  );
 }
 
 /// `/dashboard`, and one entry per template.

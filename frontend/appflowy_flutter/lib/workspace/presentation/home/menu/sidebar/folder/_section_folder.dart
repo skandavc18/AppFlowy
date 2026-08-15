@@ -8,6 +8,7 @@ import 'package:appflowy/workspace/application/collections/collection_registry.d
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_creator.dart';
@@ -325,6 +326,13 @@ Future<ViewPB?> createSidebarRootItem(
         parentViewId: workspaceId,
         name: '',
         section: section,
+      ),
+    SidebarRootCreateKind.canvas => ViewBackendService.createView(
+        layoutType: ViewLayoutPB.Document,
+        parentViewId: workspaceId,
+        name: LocaleKeys.canvas_defaultName.tr(),
+        section: section,
+        extra: CanvasMetadata.newExtra(),
       ),
     SidebarRootCreateKind.dashboard => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Document,

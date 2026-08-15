@@ -63,6 +63,7 @@ Future<String> customDocumentToMarkdown(
         const FileBlockNodeParser(),
         const FolderExplorerNodeParser(),
         const PagePreviewNodeParser(),
+        const CanvasNodeParser(),
       ],
     );
   } catch (e) {

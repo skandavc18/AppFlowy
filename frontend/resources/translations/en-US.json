@@ -1865,6 +1865,296 @@
       "embedLink": "Embed file link"
     }
   },
+  "canvas": {
+    "name": "Canvas",
+    "sectionName": "Canvas",
+    "plural": "Canvases",
+    "defaultName": "New canvas",
+    "untitled": "Untitled canvas",
+    "menuName": "Canvas",
+    "description": "An infinite space to think in",
+    "turnInto": "Turn into canvas",
+    "revert": "Turn back into a page",
+    "openStandalone": "Open as canvas",
+    "readOnly": "Read only",
+    "readOnlyHint": "You do not have permission to change this canvas",
+    "toolbar": {
+      "select": "Select",
+      "hand": "Pan",
+      "add": "Add",
+      "connect": "Connect",
+      "text": "Text",
+      "frame": "Frame",
+      "draw": "Draw",
+      "erase": "Erase",
+      "image": "Image",
+      "file": "File",
+      "more": "More"
+    },
+    "zoom": {
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "reset": "Reset zoom",
+      "fit": "Zoom to fit",
+      "fitSelection": "Zoom to selection",
+      "center": "Centre the canvas"
+    },
+    "node": {
+      "text": "Text",
+      "page": "Page",
+      "database": "Database",
+      "file": "File",
+      "web": "Web page",
+      "canvas": "Canvas",
+      "bookmark": "Bookmark",
+      "image": "Image",
+      "code": "Code",
+      "diagram": "Diagram",
+      "untitled": "Untitled"
+    },
+    "add": {
+      "text": "Text card",
+      "page": "Page",
+      "database": "Database",
+      "file": "File",
+      "image": "Image",
+      "web": "Web page",
+      "bookmark": "Bookmark",
+      "code": "Code",
+      "diagram": "Diagram",
+      "canvas": "Canvas",
+      "frame": "Frame",
+      "newPage": "New page",
+      "newCanvas": "New canvas"
+    },
+    "menu": {
+      "open": "Open",
+      "edit": "Edit",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "changeType": "Change type",
+      "colour": "Colour",
+      "noColour": "No colour",
+      "addConnection": "Connect from here",
+      "removeFromFrame": "Take out of frame",
+      "convertToPage": "Turn into a page",
+      "selectAll": "Select all",
+      "paste": "Paste",
+      "newFrame": "New frame",
+      "editLabel": "Edit label",
+      "changeStyle": "Line style",
+      "lock": "Lock",
+      "unlock": "Unlock",
+      "bringToFront": "Bring to front",
+      "sendToBack": "Send to back",
+      "group": "Group",
+      "ungroup": "Ungroup",
+      "copyLink": "Copy link"
+    },
+    "align": {
+      "title": "Align",
+      "left": "Left",
+      "centerX": "Centre",
+      "right": "Right",
+      "top": "Top",
+      "centerY": "Middle",
+      "bottom": "Bottom",
+      "distributeHorizontally": "Distribute across",
+      "distributeVertically": "Distribute down",
+      "spaceHorizontally": "Equal gaps across",
+      "spaceVertically": "Equal gaps down"
+    },
+    "layout": {
+      "title": "Arrange",
+      "flow": "Flow",
+      "tree": "Tree",
+      "mindMap": "Mind map",
+      "grid": "Grid"
+    },
+    "frame": {
+      "name": "Frame",
+      "untitled": "Untitled frame",
+      "titleHint": "Name this frame",
+      "descriptionHint": "Add a description",
+      "collapse": "Collapse",
+      "expand": "Expand",
+      "selectContents": "Select what is inside",
+      "cardCount": "{} cards"
+    },
+    "edge": {
+      "name": "Connection",
+      "labelHint": "Label this connection",
+      "style": "Line style",
+      "solid": "Solid",
+      "dashed": "Dashed",
+      "dotted": "Dotted",
+      "arrow": "Arrow",
+      "none": "None",
+      "dot": "Dot",
+      "startMarker": "Start",
+      "endMarker": "End",
+      "relation": "Relationship"
+    },
+    "background": {
+      "title": "Background",
+      "blank": "Blank",
+      "dots": "Dots",
+      "grid": "Grid",
+      "lines": "Lines",
+      "spacing": "Spacing"
+    },
+    "theme": {
+      "title": "Canvas theme",
+      "auto": "Follow the app",
+      "paper": "Paper",
+      "dark": "Dark",
+      "blueprint": "Blueprint",
+      "minimal": "Minimal"
+    },
+    "minimap": {
+      "show": "Show minimap",
+      "hide": "Hide minimap"
+    },
+    "outline": {
+      "title": "Outline",
+      "show": "Show outline",
+      "hide": "Hide outline",
+      "empty": "Name a frame or a card and it will appear here"
+    },
+    "search": {
+      "placeholder": "Find on this canvas",
+      "noResults": "Nothing matches",
+      "next": "Next match",
+      "previous": "Previous match",
+      "counter": "{} of {}"
+    },
+    "settings": {
+      "title": "Canvas settings",
+      "snapToGrid": "Snap to grid",
+      "snapToObjects": "Snap to other cards"
+    },
+    "export": {
+      "title": "Export",
+      "png": "PNG image",
+      "svg": "SVG drawing",
+      "everything": "Whole canvas",
+      "viewport": "What is on screen",
+      "selection": "Selection",
+      "copyImage": "Copy as image",
+      "copied": "Copied to the clipboard",
+      "saved": "Saved to {}",
+      "failed": "The canvas could not be exported",
+      "nothing": "There is nothing to export yet"
+    },
+    "templates": {
+      "title": "Start from a template",
+      "blank": {
+        "name": "Blank canvas",
+        "description": "Start with nothing at all"
+      },
+      "mindMap": {
+        "name": "Mind map",
+        "description": "One idea with branches around it"
+      },
+      "brainstorm": {
+        "name": "Brainstorming",
+        "description": "Somewhere to put everything, then pick"
+      },
+      "project": {
+        "name": "Project planning",
+        "description": "Now, next and later"
+      },
+      "architecture": {
+        "name": "System architecture",
+        "description": "Services, data and what talks to what"
+      },
+      "research": {
+        "name": "Research board",
+        "description": "A question, its sources and what they said"
+      },
+      "journey": {
+        "name": "User journey",
+        "description": "What somebody goes through, step by step"
+      },
+      "swot": {
+        "name": "SWOT analysis",
+        "description": "Strengths, weaknesses, opportunities, threats"
+      },
+      "kanban": {
+        "name": "Kanban board",
+        "description": "To do, doing, done"
+      },
+      "meeting": {
+        "name": "Meeting planning",
+        "description": "Agenda, notes and what happens next"
+      },
+      "study": {
+        "name": "Study map",
+        "description": "A topic broken into what has to be learnt"
+      },
+      "roadmap": {
+        "name": "Product roadmap",
+        "description": "What ships when"
+      }
+    },
+    "mindMap": {
+      "title": "Mind map mode",
+      "hint": "Tab adds a branch, Enter adds one beside it",
+      "child": "Add a branch",
+      "sibling": "Add one beside"
+    },
+    "embed": {
+      "title": "Canvas",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "fullscreen": "Full screen",
+      "chooseCanvas": "Choose a canvas",
+      "createNew": "Create a new canvas",
+      "embedExisting": "Embed an existing canvas",
+      "empty": "Pick a canvas to show here",
+      "missing": "This canvas is no longer here"
+    },
+    "empty": {
+      "title": "An empty canvas",
+      "body": "Double click anywhere to write down an idea.",
+      "action": "Start from a template"
+    },
+    "hint": {
+      "connectFrom": "Click a card to connect it",
+      "drawing": "Drag to draw. Escape when you are done.",
+      "framing": "Drag out a frame",
+      "placing": "Click where it should go"
+    },
+    "card": {
+      "openPage": "Open the page",
+      "openCanvas": "Open the canvas",
+      "chooseObject": "Choose something to show",
+      "missing": "This is no longer here",
+      "addUrl": "Paste an address",
+      "language": "Language",
+      "copy": "Copy",
+      "textHint": "Write something",
+      "convertedToPage": "Turned into a page"
+    },
+    "image": {
+      "title": "Add a picture",
+      "choose": "Click to choose a picture",
+      "fromComputer": "Upload from this computer",
+      "fromAddress": "Use a web address"
+    },
+    "diagram": {
+      "title": "What sort of diagram?",
+      "choose": "Click to choose a diagram",
+      "mermaid": "Diagram from text",
+      "mermaidHint": "Write it and it lays itself out",
+      "drawing": "Freehand drawing",
+      "drawingHint": "Draw it by hand with Excalidraw",
+      "drawingUnavailable": "Only on the desktop app",
+      "drawingEmpty": "Click to draw",
+      "edit": "Edit the drawing",
+      "editSource": "Edit the source"
+    }
+  },
   "dashboard": {
     "name": "Dashboard",
     "sectionName": "Dashboards",

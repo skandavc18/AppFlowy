@@ -1,6 +1,7 @@
 export 'ai_writer_item.dart';
 export 'bulleted_list_item.dart';
 export 'callout_item.dart';
+export 'canvas_items.dart';
 export 'code_block_item.dart';
 export 'collection_items.dart';
 export 'dashboard_items.dart';

@@ -5,6 +5,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart'
     show PageStyleFontLayout, PageStyleLineHeightLayout;
 import 'package:appflowy/plugins/ai_chat/chat.dart';
+import 'package:appflowy/plugins/canvas/canvas_plugin.dart';
 import 'package:appflowy/plugins/collection/bookmark_plugin.dart';
 import 'package:appflowy/plugins/collection/chart_plugin.dart';
 import 'package:appflowy/plugins/collection/collection_plugin.dart';
@@ -28,6 +29,7 @@ import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
@@ -118,6 +120,9 @@ extension ViewExtension on ViewPB {
     if (isSlideDeck) {
       return Icon(Icons.view_carousel_rounded, size: size?.width ?? 16);
     }
+    if (isCanvas) {
+      return Icon(Icons.dashboard_customize_rounded, size: size?.width ?? 16);
+    }
     final tableView = tableViewKind;
     if (tableView != null) {
       return Icon(tableViewIcon(tableView), size: size?.width ?? 16);
@@ -188,6 +193,11 @@ extension ViewExtension on ViewPB {
     // widgets and its state are its own, and a source is optional.
     if (isDashboard) {
       return DashboardPlugin(view: this);
+    }
+    // A canvas is a page that is a space rather than a document: it has no
+    // linear order at all, so it cannot be a document page with a mark on it.
+    if (isCanvas) {
+      return CanvasPlugin(view: this);
     }
     switch (layout) {
       case ViewLayoutPB.Board:

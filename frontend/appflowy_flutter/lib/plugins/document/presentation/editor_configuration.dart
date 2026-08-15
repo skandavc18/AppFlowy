@@ -514,6 +514,9 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
     PagePreviewBlockKeys.type: PagePreviewBlockComponentBuilder(
       configuration: configuration,
     ),
+    CanvasBlockKeys.type: CanvasBlockComponentBuilder(
+      configuration: configuration,
+    ),
     // A row's comments travel with its page but are drawn beside it, so the
     // block that carries them renders nothing here.
     RowCommentKeys.type: RowCommentsBlockComponentBuilder(),
