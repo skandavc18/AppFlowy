@@ -121,7 +121,8 @@ List<PaletteCommand> buildPaletteCommands(BuildContext context) {
         palette.dismiss();
         getIt<MenuSharedState>().latestOpenView = null;
         getIt<TabsBloc>().add(
-          TabsEvent.openPlugin(plugin: makePlugin(pluginType: PluginType.trash)),
+          TabsEvent.openPlugin(
+              plugin: makePlugin(pluginType: PluginType.trash)),
         );
       },
     ),
@@ -183,8 +184,8 @@ List<PaletteCommand> buildPaletteCommands(BuildContext context) {
       shortcut: _shortcut('L', shift: true),
       keywords: const ['dark', 'light', 'appearance', 'theme'],
       run: (palette) {
-        final cubit =
-            AppGlobals.rootNavKey.currentContext?.read<AppearanceSettingsCubit>();
+        final cubit = AppGlobals.rootNavKey.currentContext
+            ?.read<AppearanceSettingsCubit>();
         palette.dismiss();
         cubit?.toggleThemeMode();
       },
@@ -292,8 +293,7 @@ List<PaletteCommand> buildPaletteCommands(BuildContext context) {
 
 /// The words that head each section of the command list.
 String paletteCommandGroupLabel(PaletteCommandGroup group) => switch (group) {
-      PaletteCommandGroup.create =>
-        LocaleKeys.commandPalette_group_create.tr(),
+      PaletteCommandGroup.create => LocaleKeys.commandPalette_group_create.tr(),
       PaletteCommandGroup.navigate =>
         LocaleKeys.commandPalette_group_navigate.tr(),
       PaletteCommandGroup.view => LocaleKeys.commandPalette_group_view.tr(),
