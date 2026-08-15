@@ -169,6 +169,7 @@ class AIChatPagePluginWidgetBuilder extends PluginWidgetBuilder
   Widget? get rightBarItem => MultiBlocProvider(
         providers: [
           BlocProvider.value(value: viewInfoBloc),
+          BlocProvider.value(value: pageAccessLevelBloc),
           BlocProvider.value(value: chatMessageSelectorBloc),
         ],
         child: BlocBuilder<ChatSelectMessageBloc, ChatSelectMessageState>(

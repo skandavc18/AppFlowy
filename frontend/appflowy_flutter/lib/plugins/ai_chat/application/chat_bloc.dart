@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/ai/ai.dart';
+import 'package:appflowy/ai/providers/ai_providers.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-ai/entities.pb.dart';
@@ -20,6 +21,7 @@ import 'chat_message_listener.dart';
 import 'chat_message_stream.dart';
 import 'chat_settings_manager.dart';
 import 'chat_stream_manager.dart';
+import 'custom_provider_chat.dart';
 
 part 'chat_bloc.freezed.dart';
 
@@ -44,6 +46,11 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
 
     _streamManager = ChatStreamManager(chatId);
     _settingsManager = ChatSettingsManager(chatId: chatId);
+    _customChat = CustomProviderChat(
+      chatId: chatId,
+      userId: userId,
+      chatController: chatController,
+    );
 
     _startListening();
     _dispatch();
@@ -60,6 +67,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   late final ChatMessageHandler _messageHandler;
   late final ChatStreamManager _streamManager;
   late final ChatSettingsManager _settingsManager;
+  late final CustomProviderChat _customChat;
 
   ChatMessagePB? lastSentMessage;
 
@@ -67,6 +75,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   bool hasMorePreviousMessages = true;
   bool isFetchingRelatedQuestions = false;
   bool shouldFetchRelatedQuestions = false;
+  bool _loadedCustomTranscript = false;
 
   // Accessor for selected sources
   ValueNotifier<List<String>> get selectedSourcesNotifier =>
@@ -76,6 +85,7 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
   Future<void> close() async {
     // Safely dispose all resources
     await _streamManager.dispose();
+    await _customChat.dispose();
     await listener.stop();
 
     final request = ViewIdPB(value: chatId);
@@ -216,11 +226,10 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     emit(state.copyWith(clearErrorMessages: !state.clearErrorMessages));
 
     _messageHandler.clearRelatedQuestions();
-    _startStreamingMessage(message, format, metadata, promptId);
+    unawaited(_send(message, format, metadata, promptId));
     lastSentMessage = null;
 
     isFetchingRelatedQuestions = false;
-    shouldFetchRelatedQuestions = format == null || format.imageFormat.hasText;
 
     emit(
       state.copyWith(
@@ -229,8 +238,50 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     );
   }
 
+  /// Sends through a provider the person configured when one is chosen, and
+  /// through AppFlowy's own backend otherwise.
+  ///
+  /// ⚠️ Which of the two it is comes from settings, so this has to wait for
+  /// them to be read. Deciding before they arrive sends the message to the
+  /// backend, where a chat that belongs to a provider gets no answer at all.
+  Future<void> _send(
+    String message,
+    PredefinedFormat? format,
+    Map<String, dynamic>? metadata,
+    String? promptId,
+  ) async {
+    await CustomAIProviderStore.instance.ensureLoaded();
+    if (isClosed) {
+      return;
+    }
+
+    // Only the backend offers follow-up questions.
+    shouldFetchRelatedQuestions = !_customChat.isActive &&
+        (format == null || format.imageFormat.hasText);
+
+    if (_customChat.isActive) {
+      await _customChat.send(
+        message: message,
+        onMessage: (message) => _safeAdd(ChatEvent.receiveMessage(message)),
+        onSendingFinished: () => _safeAdd(const ChatEvent.finishSending()),
+        onAnswerFinished: () =>
+            _safeAdd(const ChatEvent.didFinishAnswerStream()),
+      );
+    } else {
+      await _startStreamingMessage(message, format, metadata, promptId);
+    }
+  }
+
   // Stream control handlers
   Future<void> _handleStopStream(Emitter<ChatState> emit) async {
+    // A provider configured in AppFlowy never uses the backend stream, so the
+    // backend must not be asked to stop one.
+    if (_customChat.isActive || _customChat.isRunning) {
+      await _customChat.stop();
+      emit(state.copyWith(promptResponseState: PromptResponseState.ready));
+      return;
+    }
+
     await _streamManager.stopStream();
 
     // Allow user input
@@ -268,7 +319,24 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
     Emitter<ChatState> emit,
   ) {
     _messageHandler.clearRelatedQuestions();
-    _regenerateAnswer(id, format, model);
+    // An answer written by a configured provider can only be written again by
+    // one, whatever the model picked in the message's own menu.
+    final useProvider = _customChat.owns(id) ||
+        (model?.isCustomProvider ?? _customChat.isActive);
+    if (useProvider) {
+      unawaited(
+        _customChat.regenerate(
+          answerMessageId: id,
+          model: model,
+          onMessage: (message) => _safeAdd(ChatEvent.receiveMessage(message)),
+          onSendingFinished: () => _safeAdd(const ChatEvent.finishSending()),
+          onAnswerFinished: () =>
+              _safeAdd(const ChatEvent.didFinishAnswerStream()),
+        ),
+      );
+    } else {
+      _regenerateAnswer(id, format, model);
+    }
     lastSentMessage = null;
 
     isFetchingRelatedQuestions = false;
@@ -418,6 +486,32 @@ class ChatBloc extends Bloc<ChatEvent, ChatState> {
       },
       (err) => Log.error("Failed to load messages: $err"),
     );
+
+    await _loadCustomTranscript();
+  }
+
+  /// Brings back the turns answered by a provider configured in AppFlowy. The
+  /// backend never saw them, so nothing else would.
+  Future<void> _loadCustomTranscript() async {
+    if (_loadedCustomTranscript) {
+      return;
+    }
+    _loadedCustomTranscript = true;
+
+    await CustomAIProviderStore.instance.ensureLoaded();
+    final messages = await _customChat.loadTranscript();
+    if (isClosed || messages.isEmpty) {
+      return;
+    }
+    for (final message in messages) {
+      add(ChatEvent.receiveMessage(message));
+    }
+  }
+
+  void _safeAdd(ChatEvent event) {
+    if (!isClosed) {
+      add(event);
+    }
   }
 
   void _loadPreviousMessagesIfNeeded() {

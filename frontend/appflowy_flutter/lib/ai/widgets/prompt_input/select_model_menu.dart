@@ -1,6 +1,9 @@
 import 'package:appflowy/ai/ai.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/settings/show_settings.dart';
+import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
 import 'package:appflowy_backend/protobuf/flowy-ai/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -41,6 +44,16 @@ class _SelectModelMenuState extends State<SelectModelMenu> {
               return SelectModelPopoverContent(
                 models: state.models,
                 selectedModel: state.selectedModel,
+                onManageProviders: () {
+                  popoverController.close();
+                  final workspaceBloc = context.read<UserWorkspaceBloc>();
+                  showSettingsDialog(
+                    context,
+                    workspaceBloc.state.userProfile,
+                    workspaceBloc,
+                    SettingsPage.ai,
+                  );
+                },
                 onSelectModel: (model) {
                   if (model != state.selectedModel) {
                     context
@@ -53,11 +66,9 @@ class _SelectModelMenuState extends State<SelectModelMenu> {
             },
             child: _CurrentModelButton(
               model: state.selectedModel,
-              onTap: () {
-                if (state.selectedModel != null) {
-                  popoverController.show();
-                }
-              },
+              // Always open: with no backend model and no provider yet there is
+              // nothing to pick, and a dead button is how that reads.
+              onTap: popoverController.show,
             ),
           );
         },
@@ -72,21 +83,22 @@ class SelectModelPopoverContent extends StatelessWidget {
     required this.models,
     required this.selectedModel,
     this.onSelectModel,
+    this.onManageProviders,
   });
 
   final List<AIModelPB> models;
   final AIModelPB? selectedModel;
   final void Function(AIModelPB)? onSelectModel;
+  final VoidCallback? onManageProviders;
 
   @override
   Widget build(BuildContext context) {
-    if (models.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    // separate models into local and cloud models
-    final localModels = models.where((model) => model.isLocal).toList();
-    final cloudModels = models.where((model) => !model.isLocal).toList();
+    // separate models into the person's own providers, local and cloud models
+    final customModels =
+        models.where((model) => model.isCustomProvider).toList();
+    final builtIn = models.where((model) => !model.isCustomProvider).toList();
+    final localModels = builtIn.where((model) => model.isLocal).toList();
+    final cloudModels = builtIn.where((model) => !model.isLocal).toList();
 
     return Padding(
       padding: const EdgeInsets.all(8.0),
@@ -122,8 +134,64 @@ class SelectModelPopoverContent extends StatelessWidget {
                 onTap: () => onSelectModel?.call(model),
               ),
             ),
+            if (customModels.isNotEmpty) ...[
+              if (builtIn.isNotEmpty) const VSpace(8.0),
+              _ModelSectionHeader(
+                title: LocaleKeys.chat_switchModel_yourProviders.tr(),
+              ),
+              const VSpace(4.0),
+              ...customModels.map(
+                (model) => _ModelItem(
+                  model: model,
+                  isSelected: model == selectedModel,
+                  onTap: () => onSelectModel?.call(model),
+                ),
+              ),
+            ],
+            if (models.isEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 10),
+                child: FlowyText(
+                  LocaleKeys.aiProviders_noModelAvailable.tr(),
+                  fontSize: 12,
+                  figmaLineHeight: 16,
+                  maxLines: 3,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            if (onManageProviders != null)
+              _ManageProvidersItem(onTap: onManageProviders!),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Opens Settings ▸ AI, so a chat with nothing to answer it is one click from
+/// the place that fixes that.
+class _ManageProvidersItem extends StatelessWidget {
+  const _ManageProvidersItem({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 32),
+      child: FlowyButton(
+        margin: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 6.0),
+        leftIcon: Icon(
+          Icons.tune_rounded,
+          size: 16,
+          color: Theme.of(context).hintColor,
+        ),
+        text: FlowyText(
+          LocaleKeys.aiProviders_manage.tr(),
+          figmaLineHeight: 20,
+          overflow: TextOverflow.ellipsis,
+        ),
+        onTap: onTap,
       ),
     );
   }

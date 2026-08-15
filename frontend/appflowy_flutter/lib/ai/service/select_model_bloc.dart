@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/ai/providers/ai_providers.dart';
 import 'package:appflowy/ai/service/ai_model_state_notifier.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/protobuf/flowy-ai/entities.pbserver.dart';
@@ -17,12 +18,20 @@ class SelectModelBloc extends Bloc<SelectModelEvent, SelectModelState> {
       (event, emit) {
         event.when(
           selectModel: (model) {
-            AIEventUpdateSelectedModel(
-              UpdateSelectedModelPB(
-                source: _aiModelStateNotifier.objectId,
-                selectedModel: model,
-              ),
-            ).send();
+            // A provider configured in AppFlowy is answered on this side, so
+            // the backend is only told which of ITS models is in force.
+            final store = CustomAIProviderStore.instance;
+            if (model.isCustomProvider) {
+              unawaited(store.select(model.name));
+            } else {
+              unawaited(store.select(null));
+              AIEventUpdateSelectedModel(
+                UpdateSelectedModelPB(
+                  source: _aiModelStateNotifier.objectId,
+                  selectedModel: model,
+                ),
+              ).send();
+            }
 
             emit(state.copyWith(selectedModel: model));
           },

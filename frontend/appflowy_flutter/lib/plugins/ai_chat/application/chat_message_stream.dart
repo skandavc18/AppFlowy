@@ -61,6 +61,18 @@ class AnswerStream {
     _port.close();
   }
 
+  /// Feeds one event in from Dart rather than from the native port.
+  ///
+  /// The backend posts these same strings over [nativePort]; an AI service the
+  /// person configured themselves is streamed on this side, so every message
+  /// widget still reads exactly one kind of stream whoever produced it.
+  void addEvent(String event) {
+    if (_controller.isClosed) {
+      return;
+    }
+    _controller.add(event);
+  }
+
   /// Handles incoming events from the underlying stream.
   void _handleEvent(String event) {
     if (event.startsWith(AIStreamEventPrefix.data)) {

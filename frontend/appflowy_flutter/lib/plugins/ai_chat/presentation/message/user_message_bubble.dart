@@ -1,16 +1,19 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_entity.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_member_bloc.dart';
-import 'package:flowy_infra_ui/style_widget/text.dart';
-import 'package:flowy_infra_ui/widget/spacing.dart';
+import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
+import 'package:easy_localization/easy_localization.dart';
+import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_chat_core/flutter_chat_core.dart';
 
 import '../chat_avatar.dart';
 import '../layout_define.dart';
 
-class ChatUserMessageBubble extends StatelessWidget {
+class ChatUserMessageBubble extends StatefulWidget {
   const ChatUserMessageBubble({
     super.key,
     required this.message,
@@ -23,35 +26,56 @@ class ChatUserMessageBubble extends StatelessWidget {
   final List<ChatFile> files;
 
   @override
+  State<ChatUserMessageBubble> createState() => _ChatUserMessageBubbleState();
+}
+
+class _ChatUserMessageBubbleState extends State<ChatUserMessageBubble> {
+  bool _hovered = false;
+
+  Message get message => widget.message;
+  List<ChatFile> get files => widget.files;
+
+  @override
   Widget build(BuildContext context) {
     context
         .read<ChatMemberBloc>()
         .add(ChatMemberEvent.getMemberInfo(message.author.id));
 
-    return Padding(
-      padding: AIChatUILayout.messageMargin,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (files.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.only(right: 32),
-              child: _MessageFileList(files: files),
-            ),
-            const VSpace(6),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              const Spacer(),
-              _buildBubble(context),
-              const HSpace(DesktopAIChatSizes.avatarAndChatBubbleSpacing),
-              _buildAvatar(),
+    return MouseRegion(
+      opaque: false,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: Padding(
+        padding: AIChatUILayout.messageMargin,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (files.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.only(right: 32),
+                child: _MessageFileList(files: files),
+              ),
+              const VSpace(6),
             ],
-          ),
-        ],
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                const Spacer(),
+                SelectionContainer.disabled(
+                  child: _CopyPromptButton(
+                    visible: _hovered,
+                    message: message,
+                  ),
+                ),
+                _buildBubble(context),
+                const HSpace(DesktopAIChatSizes.avatarAndChatBubbleSpacing),
+                _buildAvatar(),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -82,7 +106,51 @@ class ChatUserMessageBubble extends StatelessWidget {
           horizontal: 16.0,
           vertical: 8.0,
         ),
-        child: child,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Copies the question on its own, without the answer under it.
+class _CopyPromptButton extends StatelessWidget {
+  const _CopyPromptButton({required this.visible, required this.message});
+
+  final bool visible;
+  final Message message;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = message is TextMessage ? (message as TextMessage).text : '';
+    if (text.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return AnimatedOpacity(
+      opacity: visible ? 1 : 0,
+      duration: const Duration(milliseconds: 140),
+      child: IgnorePointer(
+        ignoring: !visible,
+        child: FlowyTooltip(
+          message: LocaleKeys.settings_menu_clickToCopy.tr(),
+          child: FlowyIconButton(
+            width: 26,
+            hoverColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+            icon: FlowySvg(
+              FlowySvgs.copy_s,
+              size: const Size.square(16),
+              color: Theme.of(context).hintColor,
+            ),
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: text));
+              if (context.mounted) {
+                showToastNotification(
+                  message: LocaleKeys.message_copy_success.tr(),
+                );
+              }
+            },
+          ),
+        ),
       ),
     );
   }

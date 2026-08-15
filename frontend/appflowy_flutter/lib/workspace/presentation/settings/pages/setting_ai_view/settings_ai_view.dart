@@ -1,5 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/settings/ai/settings_ai_bloc.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/setting_ai_view/ai_tools_and_skills_setting.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/setting_ai_view/custom_ai_providers_setting.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/setting_ai_view/local_ai_setting.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/setting_ai_view/model_selection.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
@@ -33,7 +35,9 @@ class SettingsAIView extends StatelessWidget {
         children: [
           const AIModelSelection(),
           const _AISearchToggle(value: false),
+          const CustomAIProvidersSetting(),
           const LocalAISetting(),
+          const AIToolsAndSkillsSetting(),
         ],
       ),
     );

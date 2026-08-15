@@ -2,6 +2,7 @@ import 'package:appflowy/ai/ai.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_input_control_cubit.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_user_cubit.dart';
 import 'package:appflowy/plugins/ai_chat/presentation/layout_define.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
@@ -223,15 +224,26 @@ class _DesktopPromptInputState extends State<DesktopPromptInput> {
     if (widget.hideDecoration) {
       return BoxDecoration();
     }
+    final theme = Theme.of(context);
+    final focused = focusNode.hasFocus;
+    final isLight = theme.brightness == Brightness.light;
     return BoxDecoration(
-      color: Theme.of(context).colorScheme.surface,
+      color: PaperTheme.isEnabled(context)
+          ? PaperTheme.popupBackground
+          : theme.colorScheme.surface,
       border: Border.all(
-        color: focusNode.hasFocus
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.outline,
-        width: focusNode.hasFocus ? 1.5 : 1.0,
+        color: focused
+            ? theme.colorScheme.primary.withValues(alpha: 0.5)
+            : theme.colorScheme.outline.withValues(alpha: 0.5),
       ),
-      borderRadius: const BorderRadius.all(Radius.circular(12.0)),
+      borderRadius: const BorderRadius.all(Radius.circular(20.0)),
+      boxShadow: [
+        BoxShadow(
+          color: theme.shadowColor.withValues(alpha: isLight ? 0.05 : 0.25),
+          blurRadius: focused ? 20.0 : 12.0,
+          offset: const Offset(0, 4),
+        ),
+      ],
     );
   }
 

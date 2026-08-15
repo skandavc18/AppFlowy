@@ -1,4 +1,5 @@
 import 'package:appflowy/ai/ai.dart';
+import 'package:appflowy/ai/providers/ai_providers.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/ai_chat/application/ai_model_switch_listener.dart';
 import 'package:appflowy/workspace/application/settings/ai/local_llm_listener.dart';
@@ -6,6 +7,7 @@ import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-ai/entities.pb.dart';
 import 'package:appflowy_result/appflowy_result.dart';
+import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:universal_platform/universal_platform.dart';
 
@@ -59,6 +61,11 @@ class AIModelStateNotifier {
   List<AIModelPB> _availableModels = [];
   AIModelPB? _selectedModel;
 
+  /// What the backend offers, kept apart from the person's own providers so
+  /// switching back to a built-in model restores exactly what it chose.
+  List<AIModelPB> _backendModels = [];
+  AIModelPB? _backendSelectedModel;
+
   final List<OnModelStateChangedCallback> _stateChangedCallbacks = [];
   final List<OnAvailableModelsChangedCallback>
       _availableModelsChangedCallbacks = [];
@@ -76,7 +83,8 @@ class AIModelStateNotifier {
 
     _aiModelSwitchListener.start(
       onUpdateSelectedModel: (model) async {
-        _selectedModel = model;
+        _backendSelectedModel = model;
+        _applyCustomModels();
         _updateAll();
         if (model.isLocal && UniversalPlatform.isDesktop) {
           await _loadLocalState();
@@ -84,13 +92,22 @@ class AIModelStateNotifier {
         }
       },
     );
+
+    CustomAIProviderStore.instance.addListener(_onCustomProvidersChanged);
+  }
+
+  void _onCustomProvidersChanged() {
+    _applyCustomModels();
+    _updateAll();
   }
 
   Future<void> _init() async {
     await Future.wait([
       if (UniversalPlatform.isDesktop) _loadLocalState(),
       _loadModelSelection(),
+      CustomAIProviderStore.instance.ensureLoaded(),
     ]);
+    _applyCustomModels();
     _updateAll();
   }
 
@@ -123,6 +140,7 @@ class AIModelStateNotifier {
   Future<void> dispose() async {
     _stateChangedCallbacks.clear();
     _availableModelsChangedCallbacks.clear();
+    CustomAIProviderStore.instance.removeListener(_onCustomProvidersChanged);
     await _localAIListener?.stop();
     await _aiModelSwitchListener.stop();
   }
@@ -150,11 +168,38 @@ class AIModelStateNotifier {
     ).send().fold(
       (ms) {
         _modelSelection = ms;
-        _availableModels = ms.models;
-        _selectedModel = ms.selectedModel;
+        _backendModels = ms.models;
+        _backendSelectedModel = ms.selectedModel;
       },
       (e) => Log.error("Failed to fetch models: \$e"),
     );
+    _applyCustomModels();
+  }
+
+  /// Lays the person's own providers beside the built-in ones, and lets a
+  /// chosen provider model win over whatever the backend last selected.
+  void _applyCustomModels() {
+    final store = CustomAIProviderStore.instance;
+    final custom = store.models;
+    final chosen = store.selectedModelName;
+
+    if (chosen == null) {
+      _availableModels = [..._backendModels, ...custom];
+      _selectedModel = _backendSelectedModel;
+      return;
+    }
+
+    // ⚠️ A chosen model still counts when the provider's own list has not been
+    // read yet. Falling back to a backend model here hands the chat to local
+    // AI, and if that is not running the message box turns read-only: no
+    // typing, no backspace, and no sign of why.
+    final known = custom.firstWhereOrNull((model) => model.name == chosen);
+    _selectedModel = known ?? AIModelPB(name: chosen, isLocal: false);
+    _availableModels = [
+      ..._backendModels,
+      ...custom,
+      if (known == null) _selectedModel!,
+    ];
   }
 
   Future<void> _loadLocalState() async {
@@ -176,11 +221,25 @@ class AIModelStateNotifier {
   AIModelState _computeState() {
     if (UniversalPlatform.isMobile) return _defaultState();
 
+    // ⚠️ Until the person's own providers have been read, which model is in
+    // force is unknown. Reporting local AI's readiness here would lock the
+    // message box of a chat that actually belongs to a provider — no typing,
+    // no backspace, and nothing on screen to say why.
+    if (!CustomAIProviderStore.instance.isLoaded) {
+      return _defaultState();
+    }
+
+    // A provider configured in AppFlowy answers over HTTP from this side, so
+    // none of the backend's local-AI readiness applies to it.
+    if (CustomAIModelName.isCustom(_selectedModel?.name ?? '')) {
+      return _defaultState();
+    }
+
     if (_modelSelection == null || _localAIState == null) {
       return _defaultState();
     }
 
-    if (!_selectedModel!.isLocal) {
+    if (_selectedModel == null || !_selectedModel!.isLocal) {
       return _defaultState();
     }
 
@@ -209,6 +268,14 @@ class AIModelStateNotifier {
 
 extension AIModelPBExtension on AIModelPB {
   bool get isDefault => name == 'Auto';
-  String get i18n =>
-      isDefault ? LocaleKeys.chat_switchModel_autoModel.tr() : name;
+
+  /// Whether this model comes from a provider the person configured.
+  bool get isCustomProvider => CustomAIModelName.isCustom(name);
+
+  String get i18n {
+    if (isDefault) {
+      return LocaleKeys.chat_switchModel_autoModel.tr();
+    }
+    return CustomAIModelName.decode(name)?.model ?? name;
+  }
 }

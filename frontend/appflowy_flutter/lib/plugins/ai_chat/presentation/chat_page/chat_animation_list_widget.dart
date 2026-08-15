@@ -12,6 +12,11 @@ import 'package:flutter_chat_core/flutter_chat_core.dart';
 @visibleForTesting
 bool skipAIChatWelcomePage = false;
 
+/// Whether the chat has nothing in it yet, and so should show its opening page
+/// rather than a list of messages.
+bool isNewChat(ChatController controller) =>
+    controller.messages.isEmpty && !skipAIChatWelcomePage;
+
 class ChatAnimationListWidget extends StatefulWidget {
   const ChatAnimationListWidget({
     super.key,
@@ -37,7 +42,7 @@ class _ChatAnimationListWidgetState extends State<ChatAnimationListWidget> {
     final bloc = context.read<ChatBloc>();
 
     // this logic is quite weird, why don't we just get the message from the state?
-    if (bloc.chatController.messages.isEmpty && !skipAIChatWelcomePage) {
+    if (isNewChat(bloc.chatController)) {
       return ChatWelcomePage(
         userProfile: widget.userProfile,
         onSelectedQuestion: (question) {
