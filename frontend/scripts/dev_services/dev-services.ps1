@@ -12,8 +12,8 @@
     Starts every service that is enabled by default and waits until it answers.
 
 .EXAMPLE
-    .\dev-services.ps1 up onlyoffice
-    Starts only the ONLYOFFICE document server (name, tag or wildcard).
+    .\dev-services.ps1 up appflowy-cloud
+    Starts only the AppFlowy Cloud stack (name, tag or wildcard).
 
 .EXAMPLE
     .\dev-services.ps1 status

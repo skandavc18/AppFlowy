@@ -1,9 +1,9 @@
 # AppFlowy dev services
 
 One script to start, stop and inspect the local services AppFlowy talks to
-while developing: the ONLYOFFICE document server behind Word/Excel/PowerPoint
-editing, the self hosted AppFlowy Cloud backend, and whatever integration comes
-next.
+while developing: the self hosted AppFlowy Cloud backend, the ONLYOFFICE
+document server behind Word/Excel/PowerPoint editing, and whatever integration
+comes next.
 
 Everything runs in Docker, so Docker Desktop has to be running.
 
@@ -34,8 +34,8 @@ Select services by name, tag or wildcard; with no argument the default set is
 used.
 
 ```powershell
-.\dev-services.ps1 up onlyoffice
-.\dev-services.ps1 up office              # tag
+.\dev-services.ps1 up appflowy-cloud
+.\dev-services.ps1 up cloud               # tag
 .\dev-services.ps1 logs appflowy-cloud -Follow
 .\dev-services.ps1 up appflowy-cloud -Rebuild   # rebuild the image first
 .\dev-services.ps1 up -All                # include services that are off by default
@@ -54,14 +54,27 @@ it wipes every workspace stored on that instance.
 
 ## Services
 
-### `onlyoffice` — ONLYOFFICE Docs
+### `appflowy-cloud` — self hosted backend
 
-Serves the editor AppFlowy embeds for `.docx`, `.xlsx`, `.pptx` and friends.
-Started as `appflowy-onlyoffice` on port 8080 with JWT enabled.
+Brings up `postgres`, `redis`, `minio`, `gotrue` and `onlyoffice` from the
+AppFlowy-Cloud checkout (`docker-compose-dev.yml` + `deploy.env`), then runs the
+API server container on port 8000. Point AppFlowy at `http://localhost:8000` in
+*Settings > Cloud Settings > Self-hosted* and sign in with
+`admin@example.com` / `password`.
+
+The server image is built from the checkout, so `-Rebuild` is how a locally
+patched backend gets picked up.
+
+#### ONLYOFFICE Docs
+
+The document server behind `.docx`, `.xlsx` and `.pptx` editing is a service in
+that same compose file, so compose owns its lifecycle, health check and volumes.
+It listens on `127.0.0.1:8080` and the API server reaches it as
+`http://onlyoffice` over the compose network.
 
 When AppFlowy is signed in to the local AppFlowy Cloud service, office files
-connect to this container automatically and saves flow back through Cloud.
-Local-only AppFlowy users can still enter the values printed by the script:
+connect through Cloud automatically and saves flow back through it. Local-only
+AppFlowy users can still enter these values by hand:
 
 | Field | Value |
 | --- | --- |
@@ -73,17 +86,6 @@ Local-only mode serves the file from a short-lived HTTP bridge, so if that mode
 loads the editor but not the document, allow AppFlowy through Windows Firewall.
 Cloud mode keeps the JWT secret and save callback inside the Docker network.
 
-### `appflowy-cloud` — self hosted backend
-
-Brings up `postgres`, `redis`, `minio` and `gotrue` from the AppFlowy-Cloud
-checkout (`docker-compose-dev.yml` + `deploy.env`), then runs the API server
-container on port 8000. Point AppFlowy at `http://localhost:8000` in
-*Settings > Cloud Settings > Self-hosted* and sign in with
-`admin@example.com` / `password`.
-
-The server image is built from the checkout, so `-Rebuild` is how a locally
-patched backend gets picked up.
-
 ## Machine specific settings
 
 Copy `dev-services.local.example.json` to `dev-services.local.json` (gitignored)
@@ -92,7 +94,6 @@ path, a free port, another JWT secret:
 
 ```json
 {
-  "onlyoffice": { "Port": 8081 },
   "appflowy-cloud": { "RepoPath": "D:\\AppFlowy-Cloud" }
 }
 ```

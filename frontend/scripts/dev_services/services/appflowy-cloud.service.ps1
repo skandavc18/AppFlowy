@@ -1,5 +1,5 @@
-# AppFlowy Cloud - the self hosted backend (gotrue, postgres, redis, minio and
-# the appflowy_cloud API server).
+# AppFlowy Cloud - the self hosted backend (gotrue, postgres, redis, minio,
+# onlyoffice and the appflowy_cloud API server).
 #
 # The infrastructure comes from the AppFlowy-Cloud checkout's docker compose
 # file; the API server itself runs as a plain container built from that same
@@ -8,18 +8,17 @@
 @{
     Name        = 'appflowy-cloud'
     DisplayName = 'AppFlowy Cloud'
-    Summary     = 'Self hosted sync, auth and storage backend'
+    Summary     = 'Self hosted sync, auth, storage and office editing backend'
     Enabled     = $true
     Order       = 20
-    Tags        = @('cloud', 'backend', 'sync', 'auth')
-    DependsOn   = @('onlyoffice')
+    Tags        = @('cloud', 'backend', 'sync', 'auth', 'office')
 
     Defaults    = [ordered]@{
         RepoPath          = 'C:\AppFlowy-Cloud'
         ComposeFile       = 'docker-compose-dev.yml'
         EnvFile           = 'deploy.env'
         ComposeProject    = 'appflowy-cloud'
-        InfraServices     = @('postgres', 'redis', 'minio', 'gotrue')
+        InfraServices     = @('postgres', 'redis', 'minio', 'gotrue', 'onlyoffice')
         Network           = 'appflowy-cloud_default'
 
         ServerImage       = 'appflowy-cloud-local:workspace-cover'
@@ -44,9 +43,8 @@
         S3Bucket          = 'appflowy'
         WebUrl            = 'http://localhost:3000'
         RustLog           = 'info'
-        DocumentServerContainer        = 'appflowy-onlyoffice'
         DocumentServerPublicUrl        = 'http://localhost:8080'
-        DocumentServerInternalUrl      = 'http://appflowy-onlyoffice'
+        DocumentServerInternalUrl      = 'http://onlyoffice'
         DocumentServerJwtSecret        = 'appflowy-office-dev-secret'
         DocumentServerMaxFileSizeBytes = 104857600
 
@@ -88,6 +86,9 @@
         $config = $ctx.Config
 
         Write-DevStep "starting $($config.InfraServices -join ', ')"
+        # The compose file reads the document server secret from the environment,
+        # so the value here stays the single source of truth for both containers.
+        $env:APPFLOWY_DOCUMENT_SERVER_JWT_SECRET = $config.DocumentServerJwtSecret
         # This compose file gives postgres no volume, so recreating a container
         # throws its data away. Never do that unless the caller asked for it.
         $composeArgs = @('up', '-d')
@@ -106,20 +107,6 @@
             -Activity 'waiting for gotrue'
         if (-not $gotrueReady) {
             throw 'gotrue did not become healthy; run "dev-services.ps1 logs appflowy-cloud" or check docker compose logs.'
-        }
-
-        $documentServerState = Get-DevContainerState -Name $config.DocumentServerContainer
-        if ($documentServerState -ne 'running') {
-            throw "document server container $($config.DocumentServerContainer) is not running"
-        }
-        $documentServerNetworks = (
-            Invoke-DevDocker `
-                -Arguments @('inspect', '--format', '{{json .NetworkSettings.Networks}}', $config.DocumentServerContainer) `
-                -Capture
-        ) -join ''
-        if ($documentServerNetworks -notmatch [Regex]::Escape('"' + $config.Network + '"')) {
-            Write-DevStep "connecting $($config.DocumentServerContainer) to $($config.Network)"
-            Invoke-DevDocker -Arguments @('network', 'connect', $config.Network, $config.DocumentServerContainer)
         }
 
         $environment = [ordered]@{
@@ -288,10 +275,11 @@
         $config = $ctx.Config
         @{
             Endpoints = [ordered]@{
-                'Cloud API'     = "http://localhost:$($config.ServerPort)"
-                'GoTrue (auth)' = "http://localhost:$($config.GotruePort)"
-                'MinIO console' = "http://localhost:$($config.MinioConsolePort)"
-                'Postgres'      = "localhost:$($config.PostgresPort)"
+                'Cloud API'       = "http://localhost:$($config.ServerPort)"
+                'GoTrue (auth)'   = "http://localhost:$($config.GotruePort)"
+                'MinIO console'   = "http://localhost:$($config.MinioConsolePort)"
+                'Postgres'        = "localhost:$($config.PostgresPort)"
+                'ONLYOFFICE Docs' = $config.DocumentServerPublicUrl
             }
             Notes     = @(
                 'In AppFlowy: Settings > Cloud Settings > Self-hosted, then use',

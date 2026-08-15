@@ -1,13 +1,10 @@
 {
   "_comment": "Copy this file to dev-services.local.json to override manifest defaults on this machine. Every key matches a key from the Defaults block of the service with that name.",
-  "onlyoffice": {
-    "Port": 8080,
-    "JwtSecret": "appflowy-office-dev-secret"
-  },
   "appflowy-cloud": {
     "RepoPath": "C:\\AppFlowy-Cloud",
     "ServerImage": "appflowy-cloud-local:workspace-cover",
     "ServerPort": 8000,
-    "AutoBuildImage": true
+    "AutoBuildImage": true,
+    "DocumentServerJwtSecret": "appflowy-office-dev-secret"
   }
 }
