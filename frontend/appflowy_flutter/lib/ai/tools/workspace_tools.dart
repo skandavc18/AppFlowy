@@ -173,7 +173,8 @@ class WorkspaceToolServer implements AIToolServer {
         },
         'kind': {
           'type': 'string',
-          'description': 'One of: ${WorkspaceFileKind.values.map((k) => k.name).join(', ')}.',
+          'description':
+              'One of: ${WorkspaceFileKind.values.map((k) => k.name).join(', ')}.',
         },
         'content': {
           'type': 'string',
@@ -309,7 +310,14 @@ class WorkspaceToolServer implements AIToolServer {
         'name': {'type': 'string', 'description': 'The collection name.'},
         'kind': {
           'type': 'string',
-          'enum': ['book', 'album', 'repository', 'database', 'bookmark', 'email'],
+          'enum': [
+            'book',
+            'album',
+            'repository',
+            'database',
+            'bookmark',
+            'email'
+          ],
           'description': 'What the collection holds.',
         },
       },
@@ -645,8 +653,7 @@ class WorkspaceToolServer implements AIToolServer {
     final matching = result
         .where(
           (view) =>
-              query == null ||
-              view.nameOrDefault.toLowerCase().contains(query),
+              query == null || view.nameOrDefault.toLowerCase().contains(query),
         )
         .take(200)
         .toList();
@@ -779,8 +786,7 @@ class WorkspaceToolServer implements AIToolServer {
   Future<AIToolResult> _createFolder(Map<String, dynamic> arguments) async {
     final name = _string(arguments, 'name') ?? 'New folder';
     final parent = await _resolveParent(arguments);
-    final result =
-        await _items.createFolder(parentViewId: parent, name: name);
+    final result = await _items.createFolder(parentViewId: parent, name: name);
     return result.fold(
       (view) => AIToolResult('Created the folder "$name" (id: ${view.id}).'),
       (error) => AIToolResult.error('The folder was not created: ${error.msg}'),
@@ -801,9 +807,8 @@ class WorkspaceToolServer implements AIToolServer {
       parentViewId: parent,
       kind: kind,
       name: name,
-      content: content == null
-          ? null
-          : Uint8List.fromList(utf8.encode(content)),
+      content:
+          content == null ? null : Uint8List.fromList(utf8.encode(content)),
     );
     return result.fold(
       (view) => AIToolResult('Created the file "$name" (id: ${view.id}).'),
@@ -877,7 +882,8 @@ class WorkspaceToolServer implements AIToolServer {
   }
 
   Future<List<FieldPB>> _fields(String tableId) async {
-    final result = await DatabaseViewBackendService(viewId: tableId).getFields();
+    final result =
+        await DatabaseViewBackendService(viewId: tableId).getFields();
     return result.fold((fields) => fields, (_) => <FieldPB>[]);
   }
 
@@ -1064,8 +1070,7 @@ class WorkspaceToolServer implements AIToolServer {
       extra: CollectionMetadata.newExtra(kind.first),
     );
     return result.fold(
-      (view) =>
-          AIToolResult('Created the $kindName "$name" (id: ${view.id}).'),
+      (view) => AIToolResult('Created the $kindName "$name" (id: ${view.id}).'),
       (error) =>
           AIToolResult.error('The collection was not created: ${error.msg}'),
     );
@@ -1084,7 +1089,8 @@ class WorkspaceToolServer implements AIToolServer {
     }
     final outline = _blocks.outline(data);
     if (outline.isEmpty) {
-      return AIToolResult('That page is empty. Its page block is ${data.pageId}.');
+      return AIToolResult(
+          'That page is empty. Its page block is ${data.pageId}.');
     }
     return AIToolResult(outline.map((block) => block.describe()).join('\n'));
   }

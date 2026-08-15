@@ -27,7 +27,13 @@ enum AIToolPermission {
 }
 
 /// The answer to one request to run a tool.
-enum AIToolDecision { allowOnce, allowAlways, allowAllThisChat, denyOnce, denyAlways }
+enum AIToolDecision {
+  allowOnce,
+  allowAlways,
+  allowAllThisChat,
+  denyOnce,
+  denyAlways
+}
 
 /// Who may do what.
 ///

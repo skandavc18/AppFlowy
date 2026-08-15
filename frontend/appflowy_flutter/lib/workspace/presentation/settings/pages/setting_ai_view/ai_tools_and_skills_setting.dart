@@ -111,8 +111,7 @@ class _BuiltInSection extends StatelessWidget {
             spacing: 6,
             runSpacing: 6,
             children: [
-              for (final tool in own)
-                _ToolChip(tool: tool, palette: palette),
+              for (final tool in own) _ToolChip(tool: tool, palette: palette),
             ],
           ),
         ),
@@ -254,7 +253,9 @@ class _ServerRow extends StatelessWidget {
                   failure != null
                       ? LocaleKeys.aiTools_serverUnreachable.tr(args: [failure])
                       : '${server.summary} · '
-                          '${LocaleKeys.aiTools_toolsFound.tr(args: ['$count'])}',
+                          '${LocaleKeys.aiTools_toolsFound.tr(args: [
+                              '$count'
+                            ])}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -426,14 +427,16 @@ class _SkillRow extends StatelessWidget {
               iconSize: 16,
               splashRadius: 16,
               tooltip: LocaleKeys.aiProviders_edit.tr(),
-              onPressed: () => unawaited(showAISkillDialog(context, skill: skill)),
+              onPressed: () =>
+                  unawaited(showAISkillDialog(context, skill: skill)),
               icon: Icon(Icons.edit_outlined, color: palette.textMuted),
             ),
             IconButton(
               iconSize: 16,
               splashRadius: 16,
               tooltip: LocaleKeys.button_delete.tr(),
-              onPressed: () => unawaited(AISkillStore.instance.remove(skill.id)),
+              onPressed: () =>
+                  unawaited(AISkillStore.instance.remove(skill.id)),
               icon: Icon(
                 Icons.delete_outline_rounded,
                 color: palette.textMuted,
@@ -679,8 +682,7 @@ class _McpServerDialog extends StatefulWidget {
 }
 
 class _McpServerDialogState extends State<_McpServerDialog> {
-  late McpTransport _transport =
-      widget.server?.transport ?? McpTransport.stdio;
+  late McpTransport _transport = widget.server?.transport ?? McpTransport.stdio;
   late final TextEditingController _name =
       TextEditingController(text: widget.server?.name ?? '');
   late final TextEditingController _command = TextEditingController(
@@ -749,8 +751,7 @@ class _McpServerDialogState extends State<_McpServerDialog> {
       .toList();
 
   Future<void> _save() async {
-    final (command, args) =
-        McpServerConfig.parseCommandLine(_command.text);
+    final (command, args) = McpServerConfig.parseCommandLine(_command.text);
     final saved = await McpServerStore.instance.upsert(
       McpServerConfig(
         id: widget.server?.id ?? '',

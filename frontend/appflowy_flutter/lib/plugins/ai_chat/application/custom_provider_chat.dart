@@ -308,7 +308,8 @@ class CustomProviderChat {
   }
 
   /// Turns the conversation on screen into what a provider expects to read.
-  List<AIChatTurn> _history({required String excluding}) {    final turns = <AIChatTurn>[];
+  List<AIChatTurn> _history({required String excluding}) {
+    final turns = <AIChatTurn>[];
     for (final message in chatController.messages) {
       if (message.id == excluding) {
         continue;

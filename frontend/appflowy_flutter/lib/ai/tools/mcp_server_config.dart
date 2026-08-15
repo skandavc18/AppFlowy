@@ -146,8 +146,7 @@ class McpServerConfig {
       return const {};
     }
     return {
-      for (final entry in value.entries)
-        '${entry.key}': '${entry.value}',
+      for (final entry in value.entries) '${entry.key}': '${entry.value}',
     };
   }
 

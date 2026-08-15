@@ -128,8 +128,8 @@ class _ToolApprovalDialog extends StatelessWidget {
                   _Choice(
                     label: LocaleKeys.aiTools_denyAlways.tr(),
                     palette: palette,
-                    onTap: () => Navigator.of(context)
-                        .pop(AIToolDecision.denyAlways),
+                    onTap: () =>
+                        Navigator.of(context).pop(AIToolDecision.denyAlways),
                   ),
                   _Choice(
                     label: LocaleKeys.aiTools_deny.tr(),
@@ -146,8 +146,8 @@ class _ToolApprovalDialog extends StatelessWidget {
                   _Choice(
                     label: LocaleKeys.aiTools_allowAlways.tr(),
                     palette: palette,
-                    onTap: () => Navigator.of(context)
-                        .pop(AIToolDecision.allowAlways),
+                    onTap: () =>
+                        Navigator.of(context).pop(AIToolDecision.allowAlways),
                   ),
                   _Choice(
                     label: LocaleKeys.aiTools_allowOnce.tr(),

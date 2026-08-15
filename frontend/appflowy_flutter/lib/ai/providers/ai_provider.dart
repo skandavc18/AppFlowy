@@ -53,9 +53,8 @@ enum AIProviderKind {
     id: 'microsoft',
     label: 'Microsoft Copilot (Azure OpenAI / AI Foundry)',
     protocol: AIProviderProtocol.azureOpenAI,
-    defaultBaseUrl:
-        'https://YOUR-RESOURCE.openai.azure.com/openai/deployments/'
-            'YOUR-DEPLOYMENT/chat/completions?api-version=2024-10-21',
+    defaultBaseUrl: 'https://YOUR-RESOURCE.openai.azure.com/openai/deployments/'
+        'YOUR-DEPLOYMENT/chat/completions?api-version=2024-10-21',
     needsApiKey: true,
     // Azure answers for a DEPLOYMENT you named, not for a model id.
     suggestedModels: [],

@@ -93,14 +93,14 @@ void main() {
       expect(toolkit, contains('openDocument(documentId: pageId)'));
       expect(toolkit, isNot(contains('getDocument(documentId: pageId)')));
 
-      final tools = File('lib/ai/tools/workspace_tools.dart').readAsStringSync();
+      final tools =
+          File('lib/ai/tools/workspace_tools.dart').readAsStringSync();
       expect(tools, isNot(contains('getDocument(')));
     });
 
     test('the block tool names the types it can insert', () async {
       final tools = await WorkspaceToolServer().listTools();
-      final insert =
-          tools.firstWhere((tool) => tool.name == 'insert_block');
+      final insert = tools.firstWhere((tool) => tool.name == 'insert_block');
 
       // An agent cannot guess a block type, so they are spelled out.
       for (final type in const [

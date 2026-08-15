@@ -287,7 +287,8 @@ class _ProviderCardState extends State<_ProviderCard> {
               iconSize: 16,
               splashRadius: 16,
               onPressed: widget.onRemove,
-              icon: Icon(Icons.delete_outline_rounded, color: palette.textMuted),
+              icon:
+                  Icon(Icons.delete_outline_rounded, color: palette.textMuted),
             ),
           ],
         ),
@@ -491,8 +492,8 @@ class _AIProviderDialogState extends State<_AIProviderDialog> {
           _noticeIsError = true;
         } else {
           _models.text = models.join(', ');
-          _notice = LocaleKeys.aiProviders_modelsFound
-              .tr(args: ['${models.length}']);
+          _notice =
+              LocaleKeys.aiProviders_modelsFound.tr(args: ['${models.length}']);
           _noticeIsError = false;
         }
       });

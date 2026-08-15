@@ -129,7 +129,15 @@ When asked to track something:
     name: 'Organise the workspace',
     description: 'Find, rename, move and tidy pages and folders.',
     isBuiltIn: true,
-    keywords: ['organis', 'organiz', 'tidy', 'move', 'rename', 'folder', 'sort'],
+    keywords: [
+      'organis',
+      'organiz',
+      'tidy',
+      'move',
+      'rename',
+      'folder',
+      'sort'
+    ],
     instructions: '''
 When tidying up:
 - list_pages first and work from the ids it gives you; never guess an id.

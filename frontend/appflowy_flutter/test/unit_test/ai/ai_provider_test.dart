@@ -26,7 +26,8 @@ void main() {
     });
 
     test('a malformed name is refused rather than half read', () {
-      expect(CustomAIModelName.decode('${CustomAIModelName.prefix}abc'), isNull);
+      expect(
+          CustomAIModelName.decode('${CustomAIModelName.prefix}abc'), isNull);
       expect(
         CustomAIModelName.decode('${CustomAIModelName.prefix}abc/'),
         isNull,
@@ -64,7 +65,8 @@ void main() {
     });
 
     test('falls back to its service defaults when nothing was stored', () {
-      final restored = CustomAIProvider.fromJson({'id': 'p2', 'kind': 'ollama'});
+      final restored =
+          CustomAIProvider.fromJson({'id': 'p2', 'kind': 'ollama'});
 
       expect(restored.kind, AIProviderKind.ollama);
       expect(restored.baseUrl, AIProviderKind.ollama.defaultBaseUrl);
@@ -91,12 +93,10 @@ void main() {
         provider: provider,
         apiKey: 'secret',
         httpClient: client,
-      )
-          .streamChat(
-            model: 'a-model',
-            turns: const [AIChatTurn.user('hello')],
-          )
-          .toList();
+      ).streamChat(
+        model: 'a-model',
+        turns: const [AIChatTurn.user('hello')],
+      ).toList();
 
       return events.whereType<AITextDelta>().map((e) => e.text).toList();
     }
@@ -299,13 +299,11 @@ void main() {
         provider: provider,
         apiKey: 'secret',
         httpClient: client,
-      )
-          .streamChat(
-            model: 'a-model',
-            turns: const [AIChatTurn.user('make a page')],
-            tools: const [tool],
-          )
-          .toList();
+      ).streamChat(
+        model: 'a-model',
+        turns: const [AIChatTurn.user('make a page')],
+        tools: const [tool],
+      ).toList();
       return (events, seen);
     }
 
@@ -407,29 +405,27 @@ void main() {
         provider: provider,
         apiKey: 'secret',
         httpClient: client,
-      )
-          .streamChat(
-            model: 'a-model',
-            turns: const [
-              AIChatTurn.user('make a page'),
-              AIChatTurn.assistant(
-                '',
-                toolCalls: [
-                  AIToolCall(
-                    id: 'call_1',
-                    name: 'appflowy__create_page',
-                    arguments: {'name': 'Notes'},
-                  ),
-                ],
-              ),
-              AIChatTurn.toolResult(
-                callId: 'call_1',
+      ).streamChat(
+        model: 'a-model',
+        turns: const [
+          AIChatTurn.user('make a page'),
+          AIChatTurn.assistant(
+            '',
+            toolCalls: [
+              AIToolCall(
+                id: 'call_1',
                 name: 'appflowy__create_page',
-                text: 'Created it.',
+                arguments: {'name': 'Notes'},
               ),
             ],
-          )
-          .toList();
+          ),
+          AIChatTurn.toolResult(
+            callId: 'call_1',
+            name: 'appflowy__create_page',
+            text: 'Created it.',
+          ),
+        ],
+      ).toList();
 
       expect(seen!.body, contains('"tool_call_id":"call_1"'));
       expect(seen!.body, contains('Created it.'));
@@ -533,7 +529,8 @@ void main() {
       );
     });
 
-    test('every model of a provider is offered to the picker', () async {      final saved = await store.upsert(
+    test('every model of a provider is offered to the picker', () async {
+      final saved = await store.upsert(
         const CustomAIProvider(
           id: '',
           kind: AIProviderKind.openAI,

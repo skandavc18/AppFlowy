@@ -18,7 +18,8 @@ import 'ai_provider.dart';
 /// keys never do: they go to [ProviderSecretStore], which seals them with
 /// DPAPI on Windows and keeps them for the session anywhere else.
 class CustomAIProviderStore extends ChangeNotifier {
-  CustomAIProviderStore({KeyValueStorage? storage, ProviderSecretStore? secrets})
+  CustomAIProviderStore(
+      {KeyValueStorage? storage, ProviderSecretStore? secrets})
       : _storage = storage,
         _secrets = secrets ?? ProviderSecretStore(storage: storage);
 

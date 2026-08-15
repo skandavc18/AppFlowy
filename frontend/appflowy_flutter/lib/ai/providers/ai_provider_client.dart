@@ -104,10 +104,12 @@ class AIProviderClient {
 
   /// True when the address itself names the deployment, in which case the body
   /// must not name a model as well.
-  bool get _azureNamesDeploymentInPath =>
-      Uri.parse(provider.normalizedBaseUrl).pathSegments.contains('deployments');
+  bool get _azureNamesDeploymentInPath => Uri.parse(provider.normalizedBaseUrl)
+      .pathSegments
+      .contains('deployments');
 
-  Map<String, String> _headers({bool streaming = true}) {    final headers = <String, String>{
+  Map<String, String> _headers({bool streaming = true}) {
+    final headers = <String, String>{
       'content-type': 'application/json',
       if (streaming) 'accept': 'text/event-stream',
     };
