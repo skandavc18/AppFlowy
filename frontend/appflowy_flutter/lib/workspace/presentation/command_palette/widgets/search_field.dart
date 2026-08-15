@@ -11,10 +11,19 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class SearchField extends StatefulWidget {
-  const SearchField({super.key, this.query, this.isLoading = false});
+  const SearchField({
+    super.key,
+    this.query,
+    this.isLoading = false,
+    this.onSubmit,
+  });
 
   final String? query;
   final bool isLoading;
+
+  /// Called when Enter is pressed while the box still has the caret, so the
+  /// palette can run whatever it is offering first.
+  final VoidCallback? onSubmit;
 
   @override
   State<SearchField> createState() => _SearchFieldState();
@@ -40,10 +49,18 @@ class _SearchFieldState extends State<SearchField> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (node.hasFocus &&
-        event is KeyDownEvent &&
-        event.logicalKey == LogicalKeyboardKey.arrowDown) {
+    if (!node.hasFocus || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
       node.nextFocus();
+      return KeyEventResult.handled;
+    }
+    final onSubmit = widget.onSubmit;
+    if (onSubmit != null &&
+        (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+      onSubmit();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;

@@ -1,6 +1,7 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
 import 'package:appflowy/workspace/application/command_palette/search_result_list_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -8,14 +9,13 @@ import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_ask_ai_entrance.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
-import 'package:appflowy_backend/protobuf/flowy-user/workspace.pbenum.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'search_result_cell.dart';
+import 'command_results_list.dart';
 import 'page_inspection_panel.dart';
 import 'search_layout.dart';
 
@@ -24,6 +24,8 @@ class SearchResultList extends StatefulWidget {
     required this.cachedViews,
     required this.resultItems,
     required this.resultSummaries,
+    this.commands = const [],
+    this.onRunCommand,
     this.currentWorkspaceId,
     this.currentWorkspaceName,
     this.currentWorkspaceIcon,
@@ -34,6 +36,10 @@ class SearchResultList extends StatefulWidget {
   final Map<String, ViewPB> cachedViews;
   final List<SearchResultItem> resultItems;
   final List<SearchSummaryPB> resultSummaries;
+
+  /// The commands whose names also answer to the query, offered above the pages.
+  final List<PaletteCommand> commands;
+  final ValueChanged<PaletteCommand>? onRunCommand;
   final String? currentWorkspaceId;
   final String? currentWorkspaceName;
   final String? currentWorkspaceIcon;
@@ -96,8 +102,12 @@ class _SearchResultListState extends State<SearchResultList> {
               builder: (context, constrains) {
                 final maxWidth = constrains.maxWidth;
                 final hidePreview = maxWidth < commandPalettePreviewBreakpoint;
-                final listWidth =
-                    hidePreview ? maxWidth : commandPaletteListWidth(maxWidth);
+                // Nothing to preview when only commands matched, so the list
+                // takes the whole box rather than leaving it half empty.
+                final listOnly = _visibleResultItems.isEmpty;
+                final listWidth = hidePreview || listOnly
+                    ? maxWidth
+                    : commandPaletteListWidth(maxWidth);
                 final narrowFolder = narrowFolderView == null
                     ? null
                     : cachedViews[narrowFolderView!.id] ?? narrowFolderView;
@@ -155,31 +165,17 @@ class _SearchResultListState extends State<SearchResultList> {
     );
   }
 
-  Widget _buildSectionHeader(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        vertical: theme.spacing.s,
-        horizontal: theme.spacing.m,
-      ),
-      child: Text(
-        LocaleKeys.commandPalette_bestMatches.tr(),
-        style: theme.textStyle.body
-            .enhanced(color: theme.textColorScheme.secondary)
-            .copyWith(
-              letterSpacing: 0.2,
-              height: 22 / 16,
-            ),
-      ),
-    );
-  }
+  Widget _buildSectionHeader(BuildContext context) =>
+      CommandPaletteSectionHeader(
+        label: LocaleKeys.commandPalette_bestMatches.tr(),
+      );
 
   Widget _buildResultsSection(BuildContext context, bool hidePreview) {
-    final workspaceState = context.read<UserWorkspaceBloc?>()?.state;
-    final showAskingAI =
-        workspaceState?.userProfile.workspaceType == WorkspaceTypePB.ServerW;
     final resultItems = _visibleResultItems;
-    if (resultItems.isEmpty) return const SizedBox.shrink();
+    final commands = widget.commands;
+    final onRunCommand = widget.onRunCommand;
+    final showCommands = commands.isNotEmpty && onRunCommand != null;
+    if (resultItems.isEmpty && !showCommands) return const SizedBox.shrink();
     return ScrollControllerBuilder(
       builder: (context, controller) {
         final hoveredId = bloc.state.hoveredResult?.id;
@@ -197,38 +193,45 @@ class _SearchResultListState extends State<SearchResultList> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (showAskingAI) SearchAskAiEntrance(),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _buildSectionHeader(context),
-                        ListView.builder(
-                          physics: const NeverScrollableScrollPhysics(),
-                          shrinkWrap: true,
-                          itemCount: resultItems.length,
-                          itemBuilder: (_, index) {
-                            final item = resultItems[index];
-                            return SearchResultCell(
-                              key: ValueKey(item.id),
-                              item: item,
-                              isNarrowWindow: hidePreview,
-                              view: cachedViews[item.id],
-                              isHovered: hoveredId == item.id,
-                              onFolderSelected: hidePreview
-                                  ? (view) =>
-                                      setState(() => narrowFolderView = view)
-                                  : null,
-                              query: context
-                                  .read<CommandPaletteBloc?>()
-                                  ?.state
-                                  .query,
-                            );
-                          },
-                        ),
-                        VSpace(16),
-                      ],
-                    ),
+                    SearchAskAiEntrance(),
+                    if (showCommands)
+                      CommandResultsList(
+                        commands: commands,
+                        onRun: onRunCommand,
+                        grouped: false,
+                      ),
+                    if (resultItems.isNotEmpty)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildSectionHeader(context),
+                          ListView.builder(
+                            physics: const NeverScrollableScrollPhysics(),
+                            shrinkWrap: true,
+                            itemCount: resultItems.length,
+                            itemBuilder: (_, index) {
+                              final item = resultItems[index];
+                              return SearchResultCell(
+                                key: ValueKey(item.id),
+                                item: item,
+                                isNarrowWindow: hidePreview,
+                                view: cachedViews[item.id],
+                                isHovered: hoveredId == item.id,
+                                onFolderSelected: hidePreview
+                                    ? (view) =>
+                                        setState(() => narrowFolderView = view)
+                                    : null,
+                                query: context
+                                    .read<CommandPaletteBloc?>()
+                                    ?.state
+                                    .query,
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    VSpace(16),
                   ],
                 ),
               ),

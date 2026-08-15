@@ -21,6 +21,10 @@ ValueNotifier<int> switchToTheNextSpace = ValueNotifier(0);
 ValueNotifier<int> createNewPageNotifier = ValueNotifier(0);
 ValueNotifier<ViewPB?> switchToSpaceNotifier = ValueNotifier(null);
 
+/// Raised by anything outside the home screen that wants the sidebar folded
+/// away — [HomeSettingBloc] only exists below it.
+ValueNotifier<int> collapseMenuNotifier = ValueNotifier(0);
+
 @visibleForTesting
 final zoomInKeyCodes = [KeyCode.equal, KeyCode.numpadAdd, KeyCode.add];
 @visibleForTesting
@@ -67,8 +71,6 @@ class HomeHotKeys extends StatefulWidget {
 }
 
 class _HomeHotKeysState extends State<HomeHotKeys> {
-  final windowSizeManager = WindowSizeManager();
-
   late final items = [
     // Collapse sidebar menu (using slash)
     HotKeyItem(
@@ -215,6 +217,7 @@ class _HomeHotKeysState extends State<HomeHotKeys> {
   void initState() {
     super.initState();
     _registerHotKeys(context);
+    collapseMenuNotifier.addListener(_collapseMenus);
   }
 
   @override
@@ -224,7 +227,19 @@ class _HomeHotKeysState extends State<HomeHotKeys> {
   }
 
   @override
+  void dispose() {
+    collapseMenuNotifier.removeListener(_collapseMenus);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => widget.child;
+
+  void _collapseMenus() {
+    if (mounted) {
+      colappsedMenus(context);
+    }
+  }
 
   void _registerHotKeys(BuildContext context) {
     for (final element in items) {
@@ -237,34 +252,9 @@ class _HomeHotKeysState extends State<HomeHotKeys> {
     bloc.add(TabsEvent.selectTab(bloc.state.currentIndex + change));
   }
 
-  Future<void> _scaleWithStep(double step) async {
-    final currentScaleFactor = await windowSizeManager.getScaleFactor();
+  Future<void> _scaleWithStep(double step) => scaleAppWithStep(step);
 
-    double textScale = (currentScaleFactor + step).clamp(
-      WindowSizeManager.minScaleFactor,
-      WindowSizeManager.maxScaleFactor,
-    );
-
-    // only keep 2 decimal places
-    textScale = double.parse(textScale.toStringAsFixed(2));
-
-    Log.info('scale the app from $currentScaleFactor to $textScale');
-
-    await _scale(textScale);
-  }
-
-  Future<void> _scale(double scaleFactor) async {
-    if (FlowyRunner.currentMode == IntegrationMode.integrationTest) {
-      // The integration test will fail if we check the scale factor in the test.
-      // #0      ScaledWidgetsFlutterBinding.Eval ()
-      // #1      ScaledWidgetsFlutterBinding.instance (package:scaled_app/scaled_app.dart:66:62)
-      appflowyScaleFactor = double.parse(scaleFactor.toStringAsFixed(2));
-    } else {
-      ScaledWidgetsFlutterBinding.instance.scaleFactor = (_) => scaleFactor;
-    }
-
-    await windowSizeManager.setScaleFactor(scaleFactor);
-  }
+  Future<void> _scale(double scaleFactor) => scaleApp(scaleFactor);
 
   void colappsedMenus(BuildContext context) {
     final bloc = context.read<HomeSettingBloc>();
@@ -276,4 +266,35 @@ class _HomeHotKeysState extends State<HomeHotKeys> {
       bloc.collapseMenu();
     }
   }
+}
+
+/// Steps the whole application's scale, the way Ctrl +/- does. Top level so the
+/// command palette can offer the same thing.
+Future<void> scaleAppWithStep(double step) async {
+  final currentScaleFactor = await WindowSizeManager().getScaleFactor();
+
+  double textScale = (currentScaleFactor + step).clamp(
+    WindowSizeManager.minScaleFactor,
+    WindowSizeManager.maxScaleFactor,
+  );
+
+  // only keep 2 decimal places
+  textScale = double.parse(textScale.toStringAsFixed(2));
+
+  Log.info('scale the app from $currentScaleFactor to $textScale');
+
+  await scaleApp(textScale);
+}
+
+Future<void> scaleApp(double scaleFactor) async {
+  if (FlowyRunner.currentMode == IntegrationMode.integrationTest) {
+    // The integration test will fail if we check the scale factor in the test.
+    // #0      ScaledWidgetsFlutterBinding.Eval ()
+    // #1      ScaledWidgetsFlutterBinding.instance (package:scaled_app/scaled_app.dart:66:62)
+    appflowyScaleFactor = double.parse(scaleFactor.toStringAsFixed(2));
+  } else {
+    ScaledWidgetsFlutterBinding.instance.scaleFactor = (_) => scaleFactor;
+  }
+
+  await WindowSizeManager().setScaleFactor(scaleFactor);
 }

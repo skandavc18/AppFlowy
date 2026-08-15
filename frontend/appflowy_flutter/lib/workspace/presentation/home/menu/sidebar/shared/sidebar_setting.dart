@@ -111,7 +111,7 @@ void showSettingsDialog(
   SettingsPage? initPage,
   VoidCallback? onClosed,
 }) {
-  final userProfile = context.read<UserWorkspaceBloc>().state.userProfile;
+  final userProfile = userWorkspaceBloc.state.userProfile;
   AFFocusManager.maybeOf(context)?.notifyLoseFocus();
   showDialog(
     context: context,

@@ -5,6 +5,7 @@ import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/search_result_list_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_delete_button.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -159,6 +160,10 @@ class _SearchResultCellState extends State<SearchResultCell> {
                       ),
                     ),
                     Flexible(child: buildPath(theme)),
+                    PaletteDeleteButton(
+                      view: widget.view,
+                      visible: _hasFocus || widget.isHovered,
+                    ),
                   ],
                 ),
                 ...buildSummary(theme),

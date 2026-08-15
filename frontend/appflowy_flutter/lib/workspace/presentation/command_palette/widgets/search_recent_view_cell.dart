@@ -2,6 +2,7 @@ import 'package:appflowy/mobile/presentation/search/mobile_view_ancestors.dart';
 import 'package:appflowy/workspace/application/recent/recent_views_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_extension.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_delete_button.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra/theme_extension.dart';
@@ -99,6 +100,13 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
                   ),
                 ),
                 Flexible(child: buildPath(theme)),
+                PaletteDeleteButton(
+                  view: view,
+                  visible: hovering || widget.isSelected,
+                  onDeleted: () => bloc.add(
+                    RecentViewsEvent.removeRecentViews([view.id]),
+                  ),
+                ),
               ],
             ),
           ),

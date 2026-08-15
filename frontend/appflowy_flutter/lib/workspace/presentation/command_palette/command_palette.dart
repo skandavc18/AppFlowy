@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:appflowy/features/workspace/application/workspace_cover_codec.dart';
@@ -10,11 +11,14 @@ import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/command_palette/palette_commands.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/command_results_list.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/recent_views_list.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_field.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_filter_bar.dart';
@@ -22,7 +26,6 @@ import 'package:appflowy/workspace/presentation/command_palette/widgets/search_r
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
-import 'package:appflowy_backend/protobuf/flowy-user/workspace.pbenum.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -195,28 +198,35 @@ class CommandPaletteModal extends StatefulWidget {
 class _CommandPaletteModalState extends State<CommandPaletteModal> {
   CommandPaletteFilter filter = const CommandPaletteFilter();
 
+  void _dismiss() {
+    if (!mounted) return;
+    if (Navigator.canPop(context)) {
+      FlowyOverlay.pop(context);
+    }
+  }
+
+  void _runCommand(PaletteCommand command, String query) {
+    unawaited(
+      Future.sync(
+        () => command.run(
+          PaletteCommandContext(query: query, dismiss: _dismiss),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final workspaceState = context.read<UserWorkspaceBloc?>()?.state;
-    final showAskingAI =
-        workspaceState?.userProfile.workspaceType == WorkspaceTypePB.ServerW;
     return BlocListener<CommandPaletteBloc, CommandPaletteState>(
       listener: (_, state) {
-        if (state.askAI && context.mounted) {
-          if (Navigator.canPop(context)) FlowyOverlay.pop(context);
-          final currentWorkspace = workspaceState?.workspaces;
-          final spaceBloc = context.read<SpaceBloc?>();
-          if (currentWorkspace != null && spaceBloc != null) {
-            spaceBloc.add(
-              SpaceEvent.createPage(
-                name: '',
-                layout: ViewLayoutPB.Chat,
-                index: 0,
-                openAfterCreate: true,
-              ),
-            );
-          }
+        if (!state.askAI || !context.mounted) {
+          return;
         }
+        // Put the flag down, or a second "Ask AI" emits an identical state and
+        // the listener is never called again.
+        context.read<CommandPaletteBloc>().add(CommandPaletteEvent.askedAI());
+        unawaited(startPaletteAIChat(context, dismiss: _dismiss));
       },
       child: BlocBuilder<CommandPaletteBloc, CommandPaletteState>(
         builder: (context, state) {
@@ -272,6 +282,23 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
               )
               .toList();
           final hasResult = resultItems.isNotEmpty, searching = state.searching;
+          final rawQuery = state.query ?? '';
+          final commandQuery = paletteCommandModeQuery(rawQuery);
+          final inCommandMode = commandQuery != null;
+          final commands = buildPaletteCommands(context);
+          final matchedCommands = inCommandMode
+              ? rankPaletteCommands(commands, commandQuery)
+              // One stray letter matches half of them, which is noise beside
+              // the pages somebody was actually looking for.
+              : rawQuery.trim().length < 2
+                  ? const <PaletteCommand>[]
+                  : rankPaletteCommands(
+                      commands,
+                      rawQuery,
+                      limit: paletteInlineCommandLimit,
+                    );
+          final hasCommands = matchedCommands.isNotEmpty;
+          final commandRunQuery = commandQuery ?? rawQuery;
           final spaces =
               context.read<SpaceBloc?>()?.state.spaces ?? const <ViewPB>[];
           final spaceXl = theme.spacing.xl;
@@ -317,13 +344,31 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                 padding: EdgeInsets.fromLTRB(spaceXl, spaceXl, spaceXl, 0),
                 child: Column(
                   children: [
-                    SearchField(query: state.query, isLoading: searching),
-                    SearchFilterBar(
-                      filter: filter,
-                      spaces: spaces,
-                      onChanged: (value) => setState(() => filter = value),
+                    SearchField(
+                      query: state.query,
+                      isLoading: searching,
+                      onSubmit: inCommandMode && hasCommands
+                          ? () => _runCommand(
+                                matchedCommands.first,
+                                commandRunQuery,
+                              )
+                          : null,
                     ),
-                    if (noQuery)
+                    if (!inCommandMode)
+                      SearchFilterBar(
+                        filter: filter,
+                        spaces: spaces,
+                        onChanged: (value) => setState(() => filter = value),
+                      ),
+                    if (inCommandMode)
+                      Flexible(
+                        child: CommandPalettePanel(
+                          commands: matchedCommands,
+                          onRun: (command) =>
+                              _runCommand(command, commandRunQuery),
+                        ),
+                      )
+                    else if (noQuery)
                       Flexible(
                         child: RecentViewsList(
                           onSelected: () => FlowyOverlay.pop(context),
@@ -335,13 +380,16 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                           currentWorkspaceIcon: currentWorkspace?.icon,
                           currentWorkspaceCover: currentWorkspaceCover,
                         ),
-                      ),
-                    if (hasResult && hasQuery)
+                      )
+                    else if (hasQuery && (hasResult || hasCommands))
                       Flexible(
                         child: SearchResultList(
                           cachedViews: cachedViews,
                           resultItems: resultItems,
                           resultSummaries: state.resultSummaries,
+                          commands: matchedCommands,
+                          onRunCommand: (command) =>
+                              _runCommand(command, commandRunQuery),
                           currentWorkspaceId: currentWorkspace?.workspaceId,
                           currentWorkspaceName: currentWorkspace?.name,
                           currentWorkspaceIcon: currentWorkspace?.icon,
@@ -351,12 +399,16 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                     // When there are no results and the query is not empty and not loading,
                     // show the no results message, centered in the available space.
                     else if (hasQuery && !searching) ...[
-                      if (showAskingAI) SearchAskAiEntrance(),
+                      SearchAskAiEntrance(),
                       Expanded(
                         child: const NoSearchResultsHint(),
                       ),
                     ],
-                    if (hasQuery && searching && !hasResult)
+                    if (hasQuery &&
+                        searching &&
+                        !hasResult &&
+                        !hasCommands &&
+                        !inCommandMode)
                       // Show a loading indicator when searching
                       Expanded(
                         child: Center(
@@ -365,6 +417,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                           ),
                         ),
                       ),
+                    CommandPaletteHintBar(commandMode: inCommandMode),
                   ],
                 ),
               ),

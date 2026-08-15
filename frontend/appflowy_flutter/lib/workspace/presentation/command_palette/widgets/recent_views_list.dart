@@ -1,4 +1,3 @@
-import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
 import 'package:appflowy/workspace/application/recent/recent_views_bloc.dart';
@@ -8,7 +7,6 @@ import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_icon.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_recent_view_cell.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
-import 'package:appflowy_backend/protobuf/flowy-user/workspace.pbenum.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -84,9 +82,6 @@ class RecentViewsList extends StatelessWidget {
     bool hidePreview,
     double width,
   ) {
-    final workspaceState = context.read<UserWorkspaceBloc?>()?.state;
-    final showAskingAI =
-        workspaceState?.userProfile.workspaceType == WorkspaceTypePB.ServerW;
     return SizedBox(
       key: const ValueKey('command-palette-recent-list-panel'),
       width: width,
@@ -108,7 +103,7 @@ class RecentViewsList extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (showAskingAI) SearchAskAiEntrance(),
+                        SearchAskAiEntrance(),
                         buildTitle(context),
                         buildViewList(
                           visibleViews,

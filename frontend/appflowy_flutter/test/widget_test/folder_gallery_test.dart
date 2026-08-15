@@ -502,6 +502,54 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('fits an unavailable preview inside a small card', (
+    tester,
+  ) async {
+    final chat = ViewPB(
+      id: 'chat',
+      name: 'How to use Kanban to manage tasks',
+      layout: ViewLayoutPB.Chat,
+    );
+
+    await tester.pumpWidget(
+      WidgetTestApp(
+        child: Center(
+          child: SizedBox(
+            width: 196,
+            height: 196 * 1.18,
+            child: FolderGalleryCard(
+              item: WorkspaceExplorerItem.fromView(chat),
+              view: chat,
+              preview: Future.value(
+                const FolderGalleryPreview(
+                  kind: FolderGalleryPreviewKind.database,
+                  blocks: [],
+                  wordCount: 0,
+                  readingMinutes: 0,
+                  tags: [],
+                  fileTypeLabel: 'TABLE',
+                  unavailable: true,
+                ),
+              ),
+              userProfile: null,
+              selected: false,
+              editing: false,
+              onTap: () {},
+              onRename: () {},
+              onRenameSubmitted: (_) async => true,
+              onRenameCancelled: () {},
+              onMore: (_) {},
+              onContextMenu: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('keeps populated table previews legible in dark mode', (
     tester,
   ) async {

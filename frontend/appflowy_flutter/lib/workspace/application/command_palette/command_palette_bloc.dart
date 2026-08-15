@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/plugins/trash/application/trash_service.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
 import 'package:appflowy/workspace/application/command_palette/search_service.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -119,23 +120,32 @@ class CommandPaletteBloc
     _SearchChanged event,
     Emitter<CommandPaletteState> emit,
   ) {
-    _searchDebouncer.run(
-      () {
-        if (!isClosed) {
-          add(CommandPaletteEvent.performSearch(search: event.search));
-        }
-      },
-    );
+    // A command query never reaches the backend, so there is nothing to wait
+    // for — filtering the commands as fast as they are typed.
+    if (paletteCommandModeQuery(event.search) != null) {
+      _searchDebouncer.cancel();
+      _activeQuery = null;
+      add(CommandPaletteEvent.performSearch(search: event.search));
+    } else {
+      _searchDebouncer.run(
+        () {
+          if (!isClosed) {
+            add(CommandPaletteEvent.performSearch(search: event.search));
+          }
+        },
+      );
+    }
   }
 
   FutureOr<void> _onPerformSearch(
     _PerformSearch event,
     Emitter<CommandPaletteState> emit,
   ) async {
-    if (event.search.isEmpty) {
+    final isCommandQuery = paletteCommandModeQuery(event.search) != null;
+    if (event.search.isEmpty || isCommandQuery) {
       emit(
         state.copyWith(
-          query: null,
+          query: event.search.isEmpty ? null : event.search,
           searching: false,
           serverResponseItems: [],
           localResponseItems: [],

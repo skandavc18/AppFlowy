@@ -2771,29 +2771,50 @@ class _GalleryUnavailablePreview extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 72,
-            height: 8,
-            decoration: BoxDecoration(
-              color: palette.textMuted.withValues(alpha: 0.13),
-              borderRadius: BorderRadius.circular(5),
-            ),
-          ),
-          const SizedBox(height: 20),
-          for (final width in [0.92, 0.76, 0.84, 0.58]) ...[
-            FractionallySizedBox(
-              widthFactor: width,
-              child: Container(
-                height: 5,
-                decoration: BoxDecoration(
-                  color: palette.textMuted.withValues(alpha: 0.09),
-                  borderRadius: BorderRadius.circular(4),
+          Expanded(
+            child: LayoutBuilder(
+              // A chat or otherwise unreadable page still has to fit the card it
+              // was dealt. The ruled lines are drawn at the card's own width and
+              // scaled down only when the stage is too short for them, so the
+              // caption below keeps its place instead of being pushed off.
+              builder: (context, constraints) => FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: constraints.maxWidth,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 72,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: palette.textMuted.withValues(alpha: 0.13),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      for (final width in [0.92, 0.76, 0.84, 0.58]) ...[
+                        FractionallySizedBox(
+                          widthFactor: width,
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: palette.textMuted.withValues(alpha: 0.09),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 11),
+                      ],
+                    ],
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 11),
-          ],
-          const Spacer(),
+          ),
           Text(
             LocaleKeys.workspaceFolderExplorer_previewUnavailable.tr(),
             style: TextStyle(
