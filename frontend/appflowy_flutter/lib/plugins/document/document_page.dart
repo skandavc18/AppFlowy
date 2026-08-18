@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
@@ -18,6 +20,7 @@ import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/action_navigation/action_navigation_bloc.dart';
 import 'package:appflowy/workspace/application/action_navigation/navigation_action.dart';
+import 'package:appflowy/workspace/application/page_versions/page_versions.dart';
 import 'package:appflowy/workspace/application/view/prelude.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy_backend/log.dart';
@@ -55,6 +58,7 @@ class _DocumentPageState extends State<DocumentPage>
     with WidgetsBindingObserver {
   EditorState? editorState;
   Selection? initialSelection;
+  PageVersionRecorder? versionRecorder;
   late final documentBloc = DocumentBloc(documentId: widget.view.id)
     ..add(const DocumentEvent.initial());
 
@@ -70,9 +74,25 @@ class _DocumentPageState extends State<DocumentPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // The last copy has to be taken while the editor is still alive.
+    unawaited(versionRecorder?.stop());
+    versionRecorder = null;
     documentBloc.close();
 
     super.dispose();
+  }
+
+  /// Begins remembering this page once its editor exists, and follows the
+  /// editor if the document is reloaded underneath us.
+  void _watchForVersions(EditorState editorState) {
+    if (versionRecorder?.editorState == editorState) {
+      return;
+    }
+    unawaited(versionRecorder?.stop());
+    versionRecorder = PageVersionRecorder(
+      viewId: widget.view.id,
+      editorState: editorState,
+    )..start();
   }
 
   @override
@@ -126,6 +146,8 @@ class _DocumentPageState extends State<DocumentPage>
                 Log.error(error);
                 return Center(child: AppFlowyErrorPage(error: error));
               }
+
+              _watchForVersions(editorState);
 
               if (state.forceClose) {
                 widget.onDeleted();

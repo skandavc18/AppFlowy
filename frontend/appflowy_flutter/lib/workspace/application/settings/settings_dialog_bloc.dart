@@ -26,6 +26,7 @@ enum SettingsPage {
   cloud,
   documentEditing,
   editor,
+  pageVersions,
   maps,
   connections,
   member,

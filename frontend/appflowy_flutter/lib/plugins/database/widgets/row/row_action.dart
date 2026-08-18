@@ -3,6 +3,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_service.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
+import 'package:appflowy/workspace/application/page_versions/page_versions.dart';
 import 'package:easy_localization/easy_localization.dart';
 
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -20,6 +21,10 @@ class RowActionList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
+          RowDetailPageVersionsButton(
+            documentId: rowController.rowMeta.documentId,
+          ),
+          const VSpace(4.0),
           RowDetailPageDuplicateButton(
             viewId: rowController.viewId,
             rowId: rowController.rowId,
@@ -30,6 +35,32 @@ class RowActionList extends StatelessWidget {
             rowId: rowController.rowId,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A row's page keeps a history of its own, apart from the table it sits in.
+class RowDetailPageVersionsButton extends StatelessWidget {
+  const RowDetailPageVersionsButton({super.key, required this.documentId});
+
+  final String documentId;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: GridSize.popoverItemHeight,
+      child: FlowyButton(
+        text: FlowyText.regular(
+          LocaleKeys.pageVersions_showVersions.tr(),
+          lineHeight: 1.0,
+        ),
+        leftIcon: const Icon(Icons.history_rounded, size: 16),
+        onTap: () {
+          // Only the menu closes: the rail opens beside the row page itself.
+          PopoverContainer.of(context).close();
+          PageVersionPanel.instance.open(documentId);
+        },
       ),
     );
   }

@@ -6,6 +6,8 @@ import 'package:appflowy/plugins/database/domain/database_view_service.dart';
 import 'package:appflowy/plugins/database/grid/application/row/row_detail_bloc.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_document.dart';
 import 'package:appflowy/plugins/database_document/database_document_plugin.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/page_versions/page_version_host.dart';
+import 'package:appflowy/workspace/application/page_versions/page_versions.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -119,68 +121,76 @@ class _RowDetailPageState extends State<RowDetailPage> {
             BlocProvider.value(value: getIt<ReminderBloc>()),
           ],
           child: BlocBuilder<RowDetailBloc, RowDetailState>(
-            builder: (context, state) => Stack(
-              fit: StackFit.expand,
-              children: [
-                Positioned.fill(
-                  child: NestedScrollView(
-                    controller: scrollController,
-                    headerSliverBuilder:
-                        (BuildContext context, bool innerBoxIsScrolled) {
-                      return <Widget>[
-                        SliverToBoxAdapter(
-                          child: Column(
-                            children: [
-                              RowBanner(
-                                databaseController: widget.databaseController,
-                                rowController: widget.rowController,
-                                cellBuilder: cellBuilder,
-                                allowOpenAsFullPage: widget.allowOpenAsFullPage,
-                                userProfile: widget.userProfile,
-                              ),
-                              const VSpace(16),
-                              Padding(
-                                // The drag handle rides in the margin and the
-                                // name button insets itself, so the property
-                                // names still begin on the measure.
-                                padding: const EdgeInsets.only(
-                                  left: rowDetailContentInset - 24,
-                                  right: rowDetailContentInset,
-                                ),
-                                child: RowPropertyList(
+            builder: (context, state) => PageVersionHost(
+              viewId: widget.rowController.rowMeta.documentId,
+              row: PageVersionRowContext(
+                tableViewId: widget.rowController.viewId,
+                rowId: widget.rowController.rowId,
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned.fill(
+                    child: NestedScrollView(
+                      controller: scrollController,
+                      headerSliverBuilder:
+                          (BuildContext context, bool innerBoxIsScrolled) {
+                        return <Widget>[
+                          SliverToBoxAdapter(
+                            child: Column(
+                              children: [
+                                RowBanner(
+                                  databaseController: widget.databaseController,
+                                  rowController: widget.rowController,
                                   cellBuilder: cellBuilder,
-                                  viewId: widget.databaseController.viewId,
-                                  fieldController:
-                                      widget.databaseController.fieldController,
+                                  allowOpenAsFullPage:
+                                      widget.allowOpenAsFullPage,
+                                  userProfile: widget.userProfile,
                                 ),
-                              ),
-                              const VSpace(20),
-                              const Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: rowDetailContentInset,
+                                const VSpace(16),
+                                Padding(
+                                  // The drag handle rides in the margin and the
+                                  // name button insets itself, so the property
+                                  // names still begin on the measure.
+                                  padding: const EdgeInsets.only(
+                                    left: rowDetailContentInset - 24,
+                                    right: rowDetailContentInset,
+                                  ),
+                                  child: RowPropertyList(
+                                    cellBuilder: cellBuilder,
+                                    viewId: widget.databaseController.viewId,
+                                    fieldController: widget
+                                        .databaseController.fieldController,
+                                  ),
                                 ),
-                                child: Divider(height: 1.0),
-                              ),
-                              const VSpace(20),
-                            ],
+                                const VSpace(20),
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: rowDetailContentInset,
+                                  ),
+                                  child: Divider(height: 1.0),
+                                ),
+                                const VSpace(20),
+                              ],
+                            ),
                           ),
-                        ),
-                      ];
-                    },
-                    body: RowDocument(
-                      viewId: widget.rowController.viewId,
-                      rowId: widget.rowController.rowId,
-                      userProfile: widget.userProfile,
-                      showComments: true,
+                        ];
+                      },
+                      body: RowDocument(
+                        viewId: widget.rowController.viewId,
+                        rowId: widget.rowController.rowId,
+                        userProfile: widget.userProfile,
+                        showComments: true,
+                      ),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: calculateActionsOffset(),
-                  right: 12,
-                  child: Row(children: actions(context)),
-                ),
-              ],
+                  Positioned(
+                    top: calculateActionsOffset(),
+                    right: 12,
+                    child: Row(children: actions(context)),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

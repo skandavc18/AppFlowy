@@ -6,6 +6,7 @@ import 'package:appflowy/core/frameless_window.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/page_versions/page_version_host.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/window_title_bar.dart';
@@ -754,7 +755,12 @@ class PageManager {
 
                   return Padding(
                     padding: builder.contentPadding,
-                    child: pluginWidget,
+                    // Every kind of page gets its history here, so it is one
+                    // feature rather than one per plugin.
+                    child: PageVersionHost(
+                      viewId: notifier.plugin.id,
+                      child: pluginWidget,
+                    ),
                   );
                 }
 

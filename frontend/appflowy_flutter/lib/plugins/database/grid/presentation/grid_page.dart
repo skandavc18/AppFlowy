@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/database/application/database_row_opener.dart';
 import 'package:appflowy/plugins/database/application/row/row_service.dart';
 import 'package:appflowy/plugins/database/application/tab_bar_bloc.dart';
 import 'package:appflowy/plugins/database/domain/sort_service.dart';
@@ -191,6 +192,12 @@ class _GridPageState extends State<GridPage> {
       final rowCache = gridBloc.rowCache;
       final rowMeta = rowCache.getRow(rowId)?.rowMeta;
       if (rowMeta == null) {
+        return;
+      }
+
+      final opener = context.read<DatabaseRowOpener?>();
+      if (opener != null) {
+        opener.open(rowId);
         return;
       }
 
@@ -627,28 +634,37 @@ class _GridRowsState extends State<_GridRows> {
         rowCache: rowCache,
       ),
       cellBuilder: EditableCellBuilder(databaseController: databaseController),
-      openDetailPage: (rowDetailContext) => FlowyOverlay.show(
-        context: rowDetailContext,
-        builder: (_) {
-          final rowMeta = rowCache.getRow(rowId)?.rowMeta;
-          if (rowMeta == null) {
-            return const SizedBox.shrink();
-          }
+      openDetailPage: (rowDetailContext) {
+        final opener = context.read<DatabaseRowOpener?>();
+        if (opener != null) {
+          opener.open(rowId);
+          return;
+        }
+        unawaited(
+          FlowyOverlay.show(
+            context: rowDetailContext,
+            builder: (_) {
+              final rowMeta = rowCache.getRow(rowId)?.rowMeta;
+              if (rowMeta == null) {
+                return const SizedBox.shrink();
+              }
 
-          return BlocProvider.value(
-            value: context.read<UserWorkspaceBloc>(),
-            child: RowDetailPage(
-              rowController: RowController(
-                viewId: viewId,
-                rowMeta: rowMeta,
-                rowCache: rowCache,
-              ),
-              databaseController: databaseController,
-              userProfile: context.read<GridBloc>().userProfile,
-            ),
-          );
-        },
-      ),
+              return BlocProvider.value(
+                value: context.read<UserWorkspaceBloc>(),
+                child: RowDetailPage(
+                  rowController: RowController(
+                    viewId: viewId,
+                    rowMeta: rowMeta,
+                    rowCache: rowCache,
+                  ),
+                  databaseController: databaseController,
+                  userProfile: context.read<GridBloc>().userProfile,
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
 
     if (animation != null) {

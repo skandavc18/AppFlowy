@@ -12,6 +12,7 @@ import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/common_view_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/font_size_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
+import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/page_versions_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/spell_check_page_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/view_meta_info.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -145,12 +146,17 @@ class _MoreViewActionsState extends State<MoreViewActions> {
       if (widget.view.isDocument) ...[
         const FontSizeAction(),
         SpellCheckPageAction(view: view),
-        ViewAction(
-          type: ViewMoreActionType.divider,
-          view: view,
-          mutex: popoverMutex,
-        ),
       ],
+      // Every kind of page keeps a history, not only a written one.
+      PageVersionsAction(
+        view: view,
+        onOpened: popoverMutex.close,
+      ),
+      ViewAction(
+        type: ViewMoreActionType.divider,
+        view: view,
+        mutex: popoverMutex,
+      ),
       if (state.workspaceType == WorkspaceTypePB.ServerW &&
           (widget.view.isDocument || widget.view.isDatabase) &&
           !pageAccessLevelState.isReadOnly) ...[
