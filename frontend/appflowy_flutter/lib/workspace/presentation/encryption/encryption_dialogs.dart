@@ -265,8 +265,7 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
       ),
       actions: [
         TextButton(
-          onPressed:
-              _working ? null : () => Navigator.of(context).pop(false),
+          onPressed: _working ? null : () => Navigator.of(context).pop(false),
           child: Text(LocaleKeys.button_cancel.tr()),
         ),
         FilledButton(

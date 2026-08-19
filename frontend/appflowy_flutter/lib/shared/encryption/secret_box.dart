@@ -113,8 +113,7 @@ String openText({
 }) =>
     utf8.decode(openBytes(key: key, value: value, context: context));
 
-String _encode(Uint8List bytes) =>
-    base64Url.encode(bytes).replaceAll('=', '');
+String _encode(Uint8List bytes) => base64Url.encode(bytes).replaceAll('=', '');
 
 Uint8List _decode(String value) {
   final padding = (4 - value.length % 4) % 4;

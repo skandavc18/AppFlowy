@@ -398,8 +398,8 @@ enum FieldAction {
             .add(const FieldEditorEvent.toggleWrapCellContent());
         break;
       case FieldAction.encrypt:
-        final sealed = EncryptedColumnRegistry.instance
-            .isEncrypted(viewId, fieldInfo.id);
+        final sealed =
+            EncryptedColumnRegistry.instance.isEncrypted(viewId, fieldInfo.id);
         PopoverContainer.of(context).closeAll();
         unawaited(
           applyColumnEncryption(

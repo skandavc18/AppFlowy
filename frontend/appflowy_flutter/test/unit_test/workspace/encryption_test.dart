@@ -151,8 +151,7 @@ void main() {
       expect(decoded['cover_chosen'], 1);
       expect(decoded[EncryptionMark.envelopeKey], isNotNull);
 
-      final removed =
-          jsonDecode(EncryptionMark.removeFromExtra(merged)) as Map;
+      final removed = jsonDecode(EncryptionMark.removeFromExtra(merged)) as Map;
       expect(removed.containsKey(EncryptionMark.envelopeKey), isFalse);
       expect(removed['cover_chosen'], 1);
     });
@@ -280,7 +279,8 @@ void main() {
     });
   });
 
-  group('what a locked list shows', () {    tearDown(() => EncryptionVault.instance.resetForTest());
+  group('what a locked list shows', () {
+    tearDown(() => EncryptionVault.instance.resetForTest());
 
     test('a protected item keeps its name, and loses what is inside it', () {
       EncryptionVault.instance.seedForTest(

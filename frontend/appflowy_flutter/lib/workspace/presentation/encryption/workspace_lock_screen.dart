@@ -245,15 +245,13 @@ class _WorkspaceLockScreenState extends State<WorkspaceLockScreen> {
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(11),
                       borderSide: BorderSide(
-                        color: _refused
-                            ? const Color(0xFFD1454B)
-                            : premium.border,
+                        color:
+                            _refused ? const Color(0xFFD1454B) : premium.border,
                       ),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(11),
-                      borderSide:
-                          BorderSide(color: premium.accent, width: 1.4),
+                      borderSide: BorderSide(color: premium.accent, width: 1.4),
                     ),
                   ),
                 ),

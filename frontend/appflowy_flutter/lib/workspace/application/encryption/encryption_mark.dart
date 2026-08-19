@@ -252,12 +252,12 @@ abstract final class EncryptionMarkService {
   /// decryption, and the caller has already proved the passphrase.
   static Future<int> clearEveryMark() async {
     final views = await WorkspaceItemService().getAllViews().fold(
-          (views) => views,
-          (error) {
-            Log.warn('Could not list views to clear encryption marks: $error');
-            return const <ViewPB>[];
-          },
-        );
+      (views) => views,
+      (error) {
+        Log.warn('Could not list views to clear encryption marks: $error');
+        return const <ViewPB>[];
+      },
+    );
 
     var cleared = 0;
     for (final view in views.where((view) => view.isProtected)) {

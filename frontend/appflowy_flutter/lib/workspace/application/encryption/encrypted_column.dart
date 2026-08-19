@@ -143,7 +143,8 @@ class EncryptedColumnRegistry {
   /// Writing ciphertext into a date, a number or a select column would not
   /// round trip — the backend parses what it is given — so the offer is simply
   /// not made rather than made and then corrupting the table.
-  static bool canEncrypt(FieldType fieldType) => fieldType == FieldType.RichText;
+  static bool canEncrypt(FieldType fieldType) =>
+      fieldType == FieldType.RichText;
 
   Future<void> refresh(String viewId) async {
     if (!_loading.add(viewId)) {
