@@ -34,7 +34,8 @@ enum BackupDestinationKind {
           null,
       };
 
-  bool get isRemote => this != BackupDestinationKind.none &&
+  bool get isRemote =>
+      this != BackupDestinationKind.none &&
       this != BackupDestinationKind.folder;
 
   /// Whether a copy in this place needs an account to have been signed in.
@@ -428,8 +429,7 @@ class BackupPolicy {
   /// The size at which the interface says something before starting.
   final int warnAboveBytes;
 
-  bool get hasPassphrase =>
-      encrypt && salt.isNotEmpty && verifier.isNotEmpty;
+  bool get hasPassphrase => encrypt && salt.isNotEmpty && verifier.isNotEmpty;
 
   /// Whether a copy can be taken at all right now.
   bool get isReady =>

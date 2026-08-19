@@ -163,8 +163,8 @@ class _SettingsBackupViewState extends State<SettingsBackupView> {
                 value: policy.parts.contains(part),
                 // A backup of nothing is not a backup: the last part standing
                 // cannot be turned off.
-                enabled: !(policy.parts.length == 1 &&
-                    policy.parts.contains(part)),
+                enabled:
+                    !(policy.parts.length == 1 && policy.parts.contains(part)),
                 onChanged: (value) => unawaited(
                   _apply(
                     policy.copyWith(
@@ -686,7 +686,8 @@ class _RunRow extends StatelessWidget {
     );
   }
 
-  static String _stageLabel(BackupProgress progress) => switch (progress.stage) {
+  static String _stageLabel(BackupProgress progress) =>
+      switch (progress.stage) {
         BackupStage.gathering => LocaleKeys.backup_stageGathering.tr(),
         BackupStage.sealing => LocaleKeys.backup_stageSealing.tr(),
         BackupStage.sending => LocaleKeys.backup_stageSending.tr(),

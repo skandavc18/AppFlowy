@@ -39,7 +39,10 @@ class BackupOmission {
       count: json['count'] is int ? json['count']! as int : 0,
       bytes: json['bytes'] is int ? json['bytes']! as int : 0,
       names: names is List
-          ? [for (final name in names) if (name is String) name]
+          ? [
+              for (final name in names)
+                if (name is String) name
+            ]
           : const <String>[],
     );
   }

@@ -145,7 +145,8 @@ class BackupSettings extends ChangeNotifier {
         if (decoded is List) {
           _ledger = [
             for (final entry in decoded)
-              if (BackupCopy.fromJson(entry) != null) BackupCopy.fromJson(entry)!,
+              if (BackupCopy.fromJson(entry) != null)
+                BackupCopy.fromJson(entry)!,
           ];
         }
       }
@@ -258,8 +259,7 @@ class BackupSettings extends ChangeNotifier {
   Future<void> rememberPassphrase(String passphrase) =>
       _secrets.write(passphraseSecretId, passphrase);
 
-  Future<String?> rememberedPassphrase() =>
-      _secrets.read(passphraseSecretId);
+  Future<String?> rememberedPassphrase() => _secrets.read(passphraseSecretId);
 
   Future<void> forgetRememberedPassphrase() =>
       _secrets.write(passphraseSecretId, '');

@@ -51,7 +51,8 @@ Future<Uint8List?> askForBackupPassphrase(
       builder: (context) => _CopyPassphraseDialog(manifest: manifest),
     );
 
-Future<bool> _ask(BuildContext context, BackupPassphrasePurpose purpose) async =>
+Future<bool> _ask(
+        BuildContext context, BackupPassphrasePurpose purpose) async =>
     await showDialog<bool>(
       context: context,
       builder: (context) => _BackupPassphraseDialog(purpose: purpose),
@@ -155,8 +156,7 @@ class _BackupPassphraseDialogState extends State<_BackupPassphraseDialog> {
 
   BackupSettings get _settings => BackupSettings.instance;
 
-  bool get _asksCurrent =>
-      widget.purpose != BackupPassphrasePurpose.create;
+  bool get _asksCurrent => widget.purpose != BackupPassphrasePurpose.create;
 
   bool get _asksNew =>
       widget.purpose == BackupPassphrasePurpose.create ||
@@ -688,8 +688,7 @@ class _DestinationRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (selected)
-              Icon(Icons.check_rounded, size: 17, color: accent),
+            if (selected) Icon(Icons.check_rounded, size: 17, color: accent),
           ],
         ),
       ),

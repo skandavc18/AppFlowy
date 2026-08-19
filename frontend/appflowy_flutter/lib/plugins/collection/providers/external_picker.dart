@@ -727,7 +727,8 @@ class _FolderNameDialogState extends State<_FolderNameDialog> {
   }
 }
 
-class _PickerRow extends StatefulWidget {  const _PickerRow({
+class _PickerRow extends StatefulWidget {
+  const _PickerRow({
     required this.node,
     required this.palette,
     required this.accent,

@@ -177,7 +177,8 @@ class LocalFolderBackupTarget extends BackupTarget {
         continue;
       }
       final id = p.basename(entity.path).replaceAll(backupArchiveExtension, '');
-      final manifestFile = File(p.join(folder.path, '$id$backupManifestExtension'));
+      final manifestFile =
+          File(p.join(folder.path, '$id$backupManifestExtension'));
       copies.add(
         BackupCopy(
           id: id,
@@ -468,7 +469,8 @@ class ProviderBackupTarget extends BackupTarget {
           'https://www.googleapis.com/drive/v3/files/$id?alt=media&supportsAllDrives=true',
         BackupDestinationKind.oneDrive =>
           'https://graph.microsoft.com/v1.0/me/drive/items/$id/content',
-        BackupDestinationKind.box => 'https://api.box.com/2.0/files/$id/content',
+        BackupDestinationKind.box =>
+          'https://api.box.com/2.0/files/$id/content',
         _ => null,
       };
 
@@ -642,9 +644,8 @@ class ProviderBackupTarget extends BackupTarget {
     }
     final session = jsonMap(jsonDecode(start.body));
     final sessionId = jsonString(session['id']);
-    final partSize = session['part_size'] is int
-        ? session['part_size']! as int
-        : chunkBytes;
+    final partSize =
+        session['part_size'] is int ? session['part_size']! as int : chunkBytes;
     if (sessionId.isEmpty) {
       throw const BackupTargetError('Box refused to start an upload.');
     }
@@ -1027,8 +1028,8 @@ class AppFlowyCloudBackupTarget extends BackupTarget {
       if (url.isEmpty) {
         continue;
       }
-      final result = await DocumentEventDeleteFile(DeleteFilePB(url: url))
-          .send();
+      final result =
+          await DocumentEventDeleteFile(DeleteFilePB(url: url)).send();
       result.onFailure(
         (error) => Log.warn('An old backup could not be removed: ${error.msg}'),
       );
@@ -1059,8 +1060,7 @@ List<BackupCopy> mergeBackupCopies(
   for (final copy in [...leading, ...trailing]) {
     byId.putIfAbsent(copy.id, () => copy);
   }
-  return byId.values.toList()
-    ..sort((a, b) => b.takenAt.compareTo(a.takenAt));
+  return byId.values.toList()..sort((a, b) => b.takenAt.compareTo(a.takenAt));
 }
 
 /// Raised when a destination cannot do what was asked of it.

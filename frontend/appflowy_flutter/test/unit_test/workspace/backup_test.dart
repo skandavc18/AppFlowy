@@ -152,7 +152,8 @@ void main() {
     });
 
     test('a count keeps that many, newest first', () {
-      expect(expiredBackupCopies(['e', 'd', 'c', 'b', 'a'], 2), ['c', 'b', 'a']);
+      expect(
+          expiredBackupCopies(['e', 'd', 'c', 'b', 'a'], 2), ['c', 'b', 'a']);
     });
 
     test('keeping every copy sweeps nothing', () {
@@ -708,7 +709,8 @@ void main() {
 
       expect(files, greaterThan(0));
       expect(
-        File(p.join(restored.path, 'workspace', 'loose.txt')).readAsStringSync(),
+        File(p.join(restored.path, 'workspace', 'loose.txt'))
+            .readAsStringSync(),
         'a note at the root',
       );
       expect(

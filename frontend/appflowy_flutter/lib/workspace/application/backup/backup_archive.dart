@@ -182,9 +182,8 @@ Map<String, Object?> _writeArchive(
         continue;
       }
       // A file sitting loose at the root belongs to the workspace itself.
-      final part = segments.length == 1
-          ? BackupPart.workspace
-          : backupPartOfFolder(top);
+      final part =
+          segments.length == 1 ? BackupPart.workspace : backupPartOfFolder(top);
       if (!parts.contains(part)) {
         continue;
       }
@@ -304,7 +303,10 @@ Map<String, Object?> _extractArchive(
   var written = 0;
   try {
     final archive = ZipDecoder().decodeBuffer(input);
-    final files = [for (final file in archive.files) if (file.isFile) file];
+    final files = [
+      for (final file in archive.files)
+        if (file.isFile) file
+    ];
     final total = files.fold<int>(0, (sum, file) => sum + file.size);
     var done = 0;
 
