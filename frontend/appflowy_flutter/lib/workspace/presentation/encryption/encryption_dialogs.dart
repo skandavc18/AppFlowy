@@ -140,8 +140,11 @@ class _PassphraseDialogState extends State<_PassphraseDialog> {
           current: _current.text,
           next: _next.text,
           hint: _hint.text.trim(),
+          // Everything already sealed was sealed with the OLD key. Without
+          // this the new passphrase opens nothing that came before it.
+          reseal: resealWorkspace,
         );
-        return done ? null : LocaleKeys.encryption_wrongPassphrase.tr();
+        return done ? null : LocaleKeys.encryption_couldNotChange.tr();
 
       case _PassphrasePurpose.remove:
         final done = await vault.disable(

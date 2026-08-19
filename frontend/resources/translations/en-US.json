@@ -5446,7 +5446,7 @@
     "doesNotMatch": "The two passphrases are not the same.",
     "wrongPassphrase": "That passphrase is not right.",
     "couldNotSet": "The passphrase could not be set.",
-    "couldNotChange": "That could not be changed.",
+    "couldNotChange": "That did not work. Either the current passphrase is wrong, or what is already sealed could not be re-keyed \u2014 nothing has been changed.",
     "needsUnlocking": "Unlock the workspace first.",
     "nowProtected": "This workspace now has a passphrase.",
     "changed": "The passphrase was changed.",

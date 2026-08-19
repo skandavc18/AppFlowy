@@ -361,6 +361,54 @@ class EncryptedColumnRegistry {
     return (written: written, failed: failed);
   }
 
+  /// Every sealed cell of [fieldId], by row id.
+  ///
+  /// For re-keying: a passphrase change has to find each sealed value before it
+  /// can write any of them back.
+  Future<Map<String, String>> sealedCells({
+    required String viewId,
+    required String fieldId,
+  }) async {
+    final rows = await DatabaseEventGetRowsAsText(
+      DatabaseViewIdPB()..value = viewId,
+    ).send().fold<RepeatedRowTextPB?>((rows) => rows, (failure) {
+      Log.warn('Could not read $viewId to find its sealed cells: $failure');
+      return null;
+    });
+    if (rows == null) {
+      return const <String, String>{};
+    }
+
+    final column = rows.fieldIds.indexOf(fieldId);
+    if (column < 0) {
+      return const <String, String>{};
+    }
+
+    return {
+      for (final row in rows.rows)
+        if (column < row.cells.length && looksSealed(row.cells[column]))
+          row.rowId: row.cells[column],
+    };
+  }
+
+  /// Writes one already-sealed value into a cell.
+  Future<bool> writeSealedCell({
+    required String viewId,
+    required String fieldId,
+    required String rowId,
+    required String value,
+  }) async {
+    final result = await CellBackendService.updateCell(
+      viewId: viewId,
+      cellContext: CellContext(fieldId: fieldId, rowId: rowId),
+      data: value,
+    );
+    return result.fold((_) => true, (error) {
+      Log.warn('A sealed cell of $fieldId could not be written: $error');
+      return false;
+    });
+  }
+
   Future<FieldPB?> _field(String viewId, String fieldId) async {
     final fields = await FieldBackendService.getFields(viewId: viewId)
         .fold((fields) => fields, (_) => const <FieldPB>[]);
