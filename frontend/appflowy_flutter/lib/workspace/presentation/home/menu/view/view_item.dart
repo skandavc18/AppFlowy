@@ -10,6 +10,7 @@ import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_bloc.dart';
 import 'package:appflowy/workspace/application/maps/map_metadata.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
@@ -26,6 +27,7 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_explorer
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_clipboard.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_transfer_service.dart';
+import 'package:appflowy/workspace/presentation/encryption/encryption_dialogs.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
@@ -317,12 +319,20 @@ class _InnerViewItemState extends State<InnerViewItem> {
   void initState() {
     super.initState();
     widget.isExpandedNotifier?.addListener(_collapseAllPages);
+    EncryptionVault.instance.addListener(_onLockChanged);
   }
 
   @override
   void dispose() {
+    EncryptionVault.instance.removeListener(_onLockChanged);
     widget.isExpandedNotifier?.removeListener(_collapseAllPages);
     super.dispose();
+  }
+
+  void _onLockChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -361,7 +371,8 @@ class _InnerViewItemState extends State<InnerViewItem> {
     // if the view is expanded and has child views, render its child views
     if (widget.isExpanded &&
         widget.shouldRenderChildren &&
-        widget.childViews.isNotEmpty) {
+        widget.childViews.isNotEmpty &&
+        !widget.view.hidesChildrenWhileLocked) {
       final children = widget.childViews.map((childView) {
         return ViewItem(
           key: ValueKey('${widget.spaceType.name} ${childView.id}'),
@@ -832,7 +843,8 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     if (isReferencedDatabaseView(widget.view, widget.parentView)) {
       return null;
     }
-    if (context.read<ViewBloc>().state.view.childViews.isEmpty) {
+    final view = context.read<ViewBloc>().state.view;
+    if (view.childViews.isEmpty || view.hidesChildrenWhileLocked) {
       return null;
     }
     return SidebarDisclosure(
@@ -935,6 +947,16 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
           case ViewMoreActionType.turnIntoCanvas:
             await CanvasService.convert(widget.view);
             break;
+          case ViewMoreActionType.encrypt:
+          case ViewMoreActionType.decrypt:
+            await _handleEncryptionAction(action == ViewMoreActionType.encrypt);
+            break;
+          case ViewMoreActionType.lockItem:
+            lockProtectedItem(widget.view.id);
+            break;
+          case ViewMoreActionType.unlockItem:
+            await unlockProtectedItem(context, widget.view.id);
+            break;
           case ViewMoreActionType.collapseAllPages:
             context.read<ViewBloc>().add(const ViewEvent.collapseAllPages());
             break;
@@ -958,6 +980,54 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
         }
       },
     );
+  }
+
+  /// Puts this item behind the workspace key, or takes it out again.
+  ///
+  /// Both directions need the key in memory: protecting while locked would let
+  /// somebody shut another person out of their own work, and unprotecting while
+  /// locked would take the cover off without ever proving who asked.
+  Future<void> _handleEncryptionAction(bool protect) async {
+    if (!await ensureWorkspaceUnlocked(context)) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+
+    final covered = protect
+        ? await EncryptionMarkService.protect(widget.view)
+        : await EncryptionMarkService.unprotect(widget.view);
+
+    // Newly protected means newly shut: nothing is revealed until it is asked
+    // for, so the mark bites at once without closing the rest of the workspace.
+    if (covered > 0) {
+      protect
+          ? lockProtectedItem(widget.view.id)
+          : EncryptionVault.instance.reveal(widget.view.id);
+    }
+    if (!mounted) {
+      return;
+    }
+
+    // A folder covers what is inside it, so say so rather than leaving somebody
+    // to wonder whether the files went with it.
+    final inside = covered - 1;
+    reportEncryptionOutcome(
+      context: context,
+      succeeded: covered > 0,
+      succeededMessage: switch ((protect, inside > 0)) {
+        (true, false) => LocaleKeys.encryption_itemProtectedLocked.tr(),
+        (true, true) => LocaleKeys.encryption_itemProtectedLockedWithChildren
+            .tr(args: ['$inside']),
+        (false, false) => LocaleKeys.encryption_itemUnprotected.tr(),
+        (false, true) => LocaleKeys.encryption_itemUnprotectedWithChildren
+            .tr(args: ['$inside']),
+      },
+    );
+    if (covered > 0) {
+      context.read<ViewBloc>().add(const ViewEvent.initial());
+    }
   }
 
   Future<void> _handleTransferAction(ViewMoreActionType action) async {
@@ -1214,8 +1284,10 @@ class ViewItemDefaultLeftIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hosted = context.read<ViewBloc>().state.view;
     if (isReferencedDatabaseView(view, parentView) ||
-        context.read<ViewBloc>().state.view.childViews.isEmpty) {
+        hosted.childViews.isEmpty ||
+        hosted.hidesChildrenWhileLocked) {
       return const SizedBox.shrink();
     }
 

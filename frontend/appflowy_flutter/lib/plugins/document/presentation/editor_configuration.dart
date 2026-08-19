@@ -12,6 +12,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/external/e
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/object_type_typography.dart';
+import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy_editor/appflowy_editor.dart'
     hide QuoteBlockComponentBuilder, quoteNode, QuoteBlockKeys;
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
@@ -229,6 +230,16 @@ List<OptionAction> _buildOptionActions(BuildContext context, String type) {
     standardActions.addAll([OptionAction.divider, OptionAction.depth]);
   }
 
+  // Anything on a page can be sealed, and a sealed block can be opened again.
+  // Which of the two is offered follows from the block's own type, so an
+  // embed, a picture and a paragraph all reach it the same way.
+  standardActions.addAll([
+    OptionAction.divider,
+    type == EncryptedBlockKeys.type
+        ? OptionAction.decryptBlock
+        : OptionAction.encryptBlock,
+  ]);
+
   return standardActions;
 }
 
@@ -419,6 +430,9 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
       configuration,
     ),
     MermaidBlockKeys.type: MermaidBlockComponentBuilder(
+      configuration: configuration,
+    ),
+    EncryptedBlockKeys.type: EncryptedBlockComponentBuilder(
       configuration: configuration,
     ),
     MindMapBlockKeys.type: MindMapBlockComponentBuilder(

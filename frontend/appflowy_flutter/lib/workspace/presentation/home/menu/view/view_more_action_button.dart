@@ -10,6 +10,7 @@ import 'package:appflowy/workspace/application/collections/collection_registry.d
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
+import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -182,6 +183,22 @@ class ViewMoreActionPopover extends StatelessWidget {
         ViewMoreActionType.cut,
         ViewMoreActionType.moveTo,
       ]);
+
+      // Every kind of item can be put behind the workspace key: a page, a
+      // folder, a collection, a table or a file.
+      if (view.layout != ViewLayoutPB.Chat) {
+        actionTypes.addAll([
+          ViewMoreActionType.divider,
+          if (view.isProtected)
+            view.isLockedNow
+                ? ViewMoreActionType.unlockItem
+                : ViewMoreActionType.lockItem,
+          view.isProtected
+              ? ViewMoreActionType.decrypt
+              : ViewMoreActionType.encrypt,
+          ViewMoreActionType.divider,
+        ]);
+      }
       if (view.canContainWorkspaceItems &&
           WorkspaceItemClipboard.instance.hasData) {
         actionTypes.add(ViewMoreActionType.pasteInto);

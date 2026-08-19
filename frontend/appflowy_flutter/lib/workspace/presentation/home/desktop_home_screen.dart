@@ -17,6 +17,7 @@ import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/command_palette.dart';
+import 'package:appflowy/workspace/presentation/encryption/workspace_lock_screen.dart';
 import 'package:appflowy/workspace/presentation/home/af_focus_manager.dart';
 import 'package:appflowy/workspace/presentation/home/errors/workspace_failed_screen.dart';
 import 'package:appflowy/workspace/presentation/home/hotkeys.dart';
@@ -75,8 +76,11 @@ class DesktopHomeScreen extends StatelessWidget {
           return const WorkspaceFailedScreen();
         }
 
-        return AFFocusManager(
-          child: MultiBlocProvider(
+        // Nothing behind this is built while the workspace waits for its
+        // passphrase — not the sidebar, not the last page somebody had open.
+        return WorkspaceEncryptionGate(
+          child: AFFocusManager(
+            child: MultiBlocProvider(
             key: ValueKey(userProfile.id),
             providers: [
               BlocProvider.value(
@@ -171,6 +175,7 @@ class DesktopHomeScreen extends StatelessWidget {
                 ),
               ),
             ),
+          ),
           ),
         );
       },

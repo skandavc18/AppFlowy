@@ -10,6 +10,7 @@ import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/view/view_action_type.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/common_view_action.dart';
+import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/encrypt_page_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/font_size_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/page_versions_action.dart';
@@ -151,6 +152,12 @@ class _MoreViewActionsState extends State<MoreViewActions> {
       PageVersionsAction(
         view: view,
         onOpened: popoverMutex.close,
+      ),
+      // The same row the sidebar offers, where somebody actually is when they
+      // decide a page is private.
+      EncryptPageAction(
+        view: view,
+        onDone: popoverMutex.close,
       ),
       ViewAction(
         type: ViewMoreActionType.divider,

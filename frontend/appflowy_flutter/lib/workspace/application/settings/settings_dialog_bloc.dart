@@ -27,6 +27,7 @@ enum SettingsPage {
   documentEditing,
   editor,
   pageVersions,
+  encryption,
   maps,
   connections,
   member,

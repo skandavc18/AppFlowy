@@ -10,6 +10,8 @@ import 'package:appflowy/plugins/database/domain/sort_service.dart';
 import 'package:appflowy/plugins/database/widgets/field/property_button_action.dart';
 import 'package:appflowy/plugins/database/widgets/field/property_type_picker.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/workspace/application/encryption/encryption.dart';
+import 'package:appflowy/workspace/presentation/encryption/column_encryption_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialog_v2.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
@@ -40,6 +42,42 @@ Future<void> showColumnHeadingMenu({
         onEditProperty: onEditProperty,
       ),
     );
+
+/// Sealing a whole column, and opening it again.
+///
+/// Only a plain text column is offered: a date, a number or a select column is
+/// parsed by the backend when it is written, so ciphertext would not survive
+/// the round trip. The row is shown disabled with the reason rather than hidden,
+/// so it is clear the feature exists and why it does not apply here.
+///
+/// Unlocking really does decrypt: the cells come back as ordinary text and can
+/// be edited. Choosing Encrypt again is what locks them.
+AppMenuEntry _encryptionEntry({
+  required BuildContext context,
+  required String viewId,
+  required FieldInfo fieldInfo,
+}) {
+  final registry = EncryptedColumnRegistry.instance;
+  final sealed = registry.isEncrypted(viewId, fieldInfo.id);
+  final supported = EncryptedColumnRegistry.canEncrypt(fieldInfo.fieldType);
+
+  return AppMenuItem(
+    label: sealed
+        ? LocaleKeys.encryption_columnUnlock.tr()
+        : LocaleKeys.encryption_columnEncrypt.tr(),
+    icon: sealed ? Icons.lock_open_rounded : Icons.shield_outlined,
+    shortcut: supported ? null : LocaleKeys.encryption_columnTextOnly.tr(),
+    enabled: supported || sealed,
+    onSelected: () => unawaited(
+      applyColumnEncryption(
+        context: context,
+        viewId: viewId,
+        fieldId: fieldInfo.id,
+        seal: !sealed,
+      ),
+    ),
+  );
+}
 
 /// The rows the heading menu is made of.
 List<AppMenuEntry> columnHeadingMenuEntries({
@@ -145,6 +183,12 @@ List<AppMenuEntry> columnHeadingMenuEntries({
         viewId: viewId,
         fieldId: fieldId,
         style: style,
+      ),
+      const AppMenuSeparator(),
+      _encryptionEntry(
+        context: context,
+        viewId: viewId,
+        fieldInfo: fieldInfo,
       ),
       const AppMenuSeparator(),
       AppMenuItem(

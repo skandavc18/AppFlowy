@@ -14,6 +14,7 @@ import 'package:appflowy/workspace/presentation/settings/pages/settings_billing_
 import 'package:appflowy/workspace/presentation/settings/pages/settings_manage_data_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_connections_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_editor_view.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/settings_encryption_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_maps_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_page_versions_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_office_view.dart';
@@ -156,6 +157,8 @@ class SettingsDialog extends StatelessWidget {
         return const SettingsEditorView();
       case SettingsPage.pageVersions:
         return const SettingsPageVersionsView();
+      case SettingsPage.encryption:
+        return const SettingsEncryptionView();
       case SettingsPage.maps:
         return const SettingsMapsView();
       case SettingsPage.connections:

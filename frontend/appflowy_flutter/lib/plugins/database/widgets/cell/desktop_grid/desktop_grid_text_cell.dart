@@ -2,6 +2,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/database/application/cell/bloc/text_cell_bloc.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/widgets/cell/desktop_grid/location_cell_suggestions.dart';
+import 'package:appflowy/plugins/database/widgets/cell/encrypted_cell.dart';
 import 'package:appflowy/plugins/database/widgets/cell/property_style_cell.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
 import 'package:flowy_infra/theme_extension.dart';
@@ -49,51 +50,57 @@ class DesktopGridTextCellSkin extends IEditableTextCellSkin {
         final padding = compactMode
             ? GridSize.compactCellContentInsets
             : GridSize.cellContentInsets;
-        return PropertyStyledTextCell(
+        return EncryptedCellGuard(
           viewId: bloc.cellController.viewId,
           fieldId: bloc.cellController.fieldId,
-          rowId: bloc.cellController.rowId,
           controller: textEditingController,
-          bloc: bloc,
-          childBuilder: (context, align) => Padding(
-            padding: padding,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _IconOrEmoji(),
-                Expanded(
-                  child: LocationCellSuggestions(
-                    viewId: bloc.cellController.viewId,
-                    fieldId: bloc.cellController.fieldId,
-                    controller: textEditingController,
-                    focusNode: focusNode,
-                    child: TextField(
+          padding: padding,
+          child: PropertyStyledTextCell(
+            viewId: bloc.cellController.viewId,
+            fieldId: bloc.cellController.fieldId,
+            rowId: bloc.cellController.rowId,
+            controller: textEditingController,
+            bloc: bloc,
+            childBuilder: (context, align) => Padding(
+              padding: padding,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _IconOrEmoji(),
+                  Expanded(
+                    child: LocationCellSuggestions(
+                      viewId: bloc.cellController.viewId,
+                      fieldId: bloc.cellController.fieldId,
                       controller: textEditingController,
                       focusNode: focusNode,
-                      textAlign: align,
-                      maxLines:
-                          context.watch<TextCellBloc>().state.wrap ? null : 1,
-                      style: DesktopGridTextCellStyle.resolve(
-                        context,
-                        isPrimary: context
-                            .read<TextCellBloc>()
-                            .cellController
-                            .fieldInfo
-                            .isPrimary,
-                      ),
-                      decoration: const InputDecoration(
-                        border: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        errorBorder: InputBorder.none,
-                        disabledBorder: InputBorder.none,
-                        isDense: true,
-                        isCollapsed: true,
+                      child: TextField(
+                        controller: textEditingController,
+                        focusNode: focusNode,
+                        textAlign: align,
+                        maxLines:
+                            context.watch<TextCellBloc>().state.wrap ? null : 1,
+                        style: DesktopGridTextCellStyle.resolve(
+                          context,
+                          isPrimary: context
+                              .read<TextCellBloc>()
+                              .cellController
+                              .fieldInfo
+                              .isPrimary,
+                        ),
+                        decoration: const InputDecoration(
+                          border: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          errorBorder: InputBorder.none,
+                          disabledBorder: InputBorder.none,
+                          isDense: true,
+                          isCollapsed: true,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

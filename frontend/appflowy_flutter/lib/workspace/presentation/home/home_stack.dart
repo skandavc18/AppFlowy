@@ -15,6 +15,7 @@ import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/presentation/encryption/protected_view_gate.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
 import 'package:appflowy/workspace/presentation/home/navigation.dart';
@@ -756,10 +757,15 @@ class PageManager {
                   return Padding(
                     padding: builder.contentPadding,
                     // Every kind of page gets its history here, so it is one
-                    // feature rather than one per plugin.
-                    child: PageVersionHost(
+                    // feature rather than one per plugin. The same is true of
+                    // the workspace key: one wrapper covers a protected page,
+                    // table, folder, collection or file.
+                    child: ProtectedViewGate(
                       viewId: notifier.plugin.id,
-                      child: pluginWidget,
+                      child: PageVersionHost(
+                        viewId: notifier.plugin.id,
+                        child: pluginWidget,
+                      ),
                     ),
                   );
                 }

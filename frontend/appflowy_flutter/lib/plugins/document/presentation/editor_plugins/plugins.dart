@@ -53,6 +53,7 @@ export 'math_equation/math_source_editor.dart';
 export 'math_equation/math_symbols.dart';
 export 'math_equation/mobile_math_equation_toolbar_item.dart';
 export 'mermaid/mermaid_block_component.dart';
+export 'encryption/encrypted_block_component.dart';
 export 'mind_map/mind_map_block_component.dart';
 export 'drawing/drawing_block_component.dart';
 export 'interactive/interactive_blocks.dart';

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_option_cubit.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/encryption/block_encryption_action.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/toolbar_item/text_suggestions_toolbar_item.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
@@ -66,6 +69,24 @@ List<AppMenuEntry> buildBlockOptionMenu({
             submenu: _depthEntries(editorState, node),
           ),
         );
+      case OptionAction.encryptBlock:
+      case OptionAction.decryptBlock:
+        // Sealing needs the workspace key, and asking for it needs a context —
+        // which the cubit has not got. It is handled here instead.
+        entries.add(
+          AppMenuItem(
+            label: action.description,
+            icon: blockOptionIcon(action),
+            onSelected: () => unawaited(
+              applyBlockEncryption(
+                context: context,
+                editorState: editorState,
+                node: node,
+                seal: action == OptionAction.encryptBlock,
+              ),
+            ),
+          ),
+        );
       default:
         entries.add(
           AppMenuItem(
@@ -104,6 +125,8 @@ IconData blockOptionIcon(OptionAction action) => switch (action) {
       OptionAction.setToPageWidth => Icons.fit_screen_rounded,
       OptionAction.distributeColumnsEvenly => Icons.view_week_rounded,
       OptionAction.convertToSpreadsheet => Icons.grid_on_rounded,
+      OptionAction.encryptBlock => Icons.shield_outlined,
+      OptionAction.decryptBlock => Icons.lock_open_rounded,
     };
 
 List<AppMenuEntry> _alignEntries(EditorState editorState, Node node) {

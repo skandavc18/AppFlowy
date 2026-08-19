@@ -20,6 +20,10 @@ enum ViewMoreActionType {
   lastModified,
   created,
   lockPage,
+  encrypt,
+  decrypt,
+  lockItem,
+  unlockItem,
   turnIntoDashboard,
   turnIntoCanvas,
   leaveSharedPage;
@@ -65,6 +69,14 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
         return LocaleKeys.disclosureAction_collapseAllPages.tr();
       case ViewMoreActionType.lockPage:
         return LocaleKeys.disclosureAction_lockPage.tr();
+      case ViewMoreActionType.encrypt:
+        return LocaleKeys.encryption_protectItem.tr();
+      case ViewMoreActionType.decrypt:
+        return LocaleKeys.encryption_unprotectItem.tr();
+      case ViewMoreActionType.lockItem:
+        return LocaleKeys.encryption_lockItem.tr();
+      case ViewMoreActionType.unlockItem:
+        return LocaleKeys.encryption_unlockItem.tr();
       case ViewMoreActionType.turnIntoDashboard:
         return LocaleKeys.dashboard_turnInto.tr();
       case ViewMoreActionType.turnIntoCanvas:
@@ -108,6 +120,14 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
         return Icons.unfold_less_rounded;
       case ViewMoreActionType.lockPage:
         return Icons.lock_outline_rounded;
+      case ViewMoreActionType.encrypt:
+        return Icons.shield_outlined;
+      case ViewMoreActionType.decrypt:
+        return Icons.shield_rounded;
+      case ViewMoreActionType.lockItem:
+        return Icons.lock_rounded;
+      case ViewMoreActionType.unlockItem:
+        return Icons.lock_open_rounded;
       case ViewMoreActionType.turnIntoDashboard:
         return Icons.dashboard_rounded;
       case ViewMoreActionType.turnIntoCanvas:
@@ -141,6 +161,10 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
       case ViewMoreActionType.lastModified:
       case ViewMoreActionType.created:
       case ViewMoreActionType.lockPage:
+      case ViewMoreActionType.encrypt:
+      case ViewMoreActionType.decrypt:
+      case ViewMoreActionType.lockItem:
+      case ViewMoreActionType.unlockItem:
       case ViewMoreActionType.turnIntoDashboard:
       case ViewMoreActionType.turnIntoCanvas:
       case ViewMoreActionType.leaveSharedPage:

@@ -134,7 +134,11 @@ enum OptionAction {
   distributeColumnsEvenly,
 
   /// Upgrades a table block into an inline spreadsheet.
-  convertToSpreadsheet;
+  convertToSpreadsheet,
+
+  /// Replaces this block's content with ciphertext, and puts it back.
+  encryptBlock,
+  decryptBlock;
 
   FlowySvgData get svg {
     switch (this) {
@@ -177,6 +181,9 @@ enum OptionAction {
         return FlowySvgs.table_distribute_columns_evenly_s;
       case OptionAction.convertToSpreadsheet:
         return FlowySvgs.slash_menu_icon_grid_s;
+      case OptionAction.encryptBlock:
+      case OptionAction.decryptBlock:
+        return FlowySvgs.tag_s;
     }
   }
 
@@ -226,6 +233,10 @@ enum OptionAction {
             .tr();
       case OptionAction.convertToSpreadsheet:
         return LocaleKeys.spreadsheet_convertToSpreadsheet.tr();
+      case OptionAction.encryptBlock:
+        return LocaleKeys.encryption_blockEncrypt.tr();
+      case OptionAction.decryptBlock:
+        return LocaleKeys.encryption_blockDecrypt.tr();
     }
   }
 }

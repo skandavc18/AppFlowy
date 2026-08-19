@@ -114,6 +114,13 @@ class SettingsMenu extends StatelessWidget {
               changeSelectedPage: changeSelectedPage,
             ),
             SettingsMenuElement(
+              page: SettingsPage.encryption,
+              selectedPage: currentPage,
+              label: LocaleKeys.encryption_settingsTitle.tr(),
+              icon: const Icon(Icons.lock_outline_rounded, size: 20),
+              changeSelectedPage: changeSelectedPage,
+            ),
+            SettingsMenuElement(
               page: SettingsPage.maps,
               selectedPage: currentPage,
               label: LocaleKeys.map_settingsTitle.tr(),

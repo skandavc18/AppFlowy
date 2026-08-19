@@ -86,6 +86,8 @@ class BlockActionOptionCubit extends Cubit<BlockActionOptionState> {
       case OptionAction.divider:
       case OptionAction.depth:
       case OptionAction.turnInto:
+      case OptionAction.encryptBlock:
+      case OptionAction.decryptBlock:
         throw UnimplementedError();
     }
 

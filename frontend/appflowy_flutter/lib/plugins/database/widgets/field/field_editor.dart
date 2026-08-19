@@ -16,6 +16,8 @@ import 'package:appflowy/plugins/database/grid/presentation/widgets/header/deskt
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/util/field_type_extension.dart';
+import 'package:appflowy/workspace/application/encryption/encryption.dart';
+import 'package:appflowy/workspace/presentation/encryption/column_encryption_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/toggle/toggle.dart';
 import 'package:appflowy_backend/log.dart';
@@ -124,6 +126,8 @@ class _FieldEditorState extends State<FieldEditor> {
           VSpace(GridSize.typeOptionSeparatorHeight),
           _actionCell(FieldAction.delete),
           const TypeOptionSeparator(spacing: 8.0),
+          _actionCell(FieldAction.encrypt),
+          const TypeOptionSeparator(spacing: 8.0),
           _actionCell(FieldAction.wrap),
           const VSpace(8.0),
         ],
@@ -205,6 +209,13 @@ class FieldActionCell extends StatelessWidget {
         (action == FieldAction.duplicate || action == FieldAction.delete)) {
       enable = false;
     }
+    // Only a plain text column survives being replaced by ciphertext; the
+    // backend parses everything else on the way in.
+    if (action == FieldAction.encrypt &&
+        !EncryptedColumnRegistry.canEncrypt(fieldInfo.fieldType) &&
+        !EncryptedColumnRegistry.instance.isEncrypted(viewId, fieldInfo.id)) {
+      enable = false;
+    }
     return FlowyIconTextButton(
       resetHoverOnRebuild: false,
       disable: !enable,
@@ -212,7 +223,7 @@ class FieldActionCell extends StatelessWidget {
       onTap: () => action.run(context, viewId, fieldInfo),
       // show the error color when delete is hovered
       textBuilder: (onHover) => FlowyText(
-        action.title(fieldInfo),
+        action.title(fieldInfo, viewId: viewId),
         lineHeight: 1.0,
         color: enable
             ? action == FieldAction.delete && onHover
@@ -240,9 +251,13 @@ enum FieldAction {
   duplicate,
   clearData,
   delete,
+  encrypt,
   wrap;
 
   Widget? leading(FieldInfo fieldInfo, Color? color) {
+    if (this == FieldAction.encrypt) {
+      return Icon(Icons.shield_outlined, size: 16, color: color);
+    }
     FlowySvgData? svgData;
     switch (this) {
       case FieldAction.insertLeft:
@@ -292,7 +307,7 @@ enum FieldAction {
     return null;
   }
 
-  String title(FieldInfo fieldInfo) {
+  String title(FieldInfo fieldInfo, {required String viewId}) {
     switch (this) {
       case FieldAction.insertLeft:
         return LocaleKeys.grid_field_insertLeft.tr();
@@ -311,6 +326,11 @@ enum FieldAction {
         return LocaleKeys.grid_field_clear.tr();
       case FieldAction.delete:
         return LocaleKeys.grid_field_delete.tr();
+      case FieldAction.encrypt:
+        return EncryptedColumnRegistry.instance
+                .isEncrypted(viewId, fieldInfo.id)
+            ? LocaleKeys.encryption_columnUnlock.tr()
+            : LocaleKeys.encryption_columnEncrypt.tr();
       case FieldAction.wrap:
         return LocaleKeys.grid_field_wrapCellContent.tr();
     }
@@ -376,6 +396,19 @@ enum FieldAction {
         context
             .read<FieldEditorBloc>()
             .add(const FieldEditorEvent.toggleWrapCellContent());
+        break;
+      case FieldAction.encrypt:
+        final sealed = EncryptedColumnRegistry.instance
+            .isEncrypted(viewId, fieldInfo.id);
+        PopoverContainer.of(context).closeAll();
+        unawaited(
+          applyColumnEncryption(
+            context: context,
+            viewId: viewId,
+            fieldId: fieldInfo.id,
+            seal: !sealed,
+          ),
+        );
         break;
     }
   }
