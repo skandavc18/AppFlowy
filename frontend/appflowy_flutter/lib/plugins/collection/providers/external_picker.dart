@@ -178,6 +178,10 @@ class _ExternalPickerState extends State<_ExternalPicker> {
 
   /// Gathered across folders, so a selection survives browsing into one.
   final Map<String, ProviderNode> gathered = <String, ProviderNode>{};
+
+  /// The folder made a moment ago, marked so it can be found in a long list.
+  String? justCreated;
+
   bool loading = true;
   String? error;
   String query = '';
@@ -305,6 +309,17 @@ class _ExternalPickerState extends State<_ExternalPicker> {
                         ),
                       ),
                     ),
+                    if (_offersNewFolder)
+                      IconButton(
+                        onPressed: () => unawaited(_createFolder()),
+                        tooltip: LocaleKeys.providers_newFolder.tr(),
+                        icon: const Icon(
+                          Icons.create_new_folder_rounded,
+                          size: 17,
+                        ),
+                        color: palette.textSecondary,
+                        splashRadius: 15,
+                      ),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close_rounded, size: 17),
@@ -413,7 +428,8 @@ class _ExternalPickerState extends State<_ExternalPicker> {
                             node: visible[index],
                             palette: palette,
                             accent: widget.info.accent,
-                            selected: gathered.containsKey(visible[index].id),
+                            selected: gathered.containsKey(visible[index].id) ||
+                                visible[index].id == justCreated,
                             selectable:
                                 widget.multiple && !visible[index].isFolder,
                             onTap: () => _choose(visible[index]),
@@ -519,8 +535,92 @@ class _ExternalPickerState extends State<_ExternalPicker> {
     setState(() {
       trail.add(node);
       query = '';
+      justCreated = null;
     });
     await _read(node.id);
+  }
+
+  /// Whether somewhere is being chosen, which is the only time making a folder
+  /// is worth offering. It is shown even when the account cannot write yet —
+  /// asking for that permission is what the button does first.
+  bool get _offersNewFolder =>
+      widget.containersOnly && error == null && !loading && provider != null;
+
+  /// The folder being looked at, or null at the top of the account.
+  String? get _here => trail.isEmpty ? null : trail.last.id;
+
+  Future<void> _createFolder() async {
+    final account = connection;
+    if (provider == null || account == null) {
+      return;
+    }
+
+    if (!provider!.capabilities.canCreateFolder) {
+      // Signed in to look, not to write. Asking is better than a button that
+      // could only ever fail.
+      final granted = await ensureProviderWriteAccess(
+        context,
+        source: CollectionSource(
+          service: account.service,
+          connectionId: account.id,
+        ),
+      );
+      if (!granted || !mounted) {
+        return;
+      }
+      // What an account may do is read once, in probe(), so the provider has
+      // to be built again rather than refreshed.
+      provider?.dispose();
+      provider = null;
+      await _read(_here);
+      if (!mounted || provider == null) {
+        return;
+      }
+    }
+
+    final live = provider;
+    if (live == null || !live.capabilities.canCreateFolder) {
+      return;
+    }
+
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => _FolderNameDialog(
+        parentName: trail.isEmpty ? widget.info.label : trail.last.name,
+        atRoot: trail.isEmpty,
+      ),
+    );
+    if (name == null || name.isEmpty || !mounted) {
+      return;
+    }
+
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final created = await live.createFolder(name, parentId: _here);
+      if (!mounted) {
+        return;
+      }
+      // A filter left over from looking for somewhere to put it would hide the
+      // very folder that was just made.
+      setState(() => query = '');
+      await _read(_here);
+      if (mounted) {
+        setState(() => justCreated = created.id);
+      }
+    } on Object catch (failure) {
+      if (mounted) {
+        setState(() {
+          loading = false;
+          error = failure is ProviderFailure &&
+                  failure.status == ProviderStatus.permissionDenied
+              ? LocaleKeys.providers_error_refused.tr(args: [widget.info.label])
+              : LocaleKeys.providers_newFolderFailed.tr();
+        });
+      }
+    }
   }
 
   void _goUp() {
@@ -532,13 +632,102 @@ class _ExternalPickerState extends State<_ExternalPicker> {
       trail
         ..clear()
         ..addAll(next);
+      justCreated = null;
     });
     unawaited(_read(next.isEmpty ? null : next.last.id));
   }
 }
 
-class _PickerRow extends StatefulWidget {
-  const _PickerRow({
+/// Asks what a new folder should be called.
+///
+/// Owns its controller and disposes it in `dispose`; handing one to
+/// `showDialog(...).whenComplete(dispose)` reads a disposed field during the
+/// closing animation and takes the window down with it.
+class _FolderNameDialog extends StatefulWidget {
+  const _FolderNameDialog({required this.parentName, required this.atRoot});
+
+  final String parentName;
+  final bool atRoot;
+
+  @override
+  State<_FolderNameDialog> createState() => _FolderNameDialogState();
+}
+
+class _FolderNameDialogState extends State<_FolderNameDialog> {
+  final TextEditingController _name = TextEditingController();
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _name.text.trim();
+    if (name.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = FolderExplorerPalette.of(context);
+    return AlertDialog(
+      backgroundColor: palette.floatingSurface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      title: Text(
+        LocaleKeys.providers_newFolderTitle.tr(),
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+          color: palette.textPrimary,
+        ),
+      ),
+      content: SizedBox(
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.atRoot
+                  ? LocaleKeys.providers_newFolderAtRoot
+                      .tr(args: [widget.parentName])
+                  : LocaleKeys.providers_newFolderIn
+                      .tr(args: [widget.parentName]),
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.4,
+                color: palette.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ProviderTextField(
+              label: LocaleKeys.providers_newFolderLabel.tr(),
+              controller: _name,
+              palette: palette,
+              autofocus: true,
+              onSubmitted: (_) => _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(LocaleKeys.button_cancel.tr()),
+        ),
+        TextButton(
+          onPressed: _submit,
+          child: Text(LocaleKeys.button_create.tr()),
+        ),
+      ],
+    );
+  }
+}
+
+class _PickerRow extends StatefulWidget {  const _PickerRow({
     required this.node,
     required this.palette,
     required this.accent,

@@ -28,6 +28,7 @@ enum SettingsPage {
   editor,
   pageVersions,
   encryption,
+  backup,
   maps,
   connections,
   member,

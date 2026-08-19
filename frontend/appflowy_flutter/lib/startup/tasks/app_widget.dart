@@ -19,6 +19,7 @@ import 'package:appflowy/util/font_family_extension.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/workspace/application/action_navigation/action_navigation_bloc.dart';
 import 'package:appflowy/workspace/application/action_navigation/navigation_action.dart';
+import 'package:appflowy/workspace/application/backup/backup_scheduler.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/notification/notification_service.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
@@ -66,6 +67,9 @@ class InitAppWidgetTask extends LaunchTask {
     // Reminders keep their own clock, so a due one still speaks when nobody
     // has the calendar open.
     startReminderNotifications();
+
+    // A backup on a schedule needs a clock of its own for the same reason.
+    BackupScheduler.instance.start();
 
     await loadIconGroups();
 

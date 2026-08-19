@@ -11,6 +11,7 @@ import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dar
 import 'package:appflowy/workspace/presentation/settings/pages/setting_ai_view/settings_ai_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_account_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_billing_view.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/settings_backup_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_manage_data_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_connections_view.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/settings_editor_view.dart';
@@ -159,6 +160,8 @@ class SettingsDialog extends StatelessWidget {
         return const SettingsPageVersionsView();
       case SettingsPage.encryption:
         return const SettingsEncryptionView();
+      case SettingsPage.backup:
+        return const SettingsBackupView();
       case SettingsPage.maps:
         return const SettingsMapsView();
       case SettingsPage.connections:
