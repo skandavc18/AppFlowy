@@ -4,6 +4,7 @@ import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/extensions/dart/appflowy_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/data_block_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/glass_theme_extension.dart';
+import 'package:appflowy/extensions/dart/built_in/news_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/stock_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/tally_table_view_extension.dart';
 import 'package:appflowy/extensions/dart/extension_context.dart';
@@ -23,6 +24,7 @@ List<AppFlowyExtension> builtInDartExtensions() => [
       GlassThemeExtension(),
       TallyTableViewExtension(),
       StockExtension(),
+      NewsExtension(),
     ];
 
 /// Switches Dart extensions on and off, and remembers which are off.

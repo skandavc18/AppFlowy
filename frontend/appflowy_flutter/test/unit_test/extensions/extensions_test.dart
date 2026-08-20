@@ -14,6 +14,7 @@ import 'package:appflowy/extensions/application/extension_run_log.dart';
 import 'package:appflowy/extensions/application/island_server.dart';
 import 'package:appflowy/extensions/application/script_host.dart';
 import 'package:appflowy/extensions/dart/appflowy_extension.dart';
+import 'package:appflowy/extensions/dart/built_in/news_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/stock_extension.dart';
 import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
@@ -1097,6 +1098,205 @@ void main() {
       expect(StockMatch.listFrom('[]'), isEmpty);
       expect(StockMatch.listFrom(jsonEncode({'quotes': 'no'})), isEmpty);
       expect(StockMatch.listFrom(jsonEncode({})), isEmpty);
+    });
+  });
+
+  group('reading a news feed', () {
+    test('an RSS feed gives its title, links and dates', () {
+      final channel = NewsChannel.parse('''
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Economic Times</title>
+    <item>
+      <title>Markets close higher</title>
+      <link>https://example.com/a</link>
+      <description>The index gained &amp;nbsp;1.2%.</description>
+      <pubDate>Thu, 20 Aug 2026 14:14:48 +0530</pubDate>
+    </item>
+    <item>
+      <title>Rupee steadies</title>
+      <link>https://example.com/b</link>
+    </item>
+  </channel>
+</rss>
+''');
+      expect(channel.title, 'Economic Times');
+      expect(channel.items.length, 2);
+      expect(channel.items.first.title, 'Markets close higher');
+      expect(channel.items.first.link, 'https://example.com/a');
+      expect(channel.items.first.summary, 'The index gained 1.2%.');
+      expect(channel.items.first.publishedAt, isNotNull);
+      // 14:14:48 +0530 is 08:44:48 UTC.
+      expect(channel.items.first.publishedAt!.toUtc().hour, 8);
+      expect(channel.items.first.publishedAt!.toUtc().minute, 44);
+    });
+
+    test('an Atom feed reads its href and skips a non-alternate link', () {
+      final channel = NewsChannel.parse('''
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Something</title>
+  <entry>
+    <title>A post</title>
+    <link rel="self" href="https://example.com/self"/>
+    <link rel="alternate" href="https://example.com/post"/>
+    <summary>A &lt;b&gt;bold&lt;/b&gt; claim.</summary>
+    <published>2026-08-20T09:00:00Z</published>
+  </entry>
+</feed>
+''');
+      expect(channel.title, 'Something');
+      expect(channel.items.single.link, 'https://example.com/post');
+      expect(channel.items.single.summary, 'A bold claim.');
+      expect(channel.items.single.publishedAt!.toUtc().hour, 9);
+    });
+
+    test('markup in a headline is stripped, not shown', () {
+      final channel = NewsChannel.parse('''
+<rss version="2.0"><channel><title>T</title>
+  <item><title>Plain</title>
+    <description>&lt;p&gt;Some   text&lt;/p&gt;</description>
+  </item>
+</channel></rss>
+''');
+      expect(channel.items.single.summary, 'Some text');
+    });
+
+    test('an item with no title is skipped', () {
+      final channel = NewsChannel.parse('''
+<rss version="2.0"><channel><title>T</title>
+  <item><link>https://example.com/x</link></item>
+  <item><title>Kept</title></item>
+</channel></rss>
+''');
+      expect(channel.items.map((item) => item.title), ['Kept']);
+    });
+
+    test('a page that is not a feed is refused', () {
+      expect(() => NewsChannel.parse('<html><body>hi</body></html>'),
+          throwsStateError);
+      expect(() => NewsChannel.parse('not xml at all'), throwsStateError);
+    });
+
+    test('a feed with no headlines is refused rather than shown empty', () {
+      expect(
+        () => NewsChannel.parse(
+            '<rss version="2.0"><channel><title>T</title></channel></rss>'),
+        throwsStateError,
+      );
+    });
+
+    test('a channel round-trips through af.data', () {
+      final original = NewsChannel.parse('''
+<rss version="2.0"><channel><title>T</title>
+  <item><title>One</title><link>https://example.com/1</link>
+    <pubDate>Thu, 20 Aug 2026 14:14:48 +0530</pubDate></item>
+</channel></rss>
+''');
+      final read = NewsChannel.fromJson(original.toJson());
+      expect(read.title, 'T');
+      expect(read.items.single.title, 'One');
+      expect(read.items.single.link, 'https://example.com/1');
+      expect(read.items.single.publishedAt, original.items.single.publishedAt);
+    });
+
+    test('a failure round-trips like a feed does', () {
+      final read = NewsChannel.fromJson(NewsChannel.failed('offline').toJson());
+      expect(read.error, 'offline');
+      expect(read.items, isEmpty);
+    });
+
+    test('two feeds get two keys, and one feed keeps the same key', () {
+      final a = NewsFeed.keyFor('https://example.com/a.xml');
+      final b = NewsFeed.keyFor('https://example.com/b.xml');
+      expect(a, isNot(b));
+      expect(NewsFeed.keyFor(' https://example.com/a.xml '), a);
+      // No dots or slashes, which would break the dotted key path.
+      expect(a.substring('feed.'.length), isNot(contains('.')));
+    });
+
+    test('every offered source is an https feed', () {
+      for (final source in newsSources) {
+        expect(source.url, startsWith('https://'));
+        expect(source.name, isNotEmpty);
+      }
+    });
+  });
+
+  group('finding a thumbnail in a feed', () {
+    String rss(String itemBody) => '''
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/"
+     xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel><title>T</title><item><title>H</title>$itemBody</item></channel>
+</rss>
+''';
+
+    String? imageOf(String itemBody) =>
+        NewsChannel.parse(rss(itemBody)).items.single.image;
+
+    test('media:thumbnail, the way the BBC publishes one', () {
+      expect(
+        imageOf('<media:thumbnail width="240" url="https://i.example/a.jpg"/>'),
+        'https://i.example/a.jpg',
+      );
+    });
+
+    test('media:content when it declares itself an image', () {
+      expect(
+        imageOf('<media:content medium="image" url="https://i.example/b"/>'),
+        'https://i.example/b',
+      );
+    });
+
+    test('an enclosure typed as an image', () {
+      expect(
+        imageOf('<enclosure type="image/png" url="https://i.example/c"/>'),
+        'https://i.example/c',
+      );
+    });
+
+    test('an enclosure that is audio is not treated as a picture', () {
+      expect(
+        imageOf('<enclosure type="audio/mpeg" url="https://i.example/d.mp3"/>'),
+        '',
+      );
+    });
+
+    test('the first picture inside the description html', () {
+      expect(
+        imageOf(
+          '<description>&lt;p&gt;Hi &lt;img src="https://i.example/e.jpg"/&gt;'
+          '&lt;/p&gt;</description>',
+        ),
+        'https://i.example/e.jpg',
+      );
+    });
+
+    test('a feed with no picture reports none rather than guessing', () {
+      expect(imageOf('<link>https://example.com/x</link>'), '');
+      expect(
+        imageOf('<description>Just words, no picture.</description>'),
+        '',
+      );
+    });
+
+    test('a relative or non-http source is refused', () {
+      expect(imageOf('<media:thumbnail url="/local/a.jpg"/>'), '');
+      expect(
+        imageOf('<description>&lt;img src="data:image/png;base64,xx"/&gt;'
+            '</description>'),
+        '',
+      );
+    });
+
+    test('a thumbnail survives the round trip through af.data', () {
+      final channel = NewsChannel.parse(
+        rss('<media:thumbnail url="https://i.example/f.jpg"/>'),
+      );
+      final read = NewsChannel.fromJson(channel.toJson());
+      expect(read.items.single.image, 'https://i.example/f.jpg');
+      expect(read.items.single.hasImage, isTrue);
     });
   });
 
