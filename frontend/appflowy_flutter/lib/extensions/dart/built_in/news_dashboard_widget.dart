@@ -73,8 +73,7 @@ DashboardWidgetDefinition newsDashboardWidget() => DashboardWidgetDefinition(
           value: context.spec.integer(_keyCount, fallback: 8).toDouble(),
           minimum: 1,
           maximum: 20,
-          onChanged: (value) =>
-              context.setSettings({_keyCount: value.round()}),
+          onChanged: (value) => context.setSettings({_keyCount: value.round()}),
         ),
         DashboardConfigToggle(
           label: 'Show a line of summary',

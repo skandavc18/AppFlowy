@@ -202,7 +202,8 @@ class NewsFeed {
     if (response.bodyBytes.length > maximumResponseBytes) {
       throw StateError('That feed is larger than 4 MB.');
     }
-    return NewsChannel.parse(utf8.decode(response.bodyBytes, allowMalformed: true));
+    return NewsChannel.parse(
+        utf8.decode(response.bodyBytes, allowMalformed: true));
   }
 }
 
@@ -283,8 +284,8 @@ class NewsChannel {
           ),
           image: _imageOf(entry),
           publishedAt: _dateOf(
-            _textOf(entry, isAtom ? 'published' : 'pubDate'),
-          ) ??
+                _textOf(entry, isAtom ? 'published' : 'pubDate'),
+              ) ??
               _dateOf(_textOf(entry, 'updated')),
         ),
       );
@@ -355,14 +356,17 @@ class NewsChannel {
         final medium = child.getAttribute('medium') ?? '';
         final url = child.getAttribute('url') ?? child.getAttribute('href');
         final claimsImage = type.startsWith('image/') || medium == 'image';
-        if (url != null && url.isNotEmpty && (claimsImage || _looksLikeImage(url))) {
+        if (url != null &&
+            url.isNotEmpty &&
+            (claimsImage || _looksLikeImage(url))) {
           return url;
         }
       }
       if (name == 'link' && child.getAttribute('rel') == 'enclosure') {
         final url = child.getAttribute('href');
         final type = child.getAttribute('type') ?? '';
-        if (url != null && (type.startsWith('image/') || _looksLikeImage(url))) {
+        if (url != null &&
+            (type.startsWith('image/') || _looksLikeImage(url))) {
           return url;
         }
       }
@@ -392,7 +396,8 @@ class NewsChannel {
           .hasMatch(url);
 
   /// Atom puts the address in an attribute, and often lists several.
-  static String _atomLink(XmlElement entry) {    for (final link in entry.childElements) {
+  static String _atomLink(XmlElement entry) {
+    for (final link in entry.childElements) {
       if (link.name.local != 'link') {
         continue;
       }
@@ -422,8 +427,18 @@ class NewsChannel {
   }
 
   static const _months = {
-    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12,
+    'jan': 1,
+    'feb': 2,
+    'mar': 3,
+    'apr': 4,
+    'may': 5,
+    'jun': 6,
+    'jul': 7,
+    'aug': 8,
+    'sep': 9,
+    'oct': 10,
+    'nov': 11,
+    'dec': 12,
   };
 
   /// Atom dates are ISO 8601; RSS dates are RFC 822, which `DateTime.parse`
@@ -554,7 +569,9 @@ class NewsNodeParser extends NodeParser {
     }
     for (final item in channel.items.take(count)) {
       buffer.writeln(
-        item.link.isEmpty ? '- ${item.title}' : '- [${item.title}](${item.link})',
+        item.link.isEmpty
+            ? '- ${item.title}'
+            : '- [${item.title}](${item.link})',
       );
     }
     return '$buffer\n';
@@ -608,8 +625,7 @@ class _NewsBlockComponentState extends State<NewsBlockComponent>
 
   int get _count => (node.attributes[NewsBlockKeys.count] as int?) ?? 6;
 
-  bool get _showSummary =>
-      node.attributes[NewsBlockKeys.showSummary] != false;
+  bool get _showSummary => node.attributes[NewsBlockKeys.showSummary] != false;
 
   bool get _showImages => node.attributes[NewsBlockKeys.showImages] != false;
 
