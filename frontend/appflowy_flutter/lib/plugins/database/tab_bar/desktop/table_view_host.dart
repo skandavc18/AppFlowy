@@ -31,7 +31,11 @@ mixin TableViewHostPlumbing<T extends StatefulWidget> on State<T> {
 
   DatabaseController get hostController;
 
-  TableViewKind get hostKind;
+  /// Built-in views name their kind; an extension view has no enum value and
+  /// overrides [hostEnvelopeKey] instead.
+  TableViewKind? get hostKind => null;
+
+  String get hostEnvelopeKey => hostKind!.envelopeKey;
 
   /// Called when a row changed, so the view can read the table again.
   void onRowsChanged();
@@ -51,7 +55,7 @@ mixin TableViewHostPlumbing<T extends StatefulWidget> on State<T> {
 
   /// Writes this view's own settings back onto the folder.
   void saveHostSettings(Map<String, dynamic> settings) {
-    final mark = TableViewMark(kind: hostKind, settings: settings);
+    final mark = TableViewMark.forKey(hostEnvelopeKey, settings: settings);
     ViewBackendService.updateView(
       viewId: hostView.id,
       extra: mark.mergeIntoExtra(hostView.extra),

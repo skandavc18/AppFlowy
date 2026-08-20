@@ -84,6 +84,7 @@ enum SidebarIcon {
   switcher('arrows', 'caret-up-down'),
   collapse('design', 'sidebar-simple'),
   trash('office', 'trash'),
+  extensions('games', 'puzzle-piece'),
   pin('office', 'push-pin'),
   settings('system', 'gear'),
   bell('system', 'bell'),

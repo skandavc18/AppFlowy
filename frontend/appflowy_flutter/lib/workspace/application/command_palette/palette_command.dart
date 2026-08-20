@@ -16,6 +16,7 @@ enum PaletteCommandGroup {
   navigate,
   view,
   workspace,
+  extensions,
   ai,
 }
 

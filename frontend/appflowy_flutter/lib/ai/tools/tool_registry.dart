@@ -50,6 +50,11 @@ class AIToolRegistry extends ChangeNotifier {
   final WorkspaceToolServer _workspace = WorkspaceToolServer();
   final Map<String, McpClient> _clients = {};
 
+  /// Servers that are neither AppFlowy's own nor an MCP connection — today,
+  /// one per extension. They are owned by whoever registered them, so this
+  /// registry never disposes them.
+  final Map<String, AIToolServer> _local = {};
+
   List<AITool> _tools = [];
   bool _loading = false;
 
@@ -59,6 +64,16 @@ class AIToolRegistry extends ChangeNotifier {
 
   /// Why a server is not answering, keyed by server id.
   final Map<String, String> failures = {};
+
+  /// Adds a server this registry does not own. Registering the same id twice
+  /// replaces the previous one rather than shadowing it.
+  void addServer(AIToolServer server) {
+    _local[server.id] = server;
+  }
+
+  void removeServer(String serverId) {
+    _local.remove(serverId);
+  }
 
   /// Reads every server's tool list. Safe to call again; a server that refuses
   /// is reported rather than left to fail silently at call time.
@@ -75,6 +90,18 @@ class AIToolRegistry extends ChangeNotifier {
 
       final collected = <AITool>[...await _workspace.listTools()];
       failures.clear();
+
+      for (final server in _local.values) {
+        if (!server.isAvailable) {
+          continue;
+        }
+        try {
+          collected.addAll(await server.listTools());
+        } catch (error) {
+          failures[server.id] = '$error';
+          Log.warn('${server.label} could not be read: $error');
+        }
+      }
 
       final configured = McpServerStore.instance.servers
           .where((server) => server.enabled)
@@ -129,7 +156,7 @@ class AIToolRegistry extends ChangeNotifier {
   AIToolServer? _serverFor(String serverId) =>
       serverId == WorkspaceToolServer.serverId
           ? _workspace
-          : _clients[serverId];
+          : _clients[serverId] ?? _local[serverId];
 
   /// Runs one call the model asked for, asking first when it has to.
   Future<AIToolOutcome> run(

@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/settings_schema/settings_schema.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_action.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_data_source.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_variable.dart';
@@ -10,96 +11,36 @@ import 'package:flutter/material.dart';
 /// A widget says what it can be configured with; the panel decides how that
 /// looks. That is what keeps every widget's settings consistent, and what lets
 /// a new widget be added without writing a single form.
-sealed class DashboardConfigField {
-  const DashboardConfigField({required this.label, this.hint = ''});
-
-  final String label;
-  final String hint;
-}
+///
+/// The generic rows below are the shared `SettingsField` vocabulary under their
+/// dashboard names, so a block, an extension and a dashboard widget all
+/// describe a text box the same way. Only the rows that genuinely need to know
+/// about variables, data sources and views are declared here.
+typedef DashboardConfigField = SettingsField;
 
 /// A line or a paragraph of text.
-class DashboardConfigText extends DashboardConfigField {
-  const DashboardConfigText({
-    required super.label,
-    required this.value,
-    required this.onChanged,
-    super.hint,
-    this.multiline = false,
-    this.placeholder = '',
-  });
-
-  final String value;
-  final ValueChanged<String> onChanged;
-  final bool multiline;
-  final String placeholder;
-}
+typedef DashboardConfigText = SettingsTextField;
 
 /// A number, with a stepper.
-class DashboardConfigNumber extends DashboardConfigField {
-  const DashboardConfigNumber({
-    required super.label,
-    required this.value,
-    required this.onChanged,
-    super.hint,
-    this.minimum,
-    this.maximum,
-    this.step = 1,
-    this.suffix = '',
-  });
-
-  final double value;
-  final ValueChanged<double> onChanged;
-  final double? minimum;
-  final double? maximum;
-  final double step;
-  final String suffix;
-}
+typedef DashboardConfigNumber = SettingsNumberField;
 
 /// On or off.
-class DashboardConfigToggle extends DashboardConfigField {
-  const DashboardConfigToggle({
-    required super.label,
-    required this.value,
-    required this.onChanged,
-    super.hint,
-  });
-
-  final bool value;
-  final ValueChanged<bool> onChanged;
-}
+typedef DashboardConfigToggle = SettingsToggleField;
 
 /// One choice out of a few. Drawn as segments when there are three or fewer,
 /// as a menu when there are more.
-class DashboardConfigChoice extends DashboardConfigField {
-  const DashboardConfigChoice({
-    required super.label,
-    required this.value,
-    required this.choices,
-    required this.onChanged,
-    super.hint,
-    this.iconsOnly = false,
-  });
+typedef DashboardConfigChoice = SettingsChoiceField;
 
-  final String value;
-  final List<DashboardChoice> choices;
-  final ValueChanged<String> onChanged;
-  final bool iconsOnly;
-}
+typedef DashboardChoice = SettingsChoice;
 
-@immutable
-class DashboardChoice {
-  const DashboardChoice({
-    required this.value,
-    required this.label,
-    this.icon,
-    this.description = '',
-  });
+/// A heading with its own rows underneath.
+typedef DashboardConfigGroup = SettingsGroupField;
 
-  final String value;
-  final String label;
-  final IconData? icon;
-  final String description;
-}
+/// A single action the panel offers — "Reset", "Open the page".
+typedef DashboardConfigButton = SettingsButtonField;
+
+/// A sentence explaining something the panel cannot show.
+typedef DashboardConfigNote = SettingsNoteField;
 
 /// The widget's colour, drawn as a row of swatches.
 class DashboardConfigAccent extends DashboardConfigField {
@@ -215,38 +156,4 @@ class DashboardConfigBinding extends DashboardConfigField {
 
   /// Restrict the offer to variables of these kinds; empty means any.
   final List<DashboardVariableKind> kinds;
-}
-
-/// A heading with its own rows underneath.
-class DashboardConfigGroup extends DashboardConfigField {
-  const DashboardConfigGroup({
-    required super.label,
-    required this.fields,
-    this.initiallyOpen = true,
-  }) : super();
-
-  final List<DashboardConfigField> fields;
-  final bool initiallyOpen;
-}
-
-/// A single action the panel offers — "Reset", "Open the page".
-class DashboardConfigButton extends DashboardConfigField {
-  const DashboardConfigButton({
-    required super.label,
-    required this.onPressed,
-    this.icon,
-    this.destructive = false,
-    super.hint,
-  });
-
-  final VoidCallback onPressed;
-  final IconData? icon;
-  final bool destructive;
-}
-
-/// A sentence explaining something the panel cannot show.
-class DashboardConfigNote extends DashboardConfigField {
-  const DashboardConfigNote({required super.label, this.icon});
-
-  final IconData? icon;
 }

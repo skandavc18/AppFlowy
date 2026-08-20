@@ -58,7 +58,10 @@ class TabBarHeader extends StatelessWidget {
                     AddDatabaseViewButton(
                       onTap: (kind) {
                         final bloc = context.read<DatabaseTabBarBloc>();
-                        if (kind.charted) {
+                        final fromExtension = kind.extensionView;
+                        if (fromExtension != null) {
+                          bloc.createExtensionTableView(fromExtension);
+                        } else if (kind.charted) {
                           bloc.createChartView(kind.label);
                         } else if (kind.mapped) {
                           bloc.createMapView(kind.label);

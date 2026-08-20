@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
@@ -288,8 +289,31 @@ List<PaletteCommand> buildPaletteCommands(BuildContext context) {
       keywords: const ['chat', 'assistant', 'question', 'ai'],
       run: (palette) => startPaletteAIChat(context, dismiss: palette.dismiss),
     ),
+    // Read as the palette opens, so switching an extension off removes its
+    // commands with no restart.
+    for (final command in ExtensionCommandRegistry.all())
+      _extensionCommand(command),
   ];
 }
+
+PaletteCommand _extensionCommand(ExtensionCommand command) => PaletteCommand(
+      id: 'extension_${command.extensionId}_${command.id}',
+      title: command.name,
+      subtitle: command.description,
+      icon: command.icon,
+      group: PaletteCommandGroup.extensions,
+      keywords: [command.extensionId, ...command.keywords],
+      run: (palette) {
+        // Dismissed first because an extension command may well open a route of
+        // its own, and popping afterwards would close that instead. The root
+        // navigator is then the only context still alive.
+        palette.dismiss();
+        final host = AppGlobals.rootNavKey.currentContext;
+        if (host != null) {
+          unawaited(command.run(host));
+        }
+      },
+    );
 
 /// The words that head each section of the command list.
 String paletteCommandGroupLabel(PaletteCommandGroup group) => switch (group) {
@@ -299,6 +323,8 @@ String paletteCommandGroupLabel(PaletteCommandGroup group) => switch (group) {
       PaletteCommandGroup.view => LocaleKeys.commandPalette_group_view.tr(),
       PaletteCommandGroup.workspace =>
         LocaleKeys.commandPalette_group_workspace.tr(),
+      PaletteCommandGroup.extensions =>
+        LocaleKeys.commandPalette_group_extensions.tr(),
       PaletteCommandGroup.ai => LocaleKeys.commandPalette_group_ai.tr(),
     };
 

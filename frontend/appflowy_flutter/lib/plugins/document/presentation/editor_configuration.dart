@@ -1,6 +1,8 @@
 import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/extensions/dart/extension_registries.dart';
+import 'package:appflowy/extensions/presentation/island_block_component.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_comments.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
@@ -528,6 +530,9 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
     PagePreviewBlockKeys.type: PagePreviewBlockComponentBuilder(
       configuration: configuration,
     ),
+    ExtensionIslandBlockKeys.type: ExtensionIslandBlockComponentBuilder(
+      configuration: configuration,
+    ),
     CanvasBlockKeys.type: CanvasBlockComponentBuilder(
       configuration: configuration,
     ),
@@ -570,6 +575,9 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
   final builders = {
     ...standardBlockComponentBuilderMap,
     ...customBlockComponentBuilderMap,
+    // Extensions come last so a registered block wins over nothing, and a
+    // build with none behaves exactly as before.
+    ...ExtensionBlockRegistry.builders(configuration),
   };
 
   return builders;

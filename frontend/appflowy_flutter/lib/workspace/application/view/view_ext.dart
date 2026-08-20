@@ -254,6 +254,11 @@ extension ViewExtension on ViewPB {
         TableViewKind.mailbox => MailboxTabBarBuilderImpl(),
       };
     }
+    final fromExtension = extensionTableView;
+    if (fromExtension != null &&
+        tableViewMarkForKey(fromExtension.envelopeKey)?.showTable != true) {
+      return fromExtension.buildTabBar();
+    }
     return switch (layout) {
       ViewLayoutPB.Board => BoardPageTabBarBuilderImpl(),
       ViewLayoutPB.Calendar => CalendarPageTabBarBuilderImpl(),

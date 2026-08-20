@@ -1183,6 +1183,11 @@ SidebarIcon sidebarViewIcon(ViewPB view) {
       TableViewKind.mailbox => SidebarIcon.mailbox,
     };
   }
+  if (view.extensionTableView != null) {
+    // The sidebar draws named SVGs, not the Material glyph an extension
+    // supplies, so every extension view shares the one mark here.
+    return SidebarIcon.extensions;
+  }
   return switch (view.layout) {
     ViewLayoutPB.Board => SidebarIcon.board,
     ViewLayoutPB.Calendar => SidebarIcon.calendar,

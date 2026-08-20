@@ -1,3 +1,4 @@
+import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
@@ -103,8 +104,12 @@ IconData workspaceDatabaseLayoutIcon(ViewLayoutPB layout) => switch (layout) {
     };
 
 /// The table rows of the add menu.
+///
+/// [onExtensionSelected] is optional: a menu that does not pass it simply does
+/// not offer extension table views, rather than offering ones it cannot create.
 List<AppMenuEntry> databaseLayoutEntries({
   required ValueChanged<WorkspaceTableKind> onSelected,
+  ValueChanged<ExtensionTableView>? onExtensionSelected,
 }) =>
     [
       for (final kind in WorkspaceTableKind.values)
@@ -114,7 +119,37 @@ List<AppMenuEntry> databaseLayoutEntries({
           value: kind,
           onSelected: () => onSelected(kind),
         ),
+      if (onExtensionSelected != null)
+        for (final view in ExtensionTableViewRegistry.all())
+          AppMenuItem(
+            label: view.name,
+            icon: view.icon,
+            value: view.envelopeKey,
+            onSelected: () => onExtensionSelected(view),
+          ),
     ];
+
+/// Creates a table that opens as an extension's own view.
+Future<ViewPB?> createWorkspaceExtensionTable({
+  required String parentViewId,
+  required ExtensionTableView view,
+  ViewSectionPB? section,
+}) async {
+  final created = await const DatabaseTableService().createTable(
+    parentViewId: parentViewId,
+    name: view.name,
+    section: section,
+  );
+  final made = created.fold((view) => view, (_) => null);
+  if (made == null) {
+    return null;
+  }
+  await ViewBackendService.updateView(
+    viewId: made.id,
+    extra: TableViewMark.newExtraForKey(view.envelopeKey),
+  );
+  return made;
+}
 
 /// Creates a table under [parentViewId] and hands back the view.
 Future<ViewPB?> createWorkspaceDatabase({

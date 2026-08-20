@@ -1,3 +1,4 @@
+import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
@@ -15,26 +16,66 @@ import 'package:flutter/material.dart';
 ///
 /// A chart is a grid the tab bar draws instead of lists, so it belongs in the
 /// same menu as the grid, the board and the calendar.
-enum DatabaseTabKind {
-  grid(DatabaseLayoutPB.Grid),
-  board(DatabaseLayoutPB.Board),
-  calendar(DatabaseLayoutPB.Calendar),
-  gallery(DatabaseLayoutPB.Grid, tableView: TableViewKind.gallery),
-  timeline(DatabaseLayoutPB.Grid, tableView: TableViewKind.timeline),
-  feed(DatabaseLayoutPB.Grid, tableView: TableViewKind.feed),
-  form(DatabaseLayoutPB.Grid, tableView: TableViewKind.form),
-  mailbox(DatabaseLayoutPB.Grid, tableView: TableViewKind.mailbox),
-  chart(DatabaseLayoutPB.Grid, charted: true),
-  map(DatabaseLayoutPB.Grid, mapped: true),
-  slides(DatabaseLayoutPB.Grid, slided: true);
-
-  const DatabaseTabKind(
+///
+/// Deliberately a class rather than an enum: an extension can register a table
+/// view of its own, and the menu has to be able to offer one it has never heard
+/// of.
+@immutable
+class DatabaseTabKind {
+  const DatabaseTabKind._(
     this.layout, {
     this.charted = false,
     this.mapped = false,
     this.slided = false,
     this.tableView,
-  });
+  }) : extensionView = null;
+
+  const DatabaseTabKind.forExtension(this.extensionView)
+      : layout = DatabaseLayoutPB.Grid,
+        charted = false,
+        mapped = false,
+        slided = false,
+        tableView = null;
+
+  static const grid = DatabaseTabKind._(DatabaseLayoutPB.Grid);
+  static const board = DatabaseTabKind._(DatabaseLayoutPB.Board);
+  static const calendar = DatabaseTabKind._(DatabaseLayoutPB.Calendar);
+  static const gallery = DatabaseTabKind._(DatabaseLayoutPB.Grid,
+      tableView: TableViewKind.gallery);
+  static const timeline = DatabaseTabKind._(
+    DatabaseLayoutPB.Grid,
+    tableView: TableViewKind.timeline,
+  );
+  static const feed =
+      DatabaseTabKind._(DatabaseLayoutPB.Grid, tableView: TableViewKind.feed);
+  static const form =
+      DatabaseTabKind._(DatabaseLayoutPB.Grid, tableView: TableViewKind.form);
+  static const mailbox = DatabaseTabKind._(DatabaseLayoutPB.Grid,
+      tableView: TableViewKind.mailbox);
+  static const chart = DatabaseTabKind._(DatabaseLayoutPB.Grid, charted: true);
+  static const map = DatabaseTabKind._(DatabaseLayoutPB.Grid, mapped: true);
+  static const slides = DatabaseTabKind._(DatabaseLayoutPB.Grid, slided: true);
+
+  static const builtIns = <DatabaseTabKind>[
+    grid,
+    board,
+    calendar,
+    gallery,
+    timeline,
+    feed,
+    form,
+    mailbox,
+    chart,
+    map,
+    slides,
+  ];
+
+  /// Read as the menu opens, so a newly enabled extension is offered at once.
+  static List<DatabaseTabKind> all() => [
+        ...builtIns,
+        for (final view in ExtensionTableViewRegistry.all())
+          DatabaseTabKind.forExtension(view),
+      ];
 
   final DatabaseLayoutPB layout;
 
@@ -50,7 +91,14 @@ enum DatabaseTabKind {
   /// Which of the shared table views the new tab is, if it is one.
   final TableViewKind? tableView;
 
+  /// The extension that supplies this tab, if an extension does.
+  final ExtensionTableView? extensionView;
+
   IconData? get glyph {
+    final fromExtension = extensionView;
+    if (fromExtension != null) {
+      return fromExtension.icon;
+    }
     if (charted) {
       return Icons.bar_chart_rounded;
     }
@@ -65,6 +113,10 @@ enum DatabaseTabKind {
   }
 
   String get label {
+    final fromExtension = extensionView;
+    if (fromExtension != null) {
+      return fromExtension.name;
+    }
     if (charted) {
       return LocaleKeys.charts_chart.tr();
     }
@@ -143,7 +195,7 @@ class TabBarAddButtonAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cells = DatabaseTabKind.values.map((kind) {
+    final cells = DatabaseTabKind.all().map((kind) {
       return TabBarAddButtonActionCell(
         action: kind,
         onTap: onTap,

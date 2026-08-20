@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/parsers/sub_page_node_parser.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy_backend/log.dart';
@@ -64,6 +65,8 @@ Future<String> customDocumentToMarkdown(
         const FolderExplorerNodeParser(),
         const PagePreviewNodeParser(),
         const CanvasNodeParser(),
+        // Without a parser an extension's block is silently dropped on export.
+        ...ExtensionBlockRegistry.parsers().values,
       ],
     );
   } catch (e) {

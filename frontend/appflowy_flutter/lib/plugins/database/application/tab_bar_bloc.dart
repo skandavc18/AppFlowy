@@ -1,3 +1,4 @@
+import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/plugins/database/domain/database_view_service.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/database/widgets/database_layout_ext.dart';
@@ -239,6 +240,14 @@ class DatabaseTabBarBloc
         ViewLayoutPB.Grid,
         name,
         extra: TableViewMark.newExtra(kind),
+      );
+
+  /// Adds a tab that an extension knows how to draw.
+  Future<void> createExtensionTableView(ExtensionTableView view) =>
+      _createLinkedView(
+        ViewLayoutPB.Grid,
+        view.name,
+        extra: TableViewMark.newExtraForKey(view.envelopeKey),
       );
 
   void _loadChildView() async {

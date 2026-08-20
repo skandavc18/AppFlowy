@@ -1,3 +1,4 @@
+import 'package:appflowy/extensions/presentation/island_slash_items.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/operations/ai_writer_node_extension.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
@@ -114,6 +115,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       items: interactiveSlashMenuItems(),
       descriptions: interactiveSlashMenuDescriptions(),
     ),
+    _islandSection(),
     if (documentBloc != null) _canvasSection(documentBloc),
     if (documentBloc != null) _dashboardSection(documentBloc),
     SlashMenuSectionItems(
@@ -182,6 +184,19 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       ],
     ),
   ]);
+}
+
+/// One entry per island every enabled extension declares.
+///
+/// The list is read when the menu is built, so an island added to a folder is
+/// offered at once — the same loop that makes an action need no rebuild.
+SlashMenuSectionItems _islandSection() {
+  final items = islandSlashMenuItems();
+  return SlashMenuSectionItems(
+    section: SlashMenuSection.interactive,
+    items: items,
+    descriptions: islandSlashMenuDescriptions(items),
+  );
 }
 
 /// `/canvas`, `/embed canvas`, and one entry per template.

@@ -162,9 +162,13 @@ class DashboardWidgetDefinition {
     this.configure,
     this.keywords = const [],
     this.slashName,
+    this.extensionId = '',
   });
 
   final String type;
+
+  /// The extension that supplied this widget, or empty for a built-in one.
+  final String extensionId;
 
   /// Resolved lazily so a definition can be a constant while its name is
   /// translated.
@@ -236,6 +240,25 @@ abstract final class DashboardWidgetRegistry {
   static DashboardWidgetDefinition? definitionFor(String type) {
     _ensureInitialized();
     return _definitions[type];
+  }
+
+  /// Removes every widget an extension added.
+  ///
+  /// ⚠️ A widget already on a canvas is NOT deleted — its spec stays in the
+  /// document and the canvas draws the "unknown widget" placeholder, so
+  /// switching the extension back on restores it untouched.
+  static void unregisterAll(String extensionId) {
+    if (extensionId.isEmpty) {
+      return;
+    }
+    final doomed = [
+      for (final entry in _definitions.entries)
+        if (entry.value.extensionId == extensionId) entry.key,
+    ];
+    for (final type in doomed) {
+      _definitions.remove(type);
+      _order.remove(type);
+    }
   }
 
   static List<DashboardWidgetDefinition> all() {

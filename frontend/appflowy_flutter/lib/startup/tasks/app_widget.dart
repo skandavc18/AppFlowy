@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:appflowy/extensions/application/extension_manager.dart';
+import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/shared/clipboard_state.dart';
@@ -70,6 +73,9 @@ class InitAppWidgetTask extends LaunchTask {
 
     // A backup on a schedule needs a clock of its own for the same reason.
     BackupScheduler.instance.start();
+
+    // Extensions read their folder, watch it, and start their own scheduler.
+    unawaited(ExtensionManager.instance.start());
 
     await loadIconGroups();
 
@@ -261,61 +267,71 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
                       Tooltip.dismissAllToolTips();
                     }
                   },
-                  child: MaterialApp.router(
-                    debugShowCheckedModeBanner: false,
-                    theme: state.lightTheme,
-                    darkTheme: state.darkTheme,
-                    themeMode: state.themeMode,
-                    themeAnimationDuration:
-                        PremiumTheme.themeTransitionDuration,
-                    themeAnimationCurve: Curves.easeOutCubic,
-                    localizationsDelegates: context.localizationDelegates,
-                    supportedLocales: context.supportedLocales,
-                    locale: state.locale,
-                    routerConfig: routerConfig,
-                    builder: (context, child) {
-                      final brightness = Theme.of(context).brightness;
-                      final fontFamily = state.font
-                          .orDefault(defaultFontFamily)
-                          .fontFamilyName;
+                  child: ListenableBuilder(
+                    listenable: ExtensionThemeRegistry.changes,
+                    builder: (context, _) => MaterialApp.router(
+                      debugShowCheckedModeBanner: false,
+                      theme: ExtensionThemeRegistry.apply(
+                        state.lightTheme,
+                        Brightness.light,
+                      ),
+                      darkTheme: ExtensionThemeRegistry.apply(
+                        state.darkTheme,
+                        Brightness.dark,
+                      ),
+                      themeMode: state.themeMode,
+                      themeAnimationDuration:
+                          PremiumTheme.themeTransitionDuration,
+                      themeAnimationCurve: Curves.easeOutCubic,
+                      localizationsDelegates: context.localizationDelegates,
+                      supportedLocales: context.supportedLocales,
+                      locale: state.locale,
+                      routerConfig: routerConfig,
+                      builder: (context, child) {
+                        final brightness = Theme.of(context).brightness;
+                        final fontFamily = state.font
+                            .orDefault(defaultFontFamily)
+                            .fontFamilyName;
 
-                      final baseAppFlowyTheme = brightness == Brightness.light
-                          ? themeBuilder.light(fontFamily: fontFamily)
-                          : themeBuilder.dark(fontFamily: fontFamily);
-                      return AnimatedAppFlowyTheme(
-                        data: PremiumTheme.appFlowyTheme(
-                          base: baseAppFlowyTheme,
-                          palette: PremiumThemeExtension.of(context),
-                          brightness: brightness,
-                        ),
-                        child: PremiumThemeBackdrop(
-                          child: DefaultTextStyle.merge(
-                            style: AppTextRendering.rootStyleFor(brightness),
-                            child: MediaQuery(
-                              // Keep app typography independent from the host
-                              // OS scale while honoring AppFlowy's own setting.
-                              data: MediaQuery.of(context).copyWith(
-                                textScaler:
-                                    TextScaler.linear(state.textScaleFactor),
-                              ),
-                              child: PremiumScrollScope(
-                                enabled: state.enableKineticScrolling,
-                                child: overlayManagerBuilder(
-                                  context,
-                                  !UniversalPlatform.isMobile &&
-                                          FeatureFlag.search.isOn
-                                      ? CommandPalette(
-                                          notifier: _commandPaletteNotifier,
-                                          child: child,
-                                        )
-                                      : child,
+                        final baseAppFlowyTheme = brightness == Brightness.light
+                            ? themeBuilder.light(fontFamily: fontFamily)
+                            : themeBuilder.dark(fontFamily: fontFamily);
+                        return AnimatedAppFlowyTheme(
+                          data: PremiumTheme.appFlowyTheme(
+                            base: baseAppFlowyTheme,
+                            palette: PremiumThemeExtension.of(context),
+                            brightness: brightness,
+                          ),
+                          child: PremiumThemeBackdrop(
+                            child: DefaultTextStyle.merge(
+                              style: AppTextRendering.rootStyleFor(brightness),
+                              child: MediaQuery(
+                                // Keep app typography independent from the host
+                                // OS scale while honoring AppFlowy's own
+                                // setting.
+                                data: MediaQuery.of(context).copyWith(
+                                  textScaler:
+                                      TextScaler.linear(state.textScaleFactor),
+                                ),
+                                child: PremiumScrollScope(
+                                  enabled: state.enableKineticScrolling,
+                                  child: overlayManagerBuilder(
+                                    context,
+                                    !UniversalPlatform.isMobile &&
+                                            FeatureFlag.search.isOn
+                                        ? CommandPalette(
+                                            notifier: _commandPaletteNotifier,
+                                            child: child,
+                                          )
+                                        : child,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),

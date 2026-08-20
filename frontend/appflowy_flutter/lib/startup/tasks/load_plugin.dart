@@ -1,3 +1,4 @@
+import 'package:appflowy/extensions/presentation/extensions_plugin.dart';
 import 'package:appflowy/plugins/ai_chat/chat.dart';
 import 'package:appflowy/plugins/database/calendar/calendar.dart';
 import 'package:appflowy/plugins/database/board/board.dart';
@@ -21,6 +22,10 @@ class PluginLoadTask extends LaunchTask {
 
     registerPlugin(builder: BlankPluginBuilder(), config: BlankPluginConfig());
     registerPlugin(builder: TrashPluginBuilder(), config: TrashPluginConfig());
+    registerPlugin(
+      builder: ExtensionsPluginBuilder(),
+      config: ExtensionsPluginConfig(),
+    );
     registerPlugin(builder: DocumentPluginBuilder());
     registerPlugin(builder: GridPluginBuilder(), config: GridPluginConfig());
     registerPlugin(builder: BoardPluginBuilder(), config: BoardPluginConfig());

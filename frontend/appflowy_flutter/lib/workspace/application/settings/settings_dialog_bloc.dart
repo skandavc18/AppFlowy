@@ -31,6 +31,7 @@ enum SettingsPage {
   backup,
   maps,
   connections,
+  extensions,
   member,
   featureFlags,
 }

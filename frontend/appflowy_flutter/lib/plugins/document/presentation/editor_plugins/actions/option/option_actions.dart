@@ -1,3 +1,5 @@
+import 'package:appflowy/extensions/dart/extension_registries.dart';
+import 'package:appflowy/extensions/presentation/island_block_component.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
@@ -81,6 +83,10 @@ enum EditorOptionActionType {
           RadioGroupBlockKeys.type,
           MultiSelectBlockKeys.type,
           ReminderBlockKeys.type,
+          ExtensionIslandBlockKeys.type,
+
+          // Read live, so a block an extension added can be aligned too.
+          ...ExtensionBlockRegistry.alignableTypes(),
         };
       case EditorOptionActionType.depth:
         return {

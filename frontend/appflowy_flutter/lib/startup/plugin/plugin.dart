@@ -14,6 +14,7 @@ enum PluginType {
   document,
   blank,
   trash,
+  extensions,
   grid,
   board,
   calendar,

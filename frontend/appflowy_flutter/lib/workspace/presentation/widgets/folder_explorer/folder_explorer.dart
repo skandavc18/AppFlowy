@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
@@ -687,6 +688,19 @@ class _FolderExplorerState extends State<FolderExplorer> {
     }
   }
 
+  Future<void> _createExtensionTable(
+    ExtensionTableView view, {
+    String? parentId,
+  }) async {
+    final created = await createWorkspaceExtensionTable(
+      parentViewId: parentId ?? controller.currentFolder.id,
+      view: view,
+    );
+    if (created != null && mounted) {
+      _openView(created);
+    }
+  }
+
   void _beginGalleryCreate(
     WorkspaceExplorerDraftKind kind, {
     required String parentId,
@@ -761,6 +775,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
     WorkspaceFileMenuAction? kind;
     CollectionKind? collectionKind;
     WorkspaceTableKind? databaseLayout;
+    ExtensionTableView? extensionTable;
     final action = await showAppMenu<_GalleryMenuAction>(
       context: context,
       globalPosition: position,
@@ -786,6 +801,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
             icon: Icons.table_rows_rounded,
             submenu: databaseLayoutEntries(
               onSelected: (selected) => databaseLayout = selected,
+              onExtensionSelected: (selected) => extensionTable = selected,
             ),
           ),
         if (policy == null || policy.allowsCollections)
@@ -848,6 +864,10 @@ class _FolderExplorerState extends State<FolderExplorer> {
     }
     if (databaseLayout != null) {
       await _createDatabase(databaseLayout!);
+      return;
+    }
+    if (extensionTable != null) {
+      await _createExtensionTable(extensionTable!);
       return;
     }
     if (action == null) {

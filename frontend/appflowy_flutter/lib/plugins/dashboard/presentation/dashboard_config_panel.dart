@@ -291,6 +291,9 @@ class DashboardConfigPanel extends StatelessWidget {
             ],
           ),
         DashboardConfigSource() => const SizedBox.shrink(),
+        // SettingsField is open so an extension can add a row type; one this
+        // panel has never seen is skipped rather than crashing the sidebar.
+        _ => const SizedBox.shrink(),
       };
 }
 
