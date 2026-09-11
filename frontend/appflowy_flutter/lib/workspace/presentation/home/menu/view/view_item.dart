@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/plugins/templates/presentation/apply_template_dialog.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
@@ -946,6 +947,11 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
             break;
           case ViewMoreActionType.turnIntoCanvas:
             await CanvasService.convert(widget.view);
+            break;
+          case ViewMoreActionType.applyTemplate:
+            if (context.mounted) {
+              await showApplyTemplateDialog(context, widget.view);
+            }
             break;
           case ViewMoreActionType.encrypt:
           case ViewMoreActionType.decrypt:

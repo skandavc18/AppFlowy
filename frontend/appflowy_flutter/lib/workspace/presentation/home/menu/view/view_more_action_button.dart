@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
+import 'package:appflowy/plugins/templates/presentation/apply_template_dialog.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
@@ -176,6 +177,12 @@ class ViewMoreActionPopover extends StatelessWidget {
           !view.isDashboard &&
           !view.isCanvas) {
         actionTypes.add(ViewMoreActionType.turnIntoCanvas);
+      }
+
+      // Only offered where a template could actually be laid over this thing,
+      // or built inside it.
+      if (canApplyTemplateTo(view)) {
+        actionTypes.add(ViewMoreActionType.applyTemplate);
       }
 
       actionTypes.addAll([

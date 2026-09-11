@@ -26,6 +26,7 @@ enum ViewMoreActionType {
   unlockItem,
   turnIntoDashboard,
   turnIntoCanvas,
+  applyTemplate,
   leaveSharedPage;
 
   static const disableInLockedView = [
@@ -81,6 +82,8 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
         return LocaleKeys.dashboard_turnInto.tr();
       case ViewMoreActionType.turnIntoCanvas:
         return LocaleKeys.canvas_turnInto.tr();
+      case ViewMoreActionType.applyTemplate:
+        return LocaleKeys.templates_apply.tr();
       case ViewMoreActionType.leaveSharedPage:
         return 'Leave';
       case ViewMoreActionType.divider:
@@ -132,6 +135,8 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
         return Icons.dashboard_rounded;
       case ViewMoreActionType.turnIntoCanvas:
         return Icons.dashboard_customize_rounded;
+      case ViewMoreActionType.applyTemplate:
+        return Icons.auto_awesome_mosaic_rounded;
       case ViewMoreActionType.leaveSharedPage:
         return Icons.logout_rounded;
       case ViewMoreActionType.divider:
@@ -167,6 +172,7 @@ extension ViewMoreActionTypeExtension on ViewMoreActionType {
       case ViewMoreActionType.unlockItem:
       case ViewMoreActionType.turnIntoDashboard:
       case ViewMoreActionType.turnIntoCanvas:
+      case ViewMoreActionType.applyTemplate:
       case ViewMoreActionType.leaveSharedPage:
         return const SizedBox.shrink();
     }

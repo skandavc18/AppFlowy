@@ -29,11 +29,32 @@ class SidebarFooter extends StatelessWidget {
           ),
         const Column(
           children: [
+            SidebarTemplatesButton(),
             SidebarExtensionsButton(),
             SidebarTrashButton(),
           ],
         ),
       ],
+    );
+  }
+}
+
+class SidebarTemplatesButton extends StatelessWidget {
+  const SidebarTemplatesButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SidebarFooterButton(
+      icon: SidebarIcon.templates,
+      text: LocaleKeys.templates_name.tr(),
+      onTap: () {
+        getIt<MenuSharedState>().latestOpenView = null;
+        getIt<TabsBloc>().add(
+          TabsEvent.openPlugin(
+            plugin: makePlugin(pluginType: PluginType.templates),
+          ),
+        );
+      },
     );
   }
 }
