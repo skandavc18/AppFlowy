@@ -24,18 +24,23 @@ class ProviderController extends ChangeNotifier {
     required CollectionSource source,
     CollectionProvider? provider,
     ProviderCache? cache,
+    ProviderConnections? connections,
     this.autoRefresh = const Duration(minutes: 10),
   })  : _source = source,
         _cache = cache ?? ProviderCache.instance,
+        _connections = connections ?? ProviderConnections.instance,
         _factory = ProviderViewFactory(
           collectionId: collectionId,
           source: source,
         ) {
     _provider = provider;
+    _connection = _connections.byId(source.connectionId);
+    _connections.addListener(_onConnectionChanged);
   }
 
   final String collectionId;
   final ProviderCache _cache;
+  final ProviderConnections _connections;
   final ProviderViewFactory _factory;
 
   /// How often a collection left open refreshes itself. External content that
@@ -44,7 +49,9 @@ class ProviderController extends ChangeNotifier {
 
   final CollectionSource _source;
   CollectionProvider? _provider;
+  ProviderConnection? _connection;
   Future<CollectionProvider>? _resolving;
+  int _generation = 0;
   bool _disposed = false;
   Timer? _refreshTimer;
 
@@ -132,6 +139,9 @@ class ProviderController extends ChangeNotifier {
   /// Opens the collection: cache first so something is on screen immediately,
   /// then a real read behind it.
   Future<void> load() async {
+    if (_disposed) {
+      return;
+    }
     if (_source.isLocal) {
       _set(ProviderStatus.ready);
       return;
@@ -151,12 +161,18 @@ class ProviderController extends ChangeNotifier {
       return;
     }
 
+    final generation = ++_generation;
+    _failure = null;
+    _refusedThumbnails.clear();
     _set(silent ? ProviderStatus.syncing : ProviderStatus.loading);
     try {
       final provider = await _resolveProvider();
       await provider.ensureReady();
 
       final nodes = await provider.listAll();
+      if (!_isCurrent(generation)) {
+        return;
+      }
       _adopt(null, nodes);
       _lastSyncedAt = DateTime.now();
       _failure = null;
@@ -166,18 +182,26 @@ class ProviderController extends ChangeNotifier {
         'root',
         [for (final node in nodes) node.toJson()],
       );
-      unawaited(_warmThumbnails(nodes));
+      if (_isCurrent(generation)) {
+        unawaited(_warmThumbnails(nodes));
+      }
     } on ProviderFailure catch (failure) {
-      _fail(failure);
+      if (_isCurrent(generation)) {
+        _fail(failure);
+      }
     } catch (error, stackTrace) {
       Log.warn('A provider read failed: $error\n$stackTrace');
-      _fail(ProviderFailure(ProviderStatus.error, detail: '$error'));
+      if (_isCurrent(generation)) {
+        _fail(ProviderFailure(ProviderStatus.error, detail: '$error'));
+      }
     }
   }
 
   /// Reads one container's children, for a tree or a folder that was opened.
   Future<void> ensureLoaded(String containerId) async {
     if (_source.isLocal ||
+        _disposed ||
+        _status.needsReconnect ||
         _children.containsKey(containerId) ||
         _loadingContainers.contains(containerId)) {
       return;
@@ -208,8 +232,9 @@ class ProviderController extends ChangeNotifier {
       unawaited(_warmThumbnails(nodes));
     } on ProviderFailure catch (failure) {
       // A single folder failing must not take the whole collection down: the
-      // rest of the listing is still good.
-      _failure = failure;
+      // rest of the listing is still good. An expired account, however, stops
+      // every read and must offer sign in even when the root is cached.
+      _recordFailure(failure);
       Log.warn('Unable to read a remote folder: ${failure.status.name}');
     } catch (error) {
       Log.warn('Unable to read a remote folder: $error');
@@ -254,7 +279,7 @@ class ProviderController extends ChangeNotifier {
       }
       unawaited(_warmThumbnails(_searchResults));
     } on ProviderFailure catch (failure) {
-      _failure = failure;
+      _recordFailure(failure);
       _searchResults = const <ProviderNode>[];
     } catch (error) {
       Log.warn('A provider search failed: $error');
@@ -278,8 +303,7 @@ class ProviderController extends ChangeNotifier {
     try {
       return await (await _resolveProvider()).materialize(node);
     } on ProviderFailure catch (failure) {
-      _failure = failure;
-      notifyListeners();
+      _recordFailure(failure);
       return null;
     } catch (error) {
       Log.warn('Unable to fetch remote content: $error');
@@ -344,8 +368,7 @@ class ProviderController extends ChangeNotifier {
       notifyListeners();
       return true;
     } on ProviderFailure catch (failure) {
-      _failure = failure;
-      notifyListeners();
+      _recordFailure(failure);
       return false;
     } catch (error) {
       Log.warn('A provider write failed: $error');
@@ -356,6 +379,27 @@ class ProviderController extends ChangeNotifier {
   }
 
   // --- Internals -------------------------------------------------------------
+
+  /// A successful sign in replaces this account's connection, not the
+  /// collection's binding. Rebuild its provider so cached credentials and
+  /// capabilities cannot keep an open view stuck after reconnecting.
+  void _onConnectionChanged() {
+    final connection = _connections.byId(_source.connectionId);
+    final changed = !identical(connection, _connection);
+    _connection = connection;
+    if (_disposed ||
+        !changed ||
+        connection == null ||
+        !_status.needsReconnect) {
+      return;
+    }
+    _provider?.dispose();
+    _provider = null;
+    _resolving = null;
+    unawaited(refresh(silent: _children.isNotEmpty));
+  }
+
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
 
   /// The provider for this collection, built on first use.
   ///
@@ -373,8 +417,11 @@ class ProviderController extends ChangeNotifier {
     // thumbnails at once must not end up with seven providers.
     return _resolving ??= () async {
       try {
-        await ProviderConnections.instance.ensureLoaded();
-        final created = ProviderRegistry.create(_source);
+        await _connections.ensureLoaded();
+        final created = ProviderRegistry.create(
+          _source,
+          connections: _connections,
+        );
         if (created == null) {
           throw const ProviderFailure(
             ProviderStatus.error,
@@ -449,22 +496,27 @@ class ProviderController extends ChangeNotifier {
   /// runs; every arrival is one repaint.
   Future<void> _warmThumbnails(List<ProviderNode> nodes) async {
     const batch = 6;
+    final generation = _generation;
     final wanted = [
       for (final node in nodes)
         if (!node.isFolder &&
             node.thumbnailUrl != null &&
+            !_refusedThumbnails.contains(node.id) &&
             !_thumbnails.containsKey(node.id))
           node,
     ];
 
     for (var index = 0; index < wanted.length; index += batch) {
-      if (_disposed) {
+      if (!_isCurrent(generation) || _status.needsReconnect) {
         return;
       }
       final slice = wanted.skip(index).take(batch);
       final paths = await Future.wait([
-        for (final node in slice) _thumbnailFor(node),
+        for (final node in slice) _thumbnailFor(node, generation),
       ]);
+      if (!_isCurrent(generation)) {
+        return;
+      }
       var changed = false;
       var position = 0;
       for (final node in slice) {
@@ -497,9 +549,19 @@ class ProviderController extends ChangeNotifier {
     }
   }
 
-  Future<String?> _thumbnailFor(ProviderNode node) async {
+  Future<String?> _thumbnailFor(ProviderNode node, int generation) async {
     try {
-      return await (await _resolveProvider()).thumbnailPath(node);
+      final provider = await _resolveProvider();
+      if (!_isCurrent(generation) || _status.needsReconnect) {
+        return null;
+      }
+      return await provider.thumbnailPath(node);
+    } on ProviderFailure catch (failure) {
+      // A missing image is local to that tile; an expired account is not.
+      if (_isCurrent(generation) && failure.status.needsReconnect) {
+        _fail(failure);
+      }
+      return null;
     } catch (_) {
       return null;
     }
@@ -507,11 +569,13 @@ class ProviderController extends ChangeNotifier {
 
   void _startAutoRefresh() {
     _refreshTimer?.cancel();
-    if (autoRefresh <= Duration.zero) {
+    if (_disposed || autoRefresh <= Duration.zero) {
       return;
     }
     _refreshTimer = Timer.periodic(autoRefresh, (_) {
-      if (!_disposed && !isBusy) {
+      // Revoked credentials (or a missing/forbidden source) cannot heal on a
+      // timer. Leave the recovery prompt visible until the person acts.
+      if (!_disposed && !isBusy && (!hasFailed || _status.isRetryable)) {
         unawaited(refresh(silent: true));
       }
     });
@@ -530,16 +594,36 @@ class ProviderController extends ChangeNotifier {
       return;
     }
     _failure = failure;
+    if (failure.status.needsReconnect) {
+      // The rest of the queue will not run. Tell every waiting tile to stop
+      // spinning, while leaving already cached pictures alone.
+      _refusedThumbnails.addAll(
+        _byId.keys.where((id) => !_thumbnails.containsKey(id)),
+      );
+    }
     // Anything already read stays on screen. A refresh that fails should not
     // empty a collection somebody was reading.
     _status = failure.status;
     notifyListeners();
   }
 
+  void _recordFailure(ProviderFailure failure) {
+    if (_disposed) {
+      return;
+    }
+    if (failure.status.needsReconnect) {
+      _fail(failure);
+    } else if (!_status.needsReconnect) {
+      _failure = failure;
+      notifyListeners();
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
     _refreshTimer?.cancel();
+    _connections.removeListener(_onConnectionChanged);
     _provider?.dispose();
     super.dispose();
   }

@@ -103,12 +103,22 @@ abstract class RemoteCollectionProvider extends CollectionProvider {
           failure.status != ProviderStatus.authExpired) {
         rethrow;
       }
-      final bytes = await transport.bytes(
-        url,
-        headers: mediaHeaders,
-        maxBytes: maxBytes,
-        authenticated: !preferred,
-      );
+      late final Uint8List bytes;
+      try {
+        bytes = await transport.bytes(
+          url,
+          headers: mediaHeaders,
+          maxBytes: maxBytes,
+          authenticated: !preferred,
+        );
+      } on ProviderFailure {
+        // If neither works, keep the authenticated request's failure. In
+        // particular, an anonymous 403 must not hide an expired sign in.
+        if (preferred) {
+          throw failure;
+        }
+        rethrow;
+      }
       Log.info(
         'Media on ${Uri.parse(url).host} wants '
         '${preferred ? 'no' : 'an'} access token.',
@@ -139,12 +149,19 @@ abstract class RemoteCollectionProvider extends CollectionProvider {
           failure.status != ProviderStatus.authExpired) {
         rethrow;
       }
-      await transport.download(
-        url,
-        destination,
-        headers: mediaHeaders,
-        authenticated: !preferred,
-      );
+      try {
+        await transport.download(
+          url,
+          destination,
+          headers: mediaHeaders,
+          authenticated: !preferred,
+        );
+      } on ProviderFailure {
+        if (preferred) {
+          throw failure;
+        }
+        rethrow;
+      }
       Log.info(
         'Downloads from ${Uri.parse(url).host} want '
         '${preferred ? 'no' : 'an'} access token.',
@@ -184,6 +201,11 @@ abstract class RemoteCollectionProvider extends CollectionProvider {
       );
       return _cache.writeThumbnail(_source.cacheKey, node.id, bytes);
     } on ProviderFailure catch (failure) {
+      // The controller must pause the queue and offer sign in, not mistake
+      // an account-wide failure for one unavailable picture.
+      if (failure.status.needsReconnect) {
+        rethrow;
+      }
       if (failure.status != ProviderStatus.notFound) {
         Log.warn(
           'Unable to read a thumbnail from ${Uri.parse(url).host}: '

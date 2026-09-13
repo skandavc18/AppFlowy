@@ -76,6 +76,12 @@ class _AlbumThumbnailState extends State<AlbumThumbnail> {
 
   Widget _buildSurface(BuildContext context) {
     final palette = widget.palette;
+    if (widget.item.unavailable && !widget.item.isLocal) {
+      return _AlbumTilePlaceholder(
+        palette: palette,
+        icon: Icons.cloud_off_rounded,
+      );
+    }
     switch (widget.item.kind) {
       case AlbumMediaKind.image:
         return _buildPicture(context, File(widget.item.path));

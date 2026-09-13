@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/providers/external_collection_host.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
@@ -138,7 +139,18 @@ class _AlbumHostState extends State<AlbumHost> {
     for (final item in items) {
       controller.metadata.seed(item.id, albumMetadataOfProviderNode(item.node));
     }
-    controller.setItems(albumMediaFromProvider(items));
+    if (live.hasLoaded(null)) {
+      controller.setItems(
+        albumMediaFromProvider(
+          items,
+          thumbnailRefused: (id) => live.hasFailed || live.thumbnailRefused(id),
+        ),
+      );
+    }
+    // Status can change without a single item changing. AlbumController
+    // intentionally stays quiet for identical items, but the host must still
+    // replace its spinner or show the reconnect banner.
+    _onChanged();
   }
 
   void _syncItems() {
@@ -158,7 +170,7 @@ class _AlbumHostState extends State<AlbumHost> {
     if (source.isRemote &&
         (live == null || (live.isBusy && live.nodes.isEmpty))) {
       return ProviderStateView(
-        status: live?.status ?? ProviderStatus.loading,
+        status: ProviderStatus.loading,
         info: source.info,
         palette: palette,
       );
@@ -168,9 +180,28 @@ class _AlbumHostState extends State<AlbumHost> {
         status: live.status,
         info: source.info,
         palette: palette,
+        retryAfter: live.failure?.retryAfter,
         onRetry: () => unawaited(live.refresh()),
+        onReconnect: () => ProviderReconnectRequest.of(context)?.call(source),
       );
     }
-    return widget.builder(context, controller, palette);
+    if (live == null) {
+      return widget.builder(context, controller, palette);
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (live.hasFailed)
+          ProviderStaleBanner(
+            status: live.status,
+            info: source.info,
+            palette: palette,
+            onRetry: () => unawaited(live.refresh(silent: true)),
+            onReconnect: () =>
+                ProviderReconnectRequest.of(context)?.call(source),
+          ),
+        Expanded(child: widget.builder(context, controller, palette)),
+      ],
+    );
   }
 }
