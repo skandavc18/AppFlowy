@@ -5,18 +5,9 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_e
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-/// A text field that keeps its editing keys.
+/// A text field with field-local editing shortcuts and native actions.
 ///
-/// AppFlowy has several ancestors that claim keys before a field sees them —
-/// the editor's keyboard service most of all. Typing still arrives, because
-/// that comes through the input connection rather than the shortcut tree, which
-/// is what makes the failure look selective: letters appear, but Backspace,
-/// Ctrl+V and the arrows do nothing.
-///
-/// `Shortcuts` resolves from the focused node upwards and the FIRST match wins,
-/// so restating the editing keys immediately around the field beats anything
-/// above it. Nothing is handled twice: only one `Shortcuts` ever handles a
-/// given event.
+/// See [TextEntryShortcuts] for isolation from document-level commands.
 class ProviderTextField extends StatefulWidget {
   const ProviderTextField({
     super.key,
@@ -78,8 +69,7 @@ class _ProviderTextFieldState extends State<ProviderTextField> {
         Row(
           children: [
             Expanded(
-              child: Shortcuts(
-                shortcuts: textEntryShortcuts,
+              child: TextEntryShortcuts(
                 child: TextField(
                   controller: widget.controller,
                   focusNode: focusNode,
@@ -249,16 +239,129 @@ final Map<ShortcutActivator, Intent> textEntryShortcuts = {
       const RedoTextIntent(SelectionChangedCause.keyboard),
 };
 
-/// Restores the editing keys for a field this widget does not own — a search
-/// box, a filter, anything already written as a plain [TextField].
-class TextEntryShortcuts extends StatelessWidget {
+/// Keeps a field's editing keys and actions local to that field.
+///
+/// A shortcut map alone is not an action boundary. Flutter already resolves
+/// shortcuts from primaryFocus.context, but EditableText makes its editing
+/// actions overridable: even the closest action can delegate to a page-level
+/// override. Forwarding [Action.callingAction] restores the native leaf action,
+/// including its grapheme boundaries, formatters, undo and onChanged handling.
+/// This does not intercept global keyboard listeners or acquire focus.
+class TextEntryShortcuts extends StatefulWidget {
   const TextEntryShortcuts({super.key, required this.child});
 
   final Widget child;
 
   @override
-  Widget build(BuildContext context) =>
-      Shortcuts(shortcuts: textEntryShortcuts, child: child);
+  State<TextEntryShortcuts> createState() => _TextEntryShortcutsState();
+}
+
+class _TextEntryShortcutsState extends State<TextEntryShortcuts> {
+  final _manager = _TextEntryShortcutManager();
+  final Map<Type, Action<Intent>> _actions = {
+    for (final action in <Action<Intent>>[
+      _NativeTextEntryAction<DeleteCharacterIntent>(),
+      _NativeTextEntryAction<DeleteToNextWordBoundaryIntent>(),
+      _NativeTextEntryAction<DeleteToLineBreakIntent>(),
+      _NativeTextEntryAction<ExtendSelectionByCharacterIntent>(),
+      _NativeTextEntryAction<ExtendSelectionByPageIntent>(),
+      _NativeTextEntryAction<ExtendSelectionToNextWordBoundaryIntent>(),
+      _NativeTextEntryAction<ExtendSelectionToNextParagraphBoundaryIntent>(),
+      _NativeTextEntryAction<ExtendSelectionToLineBreakIntent>(),
+      // EditableText shares this base-typed action for vertical line/page moves.
+      _NativeTextEntryAction<DirectionalCaretMovementIntent>(),
+      _NativeTextEntryAction<
+          ExtendSelectionToNextParagraphBoundaryOrCaretLocationIntent>(),
+      _NativeTextEntryAction<ExtendSelectionToDocumentBoundaryIntent>(),
+      _NativeTextEntryAction<
+          ExtendSelectionToNextWordBoundaryOrCaretLocationIntent>(),
+      _NativeTextEntryAction<ScrollToDocumentBoundaryIntent>(),
+      _NativeTextEntryAction<ExpandSelectionToLineBreakIntent>(),
+      _NativeTextEntryAction<ExpandSelectionToDocumentBoundaryIntent>(),
+      _NativeTextEntryAction<SelectAllTextIntent>(),
+      _NativeTextEntryAction<CopySelectionTextIntent>(),
+      _NativeTextEntryAction<PasteTextIntent>(),
+      _NativeTextEntryAction<UndoTextIntent>(),
+      _NativeTextEntryAction<RedoTextIntent>(),
+      _NativeTextEntryAction<TransposeCharactersIntent>(),
+    ])
+      action.intentType: action,
+  };
+
+  @override
+  void dispose() {
+    _manager.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Actions(
+        // Native ReplaceText/UpdateSelection actions also use this dispatcher;
+        // an ancestor dispatcher must not turn a successful lookup into a no-op.
+        dispatcher: const ActionDispatcher(),
+        actions: _actions,
+        child: DefaultTextEditingShortcuts(
+          // Keep platform bindings (including vertical/word selection) nearer
+          // than the page's handlers, without duplicating Flutter's key maps.
+          child: Shortcuts.manager(manager: _manager, child: widget.child),
+        ),
+      );
+}
+
+class _TextEntryShortcutManager extends ShortcutManager {
+  _TextEntryShortcutManager() : super(shortcuts: textEntryShortcuts);
+
+  @override
+  KeyEventResult handleKeypress(BuildContext context, KeyEvent event) {
+    final focus = FocusManager.instance.primaryFocus;
+    final focusedContext = focus?.context;
+    if (focusedContext == null || !focusedContext.mounted) {
+      return KeyEventResult.ignored;
+    }
+    final editable =
+        focusedContext.findAncestorStateOfType<EditableTextState>();
+    if (editable == null || editable.widget.focusNode != focus) {
+      return KeyEventResult.ignored;
+    }
+
+    // The SDK uses the focused context BELOW EditableText's Actions. Using
+    // editable.context here would instead start ABOVE its native actions.
+    final result = super.handleKeypress(context, event);
+    if (result == KeyEventResult.ignored &&
+        shortcuts.keys.any(
+          (activator) => activator.accepts(event, HardwareKeyboard.instance),
+        )) {
+      // A disabled native edit (read-only, no selection, no undo) must not
+      // become a document deletion/cut/undo merely because it was a no-op.
+      return KeyEventResult.handled;
+    }
+    return result;
+  }
+}
+
+/// An override that delegates back to the native action, not another lookup.
+/// Flutter supplies a context-preserving adapter for native ContextActions.
+class _NativeTextEntryAction<T extends Intent> extends ContextAction<T> {
+  @override
+  bool get isActionEnabled => callingAction?.isActionEnabled ?? false;
+
+  @override
+  bool isEnabled(T intent, [BuildContext? context]) {
+    final action = callingAction;
+    return action is ContextAction<T>
+        ? action.isEnabled(intent, context)
+        : action?.isEnabled(intent) ?? false;
+  }
+
+  @override
+  Object? invoke(T intent, [BuildContext? context]) {
+    final action = callingAction;
+    if (action == null) return null;
+    return const ActionDispatcher().invokeAction(action, intent, context);
+  }
+
+  @override
+  bool consumesKey(T intent) => callingAction?.consumesKey(intent) ?? false;
 }
 
 class _IconButton extends StatefulWidget {

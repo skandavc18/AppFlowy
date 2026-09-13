@@ -1060,6 +1060,54 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
+  geolocator:
+    dependency: "direct main"
+    description:
+      name: geolocator
+      sha256: f62bcd90459e63210bbf9c35deb6a51c521f992a78de19a1fe5c11704f9530e2
+      url: "https://pub.dev"
+    source: hosted
+    version: "13.0.4"
+  geolocator_android:
+    dependency: transitive
+    description:
+      name: geolocator_android
+      sha256: fcb1760a50d7500deca37c9a666785c047139b5f9ee15aa5469fae7dbbe3170d
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.6.2"
+  geolocator_apple:
+    dependency: transitive
+    description:
+      name: geolocator_apple
+      sha256: "853803d6bb1713c094e935b4a5ae5f19c0308acf81da13fa9ff84fb4c70c0b73"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.3.14"
+  geolocator_platform_interface:
+    dependency: transitive
+    description:
+      name: geolocator_platform_interface
+      sha256: "94db8255dc183d268765df682580440617ca35877fc82cacb5420ad03b86198d"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.3.0"
+  geolocator_web:
+    dependency: transitive
+    description:
+      name: geolocator_web
+      sha256: "19e485a0f8d6a88abcf9c53cba3a4105e14b7435ed8ac1c108c067b938fe8429"
+      url: "https://pub.dev"
+    source: hosted
+    version: "4.1.4"
+  geolocator_windows:
+    dependency: transitive
+    description:
+      name: geolocator_windows
+      sha256: "175435404d20278ffd220de83c2ca293b73db95eafbdc8131fe8609be1421eb6"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.5"
   get_it:
     dependency: "direct main"
     description:
@@ -1337,6 +1385,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.1.5"
+  lat_lng_to_timezone:
+    dependency: "direct main"
+    description:
+      name: lat_lng_to_timezone
+      sha256: "149db00299362dd756271fd9c936e533618811214c130ca77ebfa3ccdfc6a593"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.2.0"
   leak_tracker:
     dependency: "direct main"
     description:
@@ -2313,6 +2369,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.8.24"
+  sweph:
+    dependency: "direct main"
+    description:
+      name: sweph
+      sha256: "32067efbf3984857a970a590adb6502373d199add4867936485678130824a241"
+      url: "https://pub.dev"
+    source: hosted
+    version: "3.2.1+2.10.3"
   sync_http:
     dependency: transitive
     description:
@@ -2409,6 +2473,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.5"
+  timezone:
+    dependency: "direct main"
+    description:
+      name: timezone
+      sha256: dd14a3b83cfd7cb19e7888f1cbc20f258b8d71b54c06f79ac585f14093a287d1
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.10.1"
   timing:
     dependency: transitive
     description:
@@ -2449,6 +2521,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.1.7"
+  universal_ffi:
+    dependency: transitive
+    description:
+      name: universal_ffi
+      sha256: f723a01ff2ff70729ff266037e37a125df9dd85c7322073eda18bc29987bd870
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.2.0"
   universal_html:
     dependency: transitive
     description:
@@ -2651,6 +2731,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.0"
+  wasm_ffi:
+    dependency: transitive
+    description:
+      name: wasm_ffi
+      sha256: bb58f268afc14f2591b9d15c797e74ad7f14696f2b87f0d49e00cf41bde0dc7a
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.0"
   watcher:
     dependency: transitive
     description:

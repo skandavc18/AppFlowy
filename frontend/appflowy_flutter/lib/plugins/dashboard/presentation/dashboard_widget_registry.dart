@@ -147,6 +147,7 @@ class DashboardWidgetDefinition {
     required this.icon,
     required this.group,
     required this.builder,
+    this.headerTrailing,
     this.description,
     this.defaultColumnSpan = 4,
     this.defaultRowSpan = 4,
@@ -158,6 +159,7 @@ class DashboardWidgetDefinition {
     this.defaultTitle,
     this.showsTitleByDefault = true,
     this.paintsOwnSurface = false,
+    this.requiresScrollActivation = false,
     this.padding,
     this.configure,
     this.keywords = const [],
@@ -178,6 +180,11 @@ class DashboardWidgetDefinition {
   final DashboardWidgetGroup group;
   final Widget Function(DashboardWidgetContext context) builder;
 
+  /// Optional compact controls at the right of the card's title row.
+  /// Also shown when the title is hidden and in the enlarged widget view.
+  /// The host bounds their width and reserves space for its own hover actions.
+  final Widget Function(DashboardWidgetContext context)? headerTrailing;
+
   final int defaultColumnSpan;
   final int defaultRowSpan;
   final int minimumColumnSpan;
@@ -192,6 +199,11 @@ class DashboardWidgetDefinition {
   /// True when the widget draws edge to edge and the card must not paint a
   /// surface, a title or padding around it — a divider, a picture, an embed.
   final bool paintsOwnSurface;
+
+  /// Native scrollable contents let the page scroll until the card is clicked
+  /// or keyboard-focused. Enlarged views remain immediately scrollable.
+  /// Custom renderers with independent gesture physics must handle this themselves.
+  final bool requiresScrollActivation;
 
   /// Overrides the card's usual inset.
   final EdgeInsets? padding;

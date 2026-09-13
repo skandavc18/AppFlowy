@@ -2,6 +2,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
@@ -78,6 +79,39 @@ class _DashboardCardState extends State<DashboardCard> {
   @override
   Widget build(BuildContext context) {
     final definition = DashboardWidgetRegistry.definitionFor(spec.type);
+    if (!(definition?.requiresScrollActivation ?? false)) {
+      return _buildCard(context);
+    }
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) => ScrollActivationRegion(
+        key: ValueKey('dashboard-scroll-activation-${spec.id}'),
+        active: controller.selectedWidgetId == spec.id,
+        onActiveChanged: _selectForScrolling,
+        // Invoke builders below the gate. Some embed builders capture this
+        // context's ScrollConfiguration before constructing their descendants.
+        child: Builder(builder: _buildCard),
+      ),
+    );
+  }
+
+  void _selectForScrolling(bool active) {
+    if (!mounted) return;
+    if (active) {
+      if (controller.document.widgetById(spec.id) != null) {
+        controller.select(spec.id);
+      }
+    } else if (controller.selectedWidgetId == spec.id) {
+      // A losing card must never clear the card selected by the same click.
+      controller.select(null);
+    }
+  }
+
+  Widget _buildCard(BuildContext context) {
+    final definition = DashboardWidgetRegistry.definitionFor(spec.type);
+    final selected = definition?.requiresScrollActivation == true
+        ? controller.selectedWidgetId == spec.id
+        : widget.selected;
     final tone = palette.toneFor(spec.accent);
     final widgetContext = DashboardWidgetContext(
       context: context,
@@ -96,18 +130,31 @@ class _DashboardCardState extends State<DashboardCard> {
 
     final bare = definition?.paintsOwnSurface ?? false;
     final showsTitle = spec.showTitle && spec.title.isNotEmpty;
+    final trailing = definition?.headerTrailing?.call(widgetContext);
+    final showsHeader = showsTitle || trailing != null;
+    final scale = spec.number(dashboardTextScaleKey, fallback: 1);
+    final headerHeight = trailing == null
+        ? DashboardMetrics.headerHeight
+        : (MediaQuery.textScalerOf(context).scale(13) * scale * 1.25 + 16)
+            .clamp(40.0, double.infinity);
 
     Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (showsTitle) _buildTitle(tone),
+        if (showsHeader)
+          _buildTitle(
+            tone,
+            showsTitle: showsTitle,
+            height: headerHeight,
+            trailing: trailing,
+          ),
         if (!spec.collapsed)
           Expanded(
             child: Padding(
               padding: definition?.padding ??
                   EdgeInsets.fromLTRB(
                     bare ? 0 : 14,
-                    showsTitle ? 0 : (bare ? 0 : 12),
+                    showsHeader ? 0 : (bare ? 0 : 12),
                     bare ? 0 : 14,
                     bare ? 0 : 12,
                   ),
@@ -119,7 +166,6 @@ class _DashboardCardState extends State<DashboardCard> {
 
     // One setting sizes everything the widget says, whatever it is made of:
     // a note, a reminder list and a callout all answer to it.
-    final scale = spec.number(dashboardTextScaleKey, fallback: 1);
     if (scale != 1) {
       final ambient = MediaQuery.textScalerOf(context);
       content = MediaQuery(
@@ -145,7 +191,7 @@ class _DashboardCardState extends State<DashboardCard> {
           ),
         ),
         foregroundDecoration: palette.selectionRing(
-          selected: widget.selected,
+          selected: selected,
           radius: DashboardMetrics.cardRadius,
         ),
         clipBehavior: Clip.antiAlias,
@@ -205,7 +251,7 @@ class _DashboardCardState extends State<DashboardCard> {
             left: 0,
             right: 0,
             top: 0,
-            height: DashboardMetrics.headerHeight,
+            height: headerHeight,
             child: _buildFloatingControls(),
           ),
           if (!widget.dragging) ..._buildGrips(),
@@ -234,22 +280,54 @@ class _DashboardCardState extends State<DashboardCard> {
     );
   }
 
-  Widget _buildTitle(DashboardTone tone) => SizedBox(
-        height: DashboardMetrics.headerHeight,
+  Widget _buildTitle(
+    DashboardTone tone, {
+    required bool showsTitle,
+    required double height,
+    Widget? trailing,
+  }) =>
+      SizedBox(
+        height: height,
         child: Padding(
-          padding: const EdgeInsets.only(left: 14, right: 60),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onDoubleTap: _editable ? _rename : null,
-              child: Text(
-                spec.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: DashboardType.cardTitle(palette, color: tone.inkSoft),
+          // Do not put widget controls under the floating Configure/More
+          // buttons or the right-edge resize grip. Legacy headers stay put.
+          padding: EdgeInsets.only(
+            left: 14,
+            right: trailing != null && !_editable ? 14 : 60,
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                child: showsTitle
+                    ? GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onDoubleTap: _editable ? _rename : null,
+                        child: Text(
+                          spec.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: DashboardType.cardTitle(
+                            palette,
+                            color: tone.inkSoft,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
               ),
-            ),
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 240),
+                      child: trailing,
+                    ),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       );
@@ -612,7 +690,7 @@ class _DashboardCardState extends State<DashboardCard> {
 
   Future<void> _rename() async {
     final controllerText = TextEditingController(text: spec.title);
-    final name = await showDialog<String>(
+    final route = DialogRoute<String>(
       context: context,
       builder: (dialogContext) => _RenameDialog(
         palette: palette,
@@ -620,8 +698,12 @@ class _DashboardCardState extends State<DashboardCard> {
         title: LocaleKeys.dashboard_card_rename.tr(),
       ),
     );
+    final name = await Navigator.of(context, rootNavigator: true).push(route);
+    // Popping resolves the result before the reverse animation detaches the
+    // TextField. Its controller must live until the route is really gone.
+    await route.completed;
     controllerText.dispose();
-    if (name == null) {
+    if (!mounted || name == null) {
       return;
     }
     controller.edit(
@@ -743,6 +825,10 @@ class _EagerPan extends StatelessWidget {
 class _EagerPanRecognizer extends PanGestureRecognizer {
   @override
   void rejectGesture(int pointer) => acceptGesture(pointer);
+
+  // A two-finger scroll over a grip is still scrolling, not mouse resizing.
+  @override
+  void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {}
 }
 
 class _RenameDialog extends StatelessWidget {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/extensions/dart/appflowy_extension.dart';
+import 'package:appflowy/extensions/dart/built_in/astrology_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/data_block_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/glass_theme_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/news_extension.dart';
@@ -25,6 +26,7 @@ List<AppFlowyExtension> builtInDartExtensions() => [
       TallyTableViewExtension(),
       StockExtension(),
       NewsExtension(),
+      AstrologyExtension(),
     ];
 
 /// Switches Dart extensions on and off, and remembers which are off.

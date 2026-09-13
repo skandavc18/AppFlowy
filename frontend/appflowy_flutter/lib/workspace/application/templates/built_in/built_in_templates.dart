@@ -1,3 +1,4 @@
+import 'package:appflowy/extensions/dart/built_in/astrology/astrology_dashboard_model.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_templates.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_templates.dart';
@@ -23,6 +24,7 @@ void registerBuiltInTemplates() {
   registerFinanceTemplates();
   registerKnowledgeTemplates();
   registerPublishingTemplates();
+  TemplateRegistry.register(astrologyDashboardTemplate());
   _registerExistingDashboards();
   _registerExistingCanvases();
 }
@@ -114,6 +116,7 @@ void _registerExistingCanvases() {
 /// Named so the gallery can lead with the one somebody most likely wants.
 const featuredTemplateIds = <String>[
   'board_personal',
+  'vedic_astrology',
   'tracker',
   'stocks',
   'assets',

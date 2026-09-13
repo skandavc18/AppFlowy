@@ -53,6 +53,8 @@
 		<string>MainMenu</string>
 		<key>NSPrincipalClass</key>
 		<string>NSApplication</string>
+		<key>NSLocationUsageDescription</key>
+		<string>Your location is used to calculate a local Vedic transit chart. You can enter a place manually instead.</string>
 		<key>SUPublicEDKey</key>
 		<string>Bs++IOmOwYmNTjMMC2jMqLNldP+mndDp/LwujCg2/kw=</string>
 		<key>SUAllowsAutomaticUpdates</key>

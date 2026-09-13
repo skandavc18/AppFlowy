@@ -12,6 +12,7 @@ import 'package:appflowy/plugins/database/grid/presentation/widgets/toolbar/grid
 import 'package:appflowy/plugins/database/tab_bar/desktop/setting_menu.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_builder.dart';
 import 'package:appflowy/shared/flowy_error_page.dart';
+import 'package:appflowy/shared/scrolling/no_scrollbar_behavior.dart';
 import 'package:appflowy/workspace/application/action_navigation/action_navigation_bloc.dart';
 import 'package:appflowy/workspace/application/action_navigation/navigation_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -433,26 +434,35 @@ class _GridRowsState extends State<_GridRows> {
         0.0;
     Widget child;
     if (widget.shrinkWrap) {
-      child = Scrollbar(
+      child = SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
         controller: widget.scrollController.horizontalController,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          controller: widget.scrollController.horizontalController,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: GridLayout.headerWidth(
-                context
-                            .read<DatabasePluginWidgetBuilderSize>()
-                            .horizontalPadding *
-                        3 +
-                    paddingLeft,
-                context.read<GridBloc>().state.fields,
-              ),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: GridLayout.headerWidth(
+              context
+                          .read<DatabasePluginWidgetBuilderSize>()
+                          .horizontalPadding *
+                      3 +
+                  paddingLeft,
+              context.read<GridBloc>().state.fields,
             ),
-            child: _shrinkWrapRenderList(context),
           ),
+          child: _shrinkWrapRenderList(context),
         ),
       );
+      final showScrollbars =
+          context.read<DatabasePluginWidgetBuilderSize?>()?.showScrollbars ??
+              true;
+      child = showScrollbars
+          ? Scrollbar(
+              controller: widget.scrollController.horizontalController,
+              child: child,
+            )
+          : ScrollConfiguration(
+              behavior: NoScrollbarBehavior(ScrollConfiguration.of(context)),
+              child: child,
+            );
     } else {
       child = _WrapScrollView(
         scrollController: widget.scrollController,
@@ -465,8 +475,11 @@ class _GridRowsState extends State<_GridRows> {
               previous.rowCount != current.rowCount,
           listener: (context, state) => _evaluateFloatingCalculations(),
           child: ScrollConfiguration(
-            behavior:
-                ScrollConfiguration.of(context).copyWith(scrollbars: false),
+            behavior: context
+                    .read<DatabasePluginWidgetBuilderSize>()
+                    .showScrollbars
+                ? ScrollConfiguration.of(context).copyWith(scrollbars: false)
+                : NoScrollbarBehavior(ScrollConfiguration.of(context)),
             child: _renderList(context),
           ),
         ),
@@ -694,6 +707,20 @@ class _WrapScrollView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showScrollbars =
+        context.read<DatabasePluginWidgetBuilderSize?>()?.showScrollbars ??
+            true;
+    if (!showScrollbars) {
+      return ScrollConfiguration(
+        behavior: NoScrollbarBehavior(ScrollConfiguration.of(context)),
+        child: SingleChildScrollView(
+          key: const ValueKey('embedded-grid-horizontal-scroll'),
+          controller: scrollController.horizontalController,
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(width: contentWidth, child: child),
+        ),
+      );
+    }
     return ScrollbarListStack(
       includeInsets: false,
       axis: Axis.vertical,

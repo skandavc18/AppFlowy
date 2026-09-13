@@ -277,6 +277,7 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
                 paddingLeftWithMaxDocumentWidth: paddingLeft,
                 verticalPadding: databseBuilderSize.verticalPadding,
                 coordinateVerticalScroll: coordinateVerticalScroll,
+                showScrollbars: databseBuilderSize.showScrollbars,
               ),
               child: pageContentFromState(context, state),
             ),
@@ -658,12 +659,17 @@ class DatabasePluginWidgetBuilderSize {
     this.verticalPadding = 16.0,
     this.paddingLeftWithMaxDocumentWidth = 0.0,
     this.coordinateVerticalScroll = false,
+    this.showScrollbars = true,
   });
 
   final double horizontalPadding;
   final double verticalPadding;
   final double paddingLeftWithMaxDocumentWidth;
   final bool coordinateVerticalScroll;
+
+  /// Embedded cards can retain both scrolling axes without visible rails.
+  /// Ordinary database pages keep their established scrollbar behavior.
+  final bool showScrollbars;
 
   double get paddingLeft => paddingLeftWithMaxDocumentWidth + horizontalPadding;
 }

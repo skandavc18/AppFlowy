@@ -660,6 +660,12 @@ class _ModalWidget extends StatelessWidget {
     if (spec == null || definition == null) {
       return const SizedBox.shrink();
     }
+    final widgetContext = DashboardWidgetContext(
+      context: context,
+      controller: controller,
+      spec: spec,
+      palette: palette,
+    );
     return GestureDetector(
       onTap: () => controller.openModal(null),
       child: ColoredBox(
@@ -694,6 +700,21 @@ class _ModalWidget extends StatelessWidget {
                             style: DashboardType.title(palette, size: 16),
                           ),
                         ),
+                        if (definition.headerTrailing != null) ...[
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerRight,
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 240),
+                                child:
+                                    definition.headerTrailing!(widgetContext),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                        ],
                         DashboardIconButton(
                           icon: Icons.close_rounded,
                           palette: palette,
@@ -706,14 +727,7 @@ class _ModalWidget extends StatelessWidget {
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(18, 0, 18, 18),
-                      child: definition.builder(
-                        DashboardWidgetContext(
-                          context: context,
-                          controller: controller,
-                          spec: spec,
-                          palette: palette,
-                        ),
-                      ),
+                      child: definition.builder(widgetContext),
                     ),
                   ),
                 ],
