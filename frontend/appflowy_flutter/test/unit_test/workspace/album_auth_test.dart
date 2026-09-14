@@ -48,7 +48,8 @@ void main() {
   setUpAll(() async {
     cacheRoot = await Directory.systemTemp.createTemp('appflowy-album-auth-');
     getIt.registerSingleton<ApplicationDataStorage>(
-        _DataStorage(cacheRoot.path),);
+      _DataStorage(cacheRoot.path),
+    );
     await ProviderConnections.instance.upsert(
       _connection,
       const ProviderCredentials(accessToken: 'test-only'),
@@ -295,8 +296,10 @@ class _PhotoProvider extends Fake implements CollectionProvider {
   Future<void> ensureReady() async {}
 
   @override
-  Future<List<ProviderNode>> listAll(
-      {String? parentId, int limit = 2000,}) async {
+  Future<List<ProviderNode>> listAll({
+    String? parentId,
+    int limit = 2000,
+  }) async {
     listCalls++;
     final error = failure;
     if (error != null) {

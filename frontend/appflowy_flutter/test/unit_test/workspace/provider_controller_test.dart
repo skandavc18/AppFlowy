@@ -180,7 +180,9 @@ void main() {
             : pending.future;
       final renewed = _PhotoProvider();
       ProviderRegistry.register(
-          ProviderService.googlePhotos, (_, __) => renewed,);
+        ProviderService.googlePhotos,
+        (_, __) => renewed,
+      );
       addTearDown(ProviderRegistry.reset);
       final controller = ProviderController(
         collectionId: 'album',

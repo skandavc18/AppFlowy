@@ -2,9 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+
+import 'frame_synced_scroll_pan.dart';
 
 /// Tunable constants for AppFlowy's application-wide kinetic scrolling.
 @immutable
@@ -26,7 +29,9 @@ class PremiumScrollPhysicsConfig {
     this.maxWheelScrollVelocity = 1000.0,
     this.maxWheelQueuedDistance = 240.0,
     this.wheelStopDistance = 0.1,
-    this.desktopDirectManipulationScale = 0.55,
+    this.desktopDirectManipulationScale = 0.60,
+    this.desktopCoastFriction = 4.4,
+    this.desktopFramePacing = true,
   })  : assert(friction > 0),
         assert(wheelAcceleration > 0),
         assert(precisionAcceleration > 0),
@@ -45,6 +50,7 @@ class PremiumScrollPhysicsConfig {
         assert(maxWheelScrollVelocity > 0),
         assert(maxWheelQueuedDistance > 0),
         assert(wheelStopDistance > 0),
+        assert(desktopCoastFriction > 0),
         assert(
           desktopDirectManipulationScale > 0 &&
               desktopDirectManipulationScale <= 1,
@@ -95,6 +101,13 @@ class PremiumScrollPhysicsConfig {
   /// unchanged.
   final double desktopDirectManipulationScale;
 
+  /// Desktop-only release decay; custom viewer wheel impulses stay unchanged.
+  final double desktopCoastFriction;
+
+  /// Distribute coarse trackpad drag packets across high-refresh frames with
+  /// at most 16.67ms of interpolation, never predicting unreceived distance.
+  final bool desktopFramePacing;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -116,7 +129,9 @@ class PremiumScrollPhysicsConfig {
           other.maxWheelQueuedDistance == maxWheelQueuedDistance &&
           other.wheelStopDistance == wheelStopDistance &&
           other.desktopDirectManipulationScale ==
-              desktopDirectManipulationScale;
+              desktopDirectManipulationScale &&
+            other.desktopCoastFriction == desktopCoastFriction &&
+            other.desktopFramePacing == desktopFramePacing;
 
   @override
   int get hashCode => Object.hash(
@@ -137,6 +152,8 @@ class PremiumScrollPhysicsConfig {
         maxWheelQueuedDistance,
         wheelStopDistance,
         desktopDirectManipulationScale,
+        desktopCoastFriction,
+        desktopFramePacing,
       );
 
   PremiumScrollPhysicsConfig copyWith({double? immediateResponse}) =>
@@ -158,6 +175,8 @@ class PremiumScrollPhysicsConfig {
         maxWheelQueuedDistance: maxWheelQueuedDistance,
         wheelStopDistance: wheelStopDistance,
         desktopDirectManipulationScale: desktopDirectManipulationScale,
+        desktopCoastFriction: desktopCoastFriction,
+        desktopFramePacing: desktopFramePacing,
       );
 }
 
@@ -166,6 +185,9 @@ class PremiumScrollPhysicsConfig {
 /// Flutter tickers are synchronized to the engine frame scheduler (the native
 /// equivalent of requestAnimationFrame), so this supports high-refresh-rate
 /// displays without timers or per-event layout work.
+///
+/// Nested scopes inherit the outer scope's settings, including its opt-out.
+/// Surfaces with their own scrolling should use [PremiumScrollExclusion].
 class PremiumScrollScope extends StatelessWidget {
   const PremiumScrollScope({
     super.key,
@@ -180,24 +202,41 @@ class PremiumScrollScope extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A ScrollBehavior can be hidden behind copyWith or a viewer-specific
+    // delegate. Track ownership independently so an embedded scope neither
+    // scales trackpad distance/velocity twice nor overrides the global toggle.
+    if (context.dependOnInheritedWidgetOfExactType<_PremiumScrollOwner>() !=
+        null) {
+      return child;
+    }
+
     final reducedMotion = MediaQuery.maybeOf(context)?.disableAnimations ??
         WidgetsBinding.instance.platformDispatcher.accessibilityFeatures
             .disableAnimations;
     final kineticEnabled = enabled && !reducedMotion;
 
-    return ScrollConfiguration(
-      behavior: PremiumScrollBehavior(
-        delegate: ScrollConfiguration.of(context),
-        config: config,
-        kineticEnabled: kineticEnabled,
+    return _PremiumScrollOwner(
+      child: ScrollConfiguration(
+        behavior: PremiumScrollBehavior(
+          delegate: ScrollConfiguration.of(context),
+          config: config,
+          kineticEnabled: kineticEnabled,
+        ),
+        child: kineticEnabled ? _PremiumScrollDispatcher(child: child) : child,
       ),
-      child: kineticEnabled ? _PremiumScrollDispatcher(child: child) : child,
     );
   }
 }
 
-/// Preserves Flutter's native drag/trackpad physics and registers each
-/// scrollable with the discrete mouse-wheel dispatcher.
+class _PremiumScrollOwner extends InheritedWidget {
+  const _PremiumScrollOwner({required super.child});
+
+  @override
+  bool updateShouldNotify(_PremiumScrollOwner oldWidget) => false;
+}
+
+/// Adds controlled desktop coasting and elastic edges without a second input
+/// engine. Native macOS/mobile physics and discrete wheel routing are retained.
 class PremiumScrollBehavior extends ScrollBehavior {
   const PremiumScrollBehavior({
     required this.delegate,
@@ -236,7 +275,14 @@ class PremiumScrollBehavior extends ScrollBehavior {
     }
 
     return (event) => _ScaledVelocityTracker(
-          platformBuilder(event),
+          event is PointerPanZoomStartEvent
+              ? _DesktopTrackpadVelocityTracker(
+                  context
+                      .findAncestorRenderObjectOfType<
+                          _RenderPremiumScrollDispatcher>()
+                      ?._panSessions[event.pointer],
+                )
+              : platformBuilder(event),
           config.desktopDirectManipulationScale,
         );
   }
@@ -245,6 +291,8 @@ class PremiumScrollBehavior extends ScrollBehavior {
   ScrollPhysics getScrollPhysics(BuildContext context) {
     final platformPhysics = delegate.getScrollPhysics(context);
     final platform = getPlatform(context);
+    final desktop = platform == TargetPlatform.windows ||
+        platform == TargetPlatform.linux;
     final directManipulationScale = switch (platform) {
       TargetPlatform.windows ||
       TargetPlatform.linux =>
@@ -255,7 +303,12 @@ class PremiumScrollBehavior extends ScrollBehavior {
         ? PremiumKineticScrollPhysics(
             config: config,
             directManipulationScale: directManipulationScale,
-            parent: platformPhysics,
+            parent: desktop
+                ? _DesktopElasticScrollPhysics(
+                    config: config,
+                    parent: platformPhysics,
+                  )
+                : platformPhysics,
           )
         : platformPhysics;
   }
@@ -288,6 +341,9 @@ class PremiumScrollBehavior extends ScrollBehavior {
       axisDirection: details.direction,
       pointerAxisModifiers: pointerAxisModifiers,
       config: config,
+        paceTrackpad: config.desktopFramePacing &&
+          (getPlatform(context) == TargetPlatform.windows ||
+            getPlatform(context) == TargetPlatform.linux),
       child: decorated,
     );
   }
@@ -304,9 +360,8 @@ class PremiumScrollBehavior extends ScrollBehavior {
 
 /// Marker physics for enabled premium wheel handling.
 ///
-/// Drag, touch, and precision-trackpad behavior deliberately defer to the
-/// platform physics supplied by Flutter. In particular, this avoids layering
-/// another velocity curve on top of [PointerPanZoomEvent] input.
+/// Scales direct input once, before edge resistance. The selected parent owns
+/// the sole ballistic simulation; no wheel impulses are added to trackpad pans.
 class PremiumKineticScrollPhysics extends ScrollPhysics {
   const PremiumKineticScrollPhysics({
     required this.config,
@@ -319,6 +374,13 @@ class PremiumKineticScrollPhysics extends ScrollPhysics {
   final PremiumScrollPhysicsConfig config;
   final double directManipulationScale;
 
+  // Precision pans should respond immediately, including small reversals.
+  @override
+  double? get dragStartDistanceMotionThreshold =>
+      parent is _DesktopElasticScrollPhysics
+          ? null
+          : super.dragStartDistanceMotionThreshold;
+
   @override
   PremiumKineticScrollPhysics applyTo(ScrollPhysics? ancestor) {
     return PremiumKineticScrollPhysics(
@@ -330,8 +392,263 @@ class PremiumKineticScrollPhysics extends ScrollPhysics {
 
   @override
   double applyPhysicsToUserOffset(ScrollMetrics position, double offset) {
-    return super.applyPhysicsToUserOffset(position, offset) *
-        directManipulationScale;
+    final paced = FrameSyncedScrollPan.filterOffset(position, offset);
+    if (paced == 0) return 0;
+    return super.applyPhysicsToUserOffset(
+      position,
+      paced * directManipulationScale,
+    );
+  }
+}
+
+/// Use macOS-like rubber-band resistance and its non-oscillating desktop spring,
+/// but not iOS's repeated-fling boost or the 8x desktop fling speed allowance.
+class _DesktopElasticScrollPhysics extends BouncingScrollPhysics {
+  const _DesktopElasticScrollPhysics({
+    required this.config,
+    super.parent,
+  }) : super(decelerationRate: ScrollDecelerationRate.fast);
+
+  final PremiumScrollPhysicsConfig config;
+
+  @override
+  _DesktopElasticScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      _DesktopElasticScrollPhysics(
+        config: config,
+        parent: buildParent(ancestor),
+      );
+
+  @override
+  double get maxFlingVelocity => config.maxVelocity;
+
+  @override
+  double carriedMomentum(double existingVelocity) => 0;
+
+  @override
+  Simulation? createBallisticSimulation(ScrollMetrics position, double velocity) {
+    final platformTolerance = toleranceFor(position);
+    final tolerance = Tolerance(
+      distance: platformTolerance.distance,
+      velocity: math.min(platformTolerance.velocity, config.stopVelocity),
+    );
+    if (!position.outOfRange && velocity.abs() < tolerance.velocity) {
+      return null;
+    }
+    return _DesktopCoastSimulation(
+      position: position.pixels,
+      velocity: velocity,
+      leadingExtent: position.minScrollExtent,
+      trailingExtent: position.maxScrollExtent,
+      friction: config.desktopCoastFriction,
+      spring: spring,
+      tolerance: tolerance,
+    );
+  }
+}
+
+/// Both exponential drag and the spring depend only on current position and
+/// velocity. Restarting after lazy item/viewport dimensions change therefore
+/// cannot re-accelerate the coast. Flutter 3.27's fast bouncing simulation uses
+/// a time-dependent constant-deceleration term instead.
+class _DesktopCoastSimulation extends Simulation {
+  _DesktopCoastSimulation({
+    required double position,
+    required double velocity,
+    required double leadingExtent,
+    required double trailingExtent,
+    required double friction,
+    required SpringDescription spring,
+    required super.tolerance,
+  }) {
+    if (position < leadingExtent || position > trailingExtent) {
+      final edge = position.clamp(leadingExtent, trailingExtent);
+      _motion = ScrollSpringSimulation(
+        spring,
+        position,
+        edge,
+        velocity,
+        tolerance: tolerance,
+      );
+      // A deliberate inward release can cross the boundary instead of merely
+      // relaxing toward it. Once inside, friction must own the rest of the
+      // trajectory even when no layout happens to restart the activity there.
+      if (velocity * (position - edge) < 0) {
+        final returning = SpringSimulation(
+          spring,
+          position,
+          edge,
+          velocity,
+          tolerance: tolerance,
+        );
+        final outsideSign = (position - edge).sign;
+        var upper = 1 / 120;
+        bool hasCrossed(double time) =>
+            (returning.x(time) - edge) * outsideSign < 0;
+        while (upper < 2 &&
+            !hasCrossed(upper) &&
+            !returning.isDone(upper)) {
+          upper *= 2;
+        }
+        if (hasCrossed(upper)) {
+          var lower = 0.0;
+          // Resolve the transition once, not in frame callbacks. The desktop
+          // spring is overdamped, so it can cross this edge at most once.
+          for (var iteration = 0; iteration < 32; iteration++) {
+            final middle = (lower + upper) / 2;
+            if (hasCrossed(middle)) {
+              upper = middle;
+            } else {
+              lower = middle;
+            }
+          }
+          _transitionTime = (lower + upper) / 2;
+          _continuation = _DesktopCoastSimulation(
+            position: edge,
+            velocity: returning.dx(_transitionTime),
+            leadingExtent: leadingExtent,
+            trailingExtent: trailingExtent,
+            friction: friction,
+            spring: spring,
+            tolerance: tolerance,
+          );
+        }
+      }
+      return;
+    }
+
+    final coast = FrictionSimulation(
+      math.exp(-friction),
+      position,
+      velocity,
+      tolerance: tolerance,
+    );
+    _motion = coast;
+    final double edge;
+    if (velocity > 0 && coast.finalX > trailingExtent) {
+      edge = trailingExtent;
+    } else if (velocity < 0 && coast.finalX < leadingExtent) {
+      edge = leadingExtent;
+    } else {
+      return;
+    }
+    _transitionTime =
+      -math.log(1 - (edge - position) * friction / velocity) / friction;
+    _continuation = ScrollSpringSimulation(
+      spring,
+      edge,
+      edge,
+      coast.dx(_transitionTime),
+      tolerance: tolerance,
+    );
+  }
+
+  late final Simulation _motion;
+    Simulation? _continuation;
+    double _transitionTime = double.infinity;
+
+  @override
+    double x(double time) => time >= _transitionTime
+      ? _continuation!.x(time - _transitionTime)
+      : _motion.x(time);
+
+  @override
+    double dx(double time) => time >= _transitionTime
+      ? _continuation!.dx(time - _transitionTime)
+      : _motion.dx(time);
+
+  @override
+    bool isDone(double time) => time >= _transitionTime
+      ? _continuation!.isDone(time - _transitionTime)
+      : _motion.isDone(time);
+}
+
+class _DesktopPanSession {
+  _DesktopPanSession(this.lastInputAt, this.pans);
+
+  Duration lastInputAt;
+  Duration? endedAt;
+  final List<FrameSyncedScrollPan> pans;
+
+  void update(PointerPanZoomUpdateEvent event) {
+    final interval = (event.timeStamp - lastInputAt).inMicroseconds;
+    lastInputAt = event.timeStamp;
+    if (event.scale != 1 || event.rotation != 0) {
+      finish();
+      return;
+    }
+    for (final pan in pans) {
+      pan.inputIntervalUs = interval;
+    }
+  }
+
+  void finish({bool flush = true}) {
+    for (final pan in pans) {
+      pan.dispose(flush: flush);
+    }
+  }
+}
+
+/// Quadratic fitting can invent a reverse fling when a fast pan slows down.
+/// Recent-sample estimation avoids that extrapolation. A timestamp gap resets
+/// history even when delayed events arrive in one UI-thread batch; the latest
+/// segment also caps stale speed and rejects momentum in the wrong direction.
+class _DesktopTrackpadVelocityTracker extends VelocityTracker {
+  _DesktopTrackpadVelocityTracker(this._session)
+      : super.withKind(PointerDeviceKind.trackpad);
+
+  final _DesktopPanSession? _session;
+  VelocityTracker _delegate =
+      MacOSScrollViewFlingVelocityTracker(PointerDeviceKind.trackpad);
+  Duration? _lastTime;
+  Offset _lastPosition = Offset.zero;
+  Offset _lastVelocity = Offset.zero;
+
+  @override
+  void addPosition(Duration time, Offset position) {
+    final previousTime = _lastTime;
+    final interval = previousTime == null ? Duration.zero : time - previousTime;
+    if (interval > const Duration(milliseconds: 40) || interval < Duration.zero) {
+      _delegate =
+          MacOSScrollViewFlingVelocityTracker(PointerDeviceKind.trackpad);
+      _lastVelocity = Offset.zero;
+    } else {
+      _lastVelocity = interval > Duration.zero
+          ? (position - _lastPosition) *
+              (Duration.microsecondsPerSecond / interval.inMicroseconds)
+          : Offset.zero;
+    }
+    _lastTime = time;
+    _lastPosition = position;
+    _delegate.addPosition(time, position);
+  }
+
+  @override
+  VelocityEstimate? getVelocityEstimate() {
+    if (_lastTime == null) return null;
+    final endedAt = _session?.endedAt;
+    if (endedAt != null &&
+        endedAt - _lastTime! > const Duration(milliseconds: 40)) {
+      return const VelocityEstimate(
+        pixelsPerSecond: Offset.zero,
+        confidence: 1,
+        duration: Duration.zero,
+        offset: Offset.zero,
+      );
+    }
+    final estimate = _delegate.getVelocityEstimate()!;
+    double bounded(double velocity, double latest) =>
+        velocity.sign == latest.sign
+            ? velocity.sign * math.min(velocity.abs(), latest.abs())
+            : 0;
+    return VelocityEstimate(
+      pixelsPerSecond: Offset(
+        bounded(estimate.pixelsPerSecond.dx, _lastVelocity.dx),
+        bounded(estimate.pixelsPerSecond.dy, _lastVelocity.dy),
+      ),
+      confidence: estimate.confidence,
+      duration: estimate.duration,
+      offset: estimate.offset,
+    );
   }
 }
 
@@ -1009,6 +1326,7 @@ class _PremiumScrollDispatcher extends SingleChildRenderObjectWidget {
 }
 
 class _RenderPremiumScrollDispatcher extends RenderProxyBox {
+  final _panSessions = <int, _DesktopPanSession>{};
   List<_RenderPremiumScrollRegion> _hitRegions = const [];
   bool _hitPremiumExclusion = false;
 
@@ -1035,6 +1353,30 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
 
   @override
   void handleEvent(PointerEvent event, HitTestEntry entry) {
+    // Hit-test delivery precedes the gesture router's release calculation.
+    // Flutter's tracker samples updates, not the end packet, and its stopwatch
+    // cannot detect an event-time pause when packets are delivered in a batch.
+    if (event is PointerPanZoomStartEvent) {
+      _panSessions.remove(event.pointer)?.finish(flush: false);
+      _panSessions[event.pointer] = _DesktopPanSession(
+        event.timeStamp,
+        _hitPremiumExclusion
+            ? []
+            : [for (final region in _hitRegions) ...region.prepareTrackpadPan()],
+      );
+    } else if (event is PointerPanZoomUpdateEvent) {
+      _panSessions[event.pointer]?.update(event);
+    } else if (event is PointerPanZoomEndEvent) {
+      final session = _panSessions.remove(event.pointer);
+      session?.endedAt = event.timeStamp;
+      session?.finish();
+    } else if (event is PointerCancelEvent) {
+      _panSessions.remove(event.pointer)?.finish(flush: false);
+    } else if (event is PointerDownEvent) {
+      for (final region in _hitRegions) {
+        region.cancelTrackpadPans(flush: true);
+      }
+    }
     if (_hitPremiumExclusion) {
       return;
     }
@@ -1062,6 +1404,15 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
       }
     }
   }
+
+  @override
+  void detach() {
+    for (final session in _panSessions.values) {
+      session.finish(flush: false);
+    }
+    _panSessions.clear();
+    super.detach();
+  }
 }
 
 class _PremiumScrollRegion extends SingleChildRenderObjectWidget {
@@ -1070,6 +1421,7 @@ class _PremiumScrollRegion extends SingleChildRenderObjectWidget {
     required this.axisDirection,
     required this.pointerAxisModifiers,
     required this.config,
+    required this.paceTrackpad,
     required super.child,
   });
 
@@ -1077,6 +1429,7 @@ class _PremiumScrollRegion extends SingleChildRenderObjectWidget {
   final AxisDirection axisDirection;
   final Set<LogicalKeyboardKey> pointerAxisModifiers;
   final PremiumScrollPhysicsConfig config;
+  final bool paceTrackpad;
 
   @override
   RenderObject createRenderObject(BuildContext context) {
@@ -1085,6 +1438,8 @@ class _PremiumScrollRegion extends SingleChildRenderObjectWidget {
       axisDirection: axisDirection,
       pointerAxisModifiers: pointerAxisModifiers,
       config: config,
+      paceTrackpad: paceTrackpad,
+      scrollable: context.findAncestorStateOfType<ScrollableState>(),
     );
   }
 
@@ -1095,8 +1450,10 @@ class _PremiumScrollRegion extends SingleChildRenderObjectWidget {
   ) {
     renderObject
       ..controller = controller
+      ..scrollable = context.findAncestorStateOfType<ScrollableState>()
       ..axisDirection = axisDirection
       ..pointerAxisModifiers = pointerAxisModifiers
+      ..paceTrackpad = paceTrackpad
       ..config = config;
   }
 }
@@ -1117,11 +1474,53 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
     required AxisDirection axisDirection,
     required this.pointerAxisModifiers,
     required PremiumScrollPhysicsConfig config,
+    required this.paceTrackpad,
+    required this.scrollable,
   })  : _controller = controller,
         _axisDirection = axisDirection,
         _config = config;
 
   _PremiumWheelScrollActivity? _activeActivity;
+  final _panBindings = <FrameSyncedScrollPan>{};
+  bool paceTrackpad;
+  ScrollableState? scrollable;
+
+  List<FrameSyncedScrollPan> prepareTrackpadPan() {
+    final controller = _controller;
+    if (!attached || !paceTrackpad || controller == null) return [];
+    // A controller may drive several views. Only this region's Scrollable is
+    // a candidate; a pan over another view must not discard its pending input.
+    final position = scrollable?.position;
+    if (position is! ScrollPositionWithSingleContext ||
+        !controller.positions.contains(position) ||
+        position.physics is! PremiumKineticScrollPhysics ||
+        !position.hasContentDimensions ||
+        !position.physics.shouldAcceptUserOffset(position)) {
+      return [];
+    }
+    final context = position.context.notificationContext;
+    final refreshRate = context == null
+        ? 60.0
+        : View.maybeOf(context)?.display.refreshRate ?? 60.0;
+    if (!refreshRate.isFinite || refreshRate <= 90) return [];
+    late final FrameSyncedScrollPan pan;
+    pan = FrameSyncedScrollPan(
+      controller: controller,
+      position: position,
+      refreshRate: refreshRate,
+      directScale: (position.physics as PremiumKineticScrollPhysics)
+          .directManipulationScale,
+      onDispose: () => _panBindings.remove(pan),
+    );
+    _panBindings.add(pan);
+    return [pan];
+  }
+
+  void cancelTrackpadPans({bool flush = false}) {
+    for (final pan in _panBindings.toList()) {
+      pan.dispose(flush: flush);
+    }
+  }
 
   ScrollController? get controller => _controller;
   ScrollController? _controller;
@@ -1282,6 +1681,9 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
   }
 
   void resetMomentumTracking({bool stopActivity = false}) {
+    if (stopActivity) {
+      cancelTrackpadPans();
+    }
     final activeActivity = _activeActivity;
     _activeActivity = null;
     if (stopActivity) {
@@ -1336,7 +1738,7 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
 
   void cancelMomentum() {
     if (!_isDisposed) {
-      delegate.goIdle();
+      delegate.goBallistic(0);
     }
   }
 
@@ -1357,7 +1759,7 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
     }
 
     if (_remainingDistance.abs() <= config.wheelStopDistance) {
-      delegate.goIdle();
+      delegate.goBallistic(0);
       return;
     }
 
@@ -1381,15 +1783,27 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
       delegate.goIdle();
       return;
     }
-    final overscroll = delegate.setPixels(position.pixels + displacement);
-    if (overscroll != 0) {
-      delegate.goIdle();
+    // Mouse-wheel distance is exact and bounded even when direct-manipulation
+    // physics allow elastic overscroll. Never leave an idle position outside
+    // its range, or convert the unused wheel queue into a second fling.
+    if (position.outOfRange) {
+      delegate.goBallistic(0);
+      return;
+    }
+    final requested = position.pixels + displacement;
+    final target = requested.clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    final overscroll = delegate.setPixels(target);
+    if (overscroll != 0 || target != requested) {
+      delegate.goBallistic(0);
       return;
     }
     _remainingDistance -= displacement;
 
     if (_remainingDistance.abs() <= config.wheelStopDistance) {
-      delegate.goIdle();
+      delegate.goBallistic(0);
     }
   }
 

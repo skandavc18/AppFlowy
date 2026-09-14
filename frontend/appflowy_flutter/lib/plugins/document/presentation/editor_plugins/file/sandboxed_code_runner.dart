@@ -110,6 +110,11 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   final inputFocusNode = FocusNode();
   final terminalScrollController = ScrollController();
   InAppWebViewController? webViewController;
+  HeadlessInAppWebView? _sandbox;
+  Future<InAppWebViewController?>? _sandboxStarting;
+  Completer<bool>? _sandboxReady;
+  int _sandboxGeneration = 0;
+  int _executionGeneration = 0;
   LocalCodeRunner? localRunner;
   Timer? copyFeedbackTimer;
   String output = '';
@@ -147,13 +152,19 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     super.didUpdateWidget(oldWidget);
     if (codeRuntimeForName(oldWidget.fileName) == CodeRuntime.javascript &&
         runtime != CodeRuntime.javascript) {
-      webViewController = null;
+      _executionGeneration++;
+      testRunCancelled = true;
+      unawaited(_disposeSandbox());
       running = false;
+      testsRunning = false;
     }
   }
 
   @override
   void dispose() {
+    _executionGeneration++;
+    testRunCancelled = true;
+    unawaited(_disposeSandbox());
     localRunner?.cancel();
     copyFeedbackTimer?.cancel();
     terminalScrollController.dispose();
@@ -231,7 +242,6 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
         mainAxisSize: expandEditor ? MainAxisSize.max : MainAxisSize.min,
         children: [
           if (expandEditor) Expanded(flex: 3, child: editor) else editor,
-          if (runtime == CodeRuntime.javascript) buildSandbox(),
           if (testPanel != null)
             // Given a bounded box the panel fills it, so the tray shares the
             // height with the code instead of pushing it off the block.
@@ -330,25 +340,74 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     await Clipboard.setData(ClipboardData(text: widget.code));
   }
 
-  Widget buildSandbox() {
-    return SizedBox(
-      width: 1,
-      height: 1,
-      child: Opacity(
-        opacity: 0,
-        child: InAppWebView(
-          initialData: InAppWebViewInitialData(
-            data: '''
+  Future<InAppWebViewController?> _ensureSandbox() {
+    final live = webViewController;
+    if (live != null) return Future.value(live);
+    final generation = _sandboxGeneration;
+    // Assign the in-flight future before starting: a synchronously refused
+    // platform must not latch a failed startup for the rest of the session.
+    return _sandboxStarting ??= Future(() => _startSandbox(generation));
+  }
+
+  Future<InAppWebViewController?> _startSandbox(int generation) async {
+    if (!mounted || generation != _sandboxGeneration) return null;
+    final ready = Completer<bool>();
+    _sandboxReady = ready;
+    try {
+      final sandbox = HeadlessInAppWebView(
+        initialData: InAppWebViewInitialData(
+          data: '''
 <!doctype html>
 <meta http-equiv="Content-Security-Policy"
  content="default-src 'none'; script-src 'unsafe-inline' blob:; worker-src blob:; connect-src 'none'">
 ''',
-          ),
-          initialSettings: InAppWebViewSettings(transparentBackground: true),
-          onWebViewCreated: (controller) => webViewController = controller,
         ),
-      ),
-    );
+        onLoadStop: (_, __) {
+          if (!ready.isCompleted) ready.complete(true);
+        },
+        onReceivedError: (_, __, ___) {
+          if (!ready.isCompleted) ready.complete(false);
+        },
+        onPermissionRequest: (_, request) async =>
+            PermissionResponse(resources: request.resources),
+      );
+      _sandbox = sandbox;
+      await sandbox.run().timeout(const Duration(seconds: 10));
+      final loaded = await ready.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => false,
+      );
+      if (!mounted || generation != _sandboxGeneration) return null;
+      if (!loaded || sandbox.webViewController == null) {
+        await _disposeSandbox();
+        return null;
+      }
+      return webViewController = sandbox.webViewController;
+    } on Object {
+      if (generation == _sandboxGeneration) await _disposeSandbox();
+      rethrow;
+    } finally {
+      if (generation == _sandboxGeneration) {
+        _sandboxStarting = null;
+        _sandboxReady = null;
+      }
+    }
+  }
+
+  Future<void> _disposeSandbox() async {
+    _sandboxGeneration++;
+    final ready = _sandboxReady;
+    _sandboxReady = null;
+    if (ready != null && !ready.isCompleted) ready.complete(false);
+    _sandboxStarting = null;
+    webViewController = null;
+    final sandbox = _sandbox;
+    _sandbox = null;
+    try {
+      await sandbox?.dispose();
+    } on Object {
+      // The native side may already have gone away while closing the page.
+    }
   }
 
   Widget _buildTerminal(
@@ -566,6 +625,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     if (cases.isEmpty || running) {
       return;
     }
+    final generation = ++_executionGeneration;
     testRunCancelled = false;
     setState(() {
       testsRunning = true;
@@ -580,19 +640,18 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       if (runtime == CodeRuntime.local) {
         await _runTestsLocally(cases);
       } else {
-        await _runTestsInSandbox(cases);
+        await _runTestsInSandbox(cases, generation);
       }
-    } on Exception catch (error) {
-      _recordTestOutcomes(
-        cases,
-        CodeTestOutcome(
-          status: CodeTestStatus.errored,
-          notice: '$error\n',
-        ),
-      );
+    } on Object catch (error) {
+      if (generation == _executionGeneration) {
+        _recordTestOutcomes(
+          cases,
+          CodeTestOutcome(status: CodeTestStatus.errored, notice: '$error\n'),
+        );
+      }
     } finally {
       localRunner = null;
-      if (mounted) {
+      if (mounted && generation == _executionGeneration) {
         setState(() {
           testsRunning = false;
           running = false;
@@ -632,20 +691,26 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     );
   }
 
-  Future<void> _runTestsInSandbox(List<CodeTestCase> cases) async {
-    final controller = webViewController;
+  Future<void> _runTestsInSandbox(
+    List<CodeTestCase> cases,
+    int generation,
+  ) async {
+    final controller = await _ensureSandbox();
+    if (!mounted || testRunCancelled || generation != _executionGeneration) {
+      return;
+    }
     if (controller == null) {
       _recordTestOutcomes(
         cases,
         const CodeTestOutcome(
           status: CodeTestStatus.errored,
-          notice: 'The sandbox is still starting. Try again.\n',
+          notice: 'The sandbox could not be started. Try again.\n',
         ),
       );
       return;
     }
     for (final testCase in cases) {
-      if (testRunCancelled || !mounted) {
+      if (testRunCancelled || !mounted || generation != _executionGeneration) {
         return;
       }
       final startedAt = DateTime.now();
@@ -671,7 +736,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       } on Exception catch (error) {
         notice = '$error\n';
       }
-      if (!mounted) {
+      if (!mounted || testRunCancelled || generation != _executionGeneration) {
         return;
       }
       setState(() {
@@ -735,21 +800,22 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       localRunner?.cancel();
       return;
     }
-    await webViewController?.reload();
+    _executionGeneration++;
+    await _disposeSandbox();
+    if (mounted) {
+      setState(() {
+        testsRunning = false;
+        running = false;
+      });
+    }
   }
 
   Future<void> _run() async {
+    if (running) return;
     if (runtime == CodeRuntime.local) {
       return _runLocally();
     }
-    final controller = webViewController;
-    if (controller == null) {
-      setState(() {
-        terminalVisible = true;
-        errorOutput = 'The sandbox is still starting. Try again.\n';
-      });
-      return;
-    }
+    final generation = ++_executionGeneration;
     setState(() {
       running = true;
       terminalVisible = true;
@@ -757,6 +823,11 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       errorOutput = '';
     });
     try {
+      final controller = await _ensureSandbox();
+      if (!mounted || generation != _executionGeneration) return;
+      if (controller == null) {
+        throw StateError('The sandbox could not be started. Try again.');
+      }
       final result = await controller.callAsyncJavaScript(
         functionBody: _javascriptWorkerFunction,
         arguments: {
@@ -764,7 +835,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
           'input': inputController.text,
         },
       ).timeout(const Duration(seconds: 8));
-      if (!mounted) {
+      if (!mounted || generation != _executionGeneration) {
         return;
       }
       final value = result?.value;
@@ -780,15 +851,15 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
         setState(() => errorOutput = 'The sandbox returned no result.\n');
       }
     } on TimeoutException {
-      if (mounted) {
+      if (mounted && generation == _executionGeneration) {
         setState(() => errorOutput = 'Execution timed out after 8 seconds.\n');
       }
-    } on Exception catch (error) {
-      if (mounted) {
+    } on Object catch (error) {
+      if (mounted && generation == _executionGeneration) {
         setState(() => errorOutput = '$error\n');
       }
     } finally {
-      if (mounted) {
+      if (mounted && generation == _executionGeneration) {
         setState(() => running = false);
       }
     }
@@ -844,7 +915,8 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       localRunner?.cancel();
       return;
     }
-    await webViewController?.reload();
+    _executionGeneration++;
+    await _disposeSandbox();
     if (mounted) {
       setState(() {
         running = false;
@@ -1243,14 +1315,12 @@ self.onmessage = async (event) => {
     error: (...values) => stderr.push(values.map(format).join(' '))
   };
   const readLine = () => lines[lineIndex++] ?? null;
+  const stdin = event.data.input;
   try {
-    const fn = new Function(
-      'console',
-      'readLine',
-      'stdin',
-      '"use strict"; return (async () => {\\n' + event.data.code + '\\n})()'
-    );
-    const value = await fn(console, readLine, event.data.input);
+    const value = await (async () => {
+      "use strict";
+      ${code}
+    })();
     if (value !== undefined) stdout.push(format(value));
   } catch (error) {
     stderr.push(error && error.stack ? error.stack : String(error));
@@ -1282,6 +1352,6 @@ return await new Promise((resolve) => {
     URL.revokeObjectURL(workerUrl);
     resolve({stdout: '', stderr: event.message + '\\n'});
   };
-  worker.postMessage({code, input});
+  worker.postMessage({input});
 });
 ''';

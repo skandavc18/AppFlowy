@@ -10,6 +10,24 @@
   // ${cwd}: the current working directory of the spawned process
   "tasks": [
     {
+      "label": "AF: Build and Verify Windows Bundles",
+      "type": "shell",
+      "command": "& '${workspaceFolder}/frontend/appflowy_flutter/tool/build_windows_bundles.ps1'",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend/appflowy_flutter",
+        "shell": {
+          "executable": "pwsh",
+          "args": ["-NoProfile", "-Command"]
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
       "label": "AF: Clean + Rebuild All",
       "type": "shell",
       "dependsOrder": "sequence",

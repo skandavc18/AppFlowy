@@ -391,6 +391,9 @@ class FlowyOverlayState extends State<FlowyOverlay> {
 
     return MaterialApp(
       theme: Theme.of(context),
+      // This nested app supplies text-selection overlays, not a new input
+      // policy. Keep the host's scroll physics and wheel-region decoration.
+      scrollBehavior: ScrollConfiguration.of(context),
       debugShowCheckedModeBanner: false,
       home: Stack(children: children..addAll(overlays)),
     );

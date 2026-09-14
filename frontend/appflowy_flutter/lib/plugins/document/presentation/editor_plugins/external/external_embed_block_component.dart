@@ -309,8 +309,14 @@ class _ExternalEmbedBlockComponentState
     if (stored is num) {
       return stored.toDouble().clamp(160, 900);
     }
-    final kind = remote?.kind;
-    if (kind != null && kind.isContainer) {
+    // The stored kind is already known before the remote metadata resolves.
+    // Reserve the final folder height immediately instead of jumping 420→340.
+    final kind = remote?.kind ??
+        ProviderNodeKind.values.firstWhere(
+          (value) => value.name == node.attributes[ExternalEmbedKeys.kind],
+          orElse: () => ProviderNodeKind.other,
+        );
+    if (kind.isContainer) {
       return 340;
     }
     final previewKind = filePreviewKindFromName(

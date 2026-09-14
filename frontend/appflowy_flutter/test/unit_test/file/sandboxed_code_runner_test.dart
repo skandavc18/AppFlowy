@@ -8,8 +8,31 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
 void main() {
+  testWidgets('reading JavaScript does not create a browser sandbox', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _codeApp(
+        brightness: Brightness.light,
+        paper: false,
+        child: SandboxedCodeRunner(
+          code: 'console.log(42);',
+          fileName: 'main.js',
+          language: 'javascript',
+          showLineNumbers: true,
+          onLanguageChanged: (_) {},
+          onToggleLineNumbers: () {},
+          child: const SizedBox(height: 100),
+        ),
+      ),
+    );
+    expect(find.byType(InAppWebView), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   test('a code block is framed exactly like an embedded document', () {
     // The block in the editor and a code file in the viewer share one shell.
     expect(codeBlockCornerRadius, EditorSurfaceStyle.embedCornerRadius);

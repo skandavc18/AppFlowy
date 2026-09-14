@@ -27,11 +27,12 @@ class BlockAddButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final direction =
-        context.read<AppearanceSettingsCubit>().state.layoutDirection ==
-                LayoutDirection.rtlLayout
-            ? PopoverDirection.rightWithCenterAligned
-            : PopoverDirection.leftWithCenterAligned;
+    final layoutDirection = context.select(
+      (AppearanceSettingsCubit cubit) => cubit.state.layoutDirection,
+    );
+    final direction = layoutDirection == LayoutDirection.rtlLayout
+        ? PopoverDirection.rightWithCenterAligned
+        : PopoverDirection.leftWithCenterAligned;
     return BlocProvider(
       create: (_) => BlockActionOptionCubit(
         editorState: editorState,

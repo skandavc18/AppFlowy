@@ -5,6 +5,25 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('desktop tuning is lighter without changing embedded wheel physics', () {
+    const config = PremiumScrollPhysicsConfig();
+    expect(config.desktopDirectManipulationScale, 0.60);
+    expect(config.desktopCoastFriction, 4.4);
+    expect(config.friction, 5);
+    expect(config.maxVelocity, 4800);
+    expect(config.desktopFramePacing, isTrue);
+    const custom = PremiumScrollPhysicsConfig(
+      desktopCoastFriction: 4,
+      desktopFramePacing: false,
+    );
+    expect(custom.copyWith(), custom);
+    expect(custom.copyWith().hashCode, custom.hashCode);
+    expect(config, isNot(custom));
+    final copy = custom.copyWith(immediateResponse: 0.1);
+    expect(copy.desktopCoastFriction, 4);
+    expect(copy.desktopFramePacing, isFalse);
+  });
+
   test('kinetic simulation decays exponentially without an abrupt stop', () {
     final simulation = PremiumKineticScrollSimulation(
       position: 100,
@@ -248,11 +267,11 @@ void main() {
 
     expect(
       physics.applyPhysicsToUserOffset(metrics, 100),
-      closeTo(55, 0.001),
+      closeTo(60, 0.001),
     );
     expect(
       physics.applyPhysicsToUserOffset(metrics, 0.25),
-      closeTo(0.1375, 0.001),
+      closeTo(0.15, 0.001),
     );
 
     final reapplied = physics.applyTo(const RangeMaintainingScrollPhysics());
@@ -262,7 +281,7 @@ void main() {
     );
   });
 
-  testWidgets('desktop release velocity matches direct manipulation scale', (
+  testWidgets('desktop touch release retains scaled delegate estimation', (
     tester,
   ) async {
     late GestureVelocityTrackerBuilder trackerBuilder;
@@ -280,12 +299,12 @@ void main() {
     );
 
     final tracker = trackerBuilder(
-      const PointerPanZoomStartEvent(pointer: 31),
+      const PointerDownEvent(pointer: 31),
     );
     final estimate = tracker.getVelocityEstimate()!;
 
-    expect(estimate.pixelsPerSecond, const Offset(550, -1100));
-    expect(estimate.offset, const Offset(5.5, -11));
+    expect(estimate.pixelsPerSecond, const Offset(600, -1200));
+    expect(estimate.offset, const Offset(6, -12));
     expect(estimate.duration, const Duration(milliseconds: 20));
     expect(estimate.confidence, 0.9);
   });
@@ -453,11 +472,11 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(directOffset, closeTo(80 * 0.55, 0.001));
+    expect(directOffset, closeTo(80 * 0.60, 0.001));
     expect(controller.offset, greaterThanOrEqualTo(directOffset));
     expect(
       controller.position.physics.parent,
-      isA<ClampingScrollPhysics>(),
+      isA<BouncingScrollPhysics>(),
     );
   });
 

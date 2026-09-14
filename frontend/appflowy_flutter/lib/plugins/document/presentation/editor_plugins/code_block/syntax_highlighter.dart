@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:highlight/highlight.dart' as highlight;
 import 'package:highlight/languages/all.dart';
@@ -166,26 +167,166 @@ TextSpan buildSyntaxHighlightedTextSpan({
     return TextSpan(text: code, style: style);
   }
 
+  final key = _syntaxKey(code, normalizedLanguage, brightness, isPaper);
+  return _syntaxRoot(key, _highlightedSpans(key), style);
+}
+
+/// Reads the existing cache without starting a parser on the UI thread.
+TextSpan? cachedSyntaxHighlightedTextSpan({
+  required String code,
+  required String language,
+  required Brightness brightness,
+  TextStyle? style,
+  bool isPaper = false,
+}) {
+  final normalized = normalizeCodeLanguage(language);
+  if (normalized == 'text') return TextSpan(text: code, style: style);
+  final key = _syntaxKey(code, normalized, brightness, isPaper);
+  final spans = _readSyntaxSpans(key);
+  return spans == null ? null : _syntaxRoot(key, spans, style);
+}
+
+typedef AsyncSyntaxHighlighter = Future<TextSpan?> Function({
+  required String code,
+  required String language,
+  required Brightness brightness,
+  TextStyle? style,
+  bool isPaper,
+  bool Function()? isCancelled,
+});
+
+// One parser worker at a time, rather than spawning one isolate per visible
+// block. Obsolete queued work is skipped before any parsing or span allocation.
+Future<void> _syntaxWork = Future<void>.value();
+
+/// Tokenizes in a worker isolate. Only strings and highlight's plain token
+/// nodes cross the boundary, never editor nodes, Flutter keys or listeners.
+/// The existing bounded cache and exactly the same span styling are reused.
+Future<TextSpan?> loadSyntaxHighlightedTextSpan({
+  required String code,
+  required String language,
+  required Brightness brightness,
+  TextStyle? style,
+  bool isPaper = false,
+  bool Function()? isCancelled,
+}) {
+  final normalized = normalizeCodeLanguage(language);
+  final key = _syntaxKey(code, normalized, brightness, isPaper);
+  final result = _syntaxWork.then<TextSpan?>((_) async {
+    if (isCancelled?.call() ?? false) return null;
+    if (normalized == 'text') return TextSpan(text: code, style: style);
+    final cached = _readSyntaxSpans(key);
+    if (cached != null) return _syntaxRoot(key, cached, style);
+    final nodes = await compute(
+      _parseSyntax,
+      (code: code, grammar: key.grammar),
+      debugLabel: 'editor-code-tokenize',
+    );
+    if (isCancelled?.call() ?? false) return null;
+    return _syntaxRoot(key, _cacheSyntaxSpans(key, nodes), style);
+  });
+  // A failed job is still reported to its caller, but must not poison the queue.
+  _syntaxWork =
+      result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+  return result;
+}
+
+typedef _SyntaxSpanKey = ({
+  String code,
+  String grammar,
+  Brightness brightness,
+  bool isPaper,
+});
+
+// Scrolling can dispose and rebuild a code block; keeping this outside its
+// widget avoids reparsing the same source (16 grammars for auto-detection).
+// Bound both entry count and aggregate source size, not just the number of
+// visited blocks. Oversized blocks still render in full but are not retained.
+const _maximumSyntaxCacheEntries = 32;
+const _maximumSyntaxCacheCodeUnits = 256 * 1024;
+final _syntaxSpanCache = <_SyntaxSpanKey, List<TextSpan>>{};
+int _syntaxCacheCodeUnits = 0;
+
+_SyntaxSpanKey _syntaxKey(
+  String code,
+  String normalizedLanguage,
+  Brightness brightness,
+  bool isPaper,
+) {
   final grammar = _grammarForLanguage(normalizedLanguage);
-  final useAutoDetection =
-      grammar == 'auto' || !allLanguages.containsKey(grammar);
-
-  final result = useAutoDetection
-      ? _autoHighlighter.parse(code, autoDetection: true)
-      : highlight.highlight.parse(code, language: grammar);
-  final theme = switch (brightness) {
-    Brightness.dark => _darkPlusSyntaxTheme,
-    Brightness.light when isPaper => _paperSyntaxTheme,
-    Brightness.light => _lightSyntaxTheme,
-  };
-  final rootStyle = (style ?? const TextStyle()).copyWith(
-    color: theme['root']?.color,
+  return (
+    code: code,
+    grammar: allLanguages.containsKey(grammar) ? grammar : 'auto',
+    brightness: brightness,
+    isPaper: brightness == Brightness.light && isPaper,
   );
+}
 
-  return TextSpan(
-    style: rootStyle,
-    children: _buildSpans(result.nodes, theme) ?? [TextSpan(text: code)],
+Map<String, TextStyle> _syntaxTheme(_SyntaxSpanKey key) =>
+    switch (key.brightness) {
+      Brightness.dark => _darkPlusSyntaxTheme,
+      Brightness.light when key.isPaper => _paperSyntaxTheme,
+      Brightness.light => _lightSyntaxTheme,
+    };
+
+TextSpan _syntaxRoot(
+  _SyntaxSpanKey key,
+  List<TextSpan> spans,
+  TextStyle? style,
+) =>
+    TextSpan(
+      style: (style ?? const TextStyle()).copyWith(
+        color: _syntaxTheme(key)['root']?.color,
+      ),
+      children: spans,
+    );
+
+List<highlight.Node>? _parseSyntax(({String code, String grammar}) request) =>
+    (request.grammar == 'auto'
+            ? _autoHighlighter.parse(request.code, autoDetection: true)
+            : highlight.highlight
+                .parse(request.code, language: request.grammar))
+        .nodes;
+
+List<TextSpan>? _readSyntaxSpans(_SyntaxSpanKey key) {
+  final cached = _syntaxSpanCache.remove(key);
+  if (cached != null) {
+    _syntaxSpanCache[key] = cached;
+  }
+  return cached;
+}
+
+List<TextSpan> _highlightedSpans(_SyntaxSpanKey key) =>
+    _readSyntaxSpans(key) ??
+    _cacheSyntaxSpans(
+      key,
+      _parseSyntax((code: key.code, grammar: key.grammar)),
+    );
+
+List<TextSpan> _cacheSyntaxSpans(
+  _SyntaxSpanKey key,
+  List<highlight.Node>? nodes,
+) {
+  // A synchronous consumer may have populated the cache while the worker ran.
+  final cached = _readSyntaxSpans(key);
+  if (cached != null) return cached;
+  // Only token styles are cached. The caller's font, size and other root
+  // attributes are applied afresh by buildSyntaxHighlightedTextSpan.
+  final spans = List<TextSpan>.unmodifiable(
+    _buildSpans(nodes, _syntaxTheme(key)) ?? [TextSpan(text: key.code)],
   );
+  if (key.code.length <= _maximumSyntaxCacheCodeUnits) {
+    while (_syntaxSpanCache.length >= _maximumSyntaxCacheEntries ||
+        _syntaxCacheCodeUnits + key.code.length >
+            _maximumSyntaxCacheCodeUnits) {
+      final oldest = _syntaxSpanCache.keys.first;
+      _syntaxSpanCache.remove(oldest);
+      _syntaxCacheCodeUnits -= oldest.code.length;
+    }
+    _syntaxSpanCache[key] = spans;
+    _syntaxCacheCodeUnits += key.code.length;
+  }
+  return spans;
 }
 
 /// A leaf of the parse tree, with the style its whole ancestry resolves to.

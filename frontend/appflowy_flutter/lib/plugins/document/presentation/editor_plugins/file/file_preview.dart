@@ -23,6 +23,7 @@ import 'package:markdown/markdown.dart' as markdown;
 import 'package:path/path.dart' as p;
 
 import 'archive/archive_explorer.dart';
+import 'csv_preview.dart';
 import 'file_preview_kind.dart';
 import 'markdown_preview_fonts.dart';
 import 'notebook/notebook_view.dart';
@@ -200,7 +201,7 @@ class _FilePreviewState extends State<FilePreview> {
           toolbarTrailing: widget.toolbarTrailing,
         ),
       FilePreviewKind.csv => _buildPreviewScaffold(
-          _CsvPreview(
+          CsvPreview(
             text: await _readText(maxTextPreviewBytes),
             separator: p.extension(widget.file.path).toLowerCase() == '.tsv'
                 ? '\t'
@@ -1456,52 +1457,6 @@ class _TextPreviewState extends State<_TextPreview> {
     final target = dy + _padding - position.viewportDimension / 3;
     scrollController.jumpTo(
       target.clamp(position.minScrollExtent, position.maxScrollExtent),
-    );
-  }
-}
-
-class _CsvPreview extends StatelessWidget {
-  const _CsvPreview({required this.text, required this.separator});
-
-  final String text;
-  final String separator;
-
-  @override
-  Widget build(BuildContext context) {
-    final rows = const LineSplitter()
-        .convert(text)
-        .take(1000)
-        .map((line) => line.split(separator))
-        .toList();
-    if (rows.isEmpty) {
-      return const Center(child: Text('This table is empty.'));
-    }
-    final width = rows.map((row) => row.length).reduce((a, b) => a > b ? a : b);
-    return Scrollbar(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(12),
-          child: Table(
-            defaultColumnWidth: const IntrinsicColumnWidth(),
-            border: TableBorder.all(color: Theme.of(context).dividerColor),
-            children: [
-              for (final row in rows)
-                TableRow(
-                  children: [
-                    for (var index = 0; index < width; index++)
-                      Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: SelectableText(
-                          index < row.length ? row[index] : '',
-                        ),
-                      ),
-                  ],
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

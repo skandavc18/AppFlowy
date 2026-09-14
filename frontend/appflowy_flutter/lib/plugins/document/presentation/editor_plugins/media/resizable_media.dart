@@ -1,5 +1,6 @@
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/scrolling/deferred_page_embed.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -105,7 +106,10 @@ class _ResizableMediaState extends State<ResizableMedia> {
             fit: height == null ? StackFit.loose : StackFit.expand,
             clipBehavior: Clip.none,
             children: [
-              widget.child,
+              DeferredPageEmbed(
+                enabled: height != null && height.isFinite && height > 0,
+                child: widget.child,
+              ),
               if (widget.editable) ...[
                 _ResizeHandle(
                   left: true,

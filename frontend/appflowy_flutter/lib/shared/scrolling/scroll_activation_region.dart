@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/scrolling/scroll_gesture_gate.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,16 +13,21 @@ import 'package:flutter/services.dart';
 /// Descendants must inherit the local ScrollConfiguration (possibly through a
 /// delegating behavior). This covers native Scrollables, including the premium
 /// wheel dispatcher, which checks the same shouldAcceptUserOffset contract.
-/// Custom renderers with their own gesture physics are not governed here.
+/// [gateScrollGestures] also covers custom renderers with their own gestures.
 class ScrollActivationRegion extends StatefulWidget {
   const ScrollActivationRegion({
     super.key,
     required this.child,
     this.active,
     this.onActiveChanged,
+    this.gateScrollGestures = false,
   });
 
   final Widget child;
+
+  /// Also gates custom PDF/canvas/platform-view gesture handlers, not just
+  /// Flutter scroll physics. Ordinary clicks and touch editing are unaffected.
+  final bool gateScrollGestures;
 
   /// When supplied, the host's visible selection is the only source of truth.
   /// Focus alone cannot enable scrolling in controlled mode; a completed click
@@ -42,6 +48,24 @@ class _ScrollActivationRegionState extends State<ScrollActivationRegion> {
   FocusNode? _focusAtPress;
 
   bool get _active => widget.active ?? _localActive;
+
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onGlobalKeyEvent);
+  }
+
+  bool _onGlobalKeyEvent(KeyEvent event) {
+    // The document's keyboard service can retain focus after an embed header
+    // click. Escape must still release that embed; don't steal the key or
+    // change focus, and let an open dialog/menu handle its own Escape first.
+    if (widget.gateScrollGestures &&
+        _active &&
+        (ModalRoute.isCurrentOf(context) ?? true)) {
+      _onKeyEvent(_focus, event);
+    }
+    return false;
+  }
 
   @override
   void didUpdateWidget(covariant ScrollActivationRegion oldWidget) {
@@ -142,6 +166,7 @@ class _ScrollActivationRegionState extends State<ScrollActivationRegion> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onGlobalKeyEvent);
     _focus.dispose();
     super.dispose();
   }
@@ -182,7 +207,10 @@ class _ScrollActivationRegionState extends State<ScrollActivationRegion> {
                   active: _active,
                   route: ModalRoute.of(context),
                 ),
-                child: widget.child,
+                child: ScrollGestureGate(
+                  blocked: widget.gateScrollGestures && !_active,
+                  child: widget.child,
+                ),
               ),
             ),
           ),
@@ -215,12 +243,18 @@ class _ActivationScrollBehavior extends ScrollBehavior {
 
   @override
   Widget buildScrollbar(
-          BuildContext context, Widget child, ScrollableDetails details) =>
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
       parent.buildScrollbar(context, child, details);
 
   @override
   Widget buildOverscrollIndicator(
-          BuildContext context, Widget child, ScrollableDetails details) =>
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) =>
       parent.buildOverscrollIndicator(context, child, details);
 
   @override

@@ -22,6 +22,11 @@ class AlbumController extends ChangeNotifier {
   AlbumState _state;
   List<AlbumMediaItem> _items = const [];
   List<AlbumMediaItem> _ordered = const [];
+  List<AlbumMediaItem>? _visual;
+  List<AlbumMediaItem>? _playable;
+  int _imageCount = 0;
+  int _videoCount = 0;
+  int _audioCount = 0;
   Timer? _persistTimer;
   bool _disposed = false;
   bool _loadingAll = false;
@@ -35,29 +40,39 @@ class AlbumController extends ChangeNotifier {
   /// The media as the current sort arranges it.
   List<AlbumMediaItem> get ordered => _ordered;
 
-  List<AlbumMediaItem> get visual => [
-        for (final item in _ordered)
-          if (item.kind.isVisual) item,
-      ];
+  // Read by toolbars, viewers and lightboxes repeatedly. Build each projection
+  // only when needed, and keep it until the underlying order changes.
+  List<AlbumMediaItem> get visual => _visual ??= List.unmodifiable(
+        _ordered.where((item) => item.kind.isVisual),
+      );
 
-  List<AlbumMediaItem> get playable => [
-        for (final item in _ordered)
-          if (item.kind.plays) item,
-      ];
+  List<AlbumMediaItem> get playable => _playable ??= List.unmodifiable(
+        _ordered.where((item) => item.kind.plays),
+      );
 
   bool get isEmpty => _items.isEmpty;
 
-  int get imageCount =>
-      _items.where((item) => item.kind == AlbumMediaKind.image).length;
-  int get videoCount =>
-      _items.where((item) => item.kind == AlbumMediaKind.video).length;
-  int get audioCount =>
-      _items.where((item) => item.kind == AlbumMediaKind.audio).length;
+  int get imageCount => _imageCount;
+  int get videoCount => _videoCount;
+  int get audioCount => _audioCount;
 
   void setItems(List<AlbumMediaItem> items) {
     final unchanged = _items.length == items.length &&
         !_items.indexed.any((entry) => entry.$2 != items[entry.$1]);
-    _items = items;
+    _items = List.unmodifiable(items);
+    _imageCount = 0;
+    _videoCount = 0;
+    _audioCount = 0;
+    for (final item in _items) {
+      switch (item.kind) {
+        case AlbumMediaKind.image:
+          _imageCount++;
+        case AlbumMediaKind.video:
+          _videoCount++;
+        case AlbumMediaKind.audio:
+          _audioCount++;
+      }
+    }
     final pruned = _state.prunedTo([for (final item in items) item.id]);
     final changed = !identical(pruned, _state);
     _state = pruned;
@@ -162,6 +177,8 @@ class AlbumController extends ChangeNotifier {
         });
     }
     _ordered = List.unmodifiable(next);
+    _visual = null;
+    _playable = null;
   }
 
   void updateSettings(AlbumSettings settings) {

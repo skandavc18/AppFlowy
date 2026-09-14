@@ -41,6 +41,7 @@ import 'file_media_player.dart';
 import 'file_preview.dart';
 import 'file_preview_kind.dart';
 import 'file_upload_menu.dart';
+import 'materialized_file_builder.dart';
 import 'office/office_document_view.dart';
 import 'pdf_preview.dart';
 import 'pdf_preview_scroll_physics.dart';
@@ -641,12 +642,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
                 ),
               )
           : null,
-      child: FutureBuilder<File>(
-        future: materializeMediaFile(
-          source: url,
-          name: name,
-          httpHeaders: _httpHeadersFor(urlType),
-        ),
+      child: MaterializedFileBuilder(
+        source: url,
+        name: name,
+        httpHeaders: _httpHeadersFor(urlType),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             return Center(
@@ -720,12 +719,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
         editable: editorState.editable,
         onResize: _saveMediaWidth,
         onResizeHeight: _saveMediaHeight,
-        child: FutureBuilder<File>(
-          future: materializeMediaFile(
-            source: url,
-            name: name,
-            httpHeaders: _httpHeadersFor(urlType),
-          ),
+        child: MaterializedFileBuilder(
+          source: url,
+          name: name,
+          httpHeaders: _httpHeadersFor(urlType),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Center(
@@ -795,12 +792,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
         child: Stack(
           fit: StackFit.expand,
           children: [
-            FutureBuilder<File>(
-              future: materializeMediaFile(
-                source: url,
-                name: name,
-                httpHeaders: _httpHeadersFor(urlType),
-              ),
+            MaterializedFileBuilder(
+              source: url,
+              name: name,
+              httpHeaders: _httpHeadersFor(urlType),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(

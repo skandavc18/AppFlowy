@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/deferred_code_highlight.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandboxed_code_runner.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
@@ -242,25 +243,26 @@ class _ExecutableCodeBlockComponentWidgetState
       ],
       fontFeatures: const [FontFeature.tabularFigures()],
     );
-    final highlightedSpan = buildSyntaxHighlightedTextSpan(
+    final editor = DeferredCodeHighlight(
       code: code,
       language: language,
       brightness: Theme.of(context).brightness,
       isPaper: PaperTheme.isEnabled(context),
       style: baseTextStyle,
-    );
-    final editor = AppFlowyRichText(
-      key: forwardKey,
-      delegate: this,
-      node: node,
-      editorState: editorState,
-      placeholderText: placeholderText,
-      lineHeight: 1.55,
-      textSpanDecorator: (_) => highlightedSpan,
-      placeholderTextSpanDecorator: (textSpan) => textSpan,
-      textDirection: textDirection,
-      cursorColor: editorState.editorStyle.cursorColor,
-      selectionColor: editorState.editorStyle.selectionColor,
+      scrolling: Scrollable.maybeOf(context)?.position.isScrollingNotifier,
+      builder: (_, highlightedSpan) => AppFlowyRichText(
+        key: forwardKey,
+        delegate: this,
+        node: node,
+        editorState: editorState,
+        placeholderText: placeholderText,
+        lineHeight: 1.55,
+        textSpanDecorator: (_) => highlightedSpan,
+        placeholderTextSpanDecorator: (textSpan) => textSpan,
+        textDirection: textDirection,
+        cursorColor: editorState.editorStyle.cursorColor,
+        selectionColor: editorState.editorStyle.selectionColor,
+      ),
     );
     final wrapLines = widget.style.wrapLines && !showLineNumbers;
     final codeEditor = wrapLines
