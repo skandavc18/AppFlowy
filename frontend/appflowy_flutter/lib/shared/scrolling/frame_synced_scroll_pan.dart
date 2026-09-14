@@ -159,7 +159,10 @@ class FrameSyncedScrollPan {
 }
 
 class _PanSegment {
-  _PanSegment({required this.distance, required this.startUs, required this.durationUs});
+  _PanSegment(
+      {required this.distance,
+      required this.startUs,
+      required this.durationUs});
 
   final double distance;
   final int startUs;

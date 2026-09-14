@@ -7,7 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 const _listKey = ValueKey('paced-scroll');
 const _packetInterval = Duration(microseconds: 16666);
 const _frameInterval = Duration(microseconds: 8333);
-const _desktop = TargetPlatformVariant({TargetPlatform.windows, TargetPlatform.linux});
+const _desktop =
+    TargetPlatformVariant({TargetPlatform.windows, TargetPlatform.linux});
 
 void main() {
   testWidgets(
@@ -81,7 +82,8 @@ void main() {
           tester,
           enabled: mode != 'disabled',
           reducedMotion: mode == 'reduced',
-          config: PremiumScrollPhysicsConfig(desktopFramePacing: mode != 'opt-out'),
+          config:
+              PremiumScrollPhysicsConfig(desktopFramePacing: mode != 'opt-out'),
           physics: mode == 'explicit' ? const ClampingScrollPhysics() : null,
         );
         final point = tester.getCenter(find.byKey(_listKey));
@@ -315,7 +317,8 @@ void main() {
       final positions = <int, ScrollPosition>{};
       await tester.pumpWidget(
         MaterialApp(
-          scrollBehavior: const MaterialScrollBehavior().copyWith(scrollbars: false),
+          scrollBehavior:
+              const MaterialScrollBehavior().copyWith(scrollbars: false),
           home: PremiumScrollScope(
             enabled: true,
             child: Row(
@@ -376,7 +379,8 @@ void main() {
         onDispose: () => disposals++,
       )..inputIntervalUs = _packetInterval.inMicroseconds;
       final before = controller.offset;
-      (controller.position as ScrollPositionWithSingleContext).applyUserOffset(-24);
+      (controller.position as ScrollPositionWithSingleContext)
+          .applyUserOffset(-24);
       await tester.pump(_frameInterval);
       void interrupt() => buffer.dispose();
       controller.addListener(interrupt);

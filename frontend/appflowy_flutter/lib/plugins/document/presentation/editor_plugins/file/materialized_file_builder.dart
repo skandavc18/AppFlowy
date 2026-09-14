@@ -28,7 +28,8 @@ class MaterializedFileBuilder extends StatefulWidget {
   final MaterializedFileLoader loader;
 
   @override
-  State<MaterializedFileBuilder> createState() => _MaterializedFileBuilderState();
+  State<MaterializedFileBuilder> createState() =>
+      _MaterializedFileBuilderState();
 }
 
 class _MaterializedFileBuilderState extends State<MaterializedFileBuilder> {

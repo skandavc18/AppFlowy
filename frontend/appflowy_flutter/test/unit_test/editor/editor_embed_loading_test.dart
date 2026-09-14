@@ -32,7 +32,8 @@ void main() {
             _expectOutsidePreload(tester, fixture);
             final record = fixture.record;
             final frameElement = record.frameKey.currentContext;
-            expect(tester.getSize(_byKey(record.frameKey)), const Size(400, 240));
+            expect(
+                tester.getSize(_byKey(record.frameKey)), const Size(400, 240));
             // Header and padding exist even though the expensive body does not.
             expect(tester.getSize(_byKey(record.blockKey)).height, 320);
             expect(tester.getSize(_byKey(record.headerKey)).height, 48);
@@ -56,7 +57,9 @@ void main() {
               expect(position.pixels, greaterThan(releasedOffset));
               expect(position.isScrollingNotifier.value, isTrue);
               expect(
-                tester.getRect(_byKey(record.frameKey)).overlaps(fixture.viewport),
+                tester
+                    .getRect(_byKey(record.frameKey))
+                    .overlaps(fixture.viewport),
                 isTrue,
                 reason: 'the cold frame actually passed into the viewport',
               );
@@ -74,7 +77,8 @@ void main() {
             await _pumpIdle(tester);
             expect(position.pixels, 0);
             expect(record.frameKey.currentContext, same(frameElement));
-            expect(tester.getSize(_byKey(record.frameKey)), const Size(400, 240));
+            expect(
+                tester.getSize(_byKey(record.frameKey)), const Size(400, 240));
             _expectCold(record);
           });
         },
@@ -84,121 +88,133 @@ void main() {
       testWidgets(
         'held pan delays a 320px frame without a jump; scroll and resize keep state',
         (tester) async {
-          await _withEditor(tester, shrinkWrap, (fixture) async {
-            _expectProductionHierarchy(tester, fixture, previewEnabled: true);
-            _expectOutsidePreload(tester, fixture);
-            await fixture.reveal(tester);
-            final record = fixture.record;
-            final position = fixture.position;
-            final pan = _PagePan(tester, fixture.panTarget);
-            final beforePan = position.pixels;
-            await pan.start();
-            try {
-              for (var step = 0; step < 3; step++) {
-                await pan.moveBy(-20);
+          await _withEditor(
+            tester,
+            shrinkWrap,
+            (fixture) async {
+              _expectProductionHierarchy(tester, fixture, previewEnabled: true);
+              _expectOutsidePreload(tester, fixture);
+              await fixture.reveal(tester);
+              final record = fixture.record;
+              final position = fixture.position;
+              final pan = _PagePan(tester, fixture.panTarget);
+              final beforePan = position.pixels;
+              await pan.start();
+              try {
+                for (var step = 0; step < 3; step++) {
+                  await pan.moveBy(-20);
+                }
+                await tester.pump();
+                expect(position.pixels, greaterThan(beforePan));
+                expect(position.isScrollingNotifier.value, isTrue);
+                expect(
+                  tester
+                      .getRect(_byKey(record.frameKey))
+                      .overlaps(fixture.viewport),
+                  isTrue,
+                );
+                // Give both the debounce and admission queue frames while a REAL
+                // drag remains held. A visible frame alone must not mount it.
+                await _pumpIdle(tester);
+                expect(position.isScrollingNotifier.value, isTrue);
+                _expectCold(record);
+                expect(tester.getSize(_byKey(record.frameKey)),
+                    const Size(400, 320));
+              } finally {
+                await pan.end();
+              }
+
+              await tester.pump();
+              position
+                  .jumpTo(position.pixels); // Eliminate residual native coast.
+              await tester.pump();
+              _expectCold(record);
+              final before = _Geometry.capture(tester, fixture);
+              before.expectFrame(height: 320);
+              final idleOffset = position.pixels;
+              final frameElement = record.frameKey.currentContext;
+
+              await _pumpIdle(tester);
+              final after = _Geometry.capture(tester, fixture);
+              after.expectFrame(height: 320);
+              expect(after.frame, before.frame);
+              expect(after.block, before.block);
+              expect(after.header, before.header);
+              expect(after.pageHeader, before.pageHeader);
+              expect((after.belowY - before.belowY).abs(), lessThan(0.1));
+              expect(position.pixels, idleOffset,
+                  reason: 'admission must not scroll');
+              expect(record.frameKey.currentContext, same(frameElement));
+              final state = record.bodyKey.currentState!;
+              final element = record.bodyKey.currentContext!;
+              _expectSameBody(record, state, element);
+              expect(record.previewEnabledInBody, isFalse);
+              expect(state.inner.hasClients, isTrue);
+
+              // Leave the visible/preload area, but stay within the real list's
+              // two-viewport cache. We deliberately do not force any keep-alive:
+              // disposal beyond actual virtualization is normal for shrinkWrap=false.
+              final excursion = after.frame.bottom - fixture.viewport.top + 160;
+              expect(excursion, lessThan(fixture.viewport.height * 2));
+              position.jumpTo(idleOffset + excursion);
+              await tester.pump(const Duration(milliseconds: 16));
+              final cachedFrame = tester.getRect(_byKey(record.frameKey));
+              expect(cachedFrame.bottom, lessThan(fixture.viewport.top - 128));
+              expect(
+                cachedFrame.bottom,
+                greaterThan(fixture.viewport.top - fixture.viewport.height * 2),
+              );
+              await _pumpIdle(tester);
+              _expectSameBody(record, state, element);
+              position.jumpTo(idleOffset);
+              await tester.pump(const Duration(milliseconds: 16));
+              _expectSameBody(record, state, element);
+
+              await tester.tap(_byKey(record.buttonKey));
+              await tester.pump();
+              expect(state.presses, 1);
+              state.focus.requestFocus();
+              await tester.pump();
+              expect(state.focus.hasFocus, isTrue);
+              // A real native list's retained offset is observable local state too.
+              state.inner.jumpTo(64);
+              await tester.pump();
+              final beforeResizeOffset = position.pixels;
+              final corner = find.descendant(
+                of: _byKey(record.frameKey),
+                matching: find.byKey(
+                  const ValueKey('resizable_media_bottom_right_handle'),
+                ),
+              );
+              final resize = await tester.startGesture(
+                tester.getCenter(corner),
+                kind: PointerDeviceKind.mouse,
+              );
+              try {
+                for (var step = 0; step < 2; step++) {
+                  await resize.moveBy(const Offset(-20, 20));
+                  await tester
+                      .pump(); // Catch reparenting during, not after, a drag.
+                  _expectSameBody(record, state, element);
+                }
+              } finally {
+                await resize.up();
               }
               await tester.pump();
-              expect(position.pixels, greaterThan(beforePan));
-              expect(position.isScrollingNotifier.value, isTrue);
-              expect(
-                tester.getRect(_byKey(record.frameKey)).overlaps(fixture.viewport),
-                isTrue,
-              );
-              // Give both the debounce and admission queue frames while a REAL
-              // drag remains held. A visible frame alone must not mount it.
-              await _pumpIdle(tester);
-              expect(position.isScrollingNotifier.value, isTrue);
-              _expectCold(record);
-              expect(tester.getSize(_byKey(record.frameKey)), const Size(400, 320));
-            } finally {
-              await pan.end();
-            }
-
-            await tester.pump();
-            position.jumpTo(position.pixels); // Eliminate residual native coast.
-            await tester.pump();
-            _expectCold(record);
-            final before = _Geometry.capture(tester, fixture);
-            before.expectFrame(height: 320);
-            final idleOffset = position.pixels;
-            final frameElement = record.frameKey.currentContext;
-
-            await _pumpIdle(tester);
-            final after = _Geometry.capture(tester, fixture);
-            after.expectFrame(height: 320);
-            expect(after.frame, before.frame);
-            expect(after.block, before.block);
-            expect(after.header, before.header);
-            expect(after.pageHeader, before.pageHeader);
-            expect((after.belowY - before.belowY).abs(), lessThan(0.1));
-            expect(position.pixels, idleOffset, reason: 'admission must not scroll');
-            expect(record.frameKey.currentContext, same(frameElement));
-            final state = record.bodyKey.currentState!;
-            final element = record.bodyKey.currentContext!;
-            _expectSameBody(record, state, element);
-            expect(record.previewEnabledInBody, isFalse);
-            expect(state.inner.hasClients, isTrue);
-
-            // Leave the visible/preload area, but stay within the real list's
-            // two-viewport cache. We deliberately do not force any keep-alive:
-            // disposal beyond actual virtualization is normal for shrinkWrap=false.
-            final excursion = after.frame.bottom - fixture.viewport.top + 160;
-            expect(excursion, lessThan(fixture.viewport.height * 2));
-            position.jumpTo(idleOffset + excursion);
-            await tester.pump(const Duration(milliseconds: 16));
-            final cachedFrame = tester.getRect(_byKey(record.frameKey));
-            expect(cachedFrame.bottom, lessThan(fixture.viewport.top - 128));
-            expect(
-              cachedFrame.bottom,
-              greaterThan(fixture.viewport.top - fixture.viewport.height * 2),
-            );
-            await _pumpIdle(tester);
-            _expectSameBody(record, state, element);
-            position.jumpTo(idleOffset);
-            await tester.pump(const Duration(milliseconds: 16));
-            _expectSameBody(record, state, element);
-
-            await tester.tap(_byKey(record.buttonKey));
-            await tester.pump();
-            expect(state.presses, 1);
-            state.focus.requestFocus();
-            await tester.pump();
-            expect(state.focus.hasFocus, isTrue);
-            // A real native list's retained offset is observable local state too.
-            state.inner.jumpTo(64);
-            await tester.pump();
-            final beforeResizeOffset = position.pixels;
-            final corner = find.descendant(
-              of: _byKey(record.frameKey),
-              matching: find.byKey(
-                const ValueKey('resizable_media_bottom_right_handle'),
-              ),
-            );
-            final resize = await tester.startGesture(
-              tester.getCenter(corner),
-              kind: PointerDeviceKind.mouse,
-            );
-            try {
-              for (var step = 0; step < 2; step++) {
-                await resize.moveBy(const Offset(-20, 20));
-                await tester.pump(); // Catch reparenting during, not after, a drag.
-                _expectSameBody(record, state, element);
-              }
-            } finally {
-              await resize.up();
-            }
-            await tester.pump();
-            expect(tester.getSize(_byKey(record.frameKey)), const Size(360, 360));
-            expect(record.width, 360);
-            expect(record.height, 360);
-            expect(record.widthCommits, 1);
-            expect(record.heightCommits, 1);
-            expect(position.pixels, beforeResizeOffset);
-            expect(state.inner.offset, 64);
-            expect(state.presses, 1);
-            expect(state.focus.hasFocus, isTrue);
-            _expectSameBody(record, state, element);
-          }, height: 320,);
+              expect(tester.getSize(_byKey(record.frameKey)),
+                  const Size(360, 360));
+              expect(record.width, 360);
+              expect(record.height, 360);
+              expect(record.widthCommits, 1);
+              expect(record.heightCommits, 1);
+              expect(position.pixels, beforeResizeOffset);
+              expect(state.inner.offset, 64);
+              expect(state.presses, 1);
+              expect(state.focus.hasFocus, isTrue);
+              _expectSameBody(record, state, element);
+            },
+            height: 320,
+          );
         },
         variant: TargetPlatformVariant.only(TargetPlatform.windows),
       );
@@ -207,70 +223,77 @@ void main() {
         'file materialization starts only after real page admission and is reused',
         (tester) async {
           final loader = _RecordingLoader();
-          await _withEditor(tester, shrinkWrap, (fixture) async {
-            _expectProductionHierarchy(tester, fixture, previewEnabled: true);
-            _expectOutsidePreload(tester, fixture);
-            final record = fixture.record;
-            final materializer = find.byType(
-              MaterializedFileBuilder,
-              skipOffstage: false,
-            );
-            await _pumpIdle(tester);
-            expect(materializer, findsNothing);
-            expect(loader.calls, 0);
-            _expectCold(record);
-
-            await fixture.reveal(tester);
-            expect(materializer, findsNothing);
-            expect(loader.calls, 0);
-            final before = _Geometry.capture(tester, fixture);
-            final position = fixture.position;
-            final idleOffset = position.pixels;
-            await _pumpIdle(tester);
-            expect(materializer, findsOneWidget);
-            expect(loader.calls, 1);
-            expect(loader.source, 'fake-source');
-            expect(loader.name, 'preview.txt');
-            expect(record.initializations, 0, reason: 'the fake file is still pending');
-            expect(record.bodyKey.currentContext, isNull);
-            expect(position.pixels, idleOffset);
-            expect(tester.getRect(_byKey(record.frameKey)), before.frame);
-            final materializerElement = tester.element(materializer);
-            final futureFinder = find.descendant(
-              of: materializer,
-              matching: find.byType(FutureBuilder<File>, skipOffstage: false),
-              skipOffstage: false,
-            );
-            final future = tester.widget<FutureBuilder<File>>(futureFinder).future;
-
-            // File is only a value here: no filesystem or network operation.
-            loader.completion.complete(File('fake-preview.txt'));
-            await tester.pump();
-            await tester.pump();
-            final state = record.bodyKey.currentState!;
-            final element = record.bodyKey.currentContext!;
-            _expectSameBody(record, state, element);
-            final after = _Geometry.capture(tester, fixture);
-            after.expectFrame(height: 240);
-            expect(after.frame, before.frame);
-            expect(after.header, before.header);
-            expect((after.belowY - before.belowY).abs(), lessThan(0.1));
-            expect(position.pixels, idleOffset);
-
-            for (final delta in [40.0, -40.0]) {
-              position.jumpTo(position.pixels + delta);
-              await tester.pump(const Duration(milliseconds: 16));
-              fixture.embed.notify();
-              await tester.pump();
-              expect(tester.element(materializer), same(materializerElement));
-              expect(
-                tester.widget<FutureBuilder<File>>(futureFinder).future,
-                same(future),
+          await _withEditor(
+            tester,
+            shrinkWrap,
+            (fixture) async {
+              _expectProductionHierarchy(tester, fixture, previewEnabled: true);
+              _expectOutsidePreload(tester, fixture);
+              final record = fixture.record;
+              final materializer = find.byType(
+                MaterializedFileBuilder,
+                skipOffstage: false,
               );
+              await _pumpIdle(tester);
+              expect(materializer, findsNothing);
+              expect(loader.calls, 0);
+              _expectCold(record);
+
+              await fixture.reveal(tester);
+              expect(materializer, findsNothing);
+              expect(loader.calls, 0);
+              final before = _Geometry.capture(tester, fixture);
+              final position = fixture.position;
+              final idleOffset = position.pixels;
+              await _pumpIdle(tester);
+              expect(materializer, findsOneWidget);
               expect(loader.calls, 1);
+              expect(loader.source, 'fake-source');
+              expect(loader.name, 'preview.txt');
+              expect(record.initializations, 0,
+                  reason: 'the fake file is still pending');
+              expect(record.bodyKey.currentContext, isNull);
+              expect(position.pixels, idleOffset);
+              expect(tester.getRect(_byKey(record.frameKey)), before.frame);
+              final materializerElement = tester.element(materializer);
+              final futureFinder = find.descendant(
+                of: materializer,
+                matching: find.byType(FutureBuilder<File>, skipOffstage: false),
+                skipOffstage: false,
+              );
+              final future =
+                  tester.widget<FutureBuilder<File>>(futureFinder).future;
+
+              // File is only a value here: no filesystem or network operation.
+              loader.completion.complete(File('fake-preview.txt'));
+              await tester.pump();
+              await tester.pump();
+              final state = record.bodyKey.currentState!;
+              final element = record.bodyKey.currentContext!;
               _expectSameBody(record, state, element);
-            }
-          }, loader: loader,);
+              final after = _Geometry.capture(tester, fixture);
+              after.expectFrame(height: 240);
+              expect(after.frame, before.frame);
+              expect(after.header, before.header);
+              expect((after.belowY - before.belowY).abs(), lessThan(0.1));
+              expect(position.pixels, idleOffset);
+
+              for (final delta in [40.0, -40.0]) {
+                position.jumpTo(position.pixels + delta);
+                await tester.pump(const Duration(milliseconds: 16));
+                fixture.embed.notify();
+                await tester.pump();
+                expect(tester.element(materializer), same(materializerElement));
+                expect(
+                  tester.widget<FutureBuilder<File>>(futureFinder).future,
+                  same(future),
+                );
+                expect(loader.calls, 1);
+                _expectSameBody(record, state, element);
+              }
+            },
+            loader: loader,
+          );
         },
         variant: TargetPlatformVariant.only(TargetPlatform.windows),
       );
@@ -278,22 +301,29 @@ void main() {
       testWidgets(
         'code uses the same bounded frame but its body is available immediately',
         (tester) async {
-          await _withEditor(tester, shrinkWrap, (fixture) async {
-            _expectProductionHierarchy(tester, fixture, previewEnabled: false);
-            _expectOutsidePreload(tester, fixture);
-            // No idle pump precedes this assertion. The renderer must exclude
-            // editable code even when its identical fixed frame is only cached.
-            final record = fixture.record;
-            expect(record.initializations, 1);
-            expect(fixture.editor.editable, isTrue);
-            final state = record.bodyKey.currentState!;
-            final element = record.bodyKey.currentContext!;
-            _expectSameBody(record, state, element);
-            expect(tester.getSize(_byKey(record.frameKey)), const Size(400, 240));
-            expect(tester.getSize(_byKey(record.blockKey)).height, 320);
-            await _pumpIdle(tester);
-            _expectSameBody(record, state, element);
-          }, type: CodeBlockKeys.type,);
+          await _withEditor(
+            tester,
+            shrinkWrap,
+            (fixture) async {
+              _expectProductionHierarchy(tester, fixture,
+                  previewEnabled: false);
+              _expectOutsidePreload(tester, fixture);
+              // No idle pump precedes this assertion. The renderer must exclude
+              // editable code even when its identical fixed frame is only cached.
+              final record = fixture.record;
+              expect(record.initializations, 1);
+              expect(fixture.editor.editable, isTrue);
+              final state = record.bodyKey.currentState!;
+              final element = record.bodyKey.currentContext!;
+              _expectSameBody(record, state, element);
+              expect(tester.getSize(_byKey(record.frameKey)),
+                  const Size(400, 240));
+              expect(tester.getSize(_byKey(record.blockKey)).height, 320);
+              await _pumpIdle(tester);
+              _expectSameBody(record, state, element);
+            },
+            type: CodeBlockKeys.type,
+          );
         },
         variant: TargetPlatformVariant.only(TargetPlatform.windows),
       );
@@ -368,7 +398,8 @@ void _expectProductionHierarchy(
     ResizableMedia,
   ]) {
     expect(
-      find.ancestor(of: frame, matching: find.byType(type, skipOffstage: false)),
+      find.ancestor(
+          of: frame, matching: find.byType(type, skipOffstage: false)),
       findsOneWidget,
       reason: 'the actual frame must be under $type',
     );

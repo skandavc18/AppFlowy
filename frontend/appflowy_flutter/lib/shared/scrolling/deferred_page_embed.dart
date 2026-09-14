@@ -142,7 +142,8 @@ class _DeferredPageEmbedState extends State<DeferredPageEmbed> {
       _positions.isEmpty;
 
   void _bind() {
-    final queue = context.dependOnInheritedWidgetOfExactType<_QueueScope>()?.queue;
+    final queue =
+        context.dependOnInheritedWidgetOfExactType<_QueueScope>()?.queue;
     final preview = context
             .dependOnInheritedWidgetOfExactType<PageEmbedPreviewScope>()
             ?.enabled ??
@@ -167,7 +168,8 @@ class _DeferredPageEmbedState extends State<DeferredPageEmbed> {
         return true;
       });
     }
-    if (queue == _queue && preview == _preview &&
+    if (queue == _queue &&
+        preview == _preview &&
         listEquals(positions, _positions)) {
       return;
     }
@@ -268,12 +270,14 @@ class _DeferredPageEmbedState extends State<DeferredPageEmbed> {
     return true;
   }
 
-    bool _canAdmit([Size? frameSize]) =>
-      _active && _ready && _geometry != null &&
+  bool _canAdmit([Size? frameSize]) =>
+      _active &&
+      _ready &&
+      _geometry != null &&
       !_positions.any((p) => p.isScrollingNotifier.value) &&
       _nearViewport(frameSize) == _geometry;
 
-    (RenderAbstractViewport, Rect, Rect)? _nearViewport([Size? frameSize]) {
+  (RenderAbstractViewport, Rect, Rect)? _nearViewport([Size? frameSize]) {
     final box = context.findRenderObject();
     if (box is! RenderBox || !box.attached || !box.hasSize) return null;
     final viewport = RenderAbstractViewport.maybeOf(box.parent);
@@ -285,7 +289,9 @@ class _DeferredPageEmbedState extends State<DeferredPageEmbed> {
       Offset.zero & (frameSize ?? box.size),
     );
     var insideViewport = true;
-    for (RenderObject child = box; child.parent != null; child = child.parent!) {
+    for (RenderObject child = box;
+        child.parent != null;
+        child = child.parent!) {
       final parent = child.parent!;
       if (!parent.paintsChild(child)) return null;
       if (parent is RenderIndexedStack) {
@@ -301,21 +307,26 @@ class _DeferredPageEmbedState extends State<DeferredPageEmbed> {
       }
       final clip = parent.describeApproximatePaintClip(child);
       if (clip == null) continue;
-      final globalClip = MatrixUtils.transformRect(parent.getTransformTo(null), clip);
+      final globalClip =
+          MatrixUtils.transformRect(parent.getTransformTo(null), clip);
       if (insideViewport) {
         rect = rect.intersect(globalClip);
       } else {
         visible = visible.intersect(globalClip);
       }
     }
-    if (!rect.isFinite || rect.isEmpty || !visible.isFinite || visible.isEmpty) {
+    if (!rect.isFinite ||
+        rect.isEmpty ||
+        !visible.isFinite ||
+        visible.isEmpty) {
       return null;
     }
-    final extent = _positions.first.axis == Axis.vertical
-        ? visible.height
-        : visible.width;
+    final extent =
+        _positions.first.axis == Axis.vertical ? visible.height : visible.width;
     final margin = math.min(128.0, extent * 0.2);
-    return rect.overlaps(visible.inflate(margin)) ? (viewport, rect, visible) : null;
+    return rect.overlaps(visible.inflate(margin))
+        ? (viewport, rect, visible)
+        : null;
   }
 
   void _load({bool rebuild = true}) {
@@ -323,7 +334,8 @@ class _DeferredPageEmbedState extends State<DeferredPageEmbed> {
     _admitted = true;
     _disconnect();
     if (!rebuild) return; // Our build/layout callback already updates the slot.
-    if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _active) setState(() {});
       });
@@ -415,7 +427,8 @@ class _EmbedLayout extends ConstrainedLayoutBuilder<BoxConstraints> {
       _RenderEmbedLayout()..onGeometry = onGeometry;
 
   @override
-  void updateRenderObject(BuildContext context, _RenderEmbedLayout renderObject) {
+  void updateRenderObject(
+      BuildContext context, _RenderEmbedLayout renderObject) {
     renderObject.onGeometry = onGeometry;
   }
 }
@@ -483,8 +496,11 @@ class _Preview extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.visibility_rounded, size: 22,
-                        color: theme.colorScheme.onSurfaceVariant,),
+                      Icon(
+                        Icons.visibility_rounded,
+                        size: 22,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                       const SizedBox(width: 8),
                       Text(label, style: theme.textTheme.bodySmall),
                     ],

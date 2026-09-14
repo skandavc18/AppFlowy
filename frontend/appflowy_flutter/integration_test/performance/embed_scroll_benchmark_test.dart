@@ -112,7 +112,8 @@ void main() {
         'page_scroll_distances': distances,
       };
 
-      final root = await Directory.systemTemp.createTemp('appflowy_embed_mount_');
+      final root =
+          await Directory.systemTemp.createTemp('appflowy_embed_mount_');
       try {
         Rect? baselineViewport;
         double? baselineDistance;
@@ -157,7 +158,8 @@ void main() {
   );
 }
 
-double get _expectedDistance => _panUpdates *
+double get _expectedDistance =>
+    _panUpdates *
     _panDelta *
     const PremiumScrollPhysicsConfig().desktopDirectManipulationScale;
 
@@ -219,7 +221,10 @@ Future<({double distance, Rect viewport})> _runSample(
     ).position;
     expect(
       pagePosition.physics.applyPhysicsToUserOffset(pagePosition, 100),
-      closeTo(100 * const PremiumScrollPhysicsConfig().desktopDirectManipulationScale, 0.001),
+      closeTo(
+          100 *
+              const PremiumScrollPhysicsConfig().desktopDirectManipulationScale,
+          0.001),
       reason: 'FlowyOverlay must retain the production premium scroll policy.',
     );
     expect(counts.csvMounts, greaterThan(0));
@@ -312,11 +317,12 @@ Future<({double distance, Rect viewport})> _runSample(
     expect(
       distance,
       closeTo(_expectedDistance, _panDelta),
-        reason: 'Use the configured direct gain, allow gesture-start slop, '
+      reason: 'Use the configured direct gain, allow gesture-start slop, '
           'and compare modes within 0.1px.',
     );
     if (defer) {
-      expect(afterIdle['total_mounts']!, greaterThan(beforeIdle['total_mounts']!));
+      expect(
+          afterIdle['total_mounts']!, greaterThan(beforeIdle['total_mounts']!));
     }
     for (final key in [reportKey, '${reportKey}_mount', '${reportKey}_idle']) {
       final timings = binding.reportData![key] as Map<String, dynamic>;
@@ -399,11 +405,13 @@ Future<Map<String, dynamic>> _checkNativeCadence(
         recording = true;
         binding.addPostFrameCallback(record);
         try {
-          await position.animateTo(
-            end,
-            duration: const Duration(seconds: 3),
-            curve: Curves.linear,
-          ).timeout(const Duration(seconds: 10));
+          await position
+              .animateTo(
+                end,
+                duration: const Duration(seconds: 3),
+                curve: Curves.linear,
+              )
+              .timeout(const Duration(seconds: 10));
           await binding.endOfFrame;
         } finally {
           recording = false;
@@ -450,8 +458,10 @@ Future<Map<String, dynamic>> _checkNativeCadence(
       for (final timing in visibleTimings)
         {
           'vsync_us': timing.timestampInMicroseconds(ui.FramePhase.vsyncStart),
-          'build_start_us': timing.timestampInMicroseconds(ui.FramePhase.buildStart),
-          'raster_finish_us': timing.timestampInMicroseconds(ui.FramePhase.rasterFinish),
+          'build_start_us':
+              timing.timestampInMicroseconds(ui.FramePhase.buildStart),
+          'raster_finish_us':
+              timing.timestampInMicroseconds(ui.FramePhase.rasterFinish),
           'build_us': timing.buildDuration.inMicroseconds,
           'raster_us': timing.rasterDuration.inMicroseconds,
         },
@@ -528,7 +538,12 @@ Future<Map<String, dynamic>> _checkCoarseTrackpadCadence(
         final distance = start - position.pixels;
         expect(
           distance,
-          closeTo(updates * delta * const PremiumScrollPhysicsConfig().desktopDirectManipulationScale, 0.1),
+          closeTo(
+              updates *
+                  delta *
+                  const PremiumScrollPhysicsConfig()
+                      .desktopDirectManipulationScale,
+              0.1),
         );
         expect(counts.totalMounts, mounts);
         expect(position.isScrollingNotifier.value, isFalse);
@@ -581,10 +596,12 @@ Future<Map<String, dynamic>> _checkNativeCoast(
       config.desktopDirectManipulationScale;
   final result = <String, dynamic>{
     'expected_release_velocity': expectedVelocity,
-    'expected_direct_distance': updates * delta * config.desktopDirectManipulationScale,
+    'expected_direct_distance':
+        updates * delta * config.desktopDirectManipulationScale,
     'maximum_coast_distance': expectedVelocity / config.desktopCoastFriction,
-    'timing_scope': 'Input and coasting plus recorder delivery/idle load frames; '
-        'not a guarantee of native frame rate on every user document.',
+    'timing_scope':
+        'Input and coasting plus recorder delivery/idle load frames; '
+            'not a guarantee of native frame rate on every user document.',
   };
   var active = false;
   try {
@@ -655,7 +672,10 @@ Future<Map<String, dynamic>> _checkNativeCoast(
         final distance = position.pixels - releasedAt;
         expect(observedCoast, isTrue);
         expect(distance, greaterThan(100));
-        expect(distance, lessThanOrEqualTo(expectedVelocity / config.desktopCoastFriction + 0.1));
+        expect(
+            distance,
+            lessThanOrEqualTo(
+                expectedVelocity / config.desktopCoastFriction + 0.1));
         expect(counts.totalMounts, mounts);
         result
           ..['direct_distance'] = releasedAt - start
@@ -932,7 +952,8 @@ class _PaintProbe extends SingleChildRenderObjectWidget {
       _RenderPaintProbe(counts, id);
 
   @override
-  void updateRenderObject(BuildContext context, _RenderPaintProbe renderObject) {
+  void updateRenderObject(
+      BuildContext context, _RenderPaintProbe renderObject) {
     renderObject
       ..counts = counts
       ..id = id;
@@ -984,7 +1005,8 @@ Rect _checkGeometry(_Counts counts, {required bool defer}) {
       context.getInheritedWidgetOfExactType<PageEmbedPreviewScope>()?.enabled,
       defer,
     );
-    expect(context.findAncestorWidgetOfExactType<PageEmbedLoadScope>(), isNotNull);
+    expect(
+        context.findAncestorWidgetOfExactType<PageEmbedLoadScope>(), isNotNull);
     expect(
       context.findAncestorWidgetOfExactType<ScrollGestureGate>()?.blocked,
       isTrue,
@@ -1005,7 +1027,8 @@ Future<void> _settlePreviews(
     await tester.pump(const Duration(milliseconds: 200));
     final remaining = deadline.difference(DateTime.now());
     if (remaining <= Duration.zero) {
-      throw TimeoutException('Preview admission/native loading did not settle.');
+      throw TimeoutException(
+          'Preview admission/native loading did not settle.');
     }
     await tester.pumpAndSettle(
       _settleInterval,

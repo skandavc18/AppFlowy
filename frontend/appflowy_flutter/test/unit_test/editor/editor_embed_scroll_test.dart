@@ -24,11 +24,14 @@ void main() {
             paragraphNode(text: 'Text between preview frames $index'),
           ],
         ];
-        final editor = EditorState(document: Document(root: pageNode(children: nodes)));
-        final page = EditorScrollController(editorState: editor, shrinkWrap: shrinkWrap);
+        final editor =
+            EditorState(document: Document(root: pageNode(children: nodes)));
+        final page =
+            EditorScrollController(editorState: editor, shrinkWrap: shrinkWrap);
         final keys = List.generate(12, (_) => GlobalKey());
         var innerInput = 0;
-        final csv = List.generate(100, (row) => '$row,first,second,third').join('\n');
+        final csv =
+            List.generate(100, (row) => '$row,first,second,third').join('\n');
         try {
           await tester.pumpWidget(
             MaterialApp(
@@ -87,7 +90,8 @@ void main() {
           await tester.pumpAndSettle();
           final edgePoint = tester.getCenter(find.byKey(keys.first));
           await tester.sendEventToBinding(
-            PointerPanZoomStartEvent(pointer: 83, device: 83, position: edgePoint),
+            PointerPanZoomStartEvent(
+                pointer: 83, device: 83, position: edgePoint),
           );
           for (var step = 1; step <= 5; step++) {
             await tester.sendEventToBinding(
@@ -299,7 +303,8 @@ class _EmbedBuilder extends BlockComponentBuilder {
 }
 
 class _MixedEmbedBuilder extends BlockComponentBuilder {
-  _MixedEmbedBuilder({required this.keys, required this.csv, required this.onInnerInput});
+  _MixedEmbedBuilder(
+      {required this.keys, required this.csv, required this.onInnerInput});
 
   final List<GlobalKey> keys;
   final String csv;

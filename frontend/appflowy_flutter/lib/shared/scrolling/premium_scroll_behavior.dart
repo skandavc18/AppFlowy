@@ -130,8 +130,8 @@ class PremiumScrollPhysicsConfig {
           other.wheelStopDistance == wheelStopDistance &&
           other.desktopDirectManipulationScale ==
               desktopDirectManipulationScale &&
-            other.desktopCoastFriction == desktopCoastFriction &&
-            other.desktopFramePacing == desktopFramePacing;
+          other.desktopCoastFriction == desktopCoastFriction &&
+          other.desktopFramePacing == desktopFramePacing;
 
   @override
   int get hashCode => Object.hash(
@@ -291,8 +291,8 @@ class PremiumScrollBehavior extends ScrollBehavior {
   ScrollPhysics getScrollPhysics(BuildContext context) {
     final platformPhysics = delegate.getScrollPhysics(context);
     final platform = getPlatform(context);
-    final desktop = platform == TargetPlatform.windows ||
-        platform == TargetPlatform.linux;
+    final desktop =
+        platform == TargetPlatform.windows || platform == TargetPlatform.linux;
     final directManipulationScale = switch (platform) {
       TargetPlatform.windows ||
       TargetPlatform.linux =>
@@ -341,9 +341,9 @@ class PremiumScrollBehavior extends ScrollBehavior {
       axisDirection: details.direction,
       pointerAxisModifiers: pointerAxisModifiers,
       config: config,
-        paceTrackpad: config.desktopFramePacing &&
+      paceTrackpad: config.desktopFramePacing &&
           (getPlatform(context) == TargetPlatform.windows ||
-            getPlatform(context) == TargetPlatform.linux),
+              getPlatform(context) == TargetPlatform.linux),
       child: decorated,
     );
   }
@@ -425,7 +425,8 @@ class _DesktopElasticScrollPhysics extends BouncingScrollPhysics {
   double carriedMomentum(double existingVelocity) => 0;
 
   @override
-  Simulation? createBallisticSimulation(ScrollMetrics position, double velocity) {
+  Simulation? createBallisticSimulation(
+      ScrollMetrics position, double velocity) {
     final platformTolerance = toleranceFor(position);
     final tolerance = Tolerance(
       distance: platformTolerance.distance,
@@ -484,9 +485,7 @@ class _DesktopCoastSimulation extends Simulation {
         var upper = 1 / 120;
         bool hasCrossed(double time) =>
             (returning.x(time) - edge) * outsideSign < 0;
-        while (upper < 2 &&
-            !hasCrossed(upper) &&
-            !returning.isDone(upper)) {
+        while (upper < 2 && !hasCrossed(upper) && !returning.isDone(upper)) {
           upper *= 2;
         }
         if (hasCrossed(upper)) {
@@ -532,7 +531,7 @@ class _DesktopCoastSimulation extends Simulation {
       return;
     }
     _transitionTime =
-      -math.log(1 - (edge - position) * friction / velocity) / friction;
+        -math.log(1 - (edge - position) * friction / velocity) / friction;
     _continuation = ScrollSpringSimulation(
       spring,
       edge,
@@ -543,21 +542,21 @@ class _DesktopCoastSimulation extends Simulation {
   }
 
   late final Simulation _motion;
-    Simulation? _continuation;
-    double _transitionTime = double.infinity;
+  Simulation? _continuation;
+  double _transitionTime = double.infinity;
 
   @override
-    double x(double time) => time >= _transitionTime
+  double x(double time) => time >= _transitionTime
       ? _continuation!.x(time - _transitionTime)
       : _motion.x(time);
 
   @override
-    double dx(double time) => time >= _transitionTime
+  double dx(double time) => time >= _transitionTime
       ? _continuation!.dx(time - _transitionTime)
       : _motion.dx(time);
 
   @override
-    bool isDone(double time) => time >= _transitionTime
+  bool isDone(double time) => time >= _transitionTime
       ? _continuation!.isDone(time - _transitionTime)
       : _motion.isDone(time);
 }
@@ -607,7 +606,8 @@ class _DesktopTrackpadVelocityTracker extends VelocityTracker {
   void addPosition(Duration time, Offset position) {
     final previousTime = _lastTime;
     final interval = previousTime == null ? Duration.zero : time - previousTime;
-    if (interval > const Duration(milliseconds: 40) || interval < Duration.zero) {
+    if (interval > const Duration(milliseconds: 40) ||
+        interval < Duration.zero) {
       _delegate =
           MacOSScrollViewFlingVelocityTracker(PointerDeviceKind.trackpad);
       _lastVelocity = Offset.zero;
@@ -1362,7 +1362,9 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
         event.timeStamp,
         _hitPremiumExclusion
             ? []
-            : [for (final region in _hitRegions) ...region.prepareTrackpadPan()],
+            : [
+                for (final region in _hitRegions) ...region.prepareTrackpadPan()
+              ],
       );
     } else if (event is PointerPanZoomUpdateEvent) {
       _panSessions[event.pointer]?.update(event);

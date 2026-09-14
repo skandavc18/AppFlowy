@@ -136,8 +136,10 @@ void main() {
         tracker.addPosition(Duration.zero, Offset(0, -30.0 * sample));
       }
       expect(tracker.getVelocityEstimate()!.pixelsPerSecond, Offset.zero);
-      tracker.addPosition(const Duration(milliseconds: 100), const Offset(0, -200));
-      tracker.addPosition(const Duration(milliseconds: 90), const Offset(0, -220));
+      tracker.addPosition(
+          const Duration(milliseconds: 100), const Offset(0, -200));
+      tracker.addPosition(
+          const Duration(milliseconds: 90), const Offset(0, -220));
       expect(tracker.getVelocityEstimate()!.pixelsPerSecond, Offset.zero);
     },
     variant: _desktop,
@@ -158,7 +160,8 @@ void main() {
         final release = controller.offset;
         await _end(tester, point, _frame * 8 + const Duration(milliseconds: 1));
         await tester.pump();
-        final simulation = controller.position.physics.createBallisticSimulation(
+        final simulation =
+            controller.position.physics.createBallisticSimulation(
           controller.position,
           20 / (_frame.inMicroseconds / 1e6) * 0.60,
         )!;
@@ -272,7 +275,8 @@ void main() {
         final metrics = controller.position.copyWith(
           pixels: edge + (bottom ? 20 : -20),
         );
-        final motion = physics.createBallisticSimulation(metrics, bottom ? -1200 : 1200)!;
+        final motion =
+            physics.createBallisticSimulation(metrics, bottom ? -1200 : 1200)!;
         const restart = 0.1;
         final newPixels = motion.x(restart);
         expect(bottom ? newPixels < edge : newPixels > edge, isTrue);
@@ -323,7 +327,8 @@ void main() {
     testWidgets(
       'explicit widget physics still control scrolling: $physics',
       (tester) async {
-        final controller = await _mount(tester, initialOffset: 0, physics: physics);
+        final controller =
+            await _mount(tester, initialOffset: 0, physics: physics);
         expect(controller.position.physics.runtimeType, physics.runtimeType);
         final point = tester.getCenter(find.byKey(_listKey));
         await _start(tester, point);
@@ -358,7 +363,8 @@ void main() {
       expect(actual.maxFlingVelocity, native.maxFlingVelocity);
       expect(actual.carriedMomentum(1200), native.carriedMomentum(1200));
       expect(actual.applyPhysicsToUserOffset(controller.position, 100), 100);
-      final nativeTracker = const MaterialScrollBehavior().velocityTrackerBuilder(context)(
+      final nativeTracker =
+          const MaterialScrollBehavior().velocityTrackerBuilder(context)(
         const PointerPanZoomStartEvent(pointer: 61, device: 61),
       );
       expect(_tracker(tester).runtimeType, nativeTracker.runtimeType);
@@ -377,7 +383,8 @@ void main() {
       (tester) async {
         final controller = await _mount(tester, initialOffset: 0);
         final position = controller.position;
-        final edge = bottom ? position.maxScrollExtent : position.minScrollExtent;
+        final edge =
+            bottom ? position.maxScrollExtent : position.minScrollExtent;
         controller.jumpTo(edge);
         await tester.pumpAndSettle();
         final point = tester.getCenter(find.byKey(_listKey));
@@ -416,7 +423,8 @@ void main() {
       (tester) async {
         final controller = await _mount(tester, initialOffset: 0);
         final position = controller.position;
-        final edge = bottom ? position.maxScrollExtent : position.minScrollExtent;
+        final edge =
+            bottom ? position.maxScrollExtent : position.minScrollExtent;
         controller.jumpTo(edge + (bottom ? -10 : 10));
         await tester.pumpAndSettle();
         await tester.sendEventToBinding(

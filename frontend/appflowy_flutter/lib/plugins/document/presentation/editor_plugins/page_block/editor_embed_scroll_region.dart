@@ -38,8 +38,8 @@ final _scrollableEmbedTypes = {
 };
 
 Widget editorEmbedScrollRegion(Node node, Widget child) =>
-  _scrollableEmbedTypes.contains(node.type) ||
-      ExtensionBlockRegistry.definitionFor(node.type) != null
+    _scrollableEmbedTypes.contains(node.type) ||
+            ExtensionBlockRegistry.definitionFor(node.type) != null
         ? ScrollActivationRegion(
             key: ValueKey('embed-scroll-${node.id}'),
             gateScrollGestures: true,

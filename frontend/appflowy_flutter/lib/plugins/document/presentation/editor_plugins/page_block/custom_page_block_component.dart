@@ -49,39 +49,39 @@ class CustomPageBlockComponent extends BlockComponentStatelessWidget {
     if (scrollController == null || scrollController.shrinkWrap) {
       return PageEmbedLoadScope(
         child: ScrollHoverSuppression(
-        child: SingleChildScrollView(
-          child: Builder(
-            builder: (context) {
-              final scroller = Scrollable.maybeOf(context);
-              if (scroller != null) {
-                editorState.updateAutoScroller(scroller);
-              }
-              return Column(
-                children: [
-                  if (header != null) header!,
-                  ...items.map(
-                    (e) {
-                      Widget child = editorState.renderer.build(context, e);
-                      if (wrapper != null) {
-                        child = wrapper!(context, node: e, child: child);
-                      }
-                      child = editorEmbedScrollRegion(e, child);
-                      return Container(
-                        constraints: BoxConstraints(
-                          maxWidth: editorState.editorStyle.maxWidth ??
-                              double.infinity,
-                        ),
-                        padding: editorState.editorStyle.padding,
-                        child: child,
-                      );
-                    },
-                  ),
-                  if (footer != null) footer!,
-                ],
-              );
-            },
+          child: SingleChildScrollView(
+            child: Builder(
+              builder: (context) {
+                final scroller = Scrollable.maybeOf(context);
+                if (scroller != null) {
+                  editorState.updateAutoScroller(scroller);
+                }
+                return Column(
+                  children: [
+                    if (header != null) header!,
+                    ...items.map(
+                      (e) {
+                        Widget child = editorState.renderer.build(context, e);
+                        if (wrapper != null) {
+                          child = wrapper!(context, node: e, child: child);
+                        }
+                        child = editorEmbedScrollRegion(e, child);
+                        return Container(
+                          constraints: BoxConstraints(
+                            maxWidth: editorState.editorStyle.maxWidth ??
+                                double.infinity,
+                          ),
+                          padding: editorState.editorStyle.padding,
+                          child: child,
+                        );
+                      },
+                    ),
+                    if (footer != null) footer!,
+                  ],
+                );
+              },
+            ),
           ),
-        ),
         ),
       );
     } else {
@@ -91,49 +91,49 @@ class CustomPageBlockComponent extends BlockComponentStatelessWidget {
 
       return PageEmbedLoadScope(
         child: ScrollHoverSuppression(
-        child: ScrollablePositionedList.builder(
-          shrinkWrap: scrollController.shrinkWrap,
-          itemCount: items.length + extentCount,
-          itemBuilder: (context, index) {
-            editorState.updateAutoScroller(Scrollable.of(context));
-            if (header != null && index == 0) {
-              return IgnoreEditorSelectionGesture(
-                child: header!,
+          child: ScrollablePositionedList.builder(
+            shrinkWrap: scrollController.shrinkWrap,
+            itemCount: items.length + extentCount,
+            itemBuilder: (context, index) {
+              editorState.updateAutoScroller(Scrollable.of(context));
+              if (header != null && index == 0) {
+                return IgnoreEditorSelectionGesture(
+                  child: header!,
+                );
+              }
+
+              if (footer != null && index == (items.length - 1) + extentCount) {
+                return IgnoreEditorSelectionGesture(
+                  child: footer!,
+                );
+              }
+
+              final childNode = items[index - (header != null ? 1 : 0)];
+              final isOverflowType = overflowTypes.contains(childNode.type);
+
+              Widget child = editorState.renderer.build(context, childNode);
+              if (wrapper != null) {
+                child = wrapper!(context, node: childNode, child: child);
+              }
+              child = editorEmbedScrollRegion(childNode, child);
+
+              final item = Container(
+                constraints: BoxConstraints(
+                  maxWidth: editorState.editorStyle.maxWidth ?? double.infinity,
+                ),
+                padding: isOverflowType
+                    ? EdgeInsets.zero
+                    : editorState.editorStyle.padding,
+                child: child,
               );
-            }
 
-            if (footer != null && index == (items.length - 1) + extentCount) {
-              return IgnoreEditorSelectionGesture(
-                child: footer!,
-              );
-            }
-
-            final childNode = items[index - (header != null ? 1 : 0)];
-            final isOverflowType = overflowTypes.contains(childNode.type);
-
-            Widget child = editorState.renderer.build(context, childNode);
-            if (wrapper != null) {
-              child = wrapper!(context, node: childNode, child: child);
-            }
-            child = editorEmbedScrollRegion(childNode, child);
-
-            final item = Container(
-              constraints: BoxConstraints(
-                maxWidth: editorState.editorStyle.maxWidth ?? double.infinity,
-              ),
-              padding: isOverflowType
-                  ? EdgeInsets.zero
-                  : editorState.editorStyle.padding,
-              child: child,
-            );
-
-            return isOverflowType ? item : Center(child: item);
-          },
-          itemScrollController: scrollController.itemScrollController,
-          scrollOffsetController: scrollController.scrollOffsetController,
-          itemPositionsListener: scrollController.itemPositionsListener,
-          scrollOffsetListener: scrollController.scrollOffsetListener,
-        ),
+              return isOverflowType ? item : Center(child: item);
+            },
+            itemScrollController: scrollController.itemScrollController,
+            scrollOffsetController: scrollController.scrollOffsetController,
+            itemPositionsListener: scrollController.itemPositionsListener,
+            scrollOffsetListener: scrollController.scrollOffsetListener,
+          ),
         ),
       );
     }

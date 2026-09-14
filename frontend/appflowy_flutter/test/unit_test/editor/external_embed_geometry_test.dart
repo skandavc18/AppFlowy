@@ -85,7 +85,8 @@ void main() {
                       body: SingleChildScrollView(
                         child: Column(
                           children: [
-                            ExternalEmbedBlockComponent(key: node.key, node: node),
+                            ExternalEmbedBlockComponent(
+                                key: node.key, node: node),
                             const SizedBox(key: _following, height: 20),
                           ],
                         ),
@@ -151,12 +152,16 @@ void main() {
     ('code', 'main.dart', 160, 160),
     ('other', 'notebook.ipynb', 900, 900),
   ]) {
-    testWidgets('stored $sample sets height before metadata',
-      (tester) => verify(tester, sample),);
+    testWidgets(
+      'stored $sample sets height before metadata',
+      (tester) => verify(tester, sample),
+    );
   }
   for (final kind in ['folder', 'album']) {
-    testWidgets('$kind metadata does not move the following page element',
-      (tester) => verify(tester, (kind, kind, null, 340), resolve: true),);
+    testWidgets(
+      '$kind metadata does not move the following page element',
+      (tester) => verify(tester, (kind, kind, null, 340), resolve: true),
+    );
   }
 }
 

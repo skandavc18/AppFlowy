@@ -241,11 +241,13 @@ void main() {
         _host(loader: loader.load, httpHeaders: headers),
       );
       expect(loader.requests, hasLength(4));
-      expect(loader.requests.last.httpHeaders['Authorization'], 'Bearer test-c');
+      expect(
+          loader.requests.last.httpHeaders['Authorization'], 'Bearer test-c');
       expect(loader.requests[2].httpHeaders, {'Accept': 'text/plain'});
     });
 
-    testWidgets('preserves failures on rebuild and clears them for a new request',
+    testWidgets(
+        'preserves failures on rebuild and clears them for a new request',
         (tester) async {
       final loader = _RecordingLoader();
       final error = StateError('load failed');
@@ -328,7 +330,8 @@ void main() {
     });
 
     for (final fails in [false, true]) {
-      testWidgets('ignores a late ${fails ? 'error' : 'file'} after latest success',
+      testWidgets(
+          'ignores a late ${fails ? 'error' : 'file'} after latest success',
           (tester) async {
         final loader = _RecordingLoader();
         await tester.pumpWidget(_host(loader: loader.load));

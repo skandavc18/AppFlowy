@@ -29,7 +29,8 @@ class _CsvPreviewState extends State<CsvPreview> {
   @override
   void didUpdateWidget(covariant CsvPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text || oldWidget.separator != widget.separator) {
+    if (oldWidget.text != widget.text ||
+        oldWidget.separator != widget.separator) {
       _parse();
     }
   }
@@ -135,7 +136,8 @@ class _CsvPreviewState extends State<CsvPreview> {
           width: constraints.hasBoundedWidth ? constraints.maxWidth : width,
           height: height,
           child: ScrollConfiguration(
-            behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+            behavior:
+                ScrollConfiguration.of(context).copyWith(scrollbars: false),
             child: Scrollbar(
               controller: _vertical,
               notificationPredicate: (notification) =>

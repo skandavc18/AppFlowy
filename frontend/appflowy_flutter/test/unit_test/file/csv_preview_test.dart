@@ -19,7 +19,8 @@ void main() {
 
     final list = _list(tester);
     expect(list.childrenDelegate, isA<SliverChildBuilderDelegate>());
-    expect((list.childrenDelegate as SliverChildBuilderDelegate).childCount, 1000);
+    expect(
+        (list.childrenDelegate as SliverChildBuilderDelegate).childCount, 1000);
     expect(list.shrinkWrap, isFalse);
     expect(list.itemExtent, isNull);
     expect(_cell('0000:0'), findsOneWidget);
@@ -103,7 +104,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('samples exactly the first 32 rows without dropping later columns',
+  testWidgets(
+      'samples exactly the first 32 rows without dropping later columns',
       (tester) async {
     const sampled = 'measured sample';
     final lateValue = List.filled(30, 'long').join(' ');
@@ -195,7 +197,8 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('retains simple delimiter splitting rather than interpreting quotes',
+  testWidgets(
+      'retains simple delimiter splitting rather than interpreting quotes',
       (tester) async {
     await tester.pumpWidget(
       _host(
@@ -205,24 +208,28 @@ void main() {
         ),
       ),
     );
-    expect(_mountedCells(tester), ['first', 'second', '', '"one', 'two"', ' last ']);
+    expect(_mountedCells(tester),
+        ['first', 'second', '', '"one', 'two"', ' last ']);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('caps rows at 1000 including the header and ignores later columns',
+  testWidgets(
+      'caps rows at 1000 including the header and ignores later columns',
       (tester) async {
     final ignored = List.generate(20, (column) => 'ignored $column').join(',');
     await tester.pumpWidget(
       _host(CsvPreview(text: '${_csv(1000)}\n$ignored', separator: ',')),
     );
-    final delegate = _list(tester).childrenDelegate as SliverChildBuilderDelegate;
+    final delegate =
+        _list(tester).childrenDelegate as SliverChildBuilderDelegate;
     expect(delegate.childCount, 1000);
     expect(delegate.build(tester.element(find.byType(ListView)), 1000), isNull);
     expect(_columnWidths(tester), hasLength(6));
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('refreshes row counts, column counts and widths when inputs change',
+  testWidgets(
+      'refreshes row counts, column counts and widths when inputs change',
       (tester) async {
     Future<void> show(String text, String separator) => tester.pumpWidget(
           _host(CsvPreview(text: text, separator: separator)),
@@ -255,19 +262,23 @@ void main() {
   testWidgets('scrolls each axis independently with exactly two scrollbars',
       (tester) async {
     await tester.pumpWidget(
-      _host(CsvPreview(text: _csv(100), separator: ','), size: const Size(300, 180)),
+      _host(CsvPreview(text: _csv(100), separator: ','),
+          size: const Size(300, 180)),
     );
     final vertical = _list(tester).controller!;
     final horizontal = tester
         .widget<SingleChildScrollView>(find.byType(SingleChildScrollView))
         .controller!;
     final previewScrollbars = find.byWidgetPredicate(
-      (widget) => widget is Scrollbar &&
+      (widget) =>
+          widget is Scrollbar &&
           (widget.controller == vertical || widget.controller == horizontal),
     );
     expect(previewScrollbars, findsNWidgets(2));
     expect(
-      tester.widgetList<Scrollbar>(previewScrollbars).map((bar) => bar.controller),
+      tester
+          .widgetList<Scrollbar>(previewScrollbars)
+          .map((bar) => bar.controller),
       unorderedEquals([vertical, horizontal]),
     );
     expect(vertical.position.maxScrollExtent, greaterThan(0));
@@ -297,7 +308,8 @@ void main() {
           data: AppFlowyDefaultTheme().light(),
           child: const DocumentViewport(
             framed: false,
-            identity: DocumentIdentity(title: 'Table.csv', icon: Icons.table_chart),
+            identity:
+                DocumentIdentity(title: 'Table.csv', icon: Icons.table_chart),
             child: DocumentScrollScope(
               enabled: false,
               child: CsvPreview(text: 'a,b\nc,d', separator: ','),
@@ -313,17 +325,20 @@ void main() {
       240 - DocumentViewportStyle.contentTopInset,
     );
     expect(_list(tester).physics, isNull);
-    expect(_list(tester).controller!.position.physics, isA<DocumentScrollPhysics>());
+    expect(_list(tester).controller!.position.physics,
+        isA<DocumentScrollPhysics>());
     final horizontal = tester.widget<SingleChildScrollView>(
       find.byType(SingleChildScrollView),
     );
     expect(horizontal.physics, isNull);
-    expect(horizontal.controller!.position.physics, isA<DocumentScrollPhysics>());
+    expect(
+        horizontal.controller!.position.physics, isA<DocumentScrollPhysics>());
     expect(find.byType(Scrollbar), findsNWidgets(2));
     // SelectableText creates its own zero-range scrolling wrappers. The
     // preview axes themselves must not get a second automatic scrollbar.
     expect(
-      find.ancestor(of: find.byType(ListView), matching: find.byType(DocumentScrollbar)),
+      find.ancestor(
+          of: find.byType(ListView), matching: find.byType(DocumentScrollbar)),
       findsNothing,
     );
     expect(tester.takeException(), isNull);
@@ -362,14 +377,17 @@ void main() {
       await tester.pumpWidget(
         _host(preview, style: style, scaler: scaler, direction: direction),
       );
-      originalState ??= tester.state<State<CsvPreview>>(find.byType(CsvPreview));
+      originalState ??=
+          tester.state<State<CsvPreview>>(find.byType(CsvPreview));
       final context = tester.element(_cell('abcdefghij'));
       final width = _columnWidths(tester).first;
       expect(width, closeTo(_measureWidth(context, 'abcdefghij'), 0.01));
       expect(width, isNot(previousWidth));
       expect(tester.state(find.byType(CsvPreview)), same(originalState));
       expect(
-        tester.renderObject<RenderTable>(find.byType(Table).first).textDirection,
+        tester
+            .renderObject<RenderTable>(find.byType(Table).first)
+            .textDirection,
         direction,
       );
       previousWidth = width;
@@ -377,7 +395,8 @@ void main() {
     }
   });
 
-  testWidgets('updates inherited ink and dividers in light, dark and paper modes',
+  testWidgets(
+      'updates inherited ink and dividers in light, dark and paper modes',
       (tester) async {
     final light = ThemeData.light();
     final paper = light.copyWith(
@@ -386,15 +405,18 @@ void main() {
       textTheme: light.textTheme.apply(bodyColor: PaperTheme.textPrimary),
       extensions: [const PaperThemeExtension(enabled: true)],
     );
-    const preview = CsvPreview(text: 'First,Second\nValue,Other', separator: ',');
+    const preview =
+        CsvPreview(text: 'First,Second\nValue,Other', separator: ',');
     State<CsvPreview>? originalState;
     for (final theme in [light, ThemeData.dark(), paper]) {
       await tester.pumpWidget(_host(preview, theme: theme));
       await tester.pumpAndSettle();
-      originalState ??= tester.state<State<CsvPreview>>(find.byType(CsvPreview));
+      originalState ??=
+          tester.state<State<CsvPreview>>(find.byType(CsvPreview));
       final context = tester.element(_cell('First'));
       final editable = tester.widget<EditableText>(
-        find.descendant(of: _cell('First'), matching: find.byType(EditableText)),
+        find.descendant(
+            of: _cell('First'), matching: find.byType(EditableText)),
       );
       expect(tester.state(find.byType(CsvPreview)), same(originalState));
       expect(editable.style.color, theme.textTheme.bodyMedium!.color);
@@ -406,7 +428,8 @@ void main() {
       }
       // The ancestor paints the surface; the preview must not cover it.
       expect(
-        find.descendant(of: find.byType(CsvPreview), matching: find.byType(ColoredBox)),
+        find.descendant(
+            of: find.byType(CsvPreview), matching: find.byType(ColoredBox)),
         findsNothing,
       );
       expect(tester.takeException(), isNull);
@@ -416,8 +439,8 @@ void main() {
 
 String _csv(int rows) => List.generate(
       rows,
-      (row) => List.generate(6, (column) => '${row.toString().padLeft(4, '0')}:$column')
-          .join(','),
+      (row) => List.generate(
+          6, (column) => '${row.toString().padLeft(4, '0')}:$column').join(','),
     ).join('\n');
 
 Future<void> _trackpad(WidgetTester tester, Offset delta) async {
@@ -444,7 +467,8 @@ Finder _cell(String text) => find.byWidgetPredicate(
       (widget) => widget is SelectableText && widget.data == text,
     );
 
-ListView _list(WidgetTester tester) => tester.widget<ListView>(find.byType(ListView));
+ListView _list(WidgetTester tester) =>
+    tester.widget<ListView>(find.byType(ListView));
 
 List<String?> _mountedCells(WidgetTester tester) => tester
     .widgetList<SelectableText>(find.byType(SelectableText))
