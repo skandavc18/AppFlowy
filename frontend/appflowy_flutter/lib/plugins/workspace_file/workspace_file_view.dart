@@ -17,7 +17,9 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/medi
 import 'package:appflowy/plugins/workspace_file/workspace_file_migrator.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
+import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/application/collections/email/email_message.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -46,6 +48,7 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   late Map<String, dynamic> metadata;
   Future<File>? _file;
   String? _source;
+  int _fileRevision = 0;
 
   String get _name => widget.view.name.isEmpty ? 'Untitled' : widget.view.name;
 
@@ -79,7 +82,9 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   void didUpdateWidget(covariant WorkspaceFileView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.view.id != widget.view.id ||
-        oldWidget.view.name != widget.view.name) {
+        oldWidget.view.name != widget.view.name ||
+        oldWidget.view.workspaceItem?.storageUrl !=
+            widget.view.workspaceItem?.storageUrl) {
       metadata = _seedMetadata(
         WorkspaceFilePreviewCodec.decode(widget.view.extra),
       );
@@ -98,18 +103,19 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   }
 
   void _resolveFile() {
-    _file = _openFile();
+    _source = null;
+    _file = _openFile(widget.view, _name, ++_fileRevision);
   }
 
-  Future<File> _openFile() async {
-    final source = await _migrator.resolveStorageUrl(widget.view);
+  Future<File> _openFile(ViewPB view, String name, int revision) async {
+    final source = await _migrator.resolveStorageUrl(view);
     if (source == null || source.isEmpty) {
       throw const FileSystemException(
         'The stored copy of this file could not be found in this workspace.',
       );
     }
-    _source = source;
-    return materializeMediaFile(source: source, name: _name);
+    if (mounted && revision == _fileRevision) _source = source;
+    return materializeMediaFile(source: source, name: name);
   }
 
   void _saveMetadata(Map<String, dynamic> value) {
@@ -145,6 +151,7 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<File>(
+      key: ObjectKey(_file),
       future: _file,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -206,6 +213,7 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
                     onMetadataChanged: _saveMetadata,
                     editable: _isEditable,
                     height: constraints.maxHeight,
+                    framed: false,
                   ),
                 ),
       );
@@ -254,6 +262,7 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
         onMetadataChanged: _saveMetadata,
         editable: _isEditable,
         height: constraints.maxHeight,
+        framed: false,
         toolbarTrailing: kind.supportsSourceEditing
             ? _SourceModeToggle(
                 editing: metadata[filePreviewEditModeKey] == true,
@@ -274,33 +283,16 @@ class _SourceModeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
     return Tooltip(
       message: editing ? 'Show preview' : 'Edit source',
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                editing ? Icons.visibility_rounded : Icons.edit_rounded,
-                size: 16,
-                color: theme.iconColorScheme.secondary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                editing ? 'Preview' : 'Edit',
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: theme.textColorScheme.secondary,
-                ),
-              ),
-            ],
-          ),
+      child: TextButton.icon(
+        onPressed: onPressed,
+        style: WorkspaceChrome.controlStyle(context),
+        icon: Icon(
+          editing ? Icons.visibility_rounded : Icons.edit_rounded,
+          size: 16,
         ),
+        label: Text(editing ? 'Preview' : 'Edit'),
       ),
     );
   }
@@ -344,9 +336,16 @@ class _WorkspaceImageStage extends StatefulWidget {
   State<_WorkspaceImageStage> createState() => _WorkspaceImageStageState();
 }
 
-class _WorkspaceImageStageState extends State<_WorkspaceImageStage> {
+class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
+    with SingleTickerProviderStateMixin {
   final TransformationController _transformation = TransformationController();
+  late final _fitAnimation = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+  )..addListener(_animateFit);
+  Matrix4Tween? _fitTween;
   int _revision = 0;
+  int _fitRevision = 0;
   String? _subtitle;
 
   ImageEditorSource get _source => ImageEditorSource(
@@ -362,6 +361,7 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage> {
 
   @override
   void dispose() {
+    _fitAnimation.dispose();
     _transformation.dispose();
     super.dispose();
   }
@@ -397,12 +397,39 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage> {
     }
   }
 
+  void _fitToView() {
+    _fitAnimation.stop();
+    // A controller assignment does not stop InteractiveViewer's private pinch
+    // inertia. Reset its gesture state, retaining the matrix and cached image,
+    // so an earlier fling cannot overwrite the requested fit on a later frame.
+    setState(() => _fitRevision++);
+    if (_transformation.value.isIdentity()) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _transformation.value = Matrix4.identity();
+      return;
+    }
+    _fitTween = Matrix4Tween(
+      begin: _transformation.value.clone(),
+      end: Matrix4.identity(),
+    );
+    unawaited(_fitAnimation.forward(from: 0));
+  }
+
+  void _animateFit() {
+    final tween = _fitTween;
+    if (tween != null) {
+      _transformation.value = tween.transform(
+        Curves.easeOutCubic.transform(_fitAnimation.value),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
     return DocumentViewport(
       framed: false,
-      background: Colors.transparent,
+      background: Theme.of(context).scaffoldBackgroundColor,
       revealKey: widget.file.path,
       identity: DocumentIdentity(
         title: widget.name,
@@ -427,35 +454,42 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage> {
           ),
         ),
         const DocumentViewportSeparator(),
-        DocumentViewportButton(
-          icon: Icons.fit_screen_rounded,
-          tooltip: 'Fit to view',
-          onPressed: () => _transformation.value = Matrix4.identity(),
+        DocumentViewportFitButton(
+          onPressed: _fitToView,
         ),
       ],
-      child: ClipRect(
-        child: InteractiveViewer(
-          transformationController: _transformation,
-          minScale: 0.4,
-          maxScale: 8,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(24, 4, 24, 24),
-            child: Center(
-              // The card hugs the picture instead of filling the window, so
-              // nothing sits behind it but the page.
-              child: ViewerCard(
-                reactsToPointer: false,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Image.file(
-                    widget.file,
-                    key: ValueKey('${widget.file.path}_$_revision'),
-                    errorBuilder: (context, error, stackTrace) => Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Text(
-                        'This picture could not be decoded.',
-                        style: TextStyle(
-                          color: theme.textColorScheme.secondary,
+      child: HistorySwipeExclusion(
+        child: Listener(
+          // A new gesture takes over immediately, rather than fighting a reset.
+          onPointerDown: (_) => _fitAnimation.stop(),
+          onPointerSignal: (_) => _fitAnimation.stop(),
+          child: ClipRect(
+            child: InteractiveViewer(
+              key: ValueKey(_fitRevision),
+              transformationController: _transformation,
+              onInteractionStart: (_) => _fitAnimation.stop(),
+              minScale: 0.4,
+              maxScale: 8,
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  // The card hugs the picture instead of filling the window, so
+                  // nothing sits behind it but the page.
+                  child: ViewerCard(
+                    reactsToPointer: false,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Image.file(
+                        widget.file,
+                        key: ValueKey('${widget.file.path}_$_revision'),
+                        errorBuilder: (context, error, stackTrace) => Padding(
+                          padding: const EdgeInsets.all(28),
+                          child: Text(
+                            'This picture could not be decoded.',
+                            style: TextStyle(
+                              color: theme.textColorScheme.secondary,
+                            ),
+                          ),
                         ),
                       ),
                     ),

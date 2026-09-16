@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -141,6 +142,18 @@ class BoardScrollBehaviour extends MaterialScrollBehavior {
   @override
   ScrollPhysics getScrollPhysics(BuildContext context) =>
       const BouncingScrollPhysics(parent: RangeMaintainingScrollPhysics());
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    final decorated = super.buildOverscrollIndicator(context, child, details);
+    return axisDirectionToAxis(details.direction) == Axis.horizontal
+        ? HistorySwipeExclusion(child: decorated)
+        : decorated;
+  }
 
   @override
   Widget buildScrollbar(

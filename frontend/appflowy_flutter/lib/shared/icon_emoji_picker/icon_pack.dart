@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:appflowy/shared/icon_emoji_picker/default_icons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:flutter/foundation.dart';
@@ -7,9 +8,9 @@ import 'package:flutter/services.dart';
 
 /// A selectable icon library.
 ///
-/// Every pack is a separate JSON asset with the same shape as the built-in
-/// `icons.json`, and its group names are namespaced with [groupPrefix] so that
-/// a stored `groupName/iconName` pair stays globally unique.
+/// External packs are JSON assets with the same shape as `icons.json`; the
+/// application's defaults are compiled in. Group names are namespaced with
+/// [groupPrefix] so a stored `groupName/iconName` pair stays globally unique.
 class IconPack {
   const IconPack({
     required this.id,
@@ -53,10 +54,21 @@ const kDefaultIconPack = IconPack(
   attributionUrl: 'https://www.streamlinehq.com/',
 );
 
+/// The application's own defaults have a dedicated picker tab, rather than
+/// changing what the existing Streamline "Default" style means on disk.
+const kAppFlowyDefaultIconPack = IconPack(
+  id: appFlowyDefaultIconPackId,
+  displayName: 'Default icons',
+  asset: '',
+  groupPrefix: appFlowyDefaultIconGroupPrefix,
+  attribution: 'AppFlowy',
+  attributionUrl: 'https://github.com/AppFlowy-IO/AppFlowy',
+);
+
 const _kPhosphorAttribution = 'Phosphor Icons';
 const _kPhosphorUrl = 'https://phosphoricons.com/';
 
-/// The packs available in the icon picker, in the order they are offered.
+/// Library styles in the Icons tab. AppFlowy's defaults have their own tab.
 const List<IconPack> kIconPacks = [
   kDefaultIconPack,
   IconPack(
@@ -118,10 +130,13 @@ const List<IconPack> kIconPacks = [
   ),
 ];
 
-IconPack iconPackForGroup(String groupName) => kIconPacks.firstWhere(
-      (pack) => pack.owns(groupName),
-      orElse: () => kDefaultIconPack,
-    );
+IconPack iconPackForGroup(String groupName) =>
+    isAppFlowyDefaultIconGroup(groupName)
+        ? kAppFlowyDefaultIconPack
+        : kIconPacks.firstWhere(
+            (pack) => pack.owns(groupName),
+            orElse: () => kDefaultIconPack,
+          );
 
 final Map<String, List<IconGroup>> _loadedPacks = {};
 final Map<String, Future<List<IconGroup>>> _pendingPacks = {};
@@ -130,16 +145,18 @@ final Map<String, Future<List<IconGroup>>> _pendingPacks = {};
 /// synchronously can repaint once its pack becomes available.
 final ValueNotifier<int> iconPacksVersion = ValueNotifier<int>(0);
 
-bool isIconPackLoaded(IconPack pack) => _loadedPacks.containsKey(pack.id);
+bool isIconPackLoaded(IconPack pack) =>
+    pack.id == appFlowyDefaultIconPackId || _loadedPacks.containsKey(pack.id);
 
 List<IconGroup> loadedIconGroupsOf(IconPack pack) =>
-    _loadedPacks[pack.id] ?? const [];
+    pack.id == appFlowyDefaultIconPackId
+        ? appFlowyDefaultIconGroups
+        : _loadedPacks[pack.id] ?? const [];
 
 /// Loads [pack] once and returns its groups. Concurrent calls share one load.
 Future<List<IconGroup>> loadIconPack(IconPack pack) {
-  final loaded = _loadedPacks[pack.id];
-  if (loaded != null) {
-    return Future.value(loaded);
+  if (isIconPackLoaded(pack)) {
+    return Future.value(loadedIconGroupsOf(pack));
   }
   return _pendingPacks[pack.id] ??= _loadIconPack(pack);
 }
@@ -170,15 +187,16 @@ Future<List<IconGroup>> _loadIconPack(IconPack pack) async {
     _loadedPacks[pack.id] = groups;
     iconPacksVersion.value++;
     return groups;
-  } catch (e) {
-    Log.error('Failed to load icon pack ${pack.id}', e);
+  } catch (e, stackTrace) {
+    Log.error('Failed to load icon pack ${pack.id}: $e', e, stackTrace);
     _loadedPacks[pack.id] = const [];
     return const [];
   } finally {
     _pendingPacks.remove(pack.id)?.ignore();
     stopwatch.stop();
     Log.info(
-      'Loaded icon pack ${pack.id} in ${stopwatch.elapsedMilliseconds}ms',
+      'Icon pack ${pack.id}: ${loadedIconGroupsOf(pack).length} groups '
+      'in ${stopwatch.elapsedMilliseconds}ms',
     );
   }
 }

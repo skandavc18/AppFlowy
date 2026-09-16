@@ -1,12 +1,12 @@
-import 'dart:ui' as ui;
-
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'document_viewport_style.dart';
 
-/// What the floating header says about the open document.
+/// What the fixed header says about the open document.
 @immutable
 class DocumentIdentity {
   const DocumentIdentity({
@@ -26,8 +26,8 @@ class DocumentIdentity {
 ///
 /// The renderer passed as [child] is never inspected or restyled — it keeps
 /// full responsibility for drawing the document. This widget only supplies the
-/// surface it sits on: a floating header, an optional floating toolbar, soft
-/// depth and consistent spacing, so switching file types never feels like
+/// surface it sits on: a fixed header, an optional docked toolbar and consistent
+/// spacing, so switching file types never feels like
 /// switching applications.
 class DocumentViewport extends StatefulWidget {
   const DocumentViewport({
@@ -50,7 +50,8 @@ class DocumentViewport extends StatefulWidget {
   /// Small controls aligned to the trailing edge of the header.
   final List<Widget> actions;
 
-  /// An optional control cluster floating over the bottom of the document.
+  /// An optional bottom toolbar, docked outside the document's viewport.
+  /// The original parameter name is retained for existing callers.
   final Widget? floatingToolbar;
 
   final Widget? leading;
@@ -75,8 +76,6 @@ class _DocumentViewportState extends State<DocumentViewport>
     duration: AppFlowyMotion.deliberate,
   )..forward();
 
-  bool hovered = false;
-
   @override
   void didUpdateWidget(covariant DocumentViewport oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -96,71 +95,78 @@ class _DocumentViewportState extends State<DocumentViewport>
   @override
   Widget build(BuildContext context) {
     final style = DocumentViewportStyle.of(context);
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final surfaceColor = widget.background ?? style.canvas;
 
-    final content = Stack(
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Positioned.fill(
-          child: Padding(
-            padding: const EdgeInsets.only(
-              top: DocumentViewportStyle.contentTopInset,
-            ),
-            child: RepaintBoundary(child: widget.child),
-          ),
+        DocumentViewportHeader(
+          identity: widget.identity,
+          actions: widget.actions,
+          leading: widget.leading,
+          background: surfaceColor,
         ),
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          child: DocumentViewportHeader(
-            identity: widget.identity,
-            actions: widget.actions,
-            showActions: hovered,
-            leading: widget.leading,
-          ),
-        ),
-        if (widget.floatingToolbar != null)
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 14,
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: widget.floatingToolbar,
+        Expanded(
+          child: ClipRect(
+            child: FadeTransition(
+              opacity: reducedMotion
+                  ? const AlwaysStoppedAnimation(1.0)
+                  : reveal.drive(CurveTween(curve: AppFlowyMotion.enterCurve)),
+              child: RepaintBoundary(child: widget.child),
             ),
           ),
+        ),
+        if (widget.floatingToolbar != null) widget.floatingToolbar!,
       ],
     );
 
     final surface = ColoredBox(
-      color: widget.background ?? style.canvas,
+      color: surfaceColor,
       child: content,
     );
-    final framed = widget.framed
+    return widget.framed
         ? ViewerCard(
             borderRadius: DocumentViewportStyle.borderRadius,
             child: surface,
           )
         : surface;
+  }
+}
 
-    final curved = CurvedAnimation(
-      parent: reveal,
-      curve: AppFlowyMotion.enterCurve,
-    );
-    return MouseRegion(
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: FadeTransition(
-        opacity: curved,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: 0.99, end: 1).animate(curved),
-          child: framed,
-        ),
+/// A workspace-aligned toolbar, separated by space rather than a drawn rule.
+/// Its fill can match the renderer; depth and blur belong to menus, not chrome.
+class DocumentViewportBar extends StatelessWidget {
+  const DocumentViewportBar({
+    super.key,
+    required this.child,
+    this.background,
+    this.padding = const EdgeInsets.symmetric(
+      horizontal: DocumentViewportStyle.horizontalPadding,
+      vertical: 6,
+    ),
+  });
+
+  final Widget child;
+  final Color? background;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = DocumentViewportStyle.of(context);
+    return Container(
+      constraints: const BoxConstraints(
+        minHeight: DocumentViewportStyle.headerHeight,
       ),
+      padding: padding,
+      color: background ?? style.chrome,
+      child: child,
     );
   }
 }
 
-/// The floating identity bar. No border, no ribbon — depth only.
+/// Fixed identity and tools. A larger tool set shares the row when there is
+/// room, and wraps below the identity in a compact pane without reparenting it.
 class DocumentViewportHeader extends StatelessWidget {
   const DocumentViewportHeader({
     super.key,
@@ -168,112 +174,131 @@ class DocumentViewportHeader extends StatelessWidget {
     this.actions = const [],
     this.showActions = true,
     this.leading,
+    this.toolbar,
+    this.background,
   });
 
   final DocumentIdentity identity;
   final List<Widget> actions;
 
-  /// Tools are for when they are wanted: the header names the document at all
-  /// times and offers its controls only while the pointer is on it.
+  /// Explicit visibility for hosts that need it; never driven by pointer hover.
   final bool showActions;
 
   final Widget? leading;
+
+  /// A full control set, such as PDF navigation, zoom and document actions.
+  final Widget? toolbar;
+  final Color? background;
 
   @override
   Widget build(BuildContext context) {
     final style = DocumentViewportStyle.of(context);
     final subtitle = identity.subtitle;
+    final face = Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        DocumentViewportStyle.gutter,
-        DocumentViewportStyle.gutter,
-        DocumentViewportStyle.gutter,
-        0,
-      ),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: style.chromeShadow,
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: BackdropFilter(
-            filter: ui.ImageFilter.blur(
-              sigmaX: DocumentViewportStyle.blurSigma,
-              sigmaY: DocumentViewportStyle.blurSigma,
-            ),
-            child: Container(
-              height: DocumentViewportStyle.headerHeight -
-                  DocumentViewportStyle.gutter,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              color: style.chrome,
-              child: Row(
-                children: [
-                  if (leading != null) ...[
-                    leading!,
-                    const SizedBox(width: 4),
-                  ],
-                  Icon(identity.icon, size: 15, color: style.icon),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          identity.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            height: 1.25,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.1,
-                            color: style.textPrimary,
-                          ),
-                        ),
-                        if (subtitle != null && subtitle.isNotEmpty)
-                          Text(
-                            subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              height: 1.3,
-                              color: style.textMuted,
+    return DocumentViewportBar(
+      background: background,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final available = constraints.maxWidth;
+          final stacked = available < DocumentViewportStyle.toolbarBreakpoint ||
+              MediaQuery.textScalerOf(context).scale(14) > 20;
+          final toolbarWidth =
+              stacked ? available : (available * 0.68).clamp(0.0, 780.0);
+          final identityWidth = toolbar == null || stacked
+              ? available
+              : available - toolbarWidth - 16;
+
+          return Wrap(
+            spacing: 16,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: identityWidth,
+                child: Row(
+                  children: [
+                    if (leading != null) ...[
+                      leading!,
+                      const SizedBox(width: 4),
+                    ],
+                    Icon(identity.icon, size: 18, color: style.icon),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Tooltip(
+                            message: identity.title,
+                            child: Text(
+                              identity.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: face.copyWith(
+                                fontSize: 13,
+                                height: 1.25,
+                                fontWeight: FontWeight.w600,
+                                fontVariations: const [
+                                  FontVariation.weight(600),
+                                ],
+                                letterSpacing: -0.1,
+                                color: style.textPrimary,
+                              ),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                  if (actions.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    AnimatedOpacity(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeOutCubic,
-                      opacity: showActions ? 1 : 0,
-                      child: IgnorePointer(
-                        ignoring: !showActions,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: actions,
-                        ),
+                          if (subtitle != null && subtitle.isNotEmpty)
+                            Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: face.copyWith(
+                                fontSize: 11,
+                                height: 1.3,
+                                fontWeight: FontWeight.w400,
+                                fontVariations: const [
+                                  FontVariation.weight(450),
+                                ],
+                                color: style.textMuted,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
+                    if (actions.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Visibility(
+                        visible: showActions,
+                        maintainState: true,
+                        maintainAnimation: true,
+                        maintainSize: true,
+                        child: ConstrainedBox(
+                          constraints:
+                              BoxConstraints(maxWidth: identityWidth * 0.55),
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: actions,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ),
-        ),
+              if (toolbar != null)
+                SizedBox(width: toolbarWidth, child: toolbar!),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-/// A blurred control cluster that floats over the document.
+/// A docked control cluster. The original name is retained for existing hosts.
 class DocumentFloatingToolbar extends StatelessWidget {
   const DocumentFloatingToolbar({
     super.key,
@@ -287,24 +312,13 @@ class DocumentFloatingToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = DocumentViewportStyle.of(context);
-    final radius = BorderRadius.circular(12);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: radius,
-        boxShadow: style.chromeShadow,
-      ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(
-            sigmaX: DocumentViewportStyle.blurSigma,
-            sigmaY: DocumentViewportStyle.blurSigma,
-          ),
-          child: Container(
-            padding: padding,
-            color: style.chrome,
-            child: Row(mainAxisSize: MainAxisSize.min, children: children),
-          ),
+    return Container(
+      color: style.chrome,
+      padding: padding,
+      child: Center(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(mainAxisSize: MainAxisSize.min, children: children),
         ),
       ),
     );
@@ -334,20 +348,122 @@ class DocumentViewportLabel extends StatelessWidget {
   }
 }
 
-/// A hairline gap between toolbar groups.
+/// Whitespace between toolbar groups, without a vertical rule.
 class DocumentViewportSeparator extends StatelessWidget {
   const DocumentViewportSeparator({super.key});
 
   @override
+  Widget build(BuildContext context) => const SizedBox(width: 12);
+}
+
+/// A legible, one-click fit action instead of another ambiguous fullscreen
+/// glyph. Optional choices sit beside it without changing the primary action.
+class DocumentViewportFitButton extends StatelessWidget {
+  const DocumentViewportFitButton({
+    super.key,
+    required this.onPressed,
+    this.tooltip = 'Fit to view',
+    this.options,
+  });
+
+  final VoidCallback? onPressed;
+  final String tooltip;
+  final Widget? options;
+
+  @override
   Widget build(BuildContext context) {
     final style = DocumentViewportStyle.of(context);
-    return Container(
-      width: 1,
-      height: 14,
-      margin: const EdgeInsets.symmetric(horizontal: 5),
-      color: style.hairline,
+    final foreground = WidgetStateProperty.resolveWith<Color>(
+      (states) =>
+          states.contains(WidgetState.disabled) ? style.iconMuted : style.icon,
+    );
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Tooltip(
+          message: tooltip,
+          child: TextButton(
+            onPressed: onPressed,
+            style: WorkspaceChrome.controlStyle(context).copyWith(
+              minimumSize: const WidgetStatePropertyAll(Size(0, 30)),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              ),
+              foregroundColor: foreground,
+              iconColor: foreground,
+              overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+              splashFactory: NoSplash.splashFactory,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Builder(
+                  builder: (context) => CustomPaint(
+                    key: const ValueKey('document-fit-glyph'),
+                    size: const Size.square(18),
+                    painter: _FitViewGlyph(
+                      IconTheme.of(context).color ?? style.icon,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Text('Fit'),
+              ],
+            ),
+          ),
+        ),
+        if (options != null) options!,
+      ],
     );
   }
+}
+
+/// Rounded viewport corners and a light content outline, not a filled monitor.
+class _FitViewGlyph extends CustomPainter {
+  const _FitViewGlyph(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.save();
+    canvas.scale(size.width / 20, size.height / 20);
+    final corners = Path()
+      ..moveTo(2, 6)
+      ..lineTo(2, 3.5)
+      ..quadraticBezierTo(2, 2, 3.5, 2)
+      ..lineTo(6, 2)
+      ..moveTo(14, 2)
+      ..lineTo(16.5, 2)
+      ..quadraticBezierTo(18, 2, 18, 3.5)
+      ..lineTo(18, 6)
+      ..moveTo(18, 14)
+      ..lineTo(18, 16.5)
+      ..quadraticBezierTo(18, 18, 16.5, 18)
+      ..lineTo(14, 18)
+      ..moveTo(6, 18)
+      ..lineTo(3.5, 18)
+      ..quadraticBezierTo(2, 18, 2, 16.5)
+      ..lineTo(2, 14);
+    canvas.drawPath(corners, paint);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(6, 6, 8, 8),
+        const Radius.circular(1.5),
+      ),
+      paint,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_FitViewGlyph oldDelegate) => oldDelegate.color != color;
 }
 
 /// The icon button used everywhere in the viewer chrome.
@@ -383,16 +499,17 @@ class DocumentViewportButton extends StatefulWidget {
 class _DocumentViewportButtonState extends State<DocumentViewportButton> {
   bool hovering = false;
   bool pressing = false;
+  bool focused = false;
 
   @override
   Widget build(BuildContext context) {
     final style = DocumentViewportStyle.of(context);
     final enabled = widget.onPressed != null;
     final background = !enabled
-        ? Colors.transparent
+        ? style.control
         : pressing || widget.selected
             ? style.controlActive
-            : hovering
+            : hovering || focused
                 ? style.controlHover
                 : style.control;
 
@@ -408,14 +525,28 @@ class _DocumentViewportButtonState extends State<DocumentViewportButton> {
       child: Semantics(
         button: true,
         enabled: enabled,
+        selected: widget.selected,
         label: widget.tooltip,
-        child: MouseRegion(
-          cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-          onEnter: (_) => setState(() => hovering = true),
-          onExit: (_) => setState(() {
-            hovering = false;
-            pressing = false;
+        child: FocusableActionDetector(
+          enabled: enabled,
+          mouseCursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+          onShowFocusHighlight: (value) => setState(() => focused = value),
+          onShowHoverHighlight: (value) => setState(() {
+            hovering = value;
+            if (!value) pressing = false;
           }),
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+            SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+          },
+          actions: {
+            ActivateIntent: CallbackAction<ActivateIntent>(
+              onInvoke: (_) {
+                widget.onPressed?.call();
+                return null;
+              },
+            ),
+          },
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTapDown: enabled ? (_) => setState(() => pressing = true) : null,
@@ -424,13 +555,20 @@ class _DocumentViewportButtonState extends State<DocumentViewportButton> {
                 enabled ? () => setState(() => pressing = false) : null,
             onTap: widget.onPressed,
             child: AnimatedContainer(
-              duration: AppFlowyMotion.fast,
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : AppFlowyMotion.fast,
               curve: AppFlowyMotion.standardCurve,
               width: widget.size,
               height: widget.size,
               decoration: BoxDecoration(
                 color: background,
                 borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: focused
+                      ? style.accent
+                      : style.accent.withValues(alpha: 0),
+                ),
               ),
               alignment: Alignment.center,
               child: Icon(

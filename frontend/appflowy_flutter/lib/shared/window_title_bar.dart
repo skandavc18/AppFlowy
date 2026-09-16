@@ -22,10 +22,12 @@ class WindowTitleBar extends StatefulWidget {
     super.key,
     this.leftChildren = const [],
     this.backgroundColor,
+    this.title,
   });
 
   final List<Widget> leftChildren;
   final Color? backgroundColor;
+  final Widget? title;
 
   @override
   State<WindowTitleBar> createState() => _WindowTitleBarState();
@@ -73,40 +75,45 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
 
+    final row = Row(
+      children: [
+        const HSpace(4),
+        ...widget.leftChildren,
+        if (widget.title != null) ...[
+          Expanded(child: widget.title!),
+          // Always leave a native drag/double-click target, even when tabs
+          // fill the strip. Tab gestures must never drag the window.
+          DragToMoveArea(child: const SizedBox(width: 36, height: 40)),
+        ] else
+          const Spacer(),
+        WindowCaptionButton.minimize(
+          brightness: brightness,
+          onPressed: () => windowManager.minimize(),
+        ),
+        if (isMaximized) ...[
+          WindowCaptionButton.unmaximize(
+            brightness: brightness,
+            onPressed: () => windowManager.unmaximize(),
+          ),
+        ] else ...[
+          WindowCaptionButton.maximize(
+            brightness: brightness,
+            onPressed: () => windowManager.maximize(),
+          ),
+        ],
+        WindowCaptionButton.close(
+          brightness: brightness,
+          onPressed: () => windowManager.close(),
+        ),
+      ],
+    );
     return Container(
       height: 40,
       decoration: BoxDecoration(
         color: widget.backgroundColor ??
             Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
-      child: DragToMoveArea(
-        child: Row(
-          children: [
-            const HSpace(4),
-            ...widget.leftChildren,
-            const Spacer(),
-            WindowCaptionButton.minimize(
-              brightness: brightness,
-              onPressed: () => windowManager.minimize(),
-            ),
-            if (isMaximized) ...[
-              WindowCaptionButton.unmaximize(
-                brightness: brightness,
-                onPressed: () => windowManager.unmaximize(),
-              ),
-            ] else ...[
-              WindowCaptionButton.maximize(
-                brightness: brightness,
-                onPressed: () => windowManager.maximize(),
-              ),
-            ],
-            WindowCaptionButton.close(
-              brightness: brightness,
-              onPressed: () => windowManager.close(),
-            ),
-          ],
-        ),
-      ),
+      child: widget.title == null ? DragToMoveArea(child: row) : row,
     );
   }
 }

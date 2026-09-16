@@ -68,9 +68,9 @@ class WorkspaceInlineEditableText extends StatelessWidget {
     final displayChild = Padding(
       padding: _caretRoom,
       child: MouseRegion(
-        cursor: onTap == null && onDoubleTap == null
-            ? MouseCursor.defer
-            : SystemMouseCursors.text,
+        // Double-click-to-rename labels are navigation targets until editing
+        // starts. Single-click title editors keep their existing affordance.
+        cursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.text,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onTap,

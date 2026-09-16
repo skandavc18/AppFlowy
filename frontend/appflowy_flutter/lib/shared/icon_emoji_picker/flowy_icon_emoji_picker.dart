@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/base/emoji/emoji_picker.dart';
+import 'package:appflowy/shared/icon_emoji_picker/default_icons.dart';
+import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/icon.pb.dart';
@@ -88,6 +91,27 @@ class EmojiIconData {
   bool get isEmpty => emoji.isEmpty;
 
   bool get isNotEmpty => emoji.isNotEmpty;
+
+  /// A saved default should reopen its own tab, not the unrelated library
+  /// styles. Keep the protobuf type and group/name JSON format unchanged.
+  PickerTabType? toPickerTabType() {
+    if (type == FlowyIconType.icon) {
+      if (isEmpty) {
+        return PickerTabType.defaultIcons;
+      }
+      try {
+        final data = jsonDecode(emoji);
+        if (data is Map &&
+            data['groupName'] is String &&
+            isAppFlowyDefaultIconGroup(data['groupName'] as String)) {
+          return PickerTabType.defaultIcons;
+        }
+      } on FormatException {
+        // A malformed stored icon still opens the library tab for replacement.
+      }
+    }
+    return type.toPickerTabType();
+  }
 }
 
 class SelectedEmojiIconResult {
@@ -125,6 +149,9 @@ class FlowyIconEmojiPicker extends StatefulWidget {
   final PickerTabType? initialType;
   final String? documentId;
 
+  /// Also expose defaults for legacy callers that already allow library icons.
+  List<PickerTabType> get effectiveTabs => pickerTabsWithDefaults(tabs);
+
   @override
   State<FlowyIconEmojiPicker> createState() => _FlowyIconEmojiPickerState();
 }
@@ -134,20 +161,23 @@ class _FlowyIconEmojiPickerState extends State<FlowyIconEmojiPicker>
   late TabController controller;
   int currentIndex = 0;
 
+  List<PickerTabType> get tabs => widget.effectiveTabs;
+
   @override
   void initState() {
     super.initState();
     final initialType = widget.initialType;
     if (initialType != null) {
-      currentIndex = max(widget.tabs.indexOf(initialType), 0);
+      currentIndex = max(tabs.indexOf(initialType), 0);
     }
     controller = TabController(
       initialIndex: currentIndex,
-      length: widget.tabs.length,
+      length: tabs.length,
       vsync: this,
     );
     controller.addListener(() {
-      final currentType = widget.tabs[currentIndex];
+      currentIndex = controller.index;
+      final currentType = tabs[currentIndex];
       if (currentType == PickerTabType.custom) {
         SystemChannels.textInput.invokeMethod('TextInput.hide');
       }
@@ -173,7 +203,7 @@ class _FlowyIconEmojiPickerState extends State<FlowyIconEmojiPicker>
               Expanded(
                 child: PickerTab(
                   controller: controller,
-                  tabs: widget.tabs,
+                  tabs: tabs,
                   onTap: (index) => currentIndex = index,
                 ),
               ),
@@ -190,10 +220,12 @@ class _FlowyIconEmojiPickerState extends State<FlowyIconEmojiPicker>
         Expanded(
           child: TabBarView(
             controller: controller,
-            children: widget.tabs.map((tab) {
+            children: tabs.map((tab) {
               switch (tab) {
                 case PickerTabType.emoji:
                   return _buildEmojiPicker();
+                case PickerTabType.defaultIcons:
+                  return _buildIconPicker(fixedPack: kAppFlowyDefaultIconPack);
                 case PickerTabType.icon:
                   return _buildIconPicker();
                 case PickerTabType.custom:
@@ -227,8 +259,9 @@ class _FlowyIconEmojiPickerState extends State<FlowyIconEmojiPicker>
     return width ~/ 40.0; // the size of the emoji
   }
 
-  Widget _buildIconPicker() {
+  Widget _buildIconPicker({IconPack? fixedPack}) {
     return FlowyIconPicker(
+      fixedPack: fixedPack,
       ensureFocus: true,
       enableBackgroundColorSelection: widget.enableBackgroundColorSelection,
       onSelectedIcon: (r) {

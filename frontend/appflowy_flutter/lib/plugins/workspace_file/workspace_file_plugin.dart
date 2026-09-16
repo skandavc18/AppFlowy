@@ -84,12 +84,9 @@ class WorkspaceFilePluginWidgetBuilder extends PluginWidgetBuilder
         context.onDeleted?.call(view, deletedViewIndex);
       }
     });
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 12, 28, 22),
-      child: WorkspaceFileView(
-        key: ValueKey(view.id),
-        view: view,
-      ),
+    return WorkspaceFileView(
+      key: ValueKey(view.id),
+      view: view,
     );
   }
 

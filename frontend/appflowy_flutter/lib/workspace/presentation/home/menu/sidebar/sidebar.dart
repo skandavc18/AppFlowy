@@ -305,8 +305,6 @@ class _Sidebar extends StatefulWidget {
 
 class _SidebarState extends State<_Sidebar> {
   final _scrollController = ScrollController();
-  Timer? _scrollDebounce;
-  bool _isScrolling = false;
   final _isHovered = ValueNotifier(false);
 
   // mute the update button during the current application lifecycle.
@@ -316,13 +314,10 @@ class _SidebarState extends State<_Sidebar> {
   void initState() {
     super.initState();
     warmSidebarIcons();
-    _scrollController.addListener(_onScrollChanged);
   }
 
   @override
   void dispose() {
-    _scrollDebounce?.cancel();
-    _scrollController.removeListener(_onScrollChanged);
     _scrollController.dispose();
     _isHovered.dispose();
     super.dispose();
@@ -453,7 +448,6 @@ class _SidebarState extends State<_Sidebar> {
                     ),
                     child: SidebarFolder(
                       userProfile: widget.userProfile,
-                      isHoverEnabled: !_isScrolling,
                     ),
                   ),
                 ),
@@ -470,7 +464,6 @@ class _SidebarState extends State<_Sidebar> {
                 controller: _scrollController,
                 child: SidebarSpace(
                   userProfile: widget.userProfile,
-                  isHoverEnabled: !_isScrolling,
                 ),
               ),
             ),
@@ -528,20 +521,6 @@ class _SidebarState extends State<_Sidebar> {
         );
       },
     );
-  }
-
-  void _onScrollChanged() {
-    setState(() => _isScrolling = true);
-
-    _scrollDebounce?.cancel();
-    _scrollDebounce =
-        Timer(const Duration(milliseconds: 300), _setScrollStopped);
-  }
-
-  void _setScrollStopped() {
-    if (mounted) {
-      setState(() => _isScrolling = false);
-    }
   }
 }
 

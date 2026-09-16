@@ -35,6 +35,7 @@ import 'package:appflowy/workspace/presentation/settings/shared/settings_radio_s
 import 'package:appflowy/workspace/presentation/settings/shared/single_setting_action.dart';
 import 'package:appflowy/workspace/presentation/settings/widgets/theme_upload/theme_upload_view.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
+import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/document_width_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/toggle/toggle.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart'
     hide AFRolePB;
@@ -1766,6 +1767,13 @@ class DocumentPaddingSetting extends StatelessWidget {
               ],
             ),
             const VSpace(6),
+            DocumentWidthPicker(
+              showHeading: false,
+              width: state.width,
+              onChanged: (value) => unawaited(
+                context.read<DocumentAppearanceCubit>().syncWidth(value),
+              ),
+            ),
             Container(
               height: 32,
               padding: const EdgeInsets.only(right: 4),

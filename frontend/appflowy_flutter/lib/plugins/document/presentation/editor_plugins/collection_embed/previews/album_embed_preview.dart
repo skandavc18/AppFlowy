@@ -73,15 +73,20 @@ class AlbumEmbedPreview extends StatefulWidget {
 
 class _AlbumEmbedPreviewState extends State<AlbumEmbedPreview>
     with SingleTickerProviderStateMixin {
-  late final AnimationController flip = AnimationController(
-    vsync: this,
-    duration: CollectionEmbedMetrics.flip,
-    reverseDuration: const Duration(milliseconds: 460),
-  );
+  AnimationController? _flip;
+
+  AnimationController get flip => _flip ??= AnimationController(
+        vsync: this,
+        duration: CollectionEmbedMetrics.flip,
+        reverseDuration: const Duration(milliseconds: 460),
+      );
 
   @override
   void dispose() {
-    flip.dispose();
+    // Empty/loading albums and non-cover layouts need no flip controller.
+    // Never create its ticker from dispose: TickerMode lookup is no longer safe
+    // and a throw here strands the dashboard's remaining children and tickers.
+    _flip?.dispose();
     super.dispose();
   }
 

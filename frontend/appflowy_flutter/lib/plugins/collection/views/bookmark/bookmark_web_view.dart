@@ -200,6 +200,9 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
         initialUrlRequest: URLRequest(url: WebUri(widget.url)),
         initialSettings: InAppWebViewSettings(
           useShouldOverrideUrlLoading: true,
+          // Explicitly retain website history gestures on this reading surface.
+          // ignore: avoid_redundant_argument_values
+          allowsBackForwardNavigationGestures: true,
           // The Windows renderer emulates a trackpad pan as a dragged touch
           // pointer. Zeroing the horizontal axis keeps that pointer from
           // wandering sideways across the page as you scroll.

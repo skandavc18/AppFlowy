@@ -13,7 +13,6 @@ import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
-import 'package:appflowy/shared/viewer_card.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -232,7 +231,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   bool turnDragForward = true;
   int? turnDragTarget;
 
-  bool autoHideToolbar = true;
+  bool autoHideToolbar = false;
   bool chromeVisible = true;
   bool toolbarHovered = false;
   Timer? chromeHideTimer;
@@ -252,7 +251,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     layoutMode = PdfPageLayoutMode.fromName(metadata[_layoutModeMetadataKey]);
     pageTransition =
         PdfPageTransition.fromName(metadata[_pageTransitionMetadataKey]);
-    autoHideToolbar = metadata[_autoHideToolbarMetadataKey] as bool? ?? true;
+    autoHideToolbar = metadata[_autoHideToolbarMetadataKey] as bool? ?? false;
     wheelScrollPhysics = PdfPreviewScrollPhysics(vsync: this)
       ..attach(viewerController);
     viewerController.addListener(_handleViewerMoved);
@@ -365,9 +364,9 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
               child: ColoredBox(
                 color: palette.canvas,
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (!widget.bare)
-                      DocumentViewportHeader(identity: _documentIdentity()),
+                    _buildChrome(),
                     Expanded(
                       child: LayoutBuilder(
                         builder: (context, constraints) => _buildViewerBody(
@@ -439,7 +438,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   Widget _buildToolbar() {
     Widget toolbar(double zoom) => PdfPreviewToolbar(
           title: widget.name,
-          showDocumentTitle: false,
+          subtitle: _documentIdentity().subtitle,
           currentPage: currentPage,
           pageCount: pageCount,
           zoom: zoom,
@@ -457,6 +456,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           onZoomIn: viewerReady ? _zoomIn : null,
           onFitWidth: viewerReady ? _fitWidth : null,
           onFitPage: viewerReady ? _fitPage : null,
+          onActualSize: viewerReady ? _actualSize : null,
           onToggleSearch: _toggleSearch,
           onRotate: viewerReady ? _rotate : null,
           onDownload: _download,
@@ -467,7 +467,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
             autoHideToolbar: autoHideToolbar,
             enabled: viewerReady,
             onPresetChanged: _setViewPreset,
-            onAutoHideToolbarChanged: _setAutoHideToolbar,
+            onAutoHideToolbarChanged:
+                widget.fullscreen ? _setAutoHideToolbar : null,
           ),
           overflow: _buildOverflowMenu(),
         );
@@ -480,13 +481,6 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       builder: (_, __) => toolbar(viewerController.currentZoom),
     );
   }
-
-  /// The vertical room the floating chrome occupies, including its margins.
-  double get _chromeHeight => widget.bare
-      ? 0
-      : PdfPreviewGeometry.toolbarHeight +
-          14 +
-          (searchVisible ? PdfPreviewGeometry.searchHeight + 6 : 0);
 
   bool get _hasSearchMatches =>
       ocrSearchEnabled ? ocrMatches.isNotEmpty : textSearcher.hasMatches;
@@ -520,72 +514,69 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     return null;
   }
 
-  /// The toolbar and the search bar float over the canvas so they can slide
-  /// away once the reader stops interacting with the document.
+  /// Chrome is measured above the canvas, never over it. Normal file views
+  /// stay pinned even if older metadata requested auto-hide; immersive hiding
+  /// is an explicit full-screen option only.
   Widget _buildChrome() {
     if (widget.bare) {
       return const SizedBox.shrink();
     }
-    final visible = chromeVisible || !autoHideToolbar;
+    final visible = !widget.fullscreen || chromeVisible || !autoHideToolbar;
     return IgnorePointer(
       ignoring: !visible,
-      child: AnimatedSlide(
+      child: AnimatedOpacity(
         duration: _chromeFadeDuration,
         curve: Curves.easeOutCubic,
-        offset: visible ? Offset.zero : const Offset(0, -0.7),
-        child: AnimatedOpacity(
-          duration: _chromeFadeDuration,
-          curve: Curves.easeOutCubic,
-          opacity: visible ? 1 : 0,
-          child: MouseRegion(
-            opaque: false,
-            onEnter: (_) => _setToolbarHovered(true),
-            onExit: (_) => _setToolbarHovered(false),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildToolbar(),
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOutCubic,
-                  alignment: Alignment.topCenter,
-                  child: searchVisible
-                      ? AnimatedBuilder(
-                          animation: searchListenable,
-                          builder: (_, __) => PdfSearchToolbar(
-                            controller: searchController,
-                            focusNode: searchFocusNode,
-                            currentMatch: ocrSearchEnabled
-                                ? ocrMatchIndex + 1
-                                : textSearcher.currentIndex == null
-                                    ? 0
-                                    : textSearcher.currentIndex! + 1,
-                            matchCount: ocrSearchEnabled
-                                ? ocrMatches.length
-                                : textSearcher.matches.length,
-                            searchProgress: ocrSearchEnabled
-                                ? _scanProgress
-                                : textSearcher.searchProgress,
-                            isSearching: ocrSearchEnabled
-                                ? (ocrIndex?.isScanning ?? false)
-                                : textSearcher.isSearching,
-                            options: searchOptions,
-                            onOptionsChanged: _setSearchOptions,
-                            queryInvalid: searchPatternInvalid,
-                            ocrEnabled: ocrSearchEnabled,
-                            onToggleOcr: _toggleOcrSearch,
-                            statusOverride: _searchStatusOverride,
-                            onChanged: _search,
-                            onPrevious:
-                                _hasSearchMatches ? _previousSearchMatch : null,
-                            onNext: _hasSearchMatches ? _nextSearchMatch : null,
-                            onClose: _closeSearch,
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ],
-            ),
+        opacity: visible ? 1 : 0,
+        child: MouseRegion(
+          opaque: false,
+          onEnter: (_) => _setToolbarHovered(true),
+          onExit: (_) => _setToolbarHovered(false),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildToolbar(),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                alignment: Alignment.topCenter,
+                child: searchVisible
+                    ? AnimatedBuilder(
+                        animation: searchListenable,
+                        builder: (_, __) => PdfSearchToolbar(
+                          controller: searchController,
+                          focusNode: searchFocusNode,
+                          currentMatch: ocrSearchEnabled
+                              ? ocrMatchIndex + 1
+                              : textSearcher.currentIndex == null
+                                  ? 0
+                                  : textSearcher.currentIndex! + 1,
+                          matchCount: ocrSearchEnabled
+                              ? ocrMatches.length
+                              : textSearcher.matches.length,
+                          searchProgress: ocrSearchEnabled
+                              ? _scanProgress
+                              : textSearcher.searchProgress,
+                          isSearching: ocrSearchEnabled
+                              ? (ocrIndex?.isScanning ?? false)
+                              : textSearcher.isSearching,
+                          options: searchOptions,
+                          onOptionsChanged: _setSearchOptions,
+                          queryInvalid: searchPatternInvalid,
+                          ocrEnabled: ocrSearchEnabled,
+                          onToggleOcr: _toggleOcrSearch,
+                          statusOverride: _searchStatusOverride,
+                          onChanged: _search,
+                          onPrevious:
+                              _hasSearchMatches ? _previousSearchMatch : null,
+                          onNext: _hasSearchMatches ? _nextSearchMatch : null,
+                          onClose: _closeSearch,
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
           ),
         ),
       ),
@@ -611,82 +602,63 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     );
 
     final scene = pageTurnScene;
-    final stage = Stack(
-      children: [
-        Positioned.fill(
-          // pdfrx claims the tap for its own text selection, so the keyboard
-          // is claimed on the raw pointer instead — otherwise Ctrl+F never
-          // reaches the viewer and the search bar looks broken.
-          child: Listener(
-            behavior: HitTestBehavior.translucent,
-            onPointerDown: (_) => _handleCanvasTap(),
-            child: AnimatedPadding(
-              duration: _chromeFadeDuration,
-              curve: Curves.easeOutCubic,
-              // The chrome always sits above the pages. Letting it float over
-              // them hid whatever was at the top of the document.
-              padding: EdgeInsets.only(top: _chromeHeight),
-              child: Stack(
-                children: [
-                  Positioned.fill(child: _wrapPageTransition(viewer)),
-                  // The turning leaf is a sibling of the viewer, never a
-                  // wrapper around it, so pdfrx is never re-parented mid
-                  // animation.
-                  if (scene != null)
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: RepaintBoundary(
-                          child: AnimatedBuilder(
-                            animation: pageTransitionController,
-                            builder: (_, __) => CustomPaint(
-                              painter: PageTurnPainter(
-                                scene: scene,
-                                progress: pageTransitionController.value,
-                              ),
-                              size: Size.infinite,
-                            ),
-                          ),
-                        ),
+    final stage = Listener(
+      // pdfrx claims the tap for its own text selection, so the keyboard
+      // is claimed on the raw pointer instead — otherwise Ctrl+F never
+      // reaches the viewer and the search bar looks broken.
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (_) => _handleCanvasTap(),
+      child: Stack(
+        children: [
+          Positioned.fill(child: _wrapPageTransition(viewer)),
+          // The turning leaf is a sibling of the viewer, never a
+          // wrapper around it, so pdfrx is never re-parented mid
+          // animation.
+          if (scene != null)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: pageTransitionController,
+                    builder: (_, __) => CustomPaint(
+                      painter: PageTurnPainter(
+                        scene: scene,
+                        progress: pageTransitionController.value,
                       ),
+                      size: Size.infinite,
                     ),
-                  ..._buildPageTurnHandles(),
-                ],
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-        Positioned(top: 0, left: 0, right: 0, child: _buildChrome()),
-      ],
+          ..._buildPageTurnHandles(),
+        ],
+      ),
     );
 
-    if (dockSidebar) {
-      return Row(
-        children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            curve: Curves.easeOutCubic,
-            width: sidebarMode == PdfSidebarMode.none ? 0 : 214,
-            clipBehavior: Clip.hardEdge,
-            decoration: const BoxDecoration(),
-            child: sidebarMode == PdfSidebarMode.none
-                ? const SizedBox.shrink()
-                : SizedBox(width: 214, child: _buildSidebar()),
-          ),
-          Expanded(child: stage),
-        ],
-      );
-    }
-
-    final sidebarVisible = sidebarMode != PdfSidebarMode.none;
+    final sidebarVisible = !widget.bare && sidebarMode != PdfSidebarMode.none;
     return Stack(
       children: [
-        Positioned.fill(child: stage),
+        Positioned.fill(
+          // Keep the renderer at the same depth across sidebar breakpoints.
+          // Replacing a Row with a Stack would reopen the loaded PDF.
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                width: dockSidebar && sidebarVisible ? 214 : 0,
+              ),
+              Expanded(child: stage),
+            ],
+          ),
+        ),
         Positioned.fill(
           child: IgnorePointer(
-            ignoring: !sidebarVisible,
+            ignoring: dockSidebar || !sidebarVisible,
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 200),
-              opacity: sidebarVisible ? 1 : 0,
+              opacity: !dockSidebar && sidebarVisible ? 1 : 0,
               child: GestureDetector(
                 key: const ValueKey('pdf-sidebar-scrim'),
                 behavior: HitTestBehavior.opaque,
@@ -704,7 +676,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           left: sidebarVisible ? 0 : -236,
           top: 0,
           bottom: 0,
-          width: 224,
+          width: dockSidebar ? 214 : 224,
           child: _buildSidebar(),
         ),
       ],
@@ -899,6 +871,15 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
         );
 
     return [
+      AppMenuItem(
+        label: sidebarMode == PdfSidebarMode.outline
+            ? 'Hide document outline'
+            : 'Show document outline',
+        icon: Icons.account_tree_rounded,
+        selected: sidebarMode == PdfSidebarMode.outline,
+        onSelected: () => _toggleSidebar(PdfSidebarMode.outline),
+      ),
+      const AppMenuSeparator(),
       item(
         _PdfOverflowAction.copyText,
         Icons.content_copy_rounded,
@@ -1846,12 +1827,15 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   /// The chrome is pinned whenever hiding it would take away something the
   /// reader is in the middle of using.
   bool get _chromePinned =>
+      !widget.fullscreen ||
+      widget.bare ||
       !viewerReady ||
       searchVisible ||
       toolbarHovered ||
       sidebarMode != PdfSidebarMode.none;
 
   void _handleChromeHover(PointerHoverEvent event) {
+    if (!widget.fullscreen || widget.bare) return;
     final now = DateTime.now();
     if (chromeVisible &&
         now.difference(chromeLastKeptAlive) < _chromeRevealThrottle) {
@@ -1862,6 +1846,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   }
 
   void _revealChrome() {
+    if (!widget.fullscreen || widget.bare) return;
     if (!chromeVisible) {
       setState(() => chromeVisible = true);
     }
@@ -1882,7 +1867,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   }
 
   void _setToolbarHovered(bool value) {
-    if (toolbarHovered == value) {
+    if (!widget.fullscreen || toolbarHovered == value) {
       return;
     }
     setState(() => toolbarHovered = value);
@@ -2727,22 +2712,15 @@ class _PdfFullscreenView extends StatelessWidget {
     return Scaffold(
       backgroundColor: palette.canvas,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: ViewerCard(
-            color: palette.canvas,
-            elevation: ViewerCardElevation.raised,
-            child: PdfPreview(
-              key: ValueKey('fullscreen-${file.path}'),
-              file: file,
-              name: name,
-              metadata: metadata,
-              editable: editable,
-              fullscreen: true,
-              sourceDocumentRef: sourceDocumentRef,
-              onMetadataChanged: onMetadataChanged,
-            ),
-          ),
+        child: PdfPreview(
+          key: ValueKey('fullscreen-${file.path}'),
+          file: file,
+          name: name,
+          metadata: metadata,
+          editable: editable,
+          fullscreen: true,
+          sourceDocumentRef: sourceDocumentRef,
+          onMetadataChanged: onMetadataChanged,
         ),
       ),
     );

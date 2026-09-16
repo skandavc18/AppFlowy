@@ -6,10 +6,40 @@ $ErrorActionPreference = 'Stop'
 $appRoot = Split-Path -Parent $PSScriptRoot
 $repoRoot = Split-Path -Parent (Split-Path -Parent $appRoot)
 
+function Get-AppBuildInputSnapshot {
+  $inputRoots = @(
+    'frontend/appflowy_flutter/lib'
+    'frontend/appflowy_flutter/packages'
+    'frontend/appflowy_flutter/assets'
+    'frontend/appflowy_flutter/windows'
+    'frontend/appflowy_flutter/pubspec.yaml'
+    'frontend/appflowy_flutter/pubspec.lock'
+  )
+  $paths = @(git -C $repoRoot ls-files --cached --others --exclude-standard -- @inputRoots)
+  if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect build inputs.' }
+
+  # Include ignored/generated Dart parts and resolved package configuration:
+  # these are compiled too, even though git diff does not list them.
+  $dartRoots = @((Join-Path $appRoot 'lib'))
+  $dartRoots += @(Get-ChildItem -LiteralPath (Join-Path $appRoot 'packages') -Directory |
+    ForEach-Object { Join-Path $_.FullName 'lib' } | Where-Object { Test-Path $_ })
+  $paths += @(Get-ChildItem -LiteralPath $dartRoots -Recurse -File -Filter '*.dart' |
+    ForEach-Object { [IO.Path]::GetRelativePath($repoRoot, $_.FullName) })
+  $paths += 'frontend/appflowy_flutter/.dart_tool/package_config.json'
+  $paths += 'frontend/appflowy_flutter/pubspec.lock'
+  $paths | ForEach-Object { $_.Replace('\', '/') } | Sort-Object -Unique |
+    ForEach-Object {
+      $file = Join-Path $repoRoot $_
+      if (Test-Path -LiteralPath $file -PathType Leaf) {
+        "$_|$((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash)"
+      }
+    }
+}
+
 Push-Location $appRoot
 try {
   $flutter = (Get-Command $FlutterExecutable -ErrorAction Stop).Source
-  $changed = @(git -C $repoRoot diff --name-only -- '*.dart')
+  $changed = @(git -C $repoRoot diff HEAD --name-only -- '*.dart')
   if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect changed Dart sources.' }
   $changed += @(git -C $repoRoot ls-files --others --exclude-standard -- '*.dart')
   if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect new Dart sources.' }
@@ -29,6 +59,8 @@ try {
   $latest = $sources | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
   Write-Host "Latest changed application source: $($latest.FullName)"
   Write-Host "Source timestamp: $($latest.LastWriteTimeUtc.ToString('o'))"
+  $inputSnapshot = @(Get-AppBuildInputSnapshot)
+  Write-Host "Verifying identical inputs across builds ($($inputSnapshot.Count) files)."
 
   $reportDirectory = Join-Path $appRoot 'build/performance'
   New-Item -Path $reportDirectory -ItemType Directory -Force | Out-Null
@@ -78,6 +110,11 @@ try {
       Tee-Object -FilePath $log
     if ($LASTEXITCODE -ne 0) { throw "$config build failed. See $log" }
 
+    $changedInputs = @(Compare-Object $inputSnapshot @(Get-AppBuildInputSnapshot))
+    if ($changedInputs.Count -gt 0) {
+      throw 'Application inputs changed during the builds. Rebuild both configurations from the same sources.'
+    }
+
     $paths = @("build/windows/x64/runner/$config/AppFlowy.exe")
     if ($config -eq 'Release') {
       $paths += 'build/windows/x64/runner/Release/data/app.so'
@@ -108,15 +145,24 @@ try {
       throw "Artifact changed or disappeared after mode switching: $($artifact.Path)"
     }
   }
+  $parity = & (Join-Path $PSScriptRoot 'verify_windows_bundle_parity.ps1') `
+    -RunnerRoot (Join-Path $appRoot 'build/windows/x64/runner')
   $artifacts | Format-List
   [pscustomobject]@{
     VerifiedUtc = [DateTime]::UtcNow.ToString('o')
     LatestSourcePath = $latest.FullName
     LatestSourceUtc = $latest.LastWriteTimeUtc.ToString('o')
+    BuildInputCount = $inputSnapshot.Count
+    BuildInputsSha256 = [Convert]::ToHexString(
+      [Security.Cryptography.SHA256]::HashData(
+        [Text.Encoding]::UTF8.GetBytes(($inputSnapshot -join "`n"))
+      )
+    )
+    BundleParity = $parity
     Artifacts = $artifacts
   } | ConvertTo-Json -Depth 4 |
     Set-Content -Path (Join-Path $reportDirectory 'windows-bundles.json') -Encoding utf8
-  Write-Host 'Both normal Windows bundles and their runtime payloads are fresh.'
+  Write-Host 'Both normal Windows bundles are fresh, with identical inputs, functional assets and native component sets.'
 } finally {
   Pop-Location
 }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -5,6 +6,7 @@ import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/string_extension.dart';
+import 'package:appflowy/shared/icon_emoji_picker/default_icons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
@@ -26,9 +28,11 @@ import 'icon_color_picker.dart';
 List<IconGroup>? kIconGroups;
 const _kRecentIconGroupName = 'Recent';
 
-/// Every group of every pack that has been loaded so far.
-Iterable<IconGroup> get allLoadedIconGroups =>
-    kIconPacks.expand(loadedIconGroupsOf);
+/// Defaults are always available; library artwork joins when its pack loads.
+Iterable<IconGroup> get allLoadedIconGroups sync* {
+  yield* appFlowyDefaultIconGroups;
+  yield* kIconPacks.expand(loadedIconGroupsOf);
+}
 
 Icon? findLoadedIcon(String groupName, String iconName) => allLoadedIconGroups
     .firstWhereOrNull((group) => group.name == groupName)
@@ -80,12 +84,17 @@ class FlowyIconPicker extends StatefulWidget {
     required this.enableBackgroundColorSelection,
     this.iconPerLine = 9,
     this.ensureFocus = false,
+    this.fixedPack,
   });
 
   final bool enableBackgroundColorSelection;
   final ValueChanged<IconPickerResult> onSelectedIcon;
   final int iconPerLine;
   final bool ensureFocus;
+
+  /// A dedicated tab can reuse search, selection and colors without showing
+  /// the library style switcher or allowing it to leave its own catalogue.
+  final IconPack? fixedPack;
 
   @override
   State<FlowyIconPicker> createState() => _FlowyIconPickerState();
@@ -150,13 +159,26 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
       loaded = isIconPackLoaded(pack);
       iconGroups.clear();
     });
-    loadIcons();
+    unawaited(loadIcons());
   }
 
   @override
   void initState() {
     super.initState();
-    loadIcons();
+    selectedPack = widget.fixedPack ?? kDefaultIconPack;
+    if (isIconPackLoaded(selectedPack)) {
+      iconGroups.addAll(loadedIconGroupsOf(selectedPack));
+      loaded = true;
+    }
+    unawaited(loadIcons());
+  }
+
+  @override
+  void didUpdateWidget(covariant FlowyIconPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.fixedPack != widget.fixedPack) {
+      _selectPack(widget.fixedPack ?? kDefaultIconPack);
+    }
   }
 
   @override
@@ -201,7 +223,7 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
             },
           ),
         ),
-        _buildStyleSelector(context),
+        if (widget.fixedPack == null) _buildStyleSelector(context),
         Expanded(
           child: loaded
               ? _buildIcons(iconGroups)

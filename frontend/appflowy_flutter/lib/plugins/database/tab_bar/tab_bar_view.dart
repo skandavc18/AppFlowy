@@ -15,6 +15,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/plugins/shared/share/share_button.dart';
 import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
@@ -432,12 +433,7 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
     final cover = view.cover;
     final icon = view.icon.toEmojiIconData();
     final padding = max(20.0, widget.horizontalPadding);
-    final titleStyle = Theme.of(context).textTheme.bodyMedium!.copyWith(
-          fontSize: 40,
-          height: 1.08,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -1.1,
-        );
+    final titleStyle = WorkspaceChrome.title(context);
     return MouseRegion(
       onEnter: (_) => _setDecorationRegionHovered(true),
       onExit: (_) => _setDecorationRegionHovered(false),

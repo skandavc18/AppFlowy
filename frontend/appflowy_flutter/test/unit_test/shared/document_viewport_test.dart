@@ -1,4 +1,5 @@
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -7,6 +8,7 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _identity = DocumentIdentity(
@@ -62,7 +64,7 @@ ScrollMetrics _metrics({
 
 void main() {
   group('DocumentViewport chrome', () {
-    testWidgets('surrounds any renderer with the same floating header',
+    testWidgets('surrounds any renderer with the same docked header',
         (tester) async {
       await _pump(
         tester,
@@ -76,9 +78,20 @@ void main() {
       expect(find.text('Quarterly report.md'), findsOneWidget);
       expect(find.text('Markdown  ·  8.5 KB'), findsOneWidget);
 
-      // Chrome, never a Material app bar or a bordered toolbar strip.
+      // No floating card, backdrop blur or animation of the renderer's bounds.
       expect(find.byType(AppBar), findsNothing);
-      expect(find.byType(BackdropFilter), findsOneWidget);
+      expect(find.byType(BackdropFilter), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(DocumentViewport),
+          matching: find.byType(ScaleTransition),
+        ),
+        findsNothing,
+      );
+      final header = tester.getRect(find.byType(DocumentViewportHeader));
+      final viewport = tester.getRect(find.byType(DocumentViewport));
+      expect(header.topLeft, viewport.topLeft);
+      expect(header.width, viewport.width);
     });
 
     testWidgets('the renderer is never hidden beneath the header',
@@ -100,7 +113,7 @@ void main() {
       );
     });
 
-    testWidgets('actions and a floating toolbar have somewhere to live',
+    testWidgets('actions are visible without hovering and the footer is docked',
         (tester) async {
       var pressed = 0;
       await _pump(
@@ -117,17 +130,120 @@ void main() {
           floatingToolbar: const DocumentFloatingToolbar(
             children: [DocumentViewportLabel(label: '1 / 12')],
           ),
-          child: const SizedBox.expand(),
+          child: const SizedBox.expand(key: ValueKey('renderer')),
         ),
       );
 
       expect(find.text('1 / 12'), findsOneWidget);
       await tester.tap(find.byIcon(Icons.download_rounded));
       expect(pressed, 1);
+      final renderer = tester.getRect(find.byKey(const ValueKey('renderer')));
+      final footer = tester.getRect(find.byType(DocumentFloatingToolbar));
+      expect(renderer.bottom, footer.top);
+      expect(
+        footer.bottom,
+        tester.getRect(find.byType(DocumentViewport)).bottom,
+      );
 
       // Premium controls: no ripple, no Material button chrome.
       expect(find.byType(IconButton), findsNothing);
       expect(find.byType(InkWell), findsNothing);
+    });
+
+    testWidgets('header and actions stay put while the document scrolls',
+        (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      var pressed = 0;
+      await _pump(
+        tester,
+        DocumentViewport(
+          framed: false,
+          identity: _identity,
+          actions: [
+            DocumentViewportButton(
+              icon: Icons.fit_screen_rounded,
+              tooltip: 'Fit to view',
+              onPressed: () => pressed++,
+            ),
+          ],
+          child: ListView.builder(
+            controller: controller,
+            itemCount: 100,
+            itemExtent: 32,
+            itemBuilder: (_, index) => Text('Line $index'),
+          ),
+        ),
+      );
+      final header = tester.getRect(find.byType(DocumentViewportHeader));
+      controller.jumpTo(1200);
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      expect(controller.offset, 1200);
+      expect(tester.getRect(find.byType(DocumentViewportHeader)), header);
+      await tester.tap(find.byTooltip('Fit to view'));
+      expect(pressed, 1);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('viewer actions are keyboard accessible', (tester) async {
+      var pressed = 0;
+      await _pump(
+        tester,
+        DocumentViewport(
+          identity: _identity,
+          actions: [
+            DocumentViewportButton(
+              icon: Icons.tune_rounded,
+              tooltip: 'Edit image',
+              onPressed: () => pressed++,
+            ),
+          ],
+          child: const SizedBox.expand(),
+        ),
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      expect(pressed, 2);
+    });
+
+    testWidgets('long identity and large text fit a narrow pane',
+        (tester) async {
+      await _pump(
+        tester,
+        const MediaQuery(
+          data: MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: SizedBox(
+            width: 300,
+            child: DocumentViewport(
+              framed: false,
+              identity: _identity,
+              actions: [
+                DocumentViewportButton(
+                  icon: Icons.tune_rounded,
+                  tooltip: 'Edit image',
+                  onPressed: null,
+                ),
+                DocumentViewportButton(
+                  icon: Icons.fit_screen_rounded,
+                  tooltip: 'Fit to view',
+                  onPressed: null,
+                ),
+              ],
+              child: SizedBox.expand(key: ValueKey('renderer')),
+            ),
+          ),
+        ),
+      );
+      final header = tester.getRect(find.byType(DocumentViewportHeader));
+      expect(header.height, greaterThan(DocumentViewportStyle.headerHeight));
+      expect(
+        tester.getRect(find.byKey(const ValueKey('renderer'))).top,
+        header.bottom,
+      );
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('the shell is rounded and lifted, never outlined',
@@ -184,14 +300,125 @@ void main() {
         appTheme: paperTheme,
       );
 
-      // Chrome is translucent so the document reads through it.
+      // A fixed header is opaque and has no elevation in any appearance.
       for (final style in [light, dark, paper]) {
-        expect(style.chrome.a, lessThan(1));
-        expect(style.chromeShadow, isNotEmpty);
+        expect(style.chrome.a, 1);
+        expect(style.chromeShadow, isEmpty);
       }
       expect(light.canvas, isNot(dark.canvas));
       // Paper stays warm rather than falling back to a cool surface.
       expect(paper.canvas.r, greaterThanOrEqualTo(paper.canvas.b));
+      expect(paper.chrome, PaperTheme.editorPreviewBackground);
+      for (final style in [light, dark, paper]) {
+        expect(style.chrome, style.canvas);
+      }
+    });
+  });
+
+  group('seamless viewer chrome', () {
+    for (final appearance in ['light', 'dark', 'paper']) {
+      testWidgets('$appearance uses one borderless header and reading surface',
+          (tester) async {
+        await _pump(
+          tester,
+          const DocumentViewport(
+            framed: false,
+            identity: _identity,
+            child: SizedBox.expand(),
+          ),
+          brightness: appearance == 'dark' ? Brightness.dark : Brightness.light,
+          appTheme: appearance == 'paper'
+              ? AppTheme.builtins
+                  .firstWhere((theme) => theme.themeName == BuiltInTheme.paper)
+              : null,
+        );
+        final header = tester.widget<DocumentViewportHeader>(
+          find.byType(DocumentViewportHeader),
+        );
+        final bar = tester.widget<Container>(
+          find
+              .descendant(
+                of: find.byType(DocumentViewportBar),
+                matching: find.byType(Container),
+              )
+              .first,
+        );
+        expect(bar.decoration, isNull);
+        expect(bar.foregroundDecoration, isNull);
+        expect(bar.color, header.background);
+        expect(
+          bar.color,
+          DocumentViewportStyle.of(
+            tester.element(find.byType(DocumentViewport)),
+          ).canvas,
+        );
+        expect(find.byType(BackdropFilter), findsNothing);
+      });
+    }
+
+    testWidgets('a custom canvas reaches the header without a second fill',
+        (tester) async {
+      const background = Color(0xFFF4EFE6);
+      await _pump(
+        tester,
+        const DocumentViewport(
+          identity: _identity,
+          background: background,
+          child: SizedBox.expand(),
+        ),
+      );
+      expect(
+        tester
+            .widget<DocumentViewportBar>(find.byType(DocumentViewportBar))
+            .background,
+        background,
+      );
+    });
+
+    testWidgets('fit is labelled and keyboard accessible without a filled icon',
+        (tester) async {
+      var fits = 0;
+      await _pump(
+        tester,
+        Center(child: DocumentViewportFitButton(onPressed: () => fits++)),
+      );
+      expect(find.text('Fit'), findsOneWidget);
+      expect(find.byIcon(Icons.fit_screen_rounded), findsNothing);
+      await tester.tap(find.byTooltip('Fit to view'));
+      expect(fits, 1);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      expect(fits, 2);
+    });
+
+    testWidgets('disabled fit cannot be invoked', (tester) async {
+      await _pump(
+        tester,
+        const Center(child: DocumentViewportFitButton(onPressed: null)),
+      );
+      expect(
+        tester.widget<TextButton>(find.byType(TextButton)).onPressed,
+        isNull,
+      );
+      expect(find.text('Fit'), findsOneWidget);
+      final glyphContext = tester.element(
+        find.byKey(const ValueKey('document-fit-glyph')),
+      );
+      expect(
+        IconTheme.of(glyphContext).color,
+        DocumentViewportStyle.of(glyphContext).iconMuted,
+      );
+    });
+
+    testWidgets('toolbar groups are separated by space, not rules',
+        (tester) async {
+      await _pump(tester, const Center(child: DocumentViewportSeparator()));
+      expect(find.byType(DecoratedBox), findsNothing);
+      expect(find.byType(ColoredBox), findsNothing);
+      expect(tester.getSize(find.byType(DocumentViewportSeparator)).width, 12);
     });
   });
 

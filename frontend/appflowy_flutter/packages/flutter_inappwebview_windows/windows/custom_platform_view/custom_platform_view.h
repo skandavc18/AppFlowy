@@ -43,6 +43,10 @@ namespace flutter_inappwebview_plugin
 
     flutter::TextureRegistrar* texture_registrar_;
     int64_t texture_id_;
+    EventRegistrationToken history_changed_token_ = {};
+    EventRegistrationToken navigation_starting_token_ = {};
+    EventRegistrationToken navigation_completed_token_ = {};
+    bool history_handlers_registered_ = false;
 
     void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue>& method_call,

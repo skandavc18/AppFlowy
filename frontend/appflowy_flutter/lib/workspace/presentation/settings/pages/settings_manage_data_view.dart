@@ -23,7 +23,6 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/file_picker/file_picker_service.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -121,15 +120,13 @@ class SettingsManageDataView extends StatelessWidget {
                     LocaleKeys.settings_manageDataPage_importData_tooltip.tr(),
                 children: const [_ImportDataField()],
               ),
-              if (kDebugMode) ...[
-                SettingsCategory(
-                  title: LocaleKeys.settings_files_exportData.tr(),
-                  children: const [
-                    SettingsExportFileWidget(),
-                    FixDataWidget(),
-                  ],
-                ),
-              ],
+              SettingsCategory(
+                title: LocaleKeys.settings_files_exportData.tr(),
+                children: const [
+                  SettingsExportFileWidget(),
+                  FixDataWidget(),
+                ],
+              ),
               SettingsCategory(
                 title: LocaleKeys.workspace_errorActions_exportLogFiles.tr(),
                 children: [

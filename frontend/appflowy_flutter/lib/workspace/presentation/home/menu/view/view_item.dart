@@ -5,7 +5,6 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/templates/presentation/apply_template_dialog.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
-import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
@@ -45,6 +44,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspac
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_thumbnail.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/lock_page_action.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -546,7 +546,6 @@ class SingleInnerViewItem extends StatefulWidget {
 }
 
 class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
-  final controller = PopoverController();
   final viewMoreActionController = PopoverController();
   final rowFocusNode = FocusNode(debugLabel: 'sidebar-view-item');
 
@@ -698,6 +697,9 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       selected: isSelected,
       active: widget.showActions || isIconPickerOpened,
       hoverEnabled: !widget.isFeedback && widget.isHoverEnabled && !_isDragging,
+      reserveLeadingSpace: true,
+      dimIcon: widget.view.icon.value.isEmpty &&
+          !WorkspaceItemIcon.showsThumbnail(widget.view),
       leading: widget.leftIconBuilder == null
           ? _buildLeftIcon()
           : widget.leftIconBuilder!(context, widget.view),
@@ -785,18 +787,18 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
           )
         : sidebarViewGlyph(context, widget.view);
 
-    final Widget child = AppFlowyPopover(
-      offset: const Offset(20, 0),
-      controller: controller,
+    final Widget child = ViewIconPicker(
+      key: ValueKey('sidebar-icon-${widget.view.id}'),
+      view: widget.view,
       direction: PopoverDirection.rightWithCenterAligned,
-      constraints: BoxConstraints.loose(const Size(364, 356)),
-      margin: const EdgeInsets.all(0),
-      onClose: () => setState(() => isIconPickerOpened = false),
-      child: GestureDetector(
-        // prevent the tap event from being passed to the parent widget
-        onTap: () {},
-        child: FlowyTooltip(
-          message: LocaleKeys.document_plugins_cover_changeIcon.tr(),
+      onOpenChanged: (open) {
+        if (mounted && isIconPickerOpened != open) {
+          setState(() => isIconPickerOpened = open);
+        }
+      },
+      child: SizedBox.square(
+        dimension: SidebarMetrics.iconSlot,
+        child: Center(
           child: SizedBox.square(
             dimension: HomeSpaceViewSizes.viewIconSize,
             child: WorkspaceItemIcon.showsThumbnail(widget.view)
@@ -808,25 +810,6 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
           ),
         ),
       ),
-      popupBuilder: (context) {
-        isIconPickerOpened = true;
-        return FlowyIconEmojiPicker(
-          initialType: iconData.type.toPickerTabType(),
-          tabs: const [
-            PickerTabType.emoji,
-            PickerTabType.icon,
-            PickerTabType.custom,
-          ],
-          documentId: widget.view.id,
-          onSelectedEmoji: (r) {
-            ViewBackendService.updateViewIcon(
-              view: widget.view,
-              viewIcon: r.data,
-            );
-            if (!r.keepOpen) controller.close();
-          },
-        );
-      },
     );
 
     if (widget.view.isLocked) {
@@ -838,8 +821,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
     return child;
   }
 
-  // The chevron shares the icon's slot, so it is only supplied for a row that
-  // really has something under it.
+  // Only expandable rows need a chevron; leaf rows keep the same gutter.
   Widget? _buildLeftIcon() {
     if (isReferencedDatabaseView(widget.view, widget.parentView)) {
       return null;
@@ -849,6 +831,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
       return null;
     }
     return SidebarDisclosure(
+      key: ValueKey('sidebar-disclosure-${view.id}'),
       expanded: widget.isExpanded,
       onTap: () => context
           .read<ViewBloc>()
@@ -1132,7 +1115,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
   }
 }
 
-/// One icon family for the sidebar: the bundled Phosphor line set.
+/// One rounded icon family, keeping real file thumbnails when available.
 Widget sidebarViewGlyph(BuildContext context, ViewPB view) {
   final item = WorkspaceExplorerItem.fromView(view);
   final source = WorkspaceItemThumbnail.localSourceFor(item);
@@ -1151,15 +1134,7 @@ Widget sidebarViewGlyph(BuildContext context, ViewPB view) {
 SidebarIcon sidebarViewIcon(ViewPB view) {
   final kind = view.collection?.kind;
   if (kind != null) {
-    return switch (kind) {
-      CollectionKind.book => SidebarIcon.book,
-      CollectionKind.album => SidebarIcon.album,
-      CollectionKind.repository => SidebarIcon.repository,
-      CollectionKind.database => SidebarIcon.database,
-      CollectionKind.bookmark => SidebarIcon.link,
-      CollectionKind.email => SidebarIcon.mailbox,
-      CollectionKind.folder => SidebarIcon.folder,
-    };
+    return sidebarCollectionIcon(kind);
   }
   if (view.isBookmark) {
     return SidebarIcon.link;

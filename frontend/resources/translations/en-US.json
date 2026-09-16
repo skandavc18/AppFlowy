@@ -342,6 +342,21 @@
     "manageAllSites": "Manage all sites",
     "updatePathName": "Update path name"
   },
+  "workspaceChrome": {
+    "historyForward": "Forward",
+    "noPreviousPage": "No previous page",
+    "noNextPage": "No next page",
+    "openTabs": "Open tabs",
+    "ancestors": "Show parent pages",
+    "reading": "Reading",
+    "wide": "Wide",
+    "full": "Full",
+    "widthScope": "Applies to all document pages on this device.",
+    "readingHint": "A comfortable column for reading and writing",
+    "wideHint": "More room for mixed content",
+    "fullHint": "Use the available width, up to 1,920 px",
+    "customWidth": "Custom width: {} px"
+  },
   "moreAction": {
     "small": "small",
     "medium": "medium",

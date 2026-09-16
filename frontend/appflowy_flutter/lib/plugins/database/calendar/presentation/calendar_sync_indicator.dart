@@ -132,10 +132,13 @@ class _SpinningWhenBusy extends StatefulWidget {
 
 class _SpinningWhenBusyState extends State<_SpinningWhenBusy>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  );
+  AnimationController? _animationController;
+
+  AnimationController get _controller =>
+      _animationController ??= AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1100),
+      );
 
   @override
   void initState() {
@@ -158,8 +161,9 @@ class _SpinningWhenBusyState extends State<_SpinningWhenBusy>
 
   @override
   void dispose() {
-    _controller.stop();
-    _controller.dispose();
+    // An indicator that was never busy may not have a ticker. Creating it
+    // during teardown would look up TickerMode on an already-defunct element.
+    _animationController?.dispose();
     super.dispose();
   }
 

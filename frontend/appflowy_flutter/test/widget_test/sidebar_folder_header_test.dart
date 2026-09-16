@@ -14,7 +14,6 @@ import 'package:appflowy/workspace/presentation/home/menu/view/view_add_button.d
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_root_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -70,7 +69,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(selected, SidebarRootCreateKind.page);
 
-    await tester.tap(find.byType(SidebarIconButton));
+    await tester.tap(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is SidebarIconButton && widget.icon == SidebarIcon.add,
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.text('New folder'), findsOneWidget);
 

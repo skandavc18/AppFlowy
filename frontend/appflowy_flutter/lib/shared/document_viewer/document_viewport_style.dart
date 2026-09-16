@@ -45,15 +45,12 @@ class DocumentViewportStyle {
 
     return DocumentViewportStyle(
       canvas: canvas,
-      // Translucent so the document reads through the blur behind it.
-      chrome: isLightPaper
-          ? PaperTheme.popupBackground.withValues(alpha: 0.86)
-          : isDark
-              ? const Color(0xFF1D1F23).withValues(alpha: 0.82)
-              : (premium?.floatingSurface ?? Colors.white)
-                  .withValues(alpha: 0.84),
+      // Identity and content share a sheet. A different toolbar fill would
+      // leave a hard seam even without a drawn divider.
+      chrome: canvas,
       hairline: EditorSurfaceStyle.embedBorder(context),
-      control: Colors.transparent,
+      control: (premium?.hover ?? appFlowy.fillColorScheme.contentHover)
+          .withValues(alpha: 0),
       controlHover: isLightPaper
           ? PaperTheme.hoverOverlay
           : isDark
@@ -76,18 +73,7 @@ class DocumentViewportStyle {
               ? const Color(0x59685440)
               : const Color(0x520F172A),
       shellShadow: EditorSurfaceStyle.embedShadow(context),
-      // A whisper of depth so the header reads as floating without an outline.
-      chromeShadow: [
-        BoxShadow(
-          color: (isLightPaper
-                  ? PaperTheme.shadow
-                  : premium?.shadow ?? Colors.black)
-              .withValues(alpha: isDark ? 0.22 : 0.06),
-          blurRadius: 14,
-          offset: const Offset(0, 4),
-          spreadRadius: -6,
-        ),
-      ],
+      chromeShadow: const [],
     );
   }
 
@@ -115,16 +101,18 @@ class DocumentViewportStyle {
 
   static BorderRadius get borderRadius => BorderRadius.circular(radius);
 
-  /// The floating header occupies this much space at the top of the viewport.
+  /// Minimum height; larger text can grow the header without clipping it.
   static const double headerHeight = 44;
 
-  /// Breathing room between the floating chrome and the viewport edge.
+  /// Spacing inside the chrome, never a margin around it.
   static const double gutter = 8;
+  static const double horizontalPadding = 16;
+  static const double toolbarBreakpoint = 960;
 
   static const double controlSize = 28;
   static const double iconSize = 16;
   static const double blurSigma = 18;
 
-  /// Content inset so nothing hides beneath the floating header.
-  static const double contentTopInset = headerHeight + gutter;
+  /// Default header extent. Layout measures the actual header at larger scales.
+  static const double contentTopInset = headerHeight;
 }

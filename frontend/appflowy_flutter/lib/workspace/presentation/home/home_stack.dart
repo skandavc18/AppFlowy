@@ -9,6 +9,7 @@ import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_versions/page_version_host.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/window_title_bar.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -60,68 +61,70 @@ class HomeStack extends StatefulWidget {
 }
 
 class _HomeStackState extends State<HomeStack> with WindowListener {
-  int selectedIndex = 0;
-
   @override
   Widget build(BuildContext context) {
     return BlocProvider<TabsBloc>.value(
       value: getIt<TabsBloc>(),
-      child: BlocBuilder<TabsBloc, TabsState>(
+      child: BlocConsumer<TabsBloc, TabsState>(
+        listenWhen: (previous, current) =>
+            previous.currentPageManager != current.currentPageManager,
+        listener: (context, _) => FocusScope.of(context).unfocus(),
         builder: (context, state) => Column(
           children: [
-            if (UniversalPlatform.isWindows)
-              WindowTitleBar(
-                backgroundColor: SidebarStyle.background(context),
-                leftChildren: [_buildToggleMenuButton(context)],
-              ),
-            Padding(
-              padding: EdgeInsets.only(left: widget.layout.menuSpacing),
-              child: TabsManager(
-                onIndexChanged: (index) {
-                  if (selectedIndex != index) {
-                    // Unfocus editor to hide selection toolbar
-                    FocusScope.of(context).unfocus();
-
-                    context.read<TabsBloc>().add(TabsEvent.selectTab(index));
-                    setState(() => selectedIndex = index);
-                  }
-                },
-              ),
+            HistorySwipeExclusion(
+              child: UniversalPlatform.isWindows
+                  ? WindowTitleBar(
+                      backgroundColor: SidebarStyle.background(context),
+                      leftChildren: [_buildToggleMenuButton(context)],
+                      title: _buildTabs(context),
+                    )
+                  : _buildTabs(context),
             ),
             Expanded(
-              child: IndexedStack(
-                index: selectedIndex,
-                children: state.pageManagers
-                    .map(
-                      (pm) => LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  children: [
-                                    pm.stackTopBar(layout: widget.layout),
-                                    Expanded(
-                                      child: PageStack(
-                                        pageManager: pm,
-                                        delegate: widget.delegate,
-                                        userProfile: widget.userProfile,
+              child: HistorySwipePageSurface(
+                child: IndexedStack(
+                  index: state.currentIndex,
+                  children: state.pageManagers
+                      .map(
+                        (pm) => LayoutBuilder(
+                          // Moving tabs must move the existing editor subtree,
+                          // not reassign its state to whichever tab replaced it.
+                          key: ObjectKey(pm),
+                          builder: (context, constraints) {
+                            return Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    children: [
+                                      HistorySwipeExclusion(
+                                        child: pm.stackTopBar(
+                                          layout: widget.layout,
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                      Expanded(
+                                        child: PageStack(
+                                          pageManager: pm,
+                                          delegate: widget.delegate,
+                                          userProfile: widget.userProfile,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              SecondaryView(
-                                pageManager: pm,
-                                adaptedPercentageWidth:
-                                    constraints.maxWidth * 3 / 7,
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    )
-                    .toList(),
+                                HistorySwipeExclusion(
+                                  child: SecondaryView(
+                                    pageManager: pm,
+                                    adaptedPercentageWidth:
+                                        constraints.maxWidth * 3 / 7,
+                                  ),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                      )
+                      .toList(),
+                ),
               ),
             ),
           ],
@@ -129,6 +132,19 @@ class _HomeStackState extends State<HomeStack> with WindowListener {
       ),
     );
   }
+
+  Widget _buildTabs(BuildContext context) => Padding(
+        padding: EdgeInsets.only(left: widget.layout.menuSpacing),
+        child: TabsManager(
+          onIndexChanged: (index) {
+            final tabs = context.read<TabsBloc>();
+            if (tabs.state.currentIndex != index) {
+              FocusScope.of(context).unfocus();
+              tabs.add(TabsEvent.selectTab(index));
+            }
+          },
+        ),
+      );
 
   Widget _buildToggleMenuButton(BuildContext context) {
     if (context.read<HomeSettingBloc>().isMenuExpanded) {
@@ -250,15 +266,11 @@ class _SecondaryViewState extends State<SecondaryView>
   late final ValueNotifier<double> widthNotifier;
 
   late final AnimationController animationController;
+  late final CurvedAnimation curveAnimation;
   late Animation<double> widthAnimation;
   late final Animation<Offset> offsetAnimation;
 
   late bool hasSecondaryView;
-
-  CurvedAnimation get curveAnimation => CurvedAnimation(
-        parent: animationController,
-        curve: Curves.easeOut,
-      );
 
   @override
   void initState() {
@@ -274,6 +286,12 @@ class _SecondaryViewState extends State<SecondaryView>
     animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
+    );
+    // Reuse one curve: allocating a CurvedAnimation on every resize leaves
+    // another status listener attached to the controller each time.
+    curveAnimation = CurvedAnimation(
+      parent: animationController,
+      curve: Curves.easeOut,
     );
 
     widthAnimation = Tween<double>(
@@ -296,6 +314,8 @@ class _SecondaryViewState extends State<SecondaryView>
     widget.pageManager.showSecondaryPluginNotifier
         .removeListener(onShowSecondaryChanged);
     widget.pageManager.secondaryNotifier.removeListener(onSecondaryViewChanged);
+    curveAnimation.dispose();
+    animationController.dispose();
     widthNotifier.dispose();
     super.dispose();
   }
@@ -453,13 +473,22 @@ class _SecondaryViewState extends State<SecondaryView>
   }
 
   void onShowSecondaryChanged() async {
-    if (widget.pageManager.showSecondaryPluginNotifier.value) {
+    final showing = widget.pageManager.showSecondaryPluginNotifier.value;
+    if (showing) {
       widthNotifier.value = max(450.0, widget.adaptedPercentageWidth);
-      updateWidthAnimation();
-      await animationController.forward();
-    } else {
-      updateWidthAnimation();
-      await animationController.reverse();
+    }
+    updateWidthAnimation();
+    try {
+      await (showing
+              ? animationController.forward()
+              : animationController.reverse())
+          .orCancel;
+    } on TickerCanceled {
+      return;
+    }
+    if (mounted &&
+        !showing &&
+        !widget.pageManager.showSecondaryPluginNotifier.value) {
       setState(() => widthNotifier.value = 0.0);
     }
   }
@@ -500,6 +529,12 @@ class _SecondaryViewResizerState extends State<SecondaryViewResizer> {
   Timer? showHoverTimer;
 
   @override
+  void dispose() {
+    showHoverTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     overlayController.show();
@@ -519,8 +554,9 @@ class _SecondaryViewResizerState extends State<SecondaryViewResizer> {
             child: MouseRegion(
               cursor: SystemMouseCursors.resizeLeftRight,
               onEnter: (_) {
+                showHoverTimer?.cancel();
                 showHoverTimer = Timer(const Duration(milliseconds: 500), () {
-                  setState(() => isHover = true);
+                  if (mounted) setState(() => isHover = true);
                 });
               },
               onExit: (_) {
@@ -606,12 +642,14 @@ class FadingIndexedStackState extends State<FadingIndexedStack> {
 
   @override
   void didUpdateWidget(FadingIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
     if (oldWidget.index == widget.index) return;
     _targetOpacity = 0;
     SchedulerBinding.instance.addPostFrameCallback(
-      (_) => setState(() => _targetOpacity = 1),
+      (_) {
+        if (mounted) setState(() => _targetOpacity = 1);
+      },
     );
-    super.didUpdateWidget(oldWidget);
   }
 
   @override
@@ -639,6 +677,7 @@ class PageNotifier extends ChangeNotifier {
       : _plugin = plugin ?? makePlugin(pluginType: PluginType.blank);
 
   Plugin _plugin;
+  bool _disposed = false;
 
   Widget get titleWidget => _plugin.widgetBuilder.leftBarItem;
 
@@ -667,6 +706,17 @@ class PageNotifier extends ChangeNotifier {
   }
 
   Plugin get plugin => _plugin;
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    try {
+      _plugin.dispose();
+    } finally {
+      super.dispose();
+    }
+  }
 }
 
 // PageManager manages the view for one Tab
@@ -677,6 +727,7 @@ class PageManager {
 
   final PageNotifier _notifier;
   final PageNotifier _secondaryNotifier;
+  bool _disposed = false;
 
   PageNotifier get notifier => _notifier;
   PageNotifier get secondaryNotifier => _secondaryNotifier;
@@ -688,14 +739,16 @@ class PageManager {
   Plugin get plugin => _notifier.plugin;
 
   void setPlugin(Plugin newPlugin, bool setLatest, [bool init = true]) {
-    if (init) {
+    if (init && !identical(newPlugin, plugin)) {
       newPlugin.init();
     }
     _notifier.setPlugin(newPlugin, setLatest: setLatest);
   }
 
   void setSecondaryPlugin(Plugin newPlugin) {
-    newPlugin.init();
+    if (!identical(newPlugin, _secondaryNotifier.plugin)) {
+      newPlugin.init();
+    }
     _secondaryNotifier.setPlugin(newPlugin, setLatest: false);
   }
 
@@ -829,9 +882,19 @@ class PageManager {
   }
 
   void dispose() {
-    _notifier.dispose();
-    _secondaryNotifier.dispose();
-    showSecondaryPluginNotifier.dispose();
+    // Immutable TabsState snapshots share managers. Releasing an old snapshot
+    // must not dispose a closed tab's plugins a second time.
+    if (_disposed) return;
+    _disposed = true;
+    try {
+      _notifier.dispose();
+    } finally {
+      try {
+        _secondaryNotifier.dispose();
+      } finally {
+        showSecondaryPluginNotifier.dispose();
+      }
+    }
   }
 }
 
@@ -894,7 +957,11 @@ class HomeSecondaryTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: EditorSurfaceStyle.canvasBackgroundFor(
+          Theme.of(context).brightness,
+          Theme.of(context).colorScheme.surface,
+          isPaper: PaperTheme.isEnabled(context),
+        ),
       ),
       height: HomeSizes.topBarHeight + HomeInsets.topBarTitleVerticalPadding,
       child: Padding(

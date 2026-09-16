@@ -1,11 +1,61 @@
+import 'dart:convert';
+
+import 'package:appflowy/shared/icon_emoji_picker/icon.dart' as icons;
 import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('icon packs', () {
+    test('asset JSON does not require runtime metadata or parent references',
+        () {
+      final group = icons.IconGroup.fromMapEntry(
+        const MapEntry('example', [
+          {
+            'name': 'page',
+            'keywords': ['document'],
+            'content': '<svg/>',
+          },
+        ]),
+      );
+      expect(group.packId, isNull);
+      expect(group.groupPrefix, isEmpty);
+      expect(group.isColorful, isFalse);
+      expect(group.icons.single.iconGroup, same(group));
+
+      group
+        ..packId = 'runtime'
+        ..groupPrefix = 'runtime_'
+        ..isColorful = true;
+      final encoded = jsonDecode(jsonEncode(group)) as Map<String, dynamic>;
+      expect(encoded.keys, unorderedEquals(['name', 'icons']));
+      expect(
+        (encoded['icons'] as List).single.keys,
+        unorderedEquals(['name', 'keywords', 'content']),
+      );
+      final recent = jsonDecode(
+        jsonEncode(icons.RecentIcon(group.icons.single, group.name)),
+      ) as Map<String, dynamic>;
+      expect(recent['groupName'], 'example');
+      expect(recent.containsKey('iconGroup'), isFalse);
+    });
+
+    test('every sidebar symbol resolves from the actual bundled pack',
+        () async {
+      final groups = await loadIconPack(sidebarIconPack);
+      expect(groups, isNotEmpty);
+      for (final icon in SidebarIcon.values) {
+        expect(
+          findLoadedIcon(icon.group, icon.name)?.content,
+          startsWith('<svg'),
+          reason: '${icon.group}/${icon.name}',
+        );
+      }
+    });
+
     test('the default pack is the built-in streamline set', () {
       expect(kIconPacks.first, kDefaultIconPack);
       expect(kDefaultIconPack.groupPrefix, isEmpty);

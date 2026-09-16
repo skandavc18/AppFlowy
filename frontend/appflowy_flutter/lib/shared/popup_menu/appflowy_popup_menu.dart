@@ -615,9 +615,10 @@ class _PopupMenuState<T> extends State<_PopupMenu<T>> {
     for (int i = 0; i < widget.route.items.length; i += 1) {
       final double start = (i + 1) * unit;
       final double end = clampDouble(start + 1.5 * unit, 0.0, 1.0);
-      final CurvedAnimation opacity = CurvedAnimation(
-        parent: widget.route.animation!,
-        curve: Interval(start, end),
+      // A tween delegates listeners to the route animation; unlike a new
+      // CurvedAnimation per build it owns no status listener to dispose.
+      final Animation<double> opacity = widget.route.animation!.drive(
+        _CurveTween(curve: Interval(start, end)),
       );
       Widget item = widget.route.items[i];
       if (widget.route.initialValue != null &&
@@ -884,18 +885,28 @@ class _PopupMenuRoute<T> extends PopupRoute<T> {
   final BoxConstraints? constraints;
   final Clip clipBehavior;
   final AnimationStyle? popUpAnimationStyle;
+  CurvedAnimation? _transition;
 
   @override
   Animation<double> createAnimation() {
     if (popUpAnimationStyle != AnimationStyle.noAnimation) {
-      return CurvedAnimation(
+      _transition = CurvedAnimation(
         parent: super.createAnimation(),
-        curve: popUpAnimationStyle?.curve ?? Curves.easeInBack,
+        curve: popUpAnimationStyle?.curve ?? Curves.easeOutCubic,
         reverseCurve: popUpAnimationStyle?.reverseCurve ??
             const Interval(0.0, _kMenuCloseIntervalEnd),
       );
+      // Custom back/elastic curves can leave [0, 1]. The route drives opacity,
+      // dimensions and nested intervals, all of which require bounded input.
+      return _transition!.drive(_CurveTween(curve: Curves.linear));
     }
     return super.createAnimation();
+  }
+
+  @override
+  void dispose() {
+    _transition?.dispose();
+    super.dispose();
   }
 
   void scrollTo(int selectedItemIndex) {
@@ -1432,7 +1443,7 @@ class PopupMenuButton<T> extends StatefulWidget {
   /// menu's open and close transitions.
   ///
   /// If [AnimationStyle.curve] is provided, it will be used to override
-  /// the default popup animation curve. Otherwise, defaults to [Curves.linear].
+  /// the default popup animation curve. Otherwise, defaults to [Curves.easeOutCubic].
   ///
   /// If [AnimationStyle.reverseCurve] is provided, it will be used to
   /// override the default popup animation reverse curve. Otherwise, defaults to

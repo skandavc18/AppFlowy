@@ -5,6 +5,9 @@ import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/scrolling/scroll_hover_suppression.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_icon_artwork.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:flutter/material.dart';
 
@@ -41,8 +44,8 @@ abstract final class SidebarMetrics {
   /// Added per level of nesting, inside the pill so every pill still aligns.
   static const indent = 14.0;
 
-  /// The disclosure chevron takes the icon's place on hover, so it costs no
-  /// horizontal room of its own.
+  /// A separate disclosure target; it must never replace an editable icon.
+  static const disclosureSlot = 16.0;
   static const disclosureIconSize = 12.0;
 
   static const iconSlot = 22.0;
@@ -70,9 +73,9 @@ abstract final class SidebarMetrics {
 
 /// The sidebar's icon family.
 ///
-/// Phosphor "Bold" — already bundled as one of the application's icon packs.
-/// Every glyph is hollow outline artwork with rounded joins, so a page reads
-/// as an outlined sheet rather than a solid Material slab.
+/// Stable picker identities, drawn with a small, rounded navigation set rather
+/// than the picker's heavy bold artwork. Keep these names for compatibility;
+/// an unmapped future symbol can still fall back to its bundled picker glyph.
 enum SidebarIcon {
   search('editor', 'magnifying-glass'),
   newPage('office', 'note-pencil'),
@@ -129,14 +132,30 @@ enum SidebarIcon {
   String get group => '${_sidebarIconPackId}_$_category';
 }
 
+/// Collections use the same default identity in the sidebar and page header.
+SidebarIcon sidebarCollectionIcon(CollectionKind kind) => switch (kind) {
+      CollectionKind.book => SidebarIcon.book,
+      CollectionKind.album => SidebarIcon.album,
+      CollectionKind.repository => SidebarIcon.repository,
+      CollectionKind.database => SidebarIcon.database,
+      CollectionKind.bookmark => SidebarIcon.link,
+      CollectionKind.email => SidebarIcon.mailbox,
+      CollectionKind.folder => SidebarIcon.folder,
+    };
+
 const _sidebarIconPackId = 'phosphor_bold';
 
-/// The pack every [SidebarIcon] is drawn from.
+/// The compatibility pack for sidebar symbols without local artwork.
 final IconPack sidebarIconPack =
     kIconPacks.firstWhere((pack) => pack.id == _sidebarIconPackId);
 
-/// Loads the sidebar's icon pack so the first frame is not drawn blank.
+/// Current defaults are synchronous. Only warm the compatibility pack when a
+/// new symbol has not yet been added to the local navigation artwork.
 void warmSidebarIcons() {
+  if (SidebarIcon.values
+      .every((icon) => roundedSidebarIconSvg(icon.name) != null)) {
+    return;
+  }
   if (!isIconPackLoaded(sidebarIconPack)) {
     unawaited(loadIconPack(sidebarIconPack));
   }
@@ -156,6 +175,14 @@ class SidebarGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final artwork = roundedSidebarIconSvg(icon.name);
+    if (artwork != null) {
+      return FlowySvg.string(
+        artwork,
+        size: Size.square(size),
+        color: color ?? SidebarPalette.of(context).icon,
+      );
+    }
     return ValueListenableBuilder<int>(
       valueListenable: iconPacksVersion,
       builder: (context, _, __) {
@@ -213,9 +240,8 @@ class SidebarPalette {
 
   /// Icon ink.
   ///
-  /// Deliberately lighter than [textBody]: a bold stroke carries far more ink
-  /// than a letterform, so matching the two numerically makes the glyph read
-  /// as the darker of the pair.
+  /// Deliberately quieter than [textBody], so the navigation symbols support
+  /// the names rather than competing with them.
   final Color icon;
   final Color hover;
   final Color selected;
@@ -321,6 +347,7 @@ class SidebarRow extends StatefulWidget {
     this.active = false,
     this.hoverEnabled = true,
     this.dimIcon = true,
+    this.reserveLeadingSpace = false,
     this.onTap,
     this.onSecondaryPointerDown,
     this.onTertiaryTapDown,
@@ -329,11 +356,12 @@ class SidebarRow extends StatefulWidget {
 
   final Widget label;
 
-  /// The disclosure control. When present it takes the icon's place while the
-  /// row is hovered, the way Notion does, so nothing is indented to make room
-  /// for a chevron that is usually invisible.
+  /// The disclosure control, beside (never in place of) the editable icon.
   final Widget? leading;
   final Widget? icon;
+
+  /// Leaf rows reserve the same gutter as their expandable siblings.
+  final bool reserveLeadingSpace;
 
   /// Built only while the row is hovered or [active], so a sidebar of a
   /// thousand pages does not carry a thousand popovers.
@@ -380,27 +408,29 @@ class _SidebarRowState extends State<SidebarRow> {
             ? palette.hover
             : palette.hoverAtRest;
     final reserve = SidebarMetrics.trailingReserve(widget.trailingSlots);
-    final showsDisclosure = widget.leading != null && revealed;
 
     final content = Row(
       children: [
         SizedBox(width: SidebarMetrics.rowInset + widget.indent),
-        if (widget.icon != null || widget.leading != null) ...[
+        if (widget.leading != null || widget.reserveLeadingSpace)
+          SizedBox(
+            width: SidebarMetrics.disclosureSlot,
+            child: Center(child: widget.leading),
+          ),
+        if (widget.icon != null) ...[
           SizedBox(
             width: SidebarMetrics.iconSlot,
             child: Center(
-              child: showsDisclosure
-                  ? widget.leading
-                  : widget.dimIcon
-                      ? AnimatedOpacity(
-                          duration: SidebarMetrics.hover,
-                          curve: SidebarMetrics.curve,
-                          opacity: revealed || widget.selected
-                              ? 1
-                              : SidebarMetrics.iconRestingOpacity,
-                          child: widget.icon,
-                        )
-                      : widget.icon,
+              // Keep the picker mounted when a save changes a dimmed default
+              // into an undimmed custom icon (including keep-open selections).
+              child: AnimatedOpacity(
+                duration: SidebarMetrics.hover,
+                curve: SidebarMetrics.curve,
+                opacity: !widget.dimIcon || revealed || widget.selected
+                    ? 1
+                    : SidebarMetrics.iconRestingOpacity,
+                child: widget.icon,
+              ),
             ),
           ),
           const SizedBox(width: SidebarMetrics.iconGap),
@@ -538,7 +568,7 @@ class SidebarDisclosure extends StatelessWidget {
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: SizedBox(
-          width: SidebarMetrics.iconSlot,
+          width: SidebarMetrics.disclosureSlot,
           height: SidebarMetrics.iconSlot,
           child: Center(child: child),
         ),
@@ -725,7 +755,9 @@ class SidebarScrollbar extends StatelessWidget {
       mainAxisMargin: 4,
       child: ScrollConfiguration(
         behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
-        child: child,
+        // Only the viewport and scrollbar should update while scrolling, not
+        // the page tree or the popovers of every row crossed by the pointer.
+        child: ScrollHoverSuppression(child: child),
       ),
     );
   }

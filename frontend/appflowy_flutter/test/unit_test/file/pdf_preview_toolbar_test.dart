@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_p
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
@@ -545,12 +546,17 @@ void main() {
     expect(find.byTooltip('Search document (Ctrl/Cmd F)'), findsOneWidget);
     expect(find.byTooltip('Open in full screen'), findsOneWidget);
     expect(find.byTooltip('Fit to width'), findsNothing);
-    expect(find.text('Premium design.pdf'), findsNothing);
+    expect(find.text('Premium design.pdf'), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsNothing);
+    final title = tester.getRect(find.text('Premium design.pdf'));
+    final controls = tester.getRect(find.byType(PdfPageNumberField));
+    expect(controls.top, greaterThan(title.bottom));
     expect(
       find.byKey(const ValueKey('merged-pdf-overflow-trigger')),
       findsOneWidget,
     );
     expect(find.byIcon(Icons.more_horiz_rounded), findsOneWidget);
+    expect(find.byType(DocumentViewportHeader), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -573,11 +579,17 @@ void main() {
     );
 
     expect(find.text('Premium design.pdf'), findsOneWidget);
-    expect(find.byTooltip('Fit to width'), findsOneWidget);
+    expect(find.byType(DocumentViewportFitButton), findsOneWidget);
+    expect(find.byTooltip('Fit options'), findsOneWidget);
     expect(find.byTooltip('Fit whole page'), findsOneWidget);
     expect(find.byTooltip('Rotate clockwise'), findsOneWidget);
     expect(find.byTooltip('Download PDF'), findsOneWidget);
     expect(find.byTooltip('Print PDF'), findsOneWidget);
+    expect(find.byType(DocumentViewportHeader), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsNothing);
+    final title = tester.getRect(find.text('Premium design.pdf'));
+    final pageField = tester.getRect(find.byType(PdfPageNumberField));
+    expect(title.center.dy, closeTo(pageField.center.dy, 1));
     expect(
       find.byKey(const ValueKey('merged-pdf-overflow-trigger')),
       findsOneWidget,
@@ -633,6 +645,158 @@ void main() {
 
     expect(find.text('Fit to width'), findsNothing);
     expect(find.text('Rename file'), findsNothing);
+  });
+
+  testWidgets('fit is one click with width and actual-size choices beside it',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    var fitPage = 0;
+    var fitWidth = 0;
+    var actualSize = 0;
+    await tester.pumpWidget(
+      _themedApp(
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 1100,
+            child: _toolbar(
+              onFitPage: () => fitPage++,
+              onFitWidth: () => fitWidth++,
+              onActualSize: () => actualSize++,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Fit'));
+    await tester.pumpAndSettle();
+    expect(fitPage, 1);
+    expect(find.text('Fit to width'), findsNothing);
+    await tester.tap(find.byTooltip('Fit options'));
+    await tester.pumpAndSettle();
+    expect(find.text('Fit whole page'), findsOneWidget);
+    expect(find.text('Fit to width'), findsOneWidget);
+    expect(find.text('Actual size'), findsOneWidget);
+    await tester.tap(find.text('Fit to width'));
+    await tester.pumpAndSettle();
+    expect(fitWidth, 1);
+    expect(fitPage, 1);
+    await tester.tap(find.byTooltip('Fit options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Actual size'));
+    await tester.pumpAndSettle();
+    expect(actualSize, 1);
+  });
+
+  for (final width in [320.0, 430.0, 660.0, 750.0, 992.0, 1100.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('PDF controls fit $width px at ${scale}x text',
+          (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 400));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await tester.pumpWidget(
+          _themedApp(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                child: MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: _toolbar(),
+                ),
+              ),
+            ),
+          ),
+        );
+        final field = tester.widget<TextField>(
+          find.byKey(const ValueKey('pdf-page-number-field')),
+        );
+        expect(
+          (field.decoration!.enabledBorder! as OutlineInputBorder)
+              .borderSide
+              .style,
+          BorderStyle.none,
+        );
+        final bar = tester
+            .widget<DocumentViewportBar>(find.byType(DocumentViewportBar));
+        expect(
+          bar.background,
+          PdfPreviewPalette.of(tester.element(find.byType(PdfPreviewToolbar)))
+              .canvas,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  testWidgets('PDF page input survives the header wrapping on resize',
+      (tester) async {
+    await tester.binding.setSurfaceSize(const Size(1200, 320));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final width = ValueNotifier<double>(1100);
+    addTearDown(width.dispose);
+    await tester.pumpWidget(
+      _themedApp(
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: ValueListenableBuilder<double>(
+            valueListenable: width,
+            builder: (_, value, __) =>
+                SizedBox(width: value, child: _toolbar()),
+          ),
+        ),
+      ),
+    );
+    final field = find.byKey(const ValueKey('pdf-page-number-field'));
+    await tester.enterText(field, '42');
+    final controller = tester.widget<TextField>(field).controller;
+    width.value = 320;
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(field).controller, same(controller));
+    expect(controller!.text, '42');
+    expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('compact PDF search is docked and supports enlarged text',
+      (tester) async {
+    final controller = TextEditingController(text: 'report');
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      _themedApp(
+        paper: true,
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: SizedBox(
+            width: 320,
+            child: MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+              child: PdfSearchToolbar(
+                controller: controller,
+                focusNode: focusNode,
+                currentMatch: 1,
+                matchCount: 5,
+                searchProgress: null,
+                isSearching: false,
+                onChanged: (_) {},
+                onOptionsChanged: (_) {},
+                onToggleOcr: () {},
+                onPrevious: () {},
+                onNext: () {},
+                onClose: () {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byType(DocumentViewportBar), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byKey(const ValueKey('pdf-search-field')), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('toolbar buttons use the code block neutral hover surface', (
@@ -956,7 +1120,8 @@ void main() {
     test('no two presets offer the same combination', () {
       final pairs = PdfViewPreset.values
           .map(
-              (preset) => '${preset.layoutMode.name}/${preset.transition.name}')
+            (preset) => '${preset.layoutMode.name}/${preset.transition.name}',
+          )
           .toList();
       expect(pairs.toSet().length, pairs.length);
     });
@@ -1049,7 +1214,12 @@ void main() {
   });
 }
 
-PdfPreviewToolbar _toolbar() => PdfPreviewToolbar(
+PdfPreviewToolbar _toolbar({
+  VoidCallback? onFitPage,
+  VoidCallback? onFitWidth,
+  VoidCallback? onActualSize,
+}) =>
+    PdfPreviewToolbar(
       title: 'Premium design.pdf',
       currentPage: 3,
       pageCount: 120,
@@ -1066,8 +1236,9 @@ PdfPreviewToolbar _toolbar() => PdfPreviewToolbar(
       onPageSubmitted: (_) {},
       onZoomOut: () {},
       onZoomIn: () {},
-      onFitWidth: () {},
-      onFitPage: () {},
+      onFitWidth: onFitWidth ?? () {},
+      onFitPage: onFitPage ?? () {},
+      onActualSize: onActualSize,
       onToggleSearch: () {},
       onRotate: () {},
       onDownload: () {},

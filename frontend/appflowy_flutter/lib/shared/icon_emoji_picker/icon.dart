@@ -33,12 +33,15 @@ class IconGroup {
   final List<Icon> icons;
 
   /// The pack this group was loaded from, assigned by the loader.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   String? packId;
 
   /// The namespace [name] is prefixed with, stripped from [displayName].
+  @JsonKey(includeFromJson: false, includeToJson: false)
   String groupPrefix = '';
 
   /// Whether this group's artwork carries its own colors.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   bool isColorful = false;
 
   String get displayName {
@@ -88,7 +91,9 @@ class Icon {
   final List<String> keywords;
   final String content;
 
-  // Add reference to parent IconGroup
+  // Runtime back-reference, not asset data. Serialising this would recurse
+  // through the group's icons back into the same group.
+  @JsonKey(includeFromJson: false, includeToJson: false)
   IconGroup? iconGroup;
 
   /// Whether this icon carries its own colors and must be painted untinted.

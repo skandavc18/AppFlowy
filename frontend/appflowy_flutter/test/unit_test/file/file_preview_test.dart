@@ -279,9 +279,15 @@ void main() {
   });
 
   test('builds the reduced-motion direct scroll fallback', () {
+    final script = buildWebViewDirectScrollScript(const Offset(-12.5, 120));
+    expect(script, contains('const dx = -12.5;'));
+    expect(script, contains('const dy = 120.0;'));
+    expect(script, contains('window.scrollBy(dx, dy);'));
+    // The existing fallback also supports a document whose largest pane,
+    // rather than its root, owns scrolling.
     expect(
-      buildWebViewDirectScrollScript(const Offset(-12.5, 120)),
-      'window.scrollBy(-12.5, 120.0);',
+      script,
+      contains('(best || window).scrollBy(dx, dy);'),
     );
   });
 

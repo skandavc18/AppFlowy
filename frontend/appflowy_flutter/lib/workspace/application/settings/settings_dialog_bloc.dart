@@ -1,3 +1,4 @@
+import 'package:appflowy/user/application/billing_policy.dart';
 import 'package:appflowy/user/application/user_listener.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
@@ -99,31 +100,16 @@ class SettingsDialogBloc
     UserProfilePB userProfile, [
     AFRolePB? currentWorkspaceMemberRole,
   ]) async {
-    if ([
-      WorkspaceTypePB.LocalW,
-    ].contains(userProfile.workspaceType)) {
+    if (!BillingPolicy.canManageWorkspace(
+      userProfile.workspaceType,
+      currentWorkspaceMemberRole,
+    )) {
       return false;
-    }
-
-    if (currentWorkspaceMemberRole == null ||
-        currentWorkspaceMemberRole != AFRolePB.Owner) {
-      return false;
-    }
-
-    if (kDebugMode) {
-      return true;
     }
 
     final result = await UserEventGetCloudConfig().send();
     return result.fold(
-      (cloudSetting) {
-        final whiteList = [
-          "https://beta.appflowy.cloud",
-          "https://test.appflowy.cloud",
-        ];
-
-        return whiteList.contains(cloudSetting.serverUrl);
-      },
+      (cloudSetting) => BillingPolicy.supportsServer(cloudSetting.serverUrl),
       (err) {
         Log.error("Failed to get cloud config: $err");
         return false;

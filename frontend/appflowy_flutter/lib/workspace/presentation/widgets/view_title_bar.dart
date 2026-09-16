@@ -3,6 +3,9 @@ import 'package:appflowy/features/share_tab/data/models/share_section_type.dart'
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
@@ -177,7 +180,14 @@ class ViewTitleBar extends StatelessWidget {
         if (!hasAddedEllipsis) {
           hasAddedEllipsis = true;
           children.addAll([
-            const FlowyText.regular(' ... '),
+            ViewAncestorMenu(
+              views: views.sublist(lowerBound, upperBound),
+              onSelected: (parent) {
+                if (context.mounted) {
+                  context.read<TabsBloc>().openPlugin(parent);
+                }
+              },
+            ),
             const FlowySvg(FlowySvgs.title_bar_divider_s),
           ]);
         }
@@ -306,6 +316,36 @@ class ViewTitleBar extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The hidden portion of a deep breadcrumb remains navigable by mouse or key.
+class ViewAncestorMenu extends StatelessWidget {
+  const ViewAncestorMenu({
+    super.key,
+    required this.views,
+    required this.onSelected,
+  });
+
+  final List<ViewPB> views;
+  final ValueChanged<ViewPB> onSelected;
+
+  @override
+  Widget build(BuildContext context) => AppMenuIconButton(
+        key: const ValueKey('breadcrumb-ancestors'),
+        icon: Icons.more_horiz_rounded,
+        tooltip: LocaleKeys.workspaceChrome_ancestors.tr(),
+        size: 24,
+        width: 280,
+        placement: AppMenuPlacement.below,
+        entries: () => [
+          for (final view in views)
+            AppMenuItem(
+              label: view.nameOrDefault,
+              icon: Icons.folder_rounded,
+              onSelected: () => onSelected(view),
+            ),
+        ],
+      );
 }
 
 class TrashBreadcrumb extends StatelessWidget {
@@ -608,9 +648,11 @@ class ReLockedPageStatus extends StatelessWidget {
 
 extension on BuildContext {
   Color get lockedPageButtonBackground {
-    if (Theme.of(this).brightness == Brightness.light) {
-      return Colors.white.withValues(alpha: 0.75);
+    if (Theme.of(this).brightness == Brightness.light &&
+        PaperTheme.isEnabled(this)) {
+      return PaperTheme.popupBackground;
     }
-    return Color(0xB21B1A22);
+    return PremiumThemeExtension.maybeOf(this)?.surface ??
+        Theme.of(this).colorScheme.surface;
   }
 }

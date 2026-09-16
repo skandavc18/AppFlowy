@@ -306,7 +306,7 @@ class ViewMoreActionTypeWrapper extends CustomActionCell {
           PickerTabType.custom,
         ],
         documentId: sourceView.id,
-        initialType: sourceView.icon.toEmojiIconData().type.toPickerTabType(),
+        initialType: sourceView.icon.toEmojiIconData().toPickerTabType(),
         onSelectedEmoji: (result) => onTap(controller, result),
       ),
       child: child,

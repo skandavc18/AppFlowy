@@ -1,7 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 enum ImportType {
@@ -46,16 +45,8 @@ enum ImportType {
         );
       };
 
-  bool get enableOnRelease {
-    switch (this) {
-      case ImportType.historyDatabase:
-      case ImportType.historyDocument:
-      case ImportType.afDatabase:
-        return kDebugMode;
-      default:
-        return true;
-    }
-  }
+  // All supported import handlers are available in every build configuration.
+  bool get enableOnRelease => true;
 
   List<String> get allowedExtensions {
     switch (this) {

@@ -50,17 +50,24 @@ class _ViewTabBarItemState extends State<ViewTabBarItem> {
       mainAxisAlignment:
           widget.shortForm ? MainAxisAlignment.center : MainAxisAlignment.start,
       children: [
-        if (widget.view.icon.value.isNotEmpty)
+        if (view.icon.value.isNotEmpty)
           RawEmojiIconWidget(
-            emoji: widget.view.icon.toEmojiIconData(),
+            emoji: view.icon.toEmojiIconData(),
             emojiSize: 16,
-          ),
-        if (!widget.shortForm && view.icon.value.isNotEmpty) const HSpace(6),
-        if (!widget.shortForm || view.icon.value.isEmpty) ...[
+          )
+        else
+          view.defaultIcon(size: const Size.square(16)),
+        if (!widget.shortForm) ...[
+          const HSpace(8),
           Flexible(
-            child: FlowyText.medium(
+            child: Text(
               view.nameOrDefault,
+              maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontSize: 13,
+                    height: 1.2,
+                  ),
             ),
           ),
         ],

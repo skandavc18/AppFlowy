@@ -1,5 +1,212 @@
 # Large-page loading and scrolling performance
 
+## Debug/Release functional parity and memory follow-up (2026-09-16)
+
+After confirming the dashboard leak fix, the user reported high remaining RAM
+and missing Release features. There were real functional differences, not just
+different optimization levels:
+
+- `FeatureFlagTask` skipped saved flag initialization outside Debug. Flags now
+  load in every build, with the existing released-feature defaults unchanged.
+- Removed compiler-mode gates from supported legacy imports, JSON/raw database
+  exports, data-export/dry-run health controls, feature-flag settings, shared-page
+  refresh, mobile notification unarchive, and custom cloud-provider choices.
+  Existing permissions, file pickers, server-change confirmations and the
+  `Env.enableCustomCloud` setting remain in effect.
+- Billing now uses the **same existing restricted server list and cloud-owner
+  checks in both modes**, rather than copying Debug bypasses into Release.
+  Payment **return URLs**, not payment backend routing, follow the configured
+  web domain instead of compiler mode. No payment request was made during tests.
+- Native Debug testing exposed a separate popup animation defect: the default
+  back curve supplied negative values to opacity and nested intervals. The
+  route now defaults to a bounded easing curve, clamps custom curve output,
+  disposes its owned curve, and uses listener-free item opacity mappings instead
+  of allocating status-listening curves on every build. Animations remain on.
+
+**Profiles are not features:** `appFlowyApplicationDataDirectory()` still defaults
+to `data_dev` in Debug and `data` in Release; a configured custom location can
+override that. These folders can contain different accounts, pages and dashboard
+content even with identical capabilities. They were **not merged, replaced or
+migrated**. Compare the same workspace and Settings > Manage data location before
+interpreting different content as a missing feature. Debug diagnostics, JIT and
+integration-test infrastructure intentionally remain different from Release.
+
+### Validation and reproducibility
+
+- **273 regressions passed** across 17 files; targeted analysis of **20 Dart
+  paths** was clean. This includes 12 frame-by-frame popup cases (8ms steps,
+  default/undershoot/overshoot/no-animation, light/dark/paper).
+- **The same 25 isolated functional cases passed in native Windows Release and
+  Debug**, with clean process exits: saved flags, plugin/extension catalogs,
+  billing restrictions, actual settings/import/export menus, canceled exports,
+  cloud choices and notification controls in all three themes. They use
+  in-memory storage and fake file pickers, not normal startup or user data.
+  This is not an end-to-end test of every legacy database file or cloud service.
+- `tool/test_windows_feature_parity.ps1` runs the standalone native fixture and
+  validates its result files. Release has no VM service; the fixture writes a
+  report and the wrapper closes its window through normal WM_CLOSE. A direct
+  Dart `exit()` interrupted native teardown; `SystemNavigator.pop()` alone did
+  not close this runner. Accessibility is explicitly **on** before test handle
+  baselines, avoiding a first-window platform-handle timing false positive.
+- `test/unit_test/shared/build_mode_feature_guard_test.dart` rejects functional
+  compiler-mode checks, with narrow documented exceptions for diagnostics,
+  test infrastructure and legacy profile isolation. It failed on 14 production
+  files before the parity changes and passes afterward.
+- `tool/build_windows_bundles.ps1` now includes staged sources in freshness
+  checks, verifies stable input hashes across both builds, and invokes
+  `tool/verify_windows_bundle_parity.ps1`. The final normal bundles used the
+  same **3,820 inputs**, contain **1,179 byte-identical functional assets** and
+  the same **36 native components**, including an identical Rust backend.
+  Native optimized DLLs and JIT/AOT payloads need not be byte-identical.
+  Six positive/negative bundle-verifier checks passed in temporary fixtures.
+
+Final normal builds ran Release first, Debug last. Under
+`frontend/appflowy_flutter/build/windows/x64/runner/`, executable/runtime UTC
+timestamps were **Release: 11:00:13 / 10:59:22**, **Debug: 11:02:42 / 11:01:44**.
+Both were independently checked against the build manifest and latest source.
+Reports: `build/performance/windows-bundles.json`,
+`build-mode-parity-{release,debug}.json`, `build-mode-parity-regressions.log` and
+`build-mode-parity-analysis.log` (all under `build/performance/`).
+
+### Why Debug still uses substantial memory
+
+The fresh normal Debug app (PID 30060) started at 16:34:22 local and was verified
+responsive. A 15-second startup/idle sample averaged **940.6 MiB working set**,
+**705.7 MiB private memory**, **2.36% of one logical CPU**, and **0.018% 3D GPU**.
+A subsequent small VM query reported **342.0 MiB Dart heap usage**, **385.5 MiB
+heap capacity**, and about **1 MiB external usage**. There were zero spinner
+states/inspector reference records and no checked startup or lifecycle errors.
+These are overlapping counters, not values to add or a precise native-heap
+attribution. No full inspector map or heap dump was requested.
+
+Debug carries JIT code, kernel data, development metadata and a larger engine;
+the normal Debug kernel is **179.1 MiB on disk**, versus **47.7 MiB** for Release
+AOT code. File size is not resident memory, but illustrates the different runtime
+payloads. Both also retain live tab/editor/database models, native engine/backend
+allocations, decoded media and caches. The VM/allocator can retain freed capacity
+for reuse rather than immediately reducing Windows working set.
+
+Verified cache examples, **not measured occupancy**: history previews are capped
+at four entries/16 MiB per surface; `DocumentImageLoader` retains up to 128 image
+futures (24 MiB per fetched/file image limit, 1600px decode-width cap, **no total
+byte budget**); open database `RowCache` retains loaded row metadata/cells until
+view disposal. These are optimization leads, not proof they account for specific
+portions of the observed RAM or that no other leaks remain. A controlled
+same-workspace Release comparison and longer post-GC retention analysis are
+needed before assigning exact savings or diagnosing continued growth.
+
+## Resource-lifecycle audit (2026-09-16)
+
+The running normal Windows Debug process, not a test or build process, initially
+held approximately **1,620 MiB working set / 1,365 MiB private memory**. Windows
+reported **91% of one logical CPU** (not 91% of the whole machine), **24% 3D GPU
+activity**, and approximately **213 MiB shared GPU memory**. These are separate
+counters; working set, private memory and GPU memory must not be added together.
+
+### Live evidence
+
+- Of 1,051 retained ticker instances, exactly **four were active and unmuted**.
+  All four belonged to collection-preview loading spinners inside a dashboard.
+- Their elements and the dashboard's detached `PageVersionHost` were **inactive,
+  not unmounted**, with no parent above the host. The controllers had completed
+  loading, but their inactive widgets could not rebuild to replace the spinners.
+- The app was displaying a locked-page placard. No HTML/native WebView widgets
+  were mounted, so browser texture capture was not the cause of this snapshot.
+- Stopping only the four proven-inactive spinner tickers through the local VM
+  reduced the subsequent ten-sample CPU average to **3.38% of one logical CPU**
+  (0–9.21%) and both sampled 3D GPU engines to **0%**. Private memory was flat
+  across that sample. This was a diagnostic intervention, not a permanent fix.
+- A GC left about **487 MB Dart heap**. The Flutter inspector retained **672,372
+  reference records**, with **112,063 errors since startup**. Inspector records
+  use weak targets but still retain their bookkeeping. Profiling flags were off
+  before inspection and were restored afterward. A later oversized inspector
+  query itself inflated memory, so that later peak is not an app baseline.
+
+### Independently reproduced and corrected defects
+
+- `TabsState.closeView` and the close-other-tabs handler dropped page managers
+  without disposing them. `PageNotifier.dispose` also failed to dispose its
+  owned plugin, leaving constructor-created `ViewListener`s and initialized
+  plugin blocs behind. Ownership now releases once, including secondary pages.
+- Repeated/duplicate page opens construct a notifier before deduplication. The
+  discarded incoming notifier is now released without calling `dispose` on
+  uninitialized late-final plugin blocs or disposing the already-open instance.
+- `SecondaryView` did not dispose its animation controller. Removing it during
+  animation reproduces Flutter's **disposed with an active Ticker** exception.
+  It also allocated a new status-listening `CurvedAnimation` on every resize.
+  The curve is now reused and both are disposed; cancelled transitions use
+  `orCancel`, and stale closing completions cannot collapse a reopened pane.
+- The secondary resize grip now cancels its hover timer, and queued page-fade
+  callbacks check mounting before updating state.
+
+The new `test/widget_test/resource_lifecycle_test.dart` failed **nine tests**
+before these fixes; its three animated-history snapshot tests already passed.
+Coverage also exercises 100 tab open/close cycles, secondary-to-primary ownership
+transfer, interrupted open/close, and pending hover teardown. The native entry
+point is `integration_test/performance/resource_lifecycle_test.dart`; it uses
+in-memory fixtures, never normal startup, backend, credentials or live preferences.
+
+### Dashboard recurrence: root cause confirmed
+
+The user reproduced the GPU spike on dashboard opening after the tab/secondary
+cleanup fixes. The rebuilt process again contained four inactive spinner states,
+26,825 recorded Flutter errors and 160,944 inspector records. The decisive live
+state was `_BookEmbedPreviewState`: its **element was defunct**, its **State was
+still ready**, `flip` was **NotInitialized**, and the mixin had already created a
+ticker. The following album preview was still inactive with no flip controller.
+
+Both book and album previews used a `late final AnimationController` initializer
+and accessed it unconditionally in `dispose()`. Loading, empty and non-cover
+layouts could reach disposal without ever reading that field. Its first access
+then called `createTicker`/`TickerMode.getNotifier` on an already-defunct element,
+throwing **"Looking up a deactivated widget's ancestor is unsafe."** Flutter
+clears its inactive roots before unmount traversal; this exception aborted the
+remaining teardown, leaving the sibling spinners and their listeners alive.
+
+`book_embed_preview.dart` and `album_embed_preview.dart` now keep nullable owned
+controllers behind their lazy getters and dispose only existing instances. No
+controller is constructed during teardown, and unused cover layouts remain lazy.
+The same independently reproduced bug in `calendar_sync_indicator.dart` is fixed
+the same way. No animation, rendering quality, refresh rate or theme was disabled.
+
+`test/widget_test/dashboard_resource_lifecycle_test.dart` uses the **real**
+collection preview widgets with controlled in-memory repositories. The book plus
+four sibling spinners and idle calendar tests both failed with the exact unsafe
+ancestor exception before their fixes. All **42 cases pass** after the fixes:
+loading/empty and every book/album layout, removal mid-cover-animation, slideshow
+timer teardown, four-sibling disposal, and idle calendar removal in light/dark/
+paper. Real labels are loaded before intentionally pending spinners; untranslated
+key strings initially caused test-only book-cover overflow. These tests are also
+included in the native Windows resource-lifecycle entry point.
+
+Final validation: **230 tests in nine regression files passed**, targeted
+analysis of all five follow-up Dart paths was clean, and **48 widget cases passed
+on the Windows engine** (the native runner's +50 includes setup/teardown).
+Normal Release then Debug bundles were verified fresh against all changed
+production sources and each build start: Release EXE/AOT at **08:47:23 /
+08:46:42 UTC**, Debug EXE/kernel at **08:49:32 / 08:48:50 UTC** on 2026-09-16.
+Both executables live under `frontend/appflowy_flutter/build/windows/x64/runner/`
+at `Release/AppFlowy.exe` and `Debug/AppFlowy.exe`.
+
+The fresh normal Debug app was left open on the actual home dashboard. A
+30-second idle sample averaged **0.028% 3D GPU**, **0.817% of one logical CPU**,
+**739.2 MiB private memory / 968.7 MiB working set**. Three Templates/Home
+round-trips verified zero mounted dashboard States while away and exactly one
+active State on return. The post-reopen 15-second sample averaged **0.049% GPU**,
+**0.513% of one CPU**, **684.8 MiB private / 927.3 MiB working set**. Zero loading
+spinner States and zero unsafe-ancestor/ticker-disposal errors remained.
+One direct VM-invoked Templates callback ran during a Flutter build and produced
+a markNeedsBuild diagnostic; it did not recur during sampling and was not the
+teardown failure. Profiling was off and debug reporting restored afterward.
+Report: `build/performance/dashboard-resource-verification.json`. These are
+short Debug idle observations, not guarantees for all content or long sessions.
+
+The earlier secondary-pane defect was real but did not fix this dashboard path.
+Short resource samples and these regressions do not establish that every possible
+resource leak or the separately reported sleep/wake issue is solved.
+
+---
+
 Investigated 2026-09-13 on Windows: Flutter 3.27.4 / Dart 3.6.2,
 `appflowy_editor` revision `470c4e7`, Profile/AOT, 1280x800 logical viewport,
 1.25 device pixel ratio, reported 120Hz display.

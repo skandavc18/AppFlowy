@@ -1,13 +1,14 @@
 import 'dart:async';
 
-import 'package:appflowy/workspace/application/settings/plan/workspace_subscription_ext.dart';
+import 'package:appflowy/env/cloud_env.dart';
+import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/user/application/billing_policy.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:appflowy_result/appflowy_result.dart';
 import 'package:fixnum/fixnum.dart';
-import 'package:flutter/foundation.dart';
 
 abstract class IUserBackendService {
   Future<FlowyResult<void, FlowyError>> cancelSubscription(
@@ -20,9 +21,6 @@ abstract class IUserBackendService {
     SubscriptionPlanPB plan,
   );
 }
-
-const _baseBetaUrl = 'https://beta.appflowy.com';
-const _baseProdUrl = 'https://appflowy.com';
 
 class UserBackendService implements IUserBackendService {
   UserBackendService({required this.userId});
@@ -278,8 +276,10 @@ class UserBackendService implements IUserBackendService {
       ..workspaceId = workspaceId
       ..recurringInterval = RecurringIntervalPB.Year
       ..workspaceSubscriptionPlan = plan
-      ..successUrl =
-          '${kDebugMode ? _baseBetaUrl : _baseProdUrl}/after-payment?plan=${plan.toRecognizable()}';
+      ..successUrl = BillingPolicy.paymentSuccessUrl(
+        getIt<AppFlowyCloudSharedEnv>().appflowyCloudConfig.base_web_domain,
+        plan,
+      );
     return UserEventSubscribeWorkspace(request).send();
   }
 

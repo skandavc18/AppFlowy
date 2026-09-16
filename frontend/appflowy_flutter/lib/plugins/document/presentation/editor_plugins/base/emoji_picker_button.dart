@@ -130,7 +130,7 @@ class _DesktopEmojiPickerButton extends StatelessWidget {
         height: emojiPickerSize.height,
         padding: const EdgeInsets.all(4.0),
         child: FlowyIconEmojiPicker(
-          initialType: emoji.type.toPickerTabType(),
+          initialType: emoji.toPickerTabType(),
           tabs: tabs,
           documentId: documentId,
           onSelectedEmoji: (r) {
@@ -205,7 +205,8 @@ class _MobileEmojiPickerButton extends StatelessWidget {
                   path: MobileEmojiPickerScreen.routeName,
                   queryParameters: {
                     MobileEmojiPickerScreen.pageTitle: title,
-                    MobileEmojiPickerScreen.iconSelectedType: emoji.type.name,
+                    MobileEmojiPickerScreen.iconSelectedType:
+                        emoji.toPickerTabType()?.name,
                     MobileEmojiPickerScreen.uploadDocumentId: documentId,
                     MobileEmojiPickerScreen.selectTabs:
                         tabs.map((e) => e.name).toList().join('-'),

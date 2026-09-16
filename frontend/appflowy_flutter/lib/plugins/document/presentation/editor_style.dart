@@ -572,7 +572,7 @@ class EditorStyleCustomizer {
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: FlowyHover(
           style: HoverStyle(
-            hoverColor: Colors.grey.withValues(alpha: 0.3),
+            hoverColor: AFThemeExtension.of(context).greyHover,
           ),
           child: child,
         ),

@@ -26,6 +26,7 @@
 namespace flutter_inappwebview_plugin
 {
   class InAppBrowser;
+  class TrackpadTouchQueue;
 
   using namespace Microsoft::WRL;
 
@@ -194,6 +195,7 @@ namespace flutter_inappwebview_plugin
     double horizontalScrollRemainder_ = 0.0;
     double verticalScrollRemainder_ = 0.0;
     VirtualKeyState virtualKeys_;
+    std::shared_ptr<TrackpadTouchQueue> trackpadTouchQueue_;
 
     std::map<UINT64, std::shared_ptr<NavigationAction>> navigationActions_ = {};
     std::shared_ptr<NavigationAction> lastNavigationAction_;

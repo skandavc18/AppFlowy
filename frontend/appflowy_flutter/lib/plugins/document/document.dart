@@ -17,6 +17,7 @@ import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_stack.dart';
 import 'package:appflowy/workspace/presentation/widgets/favorite_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/more_view_actions/more_view_actions.dart';
+import 'package:appflowy/workspace/presentation/widgets/more_view_actions/widgets/document_width_action.dart';
 import 'package:appflowy/workspace/presentation/widgets/tab_bar_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_title_bar.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -224,7 +225,10 @@ class DocumentPluginWidgetBuilder extends PluginWidgetBuilder
             view: view,
           ),
           const HSpace(4),
-          MoreViewActions(view: view),
+          MoreViewActions(
+            view: view,
+            customActions: const [DocumentWidthAction()],
+          ),
         ],
       ),
     );

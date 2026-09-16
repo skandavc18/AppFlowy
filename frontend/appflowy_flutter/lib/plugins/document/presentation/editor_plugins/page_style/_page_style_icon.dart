@@ -91,7 +91,7 @@ class _PageStyleIconState extends State<PageStyleIcon> {
           value: pageStyleIconBloc,
           child: Expanded(
             child: FlowyIconEmojiPicker(
-              initialType: icon.type.toPickerTabType(),
+              initialType: icon.toPickerTabType(),
               documentId: widget.view.id,
               tabs: widget.tabs,
               onSelectedEmoji: (r) {

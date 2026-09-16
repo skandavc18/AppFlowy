@@ -59,15 +59,20 @@ class BookEmbedPreview extends StatefulWidget {
 
 class _BookEmbedPreviewState extends State<BookEmbedPreview>
     with SingleTickerProviderStateMixin {
-  late final AnimationController flip = AnimationController(
-    vsync: this,
-    duration: CollectionEmbedMetrics.flip,
-    reverseDuration: const Duration(milliseconds: 460),
-  );
+  AnimationController? _flip;
+
+  AnimationController get flip => _flip ??= AnimationController(
+        vsync: this,
+        duration: CollectionEmbedMetrics.flip,
+        reverseDuration: const Duration(milliseconds: 460),
+      );
 
   @override
   void dispose() {
-    flip.dispose();
+    // Loading, shelf and contents layouts may never create a cover ticker.
+    // Initializing one during dispose looks up TickerMode on a defunct element
+    // and aborts the teardown of the rest of the dashboard (including spinners).
+    _flip?.dispose();
     super.dispose();
   }
 

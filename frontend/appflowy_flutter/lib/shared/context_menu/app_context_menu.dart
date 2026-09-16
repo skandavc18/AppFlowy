@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_menu_entry.dart';
 import 'app_menu_overlay.dart';
@@ -106,8 +109,12 @@ class AppMenuIconButton extends StatefulWidget {
 class _AppMenuIconButtonState extends State<AppMenuIconButton> {
   bool _hovered = false;
   bool _open = false;
+  bool _focused = false;
 
   Future<void> _show() async {
+    if (_open || !widget.enabled) {
+      return;
+    }
     final items = widget.entries();
     if (items.isEmpty) {
       return;
@@ -129,7 +136,10 @@ class _AppMenuIconButtonState extends State<AppMenuIconButton> {
   @override
   Widget build(BuildContext context) {
     final style = AppMenuStyle.of(context);
-    final active = _hovered || _open;
+    final active = _hovered || _open || _focused;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : AppMenuMetrics.hoverDuration;
     final button = MouseRegion(
       cursor:
           widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
@@ -139,7 +149,7 @@ class _AppMenuIconButtonState extends State<AppMenuIconButton> {
         behavior: HitTestBehavior.opaque,
         onTap: widget.enabled ? _show : null,
         child: AnimatedContainer(
-          duration: AppMenuMetrics.hoverDuration,
+          duration: duration,
           curve: AppMenuMetrics.hoverCurve,
           width: widget.size,
           height: widget.size,
@@ -148,14 +158,18 @@ class _AppMenuIconButtonState extends State<AppMenuIconButton> {
             // wash never fades through transparent black.
             color: active ? style.hover : style.hoverBase,
             borderRadius: BorderRadius.circular(widget.radius),
+            border: Border.all(
+              color:
+                  _focused ? style.accent : style.accent.withValues(alpha: 0),
+            ),
           ),
           alignment: Alignment.center,
           child: TweenAnimationBuilder<Color?>(
-            duration: AppMenuMetrics.hoverDuration,
+            duration: duration,
             curve: AppMenuMetrics.hoverCurve,
             tween: ColorTween(
               end: widget.enabled
-                  ? widget.iconColor ?? (active ? style.iconStrong : style.icon)
+                  ? widget.iconColor ?? style.icon
                   : style.iconMuted.withValues(alpha: 0.5),
             ),
             builder: (context, color, _) => Icon(
@@ -169,8 +183,30 @@ class _AppMenuIconButtonState extends State<AppMenuIconButton> {
     );
 
     final tooltip = widget.tooltip;
+    final focusableButton = Semantics(
+      button: true,
+      enabled: widget.enabled,
+      child: FocusableActionDetector(
+        enabled: widget.enabled,
+        onShowFocusHighlight: (value) => setState(() => _focused = value),
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.arrowDown): ActivateIntent(),
+        },
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              unawaited(_show());
+              return null;
+            },
+          ),
+        },
+        child: button,
+      ),
+    );
     return tooltip == null || tooltip.isEmpty
-        ? button
-        : Tooltip(message: tooltip, child: button);
+        ? focusableButton
+        : Tooltip(message: tooltip, child: focusableButton);
   }
 }

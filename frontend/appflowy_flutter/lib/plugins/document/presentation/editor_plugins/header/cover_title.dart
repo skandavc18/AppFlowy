@@ -2,6 +2,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/shared_context/shared_context.dart';
 import 'package:appflowy/shared/text_field/text_filed_with_metric_lines.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/application/appearance_defaults.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
@@ -35,12 +36,7 @@ class CoverTitle extends StatelessWidget {
 
 /// The text style of the page title shown next to the page icon.
 TextStyle coverTitleTextStyle(BuildContext context) =>
-    Theme.of(context).textTheme.bodyMedium!.copyWith(
-          fontSize: 40.0,
-          height: 1.08,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -1.1,
-        );
+    WorkspaceChrome.title(context);
 
 /// The height of a single line of the page title, used to keep the page icon
 /// optically centered on the first line of a title that wraps.

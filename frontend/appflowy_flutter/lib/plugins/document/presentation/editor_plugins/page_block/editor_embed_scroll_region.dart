@@ -4,6 +4,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.da
 import 'package:appflowy/extensions/presentation/island_block_component.dart';
 import 'package:appflowy/shared/scrolling/deferred_page_embed.dart';
 import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
+import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy_editor/appflowy_editor.dart'
     show Node, ImageBlockKeys, TableBlockKeys;
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
@@ -48,7 +49,9 @@ Widget editorEmbedScrollRegion(Node node, Widget child) =>
               // available for selection/editing immediately. Other previews
               // opt in only when their ResizableMedia frame has fixed bounds.
               enabled: node.type != CodeBlockKeys.type,
-              child: child,
+              // The inactive gesture gate removes this marker too. Once the
+              // viewer is engaged, its horizontal pan must not leave the page.
+              child: HistorySwipeExclusion(child: child),
             ),
           )
         : child;

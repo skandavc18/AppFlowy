@@ -1,6 +1,8 @@
-import 'dart:ui';
+import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -47,6 +49,8 @@ class PdfPreviewToolbar extends StatelessWidget {
     required this.overflow,
     this.viewMenu,
     this.showDocumentTitle = true,
+    this.subtitle,
+    this.onActualSize,
   });
 
   final String title;
@@ -67,6 +71,7 @@ class PdfPreviewToolbar extends StatelessWidget {
   final VoidCallback? onZoomIn;
   final VoidCallback? onFitWidth;
   final VoidCallback? onFitPage;
+  final VoidCallback? onActualSize;
   final VoidCallback onToggleSearch;
   final VoidCallback? onRotate;
   final VoidCallback? onDownload;
@@ -79,192 +84,181 @@ class PdfPreviewToolbar extends StatelessWidget {
 
   /// Hidden when the shared document header already names the file.
   final bool showDocumentTitle;
+  final String? subtitle;
 
   @override
   Widget build(BuildContext context) {
     final palette = PdfPreviewPalette.of(context);
-    return LayoutBuilder(
+    final controls = LayoutBuilder(
       builder: (context, constraints) {
-        final showTitle = showDocumentTitle && constraints.maxWidth >= 900;
-        final showOutlineButton = constraints.maxWidth >= 520;
-        final showZoom = constraints.maxWidth >= 650;
-        final showDocumentActions = constraints.maxWidth >= 860;
-        final radius = BorderRadius.circular(PdfPreviewGeometry.toolbarRadius);
+        final textScale =
+            math.max(1.0, MediaQuery.textScalerOf(context).scale(12) / 12);
+        final available = constraints.maxWidth / textScale;
+        final showOutlineButton = available >= 500;
+        final showZoom = available >= 640;
+        final showDocumentActions = available >= 720;
 
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: radius,
-              boxShadow: [
-                BoxShadow(
-                  color: palette.chromeShadow.withValues(alpha: 0.12),
-                  blurRadius: 12,
-                  offset: const Offset(0, 4),
-                  spreadRadius: -4,
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            // Keep every essential action reachable even in a split pane.
+            width: math.max(constraints.maxWidth, 340 * textScale),
+            child: Row(
+              children: [
+                _ToolbarGroup(
+                  children: [
+                    FilePreviewToolbarButton(
+                      tooltip: showThumbnails
+                          ? 'Hide page thumbnails'
+                          : 'Show page thumbnails',
+                      onPressed: onToggleThumbnails,
+                      selected: showThumbnails,
+                      icon: Icons.view_sidebar_rounded,
+                    ),
+                    if (showOutlineButton)
+                      FilePreviewToolbarButton(
+                        tooltip: showOutline
+                            ? 'Hide document outline'
+                            : 'Show document outline',
+                        onPressed: onToggleOutline,
+                        selected: showOutline,
+                        icon: Icons.account_tree_rounded,
+                      ),
+                  ],
                 ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: radius,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: PdfPreviewGeometry.blurSigma,
-                  sigmaY: PdfPreviewGeometry.blurSigma,
+                const Spacer(),
+                _ToolbarGroup(
+                  children: [
+                    FilePreviewToolbarButton(
+                      tooltip: 'Previous page (Page Up)',
+                      onPressed: onPreviousPage,
+                      icon: Icons.keyboard_arrow_up_rounded,
+                    ),
+                    PdfPageNumberField(
+                      page: currentPage,
+                      pageCount: pageCount,
+                      enabled: ready,
+                      onSubmitted: onPageSubmitted,
+                    ),
+                    FilePreviewToolbarButton(
+                      tooltip: 'Next page (Page Down)',
+                      onPressed: onNextPage,
+                      icon: Icons.keyboard_arrow_down_rounded,
+                    ),
+                  ],
                 ),
-                child: Container(
-                  height: PdfPreviewGeometry.toolbarHeight,
-                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                  decoration: BoxDecoration(
-                    color: palette.chrome,
-                    border: Border.all(color: palette.border, width: 0.5),
-                    borderRadius: radius,
-                  ),
-                  child: Row(
+                if (showZoom) ...[
+                  const DocumentViewportSeparator(),
+                  _ToolbarGroup(
                     children: [
-                      _ToolbarGroup(
-                        children: [
-                          FilePreviewToolbarButton(
-                            tooltip: showThumbnails
-                                ? 'Hide page thumbnails'
-                                : 'Show page thumbnails',
-                            onPressed: onToggleThumbnails,
-                            selected: showThumbnails,
-                            icon: Icons.view_sidebar_rounded,
-                          ),
-                          if (showOutlineButton)
-                            FilePreviewToolbarButton(
-                              tooltip: showOutline
-                                  ? 'Hide document outline'
-                                  : 'Show document outline',
-                              onPressed: onToggleOutline,
-                              selected: showOutline,
-                              icon: Icons.account_tree_rounded,
-                            ),
-                        ],
+                      FilePreviewToolbarButton(
+                        tooltip: 'Zoom out (Ctrl/Cmd −)',
+                        onPressed: onZoomOut,
+                        icon: Icons.remove_rounded,
                       ),
-                      if (showTitle) ...[
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.picture_as_pdf_rounded,
-                          size: 15,
-                          color: palette.icon,
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 190),
-                            child: Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontFamily: 'Inter',
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w500,
-                                letterSpacing: -0.1,
-                              ).copyWith(color: palette.textPrimary),
-                            ),
-                          ),
-                        ),
-                      ],
-                      const Spacer(),
-                      _ToolbarGroup(
-                        children: [
-                          FilePreviewToolbarButton(
-                            tooltip: 'Previous page (Page Up)',
-                            onPressed: onPreviousPage,
-                            icon: Icons.keyboard_arrow_up_rounded,
-                          ),
-                          PdfPageNumberField(
-                            page: currentPage,
-                            pageCount: pageCount,
-                            enabled: ready,
-                            onSubmitted: onPageSubmitted,
-                          ),
-                          FilePreviewToolbarButton(
-                            tooltip: 'Next page (Page Down)',
-                            onPressed: onNextPage,
-                            icon: Icons.keyboard_arrow_down_rounded,
-                          ),
-                        ],
+                      _ZoomLabel(zoom: zoom),
+                      FilePreviewToolbarButton(
+                        tooltip: 'Zoom in (Ctrl/Cmd +)',
+                        onPressed: onZoomIn,
+                        icon: Icons.add_rounded,
                       ),
-                      if (showZoom) ...[
-                        const SizedBox(width: 8),
-                        _ToolbarGroup(
-                          children: [
-                            FilePreviewToolbarButton(
-                              tooltip: 'Zoom out (Ctrl/Cmd −)',
-                              onPressed: onZoomOut,
-                              icon: Icons.remove_rounded,
+                      const SizedBox(width: 4),
+                      DocumentViewportFitButton(
+                        tooltip: 'Fit whole page',
+                        onPressed: onFitPage,
+                        options: AppMenuIconButton(
+                          key: const ValueKey('pdf-fit-options'),
+                          icon: Icons.keyboard_arrow_down_rounded,
+                          tooltip: 'Fit options',
+                          size: 24,
+                          iconSize: 15,
+                          radius: 7,
+                          iconColor: palette.icon,
+                          enabled: ready,
+                          entries: () => [
+                            AppMenuItem(
+                              label: 'Fit whole page',
+                              icon: Icons.crop_free_rounded,
+                              shortcut: 'Ctrl/Cmd 0',
+                              enabled: onFitPage != null,
+                              onSelected: onFitPage,
                             ),
-                            _ZoomLabel(zoom: zoom),
-                            FilePreviewToolbarButton(
-                              tooltip: 'Zoom in (Ctrl/Cmd +)',
-                              onPressed: onZoomIn,
-                              icon: Icons.add_rounded,
+                            AppMenuItem(
+                              label: 'Fit to width',
+                              icon: Icons.width_wide_rounded,
+                              enabled: onFitWidth != null,
+                              onSelected: onFitWidth,
                             ),
-                            FilePreviewToolbarButton(
-                              tooltip: 'Fit to width',
-                              onPressed: onFitWidth,
-                              icon: Icons.fit_screen_rounded,
-                            ),
-                            FilePreviewToolbarButton(
-                              tooltip: 'Fit whole page',
-                              onPressed: onFitPage,
-                              icon: Icons.fullscreen_exit_rounded,
-                            ),
+                            if (onActualSize != null) ...[
+                              const AppMenuSeparator(),
+                              AppMenuItem(
+                                label: 'Actual size',
+                                shortcut: '100%',
+                                onSelected: onActualSize,
+                              ),
+                            ],
                           ],
                         ),
-                      ],
-                      const SizedBox(width: 8),
-                      _ToolbarGroup(
-                        children: [
-                          FilePreviewToolbarButton(
-                            tooltip: 'Search document (Ctrl/Cmd F)',
-                            onPressed: onToggleSearch,
-                            selected: searchVisible,
-                            icon: Icons.search_rounded,
-                          ),
-                          if (showDocumentActions) ...[
-                            FilePreviewToolbarButton(
-                              tooltip: 'Rotate clockwise',
-                              onPressed: onRotate,
-                              icon: Icons.rotate_90_degrees_cw_rounded,
-                            ),
-                            FilePreviewToolbarButton(
-                              tooltip: 'Download PDF',
-                              onPressed: onDownload,
-                              icon: Icons.download_rounded,
-                            ),
-                            FilePreviewToolbarButton(
-                              tooltip: 'Print PDF',
-                              onPressed: onPrint,
-                              icon: Icons.print_rounded,
-                            ),
-                          ],
-                          FilePreviewToolbarButton(
-                            tooltip: isFullscreen
-                                ? 'Exit full screen (Esc)'
-                                : 'Open in full screen',
-                            onPressed: onFullscreen,
-                            icon: isFullscreen
-                                ? Icons.close_fullscreen_rounded
-                                : Icons.open_in_full_rounded,
-                          ),
-                          if (viewMenu != null) viewMenu!,
-                          overflow,
-                        ],
                       ),
                     ],
                   ),
+                ],
+                const DocumentViewportSeparator(),
+                _ToolbarGroup(
+                  children: [
+                    FilePreviewToolbarButton(
+                      tooltip: 'Search document (Ctrl/Cmd F)',
+                      onPressed: onToggleSearch,
+                      selected: searchVisible,
+                      icon: Icons.search_rounded,
+                    ),
+                    if (showDocumentActions) ...[
+                      FilePreviewToolbarButton(
+                        tooltip: 'Rotate clockwise',
+                        onPressed: onRotate,
+                        icon: Icons.rotate_90_degrees_cw_rounded,
+                      ),
+                      FilePreviewToolbarButton(
+                        tooltip: 'Download PDF',
+                        onPressed: onDownload,
+                        icon: Icons.download_rounded,
+                      ),
+                      FilePreviewToolbarButton(
+                        tooltip: 'Print PDF',
+                        onPressed: onPrint,
+                        icon: Icons.print_rounded,
+                      ),
+                    ],
+                    FilePreviewToolbarButton(
+                      tooltip: isFullscreen
+                          ? 'Exit full screen (Esc)'
+                          : 'Open in full screen',
+                      onPressed: onFullscreen,
+                      icon: isFullscreen
+                          ? Icons.close_fullscreen_rounded
+                          : Icons.open_in_full_rounded,
+                    ),
+                    if (viewMenu != null) viewMenu!,
+                    overflow,
+                  ],
                 ),
-              ),
+              ],
             ),
           ),
         );
       },
     );
+    return showDocumentTitle
+        ? DocumentViewportHeader(
+            background: palette.canvas,
+            identity: DocumentIdentity(
+              title: title,
+              icon: Icons.picture_as_pdf_rounded,
+              subtitle: subtitle,
+            ),
+            toolbar: controls,
+          )
+        : DocumentViewportBar(background: palette.canvas, child: controls);
   }
 }
 
@@ -326,150 +320,183 @@ class PdfSearchToolbar extends StatelessWidget {
                         : 'No results'
                     : '$currentMatch of $matchCount');
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
-      child: Container(
-        height: PdfPreviewGeometry.searchHeight,
-        padding: const EdgeInsets.only(left: 10, right: 4),
-        decoration: BoxDecoration(
-          color: palette.chrome,
-          borderRadius: BorderRadius.circular(PdfPreviewGeometry.toolbarRadius),
-          border: Border.all(color: palette.border, width: 0.5),
-          boxShadow: [
-            BoxShadow(
-              color: palette.chromeShadow.withValues(alpha: 0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-              spreadRadius: -3,
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Icon(
-              Icons.search_rounded,
-              size: PdfPreviewGeometry.iconSize,
-              color: palette.icon,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                key: const ValueKey('pdf-search-field'),
-                controller: controller,
-                focusNode: focusNode,
-                autofocus: true,
-                textInputAction: TextInputAction.search,
-                onChanged: onChanged,
-                onSubmitted: (_) => onNext?.call(),
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontFamily: 'Inter',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-                decoration: InputDecoration(
-                  isDense: true,
-                  border: InputBorder.none,
-                  hintText: 'Search in document…',
-                  hintStyle: TextStyle(
-                    color: palette.textSecondary,
-                    fontFamily: 'Inter',
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ),
-            if (isSearching)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: SizedBox.square(
-                  dimension: 14,
-                  child: CircularProgressIndicator(
-                    value: searchProgress,
-                    strokeWidth: 1.5,
-                    color: palette.accent,
-                  ),
+    return DocumentViewportBar(
+      background: palette.canvas,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final scale =
+              math.max(1.0, MediaQuery.textScalerOf(context).scale(13) / 13);
+          final available = constraints.maxWidth;
+          final stacked = available < 720 * scale;
+          final toolsWidth = stacked ? available : 400 * scale;
+          return Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: stacked ? available : available - toolsWidth - 12,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.search_rounded,
+                      size: PdfPreviewGeometry.iconSize,
+                      color: palette.icon,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        key: const ValueKey('pdf-search-field'),
+                        controller: controller,
+                        focusNode: focusNode,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        onChanged: onChanged,
+                        onSubmitted: (_) {
+                          onNext?.call();
+                          focusNode.requestFocus();
+                        },
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: palette.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          filled: false,
+                          hoverColor: Colors.transparent,
+                          hintText: 'Search in document…',
+                          hintStyle: TextStyle(
+                            color: palette.textSecondary,
+                            fontFamily: 'Inter',
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            if (onOptionsChanged != null) ...[
-              _PdfSearchToggle(
-                palette: palette,
-                label: 'Aa',
-                tooltip: LocaleKeys.findAndReplace_caseSensitive.tr(),
-                selected: options.caseSensitive,
-                onPressed: () => onOptionsChanged!(
-                  options.copyWith(caseSensitive: !options.caseSensitive),
-                ),
-              ),
-              _PdfSearchToggle(
-                palette: palette,
-                label: 'ab',
-                underlined: true,
-                tooltip: LocaleKeys.findAndReplace_wholeWord.tr(),
-                selected: options.wholeWord,
-                onPressed: () => onOptionsChanged!(
-                  options.copyWith(wholeWord: !options.wholeWord),
-                ),
-              ),
-              _PdfSearchToggle(
-                palette: palette,
-                label: '.*',
-                tooltip: LocaleKeys.findAndReplace_useRegex.tr(),
-                selected: options.useRegex,
-                onPressed: () => onOptionsChanged!(
-                  options.copyWith(useRegex: !options.useRegex),
-                ),
-              ),
-            ],
-            Semantics(
-              container: true,
-              liveRegion: true,
-              label: 'PDF search results: $resultLabel',
-              excludeSemantics: true,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 7),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 176),
-                  child: Text(
-                    resultLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color:
-                          queryInvalid ? palette.accent : palette.textSecondary,
-                      fontFamily: 'Geist Mono',
-                      fontFamilyFallback: const ['RobotoMono', 'monospace'],
-                      fontSize: 10.5,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+              SizedBox(
+                width: toolsWidth,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: math.max(toolsWidth, 320 * scale),
+                    child: Row(
+                      children: [
+                        if (isSearching)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: SizedBox.square(
+                              dimension: 14,
+                              child: CircularProgressIndicator(
+                                value: searchProgress,
+                                strokeWidth: 1.5,
+                                color: palette.accent,
+                              ),
+                            ),
+                          ),
+                        if (onOptionsChanged != null) ...[
+                          _PdfSearchToggle(
+                            palette: palette,
+                            label: 'Aa',
+                            tooltip:
+                                LocaleKeys.findAndReplace_caseSensitive.tr(),
+                            selected: options.caseSensitive,
+                            onPressed: () => onOptionsChanged!(
+                              options.copyWith(
+                                caseSensitive: !options.caseSensitive,
+                              ),
+                            ),
+                          ),
+                          _PdfSearchToggle(
+                            palette: palette,
+                            label: 'ab',
+                            underlined: true,
+                            tooltip: LocaleKeys.findAndReplace_wholeWord.tr(),
+                            selected: options.wholeWord,
+                            onPressed: () => onOptionsChanged!(
+                              options.copyWith(wholeWord: !options.wholeWord),
+                            ),
+                          ),
+                          _PdfSearchToggle(
+                            palette: palette,
+                            label: '.*',
+                            tooltip: LocaleKeys.findAndReplace_useRegex.tr(),
+                            selected: options.useRegex,
+                            onPressed: () => onOptionsChanged!(
+                              options.copyWith(useRegex: !options.useRegex),
+                            ),
+                          ),
+                        ],
+                        Expanded(
+                          child: Semantics(
+                            container: true,
+                            liveRegion: true,
+                            label: 'PDF search results: $resultLabel',
+                            excludeSemantics: true,
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 7),
+                              child: ConstrainedBox(
+                                constraints:
+                                    const BoxConstraints(maxWidth: 176),
+                                child: Text(
+                                  resultLabel,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: queryInvalid
+                                        ? palette.accent
+                                        : palette.textSecondary,
+                                    fontFamily: 'Geist Mono',
+                                    fontFamilyFallback: const [
+                                      'RobotoMono',
+                                      'monospace',
+                                    ],
+                                    fontSize: 10.5,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (onToggleOcr != null)
+                          FilePreviewToolbarButton(
+                            tooltip:
+                                LocaleKeys.findAndReplace_scanPagesTooltip.tr(),
+                            onPressed: onToggleOcr,
+                            selected: ocrEnabled,
+                            icon: Icons.document_scanner_rounded,
+                          ),
+                        FilePreviewToolbarButton(
+                          tooltip: 'Previous match (Shift Enter)',
+                          onPressed: onPrevious,
+                          icon: Icons.keyboard_arrow_up_rounded,
+                        ),
+                        FilePreviewToolbarButton(
+                          tooltip: 'Next match (Enter)',
+                          onPressed: onNext,
+                          icon: Icons.keyboard_arrow_down_rounded,
+                        ),
+                        FilePreviewToolbarButton(
+                          tooltip: 'Close search (Esc)',
+                          onPressed: onClose,
+                          icon: Icons.close_rounded,
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
-            ),
-            if (onToggleOcr != null)
-              FilePreviewToolbarButton(
-                tooltip: LocaleKeys.findAndReplace_scanPagesTooltip.tr(),
-                onPressed: onToggleOcr,
-                selected: ocrEnabled,
-                icon: Icons.document_scanner_rounded,
-              ),
-            FilePreviewToolbarButton(
-              tooltip: 'Previous match (Shift Enter)',
-              onPressed: onPrevious,
-              icon: Icons.keyboard_arrow_up_rounded,
-            ),
-            FilePreviewToolbarButton(
-              tooltip: 'Next match (Enter)',
-              onPressed: onNext,
-              icon: Icons.keyboard_arrow_down_rounded,
-            ),
-            FilePreviewToolbarButton(
-              tooltip: 'Close search (Esc)',
-              onPressed: onClose,
-              icon: Icons.close_rounded,
-            ),
-          ],
-        ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -584,7 +611,9 @@ class _PdfPageNumberFieldState extends State<PdfPageNumberField> {
     final palette = PdfPreviewPalette.of(context);
     final count = widget.pageCount > 0 ? widget.pageCount : 1;
     final digits = count.toString().length;
-    final fieldWidth = (digits * 8.0 + 16).clamp(30.0, 50.0);
+    final scale =
+        math.max(1.0, MediaQuery.textScalerOf(context).scale(11) / 11);
+    final fieldWidth = (digits * 8.0 + 16).clamp(30.0, 50.0) * scale;
 
     return Semantics(
       label: 'Current PDF page, ${widget.page} of $count',
@@ -594,7 +623,7 @@ class _PdfPageNumberFieldState extends State<PdfPageNumberField> {
         children: [
           SizedBox(
             width: fieldWidth,
-            height: 26,
+            height: 28 * scale,
             child: TextField(
               key: const ValueKey('pdf-page-number-field'),
               controller: controller,
@@ -606,22 +635,21 @@ class _PdfPageNumberFieldState extends State<PdfPageNumberField> {
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
               onTap: controller.selectAll,
               onSubmitted: _submit,
-              style: TextStyle(
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: palette.textPrimary,
-                fontFamily: 'Geist Mono',
-                fontFamilyFallback: const ['RobotoMono', 'monospace'],
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                fontVariations: const [FontVariation.weight(550)],
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
               decoration: InputDecoration(
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                contentPadding: const EdgeInsets.symmetric(vertical: 4),
                 filled: true,
                 fillColor: palette.control,
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(color: palette.border, width: 0.5),
+                  borderSide: BorderSide.none,
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
@@ -629,7 +657,7 @@ class _PdfPageNumberFieldState extends State<PdfPageNumberField> {
                 ),
                 disabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(color: palette.border, width: 0.5),
+                  borderSide: BorderSide.none,
                 ),
               ),
             ),
@@ -637,11 +665,9 @@ class _PdfPageNumberFieldState extends State<PdfPageNumberField> {
           const SizedBox(width: 5),
           Text(
             '/ $count',
-            style: TextStyle(
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: palette.textSecondary,
-              fontFamily: 'Geist Mono',
-              fontFamilyFallback: const ['RobotoMono', 'monospace'],
-              fontSize: 10.5,
+              fontSize: 12,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
@@ -668,8 +694,8 @@ class _ToolbarGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 32,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 32),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         spacing: 1,
@@ -688,16 +714,16 @@ class _ZoomLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = PdfPreviewPalette.of(context);
     return SizedBox(
-      width: 40,
+      width:
+          48 * math.max(1.0, MediaQuery.textScalerOf(context).scale(12) / 12),
       child: Text(
         '${(zoom * 100).round()}%',
         textAlign: TextAlign.center,
-        style: TextStyle(
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: palette.textSecondary,
-          fontFamily: 'Geist Mono',
-          fontFamilyFallback: const ['RobotoMono', 'monospace'],
-          fontSize: 10.5,
+          fontSize: 12,
           fontWeight: FontWeight.w500,
+          fontVariations: const [FontVariation.weight(550)],
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),

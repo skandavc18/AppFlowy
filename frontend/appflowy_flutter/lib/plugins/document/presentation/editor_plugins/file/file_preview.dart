@@ -9,6 +9,7 @@ import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -25,6 +26,7 @@ import 'package:path/path.dart' as p;
 import 'archive/archive_explorer.dart';
 import 'csv_preview.dart';
 import 'file_preview_kind.dart';
+import 'html_preview_resource_host.dart';
 import 'markdown_preview_fonts.dart';
 import 'notebook/notebook_view.dart';
 import 'pdf_preview.dart';
@@ -60,6 +62,7 @@ class FilePreview extends StatefulWidget {
     this.height,
     this.previewScrollController,
     this.bare = false,
+    this.framed = true,
   });
 
   final File file;
@@ -76,6 +79,10 @@ class FilePreview extends StatefulWidget {
   /// Renders the content alone — no card, no header, no background of its
   /// own — for a host that supplies the surface, such as the book reader.
   final bool bare;
+
+  /// Embedded previews keep their card. Full-window files keep the same fixed
+  /// header but sit flush against the workspace rather than inside a card.
+  final bool framed;
 
   @override
   State<FilePreview> createState() => _FilePreviewState();
@@ -95,20 +102,21 @@ class _FilePreviewState extends State<FilePreview> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.file.path != widget.file.path ||
         oldWidget.kind != widget.kind ||
+        oldWidget.name != widget.name ||
+        oldWidget.editable != widget.editable ||
+        oldWidget.bare != widget.bare ||
         oldWidget.metadata[filePreviewEditModeKey] !=
             widget.metadata[filePreviewEditModeKey]) {
       preview = _buildPreview();
     }
   }
 
-  /// Whether this preview is currently showing its source for editing.
-  bool get isEditingSource =>
-      widget.metadata[filePreviewEditModeKey] == true &&
-      widget.kind.supportsSourceEditing;
-
   @override
   Widget build(BuildContext context) {
     final content = FutureBuilder<Widget>(
+      // A new file must not inherit the previous FutureBuilder's last data or
+      // editable renderer while its own IO is pending.
+      key: ObjectKey(preview),
       future: preview,
       builder: (context, snapshot) {
         if (snapshot.hasError) {
@@ -138,16 +146,30 @@ class _FilePreviewState extends State<FilePreview> {
           appFlowyTheme.surfaceColorScheme.layer01,
           isPaper: PaperTheme.isEnabled(context),
         );
-    return ViewerCard(
-      color: backgroundColor,
-      child: SizedBox(
-        height: widget.height ?? defaultFilePreviewHeight(widget.kind),
-        child: content,
-      ),
+    final sized = SizedBox(
+      height: widget.height ?? defaultFilePreviewHeight(widget.kind),
+      child: content,
     );
+    return widget.framed
+        ? ViewerCard(color: backgroundColor, child: sized)
+        : ColoredBox(color: backgroundColor, child: sized);
   }
 
-  Future<Widget> _buildPreview() async {
+  Future<Widget> _buildPreview() => _FilePreviewLoader(widget).build();
+}
+
+/// An immutable request, so an await cannot mix one file's bytes with the
+/// next file's name, base directory, renderer kind or edit destination.
+class _FilePreviewLoader {
+  _FilePreviewLoader(this.widget);
+
+  final FilePreview widget;
+
+  bool get isEditingSource =>
+      widget.metadata[filePreviewEditModeKey] == true &&
+      widget.kind.supportsSourceEditing;
+
+  Future<Widget> build() async {
     if (!await widget.file.exists()) {
       throw const FileSystemException('The preview file is unavailable.');
     }
@@ -179,6 +201,7 @@ class _FilePreviewState extends State<FilePreview> {
           editable: widget.editable,
           menuBuilder: widget.pdfMenuBuilder,
           scrollController: widget.previewScrollController,
+          bare: widget.bare,
         ),
       FilePreviewKind.html => _buildPreviewScaffold(
           _HtmlPreview(
@@ -265,7 +288,7 @@ class _FilePreviewState extends State<FilePreview> {
     );
   }
 
-  /// What the floating header says about this file.
+  /// What the fixed header says about this file.
   DocumentIdentity _documentIdentity() {
     final extension =
         p.extension(widget.name).replaceFirst('.', '').toUpperCase();
@@ -1490,6 +1513,8 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   bool findVisible = false;
   bool findEngineReady = false;
   late String preparedHtml;
+  HtmlPreviewResourceHost? resourceHost;
+  Future<Uri>? documentUrl;
   Brightness? documentBrightness;
   Color? documentScrollbarThumbColor;
   PremiumScrollPhysicsConfig physicsConfig = const PremiumScrollPhysicsConfig();
@@ -1538,6 +1563,10 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   @override
   void didUpdateWidget(covariant _HtmlPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.baseDirectory != widget.baseDirectory) {
+      unawaited(resourceHost?.dispose());
+      resourceHost = null;
+    }
     if (oldWidget.html != widget.html ||
         oldWidget.baseDirectory != widget.baseDirectory) {
       _reloadDocument();
@@ -1561,6 +1590,7 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     documentScrollbarThumbColor = scrollbarThumbColor;
     if (isInitialDocument) {
       preparedHtml = _prepareDocument();
+      _loadDocumentUrl();
       return;
     }
     _reloadDocument();
@@ -1576,6 +1606,13 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     findResult = WebViewFindResult.empty;
     webViewController = null;
     documentRevision++;
+    _loadDocumentUrl();
+  }
+
+  void _loadDocumentUrl() {
+    if (!Platform.isWindows) return;
+    resourceHost ??= HtmlPreviewResourceHost(directory: widget.baseDirectory);
+    documentUrl = resourceHost!.load(preparedHtml);
   }
 
   String _prepareDocument() => prepareHtmlPreviewDocument(
@@ -1589,6 +1626,8 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   @override
   void dispose() {
     pendingScrollCommands.clear();
+    unawaited(resourceHost?.dispose());
+    webViewController = null;
     findDebounce?.cancel();
     findController.removeListener(_scheduleFind);
     findController.dispose();
@@ -1599,15 +1638,47 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
 
   @override
   Widget build(BuildContext context) {
+    if (Platform.isWindows) {
+      return FutureBuilder<Uri>(
+        key: ObjectKey(documentUrl),
+        future: documentUrl,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _PreviewError(
+              message: 'The preview resources could not be opened.',
+              onRetry: () {
+                unawaited(resourceHost?.dispose());
+                resourceHost = null;
+                setState(_reloadDocument);
+              },
+            );
+          }
+          final url = snapshot.data;
+          return url == null
+              ? const Center(child: CircularProgressIndicator())
+              : _buildWebView(url);
+        },
+      );
+    }
+    return _buildWebView(null);
+  }
+
+  Widget _buildWebView(Uri? url) {
+    final revision = documentRevision;
     final child = SizedBox.expand(
       key: webViewViewportKey,
       child: InAppWebView(
         key: ValueKey(documentRevision),
-        initialData: InAppWebViewInitialData(
-          data: preparedHtml,
-          baseUrl: WebUri(Uri.directory(widget.baseDirectory).toString()),
-        ),
+        initialUrlRequest:
+            url == null ? null : URLRequest(url: WebUri.uri(url)),
+        initialData: url != null
+            ? null
+            : InAppWebViewInitialData(
+                data: preparedHtml,
+                baseUrl: WebUri(Uri.directory(widget.baseDirectory).toString()),
+              ),
         onWebViewCreated: (controller) {
+          if (!mounted || revision != documentRevision) return;
           webViewController = controller;
           controller.addJavaScriptHandler(
             handlerName: webViewFindOpenHandlerName,
@@ -1638,6 +1709,17 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         ),
         shouldOverrideUrlLoading: (controller, action) async {
           final uri = action.request.url;
+          if (url != null) {
+            // Permit only this sanitized document (and its fragment links),
+            // never a link navigating the renderer into an arbitrary page.
+            return mounted &&
+                    revision == documentRevision &&
+                    uri != null &&
+                    Uri.parse(uri.toString()).replace(fragment: '') ==
+                        url.replace(fragment: '')
+                ? NavigationActionPolicy.ALLOW
+                : NavigationActionPolicy.CANCEL;
+          }
           if (!scrollReady &&
               uri != null &&
               (uri.scheme == 'file' || uri.scheme == 'data')) {
@@ -1647,13 +1729,15 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         },
       ),
     );
-    final guardedChild = PremiumScrollExclusion(
-      child: PdfEmbedScrollGuard(
-        onPointerSignal: _handlePointerSignal,
-        onPointerPanZoomStart: _handlePointerPanZoomStart,
-        onPointerPanZoomUpdate: _handlePointerPanZoomUpdate,
-        onPointerPanZoomEnd: _handlePointerPanZoomEnd,
-        child: child,
+    final guardedChild = HistorySwipeBoundaryFeedback(
+      child: PremiumScrollExclusion(
+        child: PdfEmbedScrollGuard(
+          onPointerSignal: _handlePointerSignal,
+          onPointerPanZoomStart: _handlePointerPanZoomStart,
+          onPointerPanZoomUpdate: _handlePointerPanZoomUpdate,
+          onPointerPanZoomEnd: _handlePointerPanZoomEnd,
+          child: child,
+        ),
       ),
     );
     return RepaintBoundary(
@@ -1718,6 +1802,7 @@ ${buildWebViewFindEngineScript(
 ${buildWebViewFindShortcutScript()}
 ''',
       );
+      if (!mounted || controller != webViewController) return;
       findEngineReady = installed == true;
       if (findEngineReady && findVisible) {
         await _runFind();
@@ -1779,7 +1864,7 @@ ${buildWebViewFindShortcutScript()}
     final result = await controller.evaluateJavascript(
       source: buildWebViewFindCommand(findController.text, findOptions),
     );
-    if (!mounted) {
+    if (!mounted || controller != webViewController) {
       return;
     }
     setState(
@@ -1797,7 +1882,7 @@ ${buildWebViewFindShortcutScript()}
     final result = await controller.evaluateJavascript(
       source: buildWebViewFindMoveCommand(forward: forward),
     );
-    if (!mounted) {
+    if (!mounted || controller != webViewController) {
       return;
     }
     setState(() => findResult = WebViewFindResult.fromJavaScript(result));
@@ -1806,6 +1891,7 @@ ${buildWebViewFindShortcutScript()}
   Future<bool> _ensureRendererScrollReady(
     InAppWebViewController controller,
   ) async {
+    if (!mounted || controller != webViewController) return false;
     if (scrollReady) {
       return true;
     }
@@ -1844,6 +1930,7 @@ typeof globalThis.$premiumKineticJavaScriptObjectName === 'object';
 ''',
         contentWorld: htmlPreviewScrollContentWorld,
       );
+      if (!mounted || controller != webViewController) return;
       rendererScrollAvailable = installed == true;
       if (!rendererScrollAvailable) {
         Log.warn('HTML preview kinetic engine did not initialize');

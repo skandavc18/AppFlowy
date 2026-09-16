@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_add_menu.dart';
+import 'package:appflowy/plugins/collection/collection_icon_button.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/providers/external_repository_view.dart';
 import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
@@ -9,6 +10,9 @@ import 'package:appflowy/plugins/collection/providers/external_collection_host.d
 import 'package:appflowy/plugins/collection/providers/external_import.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/collection/providers/source_picker.dart';
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -185,116 +189,116 @@ class _CollectionPageState extends State<CollectionPage> {
             _WorkspaceCrumb(palette: palette),
             const SizedBox(height: 8),
           ],
-          Row(
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(right: 11, bottom: 2),
-                child: Icon(
-                  definition.icon,
-                  size: CollectionMetrics.identityIconSize,
-                  color: palette.accent,
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    WorkspaceInlineEditableText(
-                      key: const ValueKey('collection-title'),
-                      text: title,
-                      editingValue: root.name,
-                      editing: controller.editingId == root.id,
-                      onSubmitted: controller.commitRename,
-                      onCancelled: controller.cancelEditing,
-                      onDoubleTap: () => controller.beginRename(root.id),
-                      style: TextStyle(
-                        color: palette.textPrimary,
-                        fontSize: 21,
-                        fontWeight: FontWeight.w600,
-                        fontVariations: const [FontVariation.weight(650)],
-                        letterSpacing: -0.35,
-                        height: 1.2,
-                      ),
+          WorkspaceHeaderLayout(
+            identity: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: CollectionIconButton(
+                    key: const ValueKey('collection-header-icon'),
+                    view: _currentView,
+                    onViewChanged: (updated) => controller.updateView(
+                      ViewPB()
+                        ..mergeFromMessage(_currentView)
+                        ..icon = updated.icon,
                     ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            _subtitle(definition),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.textMuted,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                        if (_currentView.source.isRemote) ...[
-                          Text(
-                            '  ·  ',
-                            style: TextStyle(
-                              color: palette.textMuted,
-                              fontSize: 12,
-                            ),
-                          ),
-                          Flexible(
-                            child: ProviderBadge(
-                              source: _currentView.source,
-                              palette: palette,
-                              detail: _currentView.source.remoteName,
-                              onTap: () => unawaited(_changeSource()),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              if (ProviderServices.hasRemoteOptions(metadata.kind))
-                _SourceButton(
-                  palette: palette,
-                  source: _currentView.source,
-                  onPressed: () => unawaited(_changeSource()),
-                ),
-              _CollectionSearchField(
-                controller: searchController,
-                palette: palette,
-                onChanged: _scheduleSearch,
-              ),
-              const SizedBox(width: 6),
-              _CollectionAddButton(
-                palette: palette,
-                onPressed: _showAddMenu,
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              CollectionViewSwitcher(
-                palette: palette,
-                views: [
-                  for (final view in definition.views)
-                    if (view.availableFor(_currentView.source)) view,
-                ],
-                activeViewId: activeView.id,
-                onChanged: _setActiveView,
-              ),
-              if (nested) ...[
-                const SizedBox(width: 16),
                 Expanded(
-                  child: BreadcrumbBar(
-                    items: controller.breadcrumbs,
-                    onSelected: (id) => unawaited(controller.navigateTo(id)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      WorkspaceInlineEditableText(
+                        key: const ValueKey('collection-title'),
+                        text: title,
+                        editingValue: root.name,
+                        editing: controller.editingId == root.id,
+                        onSubmitted: controller.commitRename,
+                        onCancelled: controller.cancelEditing,
+                        onDoubleTap: () => controller.beginRename(root.id),
+                        style: WorkspaceChrome.title(context, compact: true),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              _subtitle(definition),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: palette.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                          if (_currentView.source.isRemote) ...[
+                            Text(
+                              '  ·  ',
+                              style: TextStyle(
+                                color: palette.textMuted,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Flexible(
+                              child: ProviderBadge(
+                                source: _currentView.source,
+                                palette: palette,
+                                detail: _currentView.source.remoteName,
+                                onTap: () => unawaited(_changeSource()),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
                   ),
                 ),
               ],
-            ],
+            ),
+            actions: Wrap(
+              alignment: WrapAlignment.end,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (ProviderServices.hasRemoteOptions(metadata.kind))
+                  _SourceButton(
+                    palette: palette,
+                    source: _currentView.source,
+                    onPressed: () => unawaited(_changeSource()),
+                  ),
+                _CollectionSearchField(
+                  controller: searchController,
+                  palette: palette,
+                  onChanged: _scheduleSearch,
+                ),
+                _CollectionAddButton(
+                  palette: palette,
+                  onPressed: _showAddMenu,
+                ),
+              ],
+            ),
           ),
+          const SizedBox(height: 18),
+          CollectionViewSwitcher(
+            palette: palette,
+            views: [
+              for (final view in definition.views)
+                if (view.availableFor(_currentView.source)) view,
+            ],
+            activeViewId: activeView.id,
+            onChanged: _setActiveView,
+          ),
+          if (nested) ...[
+            const SizedBox(height: 8),
+            BreadcrumbBar(
+              items: controller.breadcrumbs,
+              onSelected: (id) => unawaited(controller.navigateTo(id)),
+            ),
+          ],
           const SizedBox(height: 6),
         ],
       ),
@@ -588,7 +592,6 @@ class _CollectionAncestorState extends State<_CollectionAncestor> {
   }
 }
 
-/// The adaptive views a collection offers, as one segmented control.
 /// The adaptive views a collection offers, as one row of tabs.
 ///
 /// An underline rather than a pill: the row has to read as navigation sitting
@@ -609,26 +612,80 @@ class CollectionViewSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: CollectionMetrics.switcherHeight,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final view in views)
-            _CollectionViewSegment(
-              palette: palette,
-              definition: view,
-              selected: view.id == activeViewId,
-              onTap: () => onChanged(view.id),
-            ),
-        ],
-      ),
+    if (views.isEmpty) return const SizedBox.shrink();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final active = views.firstWhere(
+          (view) => view.id == activeViewId,
+          orElse: () => views.first,
+        );
+        final compact = constraints.maxWidth < 480;
+        return SizedBox(
+          height: MediaQuery.textScalerOf(context).scale(13) + 20,
+          child: Row(
+            children: [
+              Expanded(
+                child: compact
+                    ? Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: Text(
+                          active.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(color: palette.textPrimary),
+                        ),
+                      )
+                    : ScrollConfiguration(
+                        behavior: ScrollConfiguration.of(context)
+                            .copyWith(scrollbars: false),
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (final view in views)
+                                _CollectionViewSegment(
+                                  key: ValueKey(view.id),
+                                  palette: palette,
+                                  definition: view,
+                                  selected: view.id == activeViewId,
+                                  onTap: () => onChanged(view.id),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+              ),
+              if (views.length > 1)
+                AppMenuIconButton(
+                  key: const ValueKey('collection-view-menu'),
+                  icon: Icons.keyboard_arrow_down_rounded,
+                  tooltip: LocaleKeys.grid_settings_layout.tr(),
+                  size: WorkspaceChrome.controlHeight,
+                  entries: () => [
+                    for (final view in views)
+                      AppMenuItem(
+                        label: view.label,
+                        icon: view.icon,
+                        selected: view.id == activeViewId,
+                        onSelected: () => onChanged(view.id),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
-class _CollectionViewSegment extends StatefulWidget {
+class _CollectionViewSegment extends StatelessWidget {
   const _CollectionViewSegment({
+    super.key,
     required this.palette,
     required this.definition,
     required this.selected,
@@ -641,59 +698,25 @@ class _CollectionViewSegment extends StatefulWidget {
   final VoidCallback onTap;
 
   @override
-  State<_CollectionViewSegment> createState() => _CollectionViewSegmentState();
-}
-
-class _CollectionViewSegmentState extends State<_CollectionViewSegment> {
-  bool hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
-    final foreground = widget.selected
-        ? palette.textPrimary
-        : hovered
-            ? palette.textPrimary
-            : palette.textSecondary;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
+    final foreground = selected ? palette.textPrimary : palette.textSecondary;
+    return Semantics(
+      selected: selected,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2),
         child: Stack(
           children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOutCubic,
-              margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 3),
-              padding: const EdgeInsets.symmetric(horizontal: 9),
-              decoration: BoxDecoration(
-                color: hovered && !widget.selected
-                    ? palette.hover
-                    : palette.hover.withValues(alpha: 0),
-                borderRadius: BorderRadius.circular(6),
+            TextButton(
+              onPressed: onTap,
+              style: WorkspaceChrome.controlStyle(context).copyWith(
+                foregroundColor: WidgetStatePropertyAll(foreground),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(widget.definition.icon, size: 14.5, color: foreground),
+                  Icon(definition.icon, size: 15),
                   const SizedBox(width: 7),
-                  AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 140),
-                    curve: Curves.easeOutCubic,
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: 12.5,
-                      fontWeight:
-                          widget.selected ? FontWeight.w600 : FontWeight.w500,
-                      fontVariations: [
-                        FontVariation.weight(widget.selected ? 620 : 545),
-                      ],
-                    ),
-                    child: Text(widget.definition.label),
-                  ),
+                  Text(definition.label),
                 ],
               ),
             ),
@@ -702,11 +725,13 @@ class _CollectionViewSegmentState extends State<_CollectionViewSegment> {
               right: 8,
               bottom: 0,
               child: AnimatedContainer(
-                duration: const Duration(milliseconds: 140),
+                duration: MediaQuery.disableAnimationsOf(context)
+                    ? Duration.zero
+                    : const Duration(milliseconds: 140),
                 curve: Curves.easeOutCubic,
                 height: 2,
                 decoration: BoxDecoration(
-                  color: widget.selected
+                  color: selected
                       ? palette.accent
                       : palette.accent.withValues(alpha: 0),
                   borderRadius: const BorderRadius.vertical(
@@ -738,39 +763,42 @@ class _CollectionSearchField extends StatelessWidget {
     final field = Color.alphaBlend(palette.hover, palette.background);
     return SizedBox(
       width: CollectionMetrics.searchFieldWidth,
-      height: CollectionMetrics.searchFieldHeight,
-      child: TextField(
-        controller: controller,
-        onChanged: onChanged,
-        cursorWidth: 1.4,
-        cursorColor: palette.accent,
-        style: TextStyle(color: palette.textPrimary, fontSize: 12.5),
-        decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: field,
-          hoverColor: field,
-          contentPadding: const EdgeInsets.symmetric(vertical: 8),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            size: 15,
-            color: palette.textMuted,
+      height: MediaQuery.textScalerOf(context).scale(13) + 20,
+      child: TextEntryShortcuts(
+        child: TextField(
+          controller: controller,
+          onChanged: onChanged,
+          cursorWidth: 1.4,
+          cursorColor: palette.accent,
+          style: TextStyle(color: palette.textPrimary, fontSize: 12.5),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: field,
+            hoverColor: field,
+            contentPadding: const EdgeInsets.symmetric(vertical: 8),
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              size: 15,
+              color: palette.textMuted,
+            ),
+            prefixIconConstraints: const BoxConstraints(minWidth: 30),
+            hintText: LocaleKeys.collections_searchPlaceholder.tr(),
+            hintStyle: TextStyle(color: palette.textMuted, fontSize: 12.5),
+            // A shade, not an outlined box.
+            border: _border,
+            enabledBorder: _border,
+            focusedBorder:
+                _border.copyWith(borderSide: BorderSide(color: palette.accent)),
           ),
-          prefixIconConstraints: const BoxConstraints(minWidth: 30),
-          hintText: LocaleKeys.collections_searchPlaceholder.tr(),
-          hintStyle: TextStyle(color: palette.textMuted, fontSize: 12.5),
-          // A shade, not an outlined box.
-          border: _border,
-          enabledBorder: _border,
-          focusedBorder: _border,
         ),
       ),
     );
   }
 
   OutlineInputBorder get _border => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(9),
-        borderSide: BorderSide.none,
+        borderRadius: BorderRadius.circular(WorkspaceChrome.controlRadius),
+        borderSide: BorderSide(color: palette.accent.withValues(alpha: 0)),
       );
 }
 
@@ -778,7 +806,7 @@ class _CollectionSearchField extends StatelessWidget {
 ///
 /// It sits beside the search field rather than in a menu because binding a
 /// collection to a service is a first-class choice, not a setting.
-class _SourceButton extends StatefulWidget {
+class _SourceButton extends StatelessWidget {
   const _SourceButton({
     required this.palette,
     required this.source,
@@ -790,57 +818,34 @@ class _SourceButton extends StatefulWidget {
   final VoidCallback onPressed;
 
   @override
-  State<_SourceButton> createState() => _SourceButtonState();
-}
-
-class _SourceButtonState extends State<_SourceButton> {
-  bool hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
-    final info = widget.source.info;
-    final remote = widget.source.isRemote;
+    final info = source.info;
+    final remote = source.isRemote;
     return Tooltip(
       message: LocaleKeys.providers_changeSource.tr(),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => hovered = true),
-        onExit: (_) => setState(() => hovered = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            curve: Curves.easeOutCubic,
-            height: CollectionMetrics.searchFieldHeight,
-            margin: const EdgeInsets.only(right: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: remote
-                  ? info.accent.withValues(alpha: hovered ? 0.18 : 0.11)
-                  : palette.hover.withValues(alpha: hovered ? 1 : 0),
-              borderRadius: BorderRadius.circular(9),
+      child: TextButton(
+        onPressed: onPressed,
+        style: WorkspaceChrome.controlStyle(
+          context,
+          accent: remote ? info.accent : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              remote ? info.icon : Icons.cloud_sync_rounded,
+              size: 15,
+              color: remote ? info.accent : palette.textSecondary,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  remote ? info.icon : Icons.cloud_sync_rounded,
-                  size: 15,
-                  color: remote ? info.accent : palette.textSecondary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  remote ? info.label : LocaleKeys.providers_connect.tr(),
-                  style: TextStyle(
-                    color: remote ? info.accent : palette.textSecondary,
-                    fontSize: 12,
-                    fontVariations: const [FontVariation.weight(570)],
-                  ),
-                ),
-              ],
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                remote ? info.label : LocaleKeys.providers_connect.tr(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -859,45 +864,27 @@ class _CollectionAddButton extends StatefulWidget {
 
 class _CollectionAddButtonState extends State<_CollectionAddButton> {
   final GlobalKey anchor = GlobalKey();
-  bool hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _open,
-        child: AnimatedContainer(
-          key: anchor,
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          height: CollectionMetrics.searchFieldHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 11),
-          decoration: BoxDecoration(
-            color: palette.accent.withValues(alpha: hovered ? 0.16 : 0.1),
-            borderRadius: BorderRadius.circular(9),
+    return TextButton(
+      key: anchor,
+      onPressed: _open,
+      style: WorkspaceChrome.controlStyle(context, accent: palette.accent),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.add_rounded, size: 15, color: palette.accent),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              LocaleKeys.collections_add.tr(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add_rounded, size: 15, color: palette.accent),
-              const SizedBox(width: 5),
-              Text(
-                LocaleKeys.collections_add.tr(),
-                style: TextStyle(
-                  color: palette.accent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  fontVariations: const [FontVariation.weight(600)],
-                ),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }

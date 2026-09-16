@@ -316,14 +316,16 @@ class PdfViewOptionsMenu extends StatelessWidget {
     required this.autoHideToolbar,
     required this.enabled,
     required this.onPresetChanged,
-    required this.onAutoHideToolbarChanged,
+    this.onAutoHideToolbarChanged,
   });
 
   final PdfViewPreset preset;
   final bool autoHideToolbar;
   final bool enabled;
   final ValueChanged<PdfViewPreset> onPresetChanged;
-  final ValueChanged<bool> onAutoHideToolbarChanged;
+
+  /// Only full-screen hosts offer immersive hiding. Normal viewers stay fixed.
+  final ValueChanged<bool>? onAutoHideToolbarChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -348,13 +350,15 @@ class PdfViewOptionsMenu extends StatelessWidget {
             selected: value == preset,
             onSelected: () => onPresetChanged(value),
           ),
-        const AppMenuSeparator(),
-        AppMenuItem(
-          label: 'Hide toolbar when idle',
-          icon: Icons.visibility_off_rounded,
-          selected: autoHideToolbar,
-          onSelected: () => onAutoHideToolbarChanged(!autoHideToolbar),
-        ),
+        if (onAutoHideToolbarChanged != null) ...[
+          const AppMenuSeparator(),
+          AppMenuItem(
+            label: 'Hide toolbar when idle',
+            icon: Icons.visibility_off_rounded,
+            selected: autoHideToolbar,
+            onSelected: () => onAutoHideToolbarChanged!(!autoHideToolbar),
+          ),
+        ],
       ],
     );
   }

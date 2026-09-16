@@ -1004,7 +1004,7 @@ class _DocumentIconState extends State<DocumentIcon> {
         ),
         popupBuilder: (BuildContext popoverContext) {
           return FlowyIconEmojiPicker(
-            initialType: widget.icon.type.toPickerTabType(),
+            initialType: widget.icon.toPickerTabType(),
             tabs: const [
               PickerTabType.emoji,
               PickerTabType.icon,
@@ -1026,7 +1026,8 @@ class _DocumentIconState extends State<DocumentIcon> {
             Uri(
               path: MobileEmojiPickerScreen.routeName,
               queryParameters: {
-                MobileEmojiPickerScreen.iconSelectedType: widget.icon.type.name,
+                MobileEmojiPickerScreen.iconSelectedType:
+                    widget.icon.toPickerTabType()?.name,
               },
             ).toString(),
           );

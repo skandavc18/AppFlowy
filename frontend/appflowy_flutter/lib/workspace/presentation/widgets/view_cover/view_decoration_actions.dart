@@ -322,7 +322,7 @@ class _ViewIconPickerState extends State<ViewIconPicker> {
       ),
       popupBuilder: (_) => FlowyIconEmojiPicker(
         documentId: widget.view.id,
-        initialType: widget.view.icon.toEmojiIconData().type.toPickerTabType(),
+        initialType: widget.view.icon.toEmojiIconData().toPickerTabType(),
         tabs: const [
           PickerTabType.emoji,
           PickerTabType.icon,

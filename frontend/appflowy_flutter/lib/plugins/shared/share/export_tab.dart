@@ -11,7 +11,6 @@ import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/file_picker/file_picker_service.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -52,14 +51,12 @@ class ExportTab extends StatelessWidget {
           svg: FlowySvgs.duplicate_s,
           onTap: () => _exportToClipboard(context),
         ),
-        if (kDebugMode) ...[
-          const VSpace(10),
-          _ExportButton(
-            title: 'JSON (Debug Mode)',
-            svg: FlowySvgs.duplicate_s,
-            onTap: () => _exportJSON(context),
-          ),
-        ],
+        const VSpace(10),
+        _ExportButton(
+          title: 'JSON',
+          svg: FlowySvgs.duplicate_s,
+          onTap: () => _exportJSON(context),
+        ),
       ],
     );
   }
@@ -73,14 +70,12 @@ class ExportTab extends StatelessWidget {
           svg: FlowySvgs.database_layout_s,
           onTap: () => _exportCSV(context),
         ),
-        if (kDebugMode) ...[
-          const VSpace(10),
-          _ExportButton(
-            title: 'Raw Database Data (Debug Mode)',
-            svg: FlowySvgs.duplicate_s,
-            onTap: () => _exportRawDatabaseData(context),
-          ),
-        ],
+        const VSpace(10),
+        _ExportButton(
+          title: 'Raw Database Data',
+          svg: FlowySvgs.duplicate_s,
+          onTap: () => _exportRawDatabaseData(context),
+        ),
       ],
     );
   }

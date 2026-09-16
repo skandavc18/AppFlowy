@@ -4,7 +4,6 @@ import 'package:appflowy/mobile/presentation/setting/widgets/mobile_setting_trai
 import 'package:appflowy/startup/tasks/device_info_task.dart';
 import 'package:appflowy/workspace/presentation/settings/widgets/feature_flags/mobile_feature_flag_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -34,16 +33,15 @@ class AboutSettingGroup extends StatelessWidget {
           ),
           onTap: () => afLaunchUrlString('https://appflowy.com/terms'),
         ),
-        if (kDebugMode)
-          MobileSettingItem(
-            name: 'Feature Flags',
-            trailing: MobileSettingTrailing(
-              text: '',
-            ),
-            onTap: () {
-              context.push(FeatureFlagScreen.routeName);
-            },
+        MobileSettingItem(
+          name: 'Feature Flags',
+          trailing: MobileSettingTrailing(
+            text: '',
           ),
+          onTap: () {
+            context.push(FeatureFlagScreen.routeName);
+          },
+        ),
         MobileSettingItem(
           name: LocaleKeys.settings_mobile_version.tr(),
           trailing: MobileSettingTrailing(

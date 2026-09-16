@@ -1,6 +1,7 @@
 import 'package:appflowy/features/workspace/data/repositories/rust_workspace_repository_impl.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
+import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/startup/tasks/memory_leak_detector.dart';
@@ -81,92 +82,95 @@ class DesktopHomeScreen extends StatelessWidget {
         return WorkspaceEncryptionGate(
           child: AFFocusManager(
             child: MultiBlocProvider(
-            key: ValueKey(userProfile.id),
-            providers: [
-              BlocProvider.value(
-                value: getIt<ReminderBloc>(),
-              ),
-              BlocProvider<TabsBloc>.value(value: getIt<TabsBloc>()),
-              BlocProvider<HomeBloc>(
-                create: (_) =>
-                    HomeBloc(workspaceLatest)..add(const HomeEvent.initial()),
-              ),
-              BlocProvider<HomeSettingBloc>(
-                create: (_) => HomeSettingBloc(
-                  workspaceLatest,
-                  context.read<AppearanceSettingsCubit>(),
-                  context.widthPx,
-                )..add(const HomeSettingEvent.initial()),
-              ),
-              BlocProvider<FavoriteBloc>(
-                create: (context) =>
-                    FavoriteBloc()..add(const FavoriteEvent.initial()),
-              ),
-            ],
-            child: Scaffold(
-              floatingActionButton: enableMemoryLeakDetect
-                  ? const FloatingActionButton(
-                      onPressed: dumpMemoryLeak,
-                      child: Icon(Icons.memory),
-                    )
-                  : null,
-              body: BlocListener<HomeBloc, HomeState>(
-                listenWhen: (p, c) => p.latestView != c.latestView,
-                listener: (context, state) {
-                  final view = state.latestView;
-                  if (view != null) {
-                    final isWorkspaceRoot = view.isWorkspaceRootFor(
-                      state.workspaceSetting.workspaceId,
-                    );
-                    // Only open the last opened view if the [TabsState.currentPageManager] current opened plugin is blank and the last opened view is not null.
-                    // All opened widgets that display on the home screen are in the form of plugins. There is a list of built-in plugins defined in the [PluginType] enum, including board, grid and trash.
-                    final currentPageManager =
-                        context.read<TabsBloc>().state.currentPageManager;
+              key: ValueKey(userProfile.id),
+              providers: [
+                BlocProvider.value(
+                  value: getIt<ReminderBloc>(),
+                ),
+                BlocProvider<TabsBloc>.value(value: getIt<TabsBloc>()),
+                BlocProvider<HomeBloc>(
+                  create: (_) =>
+                      HomeBloc(workspaceLatest)..add(const HomeEvent.initial()),
+                ),
+                BlocProvider<HomeSettingBloc>(
+                  create: (_) => HomeSettingBloc(
+                    workspaceLatest,
+                    context.read<AppearanceSettingsCubit>(),
+                    context.widthPx,
+                  )..add(const HomeSettingEvent.initial()),
+                ),
+                BlocProvider<FavoriteBloc>(
+                  create: (context) =>
+                      FavoriteBloc()..add(const FavoriteEvent.initial()),
+                ),
+              ],
+              child: Scaffold(
+                floatingActionButton: enableMemoryLeakDetect
+                    ? const FloatingActionButton(
+                        onPressed: dumpMemoryLeak,
+                        child: Icon(Icons.memory),
+                      )
+                    : null,
+                body: BlocListener<HomeBloc, HomeState>(
+                  listenWhen: (p, c) => p.latestView != c.latestView,
+                  listener: (context, state) {
+                    final view = state.latestView;
+                    if (view != null) {
+                      final isWorkspaceRoot = view.isWorkspaceRootFor(
+                        state.workspaceSetting.workspaceId,
+                      );
+                      // Only open the last opened view if the [TabsState.currentPageManager] current opened plugin is blank and the last opened view is not null.
+                      // All opened widgets that display on the home screen are in the form of plugins. There is a list of built-in plugins defined in the [PluginType] enum, including board, grid and trash.
+                      final currentPageManager =
+                          context.read<TabsBloc>().state.currentPageManager;
 
-                    if (currentPageManager.plugin.pluginType ==
-                        PluginType.blank) {
-                      context.read<TabsBloc>().openPlugin(
-                            view,
-                            setLatest: !isWorkspaceRoot,
-                          );
-                    }
+                      if (currentPageManager.plugin.pluginType ==
+                          PluginType.blank) {
+                        context.read<TabsBloc>().openPlugin(
+                              view,
+                              setLatest: !isWorkspaceRoot,
+                            );
+                      }
 
-                    if (!isWorkspaceRoot) {
-                      // switch to the space that contains the last opened view
-                      _switchToSpace(view);
+                      if (!isWorkspaceRoot) {
+                        // switch to the space that contains the last opened view
+                        _switchToSpace(view);
+                      }
                     }
-                  }
-                },
-                child: BlocBuilder<HomeSettingBloc, HomeSettingState>(
-                  buildWhen: (previous, current) => previous != current,
-                  builder: (context, state) => BlocProvider(
-                    create: (_) => UserWorkspaceBloc(
-                      userProfile: userProfile,
-                      repository: RustWorkspaceRepositoryImpl(
-                        userId: userProfile.id,
-                      ),
-                    )..add(UserWorkspaceEvent.initialize()),
-                    child: BlocListener<UserWorkspaceBloc, UserWorkspaceState>(
-                      listenWhen: (previous, current) =>
-                          previous.currentWorkspace != current.currentWorkspace,
-                      listener: (context, state) {
-                        if (!context.mounted) return;
-                        final workspaceBloc =
-                            context.read<UserWorkspaceBloc?>();
-                        final spaceBloc = context.read<SpaceBloc?>();
-                        CommandPalette.maybeOf(context)?.updateBlocs(
-                          workspaceBloc: workspaceBloc,
-                          spaceBloc: spaceBloc,
-                        );
-                      },
-                      child: HomeHotKeys(
+                  },
+                  child: BlocBuilder<HomeSettingBloc, HomeSettingState>(
+                    buildWhen: (previous, current) => previous != current,
+                    builder: (context, state) => BlocProvider(
+                      create: (_) => UserWorkspaceBloc(
                         userProfile: userProfile,
-                        child: FlowyContainer(
-                          Theme.of(context).colorScheme.surface,
-                          child: _buildBody(
-                            context,
-                            userProfile,
-                            workspaceLatest,
+                        repository: RustWorkspaceRepositoryImpl(
+                          userId: userProfile.id,
+                        ),
+                      )..add(UserWorkspaceEvent.initialize()),
+                      child:
+                          BlocListener<UserWorkspaceBloc, UserWorkspaceState>(
+                        listenWhen: (previous, current) =>
+                            previous.currentWorkspace !=
+                            current.currentWorkspace,
+                        listener: (context, state) {
+                          if (!context.mounted) return;
+                          final workspaceBloc =
+                              context.read<UserWorkspaceBloc?>();
+                          final spaceBloc = context.read<SpaceBloc?>();
+                          CommandPalette.maybeOf(context)?.updateBlocs(
+                            workspaceBloc: workspaceBloc,
+                            spaceBloc: spaceBloc,
+                          );
+                        },
+                        child: HomeHotKeys(
+                          userProfile: userProfile,
+                          child: FlowyContainer(
+                            Theme.of(context).colorScheme.surface,
+                            child: _buildBody(
+                              context,
+                              userProfile,
+                              workspaceLatest,
+                            ),
                           ),
                         ),
                       ),
@@ -175,7 +179,6 @@ class DesktopHomeScreen extends StatelessWidget {
                 ),
               ),
             ),
-          ),
           ),
         );
       },
@@ -209,7 +212,7 @@ class DesktopHomeScreen extends StatelessWidget {
         layout.showMenu ? const SidebarResizer() : const SizedBox.shrink();
     final editPanel = _buildEditPanel(context, layout: layout);
 
-    return _layoutWidgets(
+    final body = _layoutWidgets(
       layout: layout,
       homeStack: homeStack,
       sidebar: sidebar,
@@ -218,6 +221,25 @@ class DesktopHomeScreen extends StatelessWidget {
       homeMenuResizer: homeMenuResizer,
       notificationPanel: notificationPanel,
       sliderHoverTrigger: sliderHoverTrigger,
+    );
+    return BlocBuilder<TabsBloc, TabsState>(
+      builder: (context, _) {
+        final tabs = context.read<TabsBloc>();
+        final history = tabs.navigationHistory;
+        return TrackpadHistoryNavigation(
+          animateChild: false,
+          enabled: !tabs.isClosed,
+          canGoBack: () => !tabs.isClosed && tabs.canGoBack,
+          canGoForward: () => !tabs.isClosed && tabs.canGoForward,
+          onBack: tabs.goBack,
+          onForward: tabs.goForward,
+          navigationToken: () => tabs.navigationEpoch,
+          pageKey: history.current?.previewKey,
+          previewKey: (forward) => history.peek(forward: forward)?.previewKey,
+          previewScope: (tabs, history.generation),
+          child: body,
+        );
+      },
     );
   }
 

@@ -22,6 +22,8 @@ namespace flutter_inappwebview_plugin
   constexpr auto kMethodSetScrollDelta = "setScrollDelta";
   constexpr auto kMethodSetZoomScale = "setZoomScale";
   constexpr auto kMethodSetFpsLimit = "setFpsLimit";
+  constexpr auto kMethodNavigateHistory = "navigateHistory";
+  constexpr auto kMethodGetHistoryState = "getHistoryState";
 
   constexpr auto kEventType = "type";
   constexpr auto kEventValue = "value";
@@ -200,6 +202,11 @@ namespace flutter_inappwebview_plugin
   CustomPlatformView::~CustomPlatformView()
   {
     debugLog("dealloc CustomPlatformView");
+    if (history_handlers_registered_ && view && view->webView) {
+      view->webView->remove_HistoryChanged(history_changed_token_);
+      view->webView->remove_NavigationStarting(navigation_starting_token_);
+      view->webView->remove_NavigationCompleted(navigation_completed_token_);
+    }
     event_sink_ = nullptr;
     texture_registrar_->UnregisterTexture(texture_id_, nullptr);
   }
@@ -226,6 +233,31 @@ namespace flutter_inappwebview_plugin
           { flutter::EncodableValue(kEventValue), name }});
         EmitEvent(event);
       });
+
+    if (!history_handlers_registered_ && view->webView) {
+      history_handlers_registered_ = true;
+      view->webView->add_HistoryChanged(
+        Microsoft::WRL::Callback<ICoreWebView2HistoryChangedEventHandler>(
+          [this](ICoreWebView2*, IUnknown*) -> HRESULT {
+            EmitEvent(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue(kEventType), flutter::EncodableValue("historyChanged")}}));
+            return S_OK;
+          }).Get(), &history_changed_token_);
+      view->webView->add_NavigationStarting(
+        Microsoft::WRL::Callback<ICoreWebView2NavigationStartingEventHandler>(
+          [this](ICoreWebView2*, ICoreWebView2NavigationStartingEventArgs*) -> HRESULT {
+            EmitEvent(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue(kEventType), flutter::EncodableValue("navigationStarting")}}));
+            return S_OK;
+          }).Get(), &navigation_starting_token_);
+      view->webView->add_NavigationCompleted(
+        Microsoft::WRL::Callback<ICoreWebView2NavigationCompletedEventHandler>(
+          [this](ICoreWebView2*, ICoreWebView2NavigationCompletedEventArgs*) -> HRESULT {
+            EmitEvent(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue(kEventType), flutter::EncodableValue("navigationCompleted")}}));
+            return S_OK;
+          }).Get(), &navigation_completed_token_);
+    }
   }
 
   void CustomPlatformView::HandleMethodCall(
@@ -233,6 +265,48 @@ namespace flutter_inappwebview_plugin
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result)
   {
     const auto& method_name = method_call.method_name();
+
+    if (method_name == kMethodGetHistoryState) {
+      if (!view) return result->Error(kErrorInvalidArgs);
+      // Keep the reply and renderer alive, never a raw CustomPlatformView
+      // pointer, while Chromium answers. No URLs/content cross this channel.
+      auto reply = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
+      auto renderer = view;
+      renderer->getCopyBackForwardList([reply, renderer](std::unique_ptr<WebHistory> history) {
+        flutter::EncodableMap state = {
+          {flutter::EncodableValue("back"), flutter::EncodableValue(renderer->canGoBack())},
+          {flutter::EncodableValue("forward"), flutter::EncodableValue(renderer->canGoForward())},
+          {flutter::EncodableValue("loading"), flutter::EncodableValue(renderer->isLoading())}
+        };
+        if (history && history->currentIndex && history->list) {
+          const auto index = *history->currentIndex;
+          const auto& entries = *history->list;
+          const auto addKey = [&](const char* name, int64_t at) {
+            if (at >= 0 && at < static_cast<int64_t>(entries.size()) && entries[at]->entryId) {
+              state[flutter::EncodableValue(name)] = flutter::EncodableValue(*entries[at]->entryId);
+            }
+          };
+          addKey("current", index);
+          addKey("previous", index - 1);
+          addKey("next", index + 1);
+        }
+        reply->Success(flutter::EncodableValue(state));
+      });
+      return;
+    }
+
+    // A bookmark owns its website history; never fall through to workspace
+    // navigation when the renderer has no previous/next entry.
+    if (method_name.compare(kMethodNavigateHistory) == 0) {
+      const auto forward = std::get_if<bool>(method_call.arguments());
+      if (!forward || !view) return result->Error(kErrorInvalidArgs);
+      const bool available = *forward ? view->canGoForward() : view->canGoBack();
+      if (available) {
+        if (*forward) view->goForward();
+        else view->goBack();
+      }
+      return result->Success(flutter::EncodableValue(available));
+    }
 
     // setCursorPos: [double x, double y]
     if (method_name.compare(kMethodSetCursorPos) == 0) {

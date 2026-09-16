@@ -4,7 +4,6 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
 import 'package:appflowy/mobile/presentation/widgets/widgets.dart';
-import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/settings/cloud_setting_bloc.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/af_dropdown_menu_entry.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
@@ -90,11 +89,9 @@ class CloudTypeSwitcher extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDevelopMode = integrationMode().isDevelop;
-    // Only show the appflowyCloudDevelop in develop mode
-    final values = AuthenticatorType.values.where((element) {
-      return isDevelopMode || element != AuthenticatorType.appflowyCloudDevelop;
-    }).toList();
+    // Custom cloud access is controlled by Env.enableCustomCloud, not the
+    // compiler mode. Changing servers still requires confirmation below.
+    final values = AuthenticatorType.values;
     return UniversalPlatform.isDesktopOrWeb
         ? SettingsDropdown(
             selectedOption: cloudType,

@@ -4,6 +4,7 @@ import 'package:appflowy/env/env.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/shared/share/constants.dart';
 import 'package:appflowy/shared/error_page/error_page.dart';
+import 'package:appflowy/user/application/billing_policy.dart';
 import 'package:appflowy/workspace/application/settings/appflowy_cloud_setting_bloc.dart';
 import 'package:appflowy/workspace/application/settings/appflowy_cloud_urls_bloc.dart';
 import 'package:appflowy/workspace/presentation/settings/widgets/_restart_app_button.dart';
@@ -19,7 +20,6 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -454,15 +454,8 @@ Future<bool> isBillingEnabled() async {
   final result = await UserEventGetCloudConfig().send();
   return result.fold(
     (cloudSetting) {
-      final whiteList = [
-        "https://beta.appflowy.cloud",
-        "https://test.appflowy.cloud",
-      ];
-      if (kDebugMode) {
-        whiteList.add("http://localhost:8000");
-      }
-
-      final isWhiteListed = whiteList.contains(cloudSetting.serverUrl);
+      final isWhiteListed =
+          BillingPolicy.supportsServer(cloudSetting.serverUrl);
       if (!isWhiteListed) {
         Log.warn("Billing is not enabled for server ${cloudSetting.serverUrl}");
       }

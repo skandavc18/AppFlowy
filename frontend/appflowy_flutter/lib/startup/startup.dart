@@ -127,6 +127,7 @@ class FlowyRunner {
         MemoryLeakDetectorTask(),
         DebugTask(),
         const FeatureFlagTask(),
+        const SidebarExpansionTask(),
 
         // localization
         const InitLocalizationTask(),

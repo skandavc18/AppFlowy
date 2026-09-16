@@ -1,4 +1,5 @@
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 
 class HomeSizes {
   static const double menuAddButtonHeight = 60;
@@ -20,7 +21,8 @@ class HomeSizes {
 
 class HomeInsets {
   static const double topBarTitleHorizontalPadding = 12;
-  static const double topBarTitleVerticalPadding = 12;
+  static const double topBarTitleVerticalPadding =
+      WorkspaceChrome.headerVerticalPadding;
 }
 
 class HomeSpaceViewSizes {

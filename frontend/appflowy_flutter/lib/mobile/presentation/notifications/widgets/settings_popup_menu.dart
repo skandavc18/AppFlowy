@@ -6,7 +6,6 @@ import 'package:appflowy/user/application/reminder/reminder_bloc.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart'
     hide PopupMenuButton, PopupMenuDivider, PopupMenuItem, PopupMenuEntry;
 import 'package:go_router/go_router.dart';
@@ -16,7 +15,6 @@ enum _NotificationSettingsPopupMenuItem {
   settings,
   markAllAsRead,
   archiveAll,
-  // only visible in debug mode
   unarchiveAll;
 }
 
@@ -56,15 +54,12 @@ class NotificationSettingsPopupMenu extends StatelessWidget {
           svg: FlowySvgs.m_notification_archived_s,
           text: LocaleKeys.settings_notifications_settings_archiveAll.tr(),
         ),
-        // only visible in debug mode
-        if (kDebugMode) ...[
-          const PopupMenuDivider(height: 0.5),
-          _buildItem(
-            value: _NotificationSettingsPopupMenuItem.unarchiveAll,
-            svg: FlowySvgs.m_notification_archived_s,
-            text: 'Unarchive all (Debug Mode)',
-          ),
-        ],
+        const PopupMenuDivider(height: 0.5),
+        _buildItem(
+          value: _NotificationSettingsPopupMenuItem.unarchiveAll,
+          svg: FlowySvgs.m_notification_archived_s,
+          text: 'Unarchive all',
+        ),
       ],
       onSelected: (_NotificationSettingsPopupMenuItem value) {
         switch (value) {
@@ -126,12 +121,8 @@ class NotificationSettingsPopupMenu extends StatelessWidget {
   }
 
   void _onUnarchiveAll(BuildContext context) {
-    if (!kDebugMode) {
-      return;
-    }
-
     showToastNotification(
-      message: 'Unarchive all success (Debug Mode)',
+      message: 'Unarchive all success',
     );
 
     context.read<ReminderBloc>().add(const ReminderEvent.unarchiveAll());
@@ -156,9 +147,12 @@ class _PopupButton extends StatelessWidget {
         children: [
           FlowySvg(svg),
           const HSpace(12),
-          FlowyText.regular(
-            text,
-            fontSize: 16,
+          Flexible(
+            child: FlowyText.regular(
+              text,
+              fontSize: 16,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
         ],
       ),

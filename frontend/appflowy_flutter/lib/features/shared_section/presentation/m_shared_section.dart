@@ -10,7 +10,6 @@ import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:flowy_infra_ui/widget/spacing.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -74,15 +73,13 @@ class MSharedSection extends StatelessWidget {
                 ),
               ),
 
-              // Refresh button, for debugging only
-              if (kDebugMode)
-                RefreshSharedSectionButton(
-                  onTap: () {
-                    context.read<SharedSectionBloc>().add(
-                          const SharedSectionEvent.refresh(),
-                        );
-                  },
-                ),
+              RefreshSharedSectionButton(
+                onTap: () {
+                  context.read<SharedSectionBloc>().add(
+                        const SharedSectionEvent.refresh(),
+                      );
+                },
+              ),
             ],
           );
         },

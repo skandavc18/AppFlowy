@@ -426,7 +426,9 @@ class _DesktopElasticScrollPhysics extends BouncingScrollPhysics {
 
   @override
   Simulation? createBallisticSimulation(
-      ScrollMetrics position, double velocity) {
+    ScrollMetrics position,
+    double velocity,
+  ) {
     final platformTolerance = toleranceFor(position);
     final tolerance = Tolerance(
       distance: platformTolerance.distance,
@@ -1363,7 +1365,8 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
         _hitPremiumExclusion
             ? []
             : [
-                for (final region in _hitRegions) ...region.prepareTrackpadPan()
+                for (final region in _hitRegions)
+                  ...region.prepareTrackpadPan(),
               ],
       );
     } else if (event is PointerPanZoomUpdateEvent) {
@@ -1851,6 +1854,11 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
 /// its own pointer-signal and pan/zoom physics.
 class PremiumScrollExclusion extends SingleChildRenderObjectWidget {
   const PremiumScrollExclusion({super.key, required super.child});
+
+  /// Custom viewers also own horizontal pan gestures; page history must not
+  /// compete with them. Inactive embed gates remove this target themselves.
+  static bool isHitTestTarget(HitTestTarget target) =>
+      target is _RenderPremiumScrollExclusion;
 
   @override
   RenderObject createRenderObject(BuildContext context) {

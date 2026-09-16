@@ -3,14 +3,17 @@ import 'dart:io';
 
 import 'package:appflowy/extensions/application/extension_manager.dart';
 import 'package:appflowy/extensions/dart/extension_registries.dart';
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/mobile_router.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/shared/clipboard_state.dart';
 import 'package:appflowy/shared/easy_localiation_service.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/feature_flags.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/shared/keyboard_state.dart';
 import 'package:appflowy/shared/maps/maps_settings.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/premium_theme_backdrop.dart';
 import 'package:appflowy/shared/calendar/reminder_notifications.dart';
@@ -24,6 +27,7 @@ import 'package:appflowy/workspace/application/action_navigation/action_navigati
 import 'package:appflowy/workspace/application/action_navigation/navigation_action.dart';
 import 'package:appflowy/workspace/application/backup/backup_scheduler.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
+import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy/workspace/application/notification/notification_service.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -38,6 +42,7 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flowy_infra_ui/widget/history_swipe.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -313,17 +318,41 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
                                   textScaler:
                                       TextScaler.linear(state.textScaleFactor),
                                 ),
-                                child: PremiumScrollScope(
-                                  enabled: state.enableKineticScrolling,
-                                  child: overlayManagerBuilder(
-                                    context,
-                                    !UniversalPlatform.isMobile &&
-                                            FeatureFlag.search.isOn
-                                        ? CommandPalette(
-                                            notifier: _commandPaletteNotifier,
-                                            child: child,
-                                          )
-                                        : child,
+                                child: ListenableBuilder(
+                                  listenable: EncryptionVault.instance,
+                                  builder: (context, child) =>
+                                      HistorySwipeTheme(
+                                    surface:
+                                        EditorSurfaceStyle.canvasBackgroundFor(
+                                      Theme.of(context).brightness,
+                                      Theme.of(context).colorScheme.surface,
+                                      isPaper: PaperTheme.isEnabled(context),
+                                    ),
+                                    back: LocaleKeys.button_back.tr(),
+                                    forward:
+                                        'workspaceChrome.historyForward'.tr(),
+                                    noPrevious:
+                                        'workspaceChrome.noPreviousPage'.tr(),
+                                    noNext: 'workspaceChrome.noNextPage'.tr(),
+                                    // Includes bookmark overlays and previews,
+                                    // not just the main workspace page stack.
+                                    allowPreviews: EncryptionVault
+                                            .instance.isLoaded &&
+                                        !EncryptionVault.instance.isConfigured,
+                                    child: child!,
+                                  ),
+                                  child: PremiumScrollScope(
+                                    enabled: state.enableKineticScrolling,
+                                    child: overlayManagerBuilder(
+                                      context,
+                                      !UniversalPlatform.isMobile &&
+                                              FeatureFlag.search.isOn
+                                          ? CommandPalette(
+                                              notifier: _commandPaletteNotifier,
+                                              child: child,
+                                            )
+                                          : child,
+                                    ),
                                   ),
                                 ),
                               ),

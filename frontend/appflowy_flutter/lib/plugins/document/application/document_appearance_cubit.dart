@@ -9,6 +9,25 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:universal_platform/universal_platform.dart';
 
+/// Width includes the page's existing margins and block-action gutter. The
+/// reading preset therefore leaves a comfortable text measure, not 960px of
+/// uninterrupted prose. These are shortcuts to the existing device setting.
+enum DocumentWidthPreset {
+  reading(960),
+  wide(1280),
+  full(EditorStyleCustomizer.maxDocumentWidth);
+
+  const DocumentWidthPreset(this.width);
+  final double width;
+
+  static DocumentWidthPreset? forWidth(double width) {
+    for (final preset in values) {
+      if ((preset.width - width).abs() < 0.5) return preset;
+    }
+    return null;
+  }
+}
+
 class DocumentAppearance {
   const DocumentAppearance({
     required this.fontSize,

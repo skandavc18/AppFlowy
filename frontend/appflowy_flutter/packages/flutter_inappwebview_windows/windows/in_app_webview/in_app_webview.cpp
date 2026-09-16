@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <limits>
 #include <nlohmann/json.hpp>
@@ -24,6 +25,63 @@
 namespace flutter_inappwebview_plugin
 {
   using namespace Microsoft::WRL;
+
+  // CDP dispatch order is not a processing-order guarantee. Keep one touch
+  // event in flight per renderer, with callbacks owning only this queue (never
+  // a destroyed InAppWebView). Adjacent pending moves can share the newest
+  // absolute contact position; start/end boundaries are never dropped.
+  class TrackpadTouchQueue : public std::enable_shared_from_this<TrackpadTouchQueue>
+  {
+  public:
+    explicit TrackpadTouchQueue(wil::com_ptr<ICoreWebView2> target)
+      : target_(std::move(target)) {}
+
+    void enqueue(nlohmann::json event)
+    {
+      if (!target_) return;
+      if (!pending_.empty() && pending_.back()["type"] == "touchMove" &&
+        event["type"] == "touchMove") {
+        pending_.back() = std::move(event);
+      }
+      else {
+        pending_.push_back(std::move(event));
+      }
+      sendNext();
+    }
+
+    void close()
+    {
+      pending_.clear();
+      target_ = nullptr;
+    }
+
+  private:
+    wil::com_ptr<ICoreWebView2> target_;
+    std::deque<nlohmann::json> pending_;
+    bool inFlight_ = false;
+
+    void sendNext()
+    {
+      if (inFlight_ || pending_.empty() || !target_) return;
+      const auto payload = utf8_to_wide(pending_.front().dump());
+      pending_.pop_front();
+      inFlight_ = true;
+      const auto self = shared_from_this();
+      const auto hr = target_->CallDevToolsProtocolMethod(L"Input.dispatchTouchEvent",
+        payload.c_str(),
+        Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
+          [self](HRESULT errorCode, LPCWSTR) -> HRESULT {
+            failedLog(errorCode);
+            self->inFlight_ = false;
+            self->sendNext();
+            return S_OK;
+          }).Get());
+      if (failedAndLog(hr)) {
+        inFlight_ = false;
+        pending_.clear();
+      }
+    }
+  };
 
   InAppWebView::InAppWebView(const FlutterInappwebviewWindowsPlugin* plugin, const InAppWebViewCreationParams& params, const HWND parentWindow, wil::com_ptr<ICoreWebView2Environment> webViewEnv,
     wil::com_ptr<ICoreWebView2Controller> webViewController,
@@ -1695,6 +1753,36 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
+    // This reserved contact is a precision trackpad, not a touchscreen.
+    // SendPointerInput's Windows touch promotion warps the physical mouse to
+    // the contact's local coordinates at gesture start. Dispatching the same
+    // touch stream inside Chromium retains compositor scrolling/fling without
+    // injecting any Windows pointer or changing the hardware cursor position.
+    constexpr int32_t kTrackpadPointerId = 0x3ffffffe;
+    if (pointer == kTrackpadPointerId && webView) {
+      const char* type = eventKind == InAppWebViewPointerEventKind::Down
+        ? "touchStart"
+        : eventKind == InAppWebViewPointerEventKind::Leave ? "touchCancel"
+        : eventKind == InAppWebViewPointerEventKind::Up ? "touchEnd" : "touchMove";
+      double zoom = 1.0;
+      if (webViewController) {
+        webViewController->get_ZoomFactor(&zoom);
+      }
+      if (zoom <= 0.0) zoom = 1.0;
+      nlohmann::json points = nlohmann::json::array();
+      if (eventKind != InAppWebViewPointerEventKind::Up &&
+        eventKind != InAppWebViewPointerEventKind::Leave) {
+        points.push_back({ {"id", 0}, {"x", x / zoom}, {"y", y / zoom},
+          {"radiusX", 1}, {"radiusY", 1}, {"force", pressure} });
+      }
+      const nlohmann::json parameters = { {"type", type}, {"touchPoints", points} };
+      if (!trackpadTouchQueue_) {
+        trackpadTouchQueue_ = std::make_shared<TrackpadTouchQueue>(webView);
+      }
+      trackpadTouchQueue_->enqueue(parameters);
+      return;
+    }
+
     COREWEBVIEW2_POINTER_EVENT_KIND event =
       COREWEBVIEW2_POINTER_EVENT_KIND_UPDATE;
     UINT32 pointerFlags = POINTER_FLAG_NONE;
@@ -1901,6 +1989,7 @@ namespace flutter_inappwebview_plugin
   InAppWebView::~InAppWebView()
   {
     debugLog("dealloc InAppWebView");
+    if (trackpadTouchQueue_) trackpadTouchQueue_->close();
     userContentController = nullptr;
     if (webView) {
       failedLog(webView->Stop());

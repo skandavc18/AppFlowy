@@ -179,6 +179,298 @@ void main() {
     expect(parentScrollController.offset, 0);
   });
 
+  testWidgets('trackpad contact does not hide or replace the mouse cursor', (
+    tester,
+  ) async {
+    const id = 44;
+    const manager =
+        MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager');
+    const view = MethodChannel('com.pichillilorenzo/custom_platform_view_$id');
+    const events =
+        MethodChannel('com.pichillilorenzo/custom_platform_view_${id}_events');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(manager,
+        (call) async => call.method == 'createInAppWebView' ? id : null);
+    messenger.setMockMethodCallHandler(view, (call) async {
+      calls.add(call);
+      return null;
+    });
+    messenger.setMockMethodCallHandler(events, (_) async => null);
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      messenger.setMockMethodCallHandler(manager, null);
+      messenger.setMockMethodCallHandler(view, null);
+      messenger.setMockMethodCallHandler(events, null);
+    });
+    await tester.pumpWidget(const MaterialApp(
+      home: Center(
+          child: SizedBox.square(
+        dimension: 300,
+        child: CustomPlatformView(creationParams: {
+          'initialSettings': {'disableHorizontalScroll': true},
+        }),
+      )),
+    ));
+    await tester.pump();
+    Future<void> cursor(String value) async {
+      tester.binding.channelBuffers.push(
+        events.name,
+        const StandardMethodCodec().encodeSuccessEnvelope({
+          'type': 'cursorChanged',
+          'value': value,
+        }),
+        (_) {},
+      );
+      await tester.pumpAndSettle();
+    }
+
+    MouseCursor actualCursor() => tester
+        .widget<MouseRegion>(
+          find.byWidgetPredicate(
+              (widget) => widget is MouseRegion && widget.child is Texture),
+        )
+        .cursor;
+    await cursor('click');
+    expect(actualCursor(), SystemMouseCursors.click);
+    final anchor = tester.getCenter(find.byType(CustomPlatformView));
+    final pan = await tester.createGesture(kind: PointerDeviceKind.trackpad);
+    await pan.panZoomStart(anchor);
+    await tester.pump();
+    await cursor('none');
+    expect(actualCursor(), SystemMouseCursors.click);
+    await pan.panZoomUpdate(anchor, pan: const Offset(-20, -35));
+    await tester.pump();
+    await cursor('text');
+    expect(actualCursor(), SystemMouseCursors.click);
+    await pan.panZoomEnd();
+    await tester.pump();
+    // A cursor event received during the pan may not be repeated by WebView2.
+    expect(actualCursor(), SystemMouseCursors.text);
+    final points =
+        calls.where((call) => call.method == 'setPointerUpdate').toList();
+    expect(
+        points.map((call) => (call.arguments as List)[2]), everyElement(150.0));
+    expect(points.map((call) => (call.arguments as List)[3]),
+        [150.0, 115.0, 115.0]);
+    expect(calls.last.method, 'setCursorPos');
+    expect(calls.last.arguments, [150.0, 150.0]);
+    await cursor('basic');
+    expect(actualCursor(), SystemMouseCursors.basic);
+
+    // A click at a new position must not use the scrolling contact/old hover.
+    final click = anchor + const Offset(25, 20);
+    await tester.tapAt(click, kind: PointerDeviceKind.mouse);
+    final button =
+        calls.indexWhere((call) => call.method == 'setPointerButton');
+    expect(calls[button - 1].method, 'setCursorPos');
+    expect(calls[button - 1].arguments, [175.0, 170.0]);
+
+    // Cancelling a contact and removing its view must not rebuild a disposed
+    // widget or leave the renderer in the middle of a touch gesture.
+    await pan.panZoomStart(anchor);
+    await pan.panZoomUpdate(anchor, pan: const Offset(0, -20));
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+    final lastContact =
+        calls.lastWhere((call) => call.method == 'setPointerUpdate');
+    expect((lastContact.arguments as List)[1],
+        InAppWebViewPointerEventKind.leave.index);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final scenario in <({
+    String name,
+    List<Offset> pans,
+    double scale,
+    double rotation,
+    bool? forward
+  })>[
+    (
+      name: 'right back',
+      pans: [Offset(24, 1), Offset(144, 4)],
+      scale: 1,
+      rotation: 0,
+      forward: false
+    ),
+    (
+      name: 'left forward',
+      pans: [Offset(-24, 1), Offset(-144, 4)],
+      scale: 1,
+      rotation: 0,
+      forward: true
+    ),
+    (
+      name: 'short',
+      pans: [Offset(24, 0), Offset(80, 0)],
+      scale: 1,
+      rotation: 0,
+      forward: null
+    ),
+    (
+      name: 'undone',
+      pans: [Offset(24, 0), Offset(144, 0), Offset(20, 0)],
+      scale: 1,
+      rotation: 0,
+      forward: null
+    ),
+    (
+      name: 'vertical',
+      pans: [Offset(0, -20), Offset(160, -25)],
+      scale: 1,
+      rotation: 0,
+      forward: null
+    ),
+    (
+      name: 'diagonal',
+      pans: [Offset(20, -20), Offset(160, -25)],
+      scale: 1,
+      rotation: 0,
+      forward: null
+    ),
+    (
+      name: 'pinch',
+      pans: [Offset(24, 0), Offset(144, 0)],
+      scale: 1.1,
+      rotation: 0,
+      forward: null
+    ),
+    (
+      name: 'rotate',
+      pans: [Offset(24, 0), Offset(144, 0)],
+      scale: 1,
+      rotation: 0.1,
+      forward: null
+    ),
+  ]) {
+    testWidgets('bookmark history: ${scenario.name}', (tester) async {
+      const id = 45;
+      const manager =
+          MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager');
+      const view =
+          MethodChannel('com.pichillilorenzo/custom_platform_view_$id');
+      const events = MethodChannel(
+          'com.pichillilorenzo/custom_platform_view_${id}_events');
+      final messenger = tester.binding.defaultBinaryMessenger;
+      final calls = <MethodCall>[];
+      messenger.setMockMethodCallHandler(manager,
+          (call) async => call.method == 'createInAppWebView' ? id : null);
+      messenger.setMockMethodCallHandler(view, (call) async {
+        calls.add(call);
+        if (call.method == 'getHistoryState') {
+          return {'back': true, 'forward': true};
+        }
+        return call.method == 'navigateHistory' ? true : null;
+      });
+      messenger.setMockMethodCallHandler(events, (_) async => null);
+      addTearDown(() async {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        messenger.setMockMethodCallHandler(manager, null);
+        messenger.setMockMethodCallHandler(view, null);
+        messenger.setMockMethodCallHandler(events, null);
+      });
+      await tester.pumpWidget(const MaterialApp(
+          home: Center(
+              child: SizedBox.square(
+        dimension: 300,
+        child: CustomPlatformView(creationParams: {
+          'initialSettings': {
+            'disableHorizontalScroll': true,
+            'allowsBackForwardNavigationGestures': true,
+          },
+        }),
+      ))));
+      await tester.pumpAndSettle();
+      final point = tester.getCenter(find.byType(CustomPlatformView));
+      final pan = await tester.createGesture(kind: PointerDeviceKind.trackpad);
+      await pan.panZoomStart(point);
+      await tester.pump();
+      expect(calls.where((call) => call.method == 'setPointerUpdate'), isEmpty);
+      for (var i = 0; i < scenario.pans.length; i++) {
+        await pan.panZoomUpdate(
+          point,
+          pan: scenario.pans[i],
+          scale: scenario.scale,
+          rotation: scenario.rotation,
+          timeStamp: Duration(milliseconds: (i + 1) * 16),
+        );
+        await tester.pump();
+      }
+      expect(calls.where((call) => call.method == 'navigateHistory'), isEmpty);
+      await pan.panZoomEnd();
+      await tester.pumpAndSettle();
+      final navigation =
+          calls.where((call) => call.method == 'navigateHistory').toList();
+      expect(navigation, hasLength(scenario.forward == null ? 0 : 1));
+      if (scenario.forward != null) {
+        expect(navigation.single.arguments, scenario.forward);
+        expect(
+            calls.where((call) => call.method == 'setPointerUpdate'), isEmpty);
+      }
+      if (scenario.name == 'pinch') {
+        expect(
+            calls.where((call) => call.method == 'setZoomScale'), hasLength(1));
+        expect(
+            calls.where((call) => call.method == 'setPointerUpdate'), isEmpty);
+      }
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('switching bookmark tabs cancels an unfinished history swipe',
+      (tester) async {
+    const id = 46;
+    const manager =
+        MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager');
+    const view = MethodChannel('com.pichillilorenzo/custom_platform_view_$id');
+    const events =
+        MethodChannel('com.pichillilorenzo/custom_platform_view_${id}_events');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final calls = <MethodCall>[];
+    messenger.setMockMethodCallHandler(manager,
+        (call) async => call.method == 'createInAppWebView' ? id : null);
+    messenger.setMockMethodCallHandler(view, (call) async {
+      calls.add(call);
+      return null;
+    });
+    messenger.setMockMethodCallHandler(events, (_) async => null);
+    final selected = ValueNotifier(0);
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      selected.dispose();
+      messenger.setMockMethodCallHandler(manager, null);
+      messenger.setMockMethodCallHandler(view, null);
+      messenger.setMockMethodCallHandler(events, null);
+    });
+    await tester.pumpWidget(MaterialApp(
+        home: ValueListenableBuilder(
+      valueListenable: selected,
+      builder: (_, value, __) => IndexedStack(index: value, children: const [
+        CustomPlatformView(creationParams: {
+          'initialSettings': {
+            'disableHorizontalScroll': true,
+            'allowsBackForwardNavigationGestures': true,
+          }
+        }),
+        SizedBox.expand(),
+      ]),
+    )));
+    await tester.pumpAndSettle();
+    final point = tester.getCenter(find.byType(CustomPlatformView));
+    final pan = await tester.createGesture(kind: PointerDeviceKind.trackpad);
+    await pan.panZoomStart(point);
+    await pan.panZoomUpdate(point, pan: const Offset(120, 0));
+    selected.value = 1;
+    await tester.pumpAndSettle();
+    await pan.panZoomEnd();
+    await tester.pumpAndSettle();
+    expect(calls.where((call) => call.method == 'navigateHistory'), isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('disposes a platform view that finishes creating late', (
     tester,
   ) async {
