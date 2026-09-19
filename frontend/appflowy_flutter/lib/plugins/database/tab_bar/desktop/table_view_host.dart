@@ -55,11 +55,38 @@ mixin TableViewHostPlumbing<T extends StatefulWidget> on State<T> {
 
   /// Writes this view's own settings back onto the folder.
   void saveHostSettings(Map<String, dynamic> settings) {
-    final mark = TableViewMark.forKey(hostEnvelopeKey, settings: settings);
-    ViewBackendService.updateView(
-      viewId: hostView.id,
-      extra: mark.mergeIntoExtra(hostView.extra),
+    unawaited(
+      persistHostSettings(settings).catchError((Object error) {
+        Log.warn('Could not save table view settings.');
+      }),
     );
+  }
+
+  Future<void> _settingsWrite = Future.value();
+
+  /// A form can await this before claiming a field setting was saved. Read the
+  /// latest extra inside the queue: encryption and view layout share it.
+  Future<void> persistHostSettings(Map<String, dynamic> settings) {
+    final viewId = hostView.id;
+    final key = hostEnvelopeKey;
+    final operation = _settingsWrite.then((_) async {
+      final current = await ViewBackendService.getView(viewId);
+      final view = current.fold((view) => view, (_) => null);
+      if (view == null) throw StateError('Could not read table view settings.');
+      final mark = (TableViewMark.fromExtraKey(view.extra, key) ??
+              TableViewMark.forKey(key))
+          .copyWith(settings: settings);
+      final result = await ViewBackendService.updateView(
+        viewId: viewId,
+        extra: mark.mergeIntoExtra(view.extra),
+      );
+      result.fold(
+        (_) {},
+        (_) => throw StateError('Could not save table view settings.'),
+      );
+    });
+    _settingsWrite = operation.catchError((Object _) {});
+    return operation;
   }
 
   RowMetaPB? metaOf(String rowId) =>

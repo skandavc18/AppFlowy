@@ -1,12 +1,14 @@
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/premium_theme.dart';
-import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/presentation/widgets/user_avatar.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// Where a row's discussion lives.
 ///
@@ -149,27 +151,32 @@ class RowCommentSection extends StatefulWidget {
 class _RowCommentSectionState extends State<RowCommentSection> {
   final TextEditingController _controller = TextEditingController();
   final FocusNode _focus = FocusNode();
+  final FocusScopeNode _scope = FocusScopeNode();
 
-  bool _composing = false;
+  bool _writing = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _focus.addListener(_onFocusChanged);
-  }
+  // Some table views pass the workspace bloc through their popup overlay but
+  // omit its optional profile argument. Use the same session identity for the
+  // avatar, new comments and ownership checks, without another backend read.
+  UserProfilePB? get _userProfile =>
+      widget.userProfile ??
+      context.read<UserWorkspaceBloc?>()?.state.userProfile;
 
   @override
   void dispose() {
-    _focus.removeListener(_onFocusChanged);
+    _scope.dispose();
     _focus.dispose();
     _controller.dispose();
     super.dispose();
   }
 
-  void _onFocusChanged() {
-    if (_focus.hasFocus != _composing) {
-      setState(() => _composing = _focus.hasFocus);
+  void _cancel() {
+    if (_writing) {
+      return;
     }
+    _controller.clear();
+    // Cancel may itself hold keyboard focus, rather than the text field.
+    _scope.unfocus();
   }
 
   Future<void> _write(List<RowComment> comments) async {
@@ -193,17 +200,15 @@ class _RowCommentSectionState extends State<RowCommentSection> {
     // The thread is not where the caret was, so the selection is left alone.
     transaction.afterSelection = widget.editorState.selection;
     await widget.editorState.apply(transaction);
-    if (mounted) {
-      setState(() {});
-    }
   }
 
   Future<void> _post() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty) {
+    final draft = _controller.text;
+    final text = draft.trim();
+    if (_writing || text.isEmpty) {
       return;
     }
-    final profile = widget.userProfile;
+    final profile = _userProfile;
     final comment = RowComment(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       author: profile?.name ?? '',
@@ -212,32 +217,60 @@ class _RowCommentSectionState extends State<RowCommentSection> {
       text: text,
       createdAt: DateTime.now(),
     );
-    _controller.clear();
-    await _write([...rowCommentsOf(widget.editorState.document), comment]);
+    setState(() => _writing = true);
+    try {
+      await _write([...rowCommentsOf(widget.editorState.document), comment]);
+      if (mounted && _controller.text == draft) {
+        _controller.clear();
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _writing = false);
+      }
+    }
   }
 
   Future<void> _remove(RowComment comment) async {
-    final left = rowCommentsOf(widget.editorState.document)
-        .where((other) => other.id != comment.id)
-        .toList();
-    await _write(left);
+    if (_writing || !_isMine(comment)) {
+      return;
+    }
+    setState(() => _writing = true);
+    try {
+      final left = rowCommentsOf(widget.editorState.document)
+          .where((other) => other.id != comment.id)
+          .toList();
+      await _write(left);
+    } finally {
+      if (mounted) {
+        setState(() => _writing = false);
+      }
+    }
   }
 
   bool _isMine(RowComment comment) =>
       comment.authorId.isNotEmpty &&
-      comment.authorId == widget.userProfile?.id.toString();
+      comment.authorId == _userProfile?.id.toString();
 
   @override
   Widget build(BuildContext context) {
+    final profile = widget.userProfile ??
+        context.select<UserWorkspaceBloc?, UserProfilePB?>(
+          (bloc) => bloc?.state.userProfile,
+        );
     final theme = Theme.of(context);
     final palette = theme.extension<PremiumThemeExtension>();
     final muted = palette?.textMuted ?? theme.hintColor;
     final comments = rowCommentsOf(widget.editorState.document);
+    final idCounts = <String, int>{};
+    for (final comment in comments) {
+      idCounts.update(comment.id, (count) => count + 1, ifAbsent: () => 1);
+    }
 
     // The composer is a text field living inside the editor, which sees
     // Backspace and Enter first. Dropping the selection while it has focus is
     // what lets those keys reach the field.
     return FocusScope(
+      node: _scope,
       skipTraversal: true,
       onFocusChange: (hasFocus) {
         if (hasFocus && keepEditorFocusNotifier.value == 0) {
@@ -245,68 +278,54 @@ class _RowCommentSectionState extends State<RowCommentSection> {
         }
       },
       child: Padding(
+        key: const ValueKey('row-comments-section'),
         padding: widget.padding,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.only(left: 2, bottom: 10),
-              child: Row(
-                children: [
-                  Icon(Icons.mode_comment_outlined, size: 13, color: muted),
-                  const SizedBox(width: 7),
-                  Text(
-                    LocaleKeys.grid_row_comments.tr().toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.8,
-                      color: muted,
-                    ),
-                  ),
-                  if (comments.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    _CountPill(count: comments.length),
-                  ],
-                ],
-              ),
-            ),
-            if (comments.isNotEmpty)
-              ViewerCard(
-                color: palette?.floatingSurface ?? theme.cardColor,
-                borderRadius: BorderRadius.circular(_cardRadius),
-                reactsToPointer: false,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 4,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      for (var i = 0; i < comments.length; i++)
-                        _CommentRow(
-                          comment: comments[i],
-                          first: i == 0,
-                          onDelete: _isMine(comments[i])
-                              ? () => _remove(comments[i])
-                              : null,
-                        ),
-                    ],
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Semantics(
+                header: true,
+                child: Text(
+                  LocaleKeys.grid_row_comments.tr(),
+                  key: const ValueKey('row-comments-heading'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 12.5,
+                    height: 1.4,
+                    color: muted,
                   ),
                 ),
               ),
-            if (comments.isNotEmpty) const SizedBox(height: 10),
+            ),
+            if (comments.isNotEmpty)
+              Column(
+                key: const ValueKey('row-comments-thread'),
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (final (index, comment) in comments.indexed)
+                    _CommentRow(
+                      // Legacy/malformed entries still render independently;
+                      // valid IDs retain hover/focus state across deletions.
+                      key: comment.id.isNotEmpty && idCounts[comment.id] == 1
+                          ? ValueKey(comment.id)
+                          : ValueKey((comment.id, index)),
+                      comment: comment,
+                      busy: _writing,
+                      onDelete:
+                          _isMine(comment) ? () => _remove(comment) : null,
+                    ),
+                ],
+              ),
+            if (comments.isNotEmpty) const SizedBox(height: 6),
             _Composer(
               controller: _controller,
               focusNode: _focus,
-              expanded: _composing || _controller.text.isNotEmpty,
-              userProfile: widget.userProfile,
+              busy: _writing,
+              userProfile: profile,
               onSubmit: _post,
-              onCancel: () {
-                _controller.clear();
-                _focus.unfocus();
-              },
+              onCancel: _cancel,
             ),
           ],
         ),
@@ -315,46 +334,16 @@ class _RowCommentSectionState extends State<RowCommentSection> {
   }
 }
 
-/// The radius the comment cards share with the rest of the row page.
-const double _cardRadius = 14;
-
-class _CountPill extends StatelessWidget {
-  const _CountPill({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final palette = theme.extension<PremiumThemeExtension>();
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: (palette?.mutedSurface ?? theme.dividerColor)
-            .withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        '$count',
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w700,
-          color: palette?.textMuted ?? theme.hintColor,
-        ),
-      ),
-    );
-  }
-}
-
 class _CommentRow extends StatefulWidget {
   const _CommentRow({
+    super.key,
     required this.comment,
-    required this.first,
+    required this.busy,
     this.onDelete,
   });
 
   final RowComment comment;
-  final bool first;
+  final bool busy;
   final VoidCallback? onDelete;
 
   @override
@@ -363,151 +352,119 @@ class _CommentRow extends StatefulWidget {
 
 class _CommentRowState extends State<_CommentRow> {
   bool _hovered = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final palette = theme.extension<PremiumThemeExtension>();
     final muted = palette?.textMuted ?? theme.hintColor;
-    final hover = palette?.hover ?? theme.hoverColor;
     final comment = widget.comment;
+    // Keep the action in the focus order without invisible mouse targets.
+    // Assistive navigation has no hover, so its actions stay discoverable.
+    final showActions =
+        _hovered || _focused || MediaQuery.accessibleNavigationOf(context);
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (!widget.first)
-            Divider(
-              height: 1,
-              thickness: 1,
-              color: (palette?.border ?? theme.dividerColor)
-                  .withValues(alpha: 0.28),
-            ),
-          AnimatedContainer(
-            duration: AppFlowyMotion.gentle,
-            curve: AppFlowyMotion.standardCurve,
-            margin: const EdgeInsets.symmetric(vertical: 4),
-            padding: const EdgeInsets.fromLTRB(8, 9, 8, 10),
-            decoration: BoxDecoration(
-              color: hover.withValues(alpha: _hovered ? 0.55 : 0),
-              borderRadius: BorderRadius.circular(9),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _Avatar(name: comment.author, url: comment.avatar),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // The name and the age keep to themselves so the free
-                      // space falls between them and the delete button.
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    comment.author.isEmpty
-                                        ? LocaleKeys.grid_row_commentSomebody
-                                            .tr()
-                                        : comment.author,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      height: 1.3,
-                                      color: theme.colorScheme.onSurface,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  rowCommentAgo(comment.createdAt),
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    height: 1.3,
-                                    color: muted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (widget.onDelete != null)
-                            AnimatedOpacity(
-                              duration: AppFlowyMotion.gentle,
-                              opacity: _hovered ? 1 : 0,
-                              child: IgnorePointer(
-                                ignoring: !_hovered,
-                                child: _CommentIconButton(
-                                  icon: Icons.delete_outline_rounded,
-                                  onTap: widget.onDelete!,
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        onFocusChange: (focused) => setState(() => _focused = focused),
+        child: Padding(
+          key: ValueKey('row-comment-${comment.id}'),
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _Avatar(name: comment.author, url: comment.avatar),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 2,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                comment.author.isEmpty
+                                    ? LocaleKeys.grid_row_commentSomebody.tr()
+                                    : comment.author,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 13,
+                                  height: 1.5,
+                                  color: palette?.textPrimary ??
+                                      theme.colorScheme.onSurface,
                                 ),
                               ),
-                            ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        comment.text,
-                        style: TextStyle(
-                          fontSize: 13.5,
-                          height: 1.55,
-                          color: theme.colorScheme.onSurface
-                              .withValues(alpha: 0.88),
+                              Text(
+                                rowCommentAgo(comment.createdAt),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  fontSize: 11.5,
+                                  height: 1.5,
+                                  color: muted,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
+                        if (widget.onDelete != null)
+                          IgnorePointer(
+                            ignoring: !showActions,
+                            child: AnimatedOpacity(
+                              key:
+                                  ValueKey('row-comment-actions-${comment.id}'),
+                              duration: MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 120),
+                              curve: Curves.easeOut,
+                              opacity: showActions ? 1 : 0,
+                              child: IconButton(
+                                key: ValueKey(
+                                  'row-comment-delete-${comment.id}',
+                                ),
+                                tooltip: LocaleKeys.button_delete.tr(),
+                                onPressed: widget.busy ? null : widget.onDelete,
+                                style: _commentButtonStyle(context).copyWith(
+                                  minimumSize: const WidgetStatePropertyAll(
+                                    Size.square(28),
+                                  ),
+                                  padding: const WidgetStatePropertyAll(
+                                    EdgeInsets.all(5),
+                                  ),
+                                  iconSize: const WidgetStatePropertyAll(16),
+                                ),
+                                icon: const Icon(Icons.delete_outline_rounded),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      comment.text,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontSize: 13.5,
+                        height: 1.5,
+                        color:
+                            palette?.textPrimary ?? theme.colorScheme.onSurface,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CommentIconButton extends StatefulWidget {
-  const _CommentIconButton({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  State<_CommentIconButton> createState() => _CommentIconButtonState();
-}
-
-class _CommentIconButtonState extends State<_CommentIconButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final palette = theme.extension<PremiumThemeExtension>();
-    final hover = palette?.hover ?? theme.hoverColor;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: AppFlowyMotion.gentle,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: hover.withValues(alpha: _hovered ? 1 : 0),
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Icon(
-            widget.icon,
-            size: 15,
-            color: palette?.textMuted ?? theme.hintColor,
+              ),
+            ],
           ),
         ),
       ),
@@ -519,7 +476,7 @@ class _Composer extends StatefulWidget {
   const _Composer({
     required this.controller,
     required this.focusNode,
-    required this.expanded,
+    required this.busy,
     required this.onSubmit,
     required this.onCancel,
     this.userProfile,
@@ -527,7 +484,7 @@ class _Composer extends StatefulWidget {
 
   final TextEditingController controller;
   final FocusNode focusNode;
-  final bool expanded;
+  final bool busy;
   final UserProfilePB? userProfile;
   final VoidCallback onSubmit;
   final VoidCallback onCancel;
@@ -537,190 +494,264 @@ class _Composer extends StatefulWidget {
 }
 
 class _ComposerState extends State<_Composer> {
-  bool _hovered = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final palette = theme.extension<PremiumThemeExtension>();
     final muted = palette?.textMuted ?? theme.hintColor;
-    final active = widget.expanded;
-    final empty = widget.controller.text.trim().isEmpty;
-    final accent = theme.colorScheme.primary;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : AppFlowyMotion.gentle;
 
-    return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.focusNode.requestFocus,
-        child: ViewerCard(
-          color: palette?.floatingSurface ?? theme.cardColor,
-          borderRadius: BorderRadius.circular(_cardRadius),
-          elevation:
-              active ? ViewerCardElevation.raised : ViewerCardElevation.resting,
-          reactsToPointer: false,
-          child: AnimatedContainer(
-            duration: AppFlowyMotion.gentle,
-            curve: AppFlowyMotion.standardCurve,
-            padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(_cardRadius),
-              border: Border.all(
-                color: accent.withValues(
-                  alpha: active ? 0.5 : (_hovered ? 0.18 : 0),
-                ),
-                width: 1.2,
-              ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _Avatar(
-                  name: widget.userProfile?.name ?? '',
-                  url: widget.userProfile?.iconUrl ?? '',
-                ),
-                const SizedBox(width: 11),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        TextField(
-                          controller: widget.controller,
-                          focusNode: widget.focusNode,
-                          maxLines: active ? 6 : 1,
-                          minLines: 1,
-                          textInputAction: TextInputAction.newline,
-                          style: TextStyle(
-                            fontSize: 13.5,
-                            height: 1.55,
-                            color: theme.colorScheme.onSurface,
-                          ),
-                          onChanged: (_) => setState(() {}),
-                          decoration: InputDecoration(
-                            isDense: true,
-                            isCollapsed: true,
-                            filled: false,
-                            hoverColor: Colors.transparent,
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                            hintText: LocaleKeys.grid_row_commentHint.tr(),
-                            hintStyle: TextStyle(
-                              fontSize: 13.5,
-                              height: 1.55,
-                              color: muted,
-                            ),
-                          ),
-                        ),
-                        AnimatedSize(
-                          duration: AppFlowyMotion.gentle,
-                          curve: AppFlowyMotion.standardCurve,
-                          alignment: Alignment.topCenter,
-                          child: active
-                              ? Padding(
-                                  padding: const EdgeInsets.only(top: 12),
-                                  child: Row(
-                                    mainAxisAlignment: MainAxisAlignment.end,
-                                    children: [
-                                      _ComposerButton(
-                                        label: LocaleKeys.button_cancel.tr(),
-                                        onTap: widget.onCancel,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      _ComposerButton(
-                                        label: LocaleKeys.grid_row_commentPost
-                                            .tr(),
-                                        primary: true,
-                                        onTap: empty ? null : widget.onSubmit,
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : const SizedBox(width: double.infinity),
-                        ),
-                      ],
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): widget.onCancel,
+      },
+      child: Focus(
+        canRequestFocus: false,
+        skipTraversal: true,
+        // Include the buttons: Tab must not close an empty focused composer.
+        onFocusChange: (focused) => setState(() => _focused = focused),
+        child: ValueListenableBuilder<TextEditingValue>(
+          valueListenable: widget.controller,
+          builder: (context, value, _) {
+            final active = _focused || value.text.isNotEmpty || widget.busy;
+            final empty = value.text.trim().isEmpty;
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              excludeFromSemantics: true,
+              onTap: widget.focusNode.requestFocus,
+              child: TextFieldTapRegion(
+                child: Row(
+                  key: const ValueKey('row-comment-composer'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: _Avatar(
+                        key: const ValueKey('row-comment-composer-avatar'),
+                        name: widget.userProfile?.name ?? '',
+                        url: widget.userProfile?.iconUrl ?? '',
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Container(
+                        key: const ValueKey('row-comment-input-surface'),
+                        constraints: const BoxConstraints(minHeight: 40),
+                        alignment: Alignment.topLeft,
+                        // Writing stays on the page itself: no filled card,
+                        // focus outline or padding shift when the caret lands.
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            DefaultTextEditingShortcuts(
+                              child: TextField(
+                                key: const ValueKey('row-comment-input'),
+                                controller: widget.controller,
+                                focusNode: widget.focusNode,
+                                readOnly: widget.busy,
+                                // Keep multiline input enabled before the
+                                // focus rebuild, or the first paste loses its
+                                // newlines to the single-line formatter.
+                                maxLines: 6,
+                                minLines: 1,
+                                keyboardType: TextInputType.multiline,
+                                textInputAction: TextInputAction.newline,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 13.5,
+                                  height: 1.4,
+                                  color: palette?.textPrimary ??
+                                      theme.colorScheme.onSurface,
+                                ),
+                                decoration: InputDecoration(
+                                  isDense: true,
+                                  isCollapsed: true,
+                                  filled: false,
+                                  hoverColor: Colors.transparent,
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  contentPadding: EdgeInsets.zero,
+                                  hintText:
+                                      LocaleKeys.grid_row_commentHint.tr(),
+                                  hintMaxLines: 1,
+                                  hintStyle:
+                                      theme.textTheme.bodyMedium?.copyWith(
+                                    fontSize: 13.5,
+                                    height: 1.4,
+                                    color: muted,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            _CommentActionReveal(
+                              duration: duration,
+                              child: active
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(top: 8),
+                                      child: Wrap(
+                                        alignment: WrapAlignment.end,
+                                        spacing: 6,
+                                        runSpacing: 4,
+                                        children: [
+                                          TextButton(
+                                            key: const ValueKey(
+                                              'row-comment-cancel',
+                                            ),
+                                            onPressed: widget.busy
+                                                ? null
+                                                : widget.onCancel,
+                                            style: _commentButtonStyle(context),
+                                            child: Text(
+                                              LocaleKeys.button_cancel.tr(),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            key: const ValueKey(
+                                              'row-comment-post',
+                                            ),
+                                            tooltip: LocaleKeys
+                                                .grid_row_commentPost
+                                                .tr(),
+                                            onPressed: empty || widget.busy
+                                                ? null
+                                                : widget.onSubmit,
+                                            style: _commentButtonStyle(
+                                              context,
+                                              primary: true,
+                                            ).copyWith(
+                                              minimumSize:
+                                                  const WidgetStatePropertyAll(
+                                                Size.square(28),
+                                              ),
+                                              maximumSize:
+                                                  const WidgetStatePropertyAll(
+                                                Size.square(28),
+                                              ),
+                                              padding:
+                                                  const WidgetStatePropertyAll(
+                                                EdgeInsets.all(5),
+                                              ),
+                                              shape:
+                                                  const WidgetStatePropertyAll(
+                                                CircleBorder(),
+                                              ),
+                                            ),
+                                            icon: const Icon(
+                                              Icons.arrow_upward_rounded,
+                                              size: 17,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 }
 
-class _ComposerButton extends StatefulWidget {
-  const _ComposerButton({
-    required this.label,
-    required this.onTap,
-    this.primary = false,
-  });
+/// AnimatedSize cannot safely finish a zero-duration layout animation on the
+/// current Flutter version. Reduced motion shows the actions directly instead.
+class _CommentActionReveal extends StatelessWidget {
+  const _CommentActionReveal({required this.duration, required this.child});
 
-  final String label;
-  final VoidCallback? onTap;
-  final bool primary;
+  final Duration duration;
+  final Widget child;
 
   @override
-  State<_ComposerButton> createState() => _ComposerButtonState();
-}
-
-class _ComposerButtonState extends State<_ComposerButton> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final palette = theme.extension<PremiumThemeExtension>();
-    final muted = palette?.textMuted ?? theme.hintColor;
-    final hover = palette?.hover ?? theme.hoverColor;
-    final enabled = widget.onTap != null;
-    final accent = theme.colorScheme.primary;
-
-    final background = widget.primary
-        ? accent.withValues(
-            alpha: enabled ? (_hovered ? 0.92 : 1) : 0.28,
-          )
-        : hover.withValues(alpha: _hovered ? 1 : 0);
-
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: AppFlowyMotion.gentle,
+  Widget build(BuildContext context) => duration == Duration.zero
+      ? child
+      : AnimatedSize(
+          duration: duration,
           curve: AppFlowyMotion.standardCurve,
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text(
-            widget.label,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              height: 1.2,
-              color: widget.primary
-                  ? theme.colorScheme.onPrimary
-                      .withValues(alpha: enabled ? 1 : 0.75)
-                  : muted,
-            ),
-          ),
-        ),
+          alignment: Alignment.topCenter,
+          child: child,
+        );
+}
+
+ButtonStyle _commentButtonStyle(BuildContext context, {bool primary = false}) {
+  final theme = Theme.of(context);
+  final palette = theme.extension<PremiumThemeExtension>();
+  final muted = palette?.textMuted ?? theme.hintColor;
+  final accent = palette?.accent ?? theme.colorScheme.primary;
+  final focusRing = palette?.focusRing ?? theme.focusColor;
+  final foreground = WidgetStateProperty.resolveWith<Color>(
+    (states) => states.contains(WidgetState.disabled)
+        ? muted.withValues(alpha: 0.6)
+        : primary
+            ? theme.colorScheme.onPrimary
+            : muted,
+  );
+  return ButtonStyle(
+    minimumSize: const WidgetStatePropertyAll(Size(0, 28)),
+    padding: const WidgetStatePropertyAll(
+      EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    ),
+    visualDensity: VisualDensity.standard,
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    splashFactory: NoSplash.splashFactory,
+    animationDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 120),
+    textStyle: WidgetStatePropertyAll(
+      theme.textTheme.labelMedium?.copyWith(fontSize: 12.5, height: 1.2),
+    ),
+    foregroundColor: foreground,
+    iconColor: foreground,
+    backgroundColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.disabled)) {
+        return accent.withValues(alpha: primary ? 0.08 : 0);
+      }
+      if (primary) {
+        return states.contains(WidgetState.pressed) ||
+                states.contains(WidgetState.hovered)
+            ? Color.alphaBlend(
+                theme.colorScheme.onSurface.withValues(alpha: 0.08),
+                accent,
+              )
+            : accent;
+      }
+      if (states.contains(WidgetState.pressed)) {
+        return palette?.pressed ?? theme.highlightColor;
+      }
+      if (states.contains(WidgetState.hovered)) {
+        return palette?.hover ?? theme.hoverColor;
+      }
+      return accent.withValues(alpha: 0);
+    }),
+    overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+    side: WidgetStateProperty.resolveWith(
+      (states) => BorderSide(
+        color: states.contains(WidgetState.focused)
+            ? focusRing
+            : focusRing.withValues(alpha: 0),
       ),
-    );
-  }
+    ),
+    shape: WidgetStatePropertyAll(
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+    ),
+  );
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.name, required this.url});
+  const _Avatar({super.key, required this.name, required this.url});
 
   final String name;
   final String url;

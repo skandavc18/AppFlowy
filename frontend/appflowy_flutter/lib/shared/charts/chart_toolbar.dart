@@ -75,7 +75,7 @@ class ChartToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final numeric = table.numericColumns;
+    final numeric = table.numericColumns.map(table.keyOf).toList();
     final measured = spec.plotsAgainstValues;
 
     return Wrap(
@@ -86,9 +86,10 @@ class ChartToolbar extends StatelessWidget {
         _typeChip(),
         _horizontalChip(numeric, measured),
         _verticalChip(numeric),
-        if (!measured && spec.valueColumns.isNotEmpty) _aggregateChip(),
+        if (!measured && !spec.type.drawsPoints && spec.valueColumns.isNotEmpty)
+          _aggregateChip(),
         if (spec.type.sizesPoints) _sizeChip(numeric),
-        if (measured && spec.categoryColumn != null) _labelChip(),
+        if (measured || spec.type.drawsPoints) _labelChip(),
         _colorChip(),
         if (!compact) _optionsChip(measured),
       ],
@@ -150,6 +151,7 @@ class ChartToolbar extends StatelessWidget {
     if (type.drawsPoints && next.xColumn == null) {
       // A scatter with no measured axis has nothing to plot against.
       final numeric = table.numericColumns
+          .map(table.keyOf)
           .where((column) => !next.valueColumns.contains(column))
           .toList();
       if (numeric.isNotEmpty) {
@@ -163,12 +165,17 @@ class ChartToolbar extends StatelessWidget {
   Widget _horizontalChip(List<String> numeric, bool measured) {
     final canMeasure = spec.type.supportsValueAxis;
     return ChartChip(
+      key: const ValueKey('chart-horizontal-column'),
       icon: spec.type.isHorizontal
           ? Icons.swap_vert_rounded
           : Icons.swap_horiz_rounded,
       label: measured
-          ? spec.xColumn!
-          : spec.categoryColumn ?? LocaleKeys.charts_everyRow.tr(),
+          ? table.nameOf(spec.xColumn!)
+          : spec.type.drawsPoints
+              ? LocaleKeys.charts_pickColumn.tr()
+              : spec.categoryColumn == null
+                  ? LocaleKeys.charts_everyRow.tr()
+                  : table.nameOf(spec.categoryColumn!),
       caption: spec.type.isCircular
           ? LocaleKeys.charts_groupBy.tr()
           : LocaleKeys.charts_xAxis.tr(),
@@ -178,44 +185,56 @@ class ChartToolbar extends StatelessWidget {
           AppMenuHeader(LocaleKeys.charts_xAxis.tr()),
           for (final column in numeric)
             AppMenuItem(
-              label: column,
+              label: table.nameOf(column),
               icon: Icons.trending_up_rounded,
               selected: measured && column == spec.xColumn,
               onSelected: () => onChanged(spec.copyWith(xColumn: column)),
             ),
           const AppMenuSeparator(),
         ],
-        AppMenuHeader(LocaleKeys.charts_groupBy.tr()),
-        AppMenuItem(
-          label: LocaleKeys.charts_everyRow.tr(),
-          icon: Icons.table_rows_rounded,
-          selected: !measured && spec.categoryColumn == null,
-          onSelected: () =>
-              onChanged(spec.copyWith(clearCategory: true, clearX: true)),
-        ),
-        for (final column in table.columns)
+        if (spec.type.drawsPoints && numeric.isEmpty)
           AppMenuItem(
-            label: column,
-            icon: Icons.label_outline_rounded,
-            selected: !measured && column == spec.categoryColumn,
-            onSelected: () => onChanged(
-              spec.copyWith(categoryColumn: column, clearX: true),
-            ),
+            label: LocaleKeys.charts_noNumericColumns.tr(),
+            enabled: false,
           ),
+        // A point chart requires numeric X/Y. Its separate label control can
+        // name points; offering categorical grouping here used to do nothing.
+        if (!spec.type.drawsPoints) ...[
+          AppMenuHeader(LocaleKeys.charts_groupBy.tr()),
+          AppMenuItem(
+            label: LocaleKeys.charts_everyRow.tr(),
+            icon: Icons.table_rows_rounded,
+            selected: !measured && spec.categoryColumn == null,
+            onSelected: () =>
+                onChanged(spec.copyWith(clearCategory: true, clearX: true)),
+          ),
+          for (final column in table.columnKeys)
+            AppMenuItem(
+              label: table.nameOf(column),
+              icon: Icons.label_outline_rounded,
+              selected: !measured && column == spec.categoryColumn,
+              onSelected: () => onChanged(
+                spec.copyWith(categoryColumn: column, clearX: true),
+              ),
+            ),
+        ],
       ],
     );
   }
 
   /// The numbers themselves. Several columns can be plotted at once.
   Widget _verticalChip(List<String> numeric) => ChartChip(
+        key: const ValueKey('chart-value-columns'),
         icon: Icons.stacked_line_chart_rounded,
         label: spec.valueColumns.isEmpty
-            ? LocaleKeys.charts_countRows.tr()
-            : spec.valueColumns.join(', '),
+            ? (spec.plotsAgainstValues || spec.type.drawsPoints
+                ? LocaleKeys.charts_pickColumn.tr()
+                : LocaleKeys.charts_countRows.tr())
+            : spec.valueColumns.map(table.nameOf).join(', '),
         caption: LocaleKeys.charts_yAxis.tr(),
         palette: palette,
         entries: [
-          if (!spec.plotsAgainstValues)
+          if (!spec.plotsAgainstValues && !spec.type.drawsPoints)
             AppMenuItem(
               label: LocaleKeys.charts_countRows.tr(),
               icon: Icons.tag_rounded,
@@ -226,7 +245,7 @@ class ChartToolbar extends StatelessWidget {
           if (numeric.isNotEmpty) const AppMenuSeparator(),
           for (final column in numeric)
             AppMenuItem(
-              label: column,
+              label: table.nameOf(column),
               icon: Icons.numbers_rounded,
               selected: spec.valueColumns.contains(column),
               onSelected: () => onChanged(
@@ -264,7 +283,9 @@ class ChartToolbar extends StatelessWidget {
 
   Widget _sizeChip(List<String> numeric) => ChartChip(
         icon: Icons.blur_circular_rounded,
-        label: spec.sizeColumn ?? LocaleKeys.charts_noSize.tr(),
+        label: spec.sizeColumn == null
+            ? LocaleKeys.charts_noSize.tr()
+            : table.nameOf(spec.sizeColumn!),
         caption: LocaleKeys.charts_bubbleSize.tr(),
         palette: palette,
         entries: [
@@ -277,7 +298,7 @@ class ChartToolbar extends StatelessWidget {
           if (numeric.isNotEmpty) const AppMenuSeparator(),
           for (final column in numeric)
             AppMenuItem(
-              label: column,
+              label: table.nameOf(column),
               icon: Icons.numbers_rounded,
               selected: column == spec.sizeColumn,
               onSelected: () => onChanged(spec.copyWith(sizeColumn: column)),
@@ -287,8 +308,11 @@ class ChartToolbar extends StatelessWidget {
 
   /// What names a point when the axes both carry numbers.
   Widget _labelChip() => ChartChip(
+        key: const ValueKey('chart-label-column'),
         icon: Icons.label_outline_rounded,
-        label: spec.categoryColumn!,
+        label: spec.categoryColumn == null
+            ? LocaleKeys.charts_everyRow.tr()
+            : table.nameOf(spec.categoryColumn!),
         caption: LocaleKeys.charts_pickColumn.tr(),
         palette: palette,
         entries: [
@@ -299,9 +323,9 @@ class ChartToolbar extends StatelessWidget {
             onSelected: () => onChanged(spec.copyWith(clearCategory: true)),
           ),
           const AppMenuSeparator(),
-          for (final column in table.columns)
+          for (final column in table.columnKeys)
             AppMenuItem(
-              label: column,
+              label: table.nameOf(column),
               icon: Icons.label_outline_rounded,
               selected: column == spec.categoryColumn,
               onSelected: () =>
@@ -316,7 +340,7 @@ class ChartToolbar extends StatelessWidget {
         palette: palette,
         showChevron: false,
         entries: [
-          if (!measured) ...[
+          if (!measured && !spec.type.drawsPoints) ...[
             AppMenuHeader(LocaleKeys.charts_sortBy.tr()),
             for (final sort in ChartSort.values)
               AppMenuItem(

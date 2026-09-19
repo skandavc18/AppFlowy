@@ -1,5 +1,7 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:appflowy/core/helpers/url_launcher.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet_media_upload.dart';
@@ -10,22 +12,26 @@ import 'package:appflowy/plugins/database/widgets/cell_editor/media_cell_editor.
 import 'package:appflowy/plugins/database/widgets/cell_editor/mobile_media_cell_editor.dart';
 import 'package:appflowy/plugins/database/widgets/media_file_type_ext.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
-import 'package:appflowy/shared/af_image.dart';
-import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
+import 'package:appflowy/workspace/presentation/widgets/file_viewer/attachment_file_viewer.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/media_entities.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:universal_platform/universal_platform.dart';
 
 class GridMediaCellSkin extends IEditableMediaCellSkin {
-  const GridMediaCellSkin({this.isMobileRowDetail = false});
+  const GridMediaCellSkin({
+    this.isMobileRowDetail = false,
+    this.styleListenable,
+  });
 
   final bool isMobileRowDetail;
+
+  /// Hosts may supply already-loaded styles without another backend read.
+  final ValueListenable<PropertyStyles>? styleListenable;
 
   @override
   void dispose() {}
@@ -47,26 +53,38 @@ class GridMediaCellSkin extends IEditableMediaCellSkin {
         final rowId = context.read<MediaCellBloc>().cellController.rowId;
 
         return ValueListenableBuilder<PropertyStyles>(
-          valueListenable: PropertyStyleRegistry.instance.listenable(viewId),
+          valueListenable: styleListenable ??
+              PropertyStyleRegistry.instance.listenable(viewId),
           builder: (context, styles, _) {
             final style = styles.cellStyle(fieldId, rowId);
             final extent =
                 (style?.thumbnailSize ?? PropertyThumbnailSize.medium).extent;
             final align = style?.align ?? PropertyAlign.center;
 
-            final List<Widget> children = state.files
-                .map<Widget>(
-                  (file) => GestureDetector(
-                    onTap: () => _openOrExpandFile(context, file, state.files),
-                    child: Padding(
-                      padding: wrapContent
-                          ? const EdgeInsets.only(right: 4)
-                          : EdgeInsets.zero,
-                      child: _FilePreviewRender(file: file, extent: extent),
-                    ),
-                  ),
-                )
-                .toList();
+            // GridRow uses this same field width and measures its cells with
+            // IntrinsicHeight. Do not introduce a LayoutBuilder here.
+            final fieldWidth = bloc.cellController.fieldInfo.width ?? 208.0;
+            final width =
+                fieldWidth.isFinite ? math.max(0.0, fieldWidth - 8) : 200.0;
+            if (width == 0) return const SizedBox.shrink();
+            final children = state.files.map<Widget>((file) {
+              void open() => _openOrExpandFile(context, file, state.files);
+              if (!file.isImage) {
+                return SizedBox(
+                  key: ValueKey(file.id),
+                  width: math.min(200, width),
+                  child: MediaFileLabel(file: file, onTap: open),
+                );
+              }
+              return GestureDetector(
+                key: ValueKey(file.id),
+                onTap: open,
+                child: _FilePreviewRender(
+                  file: file,
+                  extent: math.min(extent, width),
+                ),
+              );
+            }).toList();
 
             if (isMobileRowDetail && state.files.isEmpty) {
               children.add(
@@ -89,6 +107,7 @@ class GridMediaCellSkin extends IEditableMediaCellSkin {
                 child: SizedBox(
                   width: double.infinity,
                   child: Wrap(
+                    spacing: 4,
                     runSpacing: 4,
                     alignment: align.wrapAlignment,
                     children: children,
@@ -97,8 +116,8 @@ class GridMediaCellSkin extends IEditableMediaCellSkin {
               );
             }
 
-            // No forced full width: the strip shrink-wraps, so the cell's own
-            // alignment is what places it.
+            // The strip still scrolls in stored order; only individual
+            // labels are bounded so their text can actually ellipsize.
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: SingleChildScrollView(
@@ -172,32 +191,34 @@ class GridMediaCellSkin extends IEditableMediaCellSkin {
     MediaFilePB file,
     List<MediaFilePB> files,
   ) {
-    if (file.fileType != MediaFileTypePB.Image) {
-      afLaunchUrlString(file.url, context: context);
+    final bloc = context.read<MediaCellBloc>();
+    if (!file.isImage) {
+      if (UniversalPlatform.isMobile) {
+        unawaited(afLaunchUrlString(file.url, context: context));
+      } else {
+        unawaited(
+          showAttachmentFileViewer(
+            context,
+            file,
+            userProfile: bloc.state.userProfile,
+          ),
+        );
+      }
       return;
     }
 
-    final images =
-        files.where((f) => f.fileType == MediaFileTypePB.Image).toList();
-    final index = images.indexOf(file);
+    final images = files.where((file) => file.isImage).toList();
 
     showDialog(
       context: context,
       builder: (_) => InteractiveImageViewer(
-        userProfile: context.read<MediaCellBloc>().state.userProfile,
-        imageProvider: AFBlockImageProvider(
-          initialIndex: index,
-          images: images
-              .map(
-                (e) => ImageBlockData(
-                  url: e.url,
-                  type: e.uploadType.toCustomImageType(),
-                ),
-              )
-              .toList(),
+        userProfile: bloc.state.userProfile,
+        imageProvider: MediaFileImageProvider(
+          initialFileId: file.id,
+          files: images,
           onDeleteImage: (index) {
             final deleteFile = images[index];
-            context.read<MediaCellBloc>().deleteFile(deleteFile.id);
+            if (!bloc.isClosed) bloc.deleteFile(deleteFile.id);
           },
         ),
       ),
@@ -244,34 +265,13 @@ class _FilePreviewRender extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget tile = file.fileType != MediaFileTypePB.Image
-        ? Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: AFThemeExtension.of(context).greyHover,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Center(
-              child: FlowySvg(
-                file.fileType.icon,
-                size: Size.square((extent * 0.36).clamp(12, 26)),
-                color: AFThemeExtension.of(context).textColor,
-              ),
-            ),
-          )
-        : Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(6)),
-            child: AFImage(
-              url: file.url,
-              uploadType: file.uploadType,
-              userProfile: context.read<MediaCellBloc>().state.userProfile,
-            ),
-          );
-
-    return FlowyTooltip(
-      message: file.name,
-      child: SizedBox(height: extent, width: extent, child: tile),
+    return Tooltip(
+      message: file.displayName,
+      child: MediaFileThumbnail(
+        file: file,
+        size: Size.square(extent),
+        userProfile: context.read<MediaCellBloc>().state.userProfile,
+      ),
     );
   }
 }

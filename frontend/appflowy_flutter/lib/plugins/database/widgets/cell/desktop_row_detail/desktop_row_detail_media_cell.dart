@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
@@ -11,16 +14,15 @@ import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart'
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_block_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_upload_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
-import 'package:appflowy/shared/af_image.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/util/xfile_ext.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/shared_widget.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
-import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
+import 'package:appflowy/workspace/presentation/widgets/file_viewer/attachment_file_viewer.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
-import 'package:collection/collection.dart';
-import 'package:cross_file/cross_file.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -52,6 +54,9 @@ class DekstopRowDetailMediaCellSkin extends IEditableMediaCellSkin {
       child: BlocBuilder<MediaCellBloc, MediaCellState>(
         builder: (context, state) => LayoutBuilder(
           builder: (context, constraints) {
+            if (constraints.maxWidth <= 16) {
+              return const SizedBox.shrink();
+            }
             if (state.files.isEmpty) {
               return _AddFileButton(
                 controller: popoverController,
@@ -71,28 +76,33 @@ class DekstopRowDetailMediaCellSkin extends IEditableMediaCellSkin {
               );
             }
 
-            int itemsToShow = state.showAllFiles ? state.files.length : 0;
-            if (!state.showAllFiles) {
-              // The row width is surrounded by 8px padding on each side
-              final rowWidth = constraints.maxWidth - 16;
-
-              // Each item needs 94.4 px to render, 86.4px width + 8px runSpacing
-              final itemsPerRow = rowWidth ~/ (_itemWidth + 8);
-
-              // We show at most 2 rows
-              itemsToShow = itemsPerRow * 2;
+            final rowWidth = math.max(0.0, constraints.maxWidth - 16);
+            double widthFor(MediaFilePB file) =>
+                math.min(file.isImage ? _itemWidth : 200.0, rowWidth);
+            // Pack the actual widths into two rows. The footer replaces the
+            // last slot with the same width, preserving order and its count.
+            var capacity = state.files.length;
+            if (!state.showAllFiles && rowWidth.isFinite) {
+              var row = 0;
+              var usedWidth = 0.0;
+              capacity = 0;
+              for (final file in state.files) {
+                final width = widthFor(file);
+                if (usedWidth > 0 && usedWidth + 8 + width > rowWidth + 0.01) {
+                  row++;
+                  usedWidth = 0;
+                }
+                if (row == 2) break;
+                usedWidth += (usedWidth > 0 ? 8 : 0) + width;
+                capacity++;
+              }
             }
-
-            final filesToDisplay =
-                state.showAllFiles || itemsToShow >= state.files.length
-                    ? state.files
-                    : state.files.take(itemsToShow - 1).toList();
-            final extraCount = state.files.length - itemsToShow;
-            final images = state.files
-                .where((f) => f.fileType == MediaFileTypePB.Image)
-                .toList();
-
-            final size = constraints.maxWidth / 2 - 6;
+            final collapsed = capacity < state.files.length;
+            final visibleCount = collapsed ? capacity - 1 : state.files.length;
+            final filesToDisplay = state.files.take(visibleCount).toList();
+            // The file under the +N footer is hidden too.
+            final extraCount = state.files.length - visibleCount;
+            final images = state.files.where((file) => file.isImage).toList();
             return _AddFileButton(
               controller: popoverController,
               mutex: mutex,
@@ -109,16 +119,15 @@ class DekstopRowDetailMediaCellSkin extends IEditableMediaCellSkin {
                       onReorder: (from, to) => context
                           .read<MediaCellBloc>()
                           .add(MediaCellEvent.reorderFiles(from: from, to: to)),
-                      footer: extraCount > 0 && !state.showAllFiles
+                      footer: collapsed
                           ? GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () => _toggleShowAllFiles(context),
                               child: _FilePreviewRender(
-                                key: ValueKey(state.files[itemsToShow - 1].id),
-                                file: state.files[itemsToShow - 1],
-                                index: 9,
+                                key: ValueKey(state.files[visibleCount].id),
+                                file: state.files[visibleCount],
                                 images: images,
-                                size: size,
+                                width: widthFor(state.files[visibleCount]),
                                 mutex: mutex,
                                 hideFileNames: state.hideFileNames,
                                 foregroundText: LocaleKeys.grid_media_extraCount
@@ -132,13 +141,12 @@ class DekstopRowDetailMediaCellSkin extends IEditableMediaCellSkin {
                         child: _FilePreviewFeedback(child: child),
                       ),
                       children: filesToDisplay
-                          .mapIndexed(
-                            (index, file) => _FilePreviewRender(
+                          .map(
+                            (file) => _FilePreviewRender(
                               key: ValueKey(file.id),
                               file: file,
-                              index: index,
                               images: images,
-                              size: size,
+                              width: widthFor(file),
                               mutex: mutex,
                               hideFileNames: state.hideFileNames,
                             ),
@@ -146,26 +154,30 @@ class DekstopRowDetailMediaCellSkin extends IEditableMediaCellSkin {
                           .toList(),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        FlowySvg(
-                          FlowySvgs.add_thin_s,
-                          size: const Size.square(12),
-                          color: Theme.of(context).hintColor,
-                        ),
-                        const HSpace(6),
-                        FlowyText.medium(
-                          LocaleKeys.grid_media_addFileOrImage.tr(),
-                          fontSize: 12,
-                          color: Theme.of(context).hintColor,
-                          figmaLineHeight: 18,
-                        ),
-                      ],
+                  if (constraints.maxWidth >= 32)
+                    Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          FlowySvg(
+                            FlowySvgs.add_thin_s,
+                            size: const Size.square(12),
+                            color: Theme.of(context).hintColor,
+                          ),
+                          const HSpace(6),
+                          Flexible(
+                            child: FlowyText.medium(
+                              LocaleKeys.grid_media_addFileOrImage.tr(),
+                              fontSize: 12,
+                              color: Theme.of(context).hintColor,
+                              figmaLineHeight: 18,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             );
@@ -294,8 +306,7 @@ class _AddFileButtonState extends State<_AddFileButton> {
               return;
             }
 
-            final fakeFile = XFile(uri.path);
-            MediaFileTypePB fileType = fakeFile.fileType.toMediaFileTypePB();
+            MediaFileTypePB fileType = inferFileType(url).toMediaFileTypePB();
             fileType = fileType == MediaFileTypePB.Other
                 ? MediaFileTypePB.Link
                 : fileType;
@@ -346,8 +357,7 @@ class _FilePreviewRender extends StatefulWidget {
     super.key,
     required this.file,
     required this.images,
-    required this.index,
-    required this.size,
+    required this.width,
     required this.mutex,
     this.hideFileNames = false,
     this.foregroundText,
@@ -355,8 +365,7 @@ class _FilePreviewRender extends StatefulWidget {
 
   final MediaFilePB file;
   final List<MediaFilePB> images;
-  final int index;
-  final double size;
+  final double width;
   final PopoverMutex mutex;
   final bool hideFileNames;
   final String? foregroundText;
@@ -371,15 +380,7 @@ class _FilePreviewRenderState extends State<_FilePreviewRender> {
   bool isHovering = false;
   bool isSelected = false;
 
-  late int thisIndex;
-
   MediaFilePB get file => widget.file;
-
-  @override
-  void initState() {
-    super.initState();
-    thisIndex = widget.images.indexOf(file);
-  }
 
   @override
   void dispose() {
@@ -389,59 +390,66 @@ class _FilePreviewRenderState extends State<_FilePreviewRender> {
   }
 
   @override
-  void didUpdateWidget(covariant _FilePreviewRender oldWidget) {
-    thisIndex = widget.images.indexOf(file);
-    super.didUpdateWidget(oldWidget);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    Widget child;
-    if (file.fileType == MediaFileTypePB.Image) {
-      child = AFImage(
-        url: file.url,
-        uploadType: file.uploadType,
-        userProfile: context.read<MediaCellBloc>().state.userProfile,
-        width: _itemWidth,
-        borderRadius: BorderRadius.only(
-          topLeft: Corners.s5Radius,
-          topRight: Corners.s5Radius,
-          bottomLeft: widget.hideFileNames ? Corners.s5Radius : Radius.zero,
-          bottomRight: widget.hideFileNames ? Corners.s5Radius : Radius.zero,
-        ),
-      );
-    } else {
-      child = DecoratedBox(
-        decoration: BoxDecoration(color: file.fileType.color),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: FlowySvg(
-              file.fileType.icon,
-              color: const Color(0xFF666D76),
+    final theme = Theme.of(context);
+    final palette = PremiumThemeExtension.maybeOf(context);
+    final surface = EditorSurfaceStyle.previewBackgroundFor(
+      theme.brightness,
+      palette?.surface ?? theme.colorScheme.surfaceContainerLow,
+      isPaper: PaperTheme.isEnabled(context),
+    );
+    Widget child = file.isImage
+        ? MediaFileThumbnail(
+            file: file,
+            size: Size(widget.width, 68),
+            userProfile: context.read<MediaCellBloc>().state.userProfile,
+            borderRadius: BorderRadius.only(
+              topLeft: Corners.s5Radius,
+              topRight: Corners.s5Radius,
+              bottomLeft: widget.hideFileNames ? Corners.s5Radius : Radius.zero,
+              bottomRight:
+                  widget.hideFileNames ? Corners.s5Radius : Radius.zero,
             ),
-          ),
-        ),
-      );
-    }
+          )
+        : MediaFileLabel(
+            file: file,
+            onTap: widget.foregroundText == null ? _openOrExpandFile : null,
+            trailingInset: widget.width >= 64 ? 24 : 0,
+          );
 
     if (widget.foregroundText != null) {
       child = Stack(
         children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              position: DecorationPosition.foreground,
-              decoration:
-                  BoxDecoration(color: Colors.black.withValues(alpha: 0.5)),
-              child: child,
+          if (!file.isImage)
+            ExcludeSemantics(
+              child: TooltipVisibility(
+                visible: false,
+                child: IgnorePointer(child: child),
+              ),
             ),
-          ),
+          if (file.isImage)
+            Positioned.fill(
+              child: DecoratedBox(
+                position: DecorationPosition.foreground,
+                decoration:
+                    BoxDecoration(color: Colors.black.withValues(alpha: 0.5)),
+                child: child,
+              ),
+            ),
           Positioned.fill(
-            child: Center(
-              child: FlowyText.semibold(
-                widget.foregroundText!,
-                color: Colors.white,
-                fontSize: 14,
+            child: ColoredBox(
+              color: file.isImage ? Colors.transparent : surface,
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: FlowyText.semibold(
+                    widget.foregroundText!,
+                    color: file.isImage
+                        ? Colors.white
+                        : palette?.textPrimary ?? theme.colorScheme.onSurface,
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ),
           ),
@@ -452,8 +460,9 @@ class _FilePreviewRenderState extends State<_FilePreviewRender> {
     return MouseRegion(
       onEnter: (_) => setState(() => isHovering = true),
       onExit: (_) => setState(() => isHovering = false),
-      child: FlowyTooltip(
-        message: file.name,
+      cursor: SystemMouseCursors.click,
+      child: Tooltip(
+        message: widget.foregroundText ?? file.displayName,
         child: AppFlowyPopover(
           controller: controller,
           constraints: const BoxConstraints(maxWidth: 240),
@@ -468,7 +477,6 @@ class _FilePreviewRenderState extends State<_FilePreviewRender> {
             ],
             child: _FileMenu(
               parentContext: context,
-              index: thisIndex,
               file: file,
               images: widget.images,
               controller: controller,
@@ -477,64 +485,47 @@ class _FilePreviewRenderState extends State<_FilePreviewRender> {
           ),
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onTap: widget.foregroundText != null
-                ? null
-                : () {
-                    if (file.uploadType == FileUploadTypePB.LocalFile) {
-                      afLaunchUrlString(file.url);
-                      return;
-                    }
-
-                    if (file.fileType != MediaFileTypePB.Image) {
-                      afLaunchUrlString(widget.file.url);
-                      return;
-                    }
-
-                    openInteractiveViewerFromFiles(
-                      context,
-                      widget.images,
-                      userProfile:
-                          context.read<MediaCellBloc>().state.userProfile,
-                      initialIndex: thisIndex,
-                      onDeleteImage: (index) {
-                        final deleteFile = widget.images[index];
-                        context.read<MediaCellBloc>().deleteFile(deleteFile.id);
-                      },
-                    );
-                  },
+            onTap: file.isImage && widget.foregroundText == null
+                ? _openOrExpandFile
+                : null,
             child: Container(
-              width: _itemWidth,
+              width: widget.width,
               clipBehavior: Clip.antiAlias,
               decoration: BoxDecoration(
                 borderRadius: const BorderRadius.all(Corners.s6Radius),
-                border: Border.all(color: Theme.of(context).dividerColor),
-                color: Theme.of(context).cardColor,
+                border:
+                    file.isImage ? Border.all(color: theme.dividerColor) : null,
+                color: file.isImage ? theme.cardColor : null,
               ),
               child: Stack(
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(height: 68, child: child),
-                      if (!widget.hideFileNames)
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: FlowyText(
-                                  file.name,
-                                  fontSize: 10,
-                                  overflow: TextOverflow.ellipsis,
-                                  figmaLineHeight: 16,
+                  if (!file.isImage)
+                    child
+                  else
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(height: 68, child: child),
+                        if (!widget.hideFileNames)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(4),
+                                  child: FlowyText(
+                                    file.displayName,
+                                    fontSize: 10,
+                                    overflow: TextOverflow.ellipsis,
+                                    figmaLineHeight: 16,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                    ],
-                  ),
+                            ],
+                          ),
+                      ],
+                    ),
                   if (widget.foregroundText == null &&
+                      widget.width >= 24 &&
                       (isHovering || isSelected))
                     Positioned(
                       top: 3,
@@ -544,13 +535,18 @@ class _FilePreviewRenderState extends State<_FilePreviewRender> {
                           setState(() => isSelected = true);
                           controller.show();
                         },
-                        fillColor: Colors.black.withValues(alpha: 0.4),
+                        fillColor: file.isImage
+                            ? Colors.black.withValues(alpha: 0.4)
+                            : surface,
                         width: 18,
                         radius: BorderRadius.circular(4),
-                        icon: const FlowySvg(
+                        icon: FlowySvg(
                           FlowySvgs.three_dots_s,
-                          color: Colors.white,
-                          size: Size.square(16),
+                          color: file.isImage
+                              ? Colors.white
+                              : palette?.textSecondary ??
+                                  theme.colorScheme.onSurfaceVariant,
+                          size: const Size.square(16),
                         ),
                       ),
                     ),
@@ -562,12 +558,42 @@ class _FilePreviewRenderState extends State<_FilePreviewRender> {
       ),
     );
   }
+
+  void _openOrExpandFile() {
+    final bloc = context.read<MediaCellBloc>();
+    if (!file.isImage) {
+      unawaited(
+        showAttachmentFileViewer(
+          context,
+          file,
+          userProfile: bloc.state.userProfile,
+        ),
+      );
+      return;
+    }
+
+    // Navigation and the explicit delete callback must use the same snapshot,
+    // even if the cell receives another file list while the dialog is open.
+    final images = List<MediaFilePB>.of(widget.images);
+    showDialog(
+      context: context,
+      builder: (_) => InteractiveImageViewer(
+        userProfile: bloc.state.userProfile,
+        imageProvider: MediaFileImageProvider(
+          files: images,
+          initialFileId: file.id,
+          onDeleteImage: (index) {
+            if (!bloc.isClosed) bloc.deleteFile(images[index].id);
+          },
+        ),
+      ),
+    );
+  }
 }
 
 class _FileMenu extends StatefulWidget {
   const _FileMenu({
     required this.parentContext,
-    required this.index,
     required this.file,
     required this.images,
     required this.controller,
@@ -576,9 +602,6 @@ class _FileMenu extends StatefulWidget {
 
   /// Parent [BuildContext] used to retrieve the [MediaCellBloc]
   final BuildContext parentContext;
-
-  /// Index of this file in [widget.images]
-  final int index;
 
   /// The current [MediaFilePB] being previewed
   final MediaFilePB file;
@@ -611,11 +634,11 @@ class _FileMenuState extends State<_FileMenu> {
       separatorBuilder: () => const VSpace(8),
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (widget.file.fileType == MediaFileTypePB.Image) ...[
+        if (widget.file.isImage) ...[
           MediaMenuItem(
             onTap: () {
+              _showInteractiveViewer();
               widget.controller.close();
-              _showInteractiveViewer(context);
             },
             icon: FlowySvgs.full_view_s,
             label: LocaleKeys.grid_media_expand.tr(),
@@ -722,28 +745,21 @@ class _FileMenuState extends State<_FileMenu> {
         ),
       );
 
-  void _showInteractiveViewer(BuildContext context) => showDialog(
-        context: context,
-        builder: (_) => InteractiveImageViewer(
-          userProfile:
-              widget.parentContext.read<MediaCellBloc>().state.userProfile,
-          imageProvider: AFBlockImageProvider(
-            initialIndex: widget.index,
-            images: widget.images
-                .map(
-                  (e) => ImageBlockData(
-                    url: e.url,
-                    type: e.uploadType.toCustomImageType(),
-                  ),
-                )
-                .toList(),
-            onDeleteImage: (index) {
-              final deleteFile = widget.images[index];
-              widget.parentContext
-                  .read<MediaCellBloc>()
-                  .deleteFile(deleteFile.id);
-            },
-          ),
+  void _showInteractiveViewer() {
+    final bloc = widget.parentContext.read<MediaCellBloc>();
+    final images = List<MediaFilePB>.of(widget.images);
+    showDialog(
+      context: widget.parentContext,
+      builder: (_) => InteractiveImageViewer(
+        userProfile: bloc.state.userProfile,
+        imageProvider: MediaFileImageProvider(
+          initialFileId: widget.file.id,
+          files: images,
+          onDeleteImage: (index) {
+            if (!bloc.isClosed) bloc.deleteFile(images[index].id);
+          },
         ),
-      );
+      ),
+    );
+  }
 }

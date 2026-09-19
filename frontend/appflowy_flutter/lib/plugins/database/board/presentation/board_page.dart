@@ -950,6 +950,7 @@ class _BoardCardState extends State<_BoardCard> {
               groupingFieldId: widget.groupItem.fieldInfo.id,
               isEditing: _isEditing,
               cellBuilder: widget.cellBuilder,
+              isCompact: widget.compactMode,
               onTap: (context) => widget.onOpenCard(
                 context.read<CardBloc>().rowController.rowMeta,
               ),
@@ -964,6 +965,7 @@ class _BoardCardState extends State<_BoardCard> {
               },
               styleConfiguration: RowCardStyleConfiguration(
                 cellStyleMap: desktopBoardCardCellStyleMap(context),
+                showProperties: false,
                 cardPadding: widget.compactMode
                     ? const EdgeInsets.fromLTRB(10, 8, 10, 9)
                     : const EdgeInsets.fromLTRB(12, 10, 12, 11),

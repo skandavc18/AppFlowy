@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
@@ -10,6 +9,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/interactiv
 import 'package:appflowy/shared/calendar/calendar_reminder.dart';
 import 'package:appflowy/shared/calendar/reminder_composer.dart';
 import 'package:appflowy/shared/calendar/reminder_store.dart';
+import 'package:appflowy/shared/progress_bar.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
@@ -133,10 +133,14 @@ class PropertyStyledTextCell extends StatelessWidget {
           value: readNumericCell(raw) ?? 0,
           maximum: style.maximum,
           showPercent: style.showPercent,
+          showButtons: style.showButtons,
+          step: style.progressStep,
           palette: palette,
-          tone: tone,
+          accent: const ['neutral', 'green'].contains(style.accent)
+              ? null
+              : tone.strong,
           compact: compact,
-          onChanged: (value) => _write(writeNumericCell(value)),
+          onChanged: (value) => _write(formatProgressNumber(value)),
         ),
       PropertyStyleKind.counter => _CounterCell(
           value: readNumericCell(raw) ?? 0,
@@ -165,77 +169,429 @@ class PropertyStyledTextCell extends StatelessWidget {
   }
 }
 
+/// Grid controls usable by a form without a TextCellBloc or an early write.
+class PropertyValueControl extends StatelessWidget {
+  const PropertyValueControl({
+    super.key,
+    required this.style,
+    required this.value,
+    required this.onChanged,
+    this.onOpenRow,
+    this.enabled = true,
+  });
+
+  final PropertyStyle style;
+  final String value;
+  final ValueChanged<String> onChanged;
+  final VoidCallback? onOpenRow;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = interactivePaletteOf(context);
+    final tone = InteractiveAccent.fromValue(style.accent).resolve(palette);
+    final child = switch (style.kind) {
+      PropertyStyleKind.progress => _ProgressCell(
+          value: readNumericCell(value) ?? 0,
+          maximum: style.maximum,
+          showPercent: style.showPercent,
+          showButtons: style.showButtons,
+          step: style.progressStep,
+          palette: palette,
+          accent: const ['neutral', 'green'].contains(style.accent)
+              ? null
+              : tone.strong,
+          compact: false,
+          enabled: enabled,
+          onChanged: (number) => onChanged(formatProgressNumber(number)),
+        ),
+      PropertyStyleKind.counter => _CounterCell(
+          value: readNumericCell(value) ?? 0,
+          step: style.step,
+          minimum: style.minimum,
+          maximum: style.counterMaximum,
+          palette: palette,
+          tone: tone,
+          onChanged: (number) => onChanged(writeNumericCell(number)),
+        ),
+      PropertyStyleKind.button => _ButtonCell(
+          style: style,
+          cellText: value,
+          palette: palette,
+          tone: tone,
+          onWrite: onChanged,
+          onOpenRow: onOpenRow,
+        ),
+      _ => Text(value),
+    };
+    final active = enabled &&
+        (style.kind != PropertyStyleKind.button ||
+            style.buttonAction != PropertyButtonAction.openRow ||
+            onOpenRow != null);
+    return Semantics(
+      enabled: active,
+      child: ExcludeFocus(
+        excluding: !active,
+        child: IgnorePointer(ignoring: !active, child: child),
+      ),
+    );
+  }
+}
+
 class _ProgressCell extends StatefulWidget {
   const _ProgressCell({
     required this.value,
     required this.maximum,
     required this.showPercent,
+    required this.showButtons,
+    required this.step,
     required this.palette,
-    required this.tone,
+    this.accent,
     required this.compact,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final double value;
   final double maximum;
   final bool showPercent;
+  final bool showButtons;
+  final double step;
   final InteractivePalette palette;
-  final InteractiveTone tone;
+  final Color? accent;
   final bool compact;
   final ValueChanged<double> onChanged;
+  final bool enabled;
 
   @override
   State<_ProgressCell> createState() => _ProgressCellState();
 }
 
 class _ProgressCellState extends State<_ProgressCell> {
+  final _focusNode = FocusNode(debugLabel: 'Property progress');
+  bool _focused = false;
+
+  /// Keep the latest input while storage catches up. An earlier echoed write
+  /// must not move the next click back to an older value.
+  final List<double> _pending = [];
+
   /// What is being dragged, before it is worth writing to the row.
   double? _dragging;
 
+  double _clamp(double value) =>
+      value.isFinite ? value.clamp(0.0, widget.maximum) : 0;
+
+  double get _committed =>
+      _clamp(_pending.isEmpty ? widget.value : _pending.last);
+
+  double get _value => _dragging ?? _committed;
+
+  /// Remove floating-point addition noise, not fractional steps. Preserve an
+  /// exact bound even when it has more significant digits than the readout.
+  double _settle(double value) {
+    final clamped = _clamp(value);
+    return clamped == widget.maximum
+        ? clamped
+        : _clamp(double.parse(clamped.toStringAsPrecision(15)));
+  }
+
+  double _stepped(bool increase) {
+    final value = _committed;
+    final step = widget.step;
+    // Test the remaining distance before adding, so even huge finite steps
+    // cannot overflow to infinity and accidentally reset the bar to zero.
+    return increase
+        ? step >= widget.maximum - value
+            ? widget.maximum
+            : _settle(value + step)
+        : step >= value
+            ? 0
+            : _settle(value - step);
+  }
+
+  String _readout(double value) => widget.showPercent
+      ? '${(value / widget.maximum * 100).round()}%'
+      : '${formatProgressNumber(value)}/${formatProgressNumber(widget.maximum)}';
+
+  @override
+  void didUpdateWidget(covariant _ProgressCell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.maximum != oldWidget.maximum || !widget.enabled) {
+      _dragging = null;
+      _pending.clear();
+    }
+    if (!widget.enabled) {
+      _focusNode.unfocus();
+    }
+    final incoming = _clamp(widget.value);
+    if (incoming == _clamp(oldWidget.value)) {
+      return;
+    }
+    final acknowledged = _pending.indexOf(incoming);
+    if (acknowledged >= 0) {
+      _pending.removeRange(0, acknowledged + 1);
+    } else {
+      // A real external edit, rather than one of our in-flight writes.
+      _pending.clear();
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _commit(double value) {
+    if (!mounted || !widget.enabled || _dragging != null) {
+      return;
+    }
+    final next = _clamp(value);
+    if (next == _committed) {
+      return;
+    }
+    setState(() {
+      _pending.add(next);
+      // A draft host may intentionally never echo values back.
+      if (_pending.length > 64) {
+        _pending.removeAt(0);
+      }
+    });
+    widget.onChanged(next);
+  }
+
+  void _adjust(bool increase) => _commit(_stepped(increase));
+
+  void _scrub(double position) {
+    if (!mounted || !widget.enabled || !position.isFinite) {
+      return;
+    }
+    _focusNode.requestFocus();
+    setState(() {
+      _dragging = _settle(position.clamp(0.0, 1.0) * widget.maximum);
+    });
+  }
+
+  void _endScrub() {
+    final settled = _dragging;
+    if (settled == null) {
+      return;
+    }
+    setState(() => _dragging = null);
+    _commit(settled);
+  }
+
+  void _cancelScrub() {
+    if (mounted && _dragging != null) {
+      setState(() => _dragging = null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final maximum = widget.maximum;
-    final value = _dragging ?? widget.value;
-    final fraction = maximum <= 0 ? 0.0 : (value / maximum).clamp(0.0, 1.0);
-    final readout = widget.showPercent
-        ? '${(fraction * 100).round()}%'
-        : '${writeNumericCell(value)}/${writeNumericCell(maximum)}';
+    final palette = widget.palette;
+    final colors = ProgressBarColors.of(context, accent: widget.accent);
+    final value = _value;
+    final readout = _readout(value);
+    final canDecrease =
+        widget.enabled && _dragging == null && _stepped(false) < value;
+    final canIncrease =
+        widget.enabled && _dragging == null && _stepped(true) > value;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final size = widget.compact ? 28.0 : 32.0;
 
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: widget.compact ? 6 : 9,
+    return CallbackShortcuts(
+      bindings: widget.enabled
+          ? {
+              const SingleActivator(LogicalKeyboardKey.arrowRight): () =>
+                  _adjust(true),
+              const SingleActivator(LogicalKeyboardKey.arrowUp): () =>
+                  _adjust(true),
+              const SingleActivator(LogicalKeyboardKey.arrowLeft): () =>
+                  _adjust(false),
+              const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
+                  _adjust(false),
+              const SingleActivator(LogicalKeyboardKey.numpadAdd): () =>
+                  _adjust(true),
+              const SingleActivator(LogicalKeyboardKey.numpadSubtract): () =>
+                  _adjust(false),
+              const SingleActivator(LogicalKeyboardKey.home): () => _commit(0),
+              const SingleActivator(LogicalKeyboardKey.end): () =>
+                  _commit(widget.maximum),
+            }
+          : const {},
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: AnimatedContainer(
+          duration: reduceMotion ? Duration.zero : InteractiveMetrics.hover,
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+          decoration: BoxDecoration(
+            borderRadius:
+                BorderRadius.circular(InteractiveMetrics.controlRadius),
+            border: Border.all(
+              color: _focused && widget.enabled
+                  ? colors.fill.withValues(alpha: 0.7)
+                  : colors.fill.withValues(alpha: 0),
+            ),
+          ),
+          child: Row(
+            children: [
+              if (widget.showButtons) ...[
+                _ProgressStepButton(
+                  key: const ValueKey('property-progress-decrease'),
+                  icon: Icons.remove_rounded,
+                  label: LocaleKeys.interactive_counter_decrease.tr(),
+                  palette: palette,
+                  colors: colors,
+                  size: size,
+                  onPressed: canDecrease ? () => _adjust(false) : null,
+                ),
+                const SizedBox(width: 4),
+              ],
+              Expanded(
+                key: const ValueKey('property-progress-value'),
+                child: Semantics(
+                  container: true,
+                  slider: true,
+                  enabled: widget.enabled,
+                  focusable: widget.enabled,
+                  focused: _focused && widget.enabled,
+                  label: LocaleKeys.interactive_progress_name.tr(),
+                  value: readout,
+                  increasedValue: canIncrease ? _readout(_stepped(true)) : null,
+                  decreasedValue:
+                      canDecrease ? _readout(_stepped(false)) : null,
+                  onIncrease: canIncrease ? () => _adjust(true) : null,
+                  onDecrease: canDecrease ? () => _adjust(false) : null,
+                  excludeSemantics: true,
+                  child: FocusableActionDetector(
+                    focusNode: _focusNode,
+                    enabled: widget.enabled,
+                    onFocusChange: (focused) =>
+                        setState(() => _focused = focused),
+                    child: PropertyProgressTrack(
+                      fraction: value / widget.maximum,
+                      fill: widget.enabled
+                          ? colors.fill
+                          : colors.fill.withValues(alpha: 0.45),
+                      highlight: widget.enabled
+                          ? colors.highlight
+                          : colors.highlight.withValues(alpha: 0.45),
+                      track: colors.track,
+                      hitHeight: size,
+                      animate: _dragging == null,
+                      readout: Tooltip(
+                        message: readout,
+                        excludeFromSemantics: true,
+                        child: Text(
+                          readout,
+                          maxLines: 1,
+                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: InteractiveType.strong(
+                            palette,
+                            size: 11.5,
+                            weight: FontWeight.w500,
+                            color: widget.enabled
+                                ? palette.textSecondary
+                                : palette.textMuted,
+                          ).copyWith(
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                      onScrub: widget.enabled ? _scrub : null,
+                      onScrubEnd: widget.enabled ? _endScrub : null,
+                      onScrubCancel: widget.enabled ? _cancelScrub : null,
+                    ),
+                  ),
+                ),
+              ),
+              if (widget.showButtons) ...[
+                const SizedBox(width: 4),
+                _ProgressStepButton(
+                  key: const ValueKey('property-progress-increase'),
+                  icon: Icons.add_rounded,
+                  label: LocaleKeys.interactive_counter_increase.tr(),
+                  palette: palette,
+                  colors: colors,
+                  size: size,
+                  onPressed: canIncrease ? () => _adjust(true) : null,
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: PropertyProgressTrack(
-              fraction: fraction,
-              fill: widget.tone.strong,
-              track: widget.palette.isDark
-                  ? Colors.white.withValues(alpha: 0.10)
-                  : Colors.black.withValues(alpha: 0.07),
-              onScrub: (position) =>
-                  setState(() => _dragging = position * maximum),
-              onScrubEnd: () {
-                final settled = _dragging;
-                setState(() => _dragging = null);
-                if (settled != null) {
-                  widget.onChanged(settled);
-                }
-              },
+    );
+  }
+}
+
+class _ProgressStepButton extends StatelessWidget {
+  const _ProgressStepButton({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.palette,
+    required this.colors,
+    required this.size,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final InteractivePalette palette;
+  final ProgressBarColors colors;
+  final double size;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = WidgetStateProperty.resolveWith<Color>(
+      (states) => states.contains(WidgetState.disabled)
+          ? palette.textMuted.withValues(alpha: 0.45)
+          : states.contains(WidgetState.hovered) ||
+                  states.contains(WidgetState.focused)
+              ? colors.ink
+              : palette.textSecondary,
+    );
+    return Tooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: Semantics(
+        label: label,
+        child: TextButton(
+          onPressed: onPressed,
+          style: ButtonStyle(
+            minimumSize: WidgetStatePropertyAll(Size.square(size)),
+            maximumSize: WidgetStatePropertyAll(Size.square(size)),
+            padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.standard,
+            animationDuration: MediaQuery.disableAnimationsOf(context)
+                ? Duration.zero
+                : InteractiveMetrics.hover,
+            splashFactory: NoSplash.splashFactory,
+            foregroundColor: foreground,
+            iconColor: foreground,
+            backgroundColor: WidgetStatePropertyAll(
+              colors.fill.withValues(alpha: 0),
+            ),
+            overlayColor: WidgetStatePropertyAll(
+              colors.fill.withValues(alpha: 0.2),
+            ),
+            shape: const WidgetStatePropertyAll(CircleBorder()),
+            side: WidgetStateProperty.resolveWith(
+              (states) => BorderSide(
+                color: states.contains(WidgetState.focused)
+                    ? colors.fill
+                    : colors.fill.withValues(alpha: 0),
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            readout,
-            style: InteractiveType.caption(widget.palette).copyWith(
-              fontSize: 11.5,
-              color: widget.palette.textSecondary,
-              fontFeatures: const [FontFeature.tabularFigures()],
-            ),
-          ),
-        ],
+          child: Icon(icon, size: 16),
+        ),
       ),
     );
   }
@@ -252,15 +608,28 @@ class PropertyProgressTrack extends StatelessWidget {
     required this.fraction,
     required this.fill,
     required this.track,
-    this.height = 7,
+    this.highlight,
+    this.height = 6,
+    this.hitHeight = 28,
+    this.animate = true,
+    this.readout,
     this.onScrub,
     this.onScrubEnd,
+    this.onScrubCancel,
   });
 
   final double fraction;
   final Color fill;
   final Color track;
+  final Color? highlight;
   final double height;
+  final double hitHeight;
+
+  /// Direct manipulation paints the current value, never a trailing tween.
+  final bool animate;
+
+  /// The readout shares the bar's hit area rather than stealing track width.
+  final Widget? readout;
 
   /// Reports where along the bar the pointer is, as 0..1.
   final ValueChanged<double>? onScrub;
@@ -268,25 +637,37 @@ class PropertyProgressTrack extends StatelessWidget {
   /// The pointer was let go, so the value is worth storing.
   final VoidCallback? onScrubEnd;
 
+  /// Cancellation discards a preview, rather than storing an abandoned drag.
+  final VoidCallback? onScrubCancel;
+
   @override
   Widget build(BuildContext context) {
-    Widget bar = TweenAnimationBuilder<double>(
-      tween: Tween<double>(begin: 0, end: fraction.clamp(0.0, 1.0)),
-      duration: InteractiveMetrics.settle,
-      curve: InteractiveMetrics.curve,
-      builder: (context, drawn, _) => SizedBox(
-        width: double.infinity,
-        height: height,
-        child: CustomPaint(
-          painter: _TrackPainter(fraction: drawn, fill: fill, track: track),
-        ),
-      ),
+    Widget bar = AppFlowyProgressBar(
+      fraction: fraction,
+      fill: fill,
+      track: track,
+      highlight: highlight,
+      height: height,
+      animate: animate,
     );
 
-    // The bar is a small target, so the padding around it is the hit area.
-    bar = Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: bar,
+    // Both the readout and the whitespace are usable, not just six pixels
+    // of paint. These widgets all support a grid row's intrinsic measurement.
+    bar = ConstrainedBox(
+      constraints: BoxConstraints(minHeight: hitHeight),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (readout != null) ...[
+              readout!,
+              const SizedBox(height: 3),
+            ],
+            bar,
+          ],
+        ),
+      ),
     );
 
     if (onScrub == null) {
@@ -310,10 +691,14 @@ class PropertyProgressTrack extends StatelessWidget {
                   _report(context, details.localPosition.dx);
                 }
                 ..onEnd = (_) {
-                  onScrubEnd?.call();
+                  if (recognizer.cancelled) {
+                    onScrubCancel?.call();
+                  } else {
+                    onScrubEnd?.call();
+                  }
                 }
                 ..onCancel = () {
-                  onScrubEnd?.call();
+                  onScrubCancel?.call();
                 },
             ),
           },
@@ -326,58 +711,38 @@ class PropertyProgressTrack extends StatelessWidget {
   void _report(BuildContext context, double dx) {
     final box = context.findRenderObject() as RenderBox?;
     final width = box?.size.width ?? 0;
-    if (width <= 0) {
+    if (!width.isFinite || width <= 0 || !dx.isFinite) {
       return;
     }
     onScrub!((dx / width).clamp(0.0, 1.0));
   }
 }
 
-/// ⚠️ A plain drag loses the arena to the grid's own horizontal scroll, so the
-/// bar could be pushed but never moved. Accepting a rejection is what claims
-/// the pointer; it also means a plain click reports a position through
-/// `onStart`.
+/// Claim a primary pointer before the grid's scroll/tap recognizers do.
+/// Accepting in rejectGesture instead leaves TWO owners of the same drag.
+/// A click still reports a position through onStart and commits through onEnd.
 class _EagerHorizontalDrag extends HorizontalDragGestureRecognizer {
-  @override
-  void rejectGesture(int pointer) => acceptGesture(pointer);
-}
-
-class _TrackPainter extends CustomPainter {
-  const _TrackPainter({
-    required this.fraction,
-    required this.fill,
-    required this.track,
-  });
-
-  final double fraction;
-  final Color fill;
-  final Color track;
+  bool cancelled = false;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final radius = Radius.circular(size.height);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, radius),
-      Paint()..color = track,
-    );
-    if (fraction <= 0) {
-      return;
-    }
-    final width = math.max(fraction * size.width, size.height);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(0, 0, math.min(width, size.width), size.height),
-        radius,
-      ),
-      Paint()..color = fill,
-    );
+  void addAllowedPointer(PointerDownEvent event) {
+    cancelled = false;
+    super.addAllowedPointer(event);
+    resolve(GestureDisposition.accepted);
   }
 
+  /// Two-finger scrolling is navigation, not a request to change a cell.
   @override
-  bool shouldRepaint(_TrackPainter oldDelegate) =>
-      oldDelegate.fraction != fraction ||
-      oldDelegate.fill != fill ||
-      oldDelegate.track != track;
+  void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {}
+
+  @override
+  void handleEvent(PointerEvent event) {
+    // DragGestureRecognizer calls onEnd even for a cancelled accepted drag.
+    if (event is PointerCancelEvent) {
+      cancelled = true;
+    }
+    super.handleEvent(event);
+  }
 }
 
 class _CounterCell extends StatelessWidget {
@@ -451,6 +816,7 @@ class _ButtonCell extends StatelessWidget {
     required this.palette,
     required this.tone,
     required this.onWrite,
+    this.onOpenRow,
   });
 
   final PropertyStyle style;
@@ -458,6 +824,7 @@ class _ButtonCell extends StatelessWidget {
   final InteractivePalette palette;
   final InteractiveTone tone;
   final ValueChanged<String> onWrite;
+  final VoidCallback? onOpenRow;
 
   @override
   Widget build(BuildContext context) {
@@ -484,8 +851,7 @@ class _ButtonCell extends StatelessWidget {
   Future<void> _run(BuildContext context) async {
     switch (style.buttonAction) {
       case PropertyButtonAction.openRow:
-        // The row is already open behind this cell; nothing further to do
-        // without a second surface to send somebody to.
+        onOpenRow?.call();
         return;
       case PropertyButtonAction.openView:
         final target = style.buttonTarget.trim();
@@ -630,8 +996,7 @@ const List<String> _months = [
   'Dec',
 ];
 
-/// Wraps a link cell so a bookmark column draws a card rather than underlined
-/// text.
+/// Wraps a link cell so a bookmark column shows the site and page path.
 class PropertyStyledUrlCell extends StatelessWidget {
   const PropertyStyledUrlCell({
     super.key,
@@ -675,9 +1040,9 @@ class PropertyStyledUrlCell extends StatelessWidget {
   }
 }
 
-/// A link drawn the way the bookmark collection draws one: a favicon, the
-/// site and the page, on a soft tile.
-class BookmarkChip extends StatelessWidget {
+/// A link set directly on the cell: a favicon, the site and a quiet page path.
+/// Its destination becomes clearer on hover/focus, not a boxed control.
+class BookmarkChip extends StatefulWidget {
   const BookmarkChip({
     super.key,
     required this.url,
@@ -688,63 +1053,156 @@ class BookmarkChip extends StatelessWidget {
   final bool thumbnail;
 
   @override
+  State<BookmarkChip> createState() => _BookmarkChipState();
+}
+
+class _BookmarkChipState extends State<BookmarkChip> {
+  final _focusNode = FocusNode(debugLabel: 'Bookmark URL');
+  bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _open() => unawaited(afLaunchUrlString(widget.url, context: context));
+
+  @override
   Widget build(BuildContext context) {
     final palette = interactivePaletteOf(context);
-    final host = bookmarkHost(url) ?? url;
-    final display = bookmarkDisplayUrl(url, maxLength: 48);
+    final site = bookmarkHost(widget.url);
+    final host = site ?? widget.url;
+    final display = bookmarkDisplayUrl(widget.url);
+    // The site is already the headline; do not repeat it on the second line.
+    final detail = display.startsWith('$host/')
+        ? display.substring(host.length + 1)
+        : display;
+    final active = _hovered || _focused;
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : InteractiveMetrics.hover;
+    // AnimatedDefaultTextStyle replaces, rather than merges, inherited type.
+    final hostStyle = DefaultTextStyle.of(context).style.merge(
+          InteractiveType.strong(
+            palette,
+            size: 13,
+            weight: FontWeight.w500,
+            color: active ? palette.accent : palette.text,
+          ).copyWith(
+            decoration: active ? TextDecoration.underline : TextDecoration.none,
+            decorationColor: palette.accent.withValues(alpha: 0.5),
+            decorationThickness: 1,
+          ),
+        );
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => unawaited(afLaunchUrlString(url, context: context)),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(5, 4, 9, 4),
-            decoration: BoxDecoration(
-              color: Color.alphaBlend(
-                palette.hover.withValues(alpha: palette.isDark ? 0.7 : 0.9),
-                palette.surface,
+    return Tooltip(
+      message: widget.url,
+      waitDuration: const Duration(milliseconds: 450),
+      excludeFromSemantics: true,
+      child: Semantics(
+        key: const ValueKey('bookmark-link'),
+        link: true,
+        focusable: true,
+        focused: _focused,
+        label: widget.url,
+        onTap: _open,
+        child: ExcludeSemantics(
+          child: FocusableActionDetector(
+            focusNode: _focusNode,
+            mouseCursor: SystemMouseCursors.click,
+            onShowHoverHighlight: (hovered) =>
+                setState(() => _hovered = hovered),
+            onFocusChange: (focused) => setState(() => _focused = focused),
+            shortcuts: const {
+              SingleActivator(LogicalKeyboardKey.enter, includeRepeats: false):
+                  ActivateIntent(),
+              SingleActivator(LogicalKeyboardKey.space, includeRepeats: false):
+                  ActivateIntent(),
+            },
+            actions: {
+              ActivateIntent: CallbackAction<ActivateIntent>(
+                onInvoke: (_) {
+                  _open();
+                  return null;
+                },
               ),
-              borderRadius: BorderRadius.circular(9),
-              border: Border.all(
-                color: palette.border.withValues(alpha: 0.30),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (thumbnail) ...[
-                  _Favicon(host: host, palette: palette),
-                  const SizedBox(width: 8),
-                ] else ...[
-                  Icon(Icons.link_rounded, size: 14, color: palette.textMuted),
-                  const SizedBox(width: 6),
-                ],
-                Flexible(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        host,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: InteractiveType.strong(palette, size: 12),
-                      ),
-                      if (thumbnail && display != host)
-                        Text(
-                          display,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: InteractiveType.caption(palette)
-                              .copyWith(fontSize: 10.5),
+            },
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              excludeFromSemantics: true,
+              onTap: _open,
+              child: Padding(
+                key: const ValueKey('bookmark-link-surface'),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.thumbnail)
+                      _Favicon(host: site ?? '', palette: palette)
+                    else
+                      SizedBox.square(
+                        dimension: 20,
+                        child: Icon(
+                          Icons.link_rounded,
+                          size: 16,
+                          color: palette.textMuted,
                         ),
-                    ],
-                  ),
+                      ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          AnimatedDefaultTextStyle(
+                            duration: duration,
+                            curve: InteractiveMetrics.curve,
+                            style: hostStyle,
+                            child: Text(
+                              host,
+                              key: const ValueKey('bookmark-link-host'),
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (widget.thumbnail &&
+                              detail.isNotEmpty &&
+                              detail != host) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              detail,
+                              key: const ValueKey('bookmark-link-path'),
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: InteractiveType.caption(palette).copyWith(
+                                fontSize: 11.5,
+                                height: 1.3,
+                                color: palette.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    AnimatedOpacity(
+                      key: const ValueKey('bookmark-link-open-indicator'),
+                      opacity: active ? 1 : 0,
+                      duration: duration,
+                      curve: InteractiveMetrics.curve,
+                      child: Icon(
+                        Icons.north_east_rounded,
+                        size: 14,
+                        color: palette.accent,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
@@ -761,26 +1219,10 @@ class _Favicon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initial = host.isEmpty ? '?' : host.characters.first.toUpperCase();
-    final hue = _hueOf(host);
-    final fallback = Container(
-      width: 22,
-      height: 22,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: HSLColor.fromAHSL(1, hue, 0.42, palette.isDark ? 0.36 : 0.86)
-            .toColor(),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        initial,
-        style: InteractiveType.strong(
-          palette,
-          size: 11,
-          color: HSLColor.fromAHSL(1, hue, 0.5, palette.isDark ? 0.86 : 0.28)
-              .toColor(),
-        ),
-      ),
+    // An unavailable site icon is still a link, not a random coloured badge.
+    final fallback = SizedBox.square(
+      dimension: 20,
+      child: Icon(Icons.public_rounded, size: 18, color: palette.textMuted),
     );
 
     if (host.isEmpty) {
@@ -788,26 +1230,18 @@ class _Favicon extends StatelessWidget {
     }
 
     return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(4),
       child: Image.network(
         'https://$host/favicon.ico',
-        width: 22,
-        height: 22,
-        fit: BoxFit.cover,
+        width: 20,
+        height: 20,
+        cacheWidth: (20 * MediaQuery.devicePixelRatioOf(context)).ceil(),
+        fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => fallback,
-        // A missing favicon must not leave a spinner on every row.
-        loadingBuilder: (context, child, progress) =>
-            progress == null ? child : fallback,
+        // No spinner or empty icon space while a slow site is loading.
+        frameBuilder: (context, child, frame, _) =>
+            frame == null ? fallback : child,
       ),
     );
-  }
-
-  /// A stable hue per site, so the same host always wears the same colour.
-  static double _hueOf(String host) {
-    var hash = 2166136261;
-    for (final unit in host.codeUnits) {
-      hash = (hash ^ unit) * 16777619 & 0xFFFFFFFF;
-    }
-    return (hash % 360).toDouble();
   }
 }

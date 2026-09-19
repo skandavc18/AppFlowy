@@ -30,11 +30,13 @@ class RowPropertyList extends StatelessWidget {
     required this.viewId,
     required this.fieldController,
     required this.cellBuilder,
+    this.mutedLabels = false,
   });
 
   final String viewId;
   final FieldController fieldController;
   final EditableCellBuilder cellBuilder;
+  final bool mutedLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -51,12 +53,14 @@ class RowPropertyList extends StatelessWidget {
                 cellBuilder: cellBuilder,
                 fieldController: fieldController,
                 index: index,
+                mutedLabels: mutedLabels,
               ),
             )
             .toList();
 
         return ReorderableListView(
           shrinkWrap: true,
+          primary: false,
           physics: const NeverScrollableScrollPhysics(),
           onReorder: (from, to) => context
               .read<RowDetailBloc>()
@@ -113,12 +117,14 @@ class _PropertyCell extends StatefulWidget {
     required this.cellBuilder,
     required this.fieldController,
     required this.index,
+    required this.mutedLabels,
   });
 
   final CellContext cellContext;
   final EditableCellBuilder cellBuilder;
   final FieldController fieldController;
   final int index;
+  final bool mutedLabels;
 
   @override
   State<StatefulWidget> createState() => _PropertyCellState();
@@ -256,6 +262,9 @@ class _PropertyCellState extends State<_PropertyCell> {
               message: fieldInfo.name,
               child: FieldCellButton(
                 field: fieldInfo.field,
+                fontSize: widget.mutedLabels ? 13.5 : null,
+                textColor:
+                    widget.mutedLabels ? Theme.of(context).hintColor : null,
                 onTap: () => context.read<RowDetailBloc>().add(
                       RowDetailEvent.startEditingField(
                         widget.cellContext.fieldId,

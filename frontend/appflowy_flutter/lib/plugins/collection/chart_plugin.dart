@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
@@ -6,8 +8,8 @@ import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/charts/chart_stage.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
+import 'package:appflowy/workspace/application/charts/chart_settings.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
-import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_stack.dart';
 import 'package:appflowy/workspace/presentation/widgets/favorite_button.dart';
@@ -135,23 +137,46 @@ class ChartPage extends StatefulWidget {
 class _ChartPageState extends State<ChartPage> {
   late ChartMetadata _metadata =
       widget.view.chart ?? const ChartMetadata(spec: ChartSpec());
+  late ChartSettingsWriter _settings;
+
+  @override
+  void initState() {
+    super.initState();
+    _settings = _createSettings();
+  }
+
+  ChartSettingsWriter _createSettings() => ChartSettingsWriter(
+        viewId: widget.view.id,
+        onAdopt: (metadata) {
+          if (mounted) {
+            setState(() => _metadata = metadata);
+          }
+        },
+      );
 
   @override
   void didUpdateWidget(covariant ChartPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.view.extra != widget.view.extra) {
-      _metadata = widget.view.chart ?? _metadata;
+    if (oldWidget.view.id != widget.view.id) {
+      _settings.dispose();
+      _metadata = widget.view.chart ?? const ChartMetadata(spec: ChartSpec());
+      _settings = _createSettings();
+    } else if (oldWidget.view.extra != widget.view.extra) {
+      unawaited(_settings.reconcile());
     }
+  }
+
+  @override
+  void dispose() {
+    _settings.dispose();
+    super.dispose();
   }
 
   void _write(ChartMetadata next) {
     setState(() => _metadata = next);
     // The mark lives on the view, so the chart is the same everywhere the
     // table is opened — and on the next launch.
-    ViewBackendService.updateView(
-      viewId: widget.view.id,
-      extra: next.mergeIntoExtra(widget.view.extra),
-    );
+    unawaited(_settings.write(next));
   }
 
   @override

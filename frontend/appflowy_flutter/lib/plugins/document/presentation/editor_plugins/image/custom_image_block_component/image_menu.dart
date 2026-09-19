@@ -14,10 +14,12 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/imag
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_util.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/resizeable_image.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
@@ -32,9 +34,6 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
-import 'package:share_plus/share_plus.dart';
-
-const _menuInterceptorKey = 'image-block-menu';
 
 class ImageMenu extends StatefulWidget {
   const ImageMenu({
@@ -42,22 +41,30 @@ class ImageMenu extends StatefulWidget {
     required this.node,
     required this.state,
     required this.imageStateNotifier,
+    this.mediaActions = const MediaActionService(),
   });
 
   final Node node;
   final CustomImageBlockComponentState state;
   final ValueNotifier<ResizableImageState> imageStateNotifier;
+  final MediaActionService mediaActions;
 
   @override
   State<ImageMenu> createState() => _ImageMenuState();
 }
 
 class _ImageMenuState extends State<ImageMenu> {
-  late final String? url = widget.node.attributes[CustomImageBlockKeys.url];
+  String? get url {
+    final value = widget.node.attributes[CustomImageBlockKeys.url];
+    return value is String ? value : null;
+  }
 
   final PopoverController popoverController = PopoverController();
 
-  final SelectionGestureInterceptor gestureInterceptor =
+  late final _menuInterceptorKey = 'image-block-menu-${identityHashCode(this)}';
+  EditorState? _interceptedEditor;
+
+  late final SelectionGestureInterceptor gestureInterceptor =
       SelectionGestureInterceptor(
     key: _menuInterceptorKey,
     canTap: (details) => false,
@@ -73,39 +80,67 @@ class _ImageMenuState extends State<ImageMenu> {
 
   @override
   Widget build(BuildContext context) {
-    final isPlaceholder = url == null || url!.isEmpty;
+    final source = url;
+    final isPlaceholder = source == null || source.isEmpty;
+    final canCopyAndShare = isValidImageBlockSource(source);
+    final userProfile = context.select<UserWorkspaceBloc?, UserProfilePB?>(
+          (bloc) => bloc?.state.userProfile,
+        ) ??
+        context.select<DocumentBloc?, UserProfilePB?>(
+          (bloc) => bloc?.state.userProfilePB,
+        );
     final theme = Theme.of(context);
     // The menu is never gated on the load state: a local file reports no
     // progress at all, and a download without a Content-Length never reaches
     // 100%, so waiting for "loaded" hid the menu forever.
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        // Floating chrome over a photograph: depth, never an outline.
-        boxShadow: EditorSurfaceStyle.embedShadow(context, raised: true),
-        borderRadius: BorderRadius.circular(10),
+    return Padding(
+      // The shared badge paints above its buttons. Keep that paint inside the
+      // image, including at larger text scales, without growing the 32px bar.
+      padding: EdgeInsets.only(
+        top: canCopyAndShare
+            ? MediaQuery.textScalerOf(context).scale(10) * 1.2 + 6
+            : 0,
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (!isPlaceholder) ...[
-            _MenuIconButton(
-              tooltip: 'Scan text',
-              icon: Icons.document_scanner_rounded,
-              onTap: scanText,
-            ),
-            const HSpace(2),
-            MenuBlockButton(
-              tooltip: LocaleKeys.editor_copy.tr(),
-              iconData: FlowySvgs.copy_s,
-              onTap: copyImage,
-            ),
-            const HSpace(2),
+      child: Container(
+        key: const ValueKey('image-menu-toolbar'),
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(
+          color: EditorSurfaceStyle.previewBackgroundFor(
+            theme.brightness,
+            theme.cardColor,
+            isPaper: PaperTheme.isEnabled(context),
+          ),
+          // Floating chrome over a photograph: depth, never an outline.
+          boxShadow: EditorSurfaceStyle.embedShadow(context, raised: true),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (!isPlaceholder) ...[
+              _MenuIconButton(
+                tooltip: 'Scan text',
+                icon: Icons.document_scanner_rounded,
+                onTap: scanText,
+              ),
+              const HSpace(2),
+            ],
+            if (canCopyAndShare) ...[
+              MediaActionButtons(
+                source: MediaActionSource.image(
+                  ImageBlockData(url: source!, type: _imageType),
+                  userProfile: userProfile,
+                ),
+                actions: widget.mediaActions,
+                decorated: false,
+                buttonSize: 24,
+              ),
+              const HSpace(2),
+            ],
+            _buildMoreMenu(isPlaceholder: isPlaceholder),
           ],
-          _buildMoreMenu(isPlaceholder: isPlaceholder),
-        ],
+        ),
       ),
     );
   }
@@ -130,11 +165,14 @@ class _ImageMenuState extends State<ImageMenu> {
     bool isPlaceholder,
   ) async {
     _preventMenuClose();
-    await showAppMenuForWidget<void>(
-      context: buttonContext,
-      entries: _menuEntries(isPlaceholder: isPlaceholder),
-    );
-    _allowMenuClose();
+    try {
+      await showAppMenuForWidget<void>(
+        context: buttonContext,
+        entries: _menuEntries(isPlaceholder: isPlaceholder),
+      );
+    } finally {
+      _allowMenuClose();
+    }
   }
 
   List<AppMenuEntry> _menuEntries({required bool isPlaceholder}) {
@@ -216,17 +254,30 @@ class _ImageMenuState extends State<ImageMenu> {
   }
 
   void _preventMenuClose() {
+    if (!mounted || _interceptedEditor != null) {
+      return;
+    }
     widget.state.alwaysShowMenu = true;
-    editorState.service.selectionService.registerGestureInterceptor(
+    final editor = _interceptedEditor = editorState;
+    editor.service.selectionService.registerGestureInterceptor(
       gestureInterceptor,
     );
   }
 
   void _allowMenuClose() {
+    final editor = _interceptedEditor;
+    if (editor == null) {
+      return;
+    }
+    _interceptedEditor = null;
     widget.state.alwaysShowMenu = false;
-    editorState.service.selectionService.unregisterGestureInterceptor(
-      _menuInterceptorKey,
-    );
+    // Cleanup also runs after a route completes or a block has been removed.
+    // Never resolve an ancestor or notify a disposed hover notifier here.
+    if (!editor.isDisposed) {
+      editor.service.selectionService.unregisterGestureInterceptor(
+        _menuInterceptorKey,
+      );
+    }
   }
 
   void _onAlignChanged(String align) {
@@ -258,9 +309,14 @@ class _ImageMenuState extends State<ImageMenu> {
         widget.node.attributes[CustomImageBlockKeys.imageType] ?? 2,
       );
 
-  late final UserProfilePB? _userProfile =
+  UserProfilePB? get _userProfile =>
       context.read<UserWorkspaceBloc?>()?.state.userProfile ??
-          context.read<DocumentBloc>().state.userProfilePB;
+      context.read<DocumentBloc?>()?.state.userProfilePB;
+
+  MediaActionSource get _mediaSource => MediaActionSource.image(
+        ImageBlockData(url: url ?? '', type: _imageType),
+        userProfile: _userProfile,
+      );
 
   /// The picture's own bytes.
   ///
@@ -271,28 +327,21 @@ class _ImageMenuState extends State<ImageMenu> {
     if (source == null || source.isEmpty) {
       return Future.value(Uint8List(0));
     }
+    final uri = Uri.tryParse(source);
     return ImageEditorSource(
-      url: source,
+      url: uri?.isScheme('file') == true ? File.fromUri(uri!).path : source,
       type: _imageType,
-      userProfile: _userProfile,
+      userProfile: _imageType == CustomImageType.internal ? _userProfile : null,
     ).readBytes();
   }
 
   Future<void> copyImage() async {
-    if (url == null) {
+    if (url?.isNotEmpty != true) {
       return;
     }
 
     try {
-      // Hand over the picture itself for other apps, plus the link for
-      // anything that only understands text.
-      final image = await encodeForClipboard(await _readImageBytes());
-      await getIt<ClipboardService>().setData(
-        ClipboardServiceData(
-          plainText: url!,
-          image: image,
-        ),
-      );
+      await widget.mediaActions.copy(_mediaSource);
 
       if (mounted) {
         showToastNotification(
@@ -365,8 +414,8 @@ class _ImageMenuState extends State<ImageMenu> {
       return;
     }
 
-    // The hover menu is torn down as soon as the pointer leaves the block, so
-    // everything the save callback needs is captured up front.
+    // The block can be removed or rebound while the editor is open, so capture
+    // everything the save callback needs up front.
     final documentBloc = context.read<DocumentBloc>();
     final userProfile = context.read<UserWorkspaceBloc?>()?.state.userProfile ??
         documentBloc.state.userProfilePB;
@@ -480,12 +529,25 @@ class _ImageMenuState extends State<ImageMenu> {
   }
 
   Future<void> shareImage() async {
-    final bytes = await _readImageBytes();
-    final name = _fileNameFor(sniffImageFormat(bytes));
-    final directory = await getTemporaryDirectory();
-    final file = File('${directory.path}${Platform.pathSeparator}$name');
-    await file.writeAsBytes(bytes, flush: true);
-    await Share.shareXFiles([XFile(file.path)], fileNameOverrides: [name]);
+    if (url?.isNotEmpty != true) {
+      return;
+    }
+    try {
+      final box = context.findRenderObject();
+      await widget.mediaActions.share(
+        _mediaSource,
+        sharePositionOrigin: box is RenderBox && box.hasSize
+            ? box.localToGlobal(Offset.zero) & box.size
+            : null,
+      );
+    } catch (_) {
+      if (mounted) {
+        showToastNotification(
+          message: LocaleKeys.mediaActions_shareFailed.tr(),
+          type: ToastificationType.error,
+        );
+      }
+    }
   }
 
   void openFullScreen() {

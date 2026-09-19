@@ -147,8 +147,9 @@ String chartColorKey(String name, int index) => name.isEmpty ? '#$index' : name;
 /// What a chart is: which table column names the groups, which columns supply
 /// the numbers, and how those numbers are collapsed.
 ///
-/// Columns are named rather than referenced by id so a chart survives a table
-/// being rebuilt, and so the same spec reads correctly against an export.
+/// Database-backed charts store field ids so renaming or reordering columns
+/// does not change the selection. Legacy names and name-only exports remain
+/// readable; the table resolves them before the controls save a new choice.
 @immutable
 class ChartSpec {
   const ChartSpec({
@@ -171,7 +172,8 @@ class ChartSpec {
   final ChartType type;
 
   /// The column whose values name the groups. Null means every row is its own
-  /// point, in the order the table holds them.
+  /// point, even when several rows have the same title. On a measured X axis
+  /// this column labels individual points; it does not aggregate them.
   final String? categoryColumn;
 
   /// The numeric column measured along the horizontal axis.

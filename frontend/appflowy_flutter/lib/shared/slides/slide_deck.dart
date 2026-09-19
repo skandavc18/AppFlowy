@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show lerpDouble;
 
+import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/slides/slide_card.dart';
 import 'package:appflowy/shared/slides/slide_geometry.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
@@ -72,6 +73,8 @@ class SlideDeck extends StatefulWidget {
   /// The rows a search matched. Everything else is drawn quietly.
   final Set<String>? highlighted;
 
+  /// Reports the final index after a gesture/animation settles, not every
+  /// midpoint crossed while the reader is still moving the deck.
   final ValueChanged<int>? onIndexChanged;
   final void Function(SlideCardData card)? onOpen;
   final void Function(SlideCardData card)? onEdit;
@@ -88,20 +91,19 @@ class _SlideDeckState extends State<SlideDeck>
   /// and the fourth.
   final ValueNotifier<double> _position = ValueNotifier(0);
 
-  late final AnimationController _drive = AnimationController(
-    vsync: this,
-    duration: SlideMetrics.settle,
-  )..addListener(_onDrive);
+  late final AnimationController _drive;
 
   final FocusNode _focus = FocusNode(debugLabel: 'SlideDeck');
 
   double _from = 0;
   double _to = 0;
   int _settled = 0;
+  int _reportedIndex = 0;
 
-  /// Set while a finger or a wheel is moving the deck, so it is not snapped
-  /// back mid gesture.
+  /// Set while a drag is moving the deck, so it is not snapped back mid gesture.
   bool _dragging = false;
+  bool _trackpadDragging = false;
+  double _panStartPosition = 0;
   Timer? _wheelSettle;
 
   Size _stage = Size.zero;
@@ -113,8 +115,13 @@ class _SlideDeckState extends State<SlideDeck>
   @override
   void initState() {
     super.initState();
+    _drive = AnimationController(
+      vsync: this,
+      duration: SlideMetrics.settle,
+    )..addListener(_onDrive);
     widget.controller?._deck = this;
     _settled = _clampIndex(widget.index);
+    _reportedIndex = _settled;
     _position.value = _settled.toDouble();
   }
 
@@ -139,7 +146,10 @@ class _SlideDeckState extends State<SlideDeck>
         _position.value = clamped.toDouble();
       }
     }
-    if (old.index != widget.index && widget.index != _settled) {
+    if (old.index != widget.index &&
+        widget.index != _settled &&
+        !_dragging &&
+        _wheelSettle == null) {
       goTo(widget.index);
     }
   }
@@ -178,6 +188,15 @@ class _SlideDeckState extends State<SlideDeck>
   void _onDrive() {
     final eased = SlideMetrics.settleCurve.transform(_drive.value);
     _setPosition(lerpDouble(_from, _to, eased)!);
+    if (_drive.isCompleted) _reportSettledIndex();
+  }
+
+  void _reportSettledIndex() {
+    if (_dragging || _reportedIndex == _settled) return;
+    _reportedIndex = _settled;
+    // The nearest card is live during a drag, but the host must not persist
+    // each crossed midpoint or echo it back as another navigation animation.
+    widget.onIndexChanged?.call(_settled);
   }
 
   void _setPosition(double value) {
@@ -187,7 +206,6 @@ class _SlideDeckState extends State<SlideDeck>
       _settled = settled;
       // Only the two slides whose liveness changed need rebuilding.
       _built.clear();
-      widget.onIndexChanged?.call(settled);
       if (mounted) {
         setState(() {});
       }
@@ -195,15 +213,17 @@ class _SlideDeckState extends State<SlideDeck>
   }
 
   void _glideTo(double target, {Duration? duration}) {
+    _drive.stop();
     _from = _position.value;
     _to = target;
-    if ((_to - _from).abs() < 0.0005) {
+    if ((_to - _from).abs() < 0.0005 ||
+        (MediaQuery.maybeOf(context)?.disableAnimations ?? false)) {
       _setPosition(_to);
+      _reportSettledIndex();
       return;
     }
     _drive
       ..duration = duration ?? SlideMetrics.settle
-      ..stop()
       ..value = 0
       ..forward();
   }
@@ -214,6 +234,8 @@ class _SlideDeckState extends State<SlideDeck>
     if (_count == 0) {
       return;
     }
+    _wheelSettle?.cancel();
+    _wheelSettle = null;
     final target = _clampIndex(index);
     final position = slideTargetPosition(
       from: _position.value,
@@ -226,6 +248,7 @@ class _SlideDeckState extends State<SlideDeck>
     } else {
       _drive.stop();
       _setPosition(position);
+      _reportSettledIndex();
     }
   }
 
@@ -236,11 +259,9 @@ class _SlideDeckState extends State<SlideDeck>
     }
     var target = _position.value.round();
     if (velocity.abs() > SlideMetrics.flingVelocity) {
-      // A flick carries on to the next slide rather than falling back.
+      // Carry to the next integer in the flick's direction. Adding another
+      // slide after crossing the midpoint used to skip two slides at once.
       target = velocity < 0 ? _position.value.ceil() : _position.value.floor();
-      if (target == _position.value.round()) {
-        target += velocity < 0 ? 1 : -1;
-      }
     }
     if (!widget.wrap) {
       target = target.clamp(0, _count - 1);
@@ -262,41 +283,75 @@ class _SlideDeckState extends State<SlideDeck>
     if (event is! PointerScrollEvent || _count == 0) {
       return;
     }
+    // Descendant property scrollers and maps register first. A raw listener
+    // used to move the deck even when one of them (or the page) also scrolled.
+    GestureBinding.instance.pointerSignalResolver.register(
+      event,
+      _onResolvedScroll,
+    );
+  }
+
+  void _onResolvedScroll(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent || _dragging || _count == 0) return;
     final delta = event.scrollDelta;
     // A deck reads sideways, so a plain wheel drives it too.
     final amount = delta.dx.abs() > delta.dy.abs() ? delta.dx : delta.dy;
-    if (amount == 0) {
+    if (!amount.isFinite || amount == 0) {
       return;
     }
     _nudge(amount / 120 * SlideMetrics.wheelStep);
     _wheelSettle?.cancel();
-    _wheelSettle = Timer(const Duration(milliseconds: 130), _snap);
+    _wheelSettle = Timer(const Duration(milliseconds: 130), () {
+      _wheelSettle = null;
+      _snap();
+    });
   }
 
   void _onPanZoomStart(PointerPanZoomStartEvent event) {
     _wheelSettle?.cancel();
+    _wheelSettle = null;
     _drive.stop();
+    _panStartPosition = _position.value;
     _dragging = true;
+    _trackpadDragging = true;
   }
 
-  void _onPanZoomUpdate(PointerPanZoomUpdateEvent event) {
-    if (!_dragging || _count == 0) {
+  void _onPanZoomUpdate(Offset pan) {
+    if (!_trackpadDragging || _count == 0) {
       return;
     }
     final step = _layout.step;
     if (step <= 0) {
       return;
     }
-    _nudge(-event.localPanDelta.dx / step);
+    // Use the gesture's total once, including the samples used to classify
+    // its axis. Neither a nested map nor a vertical scroll can move the deck.
+    _setPosition(
+      _layout.clampPosition(
+        _panStartPosition - pan.dx / step,
+        _count,
+        give: widget.wrap ? 0 : 0.25,
+      ),
+    );
   }
 
   void _onPanZoomEnd(PointerPanZoomEndEvent event) {
+    if (!_trackpadDragging) return;
+    _trackpadDragging = false;
     _dragging = false;
     _snap();
   }
 
+  void _onPanZoomCancel() {
+    if (!_trackpadDragging) return;
+    _trackpadDragging = false;
+    _dragging = false;
+    _glideTo(_panStartPosition.roundToDouble());
+  }
+
   void _onDragStart(DragStartDetails details) {
     _wheelSettle?.cancel();
+    _wheelSettle = null;
     _drive.stop();
     _dragging = true;
     _focus.requestFocus();
@@ -316,6 +371,12 @@ class _SlideDeckState extends State<SlideDeck>
   void _onDragEnd(DragEndDetails details) {
     _dragging = false;
     _snap(velocity: details.velocity.pixelsPerSecond.dx);
+  }
+
+  void _onDragCancel() {
+    if (!_dragging || _trackpadDragging) return;
+    _dragging = false;
+    _snap();
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
@@ -358,7 +419,14 @@ class _SlideDeckState extends State<SlideDeck>
   // ------------------------------------------------------------------ layout
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => PremiumScrollExclusion(
+        // Only the deck's viewport, not its host's header or page margins.
+        // History checks this at gesture start; moving outside cannot transfer
+        // an in-flight swipe to another owner.
+        child: _buildDeck(context),
+      );
+
+  Widget _buildDeck(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final stage = Size(constraints.maxWidth, constraints.maxHeight);
@@ -375,14 +443,21 @@ class _SlideDeckState extends State<SlideDeck>
           onKeyEvent: _onKey,
           child: Listener(
             onPointerSignal: _onScroll,
-            onPointerPanZoomStart: _onPanZoomStart,
-            onPointerPanZoomUpdate: _onPanZoomUpdate,
-            onPointerPanZoomEnd: _onPanZoomEnd,
             child: RawGestureDetector(
               behavior: HitTestBehavior.opaque,
               gestures: {
-                // A trackpad pan arrives as a pan-zoom event above; letting the
-                // drag recognizer claim it as well would move the deck twice.
+                _SlideTrackpadGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<
+                        _SlideTrackpadGestureRecognizer>(
+                  _SlideTrackpadGestureRecognizer.new,
+                  (recognizer) => recognizer
+                    ..onStart = _onPanZoomStart
+                    ..onUpdate = _onPanZoomUpdate
+                    ..onEnd = _onPanZoomEnd
+                    ..onCancel = _onPanZoomCancel,
+                ),
+                // Trackpad input has its own axis/scale-aware arena member.
+                // Handling it in both recognizers would move the deck twice.
                 HorizontalDragGestureRecognizer:
                     GestureRecognizerFactoryWithHandlers<
                         HorizontalDragGestureRecognizer>(
@@ -397,7 +472,8 @@ class _SlideDeckState extends State<SlideDeck>
                   (recognizer) => recognizer
                     ..onStart = _onDragStart
                     ..onUpdate = _onDragUpdate
-                    ..onEnd = _onDragEnd,
+                    ..onEnd = _onDragEnd
+                    ..onCancel = _onDragCancel,
                 ),
                 TapGestureRecognizer:
                     GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
@@ -515,6 +591,138 @@ class _SlideDeckState extends State<SlideDeck>
     }
     goTo(index);
   }
+}
+
+/// A deck owns deliberate sideways trackpad movement, not a vertical property
+/// scroll or a pinch on a map. Unlike a Listener, this only reports movement
+/// after winning the arena whose hit test was captured at gesture start.
+class _SlideTrackpadGestureRecognizer extends OneSequenceGestureRecognizer {
+  _SlideTrackpadGestureRecognizer()
+      : super(supportedDevices: const {PointerDeviceKind.trackpad});
+
+  ValueChanged<PointerPanZoomStartEvent>? onStart;
+  ValueChanged<Offset>? onUpdate;
+  ValueChanged<PointerPanZoomEndEvent>? onEnd;
+  VoidCallback? onCancel;
+
+  PointerPanZoomStartEvent? _start;
+  Offset _pan = Offset.zero;
+  bool _won = false;
+  bool _horizontal = false;
+  bool _started = false;
+
+  @override
+  bool isPointerAllowed(PointerDownEvent event) => false;
+
+  @override
+  void addAllowedPointer(PointerDownEvent event) {}
+
+  @override
+  bool isPointerPanZoomAllowed(PointerPanZoomStartEvent event) =>
+      _start == null && super.isPointerPanZoomAllowed(event);
+
+  @override
+  void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {
+    _start = event;
+    startTrackingPointer(event.pointer, event.transform);
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event.pointer != _start?.pointer) return;
+    if (event is PointerPanZoomUpdateEvent) {
+      if (!event.localPanDelta.isFinite ||
+          !event.scale.isFinite ||
+          !event.rotation.isFinite ||
+          (event.scale - 1).abs() > 0.01 ||
+          event.rotation.abs() > 0.01) {
+        _reject();
+        return;
+      }
+      // Flutter 3.27 transforms localPan as a point, including the viewport's
+      // translation. Deltas preserve just the displacement and local scale in
+      // the coordinate space captured when this recognizer started tracking.
+      _pan += event.localPanDelta;
+      if (!_horizontal) {
+        if (_pan.dx.abs() < 12 && _pan.dy.abs() < 12) return;
+        if (_pan.dx.abs() < 2 * _pan.dy.abs()) {
+          _reject();
+          return;
+        }
+        _horizontal = true;
+        if (!_won) {
+          resolve(GestureDisposition.accepted);
+          return;
+        }
+      }
+      _report();
+    } else if (event is PointerPanZoomEndEvent) {
+      final started = _started;
+      _clear();
+      if (started) {
+        onEnd?.call(event);
+      } else {
+        resolve(GestureDisposition.rejected);
+      }
+    } else if (event is PointerCancelEvent) {
+      _reject();
+    }
+  }
+
+  void _report() {
+    if (!_won || !_horizontal) return;
+    if (!_started) {
+      _started = true;
+      onStart?.call(_start!);
+    }
+    onUpdate?.call(_pan);
+  }
+
+  void _reject() {
+    final started = _started;
+    _clear();
+    resolve(GestureDisposition.rejected);
+    if (started) onCancel?.call();
+  }
+
+  void _clear() {
+    final pointer = _start?.pointer;
+    _start = null;
+    _pan = Offset.zero;
+    _won = false;
+    _horizontal = false;
+    _started = false;
+    if (pointer != null) stopTrackingPointer(pointer);
+  }
+
+  @override
+  void acceptGesture(int pointer) {
+    if (pointer != _start?.pointer) return;
+    _won = true;
+    _report();
+  }
+
+  @override
+  void rejectGesture(int pointer) {
+    if (pointer != _start?.pointer) return;
+    final started = _started;
+    _clear();
+    if (started) onCancel?.call();
+  }
+
+  @override
+  void didStopTrackingLastPointer(int pointer) {}
+
+  @override
+  void dispose() {
+    // Disposing an active deck must not start a return animation or look up
+    // MediaQuery through a deactivated ancestor from an onCancel callback.
+    _clear();
+    super.dispose();
+  }
+
+  @override
+  String get debugDescription => 'slide trackpad swipe';
 }
 
 /// The little rail under a deck that says where in the table you are.

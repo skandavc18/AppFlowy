@@ -114,7 +114,8 @@ class MultiImageBlockComponentState extends State<MultiImageBlockComponent>
 
   bool alwaysShowMenu = false;
 
-  static const _interceptorKey = 'multi-image-block-interceptor';
+  late final _interceptorKey =
+      'multi-image-block-interceptor-${identityHashCode(this)}';
 
   late final interceptor = SelectionGestureInterceptor(
     key: _interceptorKey,
@@ -131,6 +132,8 @@ class MultiImageBlockComponentState extends State<MultiImageBlockComponent>
   @override
   void dispose() {
     editorState.selectionService.unregisterGestureInterceptor(_interceptorKey);
+    showActionsNotifier.dispose();
+    indexNotifier.dispose();
     super.dispose();
   }
 
@@ -149,8 +152,13 @@ class MultiImageBlockComponentState extends State<MultiImageBlockComponent>
   @override
   Widget build(BuildContext context) {
     final data = MultiImageData.fromJson(
-      node.attributes[MultiImageBlockKeys.images],
+      node.attributes[MultiImageBlockKeys.images] ?? const [],
     );
+    // A remote update or a deletion can shorten the gallery while its menu is
+    // mounted. Normalize before either the renderer or menu reads the index.
+    indexNotifier.value = data.images.isEmpty
+        ? 0
+        : indexNotifier.value.clamp(0, data.images.length - 1).toInt();
 
     Widget child;
     if (data.images.isEmpty) {
@@ -169,7 +177,7 @@ class MultiImageBlockComponentState extends State<MultiImageBlockComponent>
         images: data.images,
         editorState: editorState,
         indexNotifier: indexNotifier,
-        isLocalMode: context.read<DocumentBloc>().isLocalMode,
+        isLocalMode: context.read<DocumentBloc?>()?.isLocalMode ?? true,
         onIndexChanged: (index) => setState(() => indexNotifier.value = index),
       );
     }
@@ -209,18 +217,24 @@ class MultiImageBlockComponentState extends State<MultiImageBlockComponent>
           opaque: false,
           child: ValueListenableBuilder<bool>(
             valueListenable: showActionsNotifier,
-            builder: (context, value, child) {
+            builder: (context, _, child) {
               return Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  BlockSelectionContainer(
-                    node: node,
-                    delegate: this,
-                    listenable: editorState.selectionNotifier,
-                    cursorColor: editorState.editorStyle.cursorColor,
-                    selectionColor: editorState.editorStyle.selectionColor,
-                    child: child!,
-                  ),
-                  if (value && data.images.isNotEmpty)
+                  editorState.editable
+                      ? BlockSelectionContainer(
+                          node: node,
+                          delegate: this,
+                          listenable: editorState.selectionNotifier,
+                          cursorColor: editorState.editorStyle.cursorColor,
+                          selectionColor:
+                              editorState.editorStyle.selectionColor,
+                          child: child!,
+                        )
+                      : child!,
+                  // The builder owns its Positioned wrapper; the menu reveals
+                  // inside it so hover exit never disposes an active operation.
+                  if (data.images.isNotEmpty)
                     widget.menuBuilder!(
                       widget.node,
                       this,

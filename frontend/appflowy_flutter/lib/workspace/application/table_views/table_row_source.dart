@@ -74,9 +74,10 @@ class TableReadSpec {
 class TableRowSource extends ChangeNotifier {
   TableRowSource({required this.viewId, this.settle = _settle}) {
     LocationFieldRegistry.instance.revision.addListener(_onMarkedChanged);
-    PropertyStyleRegistry.instance
-      ..listenable(viewId)
-      ..revision.addListener(_onMarkedChanged);
+    PropertyStyleRegistry.instance.revision.addListener(_onMarkedChanged);
+    if (viewId.isNotEmpty) {
+      PropertyStyleRegistry.instance.listenable(viewId);
+    }
   }
 
   final String viewId;
@@ -87,9 +88,12 @@ class TableRowSource extends ChangeNotifier {
   List<TableRowCard> _cards = const [];
   Timer? _timer;
   bool _loading = false;
+  Completer<void>? _pendingLoad;
+  bool _loadAgain = false;
   bool _disposed = false;
   String? _error;
   int _generation = 0;
+  int _revision = 0;
 
   /// The columns the author marked as holding a place.
   Set<String> _marked = const {};
@@ -99,6 +103,10 @@ class TableRowSource extends ChangeNotifier {
   List<TableRowCard> get cards => _cards;
   bool get isLoading => _loading;
   String? get error => _error;
+  int get revision => _revision;
+
+  PropertyStyle? styleForField(String fieldId, {String rowId = ''}) =>
+      PropertyStyleRegistry.instance.cellStyleFor(viewId, fieldId, rowId);
 
   /// The columns the author marked as holding a place.
   Set<String> get locationColumns => _marked;
@@ -106,7 +114,22 @@ class TableRowSource extends ChangeNotifier {
   /// The column each row is titled by.
   String get titleColumn => _spec.titleColumn.isNotEmpty
       ? _spec.titleColumn
-      : _fields.firstWhereOrNull((field) => field.isPrimary)?.id ?? '';
+      : _fields.firstWhereOrNull((field) => field.isPrimary)?.id ??
+          (_fields.isEmpty ? '' : _fields.first.id);
+
+  /// The stored text, without presentation transforms or trimming. In
+  /// particular, encrypted values stay ciphertext until explicitly opened.
+  Map<String, String> cellValuesFor(String rowId) {
+    final rows = _rows;
+    final row = rows?.rows.firstWhereOrNull((row) => row.rowId == rowId);
+    if (rows == null || row == null) {
+      return const {};
+    }
+    return Map.unmodifiable({
+      for (var i = 0; i < rows.fieldIds.length; i++)
+        rows.fieldIds[i]: i < row.cells.length ? row.cells[i] : '',
+    });
+  }
 
   /// The column that says when a row begins, worked out if not chosen.
   String get startColumn => _spec.startColumn.isNotEmpty
@@ -133,12 +156,34 @@ class TableRowSource extends ChangeNotifier {
   }
 
   Future<void> load() async {
-    if (viewId.isEmpty || _loading) {
+    if (viewId.isEmpty || _disposed) {
       return;
     }
+    final pending = _pendingLoad;
+    if (pending != null) {
+      _loadAgain = true;
+      return pending.future;
+    }
+    final completion = Completer<void>();
+    _pendingLoad = completion;
     _loading = true;
     _error = null;
     notifyListeners();
+    try {
+      do {
+        _loadAgain = false;
+        await _loadOnce();
+      } while (_loadAgain && !_disposed);
+    } finally {
+      _loading = false;
+      _pendingLoad = null;
+      completion.complete();
+      if (!_disposed) notifyListeners();
+    }
+  }
+
+  Future<void> _loadOnce() async {
+    _error = null;
     final generation = ++_generation;
 
     try {
@@ -173,16 +218,12 @@ class TableRowSource extends ChangeNotifier {
       // A read that fails silently is indistinguishable from an empty table.
       _error = '$error';
       Log.error('[TableView] could not read $viewId', error, stack);
-    } finally {
-      _loading = false;
-      if (!_disposed) {
-        notifyListeners();
-      }
     }
   }
 
   /// Reads the table again shortly, so a burst of edits costs one read.
   void invalidate() {
+    if (_disposed) return;
     _timer?.cancel();
     _timer = Timer(settle, () => unawaited(load()));
   }
@@ -191,6 +232,7 @@ class TableRowSource extends ChangeNotifier {
   Map<String, RowMetaPB> _metas = const {};
 
   void _read(RepeatedRowTextPB rows, List<RowMetaPB> metas) {
+    _revision++;
     _rows = rows;
     _metas = {for (final meta in metas) meta.id: meta};
     _rebuild();

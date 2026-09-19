@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/prelude.dart';
@@ -7,7 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
-import 'package:appflowy/shared/appflowy_cloud_auth.dart';
+import 'package:appflowy/util/xfile_ext.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/date_time/date_format_ext.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
@@ -28,6 +29,7 @@ class FileBlockMenu extends StatefulWidget {
     this.onClose,
     this.actionContext,
     this.showDownload = true,
+    this.mediaActions = const MediaActionService(),
     required this.node,
     required this.editorState,
   }) : assert(controller != null || onClose != null);
@@ -36,6 +38,7 @@ class FileBlockMenu extends StatefulWidget {
   final VoidCallback? onClose;
   final BuildContext? actionContext;
   final bool showDownload;
+  final MediaActionService mediaActions;
   final Node node;
   final EditorState editorState;
 
@@ -319,43 +322,41 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
     }
 
     final actionContext = _actionContext;
-    _closeMenu();
     final urlType = FileUrlType.fromIntValue(
-      widget.node.attributes[FileBlockKeys.urlType],
+      widget.node.attributes[FileBlockKeys.urlType] ?? 0,
     );
-    final shareAsLink =
-        urlType == FileUrlType.network && isYoutubeVideoUrl(url);
-    final httpHeaders = urlType == FileUrlType.cloud
-        ? appFlowyCloudAuthHeaders(
-            widget.editorState.document.root.context
-                ?.read<DocumentBloc>()
-                .state
-                .userProfilePB,
-          )
-        : const <String, String>{};
+    final source = MediaActionSource.file(
+      source: url,
+      name: name,
+      uploadType: urlType.toFileUploadTypePB(),
+      userProfile: actionContext.read<DocumentBloc?>()?.state.userProfilePB ??
+          actionContext.read<UserWorkspaceBloc?>()?.state.userProfile,
+      isImage: inferFileType(name) == FileType.image ||
+          (inferFileType(name) == FileType.other &&
+              inferFileType(url) == FileType.image),
+      shareAsLink: urlType == FileUrlType.network && isYoutubeVideoUrl(url),
+    );
+    final box = context.findRenderObject();
+    final origin = box is RenderBox && box.hasSize && !box.size.isEmpty
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
+    final actions = widget.mediaActions;
+    _closeMenu();
     try {
       if (copy) {
-        await copyMedia(
-          source: url,
-          name: name,
-          shareAsLink: shareAsLink,
-          httpHeaders: httpHeaders,
-        );
+        await actions.copy(source);
       } else {
-        await shareMedia(
-          source: url,
-          name: name,
-          shareAsLink: shareAsLink,
-          httpHeaders: httpHeaders,
-        );
+        await actions.share(source, sharePositionOrigin: origin);
       }
       if (copy && actionContext.mounted) {
         showToastNotification(message: LocaleKeys.message_copy_success.tr());
       }
-    } on Exception catch (error) {
+    } catch (_) {
       if (actionContext.mounted) {
         showToastNotification(
-          message: error.toString(),
+          message: copy
+              ? LocaleKeys.message_copy_fail.tr()
+              : LocaleKeys.mediaActions_shareFailed.tr(),
           type: ToastificationType.error,
         );
       }

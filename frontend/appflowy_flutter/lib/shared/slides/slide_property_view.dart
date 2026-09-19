@@ -5,6 +5,7 @@ import 'package:appflowy/shared/maps/app_map_view.dart';
 import 'package:appflowy/shared/maps/map_geocoder.dart';
 import 'package:appflowy/shared/maps/map_location.dart';
 import 'package:appflowy/shared/maps/map_marker.dart';
+import 'package:appflowy/shared/progress_bar.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
 import 'package:flutter/material.dart';
@@ -33,7 +34,7 @@ class SlidePropertyView extends StatelessWidget {
   Widget build(BuildContext context) {
     final body = switch (property.kind) {
       SlidePropertyKind.number => _number(),
-      SlidePropertyKind.progress => _progress(),
+      SlidePropertyKind.progress => _progress(context),
       SlidePropertyKind.checkbox => _checkbox(),
       SlidePropertyKind.badge => _badge(),
       SlidePropertyKind.tags => _tags(),
@@ -129,49 +130,41 @@ class SlidePropertyView extends StatelessWidget {
         ),
       );
 
-  Widget _progress() {
+  Widget _progress(BuildContext context) {
     final fraction = property.fraction;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          property.value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: palette.textPrimary,
-          ),
-        ),
-        if (fraction != null) ...[
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(SlideMetrics.progressHeight),
-            child: SizedBox(
-              height: SlideMetrics.progressHeight,
-              child: LayoutBuilder(
-                builder: (context, constraints) => Stack(
-                  children: [
-                    Positioned.fill(
-                      child: ColoredBox(
-                        color: palette.textMuted.withValues(alpha: 0.18),
-                      ),
-                    ),
-                    AnimatedContainer(
-                      duration: SlideMetrics.change,
-                      curve: SlideMetrics.settleCurve,
-                      width: constraints.maxWidth * fraction,
-                      color: palette.accent,
-                    ),
-                  ],
-                ),
+    final colors = ProgressBarColors.of(context);
+    final label = progressDisplayLabel(property.value);
+    return Semantics(
+      value: label,
+      child: ExcludeSemantics(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                fontFeatures: const [FontFeature.tabularFigures()],
+                color: palette.textSecondary,
               ),
             ),
-          ),
-        ],
-      ],
+            if (fraction != null) ...[
+              const SizedBox(height: 6),
+              AppFlowyProgressBar(
+                fraction: fraction,
+                fill: colors.fill,
+                highlight: colors.highlight,
+                track: colors.track,
+              ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 

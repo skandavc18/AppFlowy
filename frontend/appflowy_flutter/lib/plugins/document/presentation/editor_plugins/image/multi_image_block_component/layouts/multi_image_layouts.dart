@@ -2,6 +2,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/comm
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/layouts/image_browser_layout.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/layouts/image_grid_layout.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/multi_image_block_component.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide ResizableImage;
 import 'package:flutter/material.dart';
 
@@ -31,6 +32,7 @@ class ImageLayoutRender extends StatelessWidget {
     required this.indexNotifier,
     required this.isLocalMode,
     required this.onIndexChanged,
+    this.mediaActions = const MediaActionService(),
   });
 
   final Node node;
@@ -39,6 +41,7 @@ class ImageLayoutRender extends StatelessWidget {
   final ValueNotifier<int> indexNotifier;
   final bool isLocalMode;
   final void Function(int) onIndexChanged;
+  final MediaActionService mediaActions;
 
   @override
   Widget build(BuildContext context) {
@@ -62,6 +65,7 @@ class ImageLayoutRender extends StatelessWidget {
           images: images,
           indexNotifier: indexNotifier,
           isLocalMode: isLocalMode,
+          mediaActions: mediaActions,
         );
       case MultiImageLayout.browser:
         return ImageBrowserLayout(

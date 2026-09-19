@@ -1,4 +1,6 @@
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
+import 'package:appflowy/plugins/database/application/field/field_info.dart';
 import 'package:appflowy/plugins/database/tab_bar/desktop/table_view_host.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/shared/table_views/feed_stage.dart';
@@ -14,6 +16,7 @@ import 'package:appflowy/workspace/application/table_views/table_view_mark.dart'
 import 'package:appflowy/workspace/application/table_views/timeline_spec.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 const EdgeInsets _stagePadding = EdgeInsets.fromLTRB(40, 4, 40, 20);
 const EdgeInsets _innerPadding = EdgeInsets.fromLTRB(4, 8, 4, 6);
@@ -340,6 +343,7 @@ class FormTabBarBuilderImpl extends DatabaseTabBarItemBuilder {
         key: ValueKey(view.id),
         view: view,
         databaseController: controller,
+        initialRowId: initialRowId,
       );
 
   @override
@@ -359,10 +363,12 @@ class FormTabPage extends StatefulWidget {
     super.key,
     required this.view,
     required this.databaseController,
+    this.initialRowId,
   });
 
   final ViewPB view;
   final DatabaseController databaseController;
+  final String? initialRowId;
 
   @override
   State<FormTabPage> createState() => _FormTabPageState();
@@ -391,7 +397,17 @@ class _FormTabPageState extends State<FormTabPage>
   @override
   void initState() {
     super.initState();
+    hostController.fieldController.addListener(onReceiveFields: _fieldsChanged);
     startHosting();
+  }
+
+  void _fieldsChanged(List<FieldInfo> _) => onRowsChanged();
+
+  @override
+  void dispose() {
+    hostController.fieldController
+        .removeListener(onFieldsListener: _fieldsChanged);
+    super.dispose();
   }
 
   @override
@@ -404,23 +420,30 @@ class _FormTabPageState extends State<FormTabPage>
     }
   }
 
-  void _save(FormSpec spec) {
-    setState(() => _spec = spec);
-    saveHostSettings(spec.toJson());
+  Future<void> _save(FormSpec spec) async {
+    await persistHostSettings(spec.toJson());
+    if (mounted) setState(() => _spec = spec);
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: _stagePadding,
-        child: FormStage(
-          key: _stage,
-          viewId: widget.view.id,
-          spec: _spec,
-          title: widget.view.name,
-          padding: _innerPadding,
-          onSpecChanged: _save,
-          onSubmit: addRowWithAnswers,
-          onOpenRow: openRow,
+  Widget build(BuildContext context) => BlocProvider(
+        create: (_) => PageAccessLevelBloc(view: widget.view)
+          ..add(const PageAccessLevelEvent.initial()),
+        child: BlocBuilder<PageAccessLevelBloc, PageAccessLevelState>(
+          builder: (context, access) => Padding(
+            padding: _stagePadding,
+            child: FormStage(
+              key: _stage,
+              viewId: widget.view.id,
+              editable: !access.isLoadingLockStatus && access.isEditable,
+              initialRowId: widget.initialRowId,
+              spec: _spec,
+              title: widget.view.name,
+              padding: _innerPadding,
+              onSpecChanged: _save,
+              onOpenRow: openRow,
+            ),
+          ),
         ),
       );
 }

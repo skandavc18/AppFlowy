@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/database/grid/application/row/row_document_bloc
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_banner.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_comments.dart';
+import 'package:appflowy/plugins/database/widgets/row/row_detail_scroll_surface.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_handler.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart';
@@ -24,7 +25,6 @@ import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' show EditorState;
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
@@ -38,6 +38,7 @@ class RowDocument extends StatelessWidget {
     this.showComments = false,
     this.shrinkWrap = true,
     this.contentInset = rowDetailContentInset,
+    this.header,
   });
 
   final String viewId;
@@ -55,6 +56,9 @@ class RowDocument extends StatelessWidget {
   /// The measure the page is set on.
   final double contentInset;
 
+  /// Optional row cover and fields, inside the document's own scroll view.
+  final Widget? header;
+
   @override
   Widget build(BuildContext context) {
     return BlocProvider<RowDocumentBloc>(
@@ -67,13 +71,13 @@ class RowDocument extends StatelessWidget {
         ),
         builder: (context, state) {
           return state.loadingState.when(
-            loading: () => const Center(
-              child: CircularProgressIndicator.adaptive(),
+            loading: () => _RowDocumentPlaceholder(
+              header: header,
+              child: const Center(child: CircularProgressIndicator.adaptive()),
             ),
-            error: (error) => Center(
-              child: AppFlowyErrorPage(
-                error: error,
-              ),
+            error: (error) => _RowDocumentPlaceholder(
+              header: header,
+              child: Center(child: AppFlowyErrorPage(error: error)),
             ),
             finish: () => _RowEditor(
               view: state.viewPB!,
@@ -82,6 +86,7 @@ class RowDocument extends StatelessWidget {
               showComments: showComments,
               shrinkWrap: shrinkWrap,
               contentInset: contentInset,
+              header: header,
               onIsEmptyChanged: (isEmpty) => context
                   .read<RowDocumentBloc>()
                   .add(RowDocumentEvent.updateIsEmpty(isEmpty)),
@@ -102,6 +107,7 @@ class _RowEditor extends StatelessWidget {
     this.showComments = false,
     this.shrinkWrap = true,
     this.contentInset = rowDetailContentInset,
+    this.header,
   });
 
   final ViewPB view;
@@ -111,6 +117,7 @@ class _RowEditor extends StatelessWidget {
   final bool showComments;
   final bool shrinkWrap;
   final double contentInset;
+  final Widget? header;
 
   @override
   Widget build(BuildContext context) {
@@ -140,14 +147,18 @@ class _RowEditor extends StatelessWidget {
         },
         builder: (context, state) {
           if (state.isLoading) {
-            return const Center(child: CircularProgressIndicator.adaptive());
+            return _RowDocumentPlaceholder(
+              header: header,
+              child: const Center(child: CircularProgressIndicator.adaptive()),
+            );
           }
 
           final editorState = state.editorState;
           final error = state.error;
           if (error != null || editorState == null) {
-            return Center(
-              child: AppFlowyErrorPage(error: error),
+            return _RowDocumentPlaceholder(
+              header: header,
+              child: Center(child: AppFlowyErrorPage(error: error)),
             );
           }
 
@@ -187,28 +198,29 @@ class _RowEditor extends StatelessWidget {
                             shrinkWrap: shrinkWrap,
                             autoFocus: false,
                             editorState: editorState,
-                            // The thread rides in the editor's own header, so
-                            // the body stays the single scrollable the row page
-                            // scrolls.
-                            header: showComments
-                                ? Padding(
-                                    padding: EdgeInsets.fromLTRB(
-                                      contentInset,
-                                      0,
-                                      contentInset,
-                                      18,
-                                    ),
+                            // The cover, properties and thread share the lazy
+                            // document viewport: no nested wheel hand-off.
+                            header: header != null || showComments
+                                ? RowDetailScrollHeader(
                                     child: Column(
                                       crossAxisAlignment:
                                           CrossAxisAlignment.stretch,
                                       children: [
-                                        RowCommentSection(
-                                          editorState: editorState,
-                                          userProfile: userProfile,
-                                          padding: EdgeInsets.zero,
-                                        ),
-                                        const VSpace(18),
-                                        const Divider(height: 1.0),
+                                        if (header != null) header!,
+                                        if (showComments)
+                                          Padding(
+                                            padding: EdgeInsets.fromLTRB(
+                                              contentInset,
+                                              0,
+                                              contentInset,
+                                              36,
+                                            ),
+                                            child: RowCommentSection(
+                                              editorState: editorState,
+                                              userProfile: userProfile,
+                                              padding: EdgeInsets.zero,
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   )
@@ -244,6 +256,27 @@ class _RowEditor extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Keep the fields usable while the document loads (or cannot be loaded).
+/// The popup's keyed header moves into the editor without losing field state.
+class _RowDocumentPlaceholder extends StatelessWidget {
+  const _RowDocumentPlaceholder({required this.header, required this.child});
+
+  final Widget? header;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => header == null
+      ? child
+      : SingleChildScrollView(
+          child: Column(
+            children: [
+              header!,
+              SizedBox(height: 160, child: child),
+            ],
+          ),
+        );
 }
 
 /// Keeps a row's page in its history the way an ordinary page is kept.

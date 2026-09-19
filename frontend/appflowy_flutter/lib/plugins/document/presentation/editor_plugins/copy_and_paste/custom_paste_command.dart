@@ -1,17 +1,20 @@
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_notification.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_attachments.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_block_link.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_html.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_image.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_in_app_json.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_plain_text.dart';
 import 'package:appflowy/shared/clipboard_state.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/util/default_extensions.dart';
+import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:http/http.dart' as http;
@@ -41,14 +44,15 @@ final CommandShortcutEvent customPastePlainTextCommand = CommandShortcutEvent(
 
 CommandShortcutEventHandler _pasteCommandHandler = (editorState) {
   final selection = editorState.selection;
-  if (selection == null) {
+  if (selection == null || editorState.isDisposed || !editorState.editable) {
     return KeyEventResult.ignored;
   }
 
   doPaste(editorState).then((_) {
+    if (editorState.isDisposed) return;
     final context = editorState.document.root.context;
     if (context != null && context.mounted) {
-      context.read<ClipboardState>().didPaste();
+      context.read<ClipboardState?>()?.didPaste();
     }
   });
 
@@ -71,7 +75,47 @@ CommandShortcutEventHandler _pastePlainCommandHandler = (editorState) {
   return KeyEventResult.handled;
 };
 
-Future<void> doPaste(EditorState editorState) async {
+final _pendingPastes = Expando<bool>();
+
+Future<void> doPaste(
+  EditorState editorState, {
+  AttachmentPasteService attachments = const AttachmentPasteService(),
+}) async {
+  if (editorState.isDisposed ||
+      !editorState.editable ||
+      editorState.selection == null ||
+      _pendingPastes[editorState] == true) {
+    return;
+  }
+  final context = editorState.document.root.context;
+  final bloc = context?.read<DocumentBloc?>();
+  if (bloc?.isClosing == true || bloc?.isClosed == true) return;
+  _pendingPastes[editorState] = true;
+  final target = AttachmentPasteTarget(
+    editorState,
+    isActive: () =>
+        (bloc == null || (!bloc.isClosing && !bloc.isClosed)) &&
+        (context == null ||
+            (context.mounted &&
+                identical(context.read<DocumentBloc?>(), bloc))),
+  );
+  try {
+    await _doPaste(editorState, target, attachments);
+  } catch (_) {
+    // Neither source paths, clipboard contents, nor upload credentials belong
+    // in paste feedback. Also consume async shortcut failures, not just taps.
+    if (target.isCurrent) _showPasteFailure(editorState);
+  } finally {
+    target.dispose();
+    _pendingPastes[editorState] = false;
+  }
+}
+
+Future<void> _doPaste(
+  EditorState editorState,
+  AttachmentPasteTarget target,
+  AttachmentPasteService attachments,
+) async {
   final selection = editorState.selection;
   if (selection == null) {
     return;
@@ -81,6 +125,7 @@ Future<void> doPaste(EditorState editorState) async {
 
   // dispatch the paste event
   final data = await getIt<ClipboardService>().getData();
+  if (!target.isCurrent) return;
   final inAppJson = data.inAppJson;
   final html = data.html;
   final plainText = data.plainText;
@@ -92,20 +137,11 @@ Future<void> doPaste(EditorState editorState) async {
   Log.info('paste command: plainText: ${plainText?.length}');
   Log.info('paste command: image: ${image?.$2?.length}');
 
-  if (await editorState.pasteAppFlowySharePageLink(plainText)) {
-    return Log.info('Pasted block link');
-  }
-
-  // paste as link preview
-  if (await _pasteAsLinkPreview(editorState, plainText)) {
-    return Log.info('Pasted as link preview');
-  }
-
   // Order:
   // 1. in app json format
-  // 2. html
-  // 3. image
-  // 4. plain text
+  // 2. native files (all clipboard items, in order)
+  // 3. image bytes, before possibly private/unreachable HTML image URLs
+  // 4. links, HTML, plain text
 
   // try to paste the content in order, if any of them is failed, then try the next one
   if (inAppJson != null && inAppJson.isNotEmpty) {
@@ -114,27 +150,35 @@ Future<void> doPaste(EditorState editorState) async {
     }
   }
 
-  // if the image data is not null, we should handle it first
-  // because the image URL in the HTML may not be reachable due to permission issues
-  // For example, when pasting an image from Slack, the image URL provided is not public.
-  if (image != null && image.$2?.isNotEmpty == true) {
+  if (data.files.isNotEmpty || image?.$2?.isNotEmpty == true) {
     final documentBloc =
-        editorState.document.root.context?.read<DocumentBloc>();
+        editorState.document.root.context?.read<DocumentBloc?>();
     final documentId = documentBloc?.documentId;
     if (documentId == null || documentId.isEmpty) {
+      _showPasteFailure(editorState);
       return;
     }
-
-    await editorState.deleteSelectionIfNeeded();
-    final result = await editorState.pasteImage(
-      image.$1,
-      image.$2!,
-      documentId,
-      selection: selection,
+    final prepared = await attachments.prepare(
+      data,
+      documentId: documentId,
+      isLocalMode: documentBloc!.isLocalMode,
     );
-    if (result) {
-      return Log.info('Pasted image');
+    var inserted = false;
+    try {
+      if (!target.isCurrent) return;
+      inserted = await insertPastedAttachments(editorState, prepared.nodes);
+      if (!inserted) _showPasteFailure(editorState);
+    } finally {
+      if (!inserted) await prepared.discard();
     }
+    return;
+  }
+
+  if (await editorState.pasteAppFlowySharePageLink(plainText)) {
+    return Log.info('Pasted block link');
+  }
+  if (await _pasteAsLinkPreview(editorState, plainText)) {
+    return Log.info('Pasted as link preview');
   }
 
   if (html != null && html.isNotEmpty) {
@@ -157,6 +201,18 @@ Future<void> doPaste(EditorState editorState) async {
   }
 
   return Log.info('unable to parse the clipboard content');
+}
+
+void _showPasteFailure(EditorState editor) {
+  if (editor.isDisposed) return;
+  final context = editor.document.root.context;
+  if (context != null && context.mounted) {
+    showToastNotification(
+      context: context,
+      type: ToastificationType.error,
+      message: LocaleKeys.fileDropzone_uploadFailedDescription.tr(),
+    );
+  }
 }
 
 Future<bool> _pasteAsLinkPreview(

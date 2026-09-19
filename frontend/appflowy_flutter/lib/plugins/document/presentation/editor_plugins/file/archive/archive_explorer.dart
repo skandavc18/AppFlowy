@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
@@ -44,6 +45,7 @@ class ArchiveExplorer extends StatefulWidget {
     this.embedded = true,
     this.toolbarTrailing,
     this.onChanged,
+    this.mediaActions = const MediaActionService(),
   });
 
   /// The archive on disk.
@@ -64,6 +66,9 @@ class ArchiveExplorer extends StatefulWidget {
 
   /// Called after the archive on disk has been rewritten.
   final VoidCallback? onChanged;
+
+  /// Forwarded to the independent expanded route, not the extracted entry.
+  final MediaActionService mediaActions;
 
   @override
   State<ArchiveExplorer> createState() => _ArchiveExplorerState();
@@ -926,25 +931,27 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
                 emptyMessage: query.isEmpty
                     ? 'This archive is empty'
                     : 'No entries match your search',
-                header: ArchiveGalleryHeader(
-                  title: widget.name.isEmpty ? 'Archive' : widget.name,
-                  breadcrumbs: breadcrumbs,
-                  rootLabel: widget.name.isEmpty ? 'Archive' : widget.name,
-                  subtitle: _subtitle,
-                  searchController: searchController,
-                  searchFocusNode: searchFocusNode,
-                  searching: searching,
-                  onSearchChanged: _scheduleSearch,
-                  onSearchDismissed: _closeSearch,
-                  onSearchRequested: _openSearch,
-                  onNavigate: _navigateTo,
-                  editable: widget.editable &&
-                      (value?.supportsMultipleEntries ?? false),
-                  busy: saving,
-                  onAddFiles: () => unawaited(_addFiles()),
-                  onNewFolder: () => unawaited(_createFolder()),
-                  onRefresh: () => unawaited(_load()),
-                  trailing: _buildHeaderTrailing(),
+                header: _responsiveHeader(
+                  ArchiveGalleryHeader(
+                    title: widget.name.isEmpty ? 'Archive' : widget.name,
+                    breadcrumbs: breadcrumbs,
+                    rootLabel: widget.name.isEmpty ? 'Archive' : widget.name,
+                    subtitle: _subtitle,
+                    searchController: searchController,
+                    searchFocusNode: searchFocusNode,
+                    searching: searching,
+                    onSearchChanged: _scheduleSearch,
+                    onSearchDismissed: _closeSearch,
+                    onSearchRequested: _openSearch,
+                    onNavigate: _navigateTo,
+                    editable: widget.editable &&
+                        (value?.supportsMultipleEntries ?? false),
+                    busy: saving,
+                    onAddFiles: () => unawaited(_addFiles()),
+                    onNewFolder: () => unawaited(_createFolder()),
+                    onRefresh: () => unawaited(_load()),
+                    trailing: _buildHeaderTrailing(),
+                  ),
                 ),
               ),
             ),
@@ -953,6 +960,21 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
       },
     );
   }
+
+  Widget _responsiveHeader(Widget header) => LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+            // The existing header has fixed-width tools and an optional search
+            // field. Scroll just those tools in a tight window, not the cards.
+            width: math.max(
+              constraints.maxWidth,
+              (widget.editable ? 420.0 : 340.0) + (searching ? 208 : 0),
+            ),
+            child: header,
+          ),
+        ),
+      );
 
   /// The controls at the end of the heading.
   ///
@@ -975,6 +997,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
               name: widget.name,
               editable: widget.editable,
               onChanged: widget.onChanged,
+              mediaActions: widget.mediaActions,
             ),
           ),
         ),
@@ -1135,12 +1158,20 @@ Future<void> showArchiveFullscreen(
   required String name,
   required bool editable,
   VoidCallback? onChanged,
+  MediaActionService mediaActions = const MediaActionService(),
 }) {
   return Navigator.of(context).push(
     PageRouteBuilder<void>(
       opaque: false,
       barrierColor: Colors.black.withValues(alpha: 0.62),
-      transitionDuration: const Duration(milliseconds: 220),
+      transitionDuration: MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.accessibleNavigationOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 220),
+      reverseTransitionDuration: MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.accessibleNavigationOf(context)
+          ? Duration.zero
+          : const Duration(milliseconds: 300),
       transitionsBuilder: (_, animation, __, child) => FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
         child: ScaleTransition(
@@ -1153,52 +1184,125 @@ Future<void> showArchiveFullscreen(
         name: name,
         editable: editable,
         onChanged: onChanged,
+        mediaActions: mediaActions,
       ),
     ),
   );
 }
 
-class _ArchiveFullscreenView extends StatelessWidget {
+class _ArchiveFullscreenView extends StatefulWidget {
   const _ArchiveFullscreenView({
     required this.file,
     required this.name,
     required this.editable,
     required this.onChanged,
+    required this.mediaActions,
   });
 
   final File file;
   final String name;
   final bool editable;
   final VoidCallback? onChanged;
+  final MediaActionService mediaActions;
+
+  @override
+  State<_ArchiveFullscreenView> createState() => _ArchiveFullscreenViewState();
+}
+
+class _ArchiveFullscreenViewState extends State<_ArchiveFullscreenView> {
+  final _hovered = ValueNotifier(false);
+
+  @override
+  void dispose() {
+    _hovered.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
+    final platform = Theme.of(context).platform;
+    final touch =
+        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
+    final source = MediaActionSource(
+      source: widget.file.path,
+      name: widget.name,
+    );
     return Scaffold(
+      key: const ValueKey('archive-fullscreen'),
       backgroundColor: palette.background,
       body: SafeArea(
-        child: Stack(
-          children: [
-            Positioned.fill(
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): () =>
+                unawaited(Navigator.of(context).maybePop()),
+          },
+          child: MouseRegion(
+            onEnter: (_) {
+              if (mounted) _hovered.value = true;
+            },
+            onExit: (_) {
+              if (mounted) _hovered.value = false;
+            },
+            child: ValueListenableBuilder<bool>(
+              valueListenable: _hovered,
+              // Hover changes only chrome. Keep the explorer, its search and
+              // any open entry mounted without rebuilding the renderer.
               child: ArchiveExplorer(
-                key: ValueKey('fullscreen-${file.path}'),
-                file: file,
-                name: name,
-                editable: editable,
+                key: ValueKey('fullscreen-${widget.file.path}'),
+                file: widget.file,
+                name: widget.name,
+                editable: widget.editable,
                 embedded: false,
-                onChanged: onChanged,
+                onChanged: widget.onChanged,
+                mediaActions: widget.mediaActions,
+              ),
+              builder: (context, hovered, explorer) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    key: const ValueKey('archive-fullscreen-media-actions'),
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
+                      16,
+                      4,
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        // Do not let the explorer's autofocus root pin this
+                        // reveal; only actual controls retain keyboard focus.
+                        MediaActionReveal(
+                          visible: hovered || touch,
+                          child: MediaActionButtons(
+                            source: source,
+                            actions: widget.mediaActions,
+                            decorated: false,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        IconButton(
+                          key: const ValueKey('archive-fullscreen-close'),
+                          tooltip: 'Close',
+                          onPressed: () =>
+                              unawaited(Navigator.of(context).maybePop()),
+                          icon: const Icon(Icons.close_rounded, size: 18),
+                          color: palette.textSecondary,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 28,
+                            height: 28,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(child: explorer!),
+                ],
               ),
             ),
-            Positioned(
-              top: 14,
-              right: 18,
-              child: ArchivePillButton(
-                icon: Icons.close_rounded,
-                tooltip: 'Close',
-                onPressed: () => Navigator.of(context).maybePop(),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/show_mobile_bottom_sheet.dart';
@@ -12,16 +13,19 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_util.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_embed_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_cloud_auth.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
+import 'package:appflowy/util/xfile_ext.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/file_entities.pbenum.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:cross_file/cross_file.dart';
@@ -236,7 +240,10 @@ class FileBlockComponent extends BlockComponentStatefulWidget {
     super.actionBuilder,
     super.actionTrailingBuilder,
     super.configuration = const BlockComponentConfiguration(),
+    this.mediaActions = const MediaActionService(),
   });
+
+  final MediaActionService mediaActions;
 
   static const uploadDragKey = 'FileUploadMenu';
 
@@ -293,6 +300,30 @@ class FileBlockComponentState extends State<FileBlockComponent>
       dropManagerState = context.read<EditorDropManagerState?>();
     }
     super.didChangeDependencies();
+  }
+
+  @override
+  void dispose() {
+    showActionsNotifier.dispose();
+    super.dispose();
+  }
+
+  void _setHovering(bool hovering) {
+    if (!mounted) return;
+    isHovering = hovering;
+    showActionsNotifier.value = hovering || alwaysShowMenu;
+  }
+
+  void _pinMenu() {
+    if (!mounted) return;
+    alwaysShowMenu = true;
+    showActionsNotifier.value = true;
+  }
+
+  void _unpinMenu() {
+    if (!mounted) return;
+    alwaysShowMenu = false;
+    showActionsNotifier.value = isHovering;
   }
 
   @override
@@ -425,7 +456,16 @@ class FileBlockComponentState extends State<FileBlockComponent>
       );
     }
 
-    return child;
+    // Hover changes only the chrome's notifiers, never the loaded renderer or
+    // the editor's selection. Focus is observed by the action reveal itself,
+    // not by this region: typing in a preview must not pin its copy/share bar.
+    return MouseRegion(
+      key: const ValueKey('file-block-hover'),
+      opaque: false,
+      onEnter: (_) => _setHovering(true),
+      onExit: (_) => _setHovering(false),
+      child: child,
+    );
   }
 
   Widget _buildMediaPlayer(
@@ -444,29 +484,18 @@ class FileBlockComponentState extends State<FileBlockComponent>
       alignment: blockEmbedAlignment(node),
       editable: editorState.editable,
       onResize: _saveMediaWidth,
-      child: MouseRegion(
-        onEnter: (_) {
-          isHovering = true;
-          showActionsNotifier.value = true;
-        },
-        onExit: (_) {
-          isHovering = false;
-          if (!alwaysShowMenu) {
-            showActionsNotifier.value = false;
-          }
-        },
-        child: Stack(
-          children: [
-            FileMediaPlayer(
-              url: url,
-              name: name,
-              kind: kind,
-              httpHeaders: _httpHeadersFor(urlType),
-              onAspectRatioChanged: _handleVideoAspectRatio,
-            ),
-            if (UniversalPlatform.isDesktopOrWeb) _buildFileMenuOverlay(),
-          ],
-        ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          FileMediaPlayer(
+            url: url,
+            name: name,
+            kind: kind,
+            httpHeaders: _httpHeadersFor(urlType),
+            onAspectRatioChanged: _handleVideoAspectRatio,
+          ),
+          if (UniversalPlatform.isDesktopOrWeb) _buildFileMenuOverlay(),
+        ],
       ),
     );
   }
@@ -481,27 +510,16 @@ class FileBlockComponentState extends State<FileBlockComponent>
       alignment: blockEmbedAlignment(node),
       editable: editorState.editable,
       onResize: _saveMediaWidth,
-      child: MouseRegion(
-        onEnter: (_) {
-          isHovering = true;
-          showActionsNotifier.value = true;
-        },
-        onExit: (_) {
-          isHovering = false;
-          if (!alwaysShowMenu) {
-            showActionsNotifier.value = false;
-          }
-        },
-        child: Stack(
-          children: [
-            YoutubeEmbedPlayer(
-              url: url,
-              onAspectRatioChanged: _handleVideoAspectRatio,
-            ),
-            _buildOfflineDownloadIndicator(),
-            if (UniversalPlatform.isDesktopOrWeb) _buildFileMenuOverlay(),
-          ],
-        ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          YoutubeEmbedPlayer(
+            url: url,
+            onAspectRatioChanged: _handleVideoAspectRatio,
+          ),
+          _buildOfflineDownloadIndicator(),
+          if (UniversalPlatform.isDesktopOrWeb) _buildFileMenuOverlay(),
+        ],
       ),
     );
   }
@@ -511,44 +529,112 @@ class FileBlockComponentState extends State<FileBlockComponent>
     return Positioned(
       top: 8,
       right: 8,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: showActionsNotifier,
-        builder: (_, showActions, __) {
-          if (!showActions) {
-            return const SizedBox.shrink();
-          }
-          return AppFlowyPopover(
-            controller: menuController,
-            triggerActions: PopoverTriggerFlags.none,
-            direction: PopoverDirection.bottomWithRightAligned,
-            onOpen: () {
-              alwaysShowMenu = true;
-              showActionsNotifier.value = true;
-            },
-            onClose: () {
-              alwaysShowMenu = false;
-              if (!isHovering) {
-                showActionsNotifier.value = false;
-              }
-            },
-            popupBuilder: (_) => FileBlockMenu(
-              controller: menuController,
-              node: node,
-              editorState: editorState,
-            ),
-            child: GestureDetector(
-              onTap: _showMediaMenu,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: menuSurface,
-                  borderRadius: const BorderRadius.all(Radius.circular(4)),
-                ),
-                child: const FileMenuTrigger(),
+      child: _revealFileActions(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildMediaActionButtons(),
+            const HSpace(4),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: menuSurface,
+                borderRadius: const BorderRadius.all(Radius.circular(4)),
               ),
+              child: _buildFilePopover(),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _revealFileActions(Widget child) => ValueListenableBuilder<bool>(
+        valueListenable: showActionsNotifier,
+        builder: (_, visible, child) => MediaActionReveal(
+          visible: visible,
+          child: child!,
+        ),
+        child: child,
+      );
+
+  Widget _buildMediaActionButtons({bool decorated = true}) => Builder(
+        builder: (actionContext) {
+          final source = node.attributes[FileBlockKeys.url] as String? ?? '';
+          final name = node.attributes[FileBlockKeys.name] as String? ?? '';
+          final type = FileUrlType.fromIntValue(
+            node.attributes[FileBlockKeys.urlType] ?? 0,
+          );
+          // Only this small subtree subscribes to credentials. A token refresh
+          // must clear old feedback without rebuilding a native file editor.
+          final profile = type == FileUrlType.cloud
+              ? actionContext.select<DocumentBloc?, UserProfilePB?>(
+                    (bloc) => bloc?.state.userProfilePB,
+                  ) ??
+                  actionContext.select<UserWorkspaceBloc?, UserProfilePB?>(
+                    (bloc) => bloc?.state.userProfile,
+                  )
+              : null;
+          final namedType = inferFileType(name);
+          return MediaActionButtons(
+            source: MediaActionSource.file(
+              source: source,
+              name: name,
+              uploadType: type.toFileUploadTypePB(),
+              userProfile: profile,
+              isImage: namedType == FileType.image ||
+                  (namedType == FileType.other &&
+                      inferFileType(source) == FileType.image),
+              // A network attachment is still a file. Only YouTube refers to
+              // a watch page rather than the bytes of the attached media.
+              shareAsLink:
+                  type == FileUrlType.network && isYoutubeVideoUrl(source),
+            ),
+            actions: widget.mediaActions,
+            decorated: decorated,
           );
         },
-      ),
+      );
+
+  Widget _buildFilePopover() => AppFlowyPopover(
+        controller: menuController,
+        triggerActions: PopoverTriggerFlags.none,
+        direction: PopoverDirection.bottomWithRightAligned,
+        onOpen: _pinMenu,
+        onClose: _unpinMenu,
+        popupBuilder: (_) => FileBlockMenu(
+          controller: menuController,
+          actionContext: context,
+          mediaActions: widget.mediaActions,
+          node: node,
+          editorState: editorState,
+        ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _showMediaMenu,
+          child: const SizedBox.square(
+            dimension: 28,
+            child: FileMenuTrigger(),
+          ),
+        ),
+      );
+
+  Widget _withPreviewActions(Widget frame) {
+    if (!UniversalPlatform.isDesktopOrWeb) return frame;
+    // FilePreview caches its toolbar and clips its card. A sibling keeps the
+    // source fresh and the Copied badge unclipped, without replacing either
+    // the renderer or PDF's single, combined overflow menu. Leave room for
+    // the right scroll thumb (42px) and the bottom/corner resize hit targets.
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        frame,
+        Positioned(
+          key: const ValueKey('file-preview-media-actions'),
+          right: 48,
+          bottom: 20,
+          child: _revealFileActions(_buildMediaActionButtons()),
+        ),
+      ],
     );
   }
 
@@ -638,10 +724,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
                       previewScrollController.handlePointerPanZoomUpdate,
                   onPointerPanZoomEnd:
                       previewScrollController.handlePointerPanZoomEnd,
-                  child: frame,
+                  child: _withPreviewActions(frame),
                 ),
               )
-          : null,
+          : _withPreviewActions,
       child: MaterializedFileBuilder(
         source: url,
         name: name,
@@ -719,6 +805,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
         editable: editorState.editable,
         onResize: _saveMediaWidth,
         onResizeHeight: _saveMediaHeight,
+        frameBuilder: _withPreviewActions,
         child: MaterializedFileBuilder(
           source: url,
           name: name,
@@ -775,72 +862,61 @@ class FileBlockComponentState extends State<FileBlockComponent>
       editable: editorState.editable,
       onResize: _saveMediaWidth,
       onResizeHeight: _saveMediaHeight,
+      frameBuilder: _withPreviewActions,
       footer: UniversalPlatform.isDesktopOrWeb
           ? _buildOfficePreviewFooter(name)
           : null,
-      child: MouseRegion(
-        onEnter: (_) {
-          isHovering = true;
-          showActionsNotifier.value = true;
-        },
-        onExit: (_) {
-          isHovering = false;
-          if (!alwaysShowMenu) {
-            showActionsNotifier.value = false;
-          }
-        },
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            MaterializedFileBuilder(
-              source: url,
-              name: name,
-              httpHeaders: _httpHeadersFor(urlType),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(
-                        snapshot.error.toString(),
-                        textAlign: TextAlign.center,
-                      ),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          MaterializedFileBuilder(
+            source: url,
+            name: name,
+            httpHeaders: _httpHeadersFor(urlType),
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      snapshot.error.toString(),
+                      textAlign: TextAlign.center,
                     ),
-                  );
-                }
-                final file = snapshot.data;
-                if (file == null) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                return OfficeDocumentView(
-                  key: ValueKey('office_${node.id}_${name}_$url'),
-                  file: file,
-                  name: name,
-                  source: url,
-                  editable:
-                      editorState.editable && urlType != FileUrlType.network,
-                  // A CSV can still be read without an Office server.
-                  fallbackBuilder: filePreviewKindFromName(name) == null
-                      ? null
-                      : (context) => FilePreview(
-                            file: file,
-                            name: name,
-                            kind: filePreviewKindFromName(name)!,
-                            metadata: Map<String, dynamic>.from(
-                              node.attributes[FileBlockKeys.previewMetadata]
-                                      as Map? ??
-                                  const {},
-                            ),
-                            onMetadataChanged: _savePreviewMetadata,
-                            editable: editorState.editable &&
-                                urlType == FileUrlType.local,
-                            height: height,
-                          ),
+                  ),
                 );
-              },
-            ),
-          ],
-        ),
+              }
+              final file = snapshot.data;
+              if (file == null) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              return OfficeDocumentView(
+                key: ValueKey('office_${node.id}_${name}_$url'),
+                file: file,
+                name: name,
+                source: url,
+                editable:
+                    editorState.editable && urlType != FileUrlType.network,
+                // A CSV can still be read without an Office server.
+                fallbackBuilder: filePreviewKindFromName(name) == null
+                    ? null
+                    : (context) => FilePreview(
+                          file: file,
+                          name: name,
+                          kind: filePreviewKindFromName(name)!,
+                          metadata: Map<String, dynamic>.from(
+                            node.attributes[FileBlockKeys.previewMetadata]
+                                    as Map? ??
+                                const {},
+                          ),
+                          onMetadataChanged: _savePreviewMetadata,
+                          editable: editorState.editable &&
+                              urlType == FileUrlType.local,
+                          height: height,
+                        ),
+              );
+            },
+          ),
+        ],
       ),
     );
     return _wrapInteractivePreview(preview);
@@ -895,14 +971,18 @@ class FileBlockComponentState extends State<FileBlockComponent>
       controller: menuController,
       triggerActions: PopoverTriggerFlags.none,
       direction: PopoverDirection.bottomWithRightAligned,
+      onOpen: _pinMenu,
+      onClose: _unpinMenu,
       popupBuilder: (_) => FileBlockMenu(
         controller: menuController,
+        actionContext: context,
+        mediaActions: widget.mediaActions,
         node: node,
         editorState: editorState,
       ),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: menuController.show,
+        onTap: _showMediaMenu,
         child: Tooltip(
           message: 'More actions',
           child: SizedBox.square(
@@ -933,6 +1013,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
       onClose: closeMenu,
       actionContext: context,
       showDownload: false,
+      mediaActions: widget.mediaActions,
       node: node,
       editorState: editorState,
     );
@@ -959,8 +1040,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
   void _showMediaMenu() {
     // Keep the anchor mounted before opening the overlay. Waiting for the
     // popover's onOpen callback is too late when the overlay triggers onExit.
-    alwaysShowMenu = true;
-    showActionsNotifier.value = true;
+    _pinMenu();
     menuController.show();
   }
 
@@ -1003,7 +1083,8 @@ class FileBlockComponentState extends State<FileBlockComponent>
   Map<String, String> _httpHeadersFor(FileUrlType urlType) =>
       urlType == FileUrlType.cloud
           ? appFlowyCloudAuthHeaders(
-              context.read<DocumentBloc>().state.userProfilePB,
+              context.read<DocumentBloc?>()?.state.userProfilePB ??
+                  context.read<UserWorkspaceBloc?>()?.state.userProfile,
             )
           : const {};
 
@@ -1037,20 +1118,25 @@ class FileBlockComponentState extends State<FileBlockComponent>
             ? LocaleKeys.document_plugins_file_placeholderDragging.tr()
             : LocaleKeys.document_plugins_file_placeholderText.tr();
 
-    Widget card = AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOutCubic,
-      height: hasFile ? 52 : 56,
-      padding: EdgeInsets.only(left: 9, right: hasFile ? 9 : 14),
-      decoration: BoxDecoration(
-        color: isHovering
-            ? Color.alphaBlend(palette.hover, palette.surface)
-            : palette.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isDragging ? palette.accent : palette.border,
-          width: isDragging ? 1.4 : 0.8,
+    Widget card = ValueListenableBuilder<bool>(
+      valueListenable: showActionsNotifier,
+      builder: (_, hovered, child) => AnimatedContainer(
+        key: const ValueKey('file-block-chip'),
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+        height: hasFile ? 52 : 56,
+        padding: EdgeInsets.only(left: 9, right: hasFile ? 9 : 14),
+        decoration: BoxDecoration(
+          color: hovered
+              ? Color.alphaBlend(palette.hover, palette.surface)
+              : palette.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDragging ? palette.accent : palette.border,
+            width: isDragging ? 1.4 : 0.8,
+          ),
         ),
+        child: child,
       ),
       child: Row(
         mainAxisSize: hasFile ? MainAxisSize.min : MainAxisSize.max,
@@ -1089,16 +1175,6 @@ class FileBlockComponentState extends State<FileBlockComponent>
 
     card = MouseRegion(
       cursor: SystemMouseCursors.click,
-      onEnter: (_) {
-        setState(() => isHovering = true);
-        showActionsNotifier.value = true;
-      },
-      onExit: (_) {
-        setState(() => isHovering = false);
-        if (!alwaysShowMenu) {
-          showActionsNotifier.value = false;
-        }
-      },
       opaque: false,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
@@ -1121,41 +1197,19 @@ class FileBlockComponentState extends State<FileBlockComponent>
     );
   }
 
-  /// The three dot menu inside the compact card.
+  /// Copy/share and the existing three-dot menu inside the compact card.
   ///
   /// It always occupies its place and only fades in, so the card does not
   /// change width the moment the pointer arrives.
   Widget _buildFileChipMenu() {
-    return ValueListenableBuilder<bool>(
-      valueListenable: showActionsNotifier,
-      builder: (_, value, child) => AnimatedOpacity(
-        duration: const Duration(milliseconds: 120),
-        opacity: value ? 1 : 0,
-        child: IgnorePointer(ignoring: !value, child: child),
-      ),
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
-        onTap: menuController.show,
-        child: AppFlowyPopover(
-          controller: menuController,
-          triggerActions: PopoverTriggerFlags.none,
-          direction: PopoverDirection.bottomWithRightAligned,
-          onClose: () {
-            setState(() {
-              alwaysShowMenu = false;
-              showActionsNotifier.value = false;
-            });
-          },
-          popupBuilder: (_) {
-            alwaysShowMenu = true;
-            return FileBlockMenu(
-              controller: menuController,
-              node: node,
-              editorState: editorState,
-            );
-          },
-          child: const FileMenuTrigger(),
-        ),
+    return _revealFileActions(
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildMediaActionButtons(decorated: false),
+          const HSpace(4),
+          _buildFilePopover(),
+        ],
       ),
     );
   }

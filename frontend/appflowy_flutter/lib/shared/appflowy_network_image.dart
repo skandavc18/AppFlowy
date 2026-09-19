@@ -20,6 +20,8 @@ class FlowyNetworkImage extends StatefulWidget {
     this.userProfilePB,
     this.width,
     this.height,
+    this.memCacheWidth,
+    this.memCacheHeight,
     this.fit = BoxFit.cover,
     this.progressIndicatorBuilder,
     this.errorWidgetBuilder,
@@ -38,6 +40,10 @@ class FlowyNetworkImage extends StatefulWidget {
 
   /// The height of the image.
   final double? height;
+
+  /// Optional in-memory decode dimensions in physical pixels.
+  final int? memCacheWidth;
+  final int? memCacheHeight;
 
   /// The fit of the image.
   final BoxFit fit;
@@ -138,6 +144,8 @@ class FlowyNetworkImageState extends State<FlowyNetworkImage> {
           fit: widget.fit,
           width: widget.width,
           height: widget.height,
+          memCacheWidth: widget.memCacheWidth,
+          memCacheHeight: widget.memCacheHeight,
           progressIndicatorBuilder: widget.progressIndicatorBuilder,
           errorWidget: _errorWidgetBuilder,
           errorListener: (value) async {

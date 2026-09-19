@@ -11,6 +11,7 @@ import 'package:appflowy/shared/maps/map_suggestions.dart';
 import 'package:appflowy/shared/maps/map_tile_cache.dart';
 import 'package:appflowy/shared/maps/map_tile_layer.dart';
 import 'package:appflowy/shared/maps/map_tile_provider.dart';
+import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -154,10 +155,11 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   final MapTileCache _cache = MapTileCache();
   final FocusNode _focus = FocusNode(debugLabel: 'AppMapView');
 
-  late final AnimationController _fly = AnimationController(
-    vsync: this,
-    duration: MapMetrics.fly,
-  )..addListener(_onFly);
+  AnimationController? _flyController;
+  AnimationController get _fly => _flyController ??= AnimationController(
+        vsync: this,
+        duration: MapMetrics.fly,
+      )..addListener(_onFly);
 
   MapCamera? _flyFrom;
   MapCamera? _flyTo;
@@ -208,7 +210,7 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   void dispose() {
     widget.controller?._view = null;
     _hoverOut?.cancel();
-    _fly.dispose();
+    _flyController?.dispose();
     _cache.dispose();
     _focus.dispose();
     super.dispose();
@@ -239,6 +241,7 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   }
 
   void _glideTo(MapCamera target) {
+    if (!mounted) return;
     _flyFrom = _camera;
     _flyTo = target;
     _fly
@@ -274,6 +277,7 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   }
 
   void _resetView() {
+    if (!mounted) return;
     final points = widget.pins.map((pin) => pin.point).where((p) => p.isValid);
     if (points.isEmpty) {
       _glideTo(
@@ -291,9 +295,20 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
   // ---------------------------------------------------------------- gestures
 
   void _onScroll(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    // Register rather than act immediately: a popup's nested scrollable gets
+    // first refusal, and the enclosing page must never zoom AND scroll.
+    GestureBinding.instance.pointerSignalResolver.register(
+      event,
+      _onResolvedScroll,
+    );
+  }
+
+  void _onResolvedScroll(PointerSignalEvent event) {
     if (event is! PointerScrollEvent || _gestureCamera != null) {
       return;
     }
+    if (!event.scrollDelta.dy.isFinite || event.scrollDelta.dy == 0) return;
     _fly.stop();
     // A notch is about 120; a quarter of a zoom level per notch is the step
     // both Google and Apple settle on.
@@ -475,6 +490,12 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
     );
     final provider = _provider!;
 
+    // Scope the exclusion to the real viewport, not the host's header or
+    // margins. History and premium wheel routing inspect the starting hit test.
+    return PremiumScrollExclusion(child: _buildMap(palette, provider));
+  }
+
+  Widget _buildMap(MapPalette palette, MapTileProvider provider) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final size = Size(constraints.maxWidth, constraints.maxHeight);
@@ -508,51 +529,28 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
           onKeyEvent: _onKey,
           child: Listener(
             onPointerSignal: _onScroll,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) => _tappedAt = details.localPosition,
-              onTap: _onTap,
-              onScaleStart: _onScaleStart,
-              onScaleUpdate: _onScaleUpdate,
-              onScaleEnd: _onScaleEnd,
-              onDoubleTapDown: (details) =>
-                  _doubleTapAt = details.localPosition,
-              onDoubleTap: _onDoubleTap,
-              onSecondaryTapUp: widget.onContextMenu == null
-                  ? null
-                  : (details) => widget.onContextMenu!(
-                        details.globalPosition,
-                        _camera.toLatLng(details.localPosition),
-                      ),
-              child: ClipRect(
-                // Every child below is positioned, and positioned children do
-                // not size a Stack — without this the map collapses to nothing
-                // wherever its host hands it a loose width.
-                child: SizedBox.expand(
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Positioned.fill(
-                        child: RepaintBoundary(
-                          child: CustomPaint(
-                            painter: MapTilePainter(
-                              camera: _camera,
-                              provider: provider,
-                              style: _style,
-                              cache: _cache,
-                              background: palette.canvas,
-                            ),
-                          ),
-                        ),
-                      ),
-                      ..._buildMarkers(palette),
-                      if (widget.showPopup) _buildPopup(palette),
-                      if (widget.pins.isEmpty && widget.emptyHint.isNotEmpty)
-                        _buildEmpty(palette),
-                      if (widget.showSearch && widget.onSearch != null)
-                        Positioned(
-                          left: MapMetrics.controlInset + widget.padding.left,
-                          top: MapMetrics.controlInset + widget.padding.top,
+            child: ClipRect(
+              // Positioned children do not size a Stack. The map must fill
+              // its viewport even when its host supplies a loose width.
+              child: SizedBox.expand(
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Positioned.fill(child: _buildCanvas(palette, provider)),
+                    if (widget.showPopup) _buildPopup(palette),
+                    if (widget.showSearch && widget.onSearch != null)
+                      Positioned(
+                        left: MapMetrics.controlInset + widget.padding.left,
+                        top: MapMetrics.controlInset + widget.padding.top,
+                        child: Listener(
+                          // A search result list keeps its wheel even at an
+                          // edge; scrolling it must never zoom the basemap.
+                          onPointerSignal: (event) {
+                            if (event is PointerScrollEvent) {
+                              GestureBinding.instance.pointerSignalResolver
+                                  .register(event, (_) {});
+                            }
+                          },
                           child: AppMapSearchField(
                             palette: palette,
                             hintText: widget.searchHint,
@@ -562,39 +560,103 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
                             onPicked: _onSuggestionPicked,
                           ),
                         ),
-                      if (widget.showControls)
-                        Positioned(
-                          right: MapMetrics.controlInset + widget.padding.right,
-                          top: MapMetrics.controlInset + widget.padding.top,
-                          child: AppMapToolbar(
-                            palette: palette,
-                            canZoomIn: _camera.zoom < maxMapZoom,
-                            canZoomOut: _camera.zoom > minMapZoom,
-                            onZoomIn: () => _zoomBy(1),
-                            onZoomOut: () => _zoomBy(-1),
-                            onResetView: _resetView,
-                            onFullscreen: widget.onFullscreen,
-                            isFullscreen: widget.isFullscreen,
-                          ),
-                        ),
+                      ),
+                    if (widget.showControls)
                       Positioned(
-                        right:
-                            MapMetrics.attributionInset + widget.padding.right,
-                        bottom:
-                            MapMetrics.attributionInset + widget.padding.bottom,
-                        child: MapAttribution(
-                          text: provider.attribution,
+                        right: MapMetrics.controlInset + widget.padding.right,
+                        top: MapMetrics.controlInset + widget.padding.top,
+                        child: AppMapToolbar(
                           palette: palette,
+                          canZoomIn: _camera.zoom < maxMapZoom,
+                          canZoomOut: _camera.zoom > minMapZoom,
+                          onZoomIn: () => _zoomBy(1),
+                          onZoomOut: () => _zoomBy(-1),
+                          onResetView: _resetView,
+                          onFullscreen: widget.onFullscreen,
+                          isFullscreen: widget.isFullscreen,
                         ),
                       ),
-                    ],
-                  ),
+                    Positioned(
+                      right: MapMetrics.attributionInset + widget.padding.right,
+                      bottom:
+                          MapMetrics.attributionInset + widget.padding.bottom,
+                      child: MapAttribution(
+                        text: provider.attribution,
+                        palette: palette,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
         );
       },
+    );
+  }
+
+  Widget _buildCanvas(MapPalette palette, MapTileProvider provider) {
+    final gestureSettings = MediaQuery.maybeGestureSettingsOf(context);
+    // Floating controls are siblings of this layer, not descendants. In
+    // particular, a trackpad over the search suggestions scrolls that list
+    // rather than being eagerly claimed by the map's scale recognizer.
+    return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: {
+        _MapScaleGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<_MapScaleGestureRecognizer>(
+          _MapScaleGestureRecognizer.new,
+          (recognizer) => recognizer
+            ..gestureSettings = gestureSettings
+            ..dragStartBehavior = DragStartBehavior.start
+            ..onStart = _onScaleStart
+            ..onUpdate = _onScaleUpdate
+            ..onEnd = _onScaleEnd,
+        ),
+        TapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+          TapGestureRecognizer.new,
+          (recognizer) => recognizer
+            ..gestureSettings = gestureSettings
+            ..onTapDown = ((details) => _tappedAt = details.localPosition)
+            ..onTap = _onTap
+            ..onSecondaryTapUp = widget.onContextMenu == null
+                ? null
+                : (details) => widget.onContextMenu!(
+                      details.globalPosition,
+                      _camera.toLatLng(details.localPosition),
+                    ),
+        ),
+        DoubleTapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<DoubleTapGestureRecognizer>(
+          DoubleTapGestureRecognizer.new,
+          (recognizer) => recognizer
+            ..gestureSettings = gestureSettings
+            ..onDoubleTapDown =
+                ((details) => _doubleTapAt = details.localPosition)
+            ..onDoubleTap = _onDoubleTap,
+        ),
+      },
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: MapTilePainter(
+                  camera: _camera,
+                  provider: provider,
+                  style: _style,
+                  cache: _cache,
+                  background: palette.canvas,
+                ),
+              ),
+            ),
+          ),
+          ..._buildMarkers(palette),
+          if (widget.pins.isEmpty && widget.emptyHint.isNotEmpty)
+            _buildEmpty(palette),
+        ],
+      ),
     );
   }
 
@@ -724,5 +786,22 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
         ),
       ),
     );
+  }
+}
+
+/// A trackpad beginning on the map belongs to its pan/zoom surface for the
+/// entire gesture. Flutter's normal scale pan slop is larger than an enclosing
+/// Scrollable's drag slop, so a slow vertical pan otherwise scrolls the page.
+/// Keep the single ScaleGestureRecognizer path for all camera updates: adding
+/// a raw pan-zoom Listener as well would apply pinches twice.
+class _MapScaleGestureRecognizer extends ScaleGestureRecognizer {
+  @override
+  void handleEvent(PointerEvent event) {
+    // Establish the focal point before accepting; ScaleStartDetails must name
+    // the pointer's starting location, not the first update past a threshold.
+    super.handleEvent(event);
+    if (event is PointerPanZoomStartEvent) {
+      resolve(GestureDisposition.accepted);
+    }
   }
 }

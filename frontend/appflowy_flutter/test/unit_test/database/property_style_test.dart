@@ -144,6 +144,93 @@ void main() {
         1,
       );
     });
+
+    test('progress buttons default on and can be explicitly hidden', () {
+      const style = PropertyStyle(kind: PropertyStyleKind.progress);
+      expect(style.showButtons, isTrue);
+      expect(style.progressStep, 1);
+      expect(style.withSetting('show_buttons', false).showButtons, isFalse);
+      expect(style.withSetting('show_buttons', 'false').showButtons, isTrue);
+      expect(
+        style
+            .withSetting('show_buttons', false)
+            .withSetting('show_buttons', null)
+            .showButtons,
+        isTrue,
+      );
+    });
+
+    test('progress bounds and steps reject invalid and nonfinite settings', () {
+      const style = PropertyStyle(kind: PropertyStyleKind.progress);
+      for (final value in [
+        null,
+        '2',
+        false,
+        0,
+        -2,
+        double.nan,
+        double.infinity,
+        double.negativeInfinity,
+      ]) {
+        expect(style.withSetting('maximum', value).maximum, 100);
+        expect(style.withSetting('step', value).progressStep, 1);
+      }
+      expect(style.withSetting('maximum', 0.001).maximum, 0.001);
+      expect(style.withSetting('step', 0.0001).progressStep, 0.0001);
+      // A negative counter step keeps its existing meaning.
+      expect(
+        const PropertyStyle(
+          kind: PropertyStyleKind.counter,
+          settings: {'step': -2},
+        ).step,
+        -2,
+      );
+    });
+
+    test('progress settings and cell overrides survive JSON without leaking',
+        () {
+      const column = PropertyStyle(
+        kind: PropertyStyleKind.progress,
+        settings: {
+          'maximum': 2.5,
+          'step': 0.25,
+          'show_buttons': false,
+          'show_percent': false,
+          'accent': 'green',
+        },
+      );
+      final original = const PropertyStyles(byField: {'progress': column})
+          .withCell('progress', 'edited', {
+        'step': 0.125,
+        'maximum': 1.5,
+        'show_buttons': true,
+      });
+      final extra = original.mergeIntoExtra('{"unrelated":{"kept":true}}');
+      final read = PropertyStyles.fromExtra(extra);
+      expect(jsonDecode(extra)['unrelated'], {'kept': true});
+      expect(read['progress'], column);
+      expect(read.cellStyle('progress', 'edited')!.showButtons, isTrue);
+      expect(read.cellStyle('progress', 'edited')!.progressStep, 0.125);
+      expect(read.cellStyle('progress', 'edited')!.maximum, 1.5);
+      expect(read.cellStyle('progress', 'edited')!.showPercent, isFalse);
+      expect(read.cellStyle('progress', 'other'), column);
+      expect(
+        read
+            .withCell('progress', 'edited', null)
+            .cellStyle('progress', 'edited'),
+        column,
+      );
+    });
+
+    test('progress number formatting preserves small steps and large bounds',
+        () {
+      expect(formatProgressNumber(12), '12');
+      expect(formatProgressNumber(0.0001), '0.0001');
+      expect(formatProgressNumber(-0.0), '0');
+      expect(double.parse(formatProgressNumber(1e308)), 1e308);
+      expect(formatProgressNumber(double.nan), '0');
+      expect(formatProgressNumber(double.infinity), '0');
+    });
   });
 
   group('what the picker offers', () {
@@ -488,10 +575,16 @@ void main() {
 
       expect(labels, contains(LocaleKeys.interactive_property_maximum.tr()));
       expect(
-          labels, contains(LocaleKeys.interactive_progress_showPercent.tr()));
+        labels,
+        contains(LocaleKeys.interactive_progress_showPercent.tr()),
+      );
       expect(
         labels,
-        isNot(contains(LocaleKeys.interactive_property_step.tr())),
+        contains(LocaleKeys.interactive_property_step.tr()),
+      );
+      expect(
+        labels,
+        contains(LocaleKeys.interactive_progress_showButtons.tr()),
       );
     });
 
@@ -551,7 +644,7 @@ void main() {
       const styles = PropertyStyles(byField: {'f1': column});
       final extra = styles.withCell('f1', 'r1', {
         'target': 'page-2',
-        'target_name': 'Notes'
+        'target_name': 'Notes',
       }).mergeIntoExtra('{"appflowy_chart":{"version":1}}');
 
       final read = PropertyStyles.fromExtra(extra);
@@ -614,7 +707,9 @@ void main() {
       expect(
         styles
             .withField(
-                'f1', const PropertyStyle(kind: PropertyStyleKind.counter))
+              'f1',
+              const PropertyStyle(kind: PropertyStyleKind.counter),
+            )
             .byCell,
         isEmpty,
       );
@@ -717,7 +812,11 @@ void main() {
       );
       expect(
         labelsOf(progress),
-        isNot(contains(LocaleKeys.interactive_property_step.tr())),
+        contains(LocaleKeys.interactive_property_step.tr()),
+      );
+      expect(
+        labelsOf(progress),
+        contains(LocaleKeys.interactive_progress_showButtons.tr()),
       );
 
       final counter = await entriesFor(

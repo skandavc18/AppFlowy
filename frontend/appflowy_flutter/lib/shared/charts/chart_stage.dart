@@ -31,6 +31,7 @@ class ChartStage extends StatefulWidget {
     this.framed = true,
     this.trailing = const [],
     this.padding = const EdgeInsets.all(16),
+    this.source,
   });
 
   final String viewId;
@@ -49,12 +50,16 @@ class ChartStage extends StatefulWidget {
   final List<Widget> trailing;
   final EdgeInsets padding;
 
+  /// An optional borrowed source; the host remains responsible for disposal.
+  final ChartSource? source;
+
   @override
   State<ChartStage> createState() => ChartStageState();
 }
 
 class ChartStageState extends State<ChartStage> {
-  late ChartSource _source = ChartSource(viewId: widget.viewId);
+  late ChartSource _source =
+      widget.source ?? ChartSource(viewId: widget.viewId);
 
   @override
   void initState() {
@@ -66,20 +71,24 @@ class ChartStageState extends State<ChartStage> {
   @override
   void didUpdateWidget(covariant ChartStage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.viewId != widget.viewId) {
-      _source
-        ..removeListener(_onChanged)
-        ..dispose();
-      _source = ChartSource(viewId: widget.viewId)..addListener(_onChanged);
+    if (oldWidget.viewId != widget.viewId ||
+        oldWidget.source != widget.source) {
+      _source.removeListener(_onChanged);
+      if (oldWidget.source == null) {
+        _source.dispose();
+      }
+      _source = widget.source ?? ChartSource(viewId: widget.viewId);
+      _source.addListener(_onChanged);
       unawaited(_source.load());
     }
   }
 
   @override
   void dispose() {
-    _source
-      ..removeListener(_onChanged)
-      ..dispose();
+    _source.removeListener(_onChanged);
+    if (widget.source == null) {
+      _source.dispose();
+    }
     super.dispose();
   }
 
@@ -96,7 +105,9 @@ class ChartStageState extends State<ChartStage> {
   Widget build(BuildContext context) {
     final palette = chartPaletteOf(context, background: widget.background);
     final table = _source.table;
-    final spec = _resolve(widget.spec, table);
+    // Resolving a name to an id is not permission to replace a choice. Null
+    // category and empty values mean "Every row" and "Count rows".
+    final spec = table.resolveSpec(widget.spec);
     final data = buildChartData(table, spec);
 
     final body = Column(
@@ -177,10 +188,16 @@ class ChartStageState extends State<ChartStage> {
         children: [...previous, if (current != null) current],
       ),
       child: AppChart(
-        // A new type is a new drawing, so it arrives rather than mutating.
-        key: ValueKey(spec.type),
+        // A different source or type owns a new drawing and interactions;
+        // reloading the same source must not discard the reader's viewport.
+        key: ValueKey((_source, spec.type)),
         data: data,
-        spec: spec,
+        spec: table.displaySpec(spec),
+        interactionSpec: spec.copyWith(
+          valueColumns: spec.valueColumns
+              .where((column) => table.indexOf(column) >= 0)
+              .toList(),
+        ),
         palette: palette,
       ),
     );
@@ -193,7 +210,10 @@ class ChartStageState extends State<ChartStage> {
     ChartSpec spec,
   ) async {
     final rows = <String>[
-      [spec.xAxisLabel ?? '', ...data.series.map((one) => one.name)].join(','),
+      [
+        table.displaySpec(spec).xAxisLabel ?? '',
+        ...data.series.map((one) => one.name),
+      ].join(','),
       for (var index = 0; index < data.categories.length; index++)
         [
           data.categories[index],
@@ -204,53 +224,6 @@ class ChartStageState extends State<ChartStage> {
         ].join(','),
     ];
     await Clipboard.setData(ClipboardData(text: rows.join('\n')));
-  }
-
-  /// Fills in a chart that has never been configured, so opening one shows
-  /// something rather than an empty frame.
-  ChartSpec _resolve(ChartSpec spec, ChartTable table) {
-    if (table.isEmpty) {
-      return spec;
-    }
-    var resolved = spec;
-    final numeric = table.numericColumns;
-
-    if (resolved.plotsAgainstValues &&
-        !table.columns.contains(resolved.xColumn)) {
-      resolved = resolved.copyWith(clearX: true);
-    }
-    if (!resolved.plotsAgainstValues &&
-        (resolved.categoryColumn == null ||
-            !table.columns.contains(resolved.categoryColumn))) {
-      final names = numeric.toSet();
-      resolved = resolved.copyWith(
-        categoryColumn: table.columns.firstWhere(
-          (column) => !names.contains(column),
-          orElse: () => table.columns.first,
-        ),
-      );
-    }
-    if (resolved.valueColumns.isEmpty) {
-      final free = numeric
-          .where(
-            (column) =>
-                column != resolved.categoryColumn && column != resolved.xColumn,
-          )
-          .toList();
-      if (free.isNotEmpty) {
-        resolved = resolved.copyWith(valueColumns: [free.first]);
-      }
-    }
-    // A scatter has nothing to say without a measured axis.
-    if (resolved.type.drawsPoints && resolved.xColumn == null) {
-      final free = numeric
-          .where((column) => !resolved.valueColumns.contains(column))
-          .toList();
-      if (free.isNotEmpty) {
-        resolved = resolved.copyWith(xColumn: free.first);
-      }
-    }
-    return resolved;
   }
 }
 

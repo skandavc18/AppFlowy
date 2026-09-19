@@ -81,6 +81,7 @@ class FormSpec {
     this.sections = const [],
     this.requiredColumns = const [],
     this.hiddenColumns = const [],
+    this.maskedColumns = const [],
     this.descriptions = const {},
   });
 
@@ -93,12 +94,18 @@ class FormSpec {
   final List<String> requiredColumns;
   final List<String> hiddenColumns;
 
+  /// Masking is presentation only. Encryption is a separate database-wide
+  /// column setting, never a flag claiming plaintext has been encrypted.
+  final List<String> maskedColumns;
+
   /// The note under a field, keyed by field id.
   final Map<String, String> descriptions;
 
   bool isRequired(String fieldId) => requiredColumns.contains(fieldId);
 
   bool isHidden(String fieldId) => hiddenColumns.contains(fieldId);
+
+  bool isMasked(String fieldId) => maskedColumns.contains(fieldId);
 
   String descriptionOf(String fieldId) => descriptions[fieldId] ?? '';
 
@@ -108,6 +115,7 @@ class FormSpec {
     List<FormSection>? sections,
     List<String>? requiredColumns,
     List<String>? hiddenColumns,
+    List<String>? maskedColumns,
     Map<String, String>? descriptions,
   }) =>
       FormSpec(
@@ -116,6 +124,7 @@ class FormSpec {
         sections: sections ?? this.sections,
         requiredColumns: requiredColumns ?? this.requiredColumns,
         hiddenColumns: hiddenColumns ?? this.hiddenColumns,
+        maskedColumns: maskedColumns ?? this.maskedColumns,
         descriptions: descriptions ?? this.descriptions,
       );
 
@@ -135,6 +144,14 @@ class FormSpec {
     return copyWith(hiddenColumns: next);
   }
 
+  FormSpec withMasked(String fieldId, bool masked) {
+    final next = [...maskedColumns]..removeWhere((id) => id == fieldId);
+    if (masked) {
+      next.add(fieldId);
+    }
+    return copyWith(maskedColumns: next);
+  }
+
   Map<String, dynamic> toJson() => {
         if (heading.isNotEmpty) 'heading': heading,
         if (description.isNotEmpty) 'description': description,
@@ -142,6 +159,7 @@ class FormSpec {
           'sections': [for (final section in sections) section.toJson()],
         if (requiredColumns.isNotEmpty) 'required': requiredColumns,
         if (hiddenColumns.isNotEmpty) 'hidden': hiddenColumns,
+        if (maskedColumns.isNotEmpty) 'masked': maskedColumns,
         if (descriptions.isNotEmpty) 'notes': descriptions,
       };
 
@@ -161,6 +179,7 @@ class FormSpec {
             : const [],
         requiredColumns: _strings(values['required']),
         hiddenColumns: _strings(values['hidden']),
+        maskedColumns: _strings(values['masked']),
         descriptions: values['notes'] is Map
             ? Map<String, String>.unmodifiable({
                 for (final entry in (values['notes'] as Map).entries)
@@ -182,6 +201,7 @@ class FormSpec {
       listEquals(other.sections, sections) &&
       listEquals(other.requiredColumns, requiredColumns) &&
       listEquals(other.hiddenColumns, hiddenColumns) &&
+      listEquals(other.maskedColumns, maskedColumns) &&
       mapEquals(other.descriptions, descriptions);
 
   @override
@@ -191,6 +211,7 @@ class FormSpec {
         Object.hashAll(sections),
         Object.hashAll(requiredColumns),
         Object.hashAll(hiddenColumns),
+        Object.hashAll(maskedColumns),
         Object.hashAll(descriptions.entries.map((e) => '${e.key}=${e.value}')),
       );
 }
@@ -210,6 +231,12 @@ enum FormControl {
   files,
   place,
   relation,
+  time,
+  checklist,
+  progress,
+  counter,
+  button,
+  reminder,
 }
 
 /// The control a column deserves on a form.
@@ -217,9 +244,21 @@ enum FormControl {
 /// A form is where a row is made rather than read, so this asks a different
 /// question from the one the cards ask: not "what does this value look like"
 /// but "how would somebody type it".
-FormControl formControlOf(FieldPB field, {bool isLocation = false}) {
-  if (isLocation) {
-    return FormControl.place;
+FormControl formControlOf(
+  FieldPB field, {
+  bool isLocation = false,
+  String? styleKind,
+}) {
+  if (field.fieldType == FieldType.RichText) {
+    if (isLocation) return FormControl.place;
+    final styled = switch (styleKind) {
+      'progress' => FormControl.progress,
+      'counter' => FormControl.counter,
+      'button' => FormControl.button,
+      'reminder' => FormControl.reminder,
+      _ => null,
+    };
+    if (styled != null) return styled;
   }
   final heading = field.name.toLowerCase();
   switch (field.fieldType) {
@@ -242,7 +281,9 @@ FormControl formControlOf(FieldPB field, {bool isLocation = false}) {
     case FieldType.Relation:
       return FormControl.relation;
     case FieldType.Checklist:
-      return FormControl.paragraph;
+      return FormControl.checklist;
+    case FieldType.Time:
+      return FormControl.time;
     default:
       break;
   }
@@ -266,18 +307,92 @@ bool isFormFillable(FieldPB field) =>
     const [
       FieldType.CreatedTime,
       FieldType.LastEditedTime,
+      FieldType.Summary,
+      FieldType.Translate,
     ].contains(field.fieldType) ==
     false;
 
+/// Types whose simple text editor writes directly. Structured inputs go
+/// through FormFieldValue and the typed backend methods instead.
+bool isFormInlineEditable(FieldPB field) => const [
+      FieldType.RichText,
+      FieldType.Number,
+      FieldType.Checkbox,
+      FieldType.URL,
+      FieldType.SingleSelect,
+      FieldType.MultiSelect,
+    ].contains(field.fieldType);
+
+/// Custom fields remain real table columns, shared by every entry and view.
+enum FormCustomFieldKind {
+  text,
+  hidden,
+  encrypted,
+  number,
+  link,
+  boolean,
+  location,
+  date,
+  time,
+  files,
+  checklist,
+  button,
+  counter,
+  progress;
+
+  FieldType get fieldType => switch (this) {
+        number => FieldType.Number,
+        link => FieldType.URL,
+        boolean => FieldType.Checkbox,
+        date => FieldType.DateTime,
+        time => FieldType.Time,
+        files => FieldType.Media,
+        checklist => FieldType.Checklist,
+        _ => FieldType.RichText,
+      };
+
+  bool get masked => this == hidden || this == encrypted;
+}
+
+@immutable
+class FormCustomField {
+  const FormCustomField({
+    required this.name,
+    this.kind = FormCustomFieldKind.text,
+    this.required = false,
+    this.description = '',
+  });
+
+  final String name;
+  final FormCustomFieldKind kind;
+  final bool required;
+  final String description;
+}
+
 /// Which fields a form asks for, in order.
-List<FieldPB> formFieldsOf(List<FieldPB> fields, FormSpec spec) => fields
-    .where((field) => isFormFillable(field) && !spec.isHidden(field.id))
-    .toList(growable: false);
+List<FieldPB> formFieldsOf(
+  List<FieldPB> fields,
+  FormSpec spec, {
+  bool includeReadOnly = false,
+}) =>
+    fields
+        .where(
+          (field) =>
+              (includeReadOnly || isFormFillable(field)) &&
+              !spec.isHidden(field.id),
+        )
+        .toList(growable: false);
 
 /// The sections a form is laid out in, filling in the one implicit section
 /// when the author has not made any.
-List<FormSection> formSectionsOf(List<FieldPB> fields, FormSpec spec) {
-  final available = formFieldsOf(fields, spec).map((field) => field.id).toSet();
+List<FormSection> formSectionsOf(
+  List<FieldPB> fields,
+  FormSpec spec, {
+  bool includeReadOnly = false,
+}) {
+  final available = formFieldsOf(fields, spec, includeReadOnly: includeReadOnly)
+      .map((field) => field.id)
+      .toSet();
   if (spec.sections.isEmpty) {
     return [
       FormSection(id: 'all', fieldIds: available.toList(growable: false)),
@@ -286,8 +401,9 @@ List<FormSection> formSectionsOf(List<FieldPB> fields, FormSpec spec) {
   final placed = <String>{};
   final sections = <FormSection>[];
   for (final section in spec.sections) {
-    final ids = section.fieldIds.where(available.contains).toList();
-    placed.addAll(ids);
+    final ids = section.fieldIds
+        .where((id) => available.contains(id) && placed.add(id))
+        .toList();
     sections.add(section.copyWith(fieldIds: ids));
   }
   // A column added to the table after the form was laid out still has to be
@@ -307,11 +423,15 @@ List<FormSection> formSectionsOf(List<FieldPB> fields, FormSpec spec) {
 /// The fields that were asked for and left blank.
 List<String> missingRequiredFields(
   FormSpec spec,
-  Map<String, String> answers,
-) =>
+  Map<String, String> answers, {
+  Iterable<String>? fieldIds,
+}) =>
     [
       for (final fieldId in spec.requiredColumns)
-        if ((answers[fieldId] ?? '').trim().isEmpty) fieldId,
+        if (!spec.isHidden(fieldId) &&
+            (fieldIds == null || fieldIds.contains(fieldId)) &&
+            (answers[fieldId] ?? '').trim().isEmpty)
+          fieldId,
     ];
 
 const _peopleWords = [

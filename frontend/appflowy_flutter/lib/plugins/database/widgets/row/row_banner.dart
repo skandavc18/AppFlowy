@@ -47,19 +47,33 @@ const rowCoverHeight = 250.0;
 /// comments all answer to this one measure.
 const rowDetailContentInset = 96.0;
 
+/// Coverless popups still read like a page, not a form against the top edge.
+const rowPopupTopSpace = 72.0;
+
 /// How far the cover sits inside the popup, and how round its corners are.
 const _coverInset = 10.0;
 const _coverRadius = 14.0;
 
-/// The cover a row wears when nobody has chosen one for it.
-///
-/// A row page with no cover reads as unfinished beside one that has it, so
-/// every row is given a gradient of its own instead. Nothing is written down —
-/// choosing a cover still replaces this, and removing one comes back to it.
+/// The cover a row wears before a cover choice has been persisted.
 RowCoverPB defaultRowCover(String rowId) => RowCoverPB(
       data: FlowyGradientColor.forSeed(rowId).id,
       coverType: CoverTypePB.GradientCover,
     );
+
+/// An absent cover is the new-row default; a present, empty cover is the
+/// backend's persisted RemoveCover value. Never replace that choice with a
+/// generated cover, including after the row is reopened.
+RowCoverPB? effectiveRowCover(RowMetaPB rowMeta) {
+  if (!rowMeta.hasCover()) {
+    return defaultRowCover(rowMeta.id);
+  }
+  return rowMeta.cover.data.isEmpty ? null : rowMeta.cover;
+}
+
+/// The scroll surface must position its actions against the rendered cover,
+/// not reserve a cover-sized gap after removal.
+double rowCoverHeightFor(RowMetaPB rowMeta) =>
+    effectiveRowCover(rowMeta) == null ? 0 : rowCoverHeight;
 
 const _iconHeight = 60.0;
 const _toolbarHeight = 40.0;
@@ -72,6 +86,8 @@ class RowBanner extends StatefulWidget {
     required this.cellBuilder,
     this.allowOpenAsFullPage = true,
     this.userProfile,
+    this.spacious = false,
+    this.contentInset = rowDetailContentInset,
   });
 
   final DatabaseController databaseController;
@@ -79,6 +95,8 @@ class RowBanner extends StatefulWidget {
   final EditableCellBuilder cellBuilder;
   final bool allowOpenAsFullPage;
   final UserProfilePB? userProfile;
+  final bool spacious;
+  final double contentInset;
 
   @override
   State<RowBanner> createState() => _RowBannerState();
@@ -106,99 +124,120 @@ class _RowBannerState extends State<RowBanner> {
       )..add(const RowBannerEvent.initial()),
       child: BlocBuilder<RowBannerBloc, RowBannerState>(
         builder: (context, state) {
-          final chosen = state.rowMeta.cover.data.isNotEmpty;
-          final cover =
-              chosen ? state.rowMeta.cover : defaultRowCover(state.rowMeta.id);
-          final hasIcon = state.rowMeta.icon.isNotEmpty;
-
           return Column(
             children: [
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  return Stack(
-                    children: [
-                      SizedBox(
-                        height: rowCoverHeight + _toolbarHeight,
-                        width: constraints.maxWidth,
-                        child: RowHeaderToolbar(
-                          offset: rowDetailContentInset,
-                          hasIcon: hasIcon,
-                          hasCover: chosen,
-                          onIconChanged: (icon) {
-                            if (icon != null) {
-                              context
-                                  .read<RowBannerBloc>()
-                                  .add(RowBannerEvent.setIcon(icon));
-                            }
-                          },
-                          onCoverChanged: (cover) {
-                            if (cover != null) {
-                              context
-                                  .read<RowBannerBloc>()
-                                  .add(RowBannerEvent.setCover(cover));
-                            }
-                          },
-                        ),
-                      ),
-                      RowCover(
-                        rowId: widget.rowController.rowId,
-                        cover: cover,
-                        userProfile: widget.userProfile,
-                        onCoverChanged: (type, details, uploadType) {
-                          if (details != null) {
-                            context.read<RowBannerBloc>().add(
-                                  RowBannerEvent.setCover(
-                                    RowCoverPB(
-                                      data: details,
-                                      uploadType: uploadType,
-                                      coverType: type.into(),
-                                    ),
-                                  ),
-                                );
-                          } else {
-                            context
-                                .read<RowBannerBloc>()
-                                .add(const RowBannerEvent.removeCover());
-                          }
-                        },
-                        isLocalMode: isLocalMode,
-                      ),
-                      if (hasIcon)
-                        Positioned(
-                          left: rowDetailContentInset,
-                          bottom: _toolbarHeight - _iconHeight / 2,
-                          child: RowIcon(
-                            ///TODO: avoid hardcoding for [FlowyIconType]
-                            icon: EmojiIconData(
-                              FlowyIconType.emoji,
-                              state.rowMeta.icon,
-                            ),
-                            onIconChanged: (icon) {
-                              if (icon == null || icon.isEmpty) {
-                                context
-                                    .read<RowBannerBloc>()
-                                    .add(const RowBannerEvent.setIcon(""));
-                              } else {
-                                context
-                                    .read<RowBannerBloc>()
-                                    .add(RowBannerEvent.setIcon(icon));
-                              }
-                            },
-                          ),
-                        ),
-                    ],
-                  );
+              RowBannerHeader(
+                rowMeta: state.rowMeta,
+                userProfile: widget.userProfile,
+                isLocalMode: isLocalMode,
+                spacious: widget.spacious,
+                contentInset: widget.contentInset,
+                onIconChanged: (icon) => context
+                    .read<RowBannerBloc>()
+                    .add(RowBannerEvent.setIcon(icon ?? '')),
+                onCoverChanged: (cover) {
+                  context.read<RowBannerBloc>().add(
+                        cover == null
+                            ? const RowBannerEvent.removeCover()
+                            : RowBannerEvent.setCover(cover),
+                      );
                 },
               ),
-              const VSpace(8),
+              VSpace(widget.spacious ? 16 : 8),
               _BannerTitle(
                 cellBuilder: widget.cellBuilder,
                 rowController: widget.rowController,
+                spacious: widget.spacious,
+                contentInset: widget.contentInset,
               ),
             ],
           );
         },
       ),
+    );
+  }
+}
+
+/// The cover, icon and decoration controls, independent of the row's cells.
+class RowBannerHeader extends StatelessWidget {
+  const RowBannerHeader({
+    super.key,
+    required this.rowMeta,
+    required this.onIconChanged,
+    required this.onCoverChanged,
+    this.userProfile,
+    this.isLocalMode = true,
+    this.spacious = false,
+    this.contentInset = rowDetailContentInset,
+  });
+
+  final RowMetaPB rowMeta;
+  final ValueChanged<String?> onIconChanged;
+  final ValueChanged<RowCoverPB?> onCoverChanged;
+  final UserProfilePB? userProfile;
+  final bool isLocalMode;
+  final bool spacious;
+  final double contentInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = effectiveRowCover(rowMeta);
+    final hasCover = cover != null;
+    final hasIcon = rowMeta.icon.isNotEmpty;
+    final decorationHeight = hasCover
+        ? rowCoverHeight
+        : (spacious ? rowPopupTopSpace : 0.0) +
+            (hasIcon ? _iconHeight + 16 : 0.0);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          children: [
+            SizedBox(
+              height: decorationHeight + _toolbarHeight,
+              width: constraints.maxWidth,
+              child: RowHeaderToolbar(
+                offset: contentInset,
+                hasIcon: hasIcon,
+                hasCover: hasCover,
+                quiet: spacious,
+                onIconChanged: onIconChanged,
+                onCoverChanged: onCoverChanged,
+              ),
+            ),
+            if (cover != null)
+              RowCover(
+                rowId: rowMeta.id,
+                cover: cover,
+                userProfile: userProfile,
+                onCoverChanged: (type, details, uploadType) {
+                  onCoverChanged(
+                    details == null
+                        ? null
+                        : RowCoverPB(
+                            data: details,
+                            uploadType: uploadType,
+                            coverType: type.into(),
+                          ),
+                  );
+                },
+                isLocalMode: isLocalMode,
+              ),
+            if (hasIcon)
+              Positioned(
+                left: contentInset,
+                bottom: hasCover
+                    ? _toolbarHeight - _iconHeight / 2
+                    : _toolbarHeight,
+                child: RowIcon(
+                  ///TODO: avoid hardcoding for [FlowyIconType]
+                  icon: EmojiIconData(FlowyIconType.emoji, rowMeta.icon),
+                  onIconChanged: onIconChanged,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -438,11 +477,13 @@ class RowHeaderToolbar extends StatefulWidget {
     required this.hasCover,
     required this.onIconChanged,
     required this.onCoverChanged,
+    this.quiet = false,
   });
 
   final double offset;
   final bool hasIcon;
   final bool hasCover;
+  final bool quiet;
 
   /// Returns null if the icon is removed.
   ///
@@ -468,6 +509,7 @@ class _RowHeaderToolbarState extends State<RowHeaderToolbar> {
     if (!isDesktop) {
       return const SizedBox.shrink();
     }
+    final muted = widget.quiet ? Theme.of(context).hintColor : null;
 
     return MouseRegion(
       opaque: false,
@@ -480,7 +522,7 @@ class _RowHeaderToolbarState extends State<RowHeaderToolbar> {
         child: SizedBox(
           height: 28,
           child: Visibility(
-            visible: !isHidden || isPopoverOpen,
+            visible: !widget.hasCover || !isHidden || isPopoverOpen,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -489,9 +531,10 @@ class _RowHeaderToolbarState extends State<RowHeaderToolbar> {
                     resetHoverOnRebuild: false,
                     useIntrinsicWidth: true,
                     leftIconSize: const Size.square(18),
-                    leftIcon: const FlowySvg(FlowySvgs.add_cover_s),
+                    leftIcon: FlowySvg(FlowySvgs.add_cover_s, color: muted),
                     text: FlowyText.small(
                       LocaleKeys.document_plugins_cover_addCover.tr(),
+                      color: muted,
                     ),
                     onTap: () => widget.onCoverChanged(
                       RowCoverPB(
@@ -525,11 +568,12 @@ class _RowHeaderToolbarState extends State<RowHeaderToolbar> {
                     child: FlowyButton(
                       useIntrinsicWidth: true,
                       leftIconSize: const Size.square(18),
-                      leftIcon: const FlowySvg(FlowySvgs.add_icon_s),
+                      leftIcon: FlowySvg(FlowySvgs.add_icon_s, color: muted),
                       text: FlowyText.small(
                         widget.hasIcon
                             ? LocaleKeys.document_plugins_cover_removeIcon.tr()
                             : LocaleKeys.document_plugins_cover_addIcon.tr(),
+                        color: muted,
                       ),
                       onTap: () async {
                         if (!isDesktop) {
@@ -600,10 +644,14 @@ class _BannerTitle extends StatelessWidget {
   const _BannerTitle({
     required this.cellBuilder,
     required this.rowController,
+    required this.spacious,
+    required this.contentInset,
   });
 
   final EditableCellBuilder cellBuilder;
   final RowController rowController;
+  final bool spacious;
+  final double contentInset;
 
   @override
   Widget build(BuildContext context) {
@@ -624,13 +672,18 @@ class _BannerTitle extends StatelessWidget {
                   fieldId: primaryField.id,
                   rowId: rowController.rowId,
                 ),
-                skinMap: EditableCellSkinMap(textSkin: _TitleSkin()),
+                skinMap: EditableCellSkinMap(
+                  textSkin: _TitleSkin(spacious: spacious),
+                ),
               ),
             ),
         ];
 
         return Padding(
-          padding: const EdgeInsets.only(left: rowDetailContentInset),
+          padding: EdgeInsets.only(
+            left: contentInset,
+            right: spacious ? contentInset : 0,
+          ),
           child: Row(children: children),
         );
       },
@@ -639,6 +692,10 @@ class _BannerTitle extends StatelessWidget {
 }
 
 class _TitleSkin extends IEditableTextCellSkin {
+  _TitleSkin({required this.spacious});
+
+  final bool spacious;
+
   @override
   Widget build(
     BuildContext context,
@@ -648,36 +705,70 @@ class _TitleSkin extends IEditableTextCellSkin {
     FocusNode focusNode,
     TextEditingController textEditingController,
   ) {
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.escape): () =>
-            focusNode.unfocus(),
-        const SimpleActivator(LogicalKeyboardKey.enter): () =>
-            focusNode.unfocus(),
+    return RowBannerTitleField(
+      controller: textEditingController,
+      focusNode: focusNode,
+      spacious: spacious,
+      onEditingComplete: () {
+        bloc.add(TextCellEvent.updateText(textEditingController.text));
       },
-      child: TextField(
-        controller: textEditingController,
-        focusNode: focusNode,
-        autofocus: true,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 28),
-        maxLines: null,
-        decoration: InputDecoration(
-          contentPadding: EdgeInsets.zero,
-          border: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          errorBorder: InputBorder.none,
-          disabledBorder: InputBorder.none,
-          hintText: LocaleKeys.grid_row_titlePlaceholder.tr(),
-          isDense: true,
-          isCollapsed: true,
-        ),
-        onEditingComplete: () {
-          bloc.add(TextCellEvent.updateText(textEditingController.text));
-        },
-      ),
     );
   }
+}
+
+/// The editable page title, with a reading-first presentation in a popup.
+/// The host owns the field controller and persistence, just as for any cell.
+class RowBannerTitleField extends StatelessWidget {
+  const RowBannerTitleField({
+    super.key,
+    required this.controller,
+    required this.focusNode,
+    required this.onEditingComplete,
+    this.spacious = false,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final VoidCallback onEditingComplete;
+  final bool spacious;
+
+  @override
+  Widget build(BuildContext context) => CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.escape): () =>
+              focusNode.unfocus(),
+          const SimpleActivator(LogicalKeyboardKey.enter): () =>
+              focusNode.unfocus(),
+        },
+        child: TextField(
+          key: const ValueKey('row-banner-title'),
+          controller: controller,
+          focusNode: focusNode,
+          autofocus: !spacious,
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                fontSize: spacious ? 40 : 28,
+                height: spacious ? 1.18 : null,
+                fontWeight: spacious ? FontWeight.w700 : null,
+                fontVariations: spacious
+                    ? flowyFontVariationsForWeight(FontWeight.w700)
+                    : null,
+                letterSpacing: spacious ? -0.8 : null,
+              ),
+          maxLines: null,
+          decoration: InputDecoration(
+            contentPadding: EdgeInsets.zero,
+            border: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            errorBorder: InputBorder.none,
+            disabledBorder: InputBorder.none,
+            hintText: LocaleKeys.grid_row_titlePlaceholder.tr(),
+            isDense: true,
+            isCollapsed: true,
+          ),
+          onEditingComplete: onEditingComplete,
+        ),
+      );
 }
 
 class RowActionButton extends StatelessWidget {

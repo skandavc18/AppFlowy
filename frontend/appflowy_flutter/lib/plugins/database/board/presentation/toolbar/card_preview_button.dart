@@ -12,30 +12,37 @@ import 'package:flutter/material.dart';
 
 /// Chooses what the cards on this board show above their titles.
 class CardPreviewButton extends StatelessWidget {
-  const CardPreviewButton({super.key, required this.view});
+  const CardPreviewButton({super.key, required this.view, this.registry});
 
   final ViewPB view;
+  final CardPreviewRegistry? registry;
 
   @override
   Widget build(BuildContext context) {
-    final registry = CardPreviewRegistry.instance;
+    final registry = this.registry ?? CardPreviewRegistry.instance;
     return ValueListenableBuilder<CardPreviewMode>(
       valueListenable: registry.notifierFor(view),
       builder: (context, mode, _) => Builder(
-        builder: (buttonContext) => FlowyTooltip(
-          message: LocaleKeys.cardPreview_tooltip.tr(),
-          child: FlowyIconButton(
-            width: 24,
-            icon: Icon(
-              _iconOf(mode),
-              size: 16,
-              color: mode == CardPreviewMode.pageContent
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).iconTheme.color,
+        builder: (buttonContext) => Semantics(
+          label: LocaleKeys.cardPreview_tooltip.tr(),
+          value: _labelOf(mode),
+          button: true,
+          child: FlowyTooltip(
+            message: LocaleKeys.cardPreview_tooltip.tr(),
+            child: FlowyIconButton(
+              width: 24,
+              icon: Icon(
+                _iconOf(mode),
+                size: 16,
+                color: mode == CardPreviewMode.pageAndTitle ||
+                        mode == CardPreviewMode.pageContent
+                    ? Theme.of(context).colorScheme.primary
+                    : Theme.of(context).iconTheme.color,
+              ),
+              hoverColor: AFThemeExtension.of(context).greyHover,
+              radius: Corners.s4Border,
+              onPressed: () => unawaited(_choose(buttonContext, registry)),
             ),
-            hoverColor: AFThemeExtension.of(context).greyHover,
-            radius: Corners.s4Border,
-            onPressed: () => unawaited(_choose(buttonContext, registry, mode)),
           ),
         ),
       ),
@@ -45,8 +52,8 @@ class CardPreviewButton extends StatelessWidget {
   Future<void> _choose(
     BuildContext context,
     CardPreviewRegistry registry,
-    CardPreviewMode mode,
   ) async {
+    final mode = registry.modeFor(view);
     await showAppMenuForWidget<void>(
       context: context,
       entries: [
@@ -54,7 +61,12 @@ class CardPreviewButton extends StatelessWidget {
         for (final choice in CardPreviewMode.values)
           AppMenuItem(
             label: _labelOf(choice),
-            icon: _iconOf(choice),
+            iconWidget: Semantics(
+              button: true,
+              selected: choice == mode,
+              inMutuallyExclusiveGroup: true,
+              child: Icon(_iconOf(choice)),
+            ),
             selected: choice == mode,
             onSelected: () => unawaited(registry.set(view, choice)),
           ),
@@ -63,14 +75,21 @@ class CardPreviewButton extends StatelessWidget {
   }
 
   static IconData _iconOf(CardPreviewMode mode) => switch (mode) {
+        CardPreviewMode.pageAndTitle => Icons.sticky_note_2_rounded,
         CardPreviewMode.cover => Icons.image_rounded,
-        CardPreviewMode.pageContent => Icons.notes_rounded,
-        CardPreviewMode.none => Icons.crop_din_rounded,
+        CardPreviewMode.pageContent => Icons.article_rounded,
+        CardPreviewMode.none => Icons.notes_rounded,
+        CardPreviewMode.portrait => Icons.crop_portrait_rounded,
+        CardPreviewMode.titleAndProperties => Icons.view_list_rounded,
       };
 
   static String _labelOf(CardPreviewMode mode) => switch (mode) {
-        CardPreviewMode.cover => LocaleKeys.cardPreview_cover.tr(),
-        CardPreviewMode.pageContent => LocaleKeys.cardPreview_pageContent.tr(),
-        CardPreviewMode.none => LocaleKeys.cardPreview_none.tr(),
+        CardPreviewMode.pageAndTitle => LocaleKeys.gallery_facePage.tr(),
+        CardPreviewMode.cover => LocaleKeys.gallery_faceCover.tr(),
+        CardPreviewMode.pageContent => LocaleKeys.gallery_faceContent.tr(),
+        CardPreviewMode.none => LocaleKeys.gallery_faceNone.tr(),
+        CardPreviewMode.portrait => LocaleKeys.gallery_facePortrait.tr(),
+        CardPreviewMode.titleAndProperties =>
+          LocaleKeys.cardPreview_titleAndProperties.tr(),
       };
 }

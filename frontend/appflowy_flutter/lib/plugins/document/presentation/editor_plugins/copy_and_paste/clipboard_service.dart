@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:appflowy_backend/log.dart';
 import 'package:flutter/foundation.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 
@@ -28,6 +27,7 @@ class ClipboardServiceData {
     this.image,
     this.inAppJson,
     this.tableJson,
+    this.files = const [],
   });
 
   /// The [plainText] is the plain text string.
@@ -58,9 +58,18 @@ class ClipboardServiceData {
   /// It only works for the table nodes when coping a row or a column.
   /// Don't use it for another scenario.
   final String? tableJson;
+
+  /// Native file URIs in clipboard item order, never inferred from text or URLs.
+  final List<Uri> files;
 }
 
 class ClipboardService {
+  ClipboardService({
+    Future<ClipboardReader?> Function() readClipboard = _readSystemClipboard,
+  }) : _readClipboard = readClipboard;
+
+  final Future<ClipboardReader?> Function() _readClipboard;
+
   static ClipboardServiceData? _mockData;
 
   @visibleForTesting
@@ -117,32 +126,33 @@ class ClipboardService {
       return _mockData!;
     }
 
-    final reader = await SystemClipboard.instance?.read();
+    ClipboardReader? reader;
+    try {
+      reader = await _readClipboard();
+    } catch (_) {
+      return const ClipboardServiceData();
+    }
 
     if (reader == null) {
       return const ClipboardServiceData();
     }
 
+    final files = <Uri>[];
     for (final item in reader.items) {
-      final availableFormats = await item.rawReader!.getAvailableFormats();
-      Log.info('availableFormats: $availableFormats');
+      final uri = await item.readValueSafely(Formats.fileUri);
+      if (uri != null && _isUsableFileUri(uri)) {
+        files.add(uri);
+      }
     }
 
-    final plainText = await reader.readValue(Formats.plainText);
-    final html = await reader.readValue(Formats.htmlText);
-    final inAppJson = await reader.readValue(inAppJsonFormat);
-    final tableJson = await reader.readValue(tableJsonFormat);
-    final uri = await reader.readValue(Formats.uri);
-    (String, Uint8List?)? image;
-    if (reader.canProvide(Formats.png)) {
-      image = ('png', await reader.readFile(Formats.png));
-    } else if (reader.canProvide(Formats.jpeg)) {
-      image = ('jpeg', await reader.readFile(Formats.jpeg));
-    } else if (reader.canProvide(Formats.gif)) {
-      image = ('gif', await reader.readFile(Formats.gif));
-    } else if (reader.canProvide(Formats.webp)) {
-      image = ('webp', await reader.readFile(Formats.webp));
-    }
+    final plainText = await _readFirstValue(reader, Formats.plainText);
+    final html = await _readFirstValue(reader, Formats.htmlText);
+    final inAppJson = await _readFirstValue(reader, inAppJsonFormat);
+    final tableJson = await _readFirstValue(reader, tableJsonFormat);
+    final uri = await _readFirstValue(reader, Formats.uri);
+    // File URIs can advertise synthesized raster formats. Avoid reading the
+    // original file a second time (or converting it) when its URI is usable.
+    final image = files.isEmpty ? await _readImage(reader) : null;
 
     return ClipboardServiceData(
       plainText: plainText ?? uri?.uri.toString(),
@@ -150,12 +160,76 @@ class ClipboardService {
       image: image,
       inAppJson: inAppJson,
       tableJson: tableJson,
+      files: List<Uri>.unmodifiable(files),
     );
   }
 }
 
-extension on DataReader {
-  Future<Uint8List?>? readFile(FileFormat format) {
+Future<ClipboardReader?> _readSystemClipboard() async =>
+    SystemClipboard.instance?.read();
+
+bool _isUsableFileUri(Uri uri) {
+  if (!uri.isScheme('file') || !uri.hasAbsolutePath) {
+    return false;
+  }
+  try {
+    final path = uri.toFilePath(
+      windows: defaultTargetPlatform == TargetPlatform.windows,
+    );
+    return path.isNotEmpty && !path.contains('\u0000');
+  } catch (_) {
+    return false;
+  }
+}
+
+Future<T?> _readFirstValue<T extends Object>(
+  ClipboardReader reader,
+  ValueFormat<T> format,
+) async {
+  for (final item in reader.items) {
+    final value = await item.readValueSafely(format);
+    if (value != null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+Future<(String, Uint8List?)?> _readImage(ClipboardReader reader) async {
+  for (final (extension, format) in [
+    ('png', Formats.png),
+    ('jpeg', Formats.jpeg),
+    ('gif', Formats.gif),
+    ('webp', Formats.webp),
+  ]) {
+    for (final item in reader.items) {
+      try {
+        if (item.canProvide(format)) {
+          final bytes = await item.readFile(format);
+          if (bytes != null && bytes.isNotEmpty) {
+            return (extension, bytes);
+          }
+        }
+      } catch (_) {
+        // An advertised representation may be unavailable. Try the next one
+        // without logging clipboard contents or platform exception details.
+      }
+    }
+  }
+  return null;
+}
+
+extension on ClipboardDataReader {
+  Future<T?> readValueSafely<T extends Object>(ValueFormat<T> format) async {
+    try {
+      return canProvide(format) ? await readValue(format) : null;
+    } catch (_) {
+      // Optional or malformed representations must not block other formats.
+      return null;
+    }
+  }
+
+  Future<Uint8List?> readFile(FileFormat format) {
     final c = Completer<Uint8List?>();
     final progress = getFile(
       format,
@@ -170,6 +244,9 @@ extension on DataReader {
       onError: (e) {
         c.completeError(e);
       },
+      // Still allow native bitmap conversion (e.g. Windows DIB to PNG), but
+      // never retry a missing or malformed URI through filesystem synthesis.
+      synthesizeFilesFromURIs: false,
     );
     if (progress == null) {
       c.complete(null);

@@ -3,6 +3,7 @@ import 'package:appflowy/shared/charts/chart_style.dart';
 import 'package:appflowy/workspace/application/charts/chart_data.dart';
 import 'package:appflowy/workspace/application/charts/chart_number.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -18,6 +19,7 @@ class AppChart extends StatefulWidget {
     required this.data,
     required this.spec,
     required this.palette,
+    this.interactionSpec,
     this.onSelected,
     this.animate = true,
     this.allowZoom = true,
@@ -26,6 +28,11 @@ class AppChart extends StatefulWidget {
   final ChartData data;
   final ChartSpec spec;
   final ChartPalette palette;
+
+  /// The resolved column identities behind [spec]'s display labels. A host
+  /// supplies the available value columns so a rename preserves interactions,
+  /// while removing or replacing a plotted column cannot reuse hidden indices.
+  final ChartSpec? interactionSpec;
 
   /// What colour each series is drawn in.
   ChartColors get colors => ChartColors.of(palette, spec);
@@ -84,15 +91,36 @@ class _AppChartState extends State<AppChart> with TickerProviderStateMixin {
   @override
   void didUpdateWidget(covariant AppChart oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.data != widget.data ||
-        oldWidget.spec.type != widget.spec.type) {
+    final before = oldWidget.interactionSpec ?? oldWidget.spec;
+    final after = widget.interactionSpec ?? widget.spec;
+    // Fresh rows may add, remove or reorder buckets without changing what the
+    // reader asked to plot. Reset for a new reading, not for each live reload.
+    final resetInteraction = before.type != after.type ||
+        before.categoryColumn != after.categoryColumn ||
+        before.xColumn != after.xColumn ||
+        before.sizeColumn != after.sizeColumn ||
+        before.aggregate != after.aggregate ||
+        before.sort != after.sort ||
+        before.categoryLimit != after.categoryLimit ||
+        !listEquals(before.valueColumns, after.valueColumns) ||
+        oldWidget.data.measuresX != widget.data.measuresX ||
+        oldWidget.data.series.length != widget.data.series.length ||
+        (widget.interactionSpec == null &&
+            !listEquals(
+              oldWidget.data.series.map((series) => series.name).toList(),
+              widget.data.series.map((series) => series.name).toList(),
+            ));
+    if (oldWidget.data != widget.data || resetInteraction) {
       if (widget.animate) {
         _revealController.forward(from: 0);
       }
       _hover = null;
+      _pointer = null;
+      _hits.clear();
     }
-    if (oldWidget.data.series.length != widget.data.series.length) {
-      _hidden.removeWhere((index) => index >= widget.data.series.length);
+    if (resetInteraction) {
+      _hidden.clear();
+      _focusedSeries = null;
       _viewport = ChartViewport.identity;
     }
   }
@@ -163,7 +191,7 @@ class _AppChartState extends State<AppChart> with TickerProviderStateMixin {
                             spec: widget.spec,
                             palette: widget.palette,
                             colors: widget.colors,
-                            hidden: _hidden,
+                            hidden: Set<int>.of(_hidden),
                             highlight: _hover,
                             focusedSeries: _focusedSeries,
                             reveal: _reveal,
@@ -453,8 +481,7 @@ class ChartTooltip extends StatelessWidget {
         ),
       );
 
-  String _valueCaption() =>
-      spec.valueColumns.isEmpty ? 'Rows' : spec.valueColumns.first;
+  String _valueCaption() => spec.countsRows ? 'Rows' : spec.valueColumns.first;
 
   Widget _row({
     required Color? color,
@@ -557,8 +584,7 @@ class _ChartLegend extends StatelessWidget {
     );
   }
 
-  String _fallbackName() =>
-      spec.valueColumns.isEmpty ? 'Rows' : spec.valueColumns.first;
+  String _fallbackName() => spec.countsRows ? 'Rows' : spec.valueColumns.first;
 }
 
 class _LegendChip extends StatefulWidget {

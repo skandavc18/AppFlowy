@@ -121,6 +121,13 @@ class RowDetailBloc extends Bloc<RowDetailEvent, RowDetailState> {
     );
 
     rowController.addListener(
+      // initialize() reads authoritative metadata even when the caller's row
+      // cache is stale. Keep the popup's action offset in sync on reopen too.
+      onMetaChanged: () {
+        if (!isClosed) {
+          add(RowDetailEvent.didReceiveRowMeta(rowController.rowMeta));
+        }
+      },
       onRowChanged: (cellMap, reason) {
         if (isClosed) {
           return;

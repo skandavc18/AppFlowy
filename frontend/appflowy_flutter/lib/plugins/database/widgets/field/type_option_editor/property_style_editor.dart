@@ -18,13 +18,16 @@ class PropertyStyleEditor extends StatelessWidget {
     required this.viewId,
     required this.fieldId,
     required this.style,
+    this.onSettingsChanged,
   });
 
   final String viewId;
   final String fieldId;
   final PropertyStyle style;
+  final PropertyStyleSettingsWriter? onSettingsChanged;
 
   Future<void> _write(String key, Object? value) =>
+      onSettingsChanged?.call({key: value}) ??
       PropertyStyleRegistry.instance.setStyle(
         viewId: viewId,
         fieldId: fieldId,
@@ -41,7 +44,11 @@ class PropertyStyleEditor extends StatelessWidget {
     final answer = await showAFTextFieldDialog(
       context: context,
       title: title,
-      initialValue: current == null ? '' : _trim(current),
+      initialValue: current == null
+          ? ''
+          : style.kind == PropertyStyleKind.progress
+              ? formatProgressNumber(current)
+              : _trim(current),
     );
     if (answer == null) {
       return;
@@ -52,7 +59,9 @@ class PropertyStyleEditor extends StatelessWidget {
       return;
     }
     final parsed = double.tryParse(trimmed);
-    if (parsed != null) {
+    if (parsed != null &&
+        (style.kind != PropertyStyleKind.progress ||
+            isValidProgressNumber(parsed))) {
       await _write(key, parsed);
     }
   }
@@ -87,13 +96,38 @@ class PropertyStyleEditor extends StatelessWidget {
             _Row(
               icon: Icons.straighten_rounded,
               label: LocaleKeys.interactive_property_maximum.tr(),
-              value: _trim(style.maximum),
+              value: formatProgressNumber(style.maximum),
               onTap: () => unawaited(
                 _askForNumber(
                   context,
                   key: 'maximum',
                   title: LocaleKeys.interactive_property_maximum.tr(),
                   current: style.maximum,
+                ),
+              ),
+            ),
+          )
+          ..add(
+            _Row(
+              icon: style.showButtons
+                  ? Icons.check_box_rounded
+                  : Icons.check_box_outline_blank_rounded,
+              label: LocaleKeys.interactive_progress_showButtons.tr(),
+              onTap: () =>
+                  unawaited(_write('show_buttons', !style.showButtons)),
+            ),
+          )
+          ..add(
+            _Row(
+              icon: Icons.linear_scale_rounded,
+              label: LocaleKeys.interactive_property_step.tr(),
+              value: formatProgressNumber(style.progressStep),
+              onTap: () => unawaited(
+                _askForNumber(
+                  context,
+                  key: 'step',
+                  title: LocaleKeys.interactive_property_step.tr(),
+                  current: style.progressStep,
                 ),
               ),
             ),

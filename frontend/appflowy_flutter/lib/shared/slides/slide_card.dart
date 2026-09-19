@@ -4,6 +4,7 @@ import 'package:appflowy/shared/slides/slide_style.dart';
 import 'package:appflowy/shared/table_views/row_page_preview.dart';
 import 'package:appflowy/workspace/application/slides/slide_model.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// One row, drawn as something worth looking at.
@@ -368,6 +369,21 @@ class _SlideCardState extends State<SlideCard> {
     }
     flushPending();
 
+    return Listener(
+      // Let the scrollable (or an embedded map) consume a wheel first, but
+      // keep vertical input here even at its edge. Reaching the bottom of a
+      // property list must not unexpectedly turn the next wheel into a slide.
+      onPointerSignal: (event) {
+        if (event is PointerScrollEvent &&
+            event.scrollDelta.dy.abs() >= event.scrollDelta.dx.abs()) {
+          GestureBinding.instance.pointerSignalResolver.register(event, (_) {});
+        }
+      },
+      child: _propertyScroller(rows),
+    );
+  }
+
+  Widget _propertyScroller(List<Widget> rows) {
     return ScrollConfiguration(
       behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
       child: SingleChildScrollView(

@@ -27,19 +27,28 @@ class RowPageDocument {
 
   static DocumentDataPB? peek(String documentId) => _read[documentId];
 
-  static Future<DocumentDataPB?> read(String documentId) {
+  static Future<DocumentDataPB?> read(
+    String documentId, {
+    DocumentService? documentService,
+  }) {
     if (documentId.isEmpty) {
       return Future.value();
     }
     if (_read.containsKey(documentId)) {
       return Future.value(_read[documentId]);
     }
-    return _reading[documentId] ??= _load(documentId);
+    return _reading[documentId] ??= _load(
+      documentId,
+      documentService ?? DocumentService(),
+    );
   }
 
-  static Future<DocumentDataPB?> _load(String documentId) async {
+  static Future<DocumentDataPB?> _load(
+    String documentId,
+    DocumentService documentService,
+  ) async {
     try {
-      final result = await DocumentService().getDocument(
+      final result = await documentService.getDocument(
         documentId: documentId,
       );
       final data = result.fold<DocumentDataPB?>((data) => data, (_) => null);

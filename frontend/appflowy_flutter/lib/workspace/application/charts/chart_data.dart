@@ -12,30 +12,47 @@ const chartOtherCategory = 'Other';
 /// looking at. Numbers are read back out of them.
 @immutable
 class ChartTable {
-  const ChartTable({required this.columns, required this.rows});
+  const ChartTable({
+    required this.columns,
+    required this.rows,
+    this.columnIds = const [],
+  });
 
   /// Builds a table from a delimited export, taking the first row as names.
-  factory ChartTable.fromRows(List<List<String>> source) {
+  factory ChartTable.fromRows(
+    List<List<String>> source, {
+    List<String> columnIds = const [],
+    bool keepEmptyRows = false,
+  }) {
     if (source.isEmpty) {
       return ChartTable.empty;
     }
+    assert(columnIds.isEmpty || columnIds.length == source.first.length);
     final header = source.first.map((cell) => cell.trim()).toList();
-    final seen = <String, int>{};
+    final reserved = header.toSet();
+    final seen = <String>{};
     final columns = <String>[];
     for (var index = 0; index < header.length; index++) {
-      var name = header[index].isEmpty ? 'Column ${index + 1}' : header[index];
+      final base =
+          header[index].isEmpty ? 'Column ${index + 1}' : header[index];
+      var name = base;
       // Two columns with one name would make a spec ambiguous.
-      final count = seen.update(name, (value) => value + 1, ifAbsent: () => 1);
-      if (count > 1) {
-        name = '$name ($count)';
+      var count = 1;
+      while (seen.contains(name)) {
+        do {
+          count++;
+          name = '$base ($count)';
+        } while (reserved.contains(name));
       }
+      seen.add(name);
       columns.add(name);
     }
     return ChartTable(
       columns: columns,
+      columnIds: columnIds,
       rows: [
         for (final row in source.skip(1))
-          if (row.any((cell) => cell.trim().isNotEmpty)) row,
+          if (keepEmptyRows || row.any((cell) => cell.trim().isNotEmpty)) row,
       ],
     );
   }
@@ -45,9 +62,46 @@ class ChartTable {
   final List<String> columns;
   final List<List<String>> rows;
 
+  /// Field ids in the same order as [columns] and the cells in every row.
+  /// Name-only tables (for example a CSV) leave this empty.
+  final List<String> columnIds;
+
   bool get isEmpty => columns.isEmpty || rows.isEmpty;
 
-  int indexOf(String? column) => column == null ? -1 : columns.indexOf(column);
+  int indexOf(String? column) {
+    if (column == null) {
+      return -1;
+    }
+    final byId = columnIds.indexOf(column);
+    return byId >= 0 ? byId : columns.indexOf(column);
+  }
+
+  String keyOf(String column) {
+    final index = indexOf(column);
+    return index >= 0 && columnIds.isNotEmpty ? columnIds[index] : column;
+  }
+
+  String nameOf(String column) {
+    final index = indexOf(column);
+    return index >= 0 ? columns[index] : column;
+  }
+
+  List<String> get columnKeys => columnIds.isEmpty ? columns : columnIds;
+
+  /// Bind legacy names to stable ids without inventing a different selection.
+  ChartSpec resolveSpec(ChartSpec spec) => _mapColumns(spec, keyOf);
+
+  /// Painters and tooltips show names, never the ids stored in the settings.
+  ChartSpec displaySpec(ChartSpec spec) => _mapColumns(spec, nameOf);
+
+  ChartSpec _mapColumns(ChartSpec spec, String Function(String) map) =>
+      spec.copyWith(
+        categoryColumn:
+            spec.categoryColumn == null ? null : map(spec.categoryColumn!),
+        xColumn: spec.xColumn == null ? null : map(spec.xColumn!),
+        sizeColumn: spec.sizeColumn == null ? null : map(spec.sizeColumn!),
+        valueColumns: spec.valueColumns.map(map).toSet().toList(),
+      );
 
   Iterable<String> valuesOf(String column) sync* {
     final index = indexOf(column);
@@ -152,28 +206,41 @@ ChartData buildChartData(ChartTable table, ChartSpec spec) {
   if (spec.plotsAgainstValues) {
     return _buildMeasured(table, spec);
   }
+  // Scatter and bubble charts need two measured axes. They must not silently
+  // become a line chart when their X column is absent.
+  if (spec.type.drawsPoints) {
+    return ChartData.empty;
+  }
 
   final categoryIndex = table.indexOf(spec.categoryColumn);
+  if (spec.categoryColumn != null && categoryIndex < 0) {
+    return ChartData.empty;
+  }
   final valueIndices = <String, int>{
     for (final column in spec.valueColumns)
       if (table.indexOf(column) >= 0) column: table.indexOf(column),
   };
-  final counting = spec.countsRows || valueIndices.isEmpty;
+  final counting = spec.countsRows;
+  if (!counting && valueIndices.isEmpty) {
+    return ChartData.empty;
+  }
+  final aggregate = counting ? ChartAggregate.count : spec.aggregate;
 
   // Gather each category's raw numbers before collapsing them, so every
-  // aggregate reads the same set.
-  final order = <String>[];
-  final buckets = <String, Map<String, List<double>>>{};
-  for (final row in table.rows) {
-    final label = categoryIndex >= 0 && categoryIndex < row.length
-        ? _label(row[categoryIndex])
-        : _label(row.isEmpty ? '' : row.first);
-    final bucket = buckets.putIfAbsent(label, () {
-      order.add(label);
-      return <String, List<double>>{};
-    });
+  // aggregate reads the same set. A row's position, not its title, is its
+  // identity when "Every row" is selected.
+  final buckets = <Object, _ChartBucket>{};
+  for (var rowIndex = 0; rowIndex < table.rows.length; rowIndex++) {
+    final row = table.rows[rowIndex];
+    final raw = categoryIndex < 0
+        ? (row.isEmpty ? '' : row.first)
+        : categoryIndex < row.length
+            ? row[categoryIndex]
+            : '';
+    final Object key = categoryIndex < 0 ? rowIndex : raw.trim();
+    final bucket = buckets.putIfAbsent(key, () => _ChartBucket(_label(raw)));
     if (counting) {
-      bucket.putIfAbsent('', () => <double>[]).add(1);
+      bucket.values.putIfAbsent('', () => <double>[]).add(1);
       continue;
     }
     for (final entry in valueIndices.entries) {
@@ -182,38 +249,46 @@ ChartData buildChartData(ChartTable table, ChartSpec spec) {
         continue;
       }
       final number = parseChartNumber(row[index]);
-      if (number != null) {
-        bucket.putIfAbsent(entry.key, () => <double>[]).add(number);
+      if (number != null && number.isFinite) {
+        bucket.values.putIfAbsent(entry.key, () => <double>[]).add(number);
       }
     }
   }
 
   final seriesNames = counting ? const [''] : valueIndices.keys.toList();
-  final sorted = _sortCategories(order, buckets, seriesNames, spec);
-  final categories = _limit(sorted, buckets, seriesNames, spec);
+  final sorted = _sortCategories(
+    buckets.values.toList(),
+    seriesNames,
+    spec.sort,
+    aggregate,
+  );
+  final limited = _limit(sorted, seriesNames, spec.categoryLimit);
+  final categories = limited.map((bucket) => bucket.label).toList();
 
   var minimum = 0.0;
   var maximum = 0.0;
   final series = <ChartSeries>[];
   for (final name in seriesNames) {
     final points = <ChartPoint>[];
-    for (final category in categories) {
-      final values = buckets[category]?[name] ?? const <double>[];
-      final value = spec.aggregate.apply(values) ?? 0;
-      points.add(ChartPoint(label: category, value: value));
+    for (final bucket in limited) {
+      final values = bucket.values[name] ?? const <double>[];
+      final value = aggregate.apply(values) ?? 0;
+      points.add(ChartPoint(label: bucket.label, value: value));
       minimum = value < minimum ? value : minimum;
       maximum = value > maximum ? value : maximum;
     }
-    series.add(ChartSeries(name: name, points: points));
+    series.add(ChartSeries(name: table.nameOf(name), points: points));
   }
 
   if (spec.type.isStacked) {
     for (var index = 0; index < categories.length; index++) {
-      final stacked = series.fold<double>(
-        0,
-        (sum, one) => sum + one.points[index].value,
-      );
-      maximum = stacked > maximum ? stacked : maximum;
+      var stacked = 0.0;
+      // Match the cumulative stacks the painter draws, including negatives.
+      for (final one in series) {
+        stacked += one.points[index].value;
+        minimum = stacked < minimum ? stacked : minimum;
+        maximum = stacked > maximum ? stacked : maximum;
+      }
     }
   }
 
@@ -236,7 +311,7 @@ ChartData _buildMeasured(ChartTable table, ChartSpec spec) {
   final xIndex = table.indexOf(spec.xColumn);
   final sizeIndex = table.indexOf(spec.sizeColumn);
   final nameIndex = table.indexOf(spec.categoryColumn);
-  if (xIndex < 0) {
+  if (xIndex < 0 || (spec.categoryColumn != null && nameIndex < 0)) {
     return ChartData.empty;
   }
 
@@ -264,16 +339,17 @@ ChartData _buildMeasured(ChartTable table, ChartSpec spec) {
       }
       final x = parseChartNumber(row[xIndex]);
       final y = parseChartNumber(row[index]);
-      if (x == null || y == null) {
+      if (x == null || y == null || !x.isFinite || !y.isFinite) {
         continue;
       }
-      final size = sizeIndex >= 0 && sizeIndex < row.length
+      final rawSize = sizeIndex >= 0 && sizeIndex < row.length
           ? parseChartNumber(row[sizeIndex])
           : null;
+      final size = rawSize != null && rawSize.isFinite ? rawSize : null;
       points.add(
         ChartPoint(
-          label: nameIndex >= 0 && nameIndex < row.length
-              ? _label(row[nameIndex])
+          label: nameIndex >= 0
+              ? _label(nameIndex < row.length ? row[nameIndex] : '')
               : formatChartNumber(x),
           value: y,
           x: x,
@@ -290,7 +366,7 @@ ChartData _buildMeasured(ChartTable table, ChartSpec spec) {
     }
     // A line joins its points in the order they run, not the order rows sit in.
     points.sort((a, b) => (a.x ?? 0).compareTo(b.x ?? 0));
-    series.add(ChartSeries(name: column, points: points));
+    series.add(ChartSeries(name: table.nameOf(column), points: points));
   }
 
   if (series.every((one) => one.points.isEmpty)) {
@@ -317,27 +393,34 @@ ChartData _buildMeasured(ChartTable table, ChartSpec spec) {
   );
 }
 
-List<String> _sortCategories(
-  List<String> order,
-  Map<String, Map<String, List<double>>> buckets,
+class _ChartBucket {
+  _ChartBucket(this.label);
+
+  final String label;
+  final values = <String, List<double>>{};
+}
+
+List<_ChartBucket> _sortCategories(
+  List<_ChartBucket> order,
   List<String> seriesNames,
-  ChartSpec spec,
+  ChartSort sort,
+  ChartAggregate aggregate,
 ) {
   final sorted = [...order];
-  double weight(String category) {
+  double weight(_ChartBucket bucket) {
     var total = 0.0;
     for (final name in seriesNames) {
-      total += spec.aggregate.apply(buckets[category]?[name] ?? const []) ?? 0;
+      total += aggregate.apply(bucket.values[name] ?? const []) ?? 0;
     }
     return total;
   }
 
-  switch (spec.sort) {
+  switch (sort) {
     case ChartSort.natural:
       break;
     case ChartSort.labelAscending:
       sorted.sort(
-        (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
+        (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
       );
     case ChartSort.valueDescending:
       sorted.sort((a, b) => weight(b).compareTo(weight(a)));
@@ -347,29 +430,28 @@ List<String> _sortCategories(
   return sorted;
 }
 
-List<String> _limit(
-  List<String> sorted,
-  Map<String, Map<String, List<double>>> buckets,
+List<_ChartBucket> _limit(
+  List<_ChartBucket> sorted,
   List<String> seriesNames,
-  ChartSpec spec,
+  int limit,
 ) {
-  if (spec.categoryLimit <= 0 || sorted.length <= spec.categoryLimit) {
+  if (limit <= 0 || sorted.length <= limit) {
     return sorted;
   }
-  final kept = sorted.take(spec.categoryLimit - 1).toList();
-  final rest = sorted.skip(spec.categoryLimit - 1);
-  final gathered = <String, List<double>>{};
-  for (final category in rest) {
-    final bucket = buckets[category];
-    if (bucket == null) {
-      continue;
-    }
+  final kept = sorted.take(limit - 1).toList();
+  final rest = sorted.skip(limit - 1);
+  final labels = kept.map((bucket) => bucket.label).toSet();
+  var label = chartOtherCategory;
+  for (var suffix = 2; labels.contains(label); suffix++) {
+    label = '$chartOtherCategory ($suffix)';
+  }
+  final gathered = _ChartBucket(label);
+  for (final bucket in rest) {
     for (final name in seriesNames) {
-      gathered
+      gathered.values
           .putIfAbsent(name, () => <double>[])
-          .addAll(bucket[name] ?? const []);
+          .addAll(bucket.values[name] ?? const []);
     }
   }
-  buckets[chartOtherCategory] = gathered;
-  return [...kept, chartOtherCategory];
+  return [...kept, gathered];
 }

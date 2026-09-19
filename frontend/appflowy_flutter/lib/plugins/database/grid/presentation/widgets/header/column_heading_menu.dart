@@ -87,6 +87,7 @@ List<AppMenuEntry> columnHeadingMenuEntries({
   required PropertyStyle? style,
   required bool isLocation,
   required VoidCallback onEditProperty,
+  PropertyStyleSettingsWriter? onStyleSettingsChanged,
 }) {
   final fieldId = fieldInfo.id;
   final isPrimary = fieldInfo.isPrimary;
@@ -183,6 +184,7 @@ List<AppMenuEntry> columnHeadingMenuEntries({
         viewId: viewId,
         fieldId: fieldId,
         style: style,
+        onSettingsChanged: onStyleSettingsChanged,
       ),
       const AppMenuSeparator(),
       _encryptionEntry(
@@ -326,12 +328,14 @@ List<AppMenuEntry> _styleEntries({
   required String viewId,
   required String fieldId,
   required PropertyStyle? style,
+  PropertyStyleSettingsWriter? onSettingsChanged,
 }) {
   if (style == null) {
     return const [];
   }
 
   Future<void> write(String key, Object? value) =>
+      onSettingsChanged?.call({key: value}) ??
       PropertyStyleRegistry.instance.setSetting(
         viewId: viewId,
         fieldId: fieldId,
@@ -340,6 +344,7 @@ List<AppMenuEntry> _styleEntries({
       );
 
   Future<void> writeAll(Map<String, Object?> values) =>
+      onSettingsChanged?.call(values) ??
       PropertyStyleRegistry.instance.setSettings(
         viewId: viewId,
         fieldId: fieldId,
@@ -350,13 +355,23 @@ List<AppMenuEntry> _styleEntries({
     final answer = await showAFTextFieldDialog(
       context: context,
       title: title,
-      initialValue: current == null ? '' : _trim(current),
+      initialValue: current == null
+          ? ''
+          : style.kind == PropertyStyleKind.progress
+              ? formatProgressNumber(current)
+              : _trim(current),
     );
     if (answer == null) {
       return;
     }
-    final parsed = double.tryParse(answer.trim());
-    await write(key, answer.trim().isEmpty ? null : parsed);
+    final trimmed = answer.trim();
+    final parsed = double.tryParse(trimmed);
+    if (style.kind == PropertyStyleKind.progress &&
+        trimmed.isNotEmpty &&
+        !isValidProgressNumber(parsed)) {
+      return;
+    }
+    await write(key, trimmed.isEmpty ? null : parsed);
   }
 
   Future<void> askText(String key, String title) async {
@@ -375,12 +390,33 @@ List<AppMenuEntry> _styleEntries({
         AppMenuItem(
           label: LocaleKeys.interactive_property_maximum.tr(),
           icon: Icons.straighten_rounded,
-          shortcut: _trim(style.maximum),
+          shortcut: formatProgressNumber(style.maximum),
           onSelected: () => unawaited(
             askNumber(
               'maximum',
               LocaleKeys.interactive_property_maximum.tr(),
               style.maximum,
+            ),
+          ),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.interactive_progress_showButtons.tr(),
+          icon: style.showButtons
+              ? Icons.check_box_rounded
+              : Icons.check_box_outline_blank_rounded,
+          onSelected: () => unawaited(
+            write('show_buttons', !style.showButtons),
+          ),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.interactive_property_step.tr(),
+          icon: Icons.linear_scale_rounded,
+          shortcut: formatProgressNumber(style.progressStep),
+          onSelected: () => unawaited(
+            askNumber(
+              'step',
+              LocaleKeys.interactive_property_step.tr(),
+              style.progressStep,
             ),
           ),
         ),

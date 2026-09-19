@@ -1,17 +1,28 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/encryption/encryption.dart';
+import 'package:appflowy/shared/encryption/sensitive_clipboard.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/map_suggestions.dart';
 import 'package:appflowy/plugins/database/widgets/cell/desktop_grid/location_picker_card.dart';
+import 'package:appflowy/shared/table_views/form_field_dialog.dart';
+import 'package:appflowy/shared/table_views/form_field_input.dart';
+import 'package:appflowy/shared/table_views/form_field_tile.dart';
+import 'package:appflowy/shared/table_views/form_typed_field.dart';
 import 'package:appflowy/shared/table_views/table_property_view.dart';
 import 'package:appflowy/shared/table_views/table_view_chrome.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
+import 'package:appflowy/workspace/application/encryption/encrypted_column.dart';
+import 'package:appflowy/workspace/application/encryption/encryption_vault.dart';
+import 'package:appflowy/workspace/application/table_views/form_entry_service.dart';
+import 'package:appflowy/workspace/application/table_views/form_field_value.dart';
 import 'package:appflowy/workspace/application/table_views/form_spec.dart';
-import 'package:appflowy/workspace/application/table_views/table_query.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
 import 'package:appflowy/workspace/application/table_views/table_row_source.dart';
+import 'package:appflowy/workspace/presentation/encryption/encryption_dialogs.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
@@ -38,12 +49,18 @@ class FormStage extends StatefulWidget {
     this.title,
     this.onSubmit,
     this.onOpenRow,
+    this.editable = true,
+    this.source,
+    this.entryService,
+    this.authorize,
+    this.initialRowId,
+    this.inputServices = const FormInputServices(),
     this.padding = EdgeInsets.zero,
   });
 
   final String viewId;
   final FormSpec spec;
-  final ValueChanged<FormSpec> onSpecChanged;
+  final FutureOr<void> Function(FormSpec) onSpecChanged;
   final String? title;
 
   /// Making the row the form describes. Hands back the row it made.
@@ -51,29 +68,63 @@ class FormStage extends StatefulWidget {
 
   final ValueChanged<String>? onOpenRow;
 
+  final bool editable;
+  final TableRowSource? source;
+  final FormEntryService? entryService;
+  final Future<bool> Function(BuildContext)? authorize;
+  final String? initialRowId;
+  final FormInputServices inputServices;
+
   final EdgeInsets padding;
 
   @override
   State<FormStage> createState() => FormStageState();
 }
 
-class FormStageState extends State<FormStage> {
-  late final TableRowSource _source = TableRowSource(viewId: widget.viewId);
+class FormStageState extends State<FormStage> with WidgetsBindingObserver {
+  late final TableRowSource _source =
+      widget.source ?? TableRowSource(viewId: widget.viewId);
+  late final FormEntryService _entries =
+      widget.entryService ?? FormEntryService(viewId: widget.viewId);
   final ScrollController _scroll = ScrollController();
   final Map<String, TextEditingController> _controllers = {};
   final Map<String, FocusNode> _focusNodes = {};
   final Map<String, String> _answers = {};
+  final Map<String, FormFieldValue> _typedAnswers = {};
+  int _draftGeneration = 0;
   final Set<String> _collapsed = {};
+  final Set<String> _draftRevealed = {};
+  final Set<String> _editingFields = {};
 
   List<String> _missing = const [];
-  String? _addedRowId;
+  late String? _selectedRowId = widget.initialRowId;
+  bool _newEntry = false;
+  String _search = '';
+  String? _notice;
+  bool _noticeIsError = false;
   bool _submitting = false;
+  bool _changingField = false;
+  bool _writingCell = false;
+  int _privacyEpoch = 0;
+
+  bool get _busy => _submitting || _changingField || _writingCell;
+  EncryptionVault get _vault => EncryptionVault.instance;
+  EncryptedColumnRegistry get _encryption => EncryptedColumnRegistry.instance;
 
   static const double measure = 640;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _vault.addListener(_onVaultChanged);
+    _encryption.revision.addListener(_onSourceChanged);
+    if (widget.viewId.isNotEmpty) _encryption.listenable(widget.viewId);
+    _collapsed.addAll(
+      widget.spec.sections
+          .where((section) => section.collapsed)
+          .map((s) => s.id),
+    );
     _source
       ..updateSpec(const TableReadSpec())
       ..addListener(_onSourceChanged);
@@ -82,8 +133,11 @@ class FormStageState extends State<FormStage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _vault.removeListener(_onVaultChanged);
+    _encryption.revision.removeListener(_onSourceChanged);
     _source.removeListener(_onSourceChanged);
-    _source.dispose();
+    if (widget.source == null) _source.dispose();
     _scroll.dispose();
     for (final controller in _controllers.values) {
       controller.dispose();
@@ -94,12 +148,64 @@ class FormStageState extends State<FormStage> {
     super.dispose();
   }
 
+  @override
+  void didUpdateWidget(FormStage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    for (final id in widget.spec.hiddenColumns) {
+      if (!oldWidget.spec.isHidden(id)) {
+        _answers.remove(id);
+        _typedAnswers.remove(id);
+        _controllers[id]?.clear();
+        _draftRevealed.remove(id);
+      }
+    }
+    if (!widget.editable && oldWidget.editable) _concealSecrets();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed && mounted) {
+      setState(_concealSecrets);
+      // Switching to the destination app is how a copied value is pasted.
+      // Keep its expiry timer; only an actual vault lock clears it immediately.
+    }
+  }
+
+  void _onVaultChanged() {
+    if (!mounted) return;
+    setState(() {
+      if (!_vault.isUnlocked) _concealSecrets();
+    });
+    if (!_vault.isUnlocked) unawaited(SensitiveClipboard.instance.clear());
+  }
+
+  void _concealSecrets() {
+    _privacyEpoch++;
+    _draftRevealed.clear();
+    for (final field in _source.fields) {
+      if (_encryption.isEncrypted(widget.viewId, field.id)) {
+        _typedAnswers.remove(field.id);
+        if ((_answers.remove(field.id) ?? '').isNotEmpty) {
+          _notice = LocaleKeys.form_secretDraftCleared.tr();
+          _noticeIsError = true;
+        }
+        _controllers[field.id]?.clear();
+      }
+    }
+  }
+
   /// Reads the table again — the host calls this when a column changes.
   void reload() => _source.invalidate();
 
   void _onSourceChanged() {
     if (mounted) {
-      setState(() {});
+      setState(() {
+        if (!_newEntry &&
+            !_source.isLoading &&
+            !_source.cards.any((card) => card.rowId == _selectedRowId)) {
+          _selectedRowId = _source.cards.firstOrNull?.rowId;
+        }
+      });
     }
   }
 
@@ -112,8 +218,15 @@ class FormStageState extends State<FormStage> {
   FocusNode _focusFor(String fieldId) =>
       _focusNodes.putIfAbsent(fieldId, FocusNode.new);
 
-  void _answer(String fieldId, String value) {
+  void _answer(String fieldId, String value, {FormFieldValue? typed}) {
+    if (!widget.editable || _busy) return;
+    _newEntry = true;
     _answers[fieldId] = value;
+    if (typed == null) {
+      _typedAnswers.remove(fieldId);
+    } else {
+      _typedAnswers[fieldId] = typed;
+    }
     if (_missing.contains(fieldId) && value.trim().isNotEmpty) {
       setState(() => _missing = [..._missing]..remove(fieldId));
     }
@@ -124,42 +237,253 @@ class FormStageState extends State<FormStage> {
   @override
   Widget build(BuildContext context) {
     final palette = tableViewPaletteOf(context);
-    final fields = formFieldsOf(_source.fields, widget.spec);
+    final fields = _selectedRowId == null
+        ? formFieldsOf(_source.fields, widget.spec)
+        : _source.fields.where((f) => !widget.spec.isHidden(f.id)).toList();
 
-    return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.enter, control: true): _submit,
-        const SingleActivator(LogicalKeyboardKey.enter, meta: true): _submit,
-      },
-      child: Padding(
-        padding: widget.padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(palette, fields),
-            const SizedBox(height: TableViewMetrics.space3),
-            Expanded(child: _buildBody(palette, fields)),
-          ],
+    return TextEntryShortcuts(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.enter, control: true): () =>
+              unawaited(_submit()),
+          const SingleActivator(LogicalKeyboardKey.enter, meta: true): () =>
+              unawaited(_submit()),
+        },
+        child: Padding(
+          padding: widget.padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildHeader(palette, fields),
+              const SizedBox(height: TableViewMetrics.space3),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final body = _buildBody(palette, fields);
+                    final wide = constraints.maxWidth >= 820;
+                    // Keep the detail subtree at the same depth across resize:
+                    // changing Row -> Column would dispose every open field draft.
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Visibility(
+                          visible: wide,
+                          maintainState: true,
+                          child:
+                              SizedBox(width: 236, child: _entryList(palette)),
+                        ),
+                        SizedBox(width: wide ? 24 : 0),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Visibility(
+                                visible: !wide,
+                                maintainState: true,
+                                child: _entryPicker(palette),
+                              ),
+                              SizedBox(height: wide ? 0 : 8),
+                              Expanded(child: body),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(TableViewPalette palette, List<FieldPB> fields) =>
-      TableViewHeader(
-        palette: palette,
-        title: widget.title?.trim().isNotEmpty == true
-            ? widget.title!
-            : LocaleKeys.form_name.tr(),
-        subtitle: LocaleKeys.form_fieldCount
-            .tr(namedArgs: {'count': '${fields.length}'}),
-        columns: const [],
-        query: const TableQuery(),
-        onQueryChanged: (_) {},
-        valuesOf: (_) => const [],
-        optionsBuilder: () => _options(fields),
-        allowGrouping: false,
+  Widget _buildHeader(TableViewPalette palette, List<FieldPB> fields) => Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 8,
+        children: [
+          Text(
+            '${LocaleKeys.form_entries.tr()} · ${_source.cards.length}',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: palette.textPrimary,
+                ),
+          ),
+          Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            children: [
+              if (widget.editable) ...[
+                TextButton.icon(
+                  key: const ValueKey('form-new-entry'),
+                  onPressed: _busy ? null : () => unawaited(_chooseEntry(null)),
+                  icon: const Icon(Icons.add_rounded, size: 18),
+                  label: Text(LocaleKeys.form_newEntry.tr()),
+                ),
+                TextButton.icon(
+                  key: const ValueKey('form-add-field'),
+                  onPressed: _busy ? null : () => unawaited(_addField()),
+                  icon: const Icon(Icons.add_box_rounded, size: 17),
+                  label: Text(LocaleKeys.form_addField.tr()),
+                ),
+              ] else
+                Text(LocaleKeys.form_readOnly.tr()),
+              Builder(
+                builder: (context) => FormIconAction(
+                  actionKey: 'form-options',
+                  label: LocaleKeys.tableViews_options.tr(),
+                  icon: Icons.more_horiz_rounded,
+                  onPressed: _busy
+                      ? null
+                      : () => unawaited(
+                            showAppMenuForWidget<void>(
+                              context: context,
+                              entries: _options(fields),
+                            ),
+                          ),
+                ),
+              ),
+            ],
+          ),
+        ],
       );
+
+  String _entryName(TableRowCard card) {
+    final titleId = _source.titleColumn;
+    if (widget.spec.isMasked(titleId) ||
+        widget.spec.isHidden(titleId) ||
+        _encryption.isEncrypted(widget.viewId, titleId) ||
+        looksSealed(card.title)) {
+      return LocaleKeys.form_hiddenEntry.tr();
+    }
+    return card.title.isEmpty
+        ? LocaleKeys.grid_row_titlePlaceholder.tr()
+        : card.title;
+  }
+
+  Widget _entryPicker(TableViewPalette palette) => DropdownButton<String>(
+        key: const ValueKey('form-entry-picker'),
+        value: _source.cards.any((card) => card.rowId == _selectedRowId)
+            ? _selectedRowId
+            : '',
+        isExpanded: true,
+        menuMaxHeight: 320,
+        dropdownColor: palette.surface,
+        underline: const SizedBox.shrink(),
+        items: [
+          DropdownMenuItem(
+            value: '',
+            child: Text(LocaleKeys.form_newEntry.tr()),
+          ),
+          for (final card in _source.cards)
+            DropdownMenuItem(
+              value: card.rowId,
+              child: Text(
+                _entryName(card),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+        ],
+        onChanged: _busy
+            ? null
+            : (id) => unawaited(_chooseEntry(id == '' ? null : id)),
+      );
+
+  Widget _entryList(TableViewPalette palette) {
+    final cards = _source.cards
+        .where(
+          (card) =>
+              _entryName(card).toLowerCase().contains(_search.toLowerCase()),
+        )
+        .toList();
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: palette.surface,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            key: const ValueKey('form-entry-search'),
+            onChanged: (value) => setState(() => _search = value),
+            decoration: InputDecoration(
+              hintText: LocaleKeys.form_searchEntries.tr(),
+              prefixIcon: const Icon(Icons.search_rounded, size: 18),
+              border: InputBorder.none,
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: cards.isEmpty
+                ? Text(
+                    LocaleKeys.form_noEntries.tr(),
+                    style: TextStyle(color: palette.textMuted),
+                  )
+                : ListView.builder(
+                    itemCount: cards.length,
+                    itemBuilder: (context, index) {
+                      final card = cards[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: TextButton(
+                          key: ValueKey('form-entry-${card.rowId}'),
+                          style: TextButton.styleFrom(
+                            alignment: Alignment.centerLeft,
+                            foregroundColor: palette.textPrimary,
+                            backgroundColor: card.rowId == _selectedRowId
+                                ? palette.hover
+                                : palette.hoverAtRest,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 14,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                          ),
+                          onPressed: _busy
+                              ? null
+                              : () => unawaited(_chooseEntry(card.rowId)),
+                          child: Text(
+                            _entryName(card),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _chooseEntry(String? rowId) async {
+    if (_busy || rowId == _selectedRowId) return;
+    if ((_selectedRowId == null && _answers.values.any((v) => v.isNotEmpty)) ||
+        _editingFields.isNotEmpty) {
+      final discard = await _confirm(
+        LocaleKeys.form_discardDraft.tr(),
+        LocaleKeys.form_discardDraftBody.tr(),
+      );
+      if (!discard || !mounted) return;
+    }
+    setState(() {
+      _clearDraft();
+      _selectedRowId = rowId;
+      _newEntry = rowId == null;
+      _editingFields.clear();
+      _privacyEpoch++;
+    });
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
 
   Widget _buildBody(TableViewPalette palette, List<FieldPB> fields) {
     if (_source.isLoading && _source.fields.isEmpty) {
@@ -180,16 +504,11 @@ class FormStageState extends State<FormStage> {
         onAction: reload,
       );
     }
-    if (fields.isEmpty) {
-      return TableViewEmpty(
-        palette: palette,
-        icon: Icons.assignment_rounded,
-        message: LocaleKeys.form_empty.tr(),
-        detail: LocaleKeys.form_emptyDetail.tr(),
-      );
-    }
-
-    final sections = formSectionsOf(_source.fields, widget.spec);
+    final sections = formSectionsOf(
+      _source.fields,
+      widget.spec,
+      includeReadOnly: _selectedRowId != null,
+    );
     final byId = {for (final field in _source.fields) field.id: field};
 
     return Scrollbar(
@@ -206,6 +525,41 @@ class FormStageState extends State<FormStage> {
                 _buildIntro(palette),
                 for (final section in sections)
                   _buildSection(palette, section, byId),
+                if (widget.spec.hiddenColumns.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      key: const ValueKey('form-show-hidden'),
+                      onPressed: !widget.editable || _busy
+                          ? null
+                          : () => unawaited(
+                                _changeSpec(
+                                  widget.spec.copyWith(hiddenColumns: const []),
+                                ),
+                              ),
+                      icon: const Icon(Icons.visibility_rounded, size: 17),
+                      label: Text(
+                        '${LocaleKeys.form_hiddenFields.tr()} · ${widget.spec.hiddenColumns.length}',
+                      ),
+                    ),
+                  ),
+                if (fields.isEmpty)
+                  Text(
+                    LocaleKeys.form_empty.tr(),
+                    style: TextStyle(color: palette.textMuted),
+                  ),
+                if (_notice != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Text(
+                      _notice!,
+                      style: TextStyle(
+                        color: _noticeIsError
+                            ? Theme.of(context).colorScheme.error
+                            : palette.textSecondary,
+                      ),
+                    ),
+                  ),
                 const SizedBox(height: TableViewMetrics.space5),
                 _buildFooter(palette),
               ],
@@ -217,9 +571,13 @@ class FormStageState extends State<FormStage> {
   }
 
   Widget _buildIntro(TableViewPalette palette) {
-    final heading = widget.spec.heading.trim().isEmpty
-        ? (widget.title ?? LocaleKeys.form_name.tr())
-        : widget.spec.heading;
+    final selected =
+        _source.cards.where((card) => card.rowId == _selectedRowId);
+    final heading = selected.isNotEmpty
+        ? _entryName(selected.first)
+        : widget.spec.heading.trim().isEmpty
+            ? (widget.title ?? LocaleKeys.form_name.tr())
+            : widget.spec.heading;
     return Padding(
       padding: const EdgeInsets.only(
         top: TableViewMetrics.space5,
@@ -315,6 +673,105 @@ class FormStageState extends State<FormStage> {
   }
 
   Widget _buildField(TableViewPalette palette, FieldPB field) {
+    final rowId = _selectedRowId;
+    final style = _source.styleForField(field.id, rowId: rowId ?? '');
+    final control = formControlOf(
+      field,
+      isLocation: _source.locationColumns.contains(field.id),
+      styleKind: style?.kind.name,
+    );
+    if (rowId != null) {
+      final stored = _source.cellValuesFor(rowId)[field.id] ?? '';
+      final encrypted = _encryption.isEncrypted(widget.viewId, field.id) ||
+          looksSealed(stored);
+      final sensitive = encrypted || widget.spec.isMasked(field.id);
+      if (!sensitive &&
+          isFormFillable(field) &&
+          usesTypedFormInput(field, control)) {
+        return FormTypedField(
+          key: ValueKey(
+            '$rowId:${field.id}:${field.fieldType.value}:${control.name}',
+          ),
+          field: field,
+          control: control,
+          style: style,
+          revision: _source.revision,
+          backend: _entries.backend,
+          services: widget.inputServices,
+          busy: _busy,
+          read: () => _entries.backend.readValue(widget.viewId, rowId, field),
+          save: !widget.editable
+              ? null
+              : (value, previous) async {
+                  if (_busy || !widget.editable) {
+                    throw const FormEntryException('readOnly');
+                  }
+                  setState(() => _writingCell = true);
+                  try {
+                    await _entries.updateValue(
+                      rowId: rowId,
+                      field: field,
+                      value: value,
+                      previous: previous,
+                    );
+                    if (mounted) await _source.load();
+                  } finally {
+                    if (mounted) setState(() => _writingCell = false);
+                  }
+                },
+          onEditingChanged: (editing) => editing
+              ? _editingFields.add(field.id)
+              : _editingFields.remove(field.id),
+          onOpenRow:
+              widget.onOpenRow == null ? null : () => widget.onOpenRow!(rowId),
+          description: widget.spec.descriptionOf(field.id),
+          menu: widget.editable ? _fieldMenu(field) : null,
+        );
+      }
+      return FormFieldTile(
+        key: ValueKey('$rowId:${field.id}:${sensitive ? _privacyEpoch : 0}'),
+        field: field,
+        value: stored,
+        masked: widget.spec.isMasked(field.id),
+        encrypted: encrypted,
+        description: widget.spec.descriptionOf(field.id),
+        onRead: () => _readValue(stored, encrypted),
+        onEditingChanged: (editing) => editing
+            ? _editingFields.add(field.id)
+            : _editingFields.remove(field.id),
+        onSave: widget.editable && isFormInlineEditable(field)
+            ? (value) async {
+                if (!widget.editable || _busy) {
+                  throw const FormEntryException('readOnly');
+                }
+                setState(() => _writingCell = true);
+                try {
+                  await _entries.update(
+                    rowId: rowId,
+                    field: field,
+                    value: value,
+                    previousValue: stored,
+                  );
+                  if (mounted) await _source.load();
+                } finally {
+                  if (mounted) setState(() => _writingCell = false);
+                }
+              }
+            : null,
+        onOpenEditor: widget.editable &&
+                !_busy &&
+                widget.onOpenRow != null &&
+                !const [
+                  FieldType.CreatedTime,
+                  FieldType.LastEditedTime,
+                  FieldType.Summary,
+                  FieldType.Translate,
+                ].contains(field.fieldType)
+            ? () => widget.onOpenRow!(rowId)
+            : null,
+        menu: widget.editable ? _fieldMenu(field) : null,
+      );
+    }
     final required = widget.spec.isRequired(field.id);
     final missing = _missing.contains(field.id);
     final note = widget.spec.descriptionOf(field.id);
@@ -326,12 +783,14 @@ class FormStageState extends State<FormStage> {
         children: [
           Row(
             children: [
-              Text(
-                field.name,
-                style: TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                  color: palette.textPrimary,
+              Expanded(
+                child: Text(
+                  field.name,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textPrimary,
+                  ),
                 ),
               ),
               if (required) ...[
@@ -341,13 +800,30 @@ class FormStageState extends State<FormStage> {
                   style: TextStyle(fontSize: 13.5, color: palette.accent),
                 ),
               ],
-              const Spacer(),
-              _FieldMenuButton(
-                palette: palette,
-                field: field,
-                spec: widget.spec,
-                onSpecChanged: widget.onSpecChanged,
+              if (_sensitive(field))
+                FormIconAction(
+                  actionKey: 'form-draft-reveal-${field.id}',
+                  label: _draftRevealed.contains(field.id)
+                      ? LocaleKeys.form_hideValue.tr()
+                      : LocaleKeys.form_showValue.tr(),
+                  icon: _draftRevealed.contains(field.id)
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                  onPressed: _busy
+                      ? null
+                      : () => setState(() {
+                            if (!_draftRevealed.remove(field.id)) {
+                              _draftRevealed.add(field.id);
+                            }
+                          }),
+                ),
+              FormIconAction(
+                actionKey: 'form-draft-copy-${field.id}',
+                label: LocaleKeys.form_copyField.tr(args: [field.name]),
+                icon: Icons.copy_rounded,
+                onPressed: _busy ? null : () => unawaited(_copyDraft(field)),
               ),
+              if (widget.editable) _fieldMenu(field),
             ],
           ),
           if (note.isNotEmpty) ...[
@@ -362,7 +838,23 @@ class FormStageState extends State<FormStage> {
             ),
           ],
           const SizedBox(height: TableViewMetrics.space2),
-          _buildControl(palette, field, missing),
+          ExcludeFocus(
+            excluding: !widget.editable || _busy,
+            child: IgnorePointer(
+              ignoring: !widget.editable || _busy,
+              child: _buildControl(palette, field, missing),
+            ),
+          ),
+          if (_sensitive(field))
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                _encryption.isEncrypted(widget.viewId, field.id)
+                    ? LocaleKeys.form_encryptedValue.tr()
+                    : LocaleKeys.form_hiddenValue.tr(),
+                style: TextStyle(fontSize: 11, color: palette.textMuted),
+              ),
+            ),
           if (missing) ...[
             const SizedBox(height: 5),
             Text(
@@ -380,14 +872,50 @@ class FormStageState extends State<FormStage> {
     FieldPB field,
     bool missing,
   ) {
+    if (_encryption.isEncrypted(widget.viewId, field.id) &&
+        !_vault.isUnlocked) {
+      return TextButton.icon(
+        onPressed: widget.editable && !_busy
+            ? () => unawaited(ensureWorkspaceUnlocked(context))
+            : null,
+        icon: const Icon(Icons.lock_rounded, size: 17),
+        label: Text(LocaleKeys.encryption_needsUnlocking.tr()),
+      );
+    }
+    if (_sensitive(field)) {
+      return _buildText(palette, field, missing, lines: 1);
+    }
+    final style = _source.styleForField(field.id);
     final control = formControlOf(
       field,
       isLocation: _source.locationColumns.contains(field.id),
+      styleKind: style?.kind.name,
     );
+    if (usesTypedFormInput(field, control)) {
+      return FormFieldInput(
+        key: ValueKey('form-draft-input-${field.id}-$_draftGeneration'),
+        field: field,
+        control: control,
+        style: style,
+        value: _typedAnswers[field.id] ?? emptyFormValue(field),
+        backend: _entries.backend,
+        services: widget.inputServices,
+        enabled: widget.editable && !_busy,
+        onChanged: (value) {
+          if (!widget.editable || _busy) return;
+          setState(() {
+            _answer(field.id, value.text, typed: value);
+          });
+        },
+      );
+    }
     return switch (control) {
       FormControl.toggle => _buildToggle(palette, field),
       FormControl.rating => _buildRating(palette, field),
       FormControl.choice => _buildChoice(palette, field, missing),
+      FormControl.tags ||
+      FormControl.people when field.fieldType == FieldType.MultiSelect =>
+        _buildChoice(palette, field, missing),
       FormControl.date => _buildDate(palette, field, missing),
       FormControl.place => _buildPlace(palette, field, missing),
       FormControl.relation => _buildRelation(palette, field, missing),
@@ -517,7 +1045,13 @@ class FormStageState extends State<FormStage> {
       palette: palette,
       warn: missing,
       child: TextField(
+        key: ValueKey('form-draft-${field.id}'),
         controller: _controllerFor(field.id),
+        focusNode: _focusFor(field.id),
+        readOnly: !widget.editable || _busy,
+        obscureText: _sensitive(field) && !_draftRevealed.contains(field.id),
+        autocorrect: !_sensitive(field),
+        enableSuggestions: !_sensitive(field),
         maxLines: lines,
         minLines: lines,
         keyboardType:
@@ -571,40 +1105,14 @@ class FormStageState extends State<FormStage> {
 
   Widget _buildToggle(TableViewPalette palette, FieldPB field) {
     final on = (_answers[field.id] ?? '').toLowerCase() == 'yes';
-    return GestureDetector(
-      onTap: () => setState(() => _answer(field.id, on ? 'No' : 'Yes')),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AnimatedContainer(
-            duration: TableViewMetrics.hover,
-            curve: TableViewMetrics.enterCurve,
-            width: 40,
-            height: 23,
-            padding: const EdgeInsets.all(3),
-            alignment: on ? Alignment.centerRight : Alignment.centerLeft,
-            decoration: BoxDecoration(
-              color: on
-                  ? palette.accent
-                  : palette.textMuted.withValues(alpha: 0.28),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Container(
-              width: 17,
-              height: 17,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            on ? 'Yes' : 'No',
-            style: TextStyle(fontSize: 13.5, color: palette.textSecondary),
-          ),
-        ],
-      ),
+    return SwitchListTile(
+      key: ValueKey('form-toggle-${field.id}'),
+      value: on,
+      contentPadding: EdgeInsets.zero,
+      title: Text(on ? 'Yes' : 'No'),
+      onChanged: !widget.editable || _busy
+          ? null
+          : (value) => setState(() => _answer(field.id, value ? 'Yes' : 'No')),
     );
   }
 
@@ -642,23 +1150,38 @@ class FormStageState extends State<FormStage> {
     bool missing,
   ) {
     // The choices a status column already holds are the ones worth offering.
-    final options = tableValuesOf(_source.cards, field.id);
+    final options = formChoiceNames(field);
     final chosen = _answers[field.id] ?? '';
+    final multiple = field.fieldType == FieldType.MultiSelect;
+    final selected = multiple ? tablePartsOf(chosen) : [chosen];
     if (options.isEmpty) {
-      return _buildText(palette, field, missing, lines: 1);
+      return Text(
+        LocaleKeys.form_noOptions.tr(),
+        style: TextStyle(color: palette.textMuted, fontSize: 12),
+      );
     }
     return Wrap(
       spacing: 7,
       runSpacing: 7,
       children: [
         for (final option in options)
-          _ChoiceChip(
-            palette: palette,
-            label: option,
-            selected: chosen == option,
-            onTap: () => setState(
-              () => _answer(field.id, chosen == option ? '' : option),
-            ),
+          FilterChip(
+            label: Text(option),
+            selected: selected.contains(option),
+            onSelected: !widget.editable || _busy
+                ? null
+                : (include) => setState(() {
+                      final next = [...selected]..remove(option);
+                      if (include) next.add(option);
+                      _answer(
+                        field.id,
+                        multiple
+                            ? next.join(', ')
+                            : include
+                                ? option
+                                : '',
+                      );
+                    }),
           ),
       ],
     );
@@ -680,15 +1203,17 @@ class FormStageState extends State<FormStage> {
                   color: palette.textMuted,
                 ),
                 const SizedBox(width: 9),
-                Text(
-                  chosen == null
-                      ? 'No date yet'
-                      : '${chosen.year}-${_two(chosen.month)}-${_two(chosen.day)}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: chosen == null
-                        ? palette.textMuted
-                        : palette.textPrimary,
+                Expanded(
+                  child: Text(
+                    chosen == null
+                        ? 'No date yet'
+                        : '${chosen.year}-${_two(chosen.month)}-${_two(chosen.day)}',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: chosen == null
+                          ? palette.textMuted
+                          : palette.textPrimary,
+                    ),
                   ),
                 ),
               ],
@@ -729,101 +1254,395 @@ class FormStageState extends State<FormStage> {
   static String _two(int value) => value.toString().padLeft(2, '0');
 
   Widget _buildFooter(TableViewPalette palette) {
-    final added = _addedRowId;
-    return Row(
+    final rowId = _selectedRowId;
+    if (rowId != null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: widget.onOpenRow == null || _busy
+              ? null
+              : () => widget.onOpenRow!(rowId),
+          icon: const Icon(Icons.open_in_new_rounded, size: 16),
+          label: Text(LocaleKeys.form_rowEditor.tr()),
+        ),
+      );
+    }
+    if (!widget.editable) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
       children: [
-        TableViewAction(
-          palette: palette,
-          label: _submitting
-              ? LocaleKeys.tableViews_loading.tr()
-              : LocaleKeys.form_submit.tr(),
-          icon: Icons.check_rounded,
-          onTap: _submit,
-        ),
-        const SizedBox(width: TableViewMetrics.space3),
-        TableViewAction(
-          palette: palette,
-          label: LocaleKeys.form_clear.tr(),
-          icon: Icons.backspace_rounded,
-          primary: false,
-          onTap: _clear,
-        ),
-        const Spacer(),
-        if (added != null)
-          Row(
-            children: [
-              Icon(
-                Icons.check_circle_rounded,
-                size: 15,
-                color: palette.swatchFor('done'),
-              ),
-              const SizedBox(width: 7),
-              Text(
-                LocaleKeys.form_added.tr(),
-                style: TextStyle(fontSize: 12.5, color: palette.textMuted),
-              ),
-              if (widget.onOpenRow != null) ...[
-                const SizedBox(width: TableViewMetrics.space3),
-                TableViewAction(
-                  palette: palette,
-                  label: LocaleKeys.tableViews_openRow.tr(),
-                  primary: false,
-                  onTap: () => widget.onOpenRow!(added),
-                ),
-              ],
-            ],
+        TextButton.icon(
+          key: const ValueKey('form-submit'),
+          onPressed: _busy ? null : () => unawaited(_submit()),
+          icon: const Icon(Icons.check_rounded, size: 17),
+          label: Text(
+            _submitting
+                ? LocaleKeys.form_saving.tr()
+                : LocaleKeys.form_submit.tr(),
           ),
+        ),
+        TextButton(
+          onPressed: _busy ? null : _clear,
+          child: Text(LocaleKeys.form_clear.tr()),
+        ),
       ],
     );
   }
 
-  void _clear() {
-    setState(() {
-      _answers.clear();
-      _missing = const [];
-      _addedRowId = null;
-      for (final controller in _controllers.values) {
-        controller.clear();
-      }
-    });
+  void _clear() => setState(_clearDraft);
+
+  void _clearDraft() {
+    _answers.clear();
+    _typedAnswers.clear();
+    _draftGeneration++;
+    _missing = const [];
+    _notice = null;
+    _draftRevealed.clear();
+    for (final controller in _controllers.values) {
+      controller.clear();
+    }
   }
 
-  void _submit() {
-    final submit = widget.onSubmit;
-    if (submit == null || _submitting) {
-      return;
-    }
-    final missing = missingRequiredFields(widget.spec, _answers);
+  Future<void> _submit() async {
+    if (!widget.editable || _busy || _selectedRowId != null) return;
+    final fields = formFieldsOf(_source.fields, widget.spec);
+    final ids = fields.map((field) => field.id).toSet();
+    final missing = missingRequiredFields(widget.spec, _answers, fieldIds: ids);
     if (missing.isNotEmpty) {
-      setState(() => _missing = missing);
+      setState(() {
+        _missing = missing;
+        _collapsed.clear();
+      });
+      _focusFor(missing.first).requestFocus();
       return;
     }
     final answers = {
       for (final entry in _answers.entries)
-        if (entry.value.trim().isNotEmpty) entry.key: entry.value.trim(),
+        if (ids.contains(entry.key) && entry.value.isNotEmpty)
+          entry.key: entry.value,
     };
     if (answers.isEmpty) {
+      setState(() {
+        _notice = LocaleKeys.form_blankDraft.tr();
+        _noticeIsError = true;
+      });
       return;
     }
     setState(() => _submitting = true);
-    unawaited(
-      submit(answers).then((rowId) {
-        if (!mounted) {
-          return;
+    try {
+      final rowId = await (widget.onSubmit?.call(answers) ??
+          _entries.create(
+            answers,
+            typedAnswers: {
+              for (final entry in _typedAnswers.entries)
+                if (ids.contains(entry.key) && !entry.value.isEmpty)
+                  entry.key: entry.value,
+            },
+          ));
+      if (rowId == null) throw const FormEntryException('writeFailed');
+      if (!mounted) return;
+      setState(() {
+        _clearDraft();
+        _newEntry = false;
+        _selectedRowId = rowId;
+        _notice = LocaleKeys.form_added.tr();
+        _noticeIsError = false;
+      });
+      await _source.load();
+    } on Object catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _noticeIsError = true;
+        _notice = error is FormEntryException && error.partialRowId != null
+            ? LocaleKeys.form_partialSave.tr()
+            : error is FormEntryException && error.code == 'protectionUnknown'
+                ? LocaleKeys.form_protectionUnknown.tr()
+                : error is FormEntryException && error.code == 'invalidNumber'
+                    ? LocaleKeys.form_invalidNumber.tr()
+                    : LocaleKeys.form_saveFailed.tr();
+        if (error is FormEntryException && error.partialRowId != null) {
+          _selectedRowId = error.partialRowId;
+          _newEntry = false;
         }
+      });
+      if (error is FormEntryException && error.partialRowId != null) reload();
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  bool _sensitive(FieldPB field) =>
+      widget.spec.isMasked(field.id) ||
+      _encryption.isEncrypted(widget.viewId, field.id);
+
+  Future<String?> _readValue(String stored, bool encrypted) async {
+    if (!encrypted) return stored;
+    if (!await (widget.authorize ?? confirmWorkspaceKey)(context) || !mounted) {
+      return null;
+    }
+    if (!_vault.isUnlocked) return null;
+    final value = _vault.tryOpen(stored, context: encryptedCellContext);
+    if (value == null) throw const FormEntryException('readFailed');
+    return value;
+  }
+
+  Future<void> _copyDraft(FieldPB field) async {
+    final value = _answers[field.id] ?? '';
+    if (value.isEmpty) return;
+    try {
+      await SensitiveClipboard.instance
+          .copy(value, sensitive: _sensitive(field));
+      if (mounted) {
         setState(() {
-          _submitting = false;
-          _addedRowId = rowId;
-          if (rowId != null) {
-            _answers.clear();
-            _missing = const [];
-            for (final controller in _controllers.values) {
-              controller.clear();
-            }
-          }
+          _noticeIsError = false;
+          _notice = _sensitive(field)
+              ? LocaleKeys.form_sensitiveCopied.tr()
+              : LocaleKeys.form_copied.tr();
         });
-      }),
+      }
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _noticeIsError = true;
+          _notice = LocaleKeys.form_readFailed.tr();
+        });
+      }
+    }
+  }
+
+  Future<bool> _confirm(String title, String body) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: tableViewPaletteOf(context).surface,
+          scrollable: true,
+          title: Text(title),
+          content: SizedBox(width: 420, child: Text(body)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(LocaleKeys.button_cancel.tr()),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(LocaleKeys.button_confirm.tr()),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  Future<void> _changeSpec(FormSpec spec) async {
+    if (!widget.editable || _busy) return;
+    // A settings change must not silently dispose an active field editor.
+    if (!_canChangeFields()) return;
+    await _fieldOperation(() async {
+      await widget.onSpecChanged(spec);
+    });
+  }
+
+  Future<void> _fieldOperation(Future<void> Function() operation) async {
+    setState(() => _changingField = true);
+    try {
+      await operation();
+      if (mounted) {
+        setState(() {
+          _notice = LocaleKeys.form_saved.tr();
+          _noticeIsError = false;
+        });
+      }
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _notice = LocaleKeys.form_fieldFailed.tr();
+          _noticeIsError = true;
+        });
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _changingField = false);
+        reload();
+      }
+    }
+  }
+
+  Future<void> _addField() async {
+    if (!_canChangeFields()) return;
+    final chosen = await showFormFieldDialog(context);
+    if (chosen == null || !mounted || !widget.editable || _busy) return;
+    if (chosen.kind == FormCustomFieldKind.encrypted &&
+        !await ensureWorkspaceUnlocked(context)) {
+      return;
+    }
+    if (!mounted || !widget.editable) return;
+    await _fieldOperation(() async {
+      final field = await _entries.addField(chosen);
+      if (!mounted) return;
+      await widget.onSpecChanged(
+        widget.spec
+            .withMasked(field.id, chosen.kind.masked)
+            .withRequired(field.id, chosen.required)
+            .copyWith(
+          descriptions: {
+            ...widget.spec.descriptions,
+            field.id: chosen.description,
+          },
+        ),
+      );
+      await _source.load();
+    });
+  }
+
+  Future<void> _editField(FieldPB field) async {
+    if (!_canChangeFields()) return;
+    final chosen = await showFormFieldDialog(
+      context,
+      initial: FormCustomField(
+        name: field.name,
+        required: widget.spec.isRequired(field.id),
+        description: widget.spec.descriptionOf(field.id),
+      ),
     );
+    if (chosen == null || !mounted || !widget.editable || _busy) return;
+    await _fieldOperation(() async {
+      await _entries.backend.renameField(widget.viewId, field.id, chosen.name);
+      if (!mounted) return;
+      await widget.onSpecChanged(
+        widget.spec.withRequired(field.id, chosen.required).copyWith(
+          descriptions: {
+            ...widget.spec.descriptions,
+            field.id: chosen.description,
+          },
+        ),
+      );
+      await _source.load();
+    });
+  }
+
+  Future<void> _setEncrypted(FieldPB field, bool encrypted) async {
+    if (!widget.editable || _busy) return;
+    if (!_canChangeFields()) return;
+    final confirmed = await _confirm(
+      encrypted
+          ? LocaleKeys.form_encryptField.tr()
+          : LocaleKeys.form_decryptField.tr(),
+      encrypted
+          ? LocaleKeys.form_encryptionNotice.tr()
+          : LocaleKeys.encryption_columnDecryptBody.tr(),
+    );
+    if (!confirmed || !mounted || !widget.editable) return;
+    if (!await (encrypted
+        ? ensureWorkspaceUnlocked(context)
+        : confirmWorkspaceKey(context))) {
+      return;
+    }
+    if (!mounted || !widget.editable) return;
+    await _fieldOperation(() async {
+      await _entries.backend.setEncrypted(widget.viewId, field.id, encrypted);
+      if (!mounted) return;
+      if (encrypted) {
+        await widget.onSpecChanged(widget.spec.withMasked(field.id, true));
+      }
+      _privacyEpoch++;
+      await _source.load();
+    });
+  }
+
+  Widget _fieldMenu(FieldPB field) => Builder(
+        builder: (context) => FormIconAction(
+          actionKey: 'form-field-menu-${field.id}',
+          label: LocaleKeys.form_editField.tr(),
+          icon: Icons.more_horiz_rounded,
+          onPressed: _busy
+              ? null
+              : () => unawaited(
+                    showAppMenuForWidget<void>(
+                      context: context,
+                      entries: [
+                        AppMenuItem(
+                          label: LocaleKeys.form_editField.tr(),
+                          icon: Icons.edit_rounded,
+                          onSelected: () => unawaited(_editField(field)),
+                        ),
+                        AppMenuItem(
+                          label: LocaleKeys.form_required.tr(),
+                          icon: Icons.priority_high_rounded,
+                          selected: widget.spec.isRequired(field.id),
+                          enabled: isFormFillable(field),
+                          onSelected: () => unawaited(
+                            _changeSpec(
+                              widget.spec.withRequired(
+                                field.id,
+                                !widget.spec.isRequired(field.id),
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (field.fieldType == FieldType.RichText ||
+                            field.fieldType == FieldType.URL)
+                          AppMenuItem(
+                            label: widget.spec.isMasked(field.id)
+                                ? LocaleKeys.form_unmaskField.tr()
+                                : LocaleKeys.form_maskField.tr(),
+                            icon: Icons.password_rounded,
+                            onSelected: () => unawaited(
+                              _changeSpec(
+                                widget.spec.withMasked(
+                                  field.id,
+                                  !widget.spec.isMasked(field.id),
+                                ),
+                              ),
+                            ),
+                          ),
+                        AppMenuItem(
+                          label: LocaleKeys.form_hideField.tr(),
+                          icon: Icons.visibility_off_rounded,
+                          onSelected: () => unawaited(
+                            _changeSpec(
+                              widget.spec.withHidden(field.id, true),
+                            ),
+                          ),
+                        ),
+                        const AppMenuSeparator(),
+                        AppMenuItem(
+                          label:
+                              _encryption.isEncrypted(widget.viewId, field.id)
+                                  ? LocaleKeys.form_decryptField.tr()
+                                  : LocaleKeys.form_encryptField.tr(),
+                          icon: Icons.lock_rounded,
+                          enabled: EncryptedColumnRegistry.canEncrypt(
+                                field.fieldType,
+                              ) &&
+                              field.id != _source.titleColumn,
+                          shortcut: EncryptedColumnRegistry.canEncrypt(
+                            field.fieldType,
+                          )
+                              ? null
+                              : LocaleKeys.encryption_columnTextOnly.tr(),
+                          onSelected: () => unawaited(
+                            _setEncrypted(
+                              field,
+                              !_encryption.isEncrypted(
+                                widget.viewId,
+                                field.id,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+        ),
+      );
+
+  bool _canChangeFields() {
+    if (_editingFields.isEmpty) return true;
+    setState(() {
+      _notice = LocaleKeys.form_finishEditing.tr();
+      _noticeIsError = true;
+    });
+    return false;
   }
 
   List<AppMenuEntry> _options(List<FieldPB> fields) => [
@@ -831,14 +1650,26 @@ class FormStageState extends State<FormStage> {
         AppMenuItem(
           label: LocaleKeys.form_showAll.tr(),
           icon: Icons.visibility_rounded,
-          enabled: widget.spec.hiddenColumns.isNotEmpty,
-          onSelected: () => widget
-              .onSpecChanged(widget.spec.copyWith(hiddenColumns: const [])),
+          enabled: widget.editable && widget.spec.hiddenColumns.isNotEmpty,
+          onSelected: () => unawaited(
+            _changeSpec(widget.spec.copyWith(hiddenColumns: const [])),
+          ),
         ),
+        if (widget.editable)
+          for (final field in _source.fields
+              .where((field) => widget.spec.isHidden(field.id)))
+            AppMenuItem(
+              label: '${LocaleKeys.form_showField.tr()} · ${field.name}',
+              icon: Icons.visibility_rounded,
+              onSelected: () => unawaited(
+                _changeSpec(widget.spec.withHidden(field.id, false)),
+              ),
+            ),
         const AppMenuSeparator(),
         AppMenuItem(
           label: LocaleKeys.form_clear.tr(),
           icon: Icons.backspace_rounded,
+          enabled: widget.editable && _selectedRowId == null,
           onSelected: _clear,
         ),
         AppMenuItem(
@@ -1202,55 +2033,6 @@ class _FormWell extends StatelessWidget {
   }
 }
 
-class _ChoiceChip extends StatelessWidget {
-  const _ChoiceChip({
-    required this.palette,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final TableViewPalette palette;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colour = palette.swatchFor(label);
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: TableViewMetrics.hover,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-          decoration: BoxDecoration(
-            color: colour.withValues(
-              alpha: selected ? (palette.isDark ? 0.4 : 0.22) : 0.1,
-            ),
-            borderRadius: BorderRadius.circular(TableViewMetrics.pillRadius),
-            border: Border.all(
-              color: selected ? colour : colour.withValues(alpha: 0),
-              width: 1.2,
-            ),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w600,
-              color: palette.isDark
-                  ? Color.lerp(colour, Colors.white, 0.5)
-                  : Color.lerp(colour, Colors.black, 0.4),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.palette,
@@ -1317,52 +2099,6 @@ class _SectionHeader extends StatelessWidget {
                   size: 18,
                   color: palette.textMuted,
                 ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// The little menu beside a field that says how it should be asked for.
-class _FieldMenuButton extends StatelessWidget {
-  const _FieldMenuButton({
-    required this.palette,
-    required this.field,
-    required this.spec,
-    required this.onSpecChanged,
-  });
-
-  final TableViewPalette palette;
-  final FieldPB field;
-  final FormSpec spec;
-  final ValueChanged<FormSpec> onSpecChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Builder(
-      builder: (context) => TableViewButton(
-        palette: palette,
-        icon: Icons.more_horiz_rounded,
-        onTap: () => unawaited(
-          showAppMenuForWidget<void>(
-            context: context,
-            entries: [
-              AppMenuItem(
-                label: LocaleKeys.form_required.tr(),
-                icon: Icons.priority_high_rounded,
-                selected: spec.isRequired(field.id),
-                onSelected: () => onSpecChanged(
-                  spec.withRequired(field.id, !spec.isRequired(field.id)),
-                ),
-              ),
-              AppMenuItem(
-                label: LocaleKeys.tableViews_showEmpty.tr(),
-                icon: Icons.visibility_off_rounded,
-                onSelected: () =>
-                    onSpecChanged(spec.withHidden(field.id, true)),
               ),
             ],
           ),

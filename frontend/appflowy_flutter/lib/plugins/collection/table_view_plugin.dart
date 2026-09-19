@@ -1,6 +1,7 @@
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
+import 'package:appflowy/plugins/database/application/field/field_info.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/tab_bar/desktop/table_view_host.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
@@ -109,7 +110,10 @@ class TableViewPluginWidgetBuilder extends PluginWidgetBuilder
     required bool shrinkWrap,
     Map<String, dynamic>? data,
   }) =>
-      TableViewPage(key: ValueKey(view.id), view: view, kind: kind);
+      BlocProvider<PageAccessLevelBloc>.value(
+        value: pageAccessLevelBloc,
+        child: TableViewPage(key: ValueKey(view.id), view: view, kind: kind),
+      );
 
   @override
   String? get viewName =>
@@ -186,6 +190,7 @@ class _TableViewPageState extends State<TableViewPage>
   void onRowsChanged() {
     _timeline.currentState?.reload();
     _feed.currentState?.reload();
+    _form.currentState?.reload();
     _gallery.currentState?.reload();
     _mailbox.currentState?.reload();
   }
@@ -193,8 +198,11 @@ class _TableViewPageState extends State<TableViewPage>
   @override
   void initState() {
     super.initState();
+    _controller.fieldController.addListener(onReceiveFields: _fieldsChanged);
     startHosting();
   }
+
+  void _fieldsChanged(List<FieldInfo> _) => onRowsChanged();
 
   @override
   void didUpdateWidget(covariant TableViewPage old) {
@@ -206,6 +214,8 @@ class _TableViewPageState extends State<TableViewPage>
 
   @override
   void dispose() {
+    _controller.fieldController
+        .removeListener(onFieldsListener: _fieldsChanged);
     _controller.dispose();
     super.dispose();
   }
@@ -259,14 +269,22 @@ class _TableViewPageState extends State<TableViewPage>
           onAddRow: addRow,
         );
       case TableViewKind.form:
+        final access = context.watch<PageAccessLevelBloc?>()?.state;
         return FormStage(
           key: _form,
           viewId: widget.view.id,
           title: _title,
           spec: FormSpec.fromJson(_mark.settings),
           padding: padding,
-          onSpecChanged: (next) => _save(next.toJson()),
-          onSubmit: addRowWithAnswers,
+          editable: access != null &&
+              !access.isLoadingLockStatus &&
+              access.isEditable,
+          onSpecChanged: (next) async {
+            await persistHostSettings(next.toJson());
+            if (mounted) {
+              setState(() => _mark = _mark.copyWith(settings: next.toJson()));
+            }
+          },
           onOpenRow: openRow,
         );
       case TableViewKind.gallery:

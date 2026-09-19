@@ -22,7 +22,8 @@ class RowBannerBloc extends Bloc<RowBannerEvent, RowBannerState> {
     required this.viewId,
     required this.fieldController,
     required RowMetaPB rowMeta,
-  })  : _rowBackendSvc = RowBackendService(viewId: viewId),
+    RowBackendService? rowBackendService,
+  })  : _rowBackendSvc = rowBackendService ?? RowBackendService(viewId: viewId),
         _metaListener = RowMetaListener(rowMeta.id),
         super(RowBannerState.initial(rowMeta)) {
     _dispatch();
@@ -49,9 +50,9 @@ class RowBannerBloc extends Bloc<RowBannerEvent, RowBannerState> {
       (event, emit) {
         event.when(
           initial: () async {
+            _listenRowMetaChanged();
             unawaited(_readRowMeta());
             await _loadPrimaryField();
-            _listenRowMetaChanged();
             final result = await UserEventGetUserProfile().send();
             result.fold(
               (userProfile) => _userProfile = userProfile,
@@ -173,7 +174,8 @@ class RowBannerState extends Equatable with _$RowBannerState {
 
   @override
   List<Object?> get props => [
-        rowMeta.cover.data,
+        rowMeta.hasCover(),
+        rowMeta.cover,
         rowMeta.icon,
         primaryField,
         loadingState,

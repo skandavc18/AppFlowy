@@ -214,10 +214,19 @@ class PropertyStyle {
 
   double get maximum {
     final stored = doubleSetting('maximum', fallback: 100);
-    return stored <= 0 ? 100 : stored;
+    return isValidProgressNumber(stored) ? stored : 100;
   }
 
   bool get showPercent => boolSetting('show_percent', fallback: true);
+
+  /// Existing bars gain the extra inputs too; false keeps the compact bar.
+  bool get showButtons => boolSetting('show_buttons', fallback: true);
+
+  /// Progress only moves forward for +, regardless of legacy counter settings.
+  double get progressStep {
+    final stored = doubleSetting('step', fallback: 1);
+    return isValidProgressNumber(stored) ? stored : 1;
+  }
 
   // Counter ----------------------------------------------------------------
 
@@ -277,6 +286,20 @@ class PropertyStyle {
   @override
   int get hashCode => Object.hash(kind, jsonEncode(settings));
 }
+
+/// A maximum or step must be positive and safe to store as JSON.
+bool isValidProgressNumber(double? value) =>
+    value != null && value.isFinite && value > 0;
+
+/// Keep fractional steps and large bounds without rounding through an int.
+String formatProgressNumber(double value) => !value.isFinite || value == 0
+    ? '0'
+    : value.toString().replaceFirst(RegExp(r'\.0$'), '');
+
+/// Allows settings surfaces to use a host's persistence without a live view.
+typedef PropertyStyleSettingsWriter = Future<void> Function(
+  Map<String, Object?> values,
+);
 
 /// One column's settings as a single cell asked for them.
 typedef PropertyCellOverrides = Map<String, Map<String, Object?>>;

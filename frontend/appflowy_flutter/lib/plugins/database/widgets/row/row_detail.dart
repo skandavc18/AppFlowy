@@ -9,6 +9,7 @@ import 'package:appflowy/plugins/database_document/database_document_plugin.dart
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_versions/page_version_host.dart';
 import 'package:appflowy/workspace/application/page_versions/page_versions.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/user/application/reminder/reminder_bloc.dart';
@@ -16,13 +17,13 @@ import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 
 import '../cell/editable_cell_builder.dart';
 import 'row_banner.dart';
+import 'row_detail_scroll_surface.dart';
 import 'row_property.dart';
 
 /// How the row popup is shaped: a landscape 4:3 box, an iPad held sideways.
@@ -57,23 +58,11 @@ class _RowDetailPageState extends State<RowDetailPage> {
   late final cellBuilder = EditableCellBuilder(
     databaseController: widget.databaseController,
   );
-  late final ScrollController scrollController;
-
-  double scrollOffset = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    scrollController =
-        ScrollController(onAttach: (_) => attachScrollListener());
-  }
-
-  void attachScrollListener() => scrollController.addListener(onScrollChanged);
+  final _headerKey = GlobalKey(debugLabel: 'Row detail fields');
 
   @override
   void dispose() {
-    scrollController.removeListener(onScrollChanged);
-    scrollController.dispose();
+    dropManagerState.dispose();
     super.dispose();
   }
 
@@ -98,6 +87,7 @@ class _RowDetailPageState extends State<RowDetailPage> {
       height = tallest;
       width = height * _rowDetailAspectRatio;
     }
+    final contentInset = (width * 0.1).clamp(28.0, rowDetailContentInset);
 
     return FlowyDialog(
       width: width,
@@ -127,91 +117,48 @@ class _RowDetailPageState extends State<RowDetailPage> {
                 tableViewId: widget.rowController.viewId,
                 rowId: widget.rowController.rowId,
               ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Positioned.fill(
-                    child: NestedScrollView(
-                      controller: scrollController,
-                      headerSliverBuilder:
-                          (BuildContext context, bool innerBoxIsScrolled) {
-                        return <Widget>[
-                          SliverToBoxAdapter(
-                            child: Column(
-                              children: [
-                                RowBanner(
-                                  databaseController: widget.databaseController,
-                                  rowController: widget.rowController,
-                                  cellBuilder: cellBuilder,
-                                  allowOpenAsFullPage:
-                                      widget.allowOpenAsFullPage,
-                                  userProfile: widget.userProfile,
-                                ),
-                                const VSpace(16),
-                                Padding(
-                                  // The drag handle rides in the margin and the
-                                  // name button insets itself, so the property
-                                  // names still begin on the measure.
-                                  padding: const EdgeInsets.only(
-                                    left: rowDetailContentInset - 24,
-                                    right: rowDetailContentInset,
-                                  ),
-                                  child: RowPropertyList(
-                                    cellBuilder: cellBuilder,
-                                    viewId: widget.databaseController.viewId,
-                                    fieldController: widget
-                                        .databaseController.fieldController,
-                                  ),
-                                ),
-                                const VSpace(20),
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: rowDetailContentInset,
-                                  ),
-                                  child: Divider(height: 1.0),
-                                ),
-                                const VSpace(20),
-                              ],
-                            ),
-                          ),
-                        ];
-                      },
-                      body: RowDocument(
-                        viewId: widget.rowController.viewId,
-                        rowId: widget.rowController.rowId,
+              child: RowDetailScrollSurface(
+                coverHeight: rowCoverHeightFor(state.rowMeta),
+                actions: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: actions(context),
+                ),
+                child: RowDocument(
+                  viewId: widget.rowController.viewId,
+                  rowId: widget.rowController.rowId,
+                  userProfile: widget.userProfile,
+                  showComments: true,
+                  shrinkWrap: false,
+                  contentInset: contentInset,
+                  header: KeyedSubtree(
+                    key: _headerKey,
+                    child: RowDetailHeader(
+                      contentInset: contentInset,
+                      banner: RowBanner(
+                        databaseController: widget.databaseController,
+                        rowController: widget.rowController,
+                        cellBuilder: cellBuilder,
+                        allowOpenAsFullPage: widget.allowOpenAsFullPage,
                         userProfile: widget.userProfile,
-                        showComments: true,
+                        spacious: true,
+                        contentInset: contentInset,
+                      ),
+                      properties: RowPropertyList(
+                        cellBuilder: cellBuilder,
+                        viewId: widget.databaseController.viewId,
+                        fieldController:
+                            widget.databaseController.fieldController,
+                        mutedLabels: true,
                       ),
                     ),
                   ),
-                  Positioned(
-                    top: calculateActionsOffset(),
-                    right: 12,
-                    child: Row(children: actions(context)),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
         ),
       ),
     );
-  }
-
-  void onScrollChanged() {
-    if (scrollOffset != scrollController.offset) {
-      setState(() => scrollOffset = scrollController.offset);
-    }
-  }
-
-  // Every row wears a cover now, so the actions always ride down with it.
-  double calculateActionsOffset() {
-    final offsetByScroll = clampDouble(
-      rowCoverHeight - scrollOffset,
-      0,
-      rowCoverHeight,
-    );
-    return 12 + offsetByScroll;
   }
 
   List<Widget> actions(BuildContext context) {
@@ -255,5 +202,59 @@ class _RowDetailPageState extends State<RowDetailPage> {
       ],
       RowActionButton(rowController: widget.rowController),
     ];
+  }
+}
+
+/// The popup's page hierarchy. Spacing, rather than rules or nested cards,
+/// separates the title, properties and the discussion that follows them.
+class RowDetailHeader extends StatelessWidget {
+  const RowDetailHeader({
+    super.key,
+    required this.banner,
+    required this.properties,
+    this.contentInset = rowDetailContentInset,
+  });
+
+  final Widget banner;
+  final Widget properties;
+  final double contentInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted =
+        theme.extension<PremiumThemeExtension>()?.textMuted ?? theme.hintColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        banner,
+        const SizedBox(height: 24),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: contentInset),
+          child: Semantics(
+            header: true,
+            child: Text(
+              LocaleKeys.grid_settings_properties.tr(),
+              key: const ValueKey('row-properties-heading'),
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontSize: 12.5,
+                height: 1.4,
+                color: muted,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Padding(
+          // The drag handle lives in the margin, not ahead of the labels.
+          padding: EdgeInsets.only(
+            left: contentInset - 24,
+            right: contentInset,
+          ),
+          child: properties,
+        ),
+        const SizedBox(height: 32),
+      ],
+    );
   }
 }

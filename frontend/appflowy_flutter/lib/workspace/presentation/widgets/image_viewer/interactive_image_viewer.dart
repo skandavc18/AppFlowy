@@ -1,14 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:appflowy/plugins/database/widgets/cell_editor/media_cell_editor.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/plugins/database/widgets/media_file_type_ext.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_toolbar.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/media_entities.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 const double _minScaleFactor = .5;
 const double _maxScaleFactor = 5;
@@ -18,10 +23,12 @@ class InteractiveImageViewer extends StatefulWidget {
     super.key,
     this.userProfile,
     required this.imageProvider,
+    this.actions = const MediaActionService(),
   });
 
   final UserProfilePB? userProfile;
   final AFImageProvider imageProvider;
+  final MediaActionService actions;
 
   @override
   State<InteractiveImageViewer> createState() => _InteractiveImageViewerState();
@@ -37,18 +44,26 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
   bool get isLastIndex => currentIndex == widget.imageProvider.imageCount - 1;
   bool get isFirstIndex => currentIndex == 0;
 
-  late ImageBlockData currentImage;
-
-  UserProfilePB? userProfile;
+  ImageBlockData get currentImage =>
+      widget.imageProvider.getImage(currentIndex);
 
   @override
   void initState() {
     super.initState();
     controller.addListener(_onControllerChanged);
-    currentImage = widget.imageProvider.getImage(currentIndex);
-    userProfile =
-        widget.userProfile ?? context.read<DocumentBloc>().state.userProfilePB;
-    focusNode.requestFocus();
+    _clampIndex();
+  }
+
+  @override
+  void didUpdateWidget(covariant InteractiveImageViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _clampIndex();
+  }
+
+  void _clampIndex() {
+    currentIndex = widget.imageProvider.imageCount == 0
+        ? 0
+        : currentIndex.clamp(0, widget.imageProvider.imageCount - 1);
   }
 
   void _onControllerChanged() {
@@ -68,92 +83,137 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
+    // A table/local-auth viewer need not live under a document at all. These
+    // optional subscriptions also pick up profile refreshes while it is open.
+    final documentProfile = context.select<DocumentBloc?, UserProfilePB?>(
+      (bloc) => bloc?.state.userProfilePB,
+    );
+    final workspaceProfile = context.select<UserWorkspaceBloc?, UserProfilePB?>(
+      (bloc) => bloc?.state.userProfile,
+    );
+    final userProfile =
+        widget.userProfile ?? documentProfile ?? workspaceProfile;
 
-    return KeyboardListener(
-      focusNode: focusNode,
-      onKeyEvent: (event) {
-        if (event is! KeyDownEvent) {
-          return;
-        }
-
-        if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
-          _move(-1);
-        } else if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
-          _move(1);
-        } else if ([
-          LogicalKeyboardKey.add,
-          LogicalKeyboardKey.numpadAdd,
-        ].contains(event.logicalKey)) {
-          _zoom(1.1, size);
-        } else if ([
-          LogicalKeyboardKey.minus,
-          LogicalKeyboardKey.numpadSubtract,
-        ].contains(event.logicalKey)) {
-          _zoom(.9, size);
-        } else if ([
-          LogicalKeyboardKey.numpad0,
-          LogicalKeyboardKey.digit0,
-        ].contains(event.logicalKey)) {
-          controller.value = Matrix4.identity();
-          _onControllerChanged();
-        }
-      },
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          SizedBox.expand(
-            child: InteractiveViewer(
-              boundaryMargin: const EdgeInsets.all(double.infinity),
-              transformationController: controller,
-              constrained: false,
-              minScale: _minScaleFactor,
-              maxScale: _maxScaleFactor,
-              scaleFactor: 500,
-              child: SizedBox(
-                height: size.height,
-                width: size.width,
-                child: GestureDetector(
-                  // We can consider adding zoom behavior instead in a later iteration
-                  onDoubleTap: () => Navigator.of(context).pop(),
-                  child: widget.imageProvider.renderImage(
-                    context,
-                    currentIndex,
-                    userProfile,
+    // The hover region is deliberately non-opaque. Keep its transparent parts
+    // from admitting the dialog barrier into the image's gesture arena.
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      child: Focus(
+        focusNode: focusNode,
+        autofocus: true,
+        onKeyEvent: (_, event) => _handleKey(event, size),
+        // Keep the autofocus node ABOVE the hover region: otherwise its focus
+        // would permanently reveal the actions even with the pointer outside.
+        child: MediaHoverRegion(
+          builder: (context, hovered) => Stack(
+            fit: StackFit.expand,
+            children: [
+              if (widget.imageProvider.imageCount > 0) ...[
+                SizedBox.expand(
+                  child: InteractiveViewer(
+                    boundaryMargin: const EdgeInsets.all(double.infinity),
+                    transformationController: controller,
+                    constrained: false,
+                    minScale: _minScaleFactor,
+                    maxScale: _maxScaleFactor,
+                    scaleFactor: 500,
+                    child: SizedBox(
+                      height: size.height,
+                      width: size.width,
+                      child: GestureDetector(
+                        // Keep the existing double-click-to-close behavior.
+                        onDoubleTap: () => Navigator.of(context).pop(),
+                        child: widget.imageProvider.renderImage(
+                          context,
+                          currentIndex,
+                          userProfile,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-              ),
-            ),
+                InteractiveImageToolbar(
+                  currentImage: currentImage,
+                  imageName: widget.imageProvider.getImageName(currentIndex),
+                  imageCount: widget.imageProvider.imageCount,
+                  isFirstIndex: isFirstIndex,
+                  isLastIndex: isLastIndex,
+                  currentScale: currentScale,
+                  userProfile: userProfile,
+                  actions: widget.actions,
+                  hovered: hovered,
+                  onPrevious: () => _move(-1),
+                  onNext: () => _move(1),
+                  onZoomIn: () => _zoom(1.1, size),
+                  onZoomOut: () => _zoom(.9, size),
+                  onScaleChanged: (scale) {
+                    final currentScale = controller.value.getMaxScaleOnAxis();
+                    final scaleStep = scale / currentScale;
+                    _zoom(scaleStep, size);
+                  },
+                  onDelete: widget.imageProvider.onDeleteImage == null
+                      ? null
+                      : () => widget.imageProvider.onDeleteImage
+                          ?.call(currentIndex),
+                ),
+              ] else
+                Align(
+                  alignment: Alignment.topRight,
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: CloseButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          InteractiveImageToolbar(
-            currentImage: currentImage,
-            imageCount: widget.imageProvider.imageCount,
-            isFirstIndex: isFirstIndex,
-            isLastIndex: isLastIndex,
-            currentScale: currentScale,
-            userProfile: userProfile,
-            onPrevious: () => _move(-1),
-            onNext: () => _move(1),
-            onZoomIn: () => _zoom(1.1, size),
-            onZoomOut: () => _zoom(.9, size),
-            onScaleChanged: (scale) {
-              final currentScale = controller.value.getMaxScaleOnAxis();
-              final scaleStep = scale / currentScale;
-              _zoom(scaleStep, size);
-            },
-            onDelete: widget.imageProvider.onDeleteImage == null
-                ? null
-                : () => widget.imageProvider.onDeleteImage?.call(currentIndex),
-          ),
-        ],
+        ),
       ),
     );
   }
 
+  KeyEventResult _handleKey(KeyEvent event, Size size) {
+    final key = event.logicalKey;
+    // The explicit toolbar delete is the only destructive action. Do not let
+    // these keys reach a selected database row or the document underneath.
+    if (key == LogicalKeyboardKey.delete ||
+        key == LogicalKeyboardKey.backspace) {
+      return KeyEventResult.handled;
+    }
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (key == LogicalKeyboardKey.escape) {
+      if (event is KeyDownEvent) {
+        unawaited(Navigator.of(context).maybePop());
+      }
+    } else if (key == LogicalKeyboardKey.arrowLeft) {
+      _move(-1);
+    } else if (key == LogicalKeyboardKey.arrowRight) {
+      _move(1);
+    } else if (key == LogicalKeyboardKey.add ||
+        key == LogicalKeyboardKey.numpadAdd ||
+        (key == LogicalKeyboardKey.equal &&
+            HardwareKeyboard.instance.isShiftPressed)) {
+      _zoom(1.1, size);
+    } else if (key == LogicalKeyboardKey.minus ||
+        key == LogicalKeyboardKey.numpadSubtract) {
+      _zoom(.9, size);
+    } else if (key == LogicalKeyboardKey.numpad0 ||
+        key == LogicalKeyboardKey.digit0) {
+      controller.value = Matrix4.identity();
+    } else {
+      return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
+  }
+
   void _move(int steps) {
+    if (widget.imageProvider.imageCount == 0) return;
     setState(() {
       final index = currentIndex + steps;
       currentIndex = index.clamp(0, widget.imageProvider.imageCount - 1);
-      currentImage = widget.imageProvider.getImage(currentIndex);
     });
   }
 
@@ -196,18 +256,16 @@ void openInteractiveViewerFromFile(
   MediaFilePB file, {
   required void Function(int) onDeleteImage,
   UserProfilePB? userProfile,
+  MediaActionService actions = const MediaActionService(),
 }) =>
     showDialog(
       context: context,
       builder: (_) => InteractiveImageViewer(
         userProfile: userProfile,
-        imageProvider: AFBlockImageProvider(
-          images: [
-            ImageBlockData(
-              url: file.url,
-              type: file.uploadType.toCustomImageType(),
-            ),
-          ],
+        actions: actions,
+        imageProvider: MediaFileImageProvider(
+          files: [file],
+          initialFileId: file.id,
           onDeleteImage: onDeleteImage,
         ),
       ),
@@ -219,21 +277,18 @@ void openInteractiveViewerFromFiles(
   required void Function(int) onDeleteImage,
   int initialIndex = 0,
   UserProfilePB? userProfile,
+  MediaActionService actions = const MediaActionService(),
 }) =>
     showDialog(
       context: context,
       builder: (_) => InteractiveImageViewer(
         userProfile: userProfile,
-        imageProvider: AFBlockImageProvider(
-          initialIndex: initialIndex,
-          images: files
-              .map(
-                (f) => ImageBlockData(
-                  url: f.url,
-                  type: f.uploadType.toCustomImageType(),
-                ),
-              )
-              .toList(),
+        actions: actions,
+        imageProvider: MediaFileImageProvider(
+          initialFileId: files.isEmpty
+              ? null
+              : files[initialIndex.clamp(0, files.length - 1)].id,
+          files: files,
           onDeleteImage: onDeleteImage,
         ),
       ),

@@ -131,8 +131,11 @@ class _DateTimeTextFieldState extends State<DateTimeTextField> {
   }
 
   void dateFocusNodeListener() {
-    if (dateFocusNode.hasFocus || justSubmitted) {
-      justSubmitted = true;
+    if (dateFocusNode.hasFocus) {
+      justSubmitted = false;
+      return;
+    }
+    if (justSubmitted) {
       return;
     }
 
@@ -145,8 +148,11 @@ class _DateTimeTextFieldState extends State<DateTimeTextField> {
   }
 
   void timeFocusNodeListener() {
-    if (timeFocusNode.hasFocus || widget.timeFormat == null || justSubmitted) {
-      justSubmitted = true;
+    if (timeFocusNode.hasFocus) {
+      justSubmitted = false;
+      return;
+    }
+    if (widget.timeFormat == null || justSubmitted) {
       return;
     }
 

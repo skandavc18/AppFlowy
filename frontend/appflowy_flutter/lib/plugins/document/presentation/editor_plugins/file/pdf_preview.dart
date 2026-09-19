@@ -8,6 +8,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
@@ -41,7 +42,6 @@ const _scrollThumbFadeDuration = Duration(milliseconds: 160);
 /// The toolbar steps out of the way once the reader settles down.
 const _chromeIdleDelay = Duration(seconds: 3);
 const _chromeRevealThrottle = Duration(milliseconds: 300);
-const _chromeFadeDuration = Duration(milliseconds: 170);
 
 /// Half of a mid-point page transition. A flip needs the extra time to read as
 /// paper swinging on a spine; a fade only needs to get out of the way.
@@ -131,6 +131,7 @@ class PdfPreview extends StatefulWidget {
     this.sourceDocumentRef,
     this.scrollController,
     this.bare = false,
+    this.mediaActions = const MediaActionService(),
   });
 
   final File file;
@@ -142,6 +143,7 @@ class PdfPreview extends StatefulWidget {
   final bool fullscreen;
   final PdfDocumentRef? sourceDocumentRef;
   final PdfPreviewScrollController? scrollController;
+  final MediaActionService mediaActions;
 
   /// Renders the pages alone — no toolbar, search bar or sidebar — for a host
   /// that supplies the surface and the navigation, such as the book reader.
@@ -522,62 +524,89 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       return const SizedBox.shrink();
     }
     final visible = !widget.fullscreen || chromeVisible || !autoHideToolbar;
-    return IgnorePointer(
-      ignoring: !visible,
-      child: AnimatedOpacity(
-        duration: _chromeFadeDuration,
-        curve: Curves.easeOutCubic,
-        opacity: visible ? 1 : 0,
-        child: MouseRegion(
-          opaque: false,
-          onEnter: (_) => _setToolbarHovered(true),
-          onExit: (_) => _setToolbarHovered(false),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildToolbar(),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 200),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment.topCenter,
-                child: searchVisible
-                    ? AnimatedBuilder(
-                        animation: searchListenable,
-                        builder: (_, __) => PdfSearchToolbar(
-                          controller: searchController,
-                          focusNode: searchFocusNode,
-                          currentMatch: ocrSearchEnabled
-                              ? ocrMatchIndex + 1
-                              : textSearcher.currentIndex == null
-                                  ? 0
-                                  : textSearcher.currentIndex! + 1,
-                          matchCount: ocrSearchEnabled
-                              ? ocrMatches.length
-                              : textSearcher.matches.length,
-                          searchProgress: ocrSearchEnabled
-                              ? _scanProgress
-                              : textSearcher.searchProgress,
-                          isSearching: ocrSearchEnabled
-                              ? (ocrIndex?.isScanning ?? false)
-                              : textSearcher.isSearching,
-                          options: searchOptions,
-                          onOptionsChanged: _setSearchOptions,
-                          queryInvalid: searchPatternInvalid,
-                          ocrEnabled: ocrSearchEnabled,
-                          onToggleOcr: _toggleOcrSearch,
-                          statusOverride: _searchStatusOverride,
-                          onChanged: _search,
-                          onPrevious:
-                              _hasSearchMatches ? _previousSearchMatch : null,
-                          onNext: _hasSearchMatches ? _nextSearchMatch : null,
-                          onClose: _closeSearch,
-                        ),
-                      )
-                    : const SizedBox.shrink(),
+    return MediaActionReveal(
+      visible: visible,
+      child: MouseRegion(
+        opaque: false,
+        onEnter: (_) => _setToolbarHovered(true),
+        onExit: (_) => _setToolbarHovered(false),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildToolbar(),
+            if (widget.fullscreen)
+              Padding(
+                key: const ValueKey('pdf-fullscreen-media-actions'),
+                // Keep file actions and their badge outside navigation,
+                // page selection and the canvas's scroll-thumb hit area.
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
+                  16,
+                  4,
+                ),
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: Shortcuts(
+                    // Space activates these buttons, not the PDF's page turn.
+                    // Ctrl/Cmd+C remains owned by the PDF text selection.
+                    shortcuts: const {
+                      SingleActivator(LogicalKeyboardKey.space):
+                          ActivateIntent(),
+                      SingleActivator(LogicalKeyboardKey.enter):
+                          ActivateIntent(),
+                    },
+                    child: MediaActionButtons(
+                      source: MediaActionSource(
+                        source: widget.file.path,
+                        name: widget.name,
+                      ),
+                      actions: widget.mediaActions,
+                    ),
+                  ),
+                ),
               ),
-            ],
-          ),
+            AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: searchVisible
+                  ? AnimatedBuilder(
+                      animation: searchListenable,
+                      builder: (_, __) => PdfSearchToolbar(
+                        controller: searchController,
+                        focusNode: searchFocusNode,
+                        currentMatch: ocrSearchEnabled
+                            ? ocrMatchIndex + 1
+                            : textSearcher.currentIndex == null
+                                ? 0
+                                : textSearcher.currentIndex! + 1,
+                        matchCount: ocrSearchEnabled
+                            ? ocrMatches.length
+                            : textSearcher.matches.length,
+                        searchProgress: ocrSearchEnabled
+                            ? _scanProgress
+                            : textSearcher.searchProgress,
+                        isSearching: ocrSearchEnabled
+                            ? (ocrIndex?.isScanning ?? false)
+                            : textSearcher.isSearching,
+                        options: searchOptions,
+                        onOptionsChanged: _setSearchOptions,
+                        queryInvalid: searchPatternInvalid,
+                        ocrEnabled: ocrSearchEnabled,
+                        onToggleOcr: _toggleOcrSearch,
+                        statusOverride: _searchStatusOverride,
+                        onChanged: _search,
+                        onPrevious:
+                            _hasSearchMatches ? _previousSearchMatch : null,
+                        onNext: _hasSearchMatches ? _nextSearchMatch : null,
+                        onClose: _closeSearch,
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
         ),
       ),
     );
@@ -2329,6 +2358,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           editable: widget.editable,
           sourceDocumentRef: documentRef,
           onMetadataChanged: widget.onMetadataChanged,
+          mediaActions: widget.mediaActions,
         ),
       ),
     );
@@ -2697,6 +2727,7 @@ class _PdfFullscreenView extends StatelessWidget {
     required this.editable,
     required this.sourceDocumentRef,
     required this.onMetadataChanged,
+    required this.mediaActions,
   });
 
   final File file;
@@ -2705,6 +2736,7 @@ class _PdfFullscreenView extends StatelessWidget {
   final bool editable;
   final PdfDocumentRef sourceDocumentRef;
   final ValueChanged<Map<String, dynamic>> onMetadataChanged;
+  final MediaActionService mediaActions;
 
   @override
   Widget build(BuildContext context) {
@@ -2721,6 +2753,7 @@ class _PdfFullscreenView extends StatelessWidget {
           fullscreen: true,
           sourceDocumentRef: sourceDocumentRef,
           onMetadataChanged: onMetadataChanged,
+          mediaActions: mediaActions,
         ),
       ),
     );

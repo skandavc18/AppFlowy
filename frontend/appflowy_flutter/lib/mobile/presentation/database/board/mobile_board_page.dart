@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/presentation/database/board/board.dart';
 import 'package:appflowy/mobile/presentation/database/board/widgets/group_card_header.dart';
 import 'package:appflowy/mobile/presentation/database/card/card.dart';
+import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/board/application/board_bloc.dart';
 import 'package:appflowy/plugins/database/widgets/card/card.dart';
@@ -252,31 +253,38 @@ class _BoardContentState extends State<_BoardContent> {
         value: boardBloc,
         child: IgnorePointer(
           ignoring: isLocked,
-          child: RowCard(
-            fieldController: boardBloc.fieldController,
-            rowMeta: rowMeta,
-            viewId: boardBloc.viewId,
-            rowCache: boardBloc.rowCache,
-            groupingFieldId: groupItem.fieldInfo.id,
-            isEditing: false,
-            cellBuilder: cellBuilder,
-            onTap: (context) {
-              context.push(
-                MobileRowDetailPage.routeName,
-                extra: {
-                  MobileRowDetailPage.argRowId: rowMeta.id,
-                  MobileRowDetailPage.argDatabaseController:
-                      context.read<BoardBloc>().databaseController,
-                },
-              );
-            },
-            onStartEditing: () {},
-            onEndEditing: () {},
-            styleConfiguration: RowCardStyleConfiguration(
-              cellStyleMap: mobileBoardCardCellStyleMap(context),
-              showAccessory: false,
+          child: ValueListenableBuilder<CardPreviewMode>(
+            valueListenable: CardPreviewRegistry.instance.notifierFor(
+              boardBloc.databaseController.view,
             ),
-            userProfile: boardBloc.userProfile,
+            builder: (context, preview, _) => RowCard(
+              fieldController: boardBloc.fieldController,
+              rowMeta: rowMeta,
+              viewId: boardBloc.viewId,
+              rowCache: boardBloc.rowCache,
+              groupingFieldId: groupItem.fieldInfo.id,
+              isEditing: false,
+              cellBuilder: cellBuilder,
+              onTap: (context) {
+                context.push(
+                  MobileRowDetailPage.routeName,
+                  extra: {
+                    MobileRowDetailPage.argRowId: rowMeta.id,
+                    MobileRowDetailPage.argDatabaseController:
+                        context.read<BoardBloc>().databaseController,
+                  },
+                );
+              },
+              onStartEditing: () {},
+              onEndEditing: () {},
+              styleConfiguration: RowCardStyleConfiguration(
+                cellStyleMap: mobileBoardCardCellStyleMap(context),
+                showAccessory: false,
+                showProperties: false,
+                preview: preview,
+              ),
+              userProfile: boardBloc.userProfile,
+            ),
           ),
         ),
       ),

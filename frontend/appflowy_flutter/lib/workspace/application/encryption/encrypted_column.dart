@@ -58,6 +58,25 @@ class EncryptedColumns {
     );
   }
 
+  /// A writer must not interpret malformed or future protection metadata as
+  /// permission to store plaintext. UI-only legacy reads remain tolerant.
+  static EncryptedColumns? forWriting(String extra) {
+    if (extra.isEmpty) return const EncryptedColumns();
+    try {
+      final values = jsonDecode(extra);
+      if (values is! Map) return null;
+      if (!values.containsKey(envelopeKey)) return const EncryptedColumns();
+      final mark = values[envelopeKey];
+      if (mark is! Map || mark['version'] != currentVersion) return null;
+      final fields = mark['fields'];
+      if (fields is! List || fields.any((field) => field is! String))
+        return null;
+      return EncryptedColumns(fieldIds: fields.cast<String>().toSet());
+    } on Object {
+      return null;
+    }
+  }
+
   EncryptedColumns with_(String fieldId, {required bool sealed}) {
     final next = Set<String>.from(fieldIds);
     if (sealed) {
@@ -102,6 +121,66 @@ class ColumnEncryptionResult {
   bool get succeeded => failure == null;
 }
 
+/// Preflight ALL values before the first write. The private key copy cannot
+/// become zeroes if the vault locks while a backend write is in flight.
+/// Rollback covers only this operation's attempted writes and preserves the
+/// original ciphertext/plaintext verbatim. No secret is included in failures.
+Future<ColumnEncryptionResult> rewriteColumnEncryption({
+  required Uint8List key,
+  required Map<String, String> values,
+  required bool encrypt,
+  required Future<bool> Function(String rowId, String value) write,
+  required Future<bool> Function() mark,
+}) async {
+  final ownedKey = Uint8List.fromList(key);
+  final replacements = <String, String>{};
+  final attempted = <String>[];
+  try {
+    try {
+      for (final entry in values.entries) {
+        final value = entry.value;
+        if (value.isEmpty) continue;
+        if (looksSealed(value)) {
+          final plaintext = openText(
+            key: ownedKey,
+            value: value,
+            context: encryptedCellContext,
+          );
+          if (!encrypt) replacements[entry.key] = plaintext;
+        } else if (encrypt) {
+          replacements[entry.key] = sealText(
+            key: ownedKey,
+            plaintext: value,
+            context: encryptedCellContext,
+          );
+        }
+      }
+    } on Object {
+      return const ColumnEncryptionResult.failed('wrongKey');
+    }
+    try {
+      for (final entry in replacements.entries) {
+        attempted.add(entry.key);
+        if (!await write(entry.key, entry.value)) throw StateError('write');
+      }
+      if (!await mark()) throw StateError('mark');
+      return ColumnEncryptionResult(changed: true, cells: replacements.length);
+    } on Object {
+      var rolledBack = true;
+      for (final rowId in attempted.reversed) {
+        try {
+          if (!await write(rowId, values[rowId]!)) rolledBack = false;
+        } on Object {
+          rolledBack = false;
+        }
+      }
+      return ColumnEncryptionResult.failed(rolledBack ? 'write' : 'incomplete');
+    }
+  } finally {
+    ownedKey.fillRange(0, ownedKey.length, 0);
+  }
+}
+
 /// Remembers which columns are sealed, and does the sealing.
 ///
 /// The type picker, the heading menu and every cell need the same answer and
@@ -115,7 +194,8 @@ class EncryptedColumnRegistry {
   final Map<String, ValueNotifier<EncryptedColumns>> _views = {};
   final Map<String, String> _hosts = {};
   final Map<String, Future<String>> _resolving = {};
-  final Set<String> _loading = {};
+  final Map<String, Future<EncryptedColumns?>> _reading = {};
+  final Set<String> _rewriting = {};
 
   /// Bumped whenever anything changes, for surfaces that are not the view the
   /// column was sealed in.
@@ -147,19 +227,42 @@ class EncryptedColumnRegistry {
       fieldType == FieldType.RichText;
 
   Future<void> refresh(String viewId) async {
-    if (!_loading.add(viewId)) {
-      return;
+    await readColumns(viewId);
+  }
+
+  /// An authoritative read for writers. Null means unknown, NOT unencrypted.
+  /// Concurrent readers await the same operation instead of racing an empty
+  /// cache during startup.
+  Future<EncryptedColumns?> readColumns(String viewId) {
+    final pending = _reading[viewId];
+    if (pending != null) {
+      return pending;
     }
+    final future = _readColumns(viewId);
+    _reading[viewId] = future;
+    return future.whenComplete(() {
+      _reading.removeWhere((id, _) => id == viewId);
+    });
+  }
+
+  Future<EncryptedColumns?> _readColumns(String viewId) async {
     try {
       final host = await _hostFor(viewId);
       final result = await ViewBackendService.getView(host);
       final view = result.fold((found) => found, (_) => null);
       if (view == null) {
-        return;
+        return null;
       }
-      _adopt(host, EncryptedColumns.fromExtra(view.extra));
-    } finally {
-      _loading.remove(viewId);
+      final columns = EncryptedColumns.forWriting(view.extra);
+      if (columns == null) return null;
+      _views.putIfAbsent(
+        viewId,
+        () => ValueNotifier(const EncryptedColumns()),
+      );
+      _adopt(host, columns);
+      return columns;
+    } on Object {
+      return null;
     }
   }
 
@@ -191,10 +294,13 @@ class EncryptedColumnRegistry {
     }
     final future = _resolveHost(viewId);
     _resolving[viewId] = future;
-    final host = await future;
-    _hosts[viewId] = host;
-    _resolving.removeWhere((key, _) => key == viewId);
-    return host;
+    try {
+      final host = await future;
+      _hosts[viewId] = host;
+      return host;
+    } finally {
+      _resolving.removeWhere((key, _) => key == viewId);
+    }
   }
 
   Future<String> _resolveHost(String viewId) async {
@@ -202,7 +308,7 @@ class EncryptedColumnRegistry {
         .getDatabaseId()
         .fold((id) => id, (_) => null);
     if (databaseId == null) {
-      return viewId;
+      throw StateError('Could not resolve the encrypted column owner.');
     }
     final host = await DatabaseEventGetDatabases().send().fold(
           (databases) => databases.items
@@ -210,7 +316,10 @@ class EncryptedColumnRegistry {
               ?.viewId,
           (_) => null,
         );
-    return host == null || host.isEmpty ? viewId : host;
+    if (host == null || host.isEmpty) {
+      throw StateError('Could not resolve the encrypted column owner.');
+    }
+    return host;
   }
 
   /// Seals every cell of [fieldId], then marks the column.
@@ -221,144 +330,73 @@ class EncryptedColumnRegistry {
   Future<ColumnEncryptionResult> encryptColumn({
     required String viewId,
     required String fieldId,
-  }) async {
-    final vault = EncryptionVault.instance;
-    await vault.ensureLoaded();
-    final key = vault.keyForBulkWork;
-    if (key == null) {
-      return const ColumnEncryptionResult.failed('locked');
-    }
-
-    final field = await _field(viewId, fieldId);
-    if (field == null) {
-      return const ColumnEncryptionResult.failed('missing');
-    }
-    if (!canEncrypt(field.fieldType)) {
-      return const ColumnEncryptionResult.failed('unsupported');
-    }
-
-    final sealing = await _rewriteCells(
-      viewId: viewId,
-      fieldId: fieldId,
-      transform: (value) {
-        if (value.isEmpty || looksSealed(value)) {
-          return null;
-        }
-        return sealText(
-          key: key,
-          plaintext: value,
-          context: encryptedCellContext,
-        );
-      },
-    );
-    if (sealing.written < 0) {
-      return const ColumnEncryptionResult.failed('read');
-    }
-
-    final marked = await _mark(viewId, fieldId, sealed: true);
-    return ColumnEncryptionResult(changed: marked, cells: sealing.written);
-  }
+  }) =>
+      _transformColumn(viewId: viewId, fieldId: fieldId, encrypt: true);
 
   /// Writes every cell of [fieldId] back in the clear, then clears the mark.
   Future<ColumnEncryptionResult> decryptColumn({
     required String viewId,
     required String fieldId,
-  }) async {
-    final vault = EncryptionVault.instance;
-    await vault.ensureLoaded();
-    final key = vault.keyForBulkWork;
-    if (key == null) {
-      return const ColumnEncryptionResult.failed('locked');
-    }
+  }) =>
+      _transformColumn(viewId: viewId, fieldId: fieldId, encrypt: false);
 
-    var refused = false;
-    final opening = await _rewriteCells(
-      viewId: viewId,
-      fieldId: fieldId,
-      transform: (value) {
-        if (value.isEmpty || !looksSealed(value)) {
-          return null;
-        }
-        try {
-          return openText(
-            key: key,
-            value: value,
-            context: encryptedCellContext,
-          );
-        } on Object {
-          // A cell sealed with an older passphrase must not be quietly emptied.
-          refused = true;
-          return null;
-        }
-      },
-    );
-    if (opening.written < 0) {
-      return const ColumnEncryptionResult.failed('read');
-    }
-    if (refused) {
-      return const ColumnEncryptionResult.failed('wrongKey');
-    }
-
-    // The mark is what makes the interface stop hiding the column, so it must
-    // not be cleared while a cell is still ciphertext: that cell would be shown
-    // raw, which reads as the column having lost its contents.
-    if (opening.failed > 0) {
-      return const ColumnEncryptionResult.failed('incomplete');
-    }
-
-    final marked = await _mark(viewId, fieldId, sealed: false);
-    return ColumnEncryptionResult(changed: marked, cells: opening.written);
-  }
-
-  /// Reads every row once and writes back only the cells [transform] changes.
-  ///
-  /// [written] is -1 when the table could not be read at all, which is not the
-  /// same as "nothing needed changing". [failed] counts cells the backend
-  /// refused, so the caller can decline to clear a mark that is still true.
-  Future<({int written, int failed})> _rewriteCells({
+  Future<ColumnEncryptionResult> _transformColumn({
     required String viewId,
     required String fieldId,
-    required String? Function(String value) transform,
+    required bool encrypt,
   }) async {
+    String? operation;
+    try {
+      final host = await _hostFor(viewId);
+      final id = '$host|$fieldId';
+      if (!_rewriting.add(id))
+        return const ColumnEncryptionResult.failed('busy');
+      operation = id;
+      if (await readColumns(viewId) == null) {
+        return const ColumnEncryptionResult.failed('read');
+      }
+      final field = await _field(viewId, fieldId);
+      if (field == null) return const ColumnEncryptionResult.failed('missing');
+      if (!canEncrypt(field.fieldType)) {
+        return const ColumnEncryptionResult.failed('unsupported');
+      }
+      final values = await _columnValues(viewId, fieldId);
+      if (values == null) return const ColumnEncryptionResult.failed('read');
+      final vault = EncryptionVault.instance;
+      await vault.ensureLoaded();
+      final key = vault.keyForBulkWork;
+      if (key == null) return const ColumnEncryptionResult.failed('locked');
+      return await rewriteColumnEncryption(
+        key: key,
+        values: values,
+        encrypt: encrypt,
+        write: (rowId, value) async => (await CellBackendService.updateCell(
+          viewId: viewId,
+          cellContext: CellContext(fieldId: fieldId, rowId: rowId),
+          data: value,
+        ))
+            .fold((_) => true, (_) => false),
+        mark: () => _mark(viewId, fieldId, sealed: encrypt),
+      );
+    } on Object {
+      return const ColumnEncryptionResult.failed('read');
+    } finally {
+      if (operation != null) _rewriting.remove(operation);
+    }
+  }
+
+  Future<Map<String, String>?> _columnValues(
+      String viewId, String fieldId) async {
     final rows = await DatabaseEventGetRowsAsText(
       DatabaseViewIdPB()..value = viewId,
-    ).send().fold<RepeatedRowTextPB?>((rows) => rows, (failure) {
-      Log.warn('Could not read $viewId to seal a column: $failure');
-      return null;
-    });
-    if (rows == null) {
-      return (written: -1, failed: 0);
-    }
-
+    ).send().fold<RepeatedRowTextPB?>((rows) => rows, (_) => null);
+    if (rows == null) return null;
     final column = rows.fieldIds.indexOf(fieldId);
-    if (column < 0) {
-      return (written: 0, failed: 0);
-    }
-
-    var written = 0;
-    var failed = 0;
-    for (final row in rows.rows) {
-      if (column >= row.cells.length) {
-        continue;
-      }
-      final next = transform(row.cells[column]);
-      if (next == null) {
-        continue;
-      }
-      final result = await CellBackendService.updateCell(
-        viewId: viewId,
-        cellContext: CellContext(fieldId: fieldId, rowId: row.rowId),
-        data: next,
-      );
-      result.fold(
-        (_) => written++,
-        (error) {
-          failed++;
-          Log.warn('A cell of $fieldId could not be written: $error');
-        },
-      );
-    }
-    return (written: written, failed: failed);
+    if (column < 0) return null;
+    return {
+      for (final row in rows.rows)
+        row.rowId: column < row.cells.length ? row.cells[column] : '',
+    };
   }
 
   /// Every sealed cell of [fieldId], by row id.
@@ -429,16 +467,22 @@ class EncryptedColumnRegistry {
       return false;
     }
 
-    final next =
-        EncryptedColumns.fromExtra(view.extra).with_(fieldId, sealed: sealed);
-    _adopt(host, next);
-    revision.value++;
+    final currentColumns = EncryptedColumns.forWriting(view.extra);
+    if (currentColumns == null) return false;
+    final next = currentColumns.with_(fieldId, sealed: sealed);
 
     final result = await ViewBackendService.updateView(
       viewId: host,
       extra: next.mergeIntoExtra(view.extra),
     );
-    return result.fold((_) => true, (_) => false);
+    return result.fold(
+      (_) {
+        _adopt(host, next);
+        revision.value++;
+        return true;
+      },
+      (_) => false,
+    );
   }
 
   @visibleForTesting

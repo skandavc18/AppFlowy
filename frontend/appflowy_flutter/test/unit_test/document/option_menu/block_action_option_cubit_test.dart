@@ -24,6 +24,8 @@ class MemoryClipboardService extends ClipboardService {
 }
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('block action option cubit:', () {
     setUpAll(() {
       Log.shared.disableLog = true;

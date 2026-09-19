@@ -5,6 +5,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/comm
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/image_render.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/layouts/multi_image_layouts.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/multi_image_block_component.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
@@ -20,7 +22,10 @@ class ImageGridLayout extends ImageBlockMultiLayout {
     required super.images,
     required super.indexNotifier,
     required super.isLocalMode,
+    this.mediaActions = const MediaActionService(),
   });
+
+  final MediaActionService mediaActions;
 
   @override
   State<ImageGridLayout> createState() => _ImageGridLayoutState();
@@ -31,6 +36,7 @@ class _ImageGridLayoutState extends State<ImageGridLayout> {
   Widget build(BuildContext context) {
     return StaggeredGridBuilder(
       images: widget.images,
+      mediaActions: widget.mediaActions,
       onImageDoubleTapped: (index) {
         _openInteractiveViewer(context, index);
       },
@@ -40,31 +46,38 @@ class _ImageGridLayoutState extends State<ImageGridLayout> {
   void _openInteractiveViewer(BuildContext context, int index) => showDialog(
         context: context,
         builder: (_) => InteractiveImageViewer(
-          userProfile: context.read<DocumentBloc>().state.userProfilePB,
+          userProfile: context.read<DocumentBloc?>()?.state.userProfilePB,
+          actions: widget.mediaActions,
           imageProvider: AFBlockImageProvider(
             images: widget.images,
             initialIndex: index,
-            onDeleteImage: (index) async {
-              final transaction = widget.editorState.transaction;
-              final newImages = widget.images.toList();
-              newImages.removeAt(index);
+            onDeleteImage: widget.editorState.editable
+                ? (index) async {
+                    // Permissions can change while the viewer is still open.
+                    if (!widget.editorState.editable) {
+                      return;
+                    }
+                    final transaction = widget.editorState.transaction;
+                    final newImages = widget.images.toList();
+                    newImages.removeAt(index);
 
-              if (newImages.isNotEmpty) {
-                transaction.updateNode(
-                  widget.node,
-                  {
-                    MultiImageBlockKeys.images:
-                        newImages.map((e) => e.toJson()).toList(),
-                    MultiImageBlockKeys.layout:
-                        widget.node.attributes[MultiImageBlockKeys.layout],
-                  },
-                );
-              } else {
-                transaction.deleteNode(widget.node);
-              }
+                    if (newImages.isNotEmpty) {
+                      transaction.updateNode(
+                        widget.node,
+                        {
+                          MultiImageBlockKeys.images:
+                              newImages.map((e) => e.toJson()).toList(),
+                          MultiImageBlockKeys.layout: widget
+                              .node.attributes[MultiImageBlockKeys.layout],
+                        },
+                      );
+                    } else {
+                      transaction.deleteNode(widget.node);
+                    }
 
-              await widget.editorState.apply(transaction);
-            },
+                    await widget.editorState.apply(transaction);
+                  }
+                : null,
           ),
         ),
       );
@@ -97,227 +110,107 @@ class _ImageGridLayoutState extends State<ImageGridLayout> {
 /// ┌──────────┐
 /// │          │
 /// └──────────┘
-class StaggeredGridBuilder extends StatefulWidget {
+class StaggeredGridBuilder extends StatelessWidget {
   const StaggeredGridBuilder({
     super.key,
     required this.images,
     required this.onImageDoubleTapped,
+    this.mediaActions = const MediaActionService(),
   });
 
   final List<ImageBlockData> images;
   final void Function(int) onImageDoubleTapped;
-
-  @override
-  State<StaggeredGridBuilder> createState() => _StaggeredGridBuilderState();
-}
-
-class _StaggeredGridBuilderState extends State<StaggeredGridBuilder> {
-  late final UserProfilePB? _userProfile;
-  final List<List<ImageBlockData>> _splitImages = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _userProfile = context.read<DocumentBloc>().state.userProfilePB;
-
-    for (int i = 0; i < widget.images.length; i += 4) {
-      final end = (i + 4 < widget.images.length) ? i + 4 : widget.images.length;
-      _splitImages.add(widget.images.sublist(i, end));
-    }
-  }
-
-  @override
-  void didUpdateWidget(covariant StaggeredGridBuilder oldWidget) {
-    if (widget.images.length != oldWidget.images.length) {
-      _splitImages.clear();
-      for (int i = 0; i < widget.images.length; i += 4) {
-        final end =
-            (i + 4 < widget.images.length) ? i + 4 : widget.images.length;
-        _splitImages.add(widget.images.sublist(i, end));
-      }
-    }
-    super.didUpdateWidget(oldWidget);
-  }
+  final MediaActionService mediaActions;
 
   @override
   Widget build(BuildContext context) {
+    final userProfile = context.select<DocumentBloc?, UserProfilePB?>(
+      (bloc) => bloc?.state.userProfilePB,
+    );
     return StaggeredGrid.count(
       crossAxisCount: 4,
       mainAxisSpacing: 6,
       crossAxisSpacing: 6,
-      children:
-          _splitImages.indexed.map(_buildTilesForImages).flattened.toList(),
+      children: _buildTiles(userProfile).toList(),
     );
   }
 
-  List<Widget> _buildTilesForImages((int, List<ImageBlockData>) data) {
-    final index = data.$1;
-    final images = data.$2;
-
-    final isReversed = index.isOdd;
-
-    if (images.length == 4) {
-      return [
-        StaggeredGridTile.count(
-          crossAxisCellCount: isReversed ? 1 : 2,
-          mainAxisCellCount: isReversed ? 1 : 2,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[0],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
+  Iterable<Widget> _buildTiles(UserProfilePB? userProfile) sync* {
+    // Recompute from the current list even when a replacement/reorder keeps its
+    // length. Keys follow photos, not the browser's selected index or grid slot.
+    final occurrences = <(String, CustomImageType, String?), int>{};
+    for (final (segment, group) in images.slices(4).indexed) {
+      final reversed = segment.isOdd;
+      final dimensions = switch (group.length) {
+        4 => [
+            (reversed ? 1 : 2, reversed ? 1 : 2),
+            (1, 1),
+            (reversed ? 2 : 1, reversed ? 2 : 1),
+            (2, 1),
+          ],
+        3 => [(2, reversed ? 1 : 2), (2, reversed ? 2 : 1), (2, 1)],
+        2 => const [(2, 2), (2, 2)],
+        _ => const [(4, 2)],
+      };
+      for (final (offset, image) in group.indexed) {
+        final identity = (image.url, image.type, image.workspaceFileId);
+        final occurrence = occurrences.update(
+          identity,
+          (count) => count + 1,
+          ifAbsent: () => 0,
+        );
+        final imageIndex = segment * 4 + offset;
+        yield StaggeredGridTile.count(
+          key: ValueKey((identity, occurrence)),
+          crossAxisCellCount: dimensions[offset].$1,
+          mainAxisCellCount: dimensions[offset].$2,
+          child: MediaHoverRegion(
+            builder: (context, visible) => Stack(
+              fit: StackFit.expand,
+              clipBehavior: Clip.none,
+              children: [
+                GestureDetector(
+                  onDoubleTap: () => onImageDoubleTapped(imageIndex),
+                  child: ImageRender(
+                    image: image,
+                    userProfile: image.type == CustomImageType.external
+                        ? null
+                        : userProfile,
+                    borderRadius: BorderRadius.zero,
+                  ),
+                ),
+                // Keep clear of the gallery's top toolbar. Only the photo is
+                // clipped; the shared feedback badge can paint above this bar.
+                Positioned(
+                  left: 8,
+                  right: 8,
+                  bottom: 8,
+                  child: Align(
+                    alignment: Alignment.bottomRight,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 72),
+                      child: MediaActionReveal(
+                        visible: visible,
+                        child: MediaActionButtons(
+                          key: ValueKey(
+                            ('grid-image-actions', identity, occurrence),
+                          ),
+                          source: MediaActionSource.image(
+                            image,
+                            userProfile: userProfile,
+                          ),
+                          actions: mediaActions,
+                          buttonSize: 24,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-        StaggeredGridTile.count(
-          crossAxisCellCount: 1,
-          mainAxisCellCount: 1,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4 + 1;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[1],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-        StaggeredGridTile.count(
-          crossAxisCellCount: isReversed ? 2 : 1,
-          mainAxisCellCount: isReversed ? 2 : 1,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4 + 2;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[2],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-        StaggeredGridTile.count(
-          crossAxisCellCount: 2,
-          mainAxisCellCount: 1,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4 + 3;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[3],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-      ];
-    } else if (images.length == 3) {
-      return [
-        StaggeredGridTile.count(
-          crossAxisCellCount: 2,
-          mainAxisCellCount: isReversed ? 1 : 2,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[0],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-        StaggeredGridTile.count(
-          crossAxisCellCount: 2,
-          mainAxisCellCount: isReversed ? 2 : 1,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4 + 1;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[1],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-        StaggeredGridTile.count(
-          crossAxisCellCount: 2,
-          mainAxisCellCount: 1,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4 + 2;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[2],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-      ];
-    } else if (images.length == 2) {
-      return [
-        StaggeredGridTile.count(
-          crossAxisCellCount: 2,
-          mainAxisCellCount: 2,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[0],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-        StaggeredGridTile.count(
-          crossAxisCellCount: 2,
-          mainAxisCellCount: 2,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4 + 1;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[1],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-      ];
-    } else {
-      return [
-        StaggeredGridTile.count(
-          crossAxisCellCount: 4,
-          mainAxisCellCount: 2,
-          child: GestureDetector(
-            onDoubleTap: () {
-              final imageIndex = index * 4;
-              widget.onImageDoubleTapped(imageIndex);
-            },
-            child: ImageRender(
-              image: images[0],
-              userProfile: _userProfile,
-              borderRadius: BorderRadius.zero,
-            ),
-          ),
-        ),
-      ];
+        );
+      }
     }
   }
 }

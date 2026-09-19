@@ -9,6 +9,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/cust
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_caption.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_placeholder.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/resizeable_image.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/custom_image_cache_manager.dart';
@@ -22,7 +23,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:saver_gallery/saver_gallery.dart';
-import 'package:string_validator/string_validator.dart';
 import 'package:universal_platform/universal_platform.dart';
 
 import '../common.dart';
@@ -203,18 +203,21 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
     // Only a real picture can dock the menu to its own corner; the placeholder
     // and the unsupported card fall back to the block's top right.
     var menuIsDocked = false;
-    if (src.isEmpty) {
+    if (src == null || src is String && src.isEmpty) {
       child = ImagePlaceholder(
         key: imagePlaceholderKey is GlobalKey ? imagePlaceholderKey : null,
         node: node,
       );
-    } else if (imageType != CustomImageType.internal &&
-        !_checkIfURLIsValid(src)) {
+    } else if (src is! String ||
+        imageType != CustomImageType.internal && !_checkIfURLIsValid(src)) {
       child = const UnsupportedImageWidget();
     } else {
       menuIsDocked = hasHoverMenu;
+      final uri = Uri.tryParse(src);
       child = ResizableImage(
-        src: src,
+        src: imageType == CustomImageType.local && uri?.isScheme('file') == true
+            ? File.fromUri(uri!).path
+            : src,
         width: width,
         height: height,
         editable: editorState.editable,
@@ -232,13 +235,16 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
         onDoubleTap: () => showDialog(
           context: context,
           builder: (_) => InteractiveImageViewer(
-            userProfile: context.read<DocumentBloc>().state.userProfilePB,
+            userProfile: context.read<DocumentBloc?>()?.state.userProfilePB,
             imageProvider: AFBlockImageProvider(
               images: [ImageBlockData(url: src, type: imageType)],
-              onDeleteImage: (_) async {
-                final transaction = editorState.transaction..deleteNode(node);
-                await editorState.apply(transaction);
-              },
+              onDeleteImage: editorState.editable
+                  ? (_) async {
+                      final transaction = editorState.transaction
+                        ..deleteNode(node);
+                      await editorState.apply(transaction);
+                    }
+                  : null,
             ),
           ),
         ),
@@ -300,6 +306,7 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
             valueListenable: showActionsNotifier,
             builder: (_, value, child) {
               return Stack(
+                clipBehavior: Clip.none,
                 children: [
                   editorState.editable
                       ? BlockSelectionContainer(
@@ -312,14 +319,17 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
                           child: child!,
                         )
                       : child!,
-                  if (value && !menuIsDocked)
+                  if (!menuIsDocked)
                     Positioned(
                       top: 10,
                       right: 10,
-                      child: widget.menuBuilder!(
-                        widget.node,
-                        this,
-                        imageStateNotifier,
+                      child: MediaActionReveal(
+                        visible: value,
+                        child: widget.menuBuilder!(
+                          widget.node,
+                          this,
+                          imageStateNotifier,
+                        ),
                       ),
                     ),
                 ],
@@ -348,10 +358,10 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
     return ValueListenableBuilder<bool>(
       valueListenable: showActionsNotifier,
       builder: (_, showActions, __) {
-        if (!showActions) {
-          return const SizedBox.shrink();
-        }
-        return widget.menuBuilder!(widget.node, this, imageStateNotifier);
+        return MediaActionReveal(
+          visible: showActions,
+          child: widget.menuBuilder!(widget.node, this, imageStateNotifier),
+        );
       },
     );
   }
@@ -490,21 +500,7 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
     return name == null || name.isEmpty ? 'appflowy-image.png' : name;
   }
 
-  bool _checkIfURLIsValid(dynamic url) {
-    if (url is! String) {
-      return false;
-    }
-
-    if (url.isEmpty) {
-      return false;
-    }
-
-    if (!isURL(url) && !File(url).existsSync()) {
-      return false;
-    }
-
-    return true;
-  }
+  bool _checkIfURLIsValid(dynamic url) => isValidImageBlockSource(url);
 
   Future<void> _saveImageToGallery(String url) async {
     final permission = await PermissionChecker.checkPhotoPermission(context);
@@ -527,5 +523,29 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
         );
       }
     }
+  }
+}
+
+/// Whether a page image has a usable address, without fetching its contents.
+/// Local file URIs and raw paths are both supported by the media service.
+bool isValidImageBlockSource(dynamic source) {
+  if (source is! String || source.trim().isEmpty) {
+    return false;
+  }
+  final uri = Uri.tryParse(source);
+  if (uri != null && (uri.isScheme('http') || uri.isScheme('https'))) {
+    return uri.hasAuthority &&
+        uri.host.isNotEmpty &&
+        !RegExp(r'[\s%\\]').hasMatch(uri.host) &&
+        uri.userInfo.isEmpty;
+  }
+  try {
+    final file =
+        uri?.isScheme('file') == true ? File.fromUri(uri!) : File(source);
+    return file.existsSync();
+  } on ArgumentError {
+    return false;
+  } on FileSystemException {
+    return false;
   }
 }

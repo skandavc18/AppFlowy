@@ -13,6 +13,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/comm
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_migrator.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
@@ -34,9 +35,22 @@ import 'package:flutter/material.dart';
 /// reader, the media player, the picture stage, the source editor and the
 /// office bridge. Only the surrounding chrome differs.
 class WorkspaceFileView extends StatefulWidget {
-  const WorkspaceFileView({super.key, required this.view});
+  const WorkspaceFileView({
+    super.key,
+    required this.view,
+    this.mediaActions = const MediaActionService(),
+    this.resolveStorageUrl,
+    this.materializeFile = materializeMediaFile,
+  });
 
   final ViewPB view;
+  final MediaActionService mediaActions;
+
+  /// Optional IO boundaries; the normal storage migration and materialization
+  /// remain the defaults, and every renderer still receives the resolved file.
+  final Future<String?> Function(ViewPB view)? resolveStorageUrl;
+  final Future<File> Function({required String source, required String name})
+      materializeFile;
 
   @override
   State<WorkspaceFileView> createState() => _WorkspaceFileViewState();
@@ -84,7 +98,9 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
     if (oldWidget.view.id != widget.view.id ||
         oldWidget.view.name != widget.view.name ||
         oldWidget.view.workspaceItem?.storageUrl !=
-            widget.view.workspaceItem?.storageUrl) {
+            widget.view.workspaceItem?.storageUrl ||
+        oldWidget.resolveStorageUrl != widget.resolveStorageUrl ||
+        oldWidget.materializeFile != widget.materializeFile) {
       metadata = _seedMetadata(
         WorkspaceFilePreviewCodec.decode(widget.view.extra),
       );
@@ -108,14 +124,18 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   }
 
   Future<File> _openFile(ViewPB view, String name, int revision) async {
-    final source = await _migrator.resolveStorageUrl(view);
+    final materialize = widget.materializeFile;
+    final source =
+        await (widget.resolveStorageUrl ?? _migrator.resolveStorageUrl)(
+      view,
+    );
     if (source == null || source.isEmpty) {
       throw const FileSystemException(
         'The stored copy of this file could not be found in this workspace.',
       );
     }
     if (mounted && revision == _fileRevision) _source = source;
-    return materializeMediaFile(source: source, name: name);
+    return materialize(source: source, name: name);
   }
 
   void _saveMetadata(Map<String, dynamic> value) {
@@ -151,11 +171,17 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<File>(
-      key: ObjectKey(_file),
       future: _file,
       builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _WorkspaceFileMessage(
+        // FutureBuilder retains the previous data while a new source loads.
+        // Keep the action state (including its in-flight lock), not that target.
+        final file = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data
+            : null;
+        final Widget renderer;
+        if (snapshot.connectionState == ConnectionState.done &&
+            snapshot.hasError) {
+          renderer = _WorkspaceFileMessage(
             icon: Icons.error_outline_rounded,
             title: 'This file could not be opened',
             message: _describeError(snapshot.error!),
@@ -164,12 +190,59 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
               onPressed: () => setState(_resolveFile),
             ),
           );
+        } else if (file == null) {
+          renderer = const Center(child: CircularProgressIndicator());
+        } else {
+          renderer = _buildRenderer(context, file);
         }
-        final file = snapshot.data;
-        if (file == null) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        return _buildRenderer(context, file);
+        final source = MediaActionSource(
+          // A cloud download is already local here. Do not fetch it again or
+          // attach workspace credentials to a materialized file.
+          source: file?.path ?? '',
+          name: _name,
+          isImage: _isImage,
+        );
+        final body = KeyedSubtree(key: ObjectKey(_file), child: renderer);
+        return MediaHoverRegion(
+          builder: (context, visible) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                key: const ValueKey('workspace-file-media-actions'),
+                // The shared badge paints above the buttons. Reserve its
+                // scaled height, outside renderer menus and scrollbars.
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
+                  16,
+                  4,
+                ),
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  child: ExcludeFocus(
+                    excluding: file == null,
+                    child: Visibility(
+                      visible: file != null,
+                      maintainState: true,
+                      maintainAnimation: true,
+                      maintainSize: true,
+                      child: MediaActionReveal(
+                        visible: visible,
+                        child: MediaActionButtons(
+                          source: source,
+                          actions: widget.mediaActions,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              // Capture the renderer outside the hover builder: revealing the
+              // controls must not rebuild a player, editor or platform view.
+              Expanded(child: body),
+            ],
+          ),
+        );
       },
     );
   }
@@ -239,6 +312,7 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
         metadata: metadata,
         onMetadataChanged: _saveMetadata,
         editable: _isEditable,
+        mediaActions: widget.mediaActions,
       );
     }
 
@@ -249,6 +323,7 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
         name: _name,
         editable: _isEditable,
         embedded: false,
+        mediaActions: widget.mediaActions,
       );
     }
 
@@ -339,10 +414,12 @@ class _WorkspaceImageStage extends StatefulWidget {
 class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
     with SingleTickerProviderStateMixin {
   final TransformationController _transformation = TransformationController();
-  late final _fitAnimation = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 200),
-  )..addListener(_animateFit);
+  AnimationController? _fitController;
+  AnimationController get _fitAnimation =>
+      _fitController ??= (AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 200),
+      )..addListener(_animateFit));
   Matrix4Tween? _fitTween;
   int _revision = 0;
   int _fitRevision = 0;
@@ -361,7 +438,9 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
 
   @override
   void dispose() {
-    _fitAnimation.dispose();
+    // Closing a picture before using Fit must not create a ticker during
+    // teardown, when inherited widget lookups are no longer safe.
+    _fitController?.dispose();
     _transformation.dispose();
     super.dispose();
   }

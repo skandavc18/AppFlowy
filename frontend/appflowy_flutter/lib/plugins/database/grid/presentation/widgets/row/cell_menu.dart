@@ -50,12 +50,14 @@ List<AppMenuEntry> cellStyleMenuEntries({
   required String rowId,
   required PropertyStyle? style,
   required Map<String, Object?> override,
+  PropertyStyleSettingsWriter? onSettingsChanged,
 }) {
   if (style == null || style.kind == PropertyStyleKind.plain) {
     return const [];
   }
 
   Future<void> write(Map<String, Object?> values) =>
+      onSettingsChanged?.call(values) ??
       PropertyStyleRegistry.instance.setCellSettings(
         viewId: viewId,
         fieldId: fieldId,
@@ -78,12 +80,23 @@ List<AppMenuEntry> cellStyleMenuEntries({
     final answer = await showAFTextFieldDialog(
       context: context,
       title: title,
-      initialValue: current == null ? '' : _trim(current),
+      initialValue: current == null
+          ? ''
+          : style.kind == PropertyStyleKind.progress
+              ? formatProgressNumber(current)
+              : _trim(current),
     );
     if (answer == null) {
       return;
     }
-    await write({key: double.tryParse(answer.trim())});
+    final trimmed = answer.trim();
+    final parsed = double.tryParse(trimmed);
+    if (style.kind == PropertyStyleKind.progress &&
+        trimmed.isNotEmpty &&
+        !isValidProgressNumber(parsed)) {
+      return;
+    }
+    await write({key: parsed});
   }
 
   return normalizeAppMenuEntries([
@@ -176,12 +189,32 @@ List<AppMenuEntry> _settingEntries({
         AppMenuItem(
           label: LocaleKeys.interactive_property_maximum.tr(),
           icon: Icons.straighten_rounded,
-          shortcut: _trim(style.maximum),
+          shortcut: formatProgressNumber(style.maximum),
           onSelected: () => unawaited(
             askNumber(
               'maximum',
               LocaleKeys.interactive_property_maximum.tr(),
               style.maximum,
+            ),
+          ),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.interactive_progress_showButtons.tr(),
+          icon: style.showButtons
+              ? Icons.check_box_rounded
+              : Icons.check_box_outline_blank_rounded,
+          onSelected: () =>
+              unawaited(write({'show_buttons': !style.showButtons})),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.interactive_property_step.tr(),
+          icon: Icons.linear_scale_rounded,
+          shortcut: formatProgressNumber(style.progressStep),
+          onSelected: () => unawaited(
+            askNumber(
+              'step',
+              LocaleKeys.interactive_property_step.tr(),
+              style.progressStep,
             ),
           ),
         ),

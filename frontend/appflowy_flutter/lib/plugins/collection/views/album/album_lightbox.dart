@@ -2,18 +2,39 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:appflowy/env/cloud_env.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/views/album/album_chrome.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_media_player.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
+import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/album/album_metadata.dart';
 import 'package:appflowy/workspace/application/collections/album/album_state.dart';
+import 'package:appflowy/workspace/application/providers/provider_view_factory.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy_backend/protobuf/flowy-database2/file_entities.pbenum.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart';
+
+/// An optional host bridge for provider-backed items, called only on Copy/Share.
+///
+/// The host must resolve the ORIGINAL using its provider's own connection and
+/// keep the local file alive until the action finishes. Return null if only a
+/// thumbnail or display rendition is available. In particular, Google Photos'
+/// materialize path can be a transcoded JPEG, so it is not unconditionally an
+/// original-file resolver. No workspace profile or bearer is passed here.
+typedef AlbumOriginalFileResolver = Future<File?> Function(AlbumMediaItem item);
 
 /// Opens the album at [startId], filling the window.
 Future<void> showAlbumLightbox({
@@ -24,22 +45,40 @@ Future<void> showAlbumLightbox({
   ValueChanged<AlbumMediaItem>? onOpenInWorkspace,
   bool startSlideshow = false,
   bool startWithInfo = false,
+  MediaActionService mediaActions = const MediaActionService(),
+  AlbumOriginalFileResolver? resolveOriginalFile,
 }) {
+  // A dialog is outside the caller's page providers. Carry the live bloc, not a
+  // profile snapshot, so cloud actions see renewal/sign-out while it is open.
+  final workspace = context.read<UserWorkspaceBloc?>();
   return showGeneralDialog<void>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.92),
+    transitionDuration: MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 200),
     transitionBuilder: (_, animation, __, child) => FadeTransition(
       opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
       child: child,
     ),
-    pageBuilder: (_, __, ___) => AlbumLightbox(
-      controller: controller,
-      palette: palette,
-      startId: startId,
-      onOpenInWorkspace: onOpenInWorkspace,
-      startSlideshow: startSlideshow,
-      startWithInfo: startWithInfo,
-    ),
+    pageBuilder: (_, __, ___) {
+      final lightbox = AlbumLightbox(
+        controller: controller,
+        palette: palette,
+        startId: startId,
+        onOpenInWorkspace: onOpenInWorkspace,
+        startSlideshow: startSlideshow,
+        startWithInfo: startWithInfo,
+        mediaActions: mediaActions,
+        resolveOriginalFile: resolveOriginalFile,
+      );
+      return workspace == null
+          ? lightbox
+          : BlocProvider<UserWorkspaceBloc>.value(
+              value: workspace,
+              child: lightbox,
+            );
+    },
   );
 }
 
@@ -52,6 +91,8 @@ class AlbumLightbox extends StatefulWidget {
     this.onOpenInWorkspace,
     this.startSlideshow = false,
     this.startWithInfo = false,
+    this.mediaActions = const MediaActionService(),
+    this.resolveOriginalFile,
   });
 
   final AlbumController controller;
@@ -60,6 +101,8 @@ class AlbumLightbox extends StatefulWidget {
   final ValueChanged<AlbumMediaItem>? onOpenInWorkspace;
   final bool startSlideshow;
   final bool startWithInfo;
+  final MediaActionService mediaActions;
+  final AlbumOriginalFileResolver? resolveOriginalFile;
 
   @override
   State<AlbumLightbox> createState() => _AlbumLightboxState();
@@ -76,6 +119,10 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
   bool playing = false;
   bool showInfo = false;
   bool chromeVisible = true;
+  bool mediaActionActive = false;
+  bool mediaActionFailed = false;
+  Object? _mediaActionIdentity;
+  MediaActionService? _mediaActions;
   int index = 0;
   List<int>? shuffleOrder;
 
@@ -86,12 +133,40 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
     index = math.max(0, items.indexWhere((item) => item.id == widget.startId));
     pageController = PageController(initialPage: index);
     widget.controller.addListener(_onControllerChanged);
-    unawaited(widget.controller.ensureMetadata(items[index]));
+    if (items.isNotEmpty) {
+      unawaited(widget.controller.ensureMetadata(items[index]));
+    }
     showInfo = widget.startWithInfo;
     if (widget.startSlideshow) {
       _setPlaying(true);
     }
     _wakeChrome();
+  }
+
+  @override
+  void didUpdateWidget(covariant AlbumLightbox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_onControllerChanged);
+      widget.controller.addListener(_onControllerChanged);
+      items = widget.controller.ordered;
+      index =
+          math.max(0, items.indexWhere((item) => item.id == widget.startId));
+      shuffleOrder = null;
+      final controller = widget.controller;
+      final page = index;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted &&
+            identical(controller, widget.controller) &&
+            pageController.hasClients &&
+            items.isNotEmpty) {
+          pageController.jumpToPage(page);
+        }
+      });
+      final item = current;
+      if (item != null) unawaited(controller.ensureMetadata(item));
+      if (playing) _restartSlideTimer();
+    }
   }
 
   @override
@@ -108,7 +183,12 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
     if (!mounted) {
       return;
     }
-    setState(() {});
+    // Keep slideshow order stable, but adopt refreshed paths/names (a hosted
+    // thumbnail can become local while this dialog is already open).
+    final live = {for (final item in widget.controller.items) item.id: item};
+    setState(() {
+      items = [for (final item in items) live[item.id] ?? item];
+    });
   }
 
   AlbumMediaItem? get current =>
@@ -201,11 +281,11 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
   Widget _chrome(Widget child, {required Alignment alignment}) {
     return Align(
       alignment: alignment,
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-        opacity: chromeVisible ? 1 : 0,
-        child: IgnorePointer(ignoring: !chromeVisible, child: child),
+      // Only chrome descendants keep their strip revealed. The autofocus root
+      // sits outside, so the ordinary three-second idle behavior still works.
+      child: MediaActionReveal(
+        visible: chromeVisible || mediaActionActive || mediaActionFailed,
+        child: child,
       ),
     );
   }
@@ -215,7 +295,6 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
     final favourite =
         item != null && widget.controller.state.isFavourite(item.id);
     return Container(
-      height: 54,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         gradient: LinearGradient(
@@ -227,70 +306,230 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
           ],
         ),
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _LightboxButton(
-            icon: Icons.close_rounded,
-            tooltip: LocaleKeys.collections_album_close.tr(),
-            onPressed: _close,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Container(
+            constraints: const BoxConstraints(minHeight: 54),
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
               children: [
-                Text(
-                  item?.name ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w500,
+                _LightboxButton(
+                  icon: Icons.close_rounded,
+                  tooltip: LocaleKeys.collections_album_close.tr(),
+                  onPressed: _close,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item?.name ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      Text(
+                        '${index + 1} / ${items.length}',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.62),
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Text(
-                  '${index + 1} / ${items.length}',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.62),
-                    fontSize: 11,
-                  ),
+                _LightboxButton(
+                  icon: favourite
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                  tooltip: favourite
+                      ? LocaleKeys.collections_album_unfavourite.tr()
+                      : LocaleKeys.collections_album_favourite.tr(),
+                  selected: favourite,
+                  onPressed: item == null
+                      ? null
+                      : () => widget.controller.toggleFavourite(item.id),
                 ),
+                _LightboxButton(
+                  icon: Icons.info_outline_rounded,
+                  tooltip: showInfo
+                      ? LocaleKeys.collections_album_hideInfo.tr()
+                      : LocaleKeys.collections_album_info.tr(),
+                  selected: showInfo,
+                  onPressed: _toggleInfo,
+                ),
+                if (widget.onOpenInWorkspace != null)
+                  _LightboxButton(
+                    icon: Icons.open_in_new_rounded,
+                    tooltip: LocaleKeys.collections_album_openInWorkspace.tr(),
+                    onPressed: item == null
+                        ? null
+                        : () {
+                            Navigator.of(context).maybePop();
+                            widget.onOpenInWorkspace!(item);
+                          },
+                  ),
               ],
             ),
           ),
-          _LightboxButton(
-            icon: favourite ? Icons.star_rounded : Icons.star_border_rounded,
-            tooltip: favourite
-                ? LocaleKeys.collections_album_unfavourite.tr()
-                : LocaleKeys.collections_album_favourite.tr(),
-            selected: favourite,
-            onPressed: item == null
-                ? null
-                : () => widget.controller.toggleFavourite(item.id),
-          ),
-          _LightboxButton(
-            icon: Icons.info_outline_rounded,
-            tooltip: showInfo
-                ? LocaleKeys.collections_album_hideInfo.tr()
-                : LocaleKeys.collections_album_info.tr(),
-            selected: showInfo,
-            onPressed: _toggleInfo,
-          ),
-          if (widget.onOpenInWorkspace != null)
-            _LightboxButton(
-              icon: Icons.open_in_new_rounded,
-              tooltip: LocaleKeys.collections_album_openInWorkspace.tr(),
-              onPressed: item == null
-                  ? null
-                  : () {
-                      Navigator.of(context).maybePop();
-                      widget.onOpenInWorkspace!(item);
-                    },
+          if (item != null)
+            Padding(
+              key: const ValueKey('album-media-actions'),
+              padding: EdgeInsets.only(
+                top: MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
+                bottom: 6,
+              ),
+              child: Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: Shortcuts(
+                  // The reader's Space shortcut must not steal native button
+                  // activation. Other keys still reach the lightbox normally.
+                  shortcuts: const {
+                    SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+                    SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+                  },
+                  child: _buildMediaActions(item),
+                ),
+              ),
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildMediaActions(AlbumMediaItem item) {
+    final profile = context.select<UserWorkspaceBloc?, UserProfilePB?>(
+      (bloc) => bloc?.state.userProfile,
+    );
+    final identity = _actionIdentity(item, profile);
+    final source = _mediaSource(item, profile);
+    if (_mediaActionIdentity != identity) {
+      _mediaActionIdentity = identity;
+      final wasFailed = mediaActionFailed;
+      mediaActionFailed = false;
+      // Failure pins already-visible chrome. A new target releases that pin
+      // and starts a fresh idle period; ordinary slideshow changes do not wake.
+      if (wasFailed) _wakeChrome();
+      // A ViewPB is mutable even though AlbumMediaItem is immutable. Freeze a
+      // private copy before a resolver can suspend and observe a later rename.
+      final snapshot = AlbumMediaItem(
+        view: ViewPB()
+          ..mergeFromMessage(item.view)
+          ..freeze(),
+        kind: item.kind,
+        path: item.path,
+        index: item.index,
+        byteSize: item.byteSize,
+        modifiedAt: item.modifiedAt,
+        unavailable: item.unavailable,
+      );
+      _mediaActions = _LightboxMediaActions(
+        delegate: widget.mediaActions,
+        item: snapshot,
+        resolveOriginalFile: widget.resolveOriginalFile,
+        isCurrent: () => _isCurrentAction(identity),
+        canStart: () => !mediaActionActive,
+        onActivity: _onMediaActionActivity,
+        onFailure: () {
+          if (mounted) {
+            setState(() => mediaActionFailed = true);
+            _wakeChrome();
+          }
+        },
+      );
+    }
+    if (isProviderView(item.id) && widget.resolveOriginalFile == null) {
+      // The synthetic view's storageUrl can be a cached thumbnail. Neither it
+      // nor the workspace-file migrator proves where the original lives.
+      return const _UnavailableAlbumMediaActions(
+        reason: 'Original file unavailable in this album.',
+      );
+    }
+    if (!widget.controller.items.any((live) => live.id == item.id) ||
+        (!isProviderView(item.id) && source.source.isEmpty)) {
+      return const _UnavailableAlbumMediaActions(reason: 'File unavailable.');
+    }
+    return MediaActionButtons(source: source, actions: _mediaActions!);
+  }
+
+  Object _actionIdentity(AlbumMediaItem item, UserProfilePB? profile) => (
+        widget.controller,
+        widget.mediaActions,
+        widget.resolveOriginalFile,
+        item.id,
+        item.path,
+        item.name,
+        item.kind,
+        item.byteSize,
+        item.modifiedAt,
+        item.unavailable,
+        item.view.extra,
+        _mediaSource(item, profile),
+        // Account changes invalidate a pending provider resolution, but never
+        // become provider download headers. Ordinary external files need none.
+        isProviderView(item.id) ? (profile?.id, profile?.token) : null,
+      );
+
+  bool _isCurrentAction(Object identity) {
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return false;
+    final id = current?.id;
+    // Read the live controller/profile even before their next widget frame.
+    for (final item in widget.controller.items) {
+      if (item.id == id) {
+        return identity ==
+            _actionIdentity(
+              item,
+              context.read<UserWorkspaceBloc?>()?.state.userProfile,
+            );
+      }
+    }
+    return false;
+  }
+
+  MediaActionSource _mediaSource(AlbumMediaItem item, UserProfilePB? profile) {
+    if (isProviderView(item.id)) {
+      // An unresolved provider item is deliberately NOT an actionable URL or
+      // thumbnail path. The adapter must replace this with a local original.
+      return MediaActionSource(
+        source: '',
+        name: item.name,
+        isImage: item.kind == AlbumMediaKind.image,
+      );
+    }
+    final stored = item.view.workspaceItem?.storageUrl;
+    final source = stored == null || stored.isEmpty ? item.path : stored;
+    final configured = getIt.isRegistered<AppFlowyCloudSharedEnv>()
+        ? getIt<AppFlowyCloudSharedEnv>().appflowyCloudConfig.base_url
+        : kAppflowyCloudUrl;
+    final server = Uri.tryParse(configured);
+    final uri = Uri.tryParse(source);
+    // AlbumMediaItem has no CloudFile upload type. Remote provider paths may
+    // be signed URLs: never infer workspace auth merely from !isLocal.
+    final cloud = uri != null &&
+        server != null &&
+        (uri.isScheme('https') || uri.isScheme('http')) &&
+        uri.hasAuthority &&
+        uri.userInfo.isEmpty &&
+        uri.scheme == server.scheme &&
+        uri.host == server.host &&
+        uri.port == server.port &&
+        uri.path.startsWith(
+          '${server.path.replaceFirst(RegExp(r'/+$'), '')}/api/file_storage/',
+        );
+    return MediaActionSource.file(
+      source: source,
+      name: item.name,
+      isImage: item.kind == AlbumMediaKind.image,
+      uploadType: cloud ? FileUploadTypePB.CloudFile : null,
+      userProfile: profile,
     );
   }
 
@@ -309,46 +548,52 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
           ],
         ),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _LightboxButton(
-            icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            tooltip: playing
-                ? LocaleKeys.collections_album_stopSlideshow.tr()
-                : LocaleKeys.collections_album_playSlideshow.tr(),
-            selected: playing,
-            onPressed: _togglePlaying,
+      child: Center(
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _LightboxButton(
+                icon: playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                tooltip: playing
+                    ? LocaleKeys.collections_album_stopSlideshow.tr()
+                    : LocaleKeys.collections_album_playSlideshow.tr(),
+                selected: playing,
+                onPressed: _togglePlaying,
+              ),
+              const SizedBox(width: 6),
+              _LightboxButton(
+                icon: Icons.shuffle_rounded,
+                tooltip: LocaleKeys.collections_album_shuffle.tr(),
+                selected: slideshow.shuffle,
+                onPressed: () => _updateSlideshow(
+                  slideshow.copyWith(shuffle: !slideshow.shuffle),
+                ),
+              ),
+              _LightboxButton(
+                icon: Icons.repeat_rounded,
+                tooltip: LocaleKeys.collections_album_loop.tr(),
+                selected: slideshow.loop,
+                onPressed: () =>
+                    _updateSlideshow(slideshow.copyWith(loop: !slideshow.loop)),
+              ),
+              const SizedBox(width: 12),
+              _IntervalStepper(
+                seconds: slideshow.seconds,
+                onChanged: (seconds) =>
+                    _updateSlideshow(slideshow.copyWith(seconds: seconds)),
+              ),
+              const SizedBox(width: 12),
+              _TransitionPicker(
+                transition: slideshow.transition,
+                onChanged: (transition) => _updateSlideshow(
+                  slideshow.copyWith(transition: transition),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 6),
-          _LightboxButton(
-            icon: Icons.shuffle_rounded,
-            tooltip: LocaleKeys.collections_album_shuffle.tr(),
-            selected: slideshow.shuffle,
-            onPressed: () => _updateSlideshow(
-              slideshow.copyWith(shuffle: !slideshow.shuffle),
-            ),
-          ),
-          _LightboxButton(
-            icon: Icons.repeat_rounded,
-            tooltip: LocaleKeys.collections_album_loop.tr(),
-            selected: slideshow.loop,
-            onPressed: () =>
-                _updateSlideshow(slideshow.copyWith(loop: !slideshow.loop)),
-          ),
-          const SizedBox(width: 12),
-          _IntervalStepper(
-            seconds: slideshow.seconds,
-            onChanged: (seconds) =>
-                _updateSlideshow(slideshow.copyWith(seconds: seconds)),
-          ),
-          const SizedBox(width: 12),
-          _TransitionPicker(
-            transition: slideshow.transition,
-            onChanged: (transition) =>
-                _updateSlideshow(slideshow.copyWith(transition: transition)),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -363,6 +608,7 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
   }
 
   void _onPageChanged(int page) {
+    if (page < 0 || page >= items.length) return;
     setState(() => index = page);
     final item = current;
     if (item != null) {
@@ -377,7 +623,7 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
   void _previous() => _goTo(index - 1);
   void _next() => _goTo(index + 1);
 
-  void _goTo(int target) {
+  void _goTo(int target, {bool revealChrome = true}) {
     if (items.isEmpty) {
       return;
     }
@@ -387,6 +633,11 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
             ? (widget.controller.settings.slideshow.loop ? 0 : items.length - 1)
             : target;
     if (resolved == index) {
+      return;
+    }
+    if (revealChrome) _wakeChrome();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      pageController.jumpToPage(resolved);
       return;
     }
     unawaited(
@@ -406,7 +657,7 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
       final order = shuffleOrder ??= _buildShuffleOrder();
       final position = order.indexOf(index);
       final next = order[(position + 1) % order.length];
-      _goTo(next);
+      _goTo(next, revealChrome: false);
       return;
     }
     if (index >= items.length - 1 &&
@@ -414,7 +665,7 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
       _setPlaying(false);
       return;
     }
-    _goTo(index + 1);
+    _goTo(index + 1, revealChrome: false);
   }
 
   List<int> _buildShuffleOrder() {
@@ -460,17 +711,157 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
 
   void _close() => unawaited(Navigator.of(context).maybePop());
 
+  void _onMediaActionActivity(bool active) {
+    if (!mounted) return;
+    setState(() {
+      mediaActionActive = active;
+      if (active) mediaActionFailed = false;
+    });
+    // Pending work pins the chrome even if focus leaves for a native sheet;
+    // completion starts a fresh idle period, leaving time to see feedback.
+    _wakeChrome();
+  }
+
   void _wakeChrome() {
     chromeTimer?.cancel();
     if (!chromeVisible) {
       setState(() => chromeVisible = true);
     }
     chromeTimer = Timer(_chromeIdle, () {
-      if (mounted && !showInfo) {
+      if (mounted && !showInfo && !mediaActionActive && !mediaActionFailed) {
         setState(() => chromeVisible = false);
       }
     });
   }
+}
+
+/// Resolves a provider original before delegating to the existing IO boundary.
+/// No preparation, clipboard formats or native sharing are reimplemented here.
+class _LightboxMediaActions extends MediaActionService {
+  const _LightboxMediaActions({
+    required this.delegate,
+    required this.item,
+    required this.resolveOriginalFile,
+    required this.isCurrent,
+    required this.canStart,
+    required this.onActivity,
+    required this.onFailure,
+  });
+
+  final MediaActionService delegate;
+  final AlbumMediaItem item;
+  final AlbumOriginalFileResolver? resolveOriginalFile;
+  final bool Function() isCurrent;
+  final bool Function() canStart;
+  final ValueChanged<bool> onActivity;
+  final VoidCallback onFailure;
+
+  Future<void> _run(
+    MediaActionSource target,
+    Future<void> Function(MediaActionSource original) operation,
+  ) async {
+    if (!isCurrent() || !canStart()) {
+      throw StateError('The media action is no longer current.');
+    }
+    onActivity(true);
+    try {
+      var original = target;
+      if (isProviderView(item.id)) {
+        final file = await resolveOriginalFile?.call(item);
+        final uri = file == null ? null : Uri.tryParse(file.path);
+        if (file == null ||
+            !p.isAbsolute(file.path) ||
+            uri?.isScheme('http') == true ||
+            uri?.isScheme('https') == true) {
+          throw StateError('The original file is unavailable.');
+        }
+        original = MediaActionSource(
+          source: file.path,
+          name: target.name,
+          isImage: target.isImage,
+        );
+      }
+      // A delayed download must not copy/share after closing, changing album,
+      // navigating, renewing credentials, or refreshing the displayed item.
+      if (!isCurrent()) {
+        throw StateError('The media action is no longer current.');
+      }
+      await operation(original);
+      if (!isCurrent()) {
+        throw StateError('The media action is no longer current.');
+      }
+    } catch (_) {
+      if (isCurrent()) onFailure();
+      // Shared buttons deliberately neither display nor log raw IO failures.
+      rethrow;
+    } finally {
+      onActivity(false);
+    }
+  }
+
+  @override
+  Future<void> copy(MediaActionSource target) => _run(target, delegate.copy);
+
+  @override
+  Future<void> share(MediaActionSource target, {Rect? sharePositionOrigin}) =>
+      _run(
+        target,
+        (original) => delegate.share(
+          original,
+          sharePositionOrigin: sharePositionOrigin,
+        ),
+      );
+}
+
+class _UnavailableAlbumMediaActions extends StatelessWidget {
+  const _UnavailableAlbumMediaActions({required this.reason});
+
+  final String reason;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              reason,
+              key: const ValueKey('album-original-unavailable'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.62),
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          for (final copy in [true, false])
+            SizedBox.square(
+              dimension: 32,
+              child: TooltipTheme(
+                data: TooltipTheme.of(context)
+                    .copyWith(excludeFromSemantics: true),
+                child: IconButton(
+                  key: ValueKey(copy ? 'media-copy' : 'media-share'),
+                  tooltip:
+                      '${copy ? LocaleKeys.editor_copy.tr() : LocaleKeys.button_share.tr()} — $reason',
+                  onPressed: null,
+                  padding: EdgeInsets.zero,
+                  icon: Semantics(
+                    label:
+                        '${copy ? LocaleKeys.editor_copy.tr() : LocaleKeys.button_share.tr()} — $reason',
+                    excludeSemantics: true,
+                    child: Icon(
+                      copy ? Icons.copy_rounded : Icons.ios_share_rounded,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.38),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
 }
 
 class _AlbumStagePage extends StatelessWidget {
@@ -505,7 +896,10 @@ class _AlbumStagePage extends StatelessWidget {
               ),
             ),
           );
-    if (!playing || !isCurrent || transition != AlbumSlideshowTransition.zoom) {
+    if (!playing ||
+        !isCurrent ||
+        transition != AlbumSlideshowTransition.zoom ||
+        MediaQuery.disableAnimationsOf(context)) {
       return child;
     }
     // A slow drift gives a slideshow its life; it is only worth running on

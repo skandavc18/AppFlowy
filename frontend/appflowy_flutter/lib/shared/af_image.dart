@@ -16,7 +16,12 @@ class AFImage extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.userProfile,
     this.borderRadius,
-  }) : assert(
+    this.cacheWidth,
+    this.cacheHeight,
+    this.errorBuilder,
+  })  : assert(cacheWidth == null || cacheWidth > 0),
+        assert(cacheHeight == null || cacheHeight > 0),
+        assert(
           uploadType != FileUploadTypePB.CloudFile || userProfile != null,
           'userProfile must be provided for accessing files from AF Cloud',
         );
@@ -28,6 +33,15 @@ class AFImage extends StatelessWidget {
   final BoxFit fit;
   final UserProfilePB? userProfile;
   final BorderRadius? borderRadius;
+
+  /// Optional decode dimensions in physical pixels, not layout dimensions.
+  /// Leave one axis unset to retain the source aspect ratio when resizing.
+  final int? cacheWidth;
+  final int? cacheHeight;
+  final ImageErrorWidgetBuilder? errorBuilder;
+
+  Widget _error(BuildContext context, Object error, StackTrace? stackTrace) =>
+      errorBuilder?.call(context, error, stackTrace) ?? const SizedBox.shrink();
 
   @override
   Widget build(BuildContext context) {
@@ -43,36 +57,47 @@ class AFImage extends StatelessWidget {
         width: width,
         fit: fit,
         isAntiAlias: true,
-        errorBuilder: (context, error, stackTrace) {
-          return const SizedBox.shrink();
-        },
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
+        errorBuilder: _error,
       );
     } else if (uploadType == FileUploadTypePB.LocalFile) {
+      final File file;
+      try {
+        final uri = Uri.tryParse(url);
+        // Do not URI-decode raw local paths: '#' and '%' may be literal names.
+        file =
+            uri != null && uri.isScheme('file') ? File.fromUri(uri) : File(url);
+      } on Object catch (error, stackTrace) {
+        return _error(context, error, stackTrace);
+      }
       child = Image.file(
-        File(url),
+        file,
         height: height,
         width: width,
         fit: fit,
         isAntiAlias: true,
-        errorBuilder: (context, error, stackTrace) {
-          return const SizedBox.shrink();
-        },
+        cacheWidth: cacheWidth,
+        cacheHeight: cacheHeight,
+        errorBuilder: _error,
       );
     } else {
       child = FlowyNetworkImage(
+        key: ValueKey(url),
         url: url,
         userProfilePB: userProfile,
         height: height,
         width: width,
-        errorWidgetBuilder: (context, url, error) {
-          return const SizedBox.shrink();
-        },
+        fit: fit,
+        memCacheWidth: cacheWidth,
+        memCacheHeight: cacheHeight,
+        errorWidgetBuilder: (context, url, error) =>
+            _error(context, error, null),
       );
     }
 
     if (borderRadius != null) {
       child = ClipRRect(
-        clipBehavior: Clip.antiAliasWithSaveLayer,
         borderRadius: borderRadius!,
         child: child,
       );
