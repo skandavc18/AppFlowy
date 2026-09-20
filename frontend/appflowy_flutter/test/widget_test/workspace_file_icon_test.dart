@@ -74,7 +74,8 @@ void main() {
     await resetVividIconTestPacks();
     temporary = await Directory.systemTemp.createTemp('workspace-file-icon-');
     text = _ReadTrackedFile(
-      await File('${temporary.path}/notes.txt').writeAsString(originalText),);
+      await File('${temporary.path}/notes.txt').writeAsString(originalText),
+    );
     binary = await File('${temporary.path}/attachment.bin')
         .writeAsString('fixture binary contents');
   });
@@ -106,7 +107,9 @@ void main() {
           appearance: appearance,
         );
         await _waitFor(
-            tester, () => find.byType(TextField).evaluate().isNotEmpty,);
+          tester,
+          () => find.byType(TextField).evaluate().isNotEmpty,
+        );
         final renderer = tester.widget<FilePreview>(find.byType(FilePreview));
         final rendererState = tester.state(find.byType(FilePreview));
         final input = tester.widget<TextField>(find.byType(TextField));
@@ -155,15 +158,18 @@ void main() {
           matching: find.byType(MediaActionReveal),
         );
         expect(
-            tester
-                .widget<AnimatedOpacity>(find
+          tester
+              .widget<AnimatedOpacity>(
+                find
                     .descendant(
                       of: reveal,
                       matching: find.byType(AnimatedOpacity),
                     )
-                      .first,)
-                .opacity,
-                  1,);
+                    .first,
+              )
+              .opacity,
+          1,
+        );
         // ViewIconPicker's static native save is outside this scope. Exercise
         // its real callback with a serialized fake-backend result instead.
         final changed = tester
@@ -177,21 +183,26 @@ void main() {
         expect(backend.stored.icon, _vivid('rocket').toViewIcon());
         expect(backend.stored.extra, viewExtra);
         expect(backend.writes, 1);
-        expect(tester.widget<FilePreview>(find.byType(FilePreview)),
-          same(renderer),);
+        expect(
+          tester.widget<FilePreview>(find.byType(FilePreview)),
+          same(renderer),
+        );
         expect(tester.state(find.byType(FilePreview)), same(rendererState));
         expect(tester.state(find.byType(EditableText)), same(inputState));
         expect(input.controller!.text, draft);
-        expect(input.controller!.selection,
-          const TextSelection(baseOffset: 3, extentOffset: 21),);
+        expect(
+          input.controller!.selection,
+          const TextSelection(baseOffset: 3, extentOffset: 21),
+        );
         expect(input.scrollController!.offset, 80);
         expect(renderer.metadata, same(metadata));
         expect(tester.state(find.byType(MediaActionButtons)), same(controls));
         expect(
-            tester
-                .widget<MediaActionButtons>(find.byType(MediaActionButtons))
-                .source,
-            target,);
+          tester
+              .widget<MediaActionButtons>(find.byType(MediaActionButtons))
+              .source,
+          target,
+        );
         expect(io.loads, 1);
         expect(text.reads, 1);
         expect(text.writes, 0);
@@ -204,20 +215,25 @@ void main() {
         expect(_glyph(tester).icon.isEmpty, isTrue);
         expect(
           find.descendant(
-              of: find.byKey(_identity),
-              matching: find.byIcon(fileIconForName('notes.txt')),),
+            of: find.byKey(_identity),
+            matching: find.byIcon(fileIconForName('notes.txt')),
+          ),
           findsOneWidget,
         );
-        expect(tester.widget<FilePreview>(find.byType(FilePreview)),
-            same(renderer),);
+        expect(
+          tester.widget<FilePreview>(find.byType(FilePreview)),
+          same(renderer),
+        );
         expect(input.controller!.text, draft);
         expect(io.loads, 1);
         expect(text.reads, 1);
         expect(text.writes, 0);
         expect(await tester.runAsync(text.file.readAsString), originalText);
         expect(actions.calls, isEmpty);
-        expect(PaperTheme.isEnabled(tester.element(find.byKey(_identity))),
-            appearance == 'paper',);
+        expect(
+          PaperTheme.isEnabled(tester.element(find.byKey(_identity))),
+          appearance == 'paper',
+        );
         expect(tester.takeException(), isNull);
       } finally {
         await _unmount(tester);
@@ -234,35 +250,39 @@ void main() {
     final io = _Files(binary);
     try {
       await _mount(
-          tester,
-          WorkspaceFileView(
-            view: ViewPB.fromBuffer(saved.writeToBuffer()),
-            resolveStorageUrl: io.resolve,
-            materializeFile: io.load,
-            iconListenerFactory: backend.listen,
-            ),);
+        tester,
+        WorkspaceFileView(
+          view: ViewPB.fromBuffer(saved.writeToBuffer()),
+          resolveStorageUrl: io.resolve,
+          materializeFile: io.load,
+          iconListenerFactory: backend.listen,
+        ),
+      );
       await _waitFor(
-          tester,
-          () => find
-              .text('AppFlowy has no viewer for this file type yet.')
-              .evaluate()
-              .isNotEmpty,);
+        tester,
+        () => find
+            .text('AppFlowy has no viewer for this file type yet.')
+            .evaluate()
+            .isNotEmpty,
+      );
       _expectIcon(_glyph(tester).icon, _vivid('coffee'));
       await _unmount(tester);
       await _mount(
-          tester,
-          WorkspaceFileView(
-            view: ViewPB.fromBuffer(backend.stored.writeToBuffer()),
-            resolveStorageUrl: io.resolve,
-            materializeFile: io.load,
-            iconListenerFactory: backend.listen,
-            ),);
+        tester,
+        WorkspaceFileView(
+          view: ViewPB.fromBuffer(backend.stored.writeToBuffer()),
+          resolveStorageUrl: io.resolve,
+          materializeFile: io.load,
+          iconListenerFactory: backend.listen,
+        ),
+      );
       await _waitFor(
-          tester,
-          () => find
-              .text('AppFlowy has no viewer for this file type yet.')
-              .evaluate()
-              .isNotEmpty,);
+        tester,
+        () => find
+            .text('AppFlowy has no viewer for this file type yet.')
+            .evaluate()
+            .isNotEmpty,
+      );
       _expectIcon(_glyph(tester).icon, _vivid('coffee'));
       expect(io.loads, 2);
       expect(backend.writes, 1);
@@ -274,32 +294,45 @@ void main() {
 
   _test('read-only standalone identity stays live without mounting a picker',
       (tester) async {
-    final backend = _IdentityBackend(_view(
-        'read-only', 'attachment.bin', binary.path,
-        icon: _vivid('rocket'),),);
+    final backend = _IdentityBackend(
+      _view(
+        'read-only',
+        'attachment.bin',
+        binary.path,
+        icon: _vivid('rocket'),
+      ),
+    );
     final io = _Files(binary);
     try {
       await _mount(
-          tester,
-          WorkspaceFileView(
-            view: backend.stored,
-            editable: false,
-            resolveStorageUrl: io.resolve,
-            materializeFile: io.load,
-            iconListenerFactory: backend.listen,
-            ),);
+        tester,
+        WorkspaceFileView(
+          view: backend.stored,
+          editable: false,
+          resolveStorageUrl: io.resolve,
+          materializeFile: io.load,
+          iconListenerFactory: backend.listen,
+        ),
+      );
       await _waitFor(
-          tester,
-          () => find
-              .text('AppFlowy has no viewer for this file type yet.')
-              .evaluate()
-              .isNotEmpty,);
+        tester,
+        () => find
+            .text('AppFlowy has no viewer for this file type yet.')
+            .evaluate()
+            .isNotEmpty,
+      );
       expect(find.byType(ViewIconPicker), findsNothing);
       await tester.tap(find.byKey(_identity));
       await tester.pumpAndSettle();
       expect(find.byType(FlowyIconEmojiPicker), findsNothing);
-      backend.publish(_view('read-only', 'attachment.bin', binary.path,
-            icon: _vivid('coffee'),),);
+      backend.publish(
+        _view(
+          'read-only',
+          'attachment.bin',
+          binary.path,
+          icon: _vivid('coffee'),
+        ),
+      );
       await tester.pumpAndSettle();
       _expectIcon(_glyph(tester).icon, _vivid('coffee'));
       expect(io.loads, 1);
@@ -318,26 +351,35 @@ void main() {
     final editable = ValueNotifier(true);
     try {
       await _mount(
-          tester,
-          ValueListenableBuilder<bool>(
-            valueListenable: editable,
-            builder: (_, value, __) => WorkspaceFileView(
-              view: backend.stored,
-              editable: value,
-              resolveStorageUrl: io.resolve,
-              materializeFile: io.load,
-              iconListenerFactory: backend.listen,
-            ),
-              ),);
+        tester,
+        ValueListenableBuilder<bool>(
+          valueListenable: editable,
+          builder: (_, value, __) => WorkspaceFileView(
+            view: backend.stored,
+            editable: value,
+            resolveStorageUrl: io.resolve,
+            materializeFile: io.load,
+            iconListenerFactory: backend.listen,
+          ),
+        ),
+      );
       await _waitFor(
-              tester, () => find.byType(ViewIconPicker).evaluate().isNotEmpty,);
+        tester,
+        () => find.byType(ViewIconPicker).evaluate().isNotEmpty,
+      );
       final oldCallback = tester
           .widget<ViewIconPicker>(find.byType(ViewIconPicker))
           .onViewChanged!;
       editable.value = false;
       await tester.pumpAndSettle();
-      oldCallback(_view('revoked', 'attachment.bin', binary.path,
-              icon: _vivid('rocket'),),);
+      oldCallback(
+        _view(
+          'revoked',
+          'attachment.bin',
+          binary.path,
+          icon: _vivid('rocket'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(find.byType(ViewIconPicker), findsNothing);
       expect(_glyph(tester).icon.isEmpty, isTrue);
@@ -352,48 +394,64 @@ void main() {
   _test('rebound hosts ignore old callbacks and stopped view notifications',
       (tester) async {
     final backend = _IdentityBackend(
-      _view('file-a', 'attachment.bin', binary.path, icon: _vivid('rocket')),);
+      _view('file-a', 'attachment.bin', binary.path, icon: _vivid('rocket')),
+    );
     final view = ValueNotifier(backend.stored);
     final io = _Files(binary);
     try {
       await _mount(
-          tester,
-          ValueListenableBuilder<ViewPB>(
-            valueListenable: view,
-            builder: (_, value, __) => WorkspaceFileView(
-              view: value,
-              resolveStorageUrl: io.resolve,
-              materializeFile: io.load,
-              iconListenerFactory: backend.listen,
-            ),
-              ),);
+        tester,
+        ValueListenableBuilder<ViewPB>(
+          valueListenable: view,
+          builder: (_, value, __) => WorkspaceFileView(
+            view: value,
+            resolveStorageUrl: io.resolve,
+            materializeFile: io.load,
+            iconListenerFactory: backend.listen,
+          ),
+        ),
+      );
       await _waitFor(
-          tester,
-          () => find
-              .text('AppFlowy has no viewer for this file type yet.')
-              .evaluate()
-                .isNotEmpty,);
+        tester,
+        () => find
+            .text('AppFlowy has no viewer for this file type yet.')
+            .evaluate()
+            .isNotEmpty,
+      );
       final first = backend.listeners.single;
       final oldCallback = tester
           .widget<ViewIconPicker>(find.byType(ViewIconPicker))
           .onViewChanged!;
-      view.value = _view('file-b', 'attachment.bin', binary.path,
-              icon: _vivid('coffee'),);
+      view.value = _view(
+        'file-b',
+        'attachment.bin',
+        binary.path,
+        icon: _vivid('coffee'),
+      );
       await tester.pumpAndSettle();
       _expectIcon(_glyph(tester).icon, _vivid('coffee'));
       expect(first.stopped, isTrue);
       first.updated!(
-              _view('file-a', 'attachment.bin', binary.path, icon: _vivid('home')),);
+        _view('file-a', 'attachment.bin', binary.path, icon: _vivid('home')),
+      );
       oldCallback(
-              _view('file-a', 'attachment.bin', binary.path, icon: _vivid('home')),);
+        _view('file-a', 'attachment.bin', binary.path, icon: _vivid('home')),
+      );
       // Even a malformed listener delivery claiming another identity is ignored.
-      backend.listeners.last.updated!(_view(
-          'unrelated', 'attachment.bin', binary.path,
-              icon: _vivid('home'),),);
+      backend.listeners.last.updated!(
+        _view(
+          'unrelated',
+          'attachment.bin',
+          binary.path,
+          icon: _vivid('home'),
+        ),
+      );
       await tester.pumpAndSettle();
       _expectIcon(_glyph(tester).icon, _vivid('coffee'));
-      expect(tester.widget<ViewIconPicker>(find.byType(ViewIconPicker)).view.id,
-              'file-b',);
+      expect(
+        tester.widget<ViewIconPicker>(find.byType(ViewIconPicker)).view.id,
+        'file-b',
+      );
       expect(io.loads, 2);
       expect(backend.writes, 0);
       await _unmount(tester);
@@ -416,19 +474,21 @@ void main() {
     final io = _Files(binary);
     try {
       await _mount(
-          tester,
-          WorkspaceFileView(
-            view: backend.stored,
-            resolveStorageUrl: io.resolve,
-            materializeFile: io.load,
-            iconListenerFactory: backend.listen,
-        ),);
+        tester,
+        WorkspaceFileView(
+          view: backend.stored,
+          resolveStorageUrl: io.resolve,
+          materializeFile: io.load,
+          iconListenerFactory: backend.listen,
+        ),
+      );
       await _waitFor(
-          tester,
-          () => find
-              .text('AppFlowy has no viewer for this file type yet.')
-              .evaluate()
-          .isNotEmpty,);
+        tester,
+        () => find
+            .text('AppFlowy has no viewer for this file type yet.')
+            .evaluate()
+            .isNotEmpty,
+      );
       final renderer = tester
           .element(find.text('AppFlowy has no viewer for this file type yet.'));
       final changed = tester
@@ -440,14 +500,22 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(ViewIconPicker), findsNothing);
       expect(find.byType(FlowyIconEmojiPicker), findsNothing);
-      changed(_view('removed', 'attachment.bin', binary.path,
-          icon: _vivid('rocket'),),);
+      changed(
+        _view(
+          'removed',
+          'attachment.bin',
+          binary.path,
+          icon: _vivid('rocket'),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(_glyph(tester).icon.isEmpty, isTrue);
       expect(
-          tester.element(
-            find.text('AppFlowy has no viewer for this file type yet.'),),
-          same(renderer),);
+        tester.element(
+          find.text('AppFlowy has no viewer for this file type yet.'),
+        ),
+        same(renderer),
+      );
       expect(io.loads, 1);
       expect(backend.writes, 0);
       expect(tester.takeException(), isNull);
@@ -458,8 +526,11 @@ void main() {
 }
 
 void _test(String description, Future<void> Function(WidgetTester) body) =>
-    testWidgets(description, body,
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),);
+    testWidgets(
+      description,
+      body,
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
 
 EmojiIconData _vivid(String name) =>
     IconsData(vividIconTestGroup, name, null).toEmojiIconData();
@@ -471,14 +542,17 @@ void _expectIcon(EmojiIconData actual, EmojiIconData expected) {
 FileIdentityGlyph _glyph(WidgetTester tester) =>
     tester.widget<FileIdentityGlyph>(
       find.descendant(
-      of: find.byKey(_identity), matching: find.byType(FileIdentityGlyph),),
+        of: find.byKey(_identity),
+        matching: find.byType(FileIdentityGlyph),
+      ),
     );
 
 void _closePicker(WidgetTester tester) => tester
     .widget<AppFlowyPopover>(
       find.descendant(
-          of: find.byType(ViewIconPicker),
-      matching: find.byType(AppFlowyPopover),),
+        of: find.byType(ViewIconPicker),
+        matching: find.byType(AppFlowyPopover),
+      ),
     )
     .controller!
     .close();
@@ -577,19 +651,23 @@ class _ReadTrackedFile extends Fake implements File {
   }
 
   @override
-  Future<File> writeAsString(String contents,
-      {FileMode mode = FileMode.write,
-      Encoding encoding = utf8,
-      bool flush = false,}) async {
+  Future<File> writeAsString(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) async {
     writes++;
     throw StateError('Icon changes must never write file bytes');
   }
 
   @override
-  void writeAsStringSync(String contents,
-      {FileMode mode = FileMode.write,
-      Encoding encoding = utf8,
-      bool flush = false,}) {
+  void writeAsStringSync(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) {
     writes++;
     throw StateError('Icon changes must never flush an editor draft');
   }
@@ -600,8 +678,10 @@ class _Actions extends Fake implements MediaActionService {
   @override
   Future<void> copy(MediaActionSource source) async => calls.add('copy');
   @override
-  Future<void> share(MediaActionSource source,
-      {Rect? sharePositionOrigin,}) async =>
+  Future<void> share(
+    MediaActionSource source, {
+    Rect? sharePositionOrigin,
+  }) async =>
       calls.add('share');
 }
 
@@ -610,44 +690,53 @@ class _BundledMono extends GoogleFontsFamilyWithVariant {
       : super(
           family: 'JetBrainsMono',
           googleFontsVariant: const GoogleFontsVariant(
-              fontWeight: FontWeight.w500, fontStyle: FontStyle.normal,),
+            fontWeight: FontWeight.w500,
+            fontStyle: FontStyle.normal,
+          ),
         );
   @override
   String toApiFilenamePrefix() => 'RobotoMono-Regular';
 }
 
-Future<void> _mount(WidgetTester tester, Widget child,
-    {String appearance = 'light',}) async {
+Future<void> _mount(
+  WidgetTester tester,
+  Widget child, {
+  String appearance = 'light',
+}) async {
   final theme = vividIconTestTheme(appearance);
   final defaults = AppFlowyDefaultTheme();
   await tester.binding.setSurfaceSize(const Size(1000, 800));
   addTearDown(() => tester.binding.setSurfaceSize(null));
-  await tester.pumpWidget(EasyLocalization(
-    supportedLocales: const [Locale('en', 'US')],
-    path: 'assets/translations',
-    fallbackLocale: const Locale('en', 'US'),
-    saveLocale: false,
-    assetLoader: const TestBundleAssetLoader(),
-    child: Builder(
+  await tester.pumpWidget(
+    EasyLocalization(
+      supportedLocales: const [Locale('en', 'US')],
+      path: 'assets/translations',
+      fallbackLocale: const Locale('en', 'US'),
+      saveLocale: false,
+      assetLoader: const TestBundleAssetLoader(),
+      child: Builder(
         builder: (context) => MaterialApp(
-              locale: const Locale('en', 'US'),
-              localizationsDelegates: context.localizationDelegates,
-              theme: theme,
-              themeAnimationDuration: Duration.zero,
-              builder: (context, child) => AppFlowyTheme(
-                data: PremiumTheme.appFlowyTheme(
-                  base:
-                      appearance == 'dark' ? defaults.dark() : defaults.light(),
-                  palette: theme.extension<PremiumThemeExtension>()!,
-                  brightness: theme.brightness,
-                ),
-                child: child!,
-              ),
-              home: Scaffold(
-                  body: Center(
-                      child: SizedBox(width: 760, height: 660, child: child),),),
-            ),),
-  ),);
+          locale: const Locale('en', 'US'),
+          localizationsDelegates: context.localizationDelegates,
+          theme: theme,
+          themeAnimationDuration: Duration.zero,
+          builder: (context, child) => AppFlowyTheme(
+            data: PremiumTheme.appFlowyTheme(
+              base: appearance == 'dark' ? defaults.dark() : defaults.light(),
+              palette: theme.extension<PremiumThemeExtension>()!,
+              brightness: theme.brightness,
+            ),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(width: 760, height: 660, child: child),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
   await tester.pump();
 }
 

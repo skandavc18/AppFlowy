@@ -68,24 +68,28 @@ void main() {
       var editable = true;
       var writes = 0;
       late StateSetter rebuild;
-      await tester.pumpWidget(vividIconTestApp(
-        'paper',
-        StatefulBuilder(builder: (context, setState) {
-          rebuild = setState;
-          return WorkspaceIcon(
-            workspaceIcon: _legacyEmoji,
-            workspaceName: _workspaceName,
-            documentId: owner,
-            iconSize: 36,
-            isEditable: editable,
-            fontSize: 18,
-            emojiSize: 24,
-            borderRadius: 12,
-            figmaLineHeight: 26,
-            onSelected: (_) => writes++,
-          );
-        },),
-      ),);
+      await tester.pumpWidget(
+        vividIconTestApp(
+          'paper',
+          StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              return WorkspaceIcon(
+                workspaceIcon: _legacyEmoji,
+                workspaceName: _workspaceName,
+                documentId: owner,
+                iconSize: 36,
+                isEditable: editable,
+                fontSize: 18,
+                emojiSize: 24,
+                borderRadius: 12,
+                figmaLineHeight: 26,
+                onSelected: (_) => writes++,
+              );
+            },
+          ),
+        ),
+      );
       await tester.pumpAndSettle();
       await _openPicker(tester);
       final staleSelection = tester
@@ -93,10 +97,14 @@ void main() {
           .onSelectedEmoji!;
       if (invalidation == 'dismissed') {
         tester
-            .widget<AppFlowyPopover>(find.descendant(
-              of: find.byType(WorkspaceIcon),
-              matching: find.byType(AppFlowyPopover),
-            ).first,)
+            .widget<AppFlowyPopover>(
+              find
+                  .descendant(
+                    of: find.byType(WorkspaceIcon),
+                    matching: find.byType(AppFlowyPopover),
+                  )
+                  .first,
+            )
             .controller!
             .close();
       } else {

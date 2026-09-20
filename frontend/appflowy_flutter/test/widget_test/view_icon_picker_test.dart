@@ -66,16 +66,22 @@ void main() {
         case 'rebound':
           fixture.rebuild(() => fixture.view = ViewPB(id: 'second-view'));
         case 'locked':
-          fixture.rebuild(() => fixture.view = ViewPB(
-                id: 'first-view',
-                isLocked: true,
-              ),);
+          fixture.rebuild(
+            () => fixture.view = ViewPB(
+              id: 'first-view',
+              isLocked: true,
+            ),
+          );
         case 'dismissed':
           tester
-              .widget<AppFlowyPopover>(find.descendant(
-                of: find.byType(ViewIconPicker),
-                matching: find.byType(AppFlowyPopover),
-              ).first,)
+              .widget<AppFlowyPopover>(
+                find
+                    .descendant(
+                      of: find.byType(ViewIconPicker),
+                      matching: find.byType(AppFlowyPopover),
+                    )
+                    .first,
+              )
               .controller!
               .close();
         case 'unmounted':
@@ -139,21 +145,25 @@ class _Fixture {
   }
 
   Future<void> mount(WidgetTester tester, String appearance) async {
-    await tester.pumpWidget(vividIconTestApp(
-      appearance,
-      StatefulBuilder(builder: (context, setState) {
-        rebuild = setState;
-        return ViewIconPicker(
-          view: view,
-          updateIcon: save,
-          onViewChanged: updates.add,
-          child: const SizedBox.square(
-            dimension: 40,
-            child: Icon(Icons.folder_outlined),
-          ),
-        );
-      },),
-    ),);
+    await tester.pumpWidget(
+      vividIconTestApp(
+        appearance,
+        StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return ViewIconPicker(
+              view: view,
+              updateIcon: save,
+              onViewChanged: updates.add,
+              child: const SizedBox.square(
+                dimension: 40,
+                child: Icon(Icons.folder_outlined),
+              ),
+            );
+          },
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
   }
 

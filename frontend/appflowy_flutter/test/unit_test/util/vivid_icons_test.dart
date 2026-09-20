@@ -76,7 +76,9 @@ void main() {
     }
     expect(
       group.icons.fold<int>(
-          0, (size, icon) => size + utf8.encode(icon.content).length,),
+        0,
+        (size, icon) => size + utf8.encode(icon.content).length,
+      ),
       lessThan(64 * 1024),
       reason: 'A small compiled collection, not a copy of the 2.8MB Color pack',
     );
@@ -92,10 +94,12 @@ void main() {
     binding.defaultBinaryMessenger.setMockMessageHandler('flutter/assets',
         (message) async {
       requestedAssets.add(
-        utf8.decode(message!.buffer.asUint8List(
-          message.offsetInBytes,
-          message.lengthInBytes,
-        ),),
+        utf8.decode(
+          message!.buffer.asUint8List(
+            message.offsetInBytes,
+            message.lengthInBytes,
+          ),
+        ),
       );
       return null;
     });
@@ -202,11 +206,13 @@ void main() {
       EmojiIconData.emoji('📚'),
       EmojiIconData.custom('local-profile-photo.png'),
       EmojiIconData.icon(
-          IconsData('interface_essential', 'home', '4283665274'),),
+        IconsData('interface_essential', 'home', '4283665274'),
+      ),
       EmojiIconData.icon(IconsData('color_travel_places', 'full-moon', null)),
       EmojiIconData.icon(IconsData('phosphor_bold_office', 'book-open', null)),
       EmojiIconData.icon(
-          IconsData('appflowy_default_collections', 'book', null),),
+        IconsData('appflowy_default_collections', 'book', null),
+      ),
     ];
     for (final choice in choices) {
       final stored = ViewIconPB.fromBuffer(choice.toViewIcon().writeToBuffer());
@@ -216,14 +222,20 @@ void main() {
       expect(restored.toPickerTabType(), choice.toPickerTabType());
     }
     expect(
-        pickerTabsWithDefaults([PickerTabType.emoji]), [PickerTabType.emoji],);
+      pickerTabsWithDefaults([PickerTabType.emoji]),
+      [PickerTabType.emoji],
+    );
     expect(
-        pickerTabsWithDefaults([PickerTabType.custom]), [PickerTabType.custom],);
+      pickerTabsWithDefaults([PickerTabType.custom]),
+      [PickerTabType.custom],
+    );
     expect(EmojiIconData.none().toPickerTabType(), PickerTabType.defaultIcons);
     expect(iconPackForGroup('color_travel_places').id, 'color');
     expect(iconPackForGroup('phosphor_bold_office').id, 'phosphor_bold');
-    expect(iconPackForGroup('appflowy_default_collections'),
-        kAppFlowyDefaultIconPack,);
+    expect(
+      iconPackForGroup('appflowy_default_collections'),
+      kAppFlowyDefaultIconPack,
+    );
     expect(iconPackForGroup('appflowy_vividish_essentials'), kDefaultIconPack);
     expect(findLoadedIcon('appflowy_vivid_essentials', 'missing'), isNull);
     expect(findLoadedIcon('appflowy_vivid_missing', 'home'), isNull);
@@ -251,8 +263,10 @@ void main() {
         expect(gradient.getAttribute('gradientUnits'), 'userSpaceOnUse');
         final stops = gradient.findElements('stop').toList();
         expect(stops, hasLength(2));
-        expect(stops.first.getAttribute('stop-color'),
-            isNot(stops.last.getAttribute('stop-color')),);
+        expect(
+          stops.first.getAttribute('stop-color'),
+          isNot(stops.last.getAttribute('stop-color')),
+        );
       }
       final ids =
           gradients.map((gradient) => gradient.getAttribute('id')).toSet();
@@ -262,12 +276,13 @@ void main() {
           .toSet();
       expect(references, ids);
       expect(
-          RegExp('#[0-9A-F]{6}')
-              .allMatches(content)
-              .map((m) => m[0])
-              .toSet()
-              .length,
-          greaterThanOrEqualTo(5),);
+        RegExp('#[0-9A-F]{6}')
+            .allMatches(content)
+            .map((m) => m[0])
+            .toSet()
+            .length,
+        greaterThanOrEqualTo(5),
+      );
     });
   }
 }

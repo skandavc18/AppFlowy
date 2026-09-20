@@ -507,13 +507,15 @@ class _IconPickerState extends State<IconPicker> {
                                   ),
                                 );
                                 RecentIcons.putIcon(
-                                    RecentIcon(icon, groupName),);
+                                  RecentIcon(icon, groupName),
+                                );
                                 PopoverContainer.of(context).close();
                               },
                             )
                           : _IconNoBackground(
                               key: ValueKey(
-                                  'picker-icon-$groupName/${icon.name}',),
+                                'picker-icon-$groupName/${icon.name}',
+                              ),
                               icon: icon,
                               isColorful: isColorful,
                               onSelectedIcon: () {
@@ -525,7 +527,8 @@ class _IconPickerState extends State<IconPicker> {
                                   ),
                                 );
                                 RecentIcons.putIcon(
-                                    RecentIcon(icon, groupName),);
+                                  RecentIcon(icon, groupName),
+                                );
                               },
                             );
                     },

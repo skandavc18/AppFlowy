@@ -473,19 +473,19 @@ void main() {
     try {
       await _mount(tester, fixture);
       await _waitFor(
-      tester,
-      () =>
-        _glyph(tester).icon.type == FlowyIconType.icon &&
-        _glyph(tester).icon.isNotEmpty,
+        tester,
+        () =>
+            _glyph(tester).icon.type == FlowyIconType.icon &&
+            _glyph(tester).icon.isNotEmpty,
       );
       _expectVivid(_glyph(tester).icon, 'rocket');
       final document = fixture.json;
       await _openPicker(tester);
       expect(
-      tester
-        .widget<FlowyIconEmojiPicker>(find.byType(FlowyIconEmojiPicker))
-        .documentId,
-      'file-a',
+        tester
+            .widget<FlowyIconEmojiPicker>(find.byType(FlowyIconEmojiPicker))
+            .documentId,
+        'file-a',
       );
       await _chooseVivid(tester, 'coffee');
       expect(backend.writes.single.viewId, 'file-a');
@@ -592,11 +592,11 @@ void main() {
 }
 
 void _test(String description, Future<void> Function(WidgetTester) test) =>
-  testWidgets(
-    description,
-    test,
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
-  );
+    testWidgets(
+      description,
+      test,
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
 
 EmojiIconData _vivid(String name) =>
     IconsData(vividIconTestGroup, name, null).toEmojiIconData();
@@ -714,8 +714,7 @@ class _Fixture {
   int writes = 0;
   Node get file => editor.document.root.children.first;
   String get json => jsonEncode(editor.document.toJson());
-  Future<void> update(Map<String, dynamic> values) =>
-      editor.apply(
+  Future<void> update(Map<String, dynamic> values) => editor.apply(
         editor.transaction..updateNode(file, values),
         withUpdateSelection: false,
       );
@@ -782,9 +781,7 @@ Future<void> _mount(
             themeAnimationDuration: Duration.zero,
             builder: (context, child) => AppFlowyTheme(
               data: PremiumTheme.appFlowyTheme(
-                base: appearance == 'dark'
-                    ? defaults.dark()
-                    : defaults.light(),
+                base: appearance == 'dark' ? defaults.dark() : defaults.light(),
                 palette: theme.extension<PremiumThemeExtension>()!,
                 brightness: theme.brightness,
               ),
@@ -1019,10 +1016,10 @@ class _PdfText extends PdfPageText {
   @override
   List<PdfPageTextFragment> get fragments => [
         PdfPageTextFragment.fromParams(
-        0,
-        fullText.length,
-        const PdfRect(40, 760, 440, 720),
-        fullText,
-      ),
+          0,
+          fullText.length,
+          const PdfRect(40, 760, 440, 720),
+          fullText,
+        ),
       ];
 }

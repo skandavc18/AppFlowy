@@ -74,9 +74,7 @@ class FileBlockIconBinding extends ChangeNotifier {
   bool _saving = false;
 
   String? get workspaceFileId =>
-      _referenceId is String && _referenceId.isNotEmpty
-        ? _referenceId
-          : null;
+      _referenceId is String && _referenceId.isNotEmpty ? _referenceId : null;
 
   bool matches(EditorState editor, Node target) =>
       identical(editorState, editor) &&

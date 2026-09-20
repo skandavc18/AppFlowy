@@ -59,7 +59,9 @@ class DesktopHomeScreen extends StatelessWidget {
           () => FolderEventGetCurrentWorkspaceSetting().send(),
         ),
         startupProfile.measure(
-            'home.user', () => getIt<AuthService>().getUser(),),
+          'home.user',
+          () => getIt<AuthService>().getUser(),
+        ),
       ]),
       builder: (context, snapshots) {
         if (!snapshots.hasData) {

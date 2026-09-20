@@ -318,8 +318,11 @@ void main() {
 
       expect(calls, 2);
       _expectRecords(output.take(1).toList(), ['stage']);
-      _expectRecords(output.skip(1).toList(), ['stage', 'stage'],
-          succeeded: true,);
+      _expectRecords(
+        output.skip(1).toList(),
+        ['stage', 'stage'],
+        succeeded: true,
+      );
     });
 
     test('nested synchronous stages record from inner to outer', () {

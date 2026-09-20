@@ -47,9 +47,10 @@ void main() {
                             mainAxisAlignment: MainAxisAlignment.center,
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Vivid · 24 original illustrations',
-                                  style:
-                                      Theme.of(context).textTheme.titleSmall,),
+                              Text(
+                                'Vivid · 24 original illustrations',
+                                style: Theme.of(context).textTheme.titleSmall,
+                              ),
                               const SizedBox(height: 20),
                               Wrap(
                                 spacing: 10,
@@ -60,13 +61,17 @@ void main() {
                                     IconWidget(
                                       size: 42,
                                       iconsData: IconsData(
-                                          vividIconTestGroup, icon.name, null,),
+                                        vividIconTestGroup,
+                                        icon.name,
+                                        null,
+                                      ),
                                     ),
                                 ],
                               ),
                               const SizedBox(height: 20),
                               const Text(
-                                  'Original AppFlowy artwork · transparent SVG',),
+                                'Original AppFlowy artwork · transparent SVG',
+                              ),
                             ],
                           ),
                         ),
