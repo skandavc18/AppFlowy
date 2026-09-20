@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/collection
 import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/favorite/favorite_service.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -146,7 +147,8 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
     );
 
     if (widget.fullscreen) {
-      return body;
+      // This also means "the dashboard owns the size", not just a dialog.
+      return PreviewToolbarRegion(child: body);
     }
 
     return ResizableMedia(
@@ -167,7 +169,7 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
     CollectionEmbedTheme theme,
     CollectionEmbedDefinition definition,
   ) {
-    final embed = _embedContext(theme, definition);
+    final embed = _embedContext(context, theme, definition);
     final background = widget.settings.background;
     final flush = background == CollectionEmbedBackground.flush ||
         (definition.flush && background == CollectionEmbedBackground.surface);
@@ -187,13 +189,24 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
       ],
     );
 
-    if (flush) {
-      // A seamless widget still needs its controls somewhere, so they float
-      // over the top-right corner instead of riding a heading.
+    if (!showHeading) {
+      // Flush previews and types with their own identity (book/album) still
+      // need controls. Float them without adding a second heading.
       content = Stack(
         children: [
           Positioned.fill(child: preview),
-          Positioned(top: 2, right: 2, child: _buildControls(context, embed)),
+          Positioned(
+            top: 2,
+            left: 2,
+            right: 2,
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: _buildControls(context, embed),
+              ),
+            ),
+          ),
         ],
       );
     }
@@ -205,7 +218,7 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
       child: GestureDetector(
         behavior: HitTestBehavior.deferToChild,
         onSecondaryTapDown: (details) =>
-            unawaited(_showMenu(embed, details.globalPosition)),
+            unawaited(_showMenu(context, embed, details.globalPosition)),
         child: CollectionEmbedSurface(
           theme: theme,
           hovered: hovered && !widget.fullscreen,
@@ -221,6 +234,7 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
   }
 
   CollectionEmbedContext _embedContext(
+    BuildContext context,
     CollectionEmbedTheme theme,
     CollectionEmbedDefinition definition,
   ) =>
@@ -240,7 +254,11 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
         onFullscreen: _toggleFullscreen,
         onRefresh: () => unawaited(controller.refresh()),
         onShowMenu: (position) => unawaited(
-          _showMenu(_embedContext(theme, definition), position),
+          _showMenu(
+            context,
+            _embedContext(context, theme, definition),
+            position,
+          ),
         ),
       );
 
@@ -282,41 +300,37 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
 
   Widget _buildControls(BuildContext context, CollectionEmbedContext embed) {
     final theme = embed.theme;
-    final visible = hovered || menuOpen || widget.fullscreen;
-    return AnimatedOpacity(
-      opacity: visible ? 1 : 0,
-      duration: CollectionEmbedMetrics.hover,
-      curve: CollectionEmbedMetrics.ease,
-      child: IgnorePointer(
-        ignoring: !visible,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CollectionEmbedButton(
-              theme: theme,
-              icon: widget.fullscreen
-                  ? Icons.fullscreen_exit_rounded
-                  : Icons.fullscreen_rounded,
-              tooltip: widget.fullscreen
-                  ? LocaleKeys.collections_embed_exitFullscreen.tr()
-                  : LocaleKeys.collections_embed_fullscreen.tr(),
-              onPressed: _toggleFullscreen,
-            ),
-            CollectionEmbedButton(
-              theme: theme,
-              icon: Icons.open_in_new_rounded,
-              tooltip: LocaleKeys.collections_embed_openCollection.tr(),
-              onPressed: _openCollection,
-            ),
-            AppMenuIconButton(
-              icon: Icons.more_horiz_rounded,
-              iconColor: theme.textMuted,
-              tooltip: LocaleKeys.collections_embed_blockOptions.tr(),
-              onVisibilityChanged: (open) => setState(() => menuOpen = open),
-              entries: () => _menuEntries(embed),
-            ),
-          ],
-        ),
+    return PreviewToolbar(
+      keepVisible: controller.error != null,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CollectionEmbedButton(
+            theme: theme,
+            icon: widget.fullscreen
+                ? Icons.fullscreen_exit_rounded
+                : Icons.fullscreen_rounded,
+            tooltip: widget.fullscreen
+                ? LocaleKeys.collections_embed_exitFullscreen.tr()
+                : LocaleKeys.collections_embed_fullscreen.tr(),
+            onPressed: _toggleFullscreen,
+          ),
+          CollectionEmbedButton(
+            theme: theme,
+            icon: Icons.open_in_new_rounded,
+            tooltip: LocaleKeys.collections_embed_openCollection.tr(),
+            onPressed: _openCollection,
+          ),
+          AppMenuIconButton(
+            icon: Icons.more_horiz_rounded,
+            iconColor: theme.textMuted,
+            tooltip: LocaleKeys.collections_embed_blockOptions.tr(),
+            onVisibilityChanged: (open) {
+              if (mounted) setState(() => menuOpen = open);
+            },
+            entries: () => _menuEntries(embed),
+          ),
+        ],
       ),
     );
   }
@@ -326,12 +340,13 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
         embed: embed,
         onChangeCollection: widget.onChangeCollection,
         onRemove: widget.onRemove,
-        onRename: () => unawaited(_rename()),
+        onRename: widget.editable ? () => unawaited(_rename()) : null,
         onFavorite: () => unawaited(_favorite()),
-        onDuplicate: () => unawaited(_duplicate()),
+        onDuplicate: widget.editable ? () => unawaited(_duplicate()) : null,
       );
 
   Future<void> _showMenu(
+    BuildContext context,
     CollectionEmbedContext embed,
     Offset position,
   ) async {

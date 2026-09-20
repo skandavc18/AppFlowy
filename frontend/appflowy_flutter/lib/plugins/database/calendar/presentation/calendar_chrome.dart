@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 /// A borderless 30px control, the only button shape the calendar uses.
-class CalendarControlButton extends StatefulWidget {
+class CalendarControlButton extends StatelessWidget {
   const CalendarControlButton({
     super.key,
     required this.icon,
@@ -23,52 +23,30 @@ class CalendarControlButton extends StatefulWidget {
   final double size;
 
   @override
-  State<CalendarControlButton> createState() => _CalendarControlButtonState();
-}
-
-class _CalendarControlButtonState extends State<CalendarControlButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
     final palette = calendarPaletteOf(context);
-    final enabled = widget.onPressed != null;
-    final tint = widget.active
-        ? palette.accent
-        : enabled
-            ? palette.textSecondary
-            : palette.textMuted.withValues(alpha: 0.5);
-
-    final button = MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: CalendarMetrics.hover,
-          curve: CalendarMetrics.hoverCurve,
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            // Fade from the wash's own hue: lerping out of transparent black
-            // flashes grey on a light surface.
-            color: widget.active
-                ? palette.accent.withValues(alpha: 0.12)
-                : palette.hover.withValues(alpha: _hovered && enabled ? 1 : 0),
-            shape: BoxShape.circle,
-          ),
-          alignment: Alignment.center,
-          child: Icon(widget.icon, size: 17, color: tint),
+    return SizedBox.square(
+      dimension: size,
+      child: IconButton(
+        tooltip: tooltip,
+        isSelected: active,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 17),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.square(size),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: active ? palette.accent : palette.textSecondary,
+          disabledForegroundColor: palette.textMuted.withValues(alpha: 0.5),
+          backgroundColor: active
+              ? palette.accent.withValues(alpha: 0.12)
+              : palette.hover.withValues(alpha: 0),
+          hoverColor: palette.hover,
+          focusColor: palette.hover,
+          shape: const CircleBorder(),
         ),
       ),
     );
-
-    final tooltip = widget.tooltip;
-    return tooltip == null || tooltip.isEmpty
-        ? button
-        : Tooltip(message: tooltip, child: button);
   }
 }
 
@@ -144,9 +122,17 @@ class _SwitcherSegmentState extends State<_SwitcherSegment> {
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
+      child: TextButton(
+        onPressed: widget.onTap,
+        style: TextButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: palette.textPrimary,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(CalendarMetrics.controlRadius),
+          ),
+        ),
         child: AnimatedContainer(
           duration: CalendarMetrics.change,
           curve: CalendarMetrics.hoverCurve,

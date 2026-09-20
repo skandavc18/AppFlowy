@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_to
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_replace_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/shared.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/menu/menu_extension.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -43,6 +44,9 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   final moreOptionButtonKey = GlobalKey();
   bool isTurnIntoShowing = false;
   bool isMoreOptionShowing = false;
+  bool _disposing = false;
+  VoidCallback? _releaseTurnInto;
+  VoidCallback? _releaseMoreOptions;
 
   Node get node => widget.node;
   EditorState get editorState => widget.editorState;
@@ -52,10 +56,12 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
 
   @override
   void dispose() {
-    super.dispose();
+    _disposing = true;
     turnIntoController.close();
     moreOptionController.close();
-    widget.onMenuHided.call();
+    _didCloseTurnInto();
+    _didCloseMoreOptions();
+    super.dispose();
   }
 
   @override
@@ -120,15 +126,8 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
       direction: PopoverDirection.bottomWithRightAligned,
       margin: EdgeInsets.zero,
       controller: turnIntoController,
-      onOpen: () {
-        keepEditorFocusNotifier.increase();
-        isTurnIntoShowing = true;
-      },
-      onClose: () {
-        keepEditorFocusNotifier.decrease();
-        isTurnIntoShowing = false;
-        checkToHideMenu();
-      },
+      triggerActions: PopoverTriggerFlags.none,
+      onClose: _didCloseTurnInto,
       popupBuilder: (context) => buildConvertMenu(),
       child: button,
     );
@@ -191,15 +190,8 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
       direction: PopoverDirection.bottomWithRightAligned,
       margin: EdgeInsets.zero,
       controller: moreOptionController,
-      onOpen: () {
-        keepEditorFocusNotifier.increase();
-        isMoreOptionShowing = true;
-      },
-      onClose: () {
-        keepEditorFocusNotifier.decrease();
-        isMoreOptionShowing = false;
-        checkToHideMenu();
-      },
+      triggerActions: PopoverTriggerFlags.none,
+      onClose: _didCloseMoreOptions,
       popupBuilder: (context) => buildMoreOptionMenu(),
       child: button,
     );
@@ -237,6 +229,9 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   }
 
   void showTurnIntoMenu() {
+    if (isTurnIntoShowing) return;
+    _releaseTurnInto = PreviewToolbarRegion.hold(context);
+    keepEditorFocusNotifier.increase();
     isTurnIntoShowing = true;
     checkToShowMenu();
     turnIntoController.show();
@@ -248,6 +243,9 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   }
 
   void showMoreOptionMenu() {
+    if (isMoreOptionShowing) return;
+    _releaseMoreOptions = PreviewToolbarRegion.hold(context);
+    keepEditorFocusNotifier.increase();
     isMoreOptionShowing = true;
     checkToShowMenu();
     moreOptionController.show();
@@ -259,12 +257,29 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   }
 
   void checkToHideMenu() {
-    Future.delayed(Duration(milliseconds: 200), () {
-      if (!mounted) return;
-      if (!isMoreOptionShowing && !isTurnIntoShowing) {
-        widget.onMenuHided.call();
-      }
-    });
+    if (!_disposing && !isMoreOptionShowing && !isTurnIntoShowing) {
+      widget.onMenuHided.call();
+    }
+  }
+
+  void _didCloseTurnInto() {
+    final release = _releaseTurnInto;
+    if (release == null) return;
+    _releaseTurnInto = null;
+    release();
+    keepEditorFocusNotifier.decrease();
+    isTurnIntoShowing = false;
+    checkToHideMenu();
+  }
+
+  void _didCloseMoreOptions() {
+    final release = _releaseMoreOptions;
+    if (release == null) return;
+    _releaseMoreOptions = null;
+    release();
+    keepEditorFocusNotifier.decrease();
+    isMoreOptionShowing = false;
+    checkToHideMenu();
   }
 
   void checkToShowMenu() {

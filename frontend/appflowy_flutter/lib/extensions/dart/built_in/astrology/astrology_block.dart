@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/interactive/interactive_block_shell.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ import 'package:provider/provider.dart';
 
 import 'astrology_birth_form.dart';
 import 'astrology_chart_panel.dart';
+import 'astrology_chart_selector.dart';
 import 'astrology_model.dart';
 import 'astrology_style.dart';
 
@@ -90,11 +93,13 @@ class _AstrologyBlockState extends State<AstrologyBlock>
     if (mounted) setState(() {});
   }
 
-  Future<void> _configure() async {
+  Future<void> _configure(BuildContext context) async {
     final input = AstrologyInput.fromJson(
       astrologyMap(node.attributes['profile']),
     );
-    final result = await showAstrologyInputDialog(context, input: input);
+    final releasePreview = PreviewToolbarRegion.hold(context);
+    final result = await showAstrologyInputDialog(context, input: input)
+        .whenComplete(releasePreview);
     if (result != null && mounted) await _write({'profile': result.toJson()});
   }
 
@@ -142,128 +147,94 @@ class _AstrologyBlockState extends State<AstrologyBlock>
                     builder: (context, constraints) => Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        Text(
+                          'Vedic astrology',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
                         ConstrainedBox(
                           constraints: BoxConstraints(
                             maxHeight: constraints.maxHeight * 0.5,
                           ),
-                          child: SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 4,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Vedic astrology',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .titleSmall,
-                                    ),
-                                    if (editor.editable)
-                                      TextButton.icon(
-                                        onPressed: () =>
-                                            unawaited(_configure()),
-                                        icon: const Icon(
-                                          Icons.tune_rounded,
-                                          size: 16,
-                                        ),
-                                        label: const Text('Birth details'),
-                                      ),
-                                    SizedBox(
-                                      width: 230,
-                                      child: DropdownButton<AstrologyView>(
-                                        isExpanded: true,
-                                        value: view,
-                                        dropdownColor: palette.raised,
-                                        items: [
-                                          for (final option
-                                              in AstrologyView.values)
-                                            DropdownMenuItem(
-                                              value: option,
-                                              child: Text(
-                                                option.label,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                        ],
-                                        onChanged: !editor.editable
-                                            ? null
-                                            : (value) {
-                                                if (value != null) {
-                                                  unawaited(
-                                                    _write(
-                                                        {'view': value.name}),
-                                                  );
-                                                }
-                                              },
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (view == AstrologyView.chart ||
-                                    view == AstrologyView.ashtakavarga)
+                          child: PreviewToolbar(
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
                                   Wrap(
                                     spacing: 8,
                                     runSpacing: 4,
                                     crossAxisAlignment:
                                         WrapCrossAlignment.center,
                                     children: [
-                                      for (final style
-                                          in IndianChartStyle.values)
-                                        ChoiceChip(
-                                          label: Text(style.label),
-                                          selected: input.style == style,
-                                          onSelected: !editor.editable
-                                              ? null
-                                              : (_) => unawaited(
-                                                    _write(
-                                                      {
-                                                        'profile': input
-                                                            .copyWith(
-                                                              style: style,
-                                                            )
-                                                            .toJson(),
-                                                      },
-                                                    ),
-                                                  ),
-                                        ),
-                                      if (view == AstrologyView.chart)
-                                        SizedBox(
-                                          width: 230,
-                                          child: DropdownButton<int>(
-                                            isExpanded: true,
-                                            value: division,
-                                            dropdownColor: palette.raised,
-                                            items: [
-                                              for (final option
-                                                  in astrologyDivisions.entries)
-                                                DropdownMenuItem(
-                                                  value: option.key,
-                                                  child: Text(
-                                                    option.value,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                            ],
-                                            onChanged: !editor.editable
-                                                ? null
-                                                : (value) {
-                                                    if (value != null) {
-                                                      unawaited(
-                                                        _write(
-                                                          {'division': value},
-                                                        ),
-                                                      );
-                                                    }
-                                                  },
+                                      if (editor.editable)
+                                        TextButton.icon(
+                                          onPressed: () =>
+                                              unawaited(_configure(context)),
+                                          icon: const Icon(
+                                            Icons.tune_rounded,
+                                            size: 16,
                                           ),
+                                          label: const Text('Birth details'),
                                         ),
+                                      _choice<AstrologyView>(
+                                        value: view,
+                                        labels: {
+                                          for (final option
+                                              in AstrologyView.values)
+                                            option: option.label,
+                                        },
+                                        onChanged: (value) => unawaited(
+                                          _write({'view': value.name}),
+                                        ),
+                                      ),
                                     ],
                                   ),
-                              ],
+                                  if (view == AstrologyView.chart ||
+                                      view == AstrologyView.ashtakavarga)
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
+                                      crossAxisAlignment:
+                                          WrapCrossAlignment.center,
+                                      children: [
+                                        for (final style
+                                            in IndianChartStyle.values)
+                                          ChoiceChip(
+                                            label: Text(style.label),
+                                            selected: input.style == style,
+                                            onSelected: !editor.editable
+                                                ? null
+                                                : (_) => unawaited(
+                                                      _write(
+                                                        {
+                                                          'profile': input
+                                                              .copyWith(
+                                                                style: style,
+                                                              )
+                                                              .toJson(),
+                                                        },
+                                                      ),
+                                                    ),
+                                          ),
+                                        if (view == AstrologyView.chart)
+                                          SizedBox(
+                                            width: 230,
+                                            child: AstrologyChartSelector(
+                                              value: division,
+                                              onChanged: !editor.editable
+                                                  ? null
+                                                  : (value) => unawaited(
+                                                        _write({
+                                                          'division': value,
+                                                        }),
+                                                      ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
@@ -275,7 +246,7 @@ class _AstrologyBlockState extends State<AstrologyBlock>
                             division: division,
                             preview: !editor.editable,
                             onConfigure: editor.editable
-                                ? () => unawaited(_configure())
+                                ? () => unawaited(_configure(context))
                                 : null,
                           ),
                         ),
@@ -290,6 +261,46 @@ class _AstrologyBlockState extends State<AstrologyBlock>
       ),
     );
   }
+
+  Widget _choice<T>({
+    required T value,
+    required Map<T, String> labels,
+    required ValueChanged<T> onChanged,
+  }) =>
+      Builder(
+        builder: (context) => SizedBox(
+          width: 230,
+          child: TextButton(
+            onPressed: !editor.editable
+                ? null
+                : () => unawaited(
+                      showAppMenuForWidget<void>(
+                        context: context,
+                        entries: [
+                          for (final option in labels.entries)
+                            AppMenuItem(
+                              label: option.value,
+                              selected: value == option.key,
+                              onSelected: () => onChanged(option.key),
+                            ),
+                        ],
+                      ),
+                    ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    labels[value] ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const Icon(Icons.arrow_drop_down_rounded, size: 18),
+              ],
+            ),
+          ),
+        ),
+      );
 }
 
 Future<AstrologyInput?> showAstrologyInputDialog(

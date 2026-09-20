@@ -121,9 +121,9 @@ void main() {
       }
     });
 
-    test('only the color pack reports multi-color artwork', () async {
+    test('Vivid and Color report multi-color artwork', () async {
       final colorful = kIconPacks.where((pack) => pack.isColorful).toList();
-      expect(colorful.map((pack) => pack.id), ['color']);
+      expect(colorful.map((pack) => pack.id), [kVividIconPack.id, 'color']);
 
       for (final pack in kIconPacks) {
         final groups = await loadIconPack(pack);
@@ -136,7 +136,7 @@ void main() {
 
     test('color icons keep their own fills', () async {
       final groups = await loadIconPack(
-        kIconPacks.firstWhere((pack) => pack.isColorful),
+        kIconPacks.firstWhere((pack) => pack.id == 'color'),
       );
       final icon = findLoadedIcon('color_travel_places', 'full-moon');
 

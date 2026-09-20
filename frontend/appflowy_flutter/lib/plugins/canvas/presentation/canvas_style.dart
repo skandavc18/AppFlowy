@@ -361,7 +361,7 @@ CanvasPalette _minimalPalette({required bool isDark}) => isDark
       );
 
 /// A small borderless control: the toolbar's tools, a card's own buttons.
-class CanvasButton extends StatefulWidget {
+class CanvasButton extends StatelessWidget {
   const CanvasButton({
     super.key,
     required this.icon,
@@ -387,66 +387,43 @@ class CanvasButton extends StatefulWidget {
   final bool accented;
 
   @override
-  State<CanvasButton> createState() => _CanvasButtonState();
-}
-
-class _CanvasButtonState extends State<CanvasButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
-    final enabled = widget.onPressed != null;
-    final filled = widget.selected && widget.accented;
+    final filled = selected && accented;
 
     final background = filled
         ? palette.accent
-        : widget.selected
+        : selected
             ? palette.accent.withValues(alpha: 0.14)
-            : _hovered && enabled
-                ? Color.alphaBlend(palette.hover, palette.hoverAtRest)
-                : palette.hoverAtRest;
+            : palette.hoverAtRest;
 
-    final ink = !enabled
-        ? palette.textMuted.withValues(alpha: 0.45)
-        : filled
-            ? palette.onAccent
-            : widget.selected
-                ? palette.accent
-                : palette.textSecondary;
+    final ink = filled
+        ? palette.onAccent
+        : selected
+            ? palette.accent
+            : palette.textSecondary;
 
-    final button = MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration: CanvasMetrics.hover,
-          curve: CanvasMetrics.settleCurve,
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: background,
+    return SizedBox.square(
+      dimension: size,
+      child: IconButton(
+        tooltip: tooltip,
+        isSelected: selected,
+        onPressed: onPressed,
+        icon: Icon(icon, size: iconSize),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.square(size),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: ink,
+          disabledForegroundColor: palette.textMuted.withValues(alpha: 0.45),
+          backgroundColor: background,
+          hoverColor: palette.hover,
+          focusColor: palette.hover,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(CanvasMetrics.controlRadius),
-          ),
-          child: Center(
-            widthFactor: 1,
-            child: Icon(widget.icon, size: widget.iconSize, color: ink),
           ),
         ),
       ),
     );
-
-    final tooltip = widget.tooltip;
-    return tooltip == null || tooltip.isEmpty
-        ? button
-        : Tooltip(
-            message: tooltip,
-            waitDuration: CanvasMetrics.chrome,
-            child: button,
-          );
   }
 }
 

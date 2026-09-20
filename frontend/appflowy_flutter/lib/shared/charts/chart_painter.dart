@@ -94,6 +94,41 @@ class _Tick {
   final String label;
 }
 
+typedef _ShadowMark = ({Path path, double opacity, bool stroke});
+typedef _BarMark = ({
+  RRect shape,
+  Color color,
+  double value,
+  double progress,
+  bool hovered,
+  ChartHit hit,
+});
+typedef _SeriesMark = ({
+  int seriesIndex,
+  List<Offset> points,
+  List<Offset> drawn,
+  Path line,
+  Path? area,
+});
+typedef _CloudMark = ({
+  int seriesIndex,
+  int pointIndex,
+  Offset centre,
+  double radius,
+  double progress,
+  Color color,
+  bool bubbles,
+  bool hovered,
+});
+typedef _SliceMark = ({
+  int index,
+  double angle,
+  double sweep,
+  double middle,
+  Offset shift,
+  Color color,
+});
+
 /// Draws a chart, and reports what each part of it occupies so the widget
 /// above can answer the pointer without the painter knowing about gestures.
 class ChartPainter extends CustomPainter {
@@ -173,6 +208,101 @@ class ChartPainter extends CustomPainter {
   String _sliceName(int index) {
     final points = data.series.isEmpty ? const [] : data.series.first.points;
     return index < points.length ? points[index].label as String : '';
+  }
+
+  // Reuse paints/filters for every mark and animation frame.
+  late final _markShadow = ChartMarkShadow.of(palette);
+  late final _shadowPaint = Paint()
+    ..isAntiAlias = true
+    ..maskFilter =
+        ui.MaskFilter.blur(ui.BlurStyle.normal, _markShadow.blurSigma)
+    ..strokeWidth = ChartMetrics.lineWidth
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round;
+  late final _shadowLayerPaint = Paint();
+  late final _shadowStrokeMask = Paint()
+    ..isAntiAlias = false
+    ..blendMode = BlendMode.clear
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = ChartMetrics.lineWidth
+    ..strokeCap = StrokeCap.round
+    ..strokeJoin = StrokeJoin.round;
+
+  /// Paint shadows before any foreground ink. Excluding the filled silhouettes
+  /// protects translucent marks and stacked seams. Only shadows overlapping a
+  /// translucent stroke need a tightly bounded layer to subtract that stroke;
+  /// Flutter has no stroked-path clip. Never composite the whole chart.
+  /// The caller's plot clip also bounds every blur, even while zoomed in.
+  void _paintMarkShadows(
+    Canvas canvas,
+    Rect bounds,
+    List<_ShadowMark> marks,
+    List<Path> occluders, {
+    List<Path> strokeOccluders = const [],
+  }) {
+    if (_t <= 0 || _markShadow.color.a <= 0 || marks.isEmpty) {
+      return;
+    }
+    // clipPath only intersects on Flutter 3.27. Build the inverse once for
+    // this pass, bounded by the plot rather than an unbounded inverse fill.
+    // Subtract separately: opposite winding and overlapping areas must not
+    // cancel each other's exclusion, as an even-odd compound path would.
+    var shadowClip = Path()..addRect(bounds);
+    for (final occluder in occluders) {
+      shadowClip = Path.combine(PathOperation.difference, shadowClip, occluder);
+    }
+    final strokes = [
+      for (final path in strokeOccluders)
+        (
+          path: path,
+          bounds: path.getBounds().inflate(ChartMetrics.lineWidth / 2)
+        ),
+    ];
+    canvas.save();
+    canvas.clipPath(shadowClip, doAntiAlias: false);
+    canvas.translate(_markShadow.offset.dx, _markShadow.offset.dy);
+    for (final mark in marks) {
+      if (mark.opacity <= 0) {
+        continue;
+      }
+      _shadowPaint
+        ..style = mark.stroke ? PaintingStyle.stroke : PaintingStyle.fill
+        ..color = _markShadow.color.withValues(
+          alpha: _markShadow.color.a * mark.opacity.clamp(0.0, 1.0),
+        );
+      if (strokes.isNotEmpty) {
+        final shadowBounds =
+            mark.path.getBounds().shift(_markShadow.offset).inflate(
+                  _markShadow.blurSigma * 4 +
+                      (mark.stroke ? ChartMetrics.lineWidth / 2 : 0),
+                );
+        final masks = strokes
+            .where((stroke) => stroke.bounds.overlaps(shadowBounds))
+            .toList(growable: false);
+        if (masks.isNotEmpty) {
+          final layerBounds =
+              shadowBounds.intersect(bounds).shift(-_markShadow.offset);
+          if (layerBounds.isEmpty) {
+            continue;
+          }
+          canvas.save();
+          canvas.clipRect(layerBounds, doAntiAlias: false);
+          canvas.saveLayer(layerBounds, _shadowLayerPaint);
+          canvas.drawPath(mark.path, _shadowPaint);
+          // The shadow was shifted; its occluders stay at the foreground's
+          // original position. Clear only this mark's shadow, never the page.
+          canvas.translate(-_markShadow.offset.dx, -_markShadow.offset.dy);
+          for (final mask in masks) {
+            canvas.drawPath(mask.path, _shadowStrokeMask);
+          }
+          canvas.restore();
+          canvas.restore();
+          continue;
+        }
+      }
+      canvas.drawPath(mark.path, _shadowPaint);
+    }
+    canvas.restore();
   }
 
   // ------------------------------------------------------------------ layout
@@ -535,6 +665,7 @@ class ChartPainter extends CustomPainter {
     );
     final zero = _zeroLine(plot);
     final radius = math.min(ChartMetrics.barRadius, thickness / 2.4);
+    final marks = <_BarMark>[];
 
     for (var lane = 0; lane < visible.length; lane++) {
       final seriesIndex = visible[lane];
@@ -587,54 +718,71 @@ class ChartPainter extends CustomPainter {
 
         final hovered = highlight?.seriesIndex == seriesIndex &&
             highlight?.pointIndex == index;
-        _drawBar(canvas, rect, color, radius, horizontal, point.value, hovered);
-
-        hits.add(
-          ChartHit(
-            seriesIndex: seriesIndex,
-            pointIndex: index,
-            rect: horizontal
-                ? Rect.fromLTRB(
-                    plot.left,
-                    centre - span / 2,
-                    plot.right,
-                    centre + span / 2,
-                  )
-                : Rect.fromLTRB(
-                    centre - span / 2,
-                    plot.top,
-                    centre + span / 2,
-                    plot.bottom,
-                  ),
-            anchor: horizontal
-                ? Offset(rect.right, rect.center.dy)
-                : Offset(rect.center.dx, rect.top),
+        marks.add(
+          (
+            shape: _barShape(rect, radius, horizontal, point.value),
+            color: color,
+            value: point.value,
+            progress: progress,
+            hovered: hovered,
+            hit: ChartHit(
+              seriesIndex: seriesIndex,
+              pointIndex: index,
+              rect: horizontal
+                  ? Rect.fromLTRB(
+                      plot.left,
+                      centre - span / 2,
+                      plot.right,
+                      centre + span / 2,
+                    )
+                  : Rect.fromLTRB(
+                      centre - span / 2,
+                      plot.top,
+                      centre + span / 2,
+                      plot.bottom,
+                    ),
+              anchor: horizontal
+                  ? Offset(rect.right, rect.center.dy)
+                  : Offset(rect.center.dx, rect.top),
+            ),
           ),
         );
+      }
+    }
 
-        if (spec.showValues && progress > 0.9) {
-          _paintValueLabel(canvas, rect, point.value, horizontal);
-        }
+    final shadows = <_ShadowMark>[];
+    final occluder = Path();
+    for (final mark in marks) {
+      if (mark.shape.outerRect.isEmpty) {
+        continue;
+      }
+      final path = Path()..addRRect(mark.shape);
+      occluder.addPath(path, Offset.zero);
+      shadows.add(
+        (path: path, opacity: mark.color.a * mark.progress, stroke: false),
+      );
+    }
+    // In particular, no segment's shadow may be painted over an earlier fill.
+    _paintMarkShadows(canvas, plot.inflate(9), shadows, [occluder]);
+    for (final mark in marks) {
+      _drawBar(canvas, mark.shape, mark.color, horizontal, mark.hovered);
+      hits.add(mark.hit);
+      if (spec.showValues && mark.progress > 0.9) {
+        _paintValueLabel(canvas, mark.shape.outerRect, mark.value, horizontal);
       }
     }
   }
 
-  void _drawBar(
-    Canvas canvas,
+  RRect _barShape(
     Rect rect,
-    Color color,
     double radius,
     bool horizontal,
     double value,
-    bool hovered,
   ) {
-    if (rect.width <= 0 || rect.height <= 0) {
-      return;
-    }
     // Only the growing end is rounded, so a bar reads as rising from its base.
     final positive = value >= 0;
     final corner = Radius.circular(radius);
-    final shape = horizontal
+    return horizontal
         ? RRect.fromRectAndCorners(
             rect,
             topRight: positive ? corner : Radius.zero,
@@ -649,7 +797,19 @@ class ChartPainter extends CustomPainter {
             bottomLeft: positive ? Radius.zero : corner,
             bottomRight: positive ? Radius.zero : corner,
           );
+  }
 
+  void _drawBar(
+    Canvas canvas,
+    RRect shape,
+    Color color,
+    bool horizontal,
+    bool hovered,
+  ) {
+    final rect = shape.outerRect;
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
     final lift = hovered ? emphasis.value : 0.0;
     final fill = Paint()
       ..isAntiAlias = true
@@ -732,6 +892,7 @@ class ChartPainter extends CustomPainter {
     }
 
     final below = List<double>.filled(count, 0);
+    final marks = <_SeriesMark>[];
     for (final seriesIndex in visible) {
       final series = data.series[seriesIndex];
       final points = <Offset>[];
@@ -755,11 +916,17 @@ class ChartPainter extends CustomPainter {
           below[index] += series.points[index].value;
         }
       }
-      _drawSeriesPath(canvas, plot, seriesIndex, points, baseline);
+      final mark = _seriesMark(seriesIndex, points, baseline);
+      if (mark != null) {
+        marks.add(mark);
+      }
     }
+    _drawSeriesPaths(canvas, plot, marks);
   }
 
   void _paintMeasured(Canvas canvas, Rect plot, List<int> visible) {
+    final paths = <_SeriesMark>[];
+    final cloud = <_CloudMark>[];
     for (final seriesIndex in visible) {
       final series = data.series[seriesIndex];
       final points = <Offset>[];
@@ -770,37 +937,112 @@ class ChartPainter extends CustomPainter {
         baseline.add(Offset(x, _zeroLine(plot)));
       }
       if (spec.type.drawsPoints) {
-        _drawCloud(canvas, plot, seriesIndex, points);
+        cloud.addAll(_cloudMarks(plot, seriesIndex, points));
       } else {
-        _drawSeriesPath(canvas, plot, seriesIndex, points, baseline);
+        final mark = _seriesMark(seriesIndex, points, baseline);
+        if (mark != null) {
+          paths.add(mark);
+        }
       }
+    }
+    if (spec.type.drawsPoints) {
+      _drawCloud(canvas, plot, cloud);
+    } else {
+      _drawSeriesPaths(canvas, plot, paths);
     }
   }
 
-  void _drawSeriesPath(
-    Canvas canvas,
-    Rect plot,
+  _SeriesMark? _seriesMark(
     int seriesIndex,
     List<Offset> points,
     List<Offset> baseline,
   ) {
     if (points.isEmpty) {
-      return;
+      return null;
     }
-    final color = _colorFor(seriesIndex);
     final drawn = _revealed(points);
     if (drawn.isEmpty) {
-      return;
+      return null;
     }
 
     final line = _smoothPath(drawn);
-
+    Path? area;
     if (spec.type.fillsArea && drawn.length > 1) {
-      final area = Path.from(line);
+      area = Path.from(line);
       for (var index = drawn.length - 1; index >= 0; index--) {
         area.lineTo(baseline[index].dx, baseline[index].dy);
       }
       area.close();
+    }
+    return (
+      seriesIndex: seriesIndex,
+      points: points,
+      drawn: drawn,
+      line: line,
+      area: area,
+    );
+  }
+
+  void _drawSeriesPaths(Canvas canvas, Rect plot, List<_SeriesMark> marks) {
+    final shadows = <_ShadowMark>[];
+    final occluders = <Path>[];
+    final strokes = <Path>[];
+    final dots = Path();
+    for (final mark in marks) {
+      final color = _colorFor(mark.seriesIndex);
+      final opacity = color.a * _t;
+      if (color.a > 0 && color.a < 1 && mark.drawn.length > 1) {
+        strokes.add(mark.line);
+      }
+      final area = mark.area;
+      if (area != null && !area.getBounds().isEmpty) {
+        // Negative stacked areas can wind opposite to a positive neighbour.
+        // Separate exclusions form a union without cancelling their overlap.
+        occluders.add(area);
+        shadows.add((path: area, opacity: opacity, stroke: false));
+      } else if (mark.drawn.length > 1) {
+        // Shadow the actual curve, including dense lines and collapsed areas.
+        shadows.add((path: mark.line, opacity: opacity, stroke: true));
+      }
+      for (var index = 0; index < mark.drawn.length; index++) {
+        final hovered = highlight?.seriesIndex == mark.seriesIndex &&
+            highlight?.pointIndex == index;
+        if (mark.points.length > 40 && !hovered) {
+          continue;
+        }
+        final radius = ChartMetrics.pointRadius +
+            (hovered
+                ? (ChartMetrics.pointHoverRadius - ChartMetrics.pointRadius) *
+                    emphasis.value
+                : 0) +
+            1.6;
+        final dot = Path()
+          ..addOval(Rect.fromCircle(center: mark.drawn[index], radius: radius));
+        dots.addPath(dot, Offset.zero);
+        // A singleton has no stroke to cast a shadow. Do not double-shadow
+        // the dots on a longer run or change their existing hover halos.
+        if (mark.drawn.length == 1) {
+          shadows.add((path: dot, opacity: opacity, stroke: false));
+        }
+      }
+    }
+    occluders.add(dots);
+    _paintMarkShadows(
+      canvas,
+      plot.inflate(9),
+      shadows,
+      occluders,
+      strokeOccluders: strokes,
+    );
+    for (final mark in marks) {
+      _drawSeriesPath(canvas, plot, mark);
+    }
+  }
+
+  void _drawSeriesPath(Canvas canvas, Rect plot, _SeriesMark mark) {
+    final color = _colorFor(mark.seriesIndex);
+    final area = mark.area;
+    if (area != null) {
       canvas.drawPath(
         area,
         Paint()
@@ -816,9 +1058,9 @@ class ChartPainter extends CustomPainter {
       );
     }
 
-    if (drawn.length > 1) {
+    if (mark.drawn.length > 1) {
       canvas.drawPath(
-        line,
+        mark.line,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = ChartMetrics.lineWidth
@@ -829,11 +1071,10 @@ class ChartPainter extends CustomPainter {
       );
     }
 
-    _plotDots(canvas, plot, seriesIndex, points, drawn.length);
+    _plotDots(canvas, plot, mark.seriesIndex, mark.points, mark.drawn.length);
   }
 
-  void _drawCloud(
-    Canvas canvas,
+  List<_CloudMark> _cloudMarks(
     Rect plot,
     int seriesIndex,
     List<Offset> points,
@@ -841,6 +1082,7 @@ class ChartPainter extends CustomPainter {
     final series = data.series[seriesIndex];
     final color = _colorFor(seriesIndex);
     final bubbles = spec.type.sizesPoints && data.sizeMaximum > 0;
+    final marks = <_CloudMark>[];
 
     for (var index = 0; index < points.length; index++) {
       final progress = _stagger(index, points.length);
@@ -868,30 +1110,74 @@ class ChartPainter extends CustomPainter {
       if (hovered) {
         radius *= 1 + 0.18 * emphasis.value;
       }
+      marks.add(
+        (
+          seriesIndex: seriesIndex,
+          pointIndex: index,
+          centre: centre,
+          radius: radius,
+          progress: progress,
+          color: color,
+          bubbles: bubbles,
+          hovered: hovered,
+        ),
+      );
+    }
+    return marks;
+  }
 
+  void _drawCloud(Canvas canvas, Rect plot, List<_CloudMark> marks) {
+    final shadows = <_ShadowMark>[];
+    final occluder = Path();
+    for (final mark in marks) {
+      final shape = Path()
+        ..addOval(
+          Rect.fromCircle(
+            center: mark.centre,
+            radius: mark.radius + (mark.bubbles ? 0.6 : 0.5),
+          ),
+        );
+      occluder.addPath(shape, Offset.zero);
+      shadows.add(
+        (
+          path: shape,
+          opacity: mark.color.a * mark.progress * (mark.bubbles ? 0.55 : 0.9),
+          stroke: false,
+        ),
+      );
+    }
+    _paintMarkShadows(canvas, plot.inflate(9), shadows, [occluder]);
+    for (final mark in marks) {
       canvas.drawCircle(
-        centre,
-        radius,
+        mark.centre,
+        mark.radius,
         Paint()
           ..isAntiAlias = true
-          ..color = color.withValues(alpha: color.a * (bubbles ? 0.55 : 0.9)),
+          ..color = mark.color.withValues(
+            alpha: mark.color.a * (mark.bubbles ? 0.55 : 0.9),
+          ),
       );
       canvas.drawCircle(
-        centre,
-        radius,
+        mark.centre,
+        mark.radius,
         Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = bubbles ? 1.2 : 1
+          ..strokeWidth = mark.bubbles ? 1.2 : 1
           ..isAntiAlias = true
-          ..color = color.withValues(alpha: color.a * (hovered ? 1 : 0.75)),
+          ..color = mark.color.withValues(
+            alpha: mark.color.a * (mark.hovered ? 1 : 0.75),
+          ),
       );
 
       hits.add(
         ChartHit(
-          seriesIndex: seriesIndex,
-          pointIndex: index,
-          rect: Rect.fromCircle(center: centre, radius: math.max(radius, 9)),
-          anchor: Offset(centre.dx, centre.dy - radius),
+          seriesIndex: mark.seriesIndex,
+          pointIndex: mark.pointIndex,
+          rect: Rect.fromCircle(
+            center: mark.centre,
+            radius: math.max(mark.radius, 9),
+          ),
+          anchor: Offset(mark.centre.dx, mark.centre.dy - mark.radius),
         ),
       );
     }
@@ -1030,6 +1316,9 @@ class ChartPainter extends CustomPainter {
     final outer = side / 2 - 12;
     final donut = spec.type == ChartType.donut;
     final thickness = donut ? outer * 0.42 : outer;
+    final slices = <_SliceMark>[];
+    final silhouette = Path();
+    var shadowOpacity = 0.0;
 
     var angle = -math.pi / 2;
     for (var index = 0; index < series.points.length; index++) {
@@ -1044,6 +1333,69 @@ class ChartPainter extends CustomPainter {
       final shift = Offset(math.cos(middle), math.sin(middle)) * lift;
 
       final color = _colorFor(visible.first, sliceIndex: index);
+      slices.add(
+        (
+          index: index,
+          angle: angle,
+          sweep: sweep,
+          middle: middle,
+          shift: shift,
+          color: color,
+        ),
+      );
+      if (color.a > 0) {
+        final bounds = Rect.fromCircle(center: centre + shift, radius: outer);
+        if (sweep >= math.pi * 2) {
+          silhouette.addOval(bounds);
+        } else {
+          silhouette.addPath(
+            Path()
+              ..moveTo(centre.dx + shift.dx, centre.dy + shift.dy)
+              ..arcTo(bounds, angle, sweep, false)
+              ..close(),
+            Offset.zero,
+          );
+        }
+        shadowOpacity = math.max(shadowOpacity, color.a);
+      }
+      angle += sweep;
+    }
+
+    // At rest the outside is exactly one circle regardless of slice count.
+    // Adjacent arc tessellations otherwise leave subpixel radial seams in the
+    // blur, most visible with dark-theme ink. Keep lifted/partial geometry.
+    if (_t >= 1 &&
+        slices.every(
+          (slice) => slice.shift == Offset.zero && slice.color.a > 0,
+        )) {
+      silhouette
+        ..reset()
+        ..addOval(Rect.fromCircle(center: centre, radius: outer));
+    }
+
+    // One nonzero-winding silhouette, not one blur per slice. It follows the
+    // revealed sweep and lifted slices; shared radial edges cast no shadows.
+    // For a donut only its exterior casts a shadow, never its inner hole.
+    final occluder = Path.from(silhouette);
+    if (donut) {
+      occluder.addOval(
+        Rect.fromCircle(center: centre, radius: outer - thickness),
+      );
+    }
+    _paintMarkShadows(
+      canvas,
+      Offset.zero & size,
+      [(path: silhouette, opacity: shadowOpacity * _t, stroke: false)],
+      [occluder],
+    );
+
+    for (final slice in slices) {
+      final index = slice.index;
+      final point = series.points[index];
+      final angle = slice.angle;
+      final sweep = slice.sweep;
+      final middle = slice.middle;
+      final shift = slice.shift;
       final rect = Rect.fromCircle(
         center: centre + shift,
         radius: donut ? outer - thickness / 2 : outer,
@@ -1058,7 +1410,7 @@ class ChartPainter extends CustomPainter {
           ..isAntiAlias = true
           ..style = donut ? PaintingStyle.stroke : PaintingStyle.fill
           ..strokeWidth = thickness
-          ..color = color,
+          ..color = slice.color,
       );
 
       // A hairline between slices keeps neighbouring colours from merging.
@@ -1106,7 +1458,6 @@ class ChartPainter extends CustomPainter {
           anchor - Offset(painter.width / 2, painter.height / 2),
         );
       }
-      angle += sweep;
     }
 
     if (donut) {
@@ -1192,6 +1543,8 @@ class ChartPainter extends CustomPainter {
       oldDelegate.crosshair != crosshair ||
       !setEquals(oldDelegate.hidden, hidden) ||
       oldDelegate.palette.background != palette.background ||
+      oldDelegate.palette.shadow != palette.shadow ||
+      oldDelegate.palette.isDark != palette.isDark ||
       !listEquals(oldDelegate.colors.palette.series, colors.palette.series) ||
       !mapEquals(oldDelegate.colors.chosen, colors.chosen);
 }

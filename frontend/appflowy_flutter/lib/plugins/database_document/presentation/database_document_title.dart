@@ -1,3 +1,4 @@
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/cell/bloc/text_cell_bloc.dart';
@@ -155,9 +156,17 @@ class _TitleSkin extends IEditableTextCellSkin {
         return BlocBuilder<DatabaseDocumentTitleBloc,
             DatabaseDocumentTitleState>(
           builder: (context, state) {
+            final access = context.watch<PageAccessLevelBloc?>()?.state;
+            final editable = access == null
+                ? !(state.databaseController?.view.isLocked ?? false)
+                : !access.isLoadingLockStatus && access.isEditable;
+            final documentId = state.rowController?.rowMeta.documentId;
             return FlowyTooltip(
               message: name,
               child: AppFlowyPopover(
+                triggerActions: editable
+                    ? PopoverTriggerFlags.click
+                    : PopoverTriggerFlags.none,
                 constraints: const BoxConstraints(
                   maxWidth: 300,
                   maxHeight: 44,
@@ -168,23 +177,34 @@ class _TitleSkin extends IEditableTextCellSkin {
                   return RenameRowPopover(
                     textController: textEditingController,
                     icon: state.icon ?? EmojiIconData.none(),
+                    documentId: documentId == null || documentId.isEmpty
+                        ? bloc.cellController.rowId
+                        : documentId,
+                    editable: editable,
                     onUpdateIcon: (icon) {
+                      final access =
+                          context.read<PageAccessLevelBloc?>()?.state;
+                      if (!editable ||
+                          (access != null &&
+                              (access.isLoadingLockStatus ||
+                                  !access.isEditable))) {
+                        return;
+                      }
                       context
                           .read<DatabaseDocumentTitleBloc>()
                           .add(DatabaseDocumentTitleEvent.updateIcon(icon));
                     },
                     onUpdateName: (text) =>
                         bloc.add(TextCellEvent.updateText(text)),
-                    tabs: const [PickerTabType.emoji],
                   );
                 },
                 child: FlowyButton(
                   useIntrinsicWidth: true,
-                  onTap: () {},
+                  onTap: editable ? () {} : null,
                   margin: const EdgeInsets.symmetric(horizontal: 6),
                   text: Row(
                     children: [
-                      if (state.icon != null) ...[
+                      if (state.icon?.isNotEmpty ?? false) ...[
                         RawEmojiIconWidget(emoji: state.icon!, emojiSize: 14),
                         const HSpace(4.0),
                       ],
@@ -216,11 +236,15 @@ class RenameRowPopover extends StatefulWidget {
     required this.onUpdateName,
     required this.onUpdateIcon,
     required this.icon,
-    this.tabs = const [PickerTabType.emoji, PickerTabType.icon],
+    this.tabs = kAllIconPickerTabs,
+    this.documentId,
+    this.editable = true,
   });
 
   final TextEditingController textController;
   final EmojiIconData icon;
+  final String? documentId;
+  final bool editable;
 
   final ValueChanged<String> onUpdateName;
   final ValueChanged<EmojiIconData> onUpdateIcon;
@@ -234,10 +258,12 @@ class _RenameRowPopoverState extends State<RenameRowPopover> {
   @override
   void initState() {
     super.initState();
-    widget.textController.selection = TextSelection(
-      baseOffset: 0,
-      extentOffset: widget.textController.value.text.characters.length,
-    );
+    if (widget.editable) {
+      widget.textController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: widget.textController.value.text.characters.length,
+      );
+    }
   }
 
   @override
@@ -245,30 +271,51 @@ class _RenameRowPopoverState extends State<RenameRowPopover> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        EmojiPickerButton(
-          emoji: widget.icon,
-          direction: PopoverDirection.bottomWithCenterAligned,
-          offset: const Offset(0, 18),
-          defaultIcon: const FlowySvg(FlowySvgs.document_s),
-          onSubmitted: (r, _) {
-            widget.onUpdateIcon(r.data);
-            if (!r.keepOpen) PopoverContainer.of(context).close();
-          },
-          tabs: widget.tabs,
-        ),
-        const HSpace(6),
-        SizedBox(
-          height: 36.0,
-          width: 220,
-          child: FlowyTextField(
-            controller: widget.textController,
-            maxLength: 256,
-            onSubmitted: (text) {
-              widget.onUpdateName(text);
-              PopoverContainer.of(context).close();
+        if (widget.editable)
+          EmojiPickerButton(
+            emoji: widget.icon,
+            documentId: widget.documentId,
+            direction: PopoverDirection.bottomWithCenterAligned,
+            offset: const Offset(0, 18),
+            defaultIcon: const FlowySvg(FlowySvgs.document_s),
+            onSubmitted: (r, _) {
+              if (!mounted || !widget.editable) return;
+              widget.onUpdateIcon(r.data);
+              if (!r.keepOpen) PopoverContainer.of(context).close();
             },
-            onCanceled: () => widget.onUpdateName(widget.textController.text),
-            showCounter: false,
+            tabs: widget.tabs,
+          )
+        else
+          SizedBox.square(
+            dimension: 30,
+            child: Center(
+              child: widget.icon.isEmpty
+                  ? const FlowySvg(FlowySvgs.document_s)
+                  : RawEmojiIconWidget(emoji: widget.icon, emojiSize: 18),
+            ),
+          ),
+        const HSpace(6),
+        Flexible(
+          child: SizedBox(
+            height: 36.0,
+            width: 220,
+            child: FlowyTextField(
+              controller: widget.textController,
+              readOnly: !widget.editable,
+              autoFocus: widget.editable,
+              maxLength: 256,
+              onSubmitted: (text) {
+                if (!widget.editable) return;
+                widget.onUpdateName(text);
+                PopoverContainer.of(context).close();
+              },
+              onCanceled: () {
+                if (widget.editable) {
+                  widget.onUpdateName(widget.textController.text);
+                }
+              },
+              showCounter: false,
+            ),
           ),
         ),
       ],

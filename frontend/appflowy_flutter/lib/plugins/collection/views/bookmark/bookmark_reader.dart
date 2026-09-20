@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart'
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_web_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
@@ -137,29 +138,32 @@ class _BookmarkReaderState extends State<BookmarkReader> {
       return const SizedBox.shrink();
     }
 
-    final body = BookmarkPanel(
-      color: theme.panel,
-      elevation: widget.standalone
-          ? ViewerCardElevation.flush
-          : ViewerCardElevation.resting,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _header(theme, entry),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: _stage(theme, entry)),
-                if (_showAside)
-                  SizedBox(
-                    width: 300,
-                    child: _aside(theme, entry),
-                  ),
-              ],
+    final body = PreviewToolbarRegion(
+      enabled: !widget.standalone,
+      child: BookmarkPanel(
+        color: theme.panel,
+        elevation: widget.standalone
+            ? ViewerCardElevation.flush
+            : ViewerCardElevation.resting,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _header(theme, entry),
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _stage(theme, entry)),
+                  if (_showAside)
+                    SizedBox(
+                      width: 300,
+                      child: _aside(theme, entry),
+                    ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
@@ -218,40 +222,55 @@ class _BookmarkReaderState extends State<BookmarkReader> {
                 ],
               ),
             ),
-            BookmarkAction(
-              icon: entry.metadata.starred
-                  ? Icons.star_rounded
-                  : Icons.star_outline_rounded,
-              tooltip: entry.metadata.starred
-                  ? LocaleKeys.collections_bookmark_unstar.tr()
-                  : LocaleKeys.collections_bookmark_star.tr(),
-              theme: theme,
-              active: entry.metadata.starred,
-              onPressed: () =>
-                  widget.controller.setStarred(entry, !entry.metadata.starred),
-            ),
-            BookmarkAction(
-              icon: Icons.link_rounded,
-              tooltip: LocaleKeys.collections_bookmark_copyLink.tr(),
-              theme: theme,
-              onPressed: () =>
-                  Clipboard.setData(ClipboardData(text: entry.url)),
-            ),
-            _sourceToggle(theme, entry),
-            BookmarkAction(
-              icon: Icons.open_in_new_rounded,
-              tooltip: LocaleKeys.collections_bookmark_openInBrowser.tr(),
-              theme: theme,
-              onPressed: () => _openInBrowser(entry),
-            ),
-            BookmarkAction(
-              icon: _showAside
-                  ? Icons.vertical_split_rounded
-                  : Icons.notes_rounded,
-              tooltip: LocaleKeys.collections_bookmark_notes.tr(),
-              theme: theme,
-              active: _showAside,
-              onPressed: () => setState(() => _showAside = !_showAside),
+            Flexible(
+              child: PreviewToolbar(
+                keepVisible: widget.controller.isWorkingOn(entry.id),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      BookmarkAction(
+                        icon: entry.metadata.starred
+                            ? Icons.star_rounded
+                            : Icons.star_outline_rounded,
+                        tooltip: entry.metadata.starred
+                            ? LocaleKeys.collections_bookmark_unstar.tr()
+                            : LocaleKeys.collections_bookmark_star.tr(),
+                        theme: theme,
+                        active: entry.metadata.starred,
+                        onPressed: () => widget.controller
+                            .setStarred(entry, !entry.metadata.starred),
+                      ),
+                      BookmarkAction(
+                        icon: Icons.link_rounded,
+                        tooltip: LocaleKeys.collections_bookmark_copyLink.tr(),
+                        theme: theme,
+                        onPressed: () =>
+                            Clipboard.setData(ClipboardData(text: entry.url)),
+                      ),
+                      _sourceToggle(theme, entry),
+                      BookmarkAction(
+                        icon: Icons.open_in_new_rounded,
+                        tooltip:
+                            LocaleKeys.collections_bookmark_openInBrowser.tr(),
+                        theme: theme,
+                        onPressed: () => _openInBrowser(entry),
+                      ),
+                      BookmarkAction(
+                        icon: _showAside
+                            ? Icons.vertical_split_rounded
+                            : Icons.notes_rounded,
+                        tooltip: LocaleKeys.collections_bookmark_notes.tr(),
+                        theme: theme,
+                        active: _showAside,
+                        onPressed: () =>
+                            setState(() => _showAside = !_showAside),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
             BookmarkAction(
               icon: Icons.close_rounded,

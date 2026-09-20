@@ -4,9 +4,9 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -100,7 +100,6 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
   late SpreadsheetController _controller;
   String _lastWritten = '';
   bool _findVisible = false;
-  bool _hovered = false;
 
   RenderBox? get _renderBox => context.findRenderObject() as RenderBox?;
 
@@ -260,57 +259,46 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
         canRequestFocus: false,
         skipTraversal: true,
         onKeyEvent: _onBlockKey,
-        child: MouseRegion(
-          opaque: false,
-          onEnter: (_) => _setHovered(true),
-          onExit: (_) => _setHovered(false),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListenableBuilder(
-                listenable: _controller,
-                builder: (context, _) => _buildHeader(palette),
-              ),
-              if (!_collapsed) ...[
-                if (_findVisible)
-                  ListenableBuilder(
-                    listenable: _controller,
-                    builder: (context, _) => SpreadsheetFindBar(
-                      controller: _controller,
-                      editable: _editable,
-                      onClose: () => setState(() => _findVisible = false),
-                    ),
-                  ),
-                Expanded(
-                  child: SpreadsheetGrid(
-                    controller: _controller,
-                    editable: _editable,
-                    baseTextStyle:
-                        editorState.editorStyle.textStyleConfiguration.text,
-                    placeholder: LocaleKeys.spreadsheet_startTyping.tr(),
-                    addRowLabel: LocaleKeys.spreadsheet_menu_newRow.tr(),
-                    onRequestFind: () => setState(() => _findVisible = true),
-                  ),
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListenableBuilder(
+              listenable: _controller,
+              builder: (context, _) => _buildHeader(context, palette),
+            ),
+            if (!_collapsed) ...[
+              if (_findVisible)
                 ListenableBuilder(
                   listenable: _controller,
-                  builder: (context, _) => SpreadsheetFooter(
+                  builder: (context, _) => SpreadsheetFindBar(
                     controller: _controller,
+                    editable: _editable,
+                    onClose: () => setState(() => _findVisible = false),
                   ),
                 ),
-              ],
+              Expanded(
+                child: SpreadsheetGrid(
+                  controller: _controller,
+                  editable: _editable,
+                  baseTextStyle:
+                      editorState.editorStyle.textStyleConfiguration.text,
+                  placeholder: LocaleKeys.spreadsheet_startTyping.tr(),
+                  addRowLabel: LocaleKeys.spreadsheet_menu_newRow.tr(),
+                  onRequestFind: () => setState(() => _findVisible = true),
+                ),
+              ),
+              ListenableBuilder(
+                listenable: _controller,
+                builder: (context, _) => SpreadsheetFooter(
+                  controller: _controller,
+                ),
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
-  }
-
-  void _setHovered(bool value) {
-    if (_hovered != value && mounted) {
-      setState(() => _hovered = value);
-    }
   }
 
   /// Focus can sit on a control inside the block that has no use for Backspace
@@ -336,8 +324,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
 
   /// The block's controls, right-aligned above the grid. There is no title:
   /// the sheet identifies itself by its content, like a database view.
-  Widget _buildHeader(SpreadsheetPalette palette) {
-    final showControls = _hovered || _findVisible;
+  Widget _buildHeader(BuildContext context, SpreadsheetPalette palette) {
     return SizedBox(
       height: SpreadsheetMetrics.blockHeaderHeight,
       child: Row(
@@ -350,41 +337,44 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
               '${_controller.data.columnCount}',
               style: TextStyle(fontSize: 11.5, color: palette.textMuted),
             ),
-          const Spacer(),
-          AnimatedOpacity(
-            duration: AppFlowyMotion.fast,
-            curve: AppFlowyMotion.standardCurve,
-            opacity: showControls || _collapsed ? 1 : 0,
-            child: IgnorePointer(
-              ignoring: !showControls && !_collapsed,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SpreadsheetToolbarButton(
-                    icon: Icons.search_rounded,
-                    tooltip: LocaleKeys.spreadsheet_toolbar_find.tr(),
-                    active: _findVisible,
-                    onPressed: _toggleFind,
+          Expanded(
+            child: Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: PreviewToolbar(
+                keepVisible: _findVisible || _collapsed,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SpreadsheetToolbarButton(
+                        icon: Icons.search_rounded,
+                        tooltip: LocaleKeys.spreadsheet_toolbar_find.tr(),
+                        active: _findVisible,
+                        onPressed: _toggleFind,
+                      ),
+                      SpreadsheetAnchoredButton(
+                        icon: Icons.filter_list_rounded,
+                        tooltip: LocaleKeys.spreadsheet_toolbar_data.tr(),
+                        active: _controller.data.filters.isNotEmpty ||
+                            _controller.data.sort != null,
+                        onOpen: (position) => _openDataMenu(context, position),
+                      ),
+                      if (_editable)
+                        SpreadsheetAnchoredButton(
+                          icon: Icons.add_rounded,
+                          tooltip: LocaleKeys.spreadsheet_toolbar_insert.tr(),
+                          onOpen: (position) =>
+                              _openInsertMenu(context, position),
+                        ),
+                      SpreadsheetAnchoredButton(
+                        icon: Icons.more_horiz_rounded,
+                        tooltip: LocaleKeys.spreadsheet_toolbar_more.tr(),
+                        onOpen: (position) => _openMoreMenu(context, position),
+                      ),
+                    ],
                   ),
-                  SpreadsheetAnchoredButton(
-                    icon: Icons.filter_list_rounded,
-                    tooltip: LocaleKeys.spreadsheet_toolbar_data.tr(),
-                    active: _controller.data.filters.isNotEmpty ||
-                        _controller.data.sort != null,
-                    onOpen: _openDataMenu,
-                  ),
-                  if (_editable)
-                    SpreadsheetAnchoredButton(
-                      icon: Icons.add_rounded,
-                      tooltip: LocaleKeys.spreadsheet_toolbar_insert.tr(),
-                      onOpen: _openInsertMenu,
-                    ),
-                  SpreadsheetAnchoredButton(
-                    icon: Icons.more_horiz_rounded,
-                    tooltip: LocaleKeys.spreadsheet_toolbar_more.tr(),
-                    onOpen: _openMoreMenu,
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -406,7 +396,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
 
   /// Sorting, filtering and column typing — everything that changes what the
   /// grid shows rather than what it holds.
-  void _openDataMenu(Offset position) {
+  void _openDataMenu(BuildContext context, Offset position) {
     final column = _controller.selection.left;
     showSpreadsheetMenu(
       context: context,
@@ -460,7 +450,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
     );
   }
 
-  void _openInsertMenu(Offset position) {
+  void _openInsertMenu(BuildContext context, Offset position) {
     final selection = _controller.selection;
     showSpreadsheetMenu(
       context: context,
@@ -514,7 +504,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
 
   /// Everything about the block itself: how it is shown, where its data goes
   /// and what it can become.
-  void _openMoreMenu(Offset position) {
+  void _openMoreMenu(BuildContext context, Offset position) {
     final hasHidden = List.generate(
       _controller.data.columnCount,
       (index) => index,

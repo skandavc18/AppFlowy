@@ -59,7 +59,7 @@ class DatabaseDocumentTitleBloc
           );
         },
         updateIcon: (icon) {
-          _updateMeta(icon.emoji);
+          _updateMeta(icon.toStorageString());
         },
       );
     });
@@ -71,7 +71,7 @@ class DatabaseDocumentTitleBloc
         if (!isClosed) {
           add(
             DatabaseDocumentTitleEvent.didUpdateRowIcon(
-              EmojiIconData.emoji(rowMeta.icon),
+              EmojiIconData.fromStorageString(rowMeta.icon),
             ),
           );
         }
@@ -124,7 +124,7 @@ class DatabaseDocumentTitleBloc
     if (rowInfo.rowMeta.icon.isNotEmpty) {
       add(
         DatabaseDocumentTitleEvent.didUpdateRowIcon(
-          EmojiIconData.emoji(rowInfo.rowMeta.icon),
+          EmojiIconData.fromStorageString(rowInfo.rowMeta.icon),
         ),
       );
     }

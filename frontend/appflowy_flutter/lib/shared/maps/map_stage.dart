@@ -10,6 +10,7 @@ import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/map_suggestions.dart';
 import 'package:appflowy/shared/maps/map_tile_provider.dart';
 import 'package:appflowy/shared/maps/maps_settings.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/maps/map_source.dart';
 import 'package:appflowy/workspace/application/maps/map_spec.dart';
@@ -419,24 +420,45 @@ class MapStageState extends State<MapStage> {
                 ),
                 const SizedBox(width: 10),
               ],
-              _MapMeta(source: _source, palette: palette, search: _search),
+              Flexible(
+                child: _MapMeta(
+                  source: _source,
+                  palette: palette,
+                  search: _search,
+                ),
+              ),
             ],
           ),
         ),
-        if (widget.trailing != null) widget.trailing!,
-        if (widget.onAddRow != null)
-          MapControlButton(
-            icon: Icons.add_location_alt_rounded,
-            tooltip: LocaleKeys.map_addRowHere.tr(),
-            palette: palette,
-            size: 28,
-            onPressed: () => unawaited(
-              _addRow(widget.onAddRow!, _map.camera?.center ?? _defaultPlace),
+        Flexible(
+          child: PreviewToolbar(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.trailing != null) widget.trailing!,
+                  if (widget.onAddRow != null)
+                    MapControlButton(
+                      icon: Icons.add_location_alt_rounded,
+                      tooltip: LocaleKeys.map_addRowHere.tr(),
+                      palette: palette,
+                      size: 28,
+                      onPressed: () => unawaited(
+                        _addRow(
+                          widget.onAddRow!,
+                          _map.camera?.center ?? _defaultPlace,
+                        ),
+                      ),
+                    ),
+                  _MapMenuButton(
+                    palette: palette,
+                    entries: _menuEntries,
+                  ),
+                ],
+              ),
             ),
           ),
-        _MapMenuButton(
-          palette: palette,
-          entries: _menuEntries,
         ),
       ],
     );

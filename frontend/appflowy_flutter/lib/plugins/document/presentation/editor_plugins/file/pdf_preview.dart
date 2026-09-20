@@ -236,6 +236,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   bool autoHideToolbar = false;
   bool chromeVisible = true;
   bool toolbarHovered = false;
+  int openToolbarMenus = 0;
   Timer? chromeHideTimer;
   DateTime chromeLastKeptAlive = DateTime.fromMillisecondsSinceEpoch(0);
 
@@ -464,6 +465,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           onDownload: _download,
           onPrint: canPrint ? _print : null,
           onFullscreen: _toggleFullscreen,
+          onMenuVisibilityChanged: _setToolbarMenuVisible,
           viewMenu: PdfViewOptionsMenu(
             preset: PdfViewPreset.resolve(layoutMode, pageTransition),
             autoHideToolbar: autoHideToolbar,
@@ -471,6 +473,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
             onPresetChanged: _setViewPreset,
             onAutoHideToolbarChanged:
                 widget.fullscreen ? _setAutoHideToolbar : null,
+            onMenuVisibilityChanged: _setToolbarMenuVisible,
           ),
           overflow: _buildOverflowMenu(),
         );
@@ -881,6 +884,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       radius: 6,
       iconColor: palette.icon,
       enabled: viewerReady || widget.menuBuilder != null,
+      onVisibilityChanged: _setToolbarMenuVisible,
       entries: _overflowEntries,
     );
   }
@@ -1861,7 +1865,23 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       !viewerReady ||
       searchVisible ||
       toolbarHovered ||
+      openToolbarMenus > 0 ||
       sidebarMode != PdfSidebarMode.none;
+
+  void _setToolbarMenuVisible(bool visible) {
+    if (!mounted || !widget.fullscreen) return;
+    setState(() {
+      openToolbarMenus = math.max(0, openToolbarMenus + (visible ? 1 : -1));
+      if (visible) chromeVisible = true;
+    });
+    // AppMenu holds the embedded preview region itself. Fullscreen's opt-in
+    // three-second timer is separate and must not hide the menu's anchor.
+    if (visible) {
+      chromeHideTimer?.cancel();
+    } else {
+      _scheduleChromeHide();
+    }
+  }
 
   void _handleChromeHover(PointerHoverEvent event) {
     if (!widget.fullscreen || widget.bare) return;

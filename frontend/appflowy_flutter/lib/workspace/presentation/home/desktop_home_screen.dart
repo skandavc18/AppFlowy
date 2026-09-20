@@ -4,6 +4,7 @@ import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/startup/startup_profile.dart';
 import 'package:appflowy/startup/tasks/memory_leak_detector.dart';
 import 'package:appflowy/user/application/auth/auth_service.dart';
 import 'package:appflowy/user/application/reminder/reminder_bloc.dart';
@@ -53,8 +54,12 @@ class DesktopHomeScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return FutureBuilder(
       future: Future.wait([
-        FolderEventGetCurrentWorkspaceSetting().send(),
-        getIt<AuthService>().getUser(),
+        startupProfile.measure(
+          'home.workspace',
+          () => FolderEventGetCurrentWorkspaceSetting().send(),
+        ),
+        startupProfile.measure(
+            'home.user', () => getIt<AuthService>().getUser(),),
       ]),
       builder: (context, snapshots) {
         if (!snapshots.hasData) {
@@ -166,10 +171,13 @@ class DesktopHomeScreen extends StatelessWidget {
                           userProfile: userProfile,
                           child: FlowyContainer(
                             Theme.of(context).colorScheme.surface,
-                            child: _buildBody(
-                              context,
-                              userProfile,
-                              workspaceLatest,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) => _buildBody(
+                                context,
+                                userProfile,
+                                workspaceLatest,
+                                constraints,
+                              ),
                             ),
                           ),
                         ),
@@ -192,8 +200,9 @@ class DesktopHomeScreen extends StatelessWidget {
     BuildContext context,
     UserProfilePB userProfile,
     WorkspaceLatestPB workspaceSetting,
+    BoxConstraints constraints,
   ) {
-    final layout = HomeLayout(context);
+    final layout = HomeLayout(context, constraints: constraints);
     final homeStack = HomeStack(
       layout: layout,
       delegate: DesktopHomeScreenStackAdaptor(context),
@@ -212,15 +221,18 @@ class DesktopHomeScreen extends StatelessWidget {
         layout.showMenu ? const SidebarResizer() : const SizedBox.shrink();
     final editPanel = _buildEditPanel(context, layout: layout);
 
-    final body = _layoutWidgets(
-      layout: layout,
-      homeStack: homeStack,
-      sidebar: sidebar,
-      editPanel: editPanel,
-      bubble: const QuestionBubble(),
-      homeMenuResizer: homeMenuResizer,
-      notificationPanel: notificationPanel,
-      sliderHoverTrigger: sliderHoverTrigger,
+    final body = StartupProfileFrame(
+      phase: 'workspace_shell_frame',
+      child: _layoutWidgets(
+        layout: layout,
+        homeStack: homeStack,
+        sidebar: sidebar,
+        editPanel: editPanel,
+        bubble: const QuestionBubble(),
+        homeMenuResizer: homeMenuResizer,
+        notificationPanel: notificationPanel,
+        sliderHoverTrigger: sliderHoverTrigger,
+      ),
     );
     return BlocBuilder<TabsBloc, TabsState>(
       builder: (context, _) {
@@ -298,7 +310,6 @@ class DesktopHomeScreen extends StatelessWidget {
     return Stack(
       children: [
         homeStack
-            .constrained(minWidth: 500)
             .positioned(
               left: layout.homePageLOffset,
               right: layout.homePageROffset,
@@ -323,19 +334,6 @@ class DesktopHomeScreen extends StatelessWidget {
               bottom: 0,
               width: layout.editPanelWidth,
             ),
-        notificationPanel
-            .animatedPanelX(
-              closeX: -layout.notificationPanelWidth,
-              isClosed: !layout.showNotificationPanel,
-              curve: Curves.easeOutQuad,
-              duration: layout.animDuration.inMilliseconds * 0.001,
-            )
-            .positioned(
-              left: isSliderbarShowing ? layout.menuWidth : 0,
-              top: isSliderbarShowing ? 0 : 52,
-              width: layout.notificationPanelWidth,
-              bottom: 0,
-            ),
         sidebar
             .animatedPanelX(
               closeX: -layout.menuWidth,
@@ -347,6 +345,21 @@ class DesktopHomeScreen extends StatelessWidget {
         homeMenuResizer
             .positioned(left: layout.menuWidth)
             .animate(layout.animDuration, Curves.easeOutQuad),
+        // Keep one paint order at every size. In drawer mode notifications
+        // must cover the sidebar, not be hidden behind it or pushed offscreen.
+        notificationPanel
+            .animatedPanelX(
+              closeX: -layout.notificationPanelWidth,
+              isClosed: !layout.showNotificationPanel,
+              curve: Curves.easeOutQuad,
+              duration: layout.animDuration.inMilliseconds * 0.001,
+            )
+            .positioned(
+              left: layout.homePageLOffset,
+              top: isSliderbarShowing ? 0 : 52,
+              width: layout.notificationPanelWidth,
+              bottom: 0,
+            ),
       ],
     );
   }

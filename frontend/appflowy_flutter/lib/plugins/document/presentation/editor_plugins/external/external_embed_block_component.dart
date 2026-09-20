@@ -10,6 +10,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/provider_controller.dart';
@@ -345,38 +346,53 @@ class _ExternalEmbedBlockComponentState
                 ),
               ),
             ),
-            Text(
-              info.label,
-              style: TextStyle(color: palette.textMuted, fontSize: 11),
+            Flexible(
+              child: Text(
+                info.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: palette.textMuted, fontSize: 11),
+              ),
             ),
             const SizedBox(width: 6),
-            IconButton(
-              tooltip: LocaleKeys.providers_sync.tr(),
-              onPressed: () => unawaited(_load()),
-              icon: const Icon(Icons.refresh_rounded, size: 14),
-              color: palette.textMuted,
-              splashRadius: 13,
-              constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-              padding: EdgeInsets.zero,
-            ),
-            if (_stringOrNull(node.attributes[ExternalEmbedKeys.webUrl]) !=
-                null)
-              IconButton(
-                tooltip: LocaleKeys.providers_openInSource.tr(),
-                onPressed: () => unawaited(
-                  launchUrl(
-                    Uri.parse(
-                      _string(node.attributes[ExternalEmbedKeys.webUrl]),
-                    ),
-                    mode: LaunchMode.externalApplication,
+            PreviewToolbar(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: LocaleKeys.providers_sync.tr(),
+                    onPressed: () => unawaited(_load()),
+                    icon: const Icon(Icons.refresh_rounded, size: 14),
+                    color: palette.textMuted,
+                    splashRadius: 13,
+                    constraints:
+                        const BoxConstraints(minWidth: 24, minHeight: 24),
+                    padding: EdgeInsets.zero,
                   ),
-                ),
-                icon: const Icon(Icons.open_in_new_rounded, size: 14),
-                color: palette.textMuted,
-                splashRadius: 13,
-                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                padding: EdgeInsets.zero,
+                  if (_stringOrNull(
+                        node.attributes[ExternalEmbedKeys.webUrl],
+                      ) !=
+                      null)
+                    IconButton(
+                      tooltip: LocaleKeys.providers_openInSource.tr(),
+                      onPressed: () => unawaited(
+                        launchUrl(
+                          Uri.parse(
+                            _string(node.attributes[ExternalEmbedKeys.webUrl]),
+                          ),
+                          mode: LaunchMode.externalApplication,
+                        ),
+                      ),
+                      icon: const Icon(Icons.open_in_new_rounded, size: 14),
+                      color: palette.textMuted,
+                      splashRadius: 13,
+                      constraints:
+                          const BoxConstraints(minWidth: 24, minHeight: 24),
+                      padding: EdgeInsets.zero,
+                    ),
+                ],
               ),
+            ),
           ],
         ),
       );

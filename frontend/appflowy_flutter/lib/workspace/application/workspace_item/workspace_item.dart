@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/icon.pb.dart';
@@ -242,13 +243,8 @@ ViewPB workspaceRootFolderView({
 }
 
 ViewIconPB _workspaceRootViewIcon(String icon) {
-  final viewIcon = ViewIconPB();
-  if (icon.isNotEmpty) {
-    viewIcon
-      ..ty = ViewIconTypePB.Emoji
-      ..value = icon;
-  }
-  return viewIcon;
+  final data = EmojiIconData.fromStorageString(icon);
+  return data.isEmpty ? ViewIconPB() : data.toViewIcon();
 }
 
 extension WorkspaceItemViewExtension on ViewPB {
@@ -288,9 +284,11 @@ extension WorkspaceItemViewExtension on ViewPB {
 
     final normalizedName = name.trim().isEmpty ? this.name : name;
     final currentCover = _coverFromExtra(extra);
-    final iconMatches = icon == null ||
-        (icon.isEmpty && this.icon.value.isEmpty) ||
-        (this.icon.ty == ViewIconTypePB.Emoji && this.icon.value == icon);
+    final normalizedIcon = icon == null ? null : _workspaceRootViewIcon(icon);
+    final iconMatches = normalizedIcon == null ||
+        (normalizedIcon.value.isEmpty && this.icon.value.isEmpty) ||
+        (this.icon.ty == normalizedIcon.ty &&
+            this.icon.value == normalizedIcon.value);
     if (isWorkspaceFolder &&
         layout == ViewLayoutPB.Document &&
         this.name == normalizedName &&
@@ -306,8 +304,8 @@ extension WorkspaceItemViewExtension on ViewPB {
     if (cover != null) {
       normalized.extra = ViewCoverCodec.mergeCover(normalized.extra, cover);
     }
-    if (icon != null) {
-      normalized.icon = _workspaceRootViewIcon(icon);
+    if (normalizedIcon != null) {
+      normalized.icon = normalizedIcon;
     }
     return normalized;
   }

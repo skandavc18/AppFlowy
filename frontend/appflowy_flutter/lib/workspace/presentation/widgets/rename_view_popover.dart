@@ -19,7 +19,7 @@ class RenameViewPopover extends StatefulWidget {
     required this.emoji,
     this.icon,
     this.showIconChanger = true,
-    this.tabs = const [PickerTabType.emoji, PickerTabType.icon],
+    this.tabs = kAllIconPickerTabs,
   });
 
   final ViewPB view;

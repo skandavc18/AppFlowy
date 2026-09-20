@@ -105,6 +105,7 @@ class _SectionFolderState extends State<SectionFolder> {
           ? WorkspaceIcon(
               workspaceIcon: workspace.icon,
               workspaceName: workspace.name,
+              documentId: workspace.workspaceId,
               iconSize: SidebarMetrics.iconSlot,
               isEditable: true,
               fontSize: 11,
@@ -115,7 +116,7 @@ class _SectionFolderState extends State<SectionFolder> {
               onSelected: (result) => context.read<UserWorkspaceBloc>().add(
                     UserWorkspaceEvent.updateWorkspaceIcon(
                       workspaceId: workspace.workspaceId,
-                      icon: result.emoji,
+                      icon: result.toStorageString(),
                     ),
                   ),
             )

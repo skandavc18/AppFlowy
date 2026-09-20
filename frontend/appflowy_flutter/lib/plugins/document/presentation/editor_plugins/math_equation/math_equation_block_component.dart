@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -103,6 +104,7 @@ class MathEquationBlockComponentWidgetState
   bool _hovered = false;
   bool _focused = false;
   bool _menuOpen = false;
+  final _toolbarKey = GlobalKey();
 
   /// What is being typed, before it is worth writing to the document.
   ///
@@ -254,6 +256,7 @@ class MathEquationBlockComponentWidgetState
         onFocusChange: (value) => setState(() => _focused = value),
         onKeyEvent: (node, event) {
           if (event is KeyDownEvent &&
+              node.hasPrimaryFocus &&
               event.logicalKey == LogicalKeyboardKey.enter &&
               _editable &&
               !_editing) {
@@ -268,8 +271,12 @@ class MathEquationBlockComponentWidgetState
           onExit: (_) => setState(() => _hovered = false),
           child: GestureDetector(
             behavior: HitTestBehavior.deferToChild,
-            onSecondaryTapDown: (details) =>
-                unawaited(_openMenu(context, details.globalPosition)),
+            onSecondaryTapDown: (details) => unawaited(
+              _openMenu(
+                _toolbarKey.currentContext ?? context,
+                details.globalPosition,
+              ),
+            ),
             child: child,
           ),
         ),
@@ -388,74 +395,65 @@ class MathEquationBlockComponentWidgetState
     );
   }
 
-  Widget _identity(VisualBlockPalette palette) => AnimatedOpacity(
-        opacity: _chromeVisible ? 1 : 0,
-        duration: VisualBlockMetrics.reveal,
-        curve: VisualBlockMetrics.curve,
-        child: IgnorePointer(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.functions_rounded, size: 12, color: palette.textMuted),
-              const SizedBox(width: 5),
-              Text(
-                LocaleKeys.diagrams_math_name.tr(),
-                style: TextStyle(
-                  fontSize: 10.5,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.4,
-                  color: palette.textMuted,
-                ),
+  Widget _identity(VisualBlockPalette palette) => IgnorePointer(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.functions_rounded, size: 12, color: palette.textMuted),
+            const SizedBox(width: 5),
+            Text(
+              LocaleKeys.diagrams_math_name.tr(),
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w500,
+                letterSpacing: 0.4,
+                color: palette.textMuted,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
 
-  Widget _actions(VisualBlockPalette palette) => AnimatedOpacity(
-        opacity: _chromeVisible ? 1 : 0,
-        duration: VisualBlockMetrics.reveal,
-        curve: VisualBlockMetrics.curve,
-        child: IgnorePointer(
-          ignoring: !_chromeVisible,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_editable)
-                VisualBlockButton(
-                  icon: _editing ? Icons.check_rounded : Icons.edit_outlined,
-                  tooltip: _editing
-                      ? LocaleKeys.button_done.tr()
-                      : LocaleKeys.diagrams_math_editEquation.tr(),
-                  palette: palette,
-                  size: 24,
-                  onTap: _editing ? _closeEditor : showEditingDialog,
-                ),
+  Widget _actions(VisualBlockPalette palette) => PreviewToolbar(
+        key: _toolbarKey,
+        keepVisible: _editing || _shown.trim().isEmpty,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_editable)
               VisualBlockButton(
-                icon: Icons.open_in_full_rounded,
-                tooltip: LocaleKeys.diagrams_common_fullscreen.tr(),
+                icon: _editing ? Icons.check_rounded : Icons.edit_outlined,
+                tooltip: _editing
+                    ? LocaleKeys.button_done.tr()
+                    : LocaleKeys.diagrams_math_editEquation.tr(),
                 palette: palette,
                 size: 24,
-                onTap: _openFullscreen,
+                onTap: _editing ? _closeEditor : showEditingDialog,
               ),
-              Builder(
-                builder: (buttonContext) => VisualBlockButton(
-                  icon: Icons.more_horiz_rounded,
-                  tooltip: LocaleKeys.document_plugins_optionAction_more.tr(),
-                  palette: palette,
-                  size: 24,
-                  selected: _menuOpen,
-                  onTap: () {
-                    final box = buttonContext.findRenderObject() as RenderBox?;
-                    final origin = box == null
-                        ? Offset.zero
-                        : box.localToGlobal(Offset(0, box.size.height + 4));
-                    unawaited(_openMenu(buttonContext, origin));
-                  },
-                ),
+            VisualBlockButton(
+              icon: Icons.open_in_full_rounded,
+              tooltip: LocaleKeys.diagrams_common_fullscreen.tr(),
+              palette: palette,
+              size: 24,
+              onTap: _openFullscreen,
+            ),
+            Builder(
+              builder: (buttonContext) => VisualBlockButton(
+                icon: Icons.more_horiz_rounded,
+                tooltip: LocaleKeys.document_plugins_optionAction_more.tr(),
+                palette: palette,
+                size: 24,
+                selected: _menuOpen,
+                onTap: () {
+                  final box = buttonContext.findRenderObject() as RenderBox?;
+                  final origin = box == null
+                      ? Offset.zero
+                      : box.localToGlobal(Offset(0, box.size.height + 4));
+                  unawaited(_openMenu(buttonContext, origin));
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       );
 

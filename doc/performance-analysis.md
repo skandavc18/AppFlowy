@@ -1,5 +1,115 @@
 # Large-page loading and scrolling performance
 
+## Windows startup profiling (2026-09-20)
+
+The normal Release application was measured over three controlled relaunches of
+the same workspace, without clearing OS/application caches or changing saved
+settings. The user approved normal closes and restarts. These are **relaunch
+samples, not cold-boot benchmarks**.
+
+| Baseline sample | Native SDK initialization | Application initialization | Process → first raster | Process → page host frame |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 8,280.227 ms | 8,952.032 ms | 11,635.184 ms | 12,553.476 ms |
+| 2 | 2,040.120 ms | 2,392.661 ms | 4,153.541 ms | 4,669.391 ms |
+| 3 | 2,066.229 ms | 2,484.531 ms | 3,450.300 ms | 3,925.254 ms |
+
+Device identification took only 2.7–3.1 ms, ruling out the initially suspected
+Windows device-info query. A previous startup log places roughly seven seconds
+between `CollabKVDB::open` entering and returning. No database repair, migration,
+encryption or authentication checks were removed to improve those timings.
+
+### Build configuration defect
+
+The Flutter Release bundle contained the **Debug Rust backend**: its staged
+122,320,384-byte `dart_ffi.dll` matched the development artifact. RocksDB's actual
+native build output reports `OPT_LEVEL = Some(0)` and `DEBUG = Some(true)`.
+`NDEBUG` in RocksDB's C++ build script disables assertions; it does **not** mean
+that compiler optimization is enabled. Flutter's Release flag does not rebuild
+this separately staged DLL.
+
+`tool/build_windows_backend.ps1` now builds the locked Rust sources as an
+optimized Windows `cdylib`, verifies Cargo's artifact/profile response, and only
+then stages it. `tool/build_windows_bundles.ps1` invokes this before either
+Flutter configuration, includes Rust inputs and the staged DLL in its input
+snapshot, and verifies the bundled native hash against the build result. Both
+Flutter bundles still receive the same native backend; Debug retains Flutter's
+JIT/debugging behavior and separate data-location policy. Startup ordering,
+database formats, device identity and recovery remain unchanged.
+
+The rebuilt native DLL is 59,550,208 bytes; its Cargo artifact reports
+optimization level 3, and the actual RocksDB build output now reports
+`OPT_LEVEL = Some(3)` / `DEBUG = Some(false)`. Nine isolated build-guard checks
+reject failed, unoptimized, wrong-path, duplicate and empty artifacts without
+replacing the staged runtime. Six bundle-parity checks and 20 privacy/bounded
+capture checks also pass. The capture tests never launch an application.
+
+### Measured result and remaining limit
+
+A second three-launch baseline was captured immediately before the final
+rebuild, still using the old backend. Compare against that faster repeat
+baseline rather than attributing all variation from the original run to the
+change. Both batches used the same saved workspace and the same profiling flag.
+
+| Batch / sample | Native SDK (ms) | Initialization (ms) | Process → first raster (ms) | Process → page host (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| Repeat baseline / 1 | 6,485.52 | 6,895.51 | 8,975.52 | 9,527.55 |
+| Repeat baseline / 2 | 1,979.71 | 2,441.84 | 2,978.03 | 3,489.95 |
+| Repeat baseline / 3 | 1,876.08 | 2,278.97 | 2,854.69 | 3,357.41 |
+| Optimized / 1 | 6,102.61 | 6,565.06 | 8,679.63 | 9,317.19 |
+| Optimized / 2 | 641.05 | 1,033.16 | 1,602.90 | 2,141.41 |
+| Optimized / 3 | 700.27 | 1,165.86 | 1,917.41 | 2,475.13 |
+
+Three-sample medians: native SDK **1,979.71 → 700.27 ms** (64.63% lower),
+initialization **2,441.84 → 1,165.86 ms** (52.25% lower), first raster
+**2,978.03 → 1,917.41 ms** (35.61% lower), page host
+**3,489.95 → 2,475.13 ms** (29.08% lower). All nine measured processes across
+the original/repeat/optimized batches had responsive windows, all required
+milestones, zero detected error markers, and normal exit code zero.
+
+**The slow first sample is not solved:** the optimized batch still took 8.68 s
+to first raster and 9.32 s to the page host. Its native initialization alone
+took 6.10 s. OS caches, file loading and scheduling were not controlled; these
+results are not evidence of uniformly sub-two-second startup or a cold-boot
+speedup. Further native database-open profiling is needed for the residual
+delay, without weakening recovery or consistency checks. Reports:
+`startup-release-before.json`, `startup-release-before-repeat.json`, and
+`startup-release-after.json` under `build/performance/`.
+
+### Final bundle verification
+
+Both normal bundles were built Release first, Debug last and independently
+rechecked against **4,791 current input hashes**, **1,179 matching functional
+assets**, and **36 native components**. Both contain the same optimized backend
+(SHA-256 `38BBE9453818155E3E48093E5381EBA02135B5923751170FE408AE6798950371`).
+All four executable/runtime artifacts are newer than their own build starts
+and the latest changed application source; Debug's kernel remains present.
+
+| Artifact under `frontend/appflowy_flutter/build/windows/x64/runner/` | UTC on 2026-09-20 |
+| --- | --- |
+| `Release/AppFlowy.exe` | 09:56:09 |
+| `Release/data/app.so` | 09:55:08 |
+| `Debug/AppFlowy.exe` | 09:59:19 |
+| `Debug/data/flutter_assets/kernel_blob.bin` | 09:58:22 |
+
+### Reproduction and timing boundaries
+
+After saving work and normally closing AppFlowy, build with
+`tool/build_windows_bundles.ps1`, then run `tool/profile_windows_startup.ps1`
+with a distinct `-Label` and `-Runs 3`. The app's `--profile-startup` flag enables
+fixed symbolic phase names, monotonic microsecond durations and success flags.
+It does not log account IDs, document contents or exceptions in the timing data.
+The runner discards other output and records only heuristic error-line counts.
+
+Initialization durations use Dart's monotonic clock. Process-to-frame arrival
+times also include native/DLL loading and stdout delivery/scheduling. The page
+milestone is the **plugin host's first frame**, not completion of every embedded
+renderer or network request. The runner refuses existing AppFlowy processes,
+verifies the process image, checks window responsiveness, and closes only its
+own launches normally; it never force-kills. Reopen Release after measurement.
+Reports are in `build/performance/startup-{label}.json`; current reports also
+hash the native DLL and AOT/kernel payload, since an unchanged native launcher
+hash alone does not identify application code.
+
 ## Debug/Release functional parity and memory follow-up (2026-09-16)
 
 After confirming the dashboard leak fix, the user reported high remaining RAM

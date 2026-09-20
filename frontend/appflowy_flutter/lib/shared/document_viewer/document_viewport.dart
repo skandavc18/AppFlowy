@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -71,16 +72,17 @@ class DocumentViewport extends StatefulWidget {
 
 class _DocumentViewportState extends State<DocumentViewport>
     with SingleTickerProviderStateMixin {
-  late final AnimationController reveal = AnimationController(
-    vsync: this,
-    duration: AppFlowyMotion.deliberate,
-  )..forward();
+  AnimationController? _reveal;
+  AnimationController get reveal => _reveal ??= AnimationController(
+        vsync: this,
+        duration: AppFlowyMotion.deliberate,
+      )..forward();
 
   @override
   void didUpdateWidget(covariant DocumentViewport oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.revealKey != widget.revealKey) {
-      reveal
+    if (oldWidget.revealKey != widget.revealKey && _reveal != null) {
+      _reveal!
         ..reset()
         ..forward();
     }
@@ -88,14 +90,17 @@ class _DocumentViewportState extends State<DocumentViewport>
 
   @override
   void dispose() {
-    reveal.dispose();
+    // Reduced-motion views never read the lazy controller. Disposal must not
+    // create a ticker after the element has already been deactivated.
+    _reveal?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final style = DocumentViewportStyle.of(context);
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final reducedMotion = MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.accessibleNavigationOf(context);
     final surfaceColor = widget.background ?? style.canvas;
 
     final content = Column(
@@ -117,7 +122,8 @@ class _DocumentViewportState extends State<DocumentViewport>
             ),
           ),
         ),
-        if (widget.floatingToolbar != null) widget.floatingToolbar!,
+        if (widget.floatingToolbar != null)
+          PreviewToolbar(child: widget.floatingToolbar!),
       ],
     );
 
@@ -181,7 +187,8 @@ class DocumentViewportHeader extends StatelessWidget {
   final DocumentIdentity identity;
   final List<Widget> actions;
 
-  /// Explicit visibility for hosts that need it; never driven by pointer hover.
+  /// Explicit visibility for hosts that need it. Preview hosts additionally
+  /// reveal the controls on hover/focus without changing header geometry.
   final bool showActions;
 
   final Widget? leading;
@@ -272,14 +279,16 @@ class DocumentViewportHeader extends StatelessWidget {
                         maintainState: true,
                         maintainAnimation: true,
                         maintainSize: true,
-                        child: ConstrainedBox(
-                          constraints:
-                              BoxConstraints(maxWidth: identityWidth * 0.55),
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: actions,
+                        child: PreviewToolbar(
+                          child: ConstrainedBox(
+                            constraints:
+                                BoxConstraints(maxWidth: identityWidth * 0.55),
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: actions,
+                              ),
                             ),
                           ),
                         ),
@@ -289,7 +298,10 @@ class DocumentViewportHeader extends StatelessWidget {
                 ),
               ),
               if (toolbar != null)
-                SizedBox(width: toolbarWidth, child: toolbar!),
+                SizedBox(
+                  width: toolbarWidth,
+                  child: PreviewToolbar(child: toolbar!),
+                ),
             ],
           );
         },

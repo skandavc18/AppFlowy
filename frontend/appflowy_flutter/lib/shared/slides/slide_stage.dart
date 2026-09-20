@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/slides/slide_deck.dart';
 import 'package:appflowy/shared/slides/slide_query.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
@@ -365,90 +366,112 @@ class SlideStageState extends State<SlideStage> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  LocaleKeys.slides_slideCount.tr(
-                    namedArgs: {'count': '${_visible.length}'},
+                Flexible(
+                  child: Text(
+                    LocaleKeys.slides_slideCount.tr(
+                      namedArgs: {'count': '${_visible.length}'},
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: palette.textMuted),
                   ),
-                  style: TextStyle(fontSize: 12, color: palette.textMuted),
                 ),
               ],
             ),
           ),
-          if (_searchOpen) ...[
-            _buildSearchField(palette),
-            const SizedBox(width: SlideMetrics.controlGap),
-          ] else
-            SlideControlButton(
-              palette: palette,
-              icon: Icons.search_rounded,
-              tooltip: LocaleKeys.slides_search.tr(),
-              onTap: _openSearch,
-            ),
-          const SizedBox(width: SlideMetrics.controlGap),
-          SlideControlButton(
-            palette: palette,
-            icon: Icons.swap_vert_rounded,
-            tooltip: LocaleKeys.slides_sort.tr(),
-            active: _query.isSorting,
-            onTap: () => _showSortMenu(palette),
-          ),
-          const SizedBox(width: SlideMetrics.controlGap),
-          SlideControlButton(
-            palette: palette,
-            icon: Icons.filter_alt_rounded,
-            tooltip: LocaleKeys.slides_filter.tr(),
-            active: _query.isFiltering,
-            onTap: () => _showFilterMenu(palette),
-          ),
-          const SizedBox(width: SlideMetrics.controlGap),
-          SlideControlButton(
-            palette: palette,
-            icon: widget.spec.flow == SlideFlow.coverFlow
-                ? Icons.view_carousel_rounded
-                : Icons.view_agenda_rounded,
-            tooltip: widget.spec.flow == SlideFlow.coverFlow
-                ? LocaleKeys.slides_flowCoverFlow.tr()
-                : LocaleKeys.slides_flowDeck.tr(),
-            active: widget.spec.flow == SlideFlow.coverFlow,
-            onTap: _toggleFlow,
-          ),
-          const SizedBox(width: SlideMetrics.controlGap),
-          SlideControlButton(
-            palette: palette,
-            icon: Icons.notes_rounded,
-            tooltip: LocaleKeys.slides_showPageContent.tr(),
-            active: widget.spec.showPageContent,
-            onTap: () => widget.onSpecChanged(
-              widget.spec.copyWith(
-                showPageContent: !widget.spec.showPageContent,
+          Flexible(
+            child: PreviewToolbar(
+              keepVisible: _searchOpen,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                reverse: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_searchOpen) ...[
+                      _buildSearchField(palette),
+                      const SizedBox(width: SlideMetrics.controlGap),
+                    ] else
+                      SlideControlButton(
+                        palette: palette,
+                        icon: Icons.search_rounded,
+                        tooltip: LocaleKeys.slides_search.tr(),
+                        onTap: _openSearch,
+                      ),
+                    const SizedBox(width: SlideMetrics.controlGap),
+                    Builder(
+                      builder: (context) => SlideControlButton(
+                        palette: palette,
+                        icon: Icons.swap_vert_rounded,
+                        tooltip: LocaleKeys.slides_sort.tr(),
+                        active: _query.isSorting,
+                        onTap: () => _showSortMenu(context),
+                      ),
+                    ),
+                    const SizedBox(width: SlideMetrics.controlGap),
+                    Builder(
+                      builder: (context) => SlideControlButton(
+                        palette: palette,
+                        icon: Icons.filter_alt_rounded,
+                        tooltip: LocaleKeys.slides_filter.tr(),
+                        active: _query.isFiltering,
+                        onTap: () => _showFilterMenu(context),
+                      ),
+                    ),
+                    const SizedBox(width: SlideMetrics.controlGap),
+                    SlideControlButton(
+                      palette: palette,
+                      icon: widget.spec.flow == SlideFlow.coverFlow
+                          ? Icons.view_carousel_rounded
+                          : Icons.view_agenda_rounded,
+                      tooltip: widget.spec.flow == SlideFlow.coverFlow
+                          ? LocaleKeys.slides_flowCoverFlow.tr()
+                          : LocaleKeys.slides_flowDeck.tr(),
+                      active: widget.spec.flow == SlideFlow.coverFlow,
+                      onTap: _toggleFlow,
+                    ),
+                    const SizedBox(width: SlideMetrics.controlGap),
+                    SlideControlButton(
+                      palette: palette,
+                      icon: Icons.notes_rounded,
+                      tooltip: LocaleKeys.slides_showPageContent.tr(),
+                      active: widget.spec.showPageContent,
+                      onTap: () => widget.onSpecChanged(
+                        widget.spec.copyWith(
+                          showPageContent: !widget.spec.showPageContent,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: SlideMetrics.controlGap),
+                    SlideControlButton(
+                      palette: palette,
+                      icon: widget.fullscreen
+                          ? Icons.close_fullscreen_rounded
+                          : Icons.open_in_full_rounded,
+                      tooltip: widget.fullscreen
+                          ? LocaleKeys.slides_exitFullscreen.tr()
+                          : LocaleKeys.slides_fullscreen.tr(),
+                      onTap: _toggleFullscreen,
+                    ),
+                    const SizedBox(width: SlideMetrics.controlGap),
+                    SlideControlButton(
+                      palette: palette,
+                      icon: Icons.add_rounded,
+                      tooltip: LocaleKeys.slides_addSlide.tr(),
+                      onTap: _addRow,
+                    ),
+                    const SizedBox(width: SlideMetrics.controlGap),
+                    Builder(
+                      builder: (context) => SlideControlButton(
+                        palette: palette,
+                        icon: Icons.more_horiz_rounded,
+                        tooltip: LocaleKeys.slides_options.tr(),
+                        onTap: () => _showDeckMenu(context: context),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: SlideMetrics.controlGap),
-          SlideControlButton(
-            palette: palette,
-            icon: widget.fullscreen
-                ? Icons.close_fullscreen_rounded
-                : Icons.open_in_full_rounded,
-            tooltip: widget.fullscreen
-                ? LocaleKeys.slides_exitFullscreen.tr()
-                : LocaleKeys.slides_fullscreen.tr(),
-            onTap: _toggleFullscreen,
-          ),
-          const SizedBox(width: SlideMetrics.controlGap),
-          SlideControlButton(
-            palette: palette,
-            icon: Icons.add_rounded,
-            tooltip: LocaleKeys.slides_addSlide.tr(),
-            onTap: _addRow,
-          ),
-          const SizedBox(width: SlideMetrics.controlGap),
-          Builder(
-            builder: (context) => SlideControlButton(
-              palette: palette,
-              icon: Icons.more_horiz_rounded,
-              tooltip: LocaleKeys.slides_options.tr(),
-              onTap: () => _showDeckMenu(context: context),
             ),
           ),
         ],
@@ -543,7 +566,7 @@ class SlideStageState extends State<SlideStage> {
     widget.onSpecChanged(widget.spec.copyWith(flow: next));
   }
 
-  Future<void> _showSortMenu(SlidePalette palette) async {
+  Future<void> _showSortMenu(BuildContext context) async {
     await showAppMenuForWidget<void>(
       context: context,
       entries: [
@@ -576,7 +599,7 @@ class SlideStageState extends State<SlideStage> {
     );
   }
 
-  Future<void> _showFilterMenu(SlidePalette palette) async {
+  Future<void> _showFilterMenu(BuildContext context) async {
     await showAppMenuForWidget<void>(
       context: context,
       entries: [
@@ -761,7 +784,7 @@ class SlideStageState extends State<SlideStage> {
 }
 
 /// One of the small round buttons the deck's chrome is made of.
-class SlideControlButton extends StatefulWidget {
+class SlideControlButton extends StatelessWidget {
   const SlideControlButton({
     super.key,
     required this.palette,
@@ -778,52 +801,32 @@ class SlideControlButton extends StatefulWidget {
   final bool active;
 
   @override
-  State<SlideControlButton> createState() => _SlideControlButtonState();
-}
-
-class _SlideControlButtonState extends State<SlideControlButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
     // Fading from a transparent black would pass through grey; the hover
     // colour at zero alpha keeps the tween in one hue.
-    final resting = widget.active
+    final resting = active
         ? palette.accent.withValues(alpha: 0.14)
         : palette.hover.withValues(alpha: 0);
-    final button = MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: SlideMetrics.hover,
-          curve: SlideMetrics.enterCurve,
-          width: SlideMetrics.controlSize,
-          height: SlideMetrics.controlSize,
-          decoration: BoxDecoration(
-            color: _hovered && !widget.active ? palette.hover : resting,
+    return SizedBox.square(
+      dimension: SlideMetrics.controlSize,
+      child: IconButton(
+        tooltip: tooltip,
+        isSelected: active,
+        onPressed: onTap,
+        icon: Icon(icon, size: 17),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size.square(SlideMetrics.controlSize),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: active ? palette.accent : palette.textSecondary,
+          backgroundColor: resting,
+          hoverColor: palette.hover,
+          focusColor: palette.hover,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(SlideMetrics.controlRadius),
-          ),
-          child: Icon(
-            widget.icon,
-            size: 17,
-            color: widget.active ? palette.accent : palette.textSecondary,
           ),
         ),
       ),
-    );
-
-    final tooltip = widget.tooltip;
-    if (tooltip == null || tooltip.isEmpty) {
-      return button;
-    }
-    return Tooltip(
-      message: tooltip,
-      waitDuration: SlideMetrics.hover,
-      child: button,
     );
   }
 }

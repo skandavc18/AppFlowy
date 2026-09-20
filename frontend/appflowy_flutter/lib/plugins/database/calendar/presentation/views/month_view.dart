@@ -563,14 +563,18 @@ class _DayCellState extends State<_DayCell> {
                       padding: const EdgeInsets.fromLTRB(6, 4, 4, 0),
                       child: Row(
                         children: [
-                          _DateBadge(
-                            day: day,
-                            today: today,
-                            inMonth: inMonth,
-                            selected: widget.selected,
-                            palette: palette,
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: _DateBadge(
+                                day: day,
+                                today: today,
+                                inMonth: inMonth,
+                                selected: widget.selected,
+                                palette: palette,
+                              ),
+                            ),
                           ),
-                          const Spacer(),
                           if (_hovered &&
                               widget.delegate.onCreateAt != null &&
                               widget.delegate.canEdit)
@@ -639,6 +643,8 @@ class _DateBadge extends StatelessWidget {
       ),
       child: Text(
         label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontSize: 12.5,
           height: 1,

@@ -14,6 +14,8 @@ function Get-AppBuildInputSnapshot {
     'frontend/appflowy_flutter/windows'
     'frontend/appflowy_flutter/pubspec.yaml'
     'frontend/appflowy_flutter/pubspec.lock'
+    'frontend/rust-lib'
+    'frontend/rust-toolchain.toml'
   )
   $paths = @(git -C $repoRoot ls-files --cached --others --exclude-standard -- @inputRoots)
   if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect build inputs.' }
@@ -27,6 +29,9 @@ function Get-AppBuildInputSnapshot {
     ForEach-Object { [IO.Path]::GetRelativePath($repoRoot, $_.FullName) })
   $paths += 'frontend/appflowy_flutter/.dart_tool/package_config.json'
   $paths += 'frontend/appflowy_flutter/pubspec.lock'
+  $paths += 'frontend/rust-lib/Cargo.lock'
+  $paths += 'frontend/rust-lib/.cargo/config.toml'
+  $paths += 'frontend/appflowy_flutter/windows/flutter/dart_ffi/dart_ffi.dll'
   $paths | ForEach-Object { $_.Replace('\', '/') } | Sort-Object -Unique |
     ForEach-Object {
       $file = Join-Path $repoRoot $_
@@ -39,6 +44,10 @@ function Get-AppBuildInputSnapshot {
 Push-Location $appRoot
 try {
   $flutter = (Get-Command $FlutterExecutable -ErrorAction Stop).Source
+  if (@(Get-Process AppFlowy -ErrorAction SilentlyContinue).Count -gt 0) {
+    throw 'Close AppFlowy before replacing its runtime bundle.'
+  }
+  $nativeBackend = & (Join-Path $PSScriptRoot 'build_windows_backend.ps1')
   $changed = @(git -C $repoRoot diff HEAD --name-only -- '*.dart')
   if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect changed Dart sources.' }
   $changed += @(git -C $repoRoot ls-files --others --exclude-standard -- '*.dart')
@@ -147,6 +156,9 @@ try {
   }
   $parity = & (Join-Path $PSScriptRoot 'verify_windows_bundle_parity.ps1') `
     -RunnerRoot (Join-Path $appRoot 'build/windows/x64/runner')
+  if ($parity.RustBackendSha256 -ne $nativeBackend.Sha256) {
+    throw 'A bundle did not receive the optimized Rust backend from this build.'
+  }
   $artifacts | Format-List
   [pscustomobject]@{
     VerifiedUtc = [DateTime]::UtcNow.ToString('o')
@@ -158,6 +170,7 @@ try {
         [Text.Encoding]::UTF8.GetBytes(($inputSnapshot -join "`n"))
       )
     )
+    NativeBackend = $nativeBackend
     BundleParity = $parity
     Artifacts = $artifacts
   } | ConvertTo-Json -Depth 4 |

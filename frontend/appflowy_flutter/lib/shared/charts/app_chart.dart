@@ -1,8 +1,11 @@
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/charts/chart_painter.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/charts/chart_data.dart';
 import 'package:appflowy/workspace/application/charts/chart_number.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -71,7 +74,6 @@ class _AppChartState extends State<AppChart> with TickerProviderStateMixin {
   Offset? _pointer;
   ChartViewport _viewport = ChartViewport.identity;
   Size _plotSize = Size.zero;
-  bool _hoveringPlot = false;
 
   bool get _canZoom =>
       widget.allowZoom &&
@@ -168,10 +170,8 @@ class _AppChartState extends State<AppChart> with TickerProviderStateMixin {
               cursor: _viewport.isIdentity
                   ? MouseCursor.defer
                   : SystemMouseCursors.grab,
-              onEnter: (_) => setState(() => _hoveringPlot = true),
               onHover: (event) => _updateHover(event.localPosition),
               onExit: (_) {
-                setState(() => _hoveringPlot = false);
                 _updateHover(null);
               },
               child: GestureDetector(
@@ -220,7 +220,6 @@ class _AppChartState extends State<AppChart> with TickerProviderStateMixin {
                         child: _ZoomControls(
                           palette: widget.palette,
                           viewport: _viewport,
-                          visible: _hoveringPlot || !_viewport.isIdentity,
                           onZoomIn: () => _zoomBy(1.4),
                           onZoomOut: () => _zoomBy(1 / 1.4),
                           onReset: _resetZoom,
@@ -690,7 +689,6 @@ class _ZoomControls extends StatelessWidget {
   const _ZoomControls({
     required this.palette,
     required this.viewport,
-    required this.visible,
     required this.onZoomIn,
     required this.onZoomOut,
     required this.onReset,
@@ -698,118 +696,104 @@ class _ZoomControls extends StatelessWidget {
 
   final ChartPalette palette;
   final ChartViewport viewport;
-  final bool visible;
   final VoidCallback onZoomIn;
   final VoidCallback onZoomOut;
   final VoidCallback onReset;
 
   @override
-  Widget build(BuildContext context) => AnimatedOpacity(
-        duration: ChartMetrics.hoverDuration,
-        curve: ChartMetrics.hoverCurve,
-        opacity: visible ? 1 : 0,
-        child: IgnorePointer(
-          ignoring: !visible,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: palette.surface.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: palette.border),
-              boxShadow: chartCardShadow(palette),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _ZoomButton(
-                  icon: Icons.remove_rounded,
-                  palette: palette,
-                  enabled: !viewport.isIdentity,
-                  onTap: onZoomOut,
-                ),
-                GestureDetector(
-                  onTap: viewport.isIdentity ? null : onReset,
-                  child: MouseRegion(
-                    cursor: viewport.isIdentity
-                        ? MouseCursor.defer
-                        : SystemMouseCursors.click,
-                    child: SizedBox(
-                      width: 40,
-                      height: 24,
-                      child: Center(
-                        child: Text(
-                          '${formatChartNumber(viewport.scale)}×',
-                          style: palette.text(
-                            size: 10.5,
-                            color: viewport.isIdentity
-                                ? palette.label
-                                : palette.strongLabel,
-                            weight: FontWeight.w600,
-                          ),
-                        ),
+  Widget build(BuildContext context) => PreviewToolbar(
+        keepVisible: !viewport.isIdentity,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: palette.surface.withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: palette.border),
+            boxShadow: chartCardShadow(palette),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _ZoomButton(
+                icon: Icons.remove_rounded,
+                tooltip: LocaleKeys.canvas_zoom_zoomOut.tr(),
+                palette: palette,
+                enabled: !viewport.isIdentity,
+                onTap: onZoomOut,
+              ),
+              Tooltip(
+                message: LocaleKeys.canvas_zoom_reset.tr(),
+                child: SizedBox(
+                  width: 40,
+                  height: 24,
+                  child: TextButton(
+                    onPressed: viewport.isIdentity ? null : onReset,
+                    style: TextButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      foregroundColor: palette.strongLabel,
+                    ),
+                    child: Text(
+                      '${formatChartNumber(viewport.scale)}×',
+                      style: palette.text(
+                        size: 10.5,
+                        color: viewport.isIdentity
+                            ? palette.label
+                            : palette.strongLabel,
+                        weight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ),
-                _ZoomButton(
-                  icon: Icons.add_rounded,
-                  palette: palette,
-                  enabled: viewport.scale < 40,
-                  onTap: onZoomIn,
-                ),
-              ],
-            ),
+              ),
+              _ZoomButton(
+                icon: Icons.add_rounded,
+                tooltip: LocaleKeys.canvas_zoom_zoomIn.tr(),
+                palette: palette,
+                enabled: viewport.scale < 40,
+                onTap: onZoomIn,
+              ),
+            ],
           ),
         ),
       );
 }
 
-class _ZoomButton extends StatefulWidget {
+class _ZoomButton extends StatelessWidget {
   const _ZoomButton({
     required this.icon,
+    required this.tooltip,
     required this.palette,
     required this.enabled,
     required this.onTap,
   });
 
   final IconData icon;
+  final String tooltip;
   final ChartPalette palette;
   final bool enabled;
   final VoidCallback onTap;
 
   @override
-  State<_ZoomButton> createState() => _ZoomButtonState();
-}
-
-class _ZoomButtonState extends State<_ZoomButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
-    return MouseRegion(
-      cursor:
-          widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.enabled ? widget.onTap : null,
-        child: AnimatedContainer(
-          duration: ChartMetrics.hoverDuration,
-          curve: ChartMetrics.hoverCurve,
-          width: 26,
-          height: 24,
-          decoration: BoxDecoration(
-            color: _hovered && widget.enabled
-                ? palette.chipHover
-                : Colors.transparent,
+    return SizedBox(
+      width: 26,
+      height: 24,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: enabled ? onTap : null,
+        icon: Icon(icon, size: 14),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size(26, 24),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: palette.label,
+          disabledForegroundColor:
+              palette.label.withValues(alpha: palette.label.a * 0.4),
+          hoverColor: palette.chipHover,
+          focusColor: palette.chipHover,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(7),
-          ),
-          child: Icon(
-            widget.icon,
-            size: 14,
-            color: widget.enabled
-                ? (_hovered ? palette.strongLabel : palette.label)
-                : palette.label.withValues(alpha: palette.label.a * 0.4),
           ),
         ),
       ),

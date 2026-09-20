@@ -2533,14 +2533,18 @@ class _GalleryMetadata extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 7),
-            Text(
-              preview.fileTypeLabel,
-              style: TextStyle(
-                color: palette.textMuted,
-                fontFamily: 'Inter',
-                fontSize: density.typeLabelSize,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.72,
+            Flexible(
+              child: Text(
+                preview.fileTypeLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.textMuted,
+                  fontFamily: 'Inter',
+                  fontSize: density.typeLabelSize,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.72,
+                ),
               ),
             ),
             if (metadata.isNotEmpty) ...[
@@ -2705,40 +2709,51 @@ class _GalleryCardSkeleton extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.fromLTRB(27, 32, 27, 24),
                 color: palette.floatingSurface.withValues(alpha: 0.56),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 92,
-                      height: 11,
-                      decoration: BoxDecoration(
-                        color: palette.textMuted.withValues(alpha: 0.11),
-                        borderRadius: BorderRadius.circular(6),
+                child: LayoutBuilder(
+                  builder: (context, constraints) => FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: constraints.maxWidth,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 92,
+                            height: 11,
+                            decoration: BoxDecoration(
+                              color: palette.textMuted.withValues(alpha: 0.11),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          for (final width in [
+                            0.94,
+                            0.76,
+                            0.88,
+                            0.61,
+                            0.82,
+                            0.49,
+                          ]) ...[
+                            FractionallySizedBox(
+                              widthFactor: width,
+                              alignment: Alignment.centerLeft,
+                              child: Container(
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: palette.textMuted
+                                      .withValues(alpha: 0.085),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 13),
+                          ],
+                        ],
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    for (final width in [
-                      0.94,
-                      0.76,
-                      0.88,
-                      0.61,
-                      0.82,
-                      0.49,
-                    ]) ...[
-                      FractionallySizedBox(
-                        widthFactor: width,
-                        alignment: Alignment.centerLeft,
-                        child: Container(
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: palette.textMuted.withValues(alpha: 0.085),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 13),
-                    ],
-                  ],
+                  ),
                 ),
               ),
             ),

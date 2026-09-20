@@ -16,8 +16,10 @@ import 'package:appflowy/workspace/presentation/widgets/view_cover/cover_image_d
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-document/entities.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
+import 'package:appflowy_result/appflowy_result.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flowy_infra_ui/style_widget/snap_bar.dart';
@@ -280,6 +282,7 @@ class ViewIconPicker extends StatefulWidget {
     this.onViewChanged,
     this.onOpenChanged,
     this.direction = PopoverDirection.bottomWithLeftAligned,
+    this.updateIcon = ViewBackendService.updateViewIcon,
   });
 
   final ViewPB view;
@@ -287,6 +290,10 @@ class ViewIconPicker extends StatefulWidget {
   final ValueChanged<ViewPB>? onViewChanged;
   final ValueChanged<bool>? onOpenChanged;
   final PopoverDirection direction;
+  final Future<FlowyResult<void, FlowyError>> Function({
+    required ViewPB view,
+    required EmojiIconData viewIcon,
+  }) updateIcon;
 
   @override
   State<ViewIconPicker> createState() => _ViewIconPickerState();
@@ -294,9 +301,60 @@ class ViewIconPicker extends StatefulWidget {
 
 class _ViewIconPickerState extends State<ViewIconPicker> {
   final controller = PopoverController();
+  int _generation = 0;
+  bool _saving = false;
+
+  @override
+  void didUpdateWidget(covariant ViewIconPicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.view.id != widget.view.id ||
+        oldWidget.view.isLocked != widget.view.isLocked ||
+        oldWidget.updateIcon != widget.updateIcon) {
+      _generation++;
+      controller.close();
+    }
+  }
+
+  bool _canSelect(int generation, String viewId) =>
+      mounted &&
+      generation == _generation &&
+      viewId == widget.view.id &&
+      !widget.view.isLocked;
+
+  Future<void> _select(
+    SelectedEmojiIconResult result,
+    int generation,
+    String viewId,
+  ) async {
+    if (!_canSelect(generation, viewId) || _saving) return;
+    _saving = true;
+    try {
+      final update = await widget.updateIcon(
+        view: widget.view,
+        viewIcon: result.data,
+      );
+      if (!_canSelect(generation, viewId)) return;
+      update.fold(
+        (_) {
+          final updated = ViewPB.fromBuffer(widget.view.writeToBuffer())
+            ..icon = result.data.toViewIcon();
+          widget.onViewChanged?.call(updated);
+          if (!result.keepOpen) controller.close();
+        },
+        (error) => showSnapBar(context, error.msg),
+      );
+    } catch (_) {
+      if (mounted && _canSelect(generation, viewId)) {
+        showSnapBar(context, 'Unable to change this icon. Try again.');
+      }
+    } finally {
+      _saving = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.view.isLocked) return widget.child;
     final tooltip = widget.view.icon.value.isEmpty
         ? LocaleKeys.document_plugins_cover_addIcon.tr()
         : LocaleKeys.document_plugins_cover_changeIcon.tr();
@@ -308,7 +366,10 @@ class _ViewIconPickerState extends State<ViewIconPicker> {
       constraints: BoxConstraints.loose(const Size(360, 380)),
       clickHandler: PopoverClickHandler.gestureDetector,
       onOpen: () => widget.onOpenChanged?.call(true),
-      onClose: () => widget.onOpenChanged?.call(false),
+      onClose: () {
+        _generation++;
+        widget.onOpenChanged?.call(false);
+      },
       child: Semantics(
         button: true,
         label: tooltip,
@@ -320,37 +381,16 @@ class _ViewIconPickerState extends State<ViewIconPicker> {
           ),
         ),
       ),
-      popupBuilder: (_) => FlowyIconEmojiPicker(
-        documentId: widget.view.id,
-        initialType: widget.view.icon.toEmojiIconData().toPickerTabType(),
-        tabs: const [
-          PickerTabType.emoji,
-          PickerTabType.icon,
-          PickerTabType.custom,
-        ],
-        onSelectedEmoji: (result) async {
-          final update = await ViewBackendService.updateViewIcon(
-            view: widget.view,
-            viewIcon: result.data,
-          );
-          if (!mounted) {
-            return;
-          }
-          update.fold(
-            (_) {
-              widget.view.freeze();
-              final updated = widget.view.rebuild(
-                (view) => view.icon = result.data.toViewIcon(),
-              );
-              widget.onViewChanged?.call(updated);
-              if (!result.keepOpen) {
-                controller.close();
-              }
-            },
-            (error) => showSnapBar(context, error.msg),
-          );
-        },
-      ),
+      popupBuilder: (_) {
+        final generation = _generation;
+        final viewId = widget.view.id;
+        return FlowyIconEmojiPicker(
+          documentId: viewId,
+          initialType: widget.view.icon.toEmojiIconData().toPickerTabType(),
+          tabs: kAllIconPickerTabs,
+          onSelectedEmoji: (result) => _select(result, generation, viewId),
+        );
+      },
     );
   }
 }

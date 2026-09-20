@@ -75,11 +75,69 @@ class EmojiIconData {
     this.emoji,
   );
 
+  /// String-only metadata historically held an emoji. Keep those values
+  /// unchanged while explicitly tagging other icon kinds, rather than later
+  /// trying to paint an icon's JSON or an image path as emoji text.
+  factory EmojiIconData.fromStorageString(String? value) {
+    if (value == null || value.isEmpty) {
+      return EmojiIconData.none();
+    }
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(value);
+    } on FormatException {
+      // Ordinary legacy emoji strings are not JSON.
+      return EmojiIconData.emoji(value);
+    }
+    if (decoded is Map && decoded.containsKey('appflowy_icon')) {
+      final storedType = decoded['type'];
+      final type = FlowyIconType.values
+          .where((type) => type.name == storedType)
+          .firstOrNull;
+      final icon = decoded['value'];
+      if (decoded['appflowy_icon'] != 1 ||
+          type == null ||
+          icon is! String ||
+          icon.isEmpty) {
+        return EmojiIconData.none();
+      }
+      if (type == FlowyIconType.icon) {
+        try {
+          final data = jsonDecode(icon);
+          if (data is! Map ||
+              data['groupName'] is! String ||
+              data['iconName'] is! String ||
+              (data['groupName'] as String).isEmpty ||
+              (data['iconName'] as String).isEmpty ||
+              (data['color'] != null && data['color'] is! String)) {
+            return EmojiIconData.none();
+          }
+        } on FormatException {
+          // A damaged tagged icon is not legacy emoji. Show the fallback,
+          // never its serialized envelope as text in a sidebar or row title.
+          return EmojiIconData.none();
+        }
+      }
+      return EmojiIconData(type, icon);
+    }
+    return EmojiIconData.emoji(value);
+  }
+
   final FlowyIconType type;
   final String emoji;
 
   static EmojiIconData fromViewIconPB(ViewIconPB v) {
     return EmojiIconData(v.ty.fromProto(), v.value);
+  }
+
+  String toStorageString() {
+    if (isEmpty) return '';
+    if (type == FlowyIconType.emoji) return emoji;
+    return jsonEncode({
+      'appflowy_icon': 1,
+      'type': type.name,
+      'value': emoji,
+    });
   }
 
   ViewIconPB toViewIcon() {

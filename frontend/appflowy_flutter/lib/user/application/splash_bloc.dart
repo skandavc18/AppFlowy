@@ -1,4 +1,5 @@
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/startup/startup_profile.dart';
 import 'package:appflowy/user/application/auth/auth_service.dart';
 import 'package:appflowy/user/domain/auth_state.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -11,7 +12,10 @@ class SplashBloc extends Bloc<SplashEvent, SplashState> {
     on<SplashEvent>((event, emit) async {
       await event.map(
         getUser: (val) async {
-          final response = await getIt<AuthService>().getUser();
+          final response = await startupProfile.measure(
+            'splash.user',
+            () => getIt<AuthService>().getUser(),
+          );
           final authState = response.fold(
             (user) => AuthState.authenticated(user),
             (error) => AuthState.unauthenticated(error),

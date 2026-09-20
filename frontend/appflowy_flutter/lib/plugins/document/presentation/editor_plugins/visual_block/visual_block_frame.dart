@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -89,6 +90,12 @@ class _VisualBlockFrameState extends State<VisualBlockFrame> {
 
   @override
   Widget build(BuildContext context) {
+    return PreviewToolbarRegion(
+      child: Builder(builder: _buildFrame),
+    );
+  }
+
+  Widget _buildFrame(BuildContext context) {
     final palette = VisualBlockPalette.of(context);
 
     Widget body = Column(
@@ -111,22 +118,18 @@ class _VisualBlockFrameState extends State<VisualBlockFrame> {
       child: body,
     );
 
-    if (_focused) {
-      body = Container(
-        decoration: BoxDecoration(
-          borderRadius:
-              BorderRadius.circular(VisualBlockMetrics.cardRadius + 3),
-          border: Border.all(
-            color: palette.accent.withValues(alpha: 0.55),
-            width: 1.6,
-          ),
+    // Focus changes decoration, never the depth of the renderer subtree.
+    body = Container(
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(VisualBlockMetrics.cardRadius + 3),
+        border: Border.all(
+          color: palette.accent.withValues(alpha: _focused ? 0.55 : 0),
+          width: 1.6,
         ),
-        padding: const EdgeInsets.all(2),
-        child: body,
-      );
-    } else {
-      body = Padding(padding: const EdgeInsets.all(2), child: body);
-    }
+      ),
+      padding: const EdgeInsets.all(2),
+      child: body,
+    );
 
     return Semantics(
       container: true,
@@ -140,7 +143,8 @@ class _VisualBlockFrameState extends State<VisualBlockFrame> {
           if (event is! KeyDownEvent) {
             return KeyEventResult.ignored;
           }
-          if (event.logicalKey == LogicalKeyboardKey.enter &&
+          if (node.hasPrimaryFocus &&
+              event.logicalKey == LogicalKeyboardKey.enter &&
               widget.onActivate != null) {
             widget.onActivate!();
             return KeyEventResult.handled;
@@ -186,37 +190,37 @@ class _VisualBlockFrameState extends State<VisualBlockFrame> {
                 ),
               ),
             ),
-            AnimatedOpacity(
-              opacity: _controlsVisible ? 1 : 0,
-              duration: VisualBlockMetrics.hover,
-              curve: VisualBlockMetrics.curve,
-              child: IgnorePointer(
-                ignoring: !_controlsVisible,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ...widget.headerActions,
-                    if (widget.menuBuilder != null)
-                      Builder(
-                        builder: (buttonContext) => VisualBlockButton(
-                          icon: Icons.more_horiz_rounded,
-                          tooltip: LocaleKeys.document_plugins_optionAction_more
-                              .tr(),
-                          palette: palette,
-                          selected: _menuOpen,
-                          onTap: () {
-                            final box =
-                                buttonContext.findRenderObject() as RenderBox?;
-                            final origin = box == null
-                                ? Offset.zero
-                                : box.localToGlobal(
-                                    Offset(0, box.size.height + 4),
-                                  );
-                            unawaited(_openMenu(buttonContext, origin));
-                          },
+            Flexible(
+              child: PreviewToolbar(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ...widget.headerActions,
+                      if (widget.menuBuilder != null)
+                        Builder(
+                          builder: (buttonContext) => VisualBlockButton(
+                            icon: Icons.more_horiz_rounded,
+                            tooltip: LocaleKeys
+                                .document_plugins_optionAction_more
+                                .tr(),
+                            palette: palette,
+                            selected: _menuOpen,
+                            onTap: () {
+                              final box = buttonContext.findRenderObject()
+                                  as RenderBox?;
+                              final origin = box == null
+                                  ? Offset.zero
+                                  : box.localToGlobal(
+                                      Offset(0, box.size.height + 4),
+                                    );
+                              unawaited(_openMenu(buttonContext, origin));
+                            },
+                          ),
                         ),
-                      ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

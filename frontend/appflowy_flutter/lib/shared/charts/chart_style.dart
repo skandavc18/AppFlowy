@@ -1,3 +1,5 @@
+import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
 import 'package:flutter/material.dart';
@@ -168,6 +170,9 @@ class ChartPalette {
     ],
   };
 
+  /// The opaque canvas reference for series shading, point halos and slice
+  /// separators. It does not mean the chart should fill its bounds; floating
+  /// tools and tooltips use [surface] instead.
   final Color background;
   final Color surface;
   final Color grid;
@@ -233,25 +238,54 @@ class ChartPalette {
 /// Reads a chart palette out of the surrounding theme.
 ///
 /// Paper keeps its warm surfaces, dark gets the brighter series, and light
-/// stays quiet — the chart never introduces a colour the app does not own.
-ChartPalette chartPaletteOf(BuildContext context, {Color? background}) {
+/// stays quiet. Page-integrated charts borrow the canvas as an ink reference,
+/// not a fill. A deliberately framed chart can still use the card surface.
+ChartPalette chartPaletteOf(
+  BuildContext context, {
+  Color? background,
+  bool framed = false,
+}) {
   final theme = Theme.of(context);
   final premium = PremiumThemeExtension.maybeOf(context);
   final isDark = theme.brightness == Brightness.dark;
+  final isPaper = PaperTheme.isEnabled(context);
   final onSurface = premium?.textPrimary ?? theme.colorScheme.onSurface;
-  final canvas = background ?? premium?.surface ?? theme.colorScheme.surface;
+  final canvas = background ??
+      (framed
+          ? EditorSurfaceStyle.previewBackgroundFor(
+              theme.brightness,
+              premium?.surface ?? theme.colorScheme.surface,
+              isPaper: isPaper,
+            )
+          : EditorSurfaceStyle.canvasBackgroundFor(
+              theme.brightness,
+              premium?.canvas ?? theme.scaffoldBackgroundColor,
+              isPaper: isPaper,
+            ));
 
   return ChartPalette(
     background: canvas,
-    surface: premium?.floatingSurface ?? canvas,
+    // A custom chart/page background must not make a tooltip transparent or
+    // tint its floating surface. Keep that role owned by the theme.
+    surface: premium?.floatingSurface ??
+        EditorSurfaceStyle.previewBackgroundFor(
+          theme.brightness,
+          theme.colorScheme.surface,
+          isPaper: isPaper,
+        ),
     grid: onSurface.withValues(alpha: isDark ? 0.085 : 0.055),
     axis: onSurface.withValues(alpha: isDark ? 0.22 : 0.16),
-    label: premium?.textMuted ?? onSurface.withValues(alpha: 0.48),
+    // Axis values and tooltip details are content, not disabled hints. The
+    // muted hint role is too faint against dark floating surfaces.
+    label: premium?.textSecondary ??
+        onSurface.withValues(alpha: isDark ? 0.72 : 0.66),
     strongLabel: onSurface.withValues(alpha: isDark ? 0.92 : 0.82),
     series: isDark ? ChartPalette.darkSeries : ChartPalette.defaultSeries,
     baseTextStyle: theme.textTheme.bodyMedium ?? const TextStyle(),
-    shadow:
-        premium?.shadow ?? Colors.black.withValues(alpha: isDark ? 0.42 : 0.10),
+    shadow: premium?.shadow ??
+        (isPaper
+            ? PaperTheme.shadow
+            : Colors.black.withValues(alpha: isDark ? 0.42 : 0.10)),
     border: premium?.border ?? onSurface.withValues(alpha: 0.07),
     chip: premium?.mutedSurface ?? onSurface.withValues(alpha: 0.042),
     chipHover: premium?.hover ?? onSurface.withValues(alpha: 0.075),
@@ -314,7 +348,31 @@ class ChartColors {
   ];
 }
 
-/// The shadow under a chart card and its tooltip.
+/// A small, local lift for data marks, not a surface behind the plot.
+///
+/// Measurements are logical pixels. Keep the theme's shadow ink (including
+/// paper's warm brown), but attenuate it: dark charts need depth, not a glow.
+@immutable
+class ChartMarkShadow {
+  const ChartMarkShadow({
+    required this.color,
+    this.blurSigma = 1.2,
+    this.offset = const Offset(0, 1),
+  });
+
+  factory ChartMarkShadow.of(ChartPalette palette) => ChartMarkShadow(
+        color: palette.shadow.withValues(
+          alpha: (palette.shadow.a * (palette.isDark ? 0.45 : 0.9))
+              .clamp(0.0, palette.isDark ? 0.14 : 0.10),
+        ),
+      );
+
+  final Color color;
+  final double blurSigma;
+  final Offset offset;
+}
+
+/// The shadow under an explicitly framed chart card and its tooltip.
 List<BoxShadow> chartCardShadow(ChartPalette palette) => [
       BoxShadow(
         color: palette.shadow.withValues(alpha: palette.shadow.a * 0.55),

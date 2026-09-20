@@ -2,6 +2,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_painters.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_geometry.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
@@ -45,67 +46,73 @@ class CanvasToolbar extends StatelessWidget {
           onPressed: () => onToolChanged(value),
         );
 
-    return CanvasSurface(
-      palette: palette,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          tool_(
-            CanvasTool.select,
-            Icons.near_me_rounded,
-            LocaleKeys.canvas_toolbar_select.tr(),
+    return PreviewToolbar(
+      keepVisible: tool != CanvasTool.select && tool != CanvasTool.hand,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: CanvasSurface(
+          palette: palette,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              tool_(
+                CanvasTool.select,
+                Icons.near_me_rounded,
+                LocaleKeys.canvas_toolbar_select.tr(),
+              ),
+              tool_(
+                CanvasTool.hand,
+                Icons.pan_tool_alt_rounded,
+                LocaleKeys.canvas_toolbar_hand.tr(),
+              ),
+              _Divider(palette: palette),
+              Builder(
+                builder: (context) => CanvasButton(
+                  icon: Icons.add_rounded,
+                  palette: palette,
+                  tooltip: LocaleKeys.canvas_toolbar_add.tr(),
+                  onPressed: () => onAdd(_anchorOf(context)),
+                ),
+              ),
+              tool_(
+                CanvasTool.text,
+                Icons.text_fields_rounded,
+                LocaleKeys.canvas_toolbar_text.tr(),
+              ),
+              tool_(
+                CanvasTool.connect,
+                Icons.timeline_rounded,
+                LocaleKeys.canvas_toolbar_connect.tr(),
+              ),
+              tool_(
+                CanvasTool.frame,
+                Icons.crop_free_rounded,
+                LocaleKeys.canvas_toolbar_frame.tr(),
+              ),
+              if (!compact) ...[
+                tool_(
+                  CanvasTool.draw,
+                  Icons.draw_rounded,
+                  LocaleKeys.canvas_toolbar_draw.tr(),
+                ),
+                tool_(
+                  CanvasTool.erase,
+                  Icons.cleaning_services_rounded,
+                  LocaleKeys.canvas_toolbar_erase.tr(),
+                ),
+              ],
+              _Divider(palette: palette),
+              Builder(
+                builder: (context) => CanvasButton(
+                  icon: Icons.more_horiz_rounded,
+                  palette: palette,
+                  tooltip: LocaleKeys.canvas_toolbar_more.tr(),
+                  onPressed: () => onMore(_anchorOf(context)),
+                ),
+              ),
+            ],
           ),
-          tool_(
-            CanvasTool.hand,
-            Icons.pan_tool_alt_rounded,
-            LocaleKeys.canvas_toolbar_hand.tr(),
-          ),
-          _Divider(palette: palette),
-          Builder(
-            builder: (context) => CanvasButton(
-              icon: Icons.add_rounded,
-              palette: palette,
-              tooltip: LocaleKeys.canvas_toolbar_add.tr(),
-              onPressed: () => onAdd(_anchorOf(context)),
-            ),
-          ),
-          tool_(
-            CanvasTool.text,
-            Icons.text_fields_rounded,
-            LocaleKeys.canvas_toolbar_text.tr(),
-          ),
-          tool_(
-            CanvasTool.connect,
-            Icons.timeline_rounded,
-            LocaleKeys.canvas_toolbar_connect.tr(),
-          ),
-          tool_(
-            CanvasTool.frame,
-            Icons.crop_free_rounded,
-            LocaleKeys.canvas_toolbar_frame.tr(),
-          ),
-          if (!compact) ...[
-            tool_(
-              CanvasTool.draw,
-              Icons.draw_rounded,
-              LocaleKeys.canvas_toolbar_draw.tr(),
-            ),
-            tool_(
-              CanvasTool.erase,
-              Icons.cleaning_services_rounded,
-              LocaleKeys.canvas_toolbar_erase.tr(),
-            ),
-          ],
-          _Divider(palette: palette),
-          Builder(
-            builder: (context) => CanvasButton(
-              icon: Icons.more_horiz_rounded,
-              palette: palette,
-              tooltip: LocaleKeys.canvas_toolbar_more.tr(),
-              onPressed: () => onMore(_anchorOf(context)),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -154,57 +161,59 @@ class CanvasZoomCluster extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CanvasSurface(
-      palette: palette,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CanvasButton(
-            icon: Icons.remove_rounded,
-            palette: palette,
-            size: 28,
-            iconSize: 16,
-            tooltip: LocaleKeys.canvas_zoom_zoomOut.tr(),
-            onPressed: zoom > minimumCanvasZoom ? onZoomOut : null,
-          ),
-          Tooltip(
-            message: LocaleKeys.canvas_zoom_reset.tr(),
-            child: MouseRegion(
-              cursor: SystemMouseCursors.click,
-              child: GestureDetector(
-                onTap: onReset,
-                behavior: HitTestBehavior.opaque,
-                child: SizedBox(
-                  width: 50,
-                  height: 28,
-                  child: Center(
-                    child: Text(
-                      formatCanvasZoom(zoom),
-                      style: canvasLabelStyle(palette, size: 11.5),
+    return PreviewToolbar(
+      child: CanvasSurface(
+        palette: palette,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CanvasButton(
+              icon: Icons.remove_rounded,
+              palette: palette,
+              size: 28,
+              iconSize: 16,
+              tooltip: LocaleKeys.canvas_zoom_zoomOut.tr(),
+              onPressed: zoom > minimumCanvasZoom ? onZoomOut : null,
+            ),
+            Tooltip(
+              message: LocaleKeys.canvas_zoom_reset.tr(),
+              child: MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: onReset,
+                  behavior: HitTestBehavior.opaque,
+                  child: SizedBox(
+                    width: 50,
+                    height: 28,
+                    child: Center(
+                      child: Text(
+                        formatCanvasZoom(zoom),
+                        style: canvasLabelStyle(palette, size: 11.5),
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          CanvasButton(
-            icon: Icons.add_rounded,
-            palette: palette,
-            size: 28,
-            iconSize: 16,
-            tooltip: LocaleKeys.canvas_zoom_zoomIn.tr(),
-            onPressed: zoom < maximumCanvasZoom ? onZoomIn : null,
-          ),
-          _Divider(palette: palette),
-          CanvasButton(
-            icon: Icons.fit_screen_rounded,
-            palette: palette,
-            size: 28,
-            iconSize: 16,
-            tooltip: LocaleKeys.canvas_zoom_fit.tr(),
-            onPressed: onFit,
-          ),
-        ],
+            CanvasButton(
+              icon: Icons.add_rounded,
+              palette: palette,
+              size: 28,
+              iconSize: 16,
+              tooltip: LocaleKeys.canvas_zoom_zoomIn.tr(),
+              onPressed: zoom < maximumCanvasZoom ? onZoomIn : null,
+            ),
+            _Divider(palette: palette),
+            CanvasButton(
+              icon: Icons.fit_screen_rounded,
+              palette: palette,
+              size: 28,
+              iconSize: 16,
+              tooltip: LocaleKeys.canvas_zoom_fit.tr(),
+              onPressed: onFit,
+            ),
+          ],
+        ),
       ),
     );
   }

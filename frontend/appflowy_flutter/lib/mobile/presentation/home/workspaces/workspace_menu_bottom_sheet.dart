@@ -277,6 +277,7 @@ class _WorkspaceMenuItemIcon extends StatelessWidget {
       child: WorkspaceIcon(
         workspaceName: workspace.name,
         workspaceIcon: workspace.icon,
+        documentId: workspace.workspaceId,
         isEditable: false,
         iconSize: 36,
         emojiSize: 24.0,
@@ -286,7 +287,7 @@ class _WorkspaceMenuItemIcon extends StatelessWidget {
         onSelected: (result) => context.read<UserWorkspaceBloc>().add(
               UserWorkspaceEvent.updateWorkspaceIcon(
                 workspaceId: workspace.workspaceId,
-                icon: result.emoji,
+                icon: result.toStorageString(),
               ),
             ),
       ),

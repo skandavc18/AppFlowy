@@ -1,3 +1,4 @@
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
@@ -116,6 +117,10 @@ class _RowBannerState extends State<RowBanner> {
 
   @override
   Widget build(BuildContext context) {
+    final access = context.watch<PageAccessLevelBloc?>()?.state;
+    final editable = access == null
+        ? !widget.databaseController.view.isLocked
+        : !access.isLoadingLockStatus && access.isEditable;
     return BlocProvider<RowBannerBloc>(
       create: (context) => RowBannerBloc(
         viewId: widget.rowController.viewId,
@@ -132,9 +137,18 @@ class _RowBannerState extends State<RowBanner> {
                 isLocalMode: isLocalMode,
                 spacious: widget.spacious,
                 contentInset: widget.contentInset,
-                onIconChanged: (icon) => context
-                    .read<RowBannerBloc>()
-                    .add(RowBannerEvent.setIcon(icon ?? '')),
+                editable: editable,
+                onIconChanged: (icon) {
+                  final access = context.read<PageAccessLevelBloc?>()?.state;
+                  if (!editable ||
+                      (access != null &&
+                          (access.isLoadingLockStatus || !access.isEditable))) {
+                    return;
+                  }
+                  context
+                      .read<RowBannerBloc>()
+                      .add(RowBannerEvent.setIcon(icon ?? ''));
+                },
                 onCoverChanged: (cover) {
                   context.read<RowBannerBloc>().add(
                         cover == null
@@ -169,6 +183,7 @@ class RowBannerHeader extends StatelessWidget {
     this.isLocalMode = true,
     this.spacious = false,
     this.contentInset = rowDetailContentInset,
+    this.editable = true,
   });
 
   final RowMetaPB rowMeta;
@@ -178,12 +193,16 @@ class RowBannerHeader extends StatelessWidget {
   final bool isLocalMode;
   final bool spacious;
   final double contentInset;
+  final bool editable;
 
   @override
   Widget build(BuildContext context) {
     final cover = effectiveRowCover(rowMeta);
     final hasCover = cover != null;
-    final hasIcon = rowMeta.icon.isNotEmpty;
+    final icon = EmojiIconData.fromStorageString(rowMeta.icon);
+    final hasIcon = icon.isNotEmpty;
+    final documentId =
+        rowMeta.documentId.isEmpty ? rowMeta.id : rowMeta.documentId;
     final decorationHeight = hasCover
         ? rowCoverHeight
         : (spacious ? rowPopupTopSpace : 0.0) +
@@ -201,6 +220,8 @@ class RowBannerHeader extends StatelessWidget {
                 hasIcon: hasIcon,
                 hasCover: hasCover,
                 quiet: spacious,
+                documentId: documentId,
+                editable: editable,
                 onIconChanged: onIconChanged,
                 onCoverChanged: onCoverChanged,
               ),
@@ -230,8 +251,9 @@ class RowBannerHeader extends StatelessWidget {
                     ? _toolbarHeight - _iconHeight / 2
                     : _toolbarHeight,
                 child: RowIcon(
-                  ///TODO: avoid hardcoding for [FlowyIconType]
-                  icon: EmojiIconData(FlowyIconType.emoji, rowMeta.icon),
+                  icon: icon,
+                  documentId: documentId,
+                  editable: editable,
                   onIconChanged: onIconChanged,
                 ),
               ),
@@ -478,12 +500,16 @@ class RowHeaderToolbar extends StatefulWidget {
     required this.onIconChanged,
     required this.onCoverChanged,
     this.quiet = false,
+    this.documentId,
+    this.editable = true,
   });
 
   final double offset;
   final bool hasIcon;
   final bool hasCover;
   final bool quiet;
+  final String? documentId;
+  final bool editable;
 
   /// Returns null if the icon is removed.
   ///
@@ -506,7 +532,7 @@ class _RowHeaderToolbarState extends State<RowHeaderToolbar> {
 
   @override
   Widget build(BuildContext context) {
-    if (!isDesktop) {
+    if (!isDesktop || !widget.editable) {
       return const SizedBox.shrink();
     }
     final muted = widget.quiet ? Theme.of(context).hintColor : null;
@@ -558,10 +584,13 @@ class _RowHeaderToolbarState extends State<RowHeaderToolbar> {
                     popupBuilder: (_) {
                       isPopoverOpen = true;
                       return FlowyIconEmojiPicker(
-                        tabs: const [PickerTabType.emoji],
+                        tabs: kAllIconPickerTabs,
+                        documentId: widget.documentId,
+                        initialType: EmojiIconData.none().toPickerTabType(),
                         onSelectedEmoji: (result) {
-                          widget.onIconChanged(result.emoji);
-                          popoverController.close();
+                          if (!mounted || !widget.editable) return;
+                          widget.onIconChanged(result.data.toStorageString());
+                          if (!result.keepOpen) popoverController.close();
                         },
                       );
                     },
@@ -582,7 +611,8 @@ class _RowHeaderToolbarState extends State<RowHeaderToolbar> {
                           );
 
                           if (result != null) {
-                            widget.onIconChanged(result.emoji);
+                            if (!mounted || !widget.editable) return;
+                            widget.onIconChanged(result.toStorageString());
                           }
                         } else {
                           popoverController.show();
@@ -604,10 +634,14 @@ class RowIcon extends StatefulWidget {
     super.key,
     required this.icon,
     required this.onIconChanged,
+    this.documentId,
+    this.editable = true,
   });
 
   final EmojiIconData icon;
   final void Function(String?) onIconChanged;
+  final String? documentId;
+  final bool editable;
 
   @override
   State<RowIcon> createState() => _RowIconState();
@@ -621,6 +655,9 @@ class _RowIconState extends State<RowIcon> {
     if (widget.icon.isEmpty) {
       return const SizedBox.shrink();
     }
+    if (!widget.editable) {
+      return RawEmojiIconWidget(emoji: widget.icon, emojiSize: _iconHeight);
+    }
 
     return AppFlowyPopover(
       controller: controller,
@@ -629,10 +666,13 @@ class _RowIconState extends State<RowIcon> {
       constraints: BoxConstraints.loose(const Size(360, 380)),
       margin: EdgeInsets.zero,
       popupBuilder: (_) => FlowyIconEmojiPicker(
-        tabs: const [PickerTabType.emoji],
+        tabs: kAllIconPickerTabs,
+        documentId: widget.documentId,
+        initialType: widget.icon.toPickerTabType(),
         onSelectedEmoji: (result) {
-          controller.close();
-          widget.onIconChanged(result.emoji);
+          if (!mounted || !widget.editable) return;
+          widget.onIconChanged(result.data.toStorageString());
+          if (!result.keepOpen) controller.close();
         },
       ),
       child: EmojiIconWidget(emoji: widget.icon),

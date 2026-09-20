@@ -2,6 +2,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/widgets/setting/database_settings_list.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -18,6 +19,24 @@ class SettingButton extends StatefulWidget {
 
 class _SettingButtonState extends State<SettingButton> {
   final PopoverController _popoverController = PopoverController();
+  VoidCallback? _releasePreview;
+
+  void _showPopover() {
+    if (_releasePreview != null) return;
+    _releasePreview = PreviewToolbarRegion.hold(context);
+    _popoverController.show();
+  }
+
+  void _release() {
+    _releasePreview?.call();
+    _releasePreview = null;
+  }
+
+  @override
+  void dispose() {
+    _release();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,6 +46,7 @@ class _SettingButtonState extends State<SettingButton> {
       direction: PopoverDirection.bottomWithCenterAligned,
       offset: const Offset(0, 8),
       triggerActions: PopoverTriggerFlags.none,
+      onClose: _release,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: FlowyIconButton(
@@ -36,7 +56,7 @@ class _SettingButtonState extends State<SettingButton> {
           iconPadding: const EdgeInsets.all(3),
           hoverColor: AFThemeExtension.of(context).lightGreyHover,
           icon: const FlowySvg(FlowySvgs.settings_s),
-          onPressed: _popoverController.show,
+          onPressed: _showPopover,
         ),
       ),
       popupBuilder: (_) =>

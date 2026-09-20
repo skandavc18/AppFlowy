@@ -15,6 +15,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/plugins/shared/share/share_button.dart';
 import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -43,6 +44,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
 import 'package:universal_platform/universal_platform.dart';
 
+import 'desktop/setting_menu.dart';
 import 'desktop/tab_bar_header.dart';
 import 'mobile/mobile_tab_bar_header.dart';
 
@@ -383,14 +385,17 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
     final tabBar = state.tabBars[state.selectedIndex];
     final controller =
         state.tabBarControllerByViewId[tabBar.viewId]!.controller;
+    final extension = tabBar.builder.settingBarExtension(context, controller);
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal:
             context.read<DatabasePluginWidgetBuilderSize>().horizontalPadding,
       ),
-      child: tabBar.builder.settingBarExtension(
-        context,
-        controller,
+      child: PreviewToolbar(
+        // Filter/sort editors exist only while explicitly toggled open. Like
+        // search, their fields and legacy popovers stay visible until closed.
+        keepVisible: extension is DatabaseViewSettingExtension,
+        child: extension,
       ),
     );
   }

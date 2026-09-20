@@ -19,6 +19,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/medi
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/deferred_page_embed.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -30,6 +31,7 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flowy_infra/theme.dart';
+import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -304,7 +306,7 @@ void main() {
         // A focused preview is not a focused action: its bar is still hidden.
         expect(field.focusNode.hasFocus, isTrue);
         _expectReveal(tester, visible: false);
-        expect(find.byTooltip('More actions').hitTestable(), findsOneWidget);
+        expect(find.byTooltip('More actions').hitTestable(), findsNothing);
         for (var iteration = 0; iteration < 3; iteration++) {
           await _hover(tester, mouse, find.byKey(_frameKey));
           expect(find.byKey(_copyKey).hitTestable(), findsOneWidget);
@@ -348,6 +350,113 @@ void main() {
         expect(fixture.json, document);
         expect(fixture.writes, 0);
         expect(await tester.runAsync(textFile.readAsString), originalText);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await mouse.removePointer();
+        await fixture.dispose(tester);
+      }
+    });
+  }
+
+  for (final mode in _modes) {
+    _test('$mode: preview popover holds both action groups and releases safely',
+        (tester) async {
+      final fixture = _Fixture(
+        url: textFile.path,
+        name: 'notes.txt',
+        preview: true,
+        editable: false,
+      );
+      final mouse =
+          await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+      try {
+        await mouse.addPointer(location: Offset.zero);
+        await _mount(tester, fixture, mode: mode);
+        await _waitFor(
+          tester,
+          () => find.byType(SelectableText).evaluate().isNotEmpty,
+        );
+        final renderer = tester.state(find.byType(FilePreview));
+        final block = _blockState(tester);
+        final document = fixture.json;
+        final menuButton = find.byWidgetPredicate(
+          (widget) => widget is IconButton && widget.tooltip == 'More actions',
+        );
+        final toolbar = find
+            .ancestor(
+              of: menuButton,
+              matching: find.byType(PreviewToolbar),
+            )
+            .first;
+        void expectHeader(bool visible) => expect(
+              tester
+                  .widget<AnimatedOpacity>(
+                    find
+                        .descendant(
+                          of: toolbar,
+                          matching: find.byType(AnimatedOpacity),
+                        )
+                        .first,
+                  )
+                  .opacity,
+              visible ? 1 : 0,
+            );
+        final frame = tester.getRect(find.byKey(_frameKey));
+        await mouse.moveTo(Offset(frame.left - 12, frame.center.dy));
+        await tester.pump();
+        await tester.pump(_fade);
+        expectHeader(false);
+        _expectReveal(tester, visible: false);
+
+        await _hover(tester, mouse, find.byKey(_frameKey));
+        await tester.tap(menuButton, kind: ui.PointerDeviceKind.mouse);
+        await tester.pumpAndSettle();
+        expect(find.byType(FileBlockMenu), findsOneWidget);
+        await mouse.moveTo(Offset.zero);
+        await tester.pump();
+        await tester.pump(_fade);
+        expectHeader(true);
+        _expectReveal(tester, visible: true);
+        block.menuController.close();
+        fixture.outsideFocus.requestFocus();
+        await tester.pumpAndSettle();
+        expectHeader(false);
+        _expectReveal(tester, visible: false);
+
+        await tester.tapAt(frame.center);
+        await tester.pump();
+        await tester.pump(_fade);
+        expectHeader(true);
+        _expectReveal(tester, visible: true);
+        await mouse.moveTo(frame.center);
+        await mouse.moveTo(Offset.zero);
+        fixture.outsideFocus.requestFocus();
+        await tester.pumpAndSettle();
+        expectHeader(false);
+
+        for (var i = 0; i < 50 && !_focusedInside(menuButton); i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pump();
+          await tester.pump();
+        }
+        expect(_focusedInside(menuButton), isTrue);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pumpAndSettle();
+        expect(find.byType(FileBlockMenu), findsOneWidget);
+        expectHeader(true);
+        _expectReveal(tester, visible: true);
+        expect(tester.state(find.byType(FilePreview)), same(renderer));
+        expect(fixture.actions.calls, isEmpty);
+        expect(fixture.writes, 0);
+        expect(fixture.json, document);
+        final lateClose = tester
+            .widget<AppFlowyPopover>(find.byType(AppFlowyPopover).first)
+            .onClose;
+        block.menuController.close();
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox());
+        lateClose?.call();
+        await tester.pump();
         expect(tester.takeException(), isNull);
       } finally {
         await mouse.removePointer();
@@ -1036,6 +1145,9 @@ class _DocumentBloc extends Cubit<DocumentState> implements DocumentBloc {
   _DocumentBloc(UserProfilePB? profile)
       : super(DocumentState.initial().copyWith(userProfilePB: profile));
 
+  @override
+  String get documentId => 'file-media-actions-fixture';
+
   void updateProfile(UserProfilePB? profile) =>
       emit(state.copyWith(userProfilePB: profile));
 
@@ -1208,7 +1320,7 @@ IconButton _button(WidgetTester tester, Key key) =>
     tester.widget<IconButton>(find.byKey(key));
 
 void _expectReveal(WidgetTester tester, {required bool visible}) {
-  final reveal = find.byKey(_revealKey);
+  final reveal = _actionReveal();
   expect(tester.widget<AnimatedOpacity>(reveal).opacity, visible ? 1 : 0);
   expect(
     tester
@@ -1224,13 +1336,42 @@ double _paintedOpacity(WidgetTester tester) => tester
     .widget<FadeTransition>(
       find
           .descendant(
-            of: find.byKey(_revealKey),
+            of: _actionReveal(),
             matching: find.byType(FadeTransition),
           )
           .first,
     )
     .opacity
     .value;
+
+// Preview controls share the frame controller; compact chips retain their
+// original MediaActionReveal API and animation contract.
+Finder _actionReveal() {
+  final preview = find.ancestor(
+    of: find.byType(MediaActionButtons),
+    matching: find.byType(PreviewToolbar),
+  );
+  return preview.evaluate().isEmpty
+      ? find.byKey(_revealKey)
+      : find
+          .descendant(of: preview.first, matching: find.byType(AnimatedOpacity))
+          .first;
+}
+
+bool _focusedInside(Finder control) {
+  final context = FocusManager.instance.primaryFocus?.context;
+  if (context == null) return false;
+  final target = control.evaluate().single;
+  var found = identical(context, target);
+  context.visitAncestorElements((element) {
+    if (identical(element, target)) {
+      found = true;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
 
 void _expectBadgeUnclipped(WidgetTester tester) {
   final badge = find.byKey(_copiedKey);

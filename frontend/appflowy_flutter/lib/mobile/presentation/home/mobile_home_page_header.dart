@@ -125,6 +125,7 @@ class _MobileWorkspace extends StatelessWidget {
               WorkspaceIcon(
                 workspaceIcon: currentWorkspace.icon,
                 workspaceName: currentWorkspace.name,
+                documentId: currentWorkspace.workspaceId,
                 iconSize: 36,
                 fontSize: 18.0,
                 isEditable: true,
@@ -134,7 +135,7 @@ class _MobileWorkspace extends StatelessWidget {
                 onSelected: (result) => context.read<UserWorkspaceBloc>().add(
                       UserWorkspaceEvent.updateWorkspaceIcon(
                         workspaceId: currentWorkspace.workspaceId,
-                        icon: result.emoji,
+                        icon: result.toStorageString(),
                       ),
                     ),
               ),

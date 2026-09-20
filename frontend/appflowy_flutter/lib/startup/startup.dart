@@ -18,6 +18,7 @@ import 'deps_resolver.dart';
 import 'entry_point.dart';
 import 'launch_configuration.dart';
 import 'plugin/plugin.dart';
+import 'startup_profile.dart';
 import 'tasks/af_navigator_observer.dart';
 import 'tasks/file_storage_task.dart';
 import 'tasks/prelude.dart';
@@ -106,7 +107,10 @@ class FlowyRunner {
     );
 
     // Specify the env
-    await initGetIt(getIt, mode, f, config);
+    await startupProfile.measure(
+      'dependency_registration',
+      () => initGetIt(getIt, mode, f, config),
+    );
     await didInitGetItCallback?.call();
 
     final applicationDataDirectory =
@@ -262,7 +266,10 @@ class AppLauncher {
 
       for (final task in tasks) {
         final startTaskTime = Stopwatch()..start();
-        await task.initialize(context);
+        await startupProfile.measure(
+          'task.${task.runtimeType}',
+          () => task.initialize(context),
+        );
         final endTaskTime = startTaskTime.elapsed.inMilliseconds;
         Log.info(
           'AppLauncher: task ${task.runtimeType} initialized in $endTaskTime ms',

@@ -223,7 +223,7 @@ class BookmarkGap extends StatelessWidget {
 }
 
 /// A borderless control: the toolbar buttons, the card actions, the menus.
-class BookmarkAction extends StatefulWidget {
+class BookmarkAction extends StatelessWidget {
   const BookmarkAction({
     super.key,
     required this.icon,
@@ -244,76 +244,50 @@ class BookmarkAction extends StatefulWidget {
   final double size;
 
   @override
-  State<BookmarkAction> createState() => _BookmarkActionState();
-}
-
-class _BookmarkActionState extends State<BookmarkAction> {
-  bool _hovered = false;
-  bool _pressed = false;
-
-  @override
   Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final enabled = widget.onPressed != null;
-    final tint = widget.active
-        ? theme.accent
-        : enabled
-            ? theme.iconRest
-            : theme.textFaint.withValues(alpha: 0.5);
-    final fill = widget.active
+    final fill = active
         ? theme.accent.withValues(alpha: theme.isDark ? 0.18 : 0.11)
-        : _hovered
-            ? theme.hover
-            : theme.transparentAs(theme.hover);
+        : theme.transparentAs(theme.hover);
 
-    final label = widget.label;
     return Tooltip(
-      message: widget.tooltip,
+      message: tooltip,
       waitDuration: const Duration(milliseconds: 500),
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-          onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-          onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
-          onTap: widget.onPressed,
-          child: Opacity(
-            opacity: _pressed ? 0.6 : 1,
-            child: AnimatedContainer(
-              duration: BookmarkMetrics.hover,
-              curve: BookmarkMetrics.curve,
-              height: widget.size,
-              padding: EdgeInsets.symmetric(
-                horizontal: label == null ? 0 : BookmarkMetrics.space2 + 2,
-              ),
-              constraints: BoxConstraints(
-                minWidth: label == null ? widget.size : 0,
-              ),
-              decoration: BoxDecoration(
-                color: fill,
-                borderRadius:
-                    BorderRadius.circular(BookmarkMetrics.controlRadius),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(widget.icon, size: 16, color: tint),
-                  if (label != null) ...[
-                    const SizedBox(width: BookmarkMetrics.space1 + 2),
-                    Text(
-                      label,
-                      style: theme.face(
-                        fontSize: BookmarkMetrics.metaSize + 0.5,
-                        color: widget.active ? theme.accent : theme.textBody,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
+      child: SizedBox(
+        width: label == null ? size : null,
+        height: size,
+        child: TextButton(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.symmetric(
+              horizontal: label == null ? 0 : BookmarkMetrics.space2 + 2,
             ),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            foregroundColor: active ? theme.accent : theme.iconRest,
+            disabledForegroundColor: theme.textFaint.withValues(alpha: 0.5),
+            backgroundColor: fill,
+            overlayColor: theme.hover,
+            shape: RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(BookmarkMetrics.controlRadius),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 16),
+              if (label != null) ...[
+                const SizedBox(width: BookmarkMetrics.space1 + 2),
+                Text(
+                  label!,
+                  style: theme.face(
+                    fontSize: BookmarkMetrics.metaSize + 0.5,
+                    color: active ? theme.accent : theme.textBody,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ),

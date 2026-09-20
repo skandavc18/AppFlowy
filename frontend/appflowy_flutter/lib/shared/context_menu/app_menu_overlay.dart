@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -86,18 +87,27 @@ Future<T?> showAppMenu<T>({
           overlayBox.globalToLocal(globalAnchor.bottomRight),
         );
 
-  return navigator.push<T>(
-    _AppMenuRoute<T>(
-      entries: normalized,
-      anchor: localAnchor,
-      placement: placement,
-      width: width,
-      maxHeight: maxHeight,
-      capturedThemes:
-          InheritedTheme.capture(from: context, to: navigator.context),
-      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    ),
-  );
+  final releaseToolbar = PreviewToolbarRegion.hold(context);
+  try {
+    return navigator
+        .push<T>(
+          _AppMenuRoute<T>(
+            entries: normalized,
+            anchor: localAnchor,
+            placement: placement,
+            width: width,
+            maxHeight: maxHeight,
+            capturedThemes:
+                InheritedTheme.capture(from: context, to: navigator.context),
+            barrierLabel:
+                MaterialLocalizations.of(context).modalBarrierDismissLabel,
+          ),
+        )
+        .whenComplete(releaseToolbar);
+  } catch (_) {
+    releaseToolbar();
+    rethrow;
+  }
 }
 
 /// Shows a menu anchored to the widget that owns [context] — the shape every

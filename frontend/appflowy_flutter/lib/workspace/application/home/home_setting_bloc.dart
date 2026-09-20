@@ -1,9 +1,9 @@
+import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:appflowy/user/application/user_listener.dart';
 import 'package:appflowy/workspace/application/edit_panel/edit_context.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart'
     show WorkspaceLatestPB;
-import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/time/duration.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
@@ -73,7 +73,7 @@ class HomeSettingBloc extends Bloc<HomeSettingEvent, HomeSettingState> {
           },
           checkScreenSize: (_CheckScreenSize e) {
             final bool isScreenSmall =
-                e.screenWidthPx < PageBreaks.tabletLandscape;
+                WorkspaceLayout.sidebarIsDrawer(e.screenWidthPx);
             if (state.isScreenSmall == isScreenSmall) return;
             if (state.hasColappsedMenuManually) {
               emit(state.copyWith(isScreenSmall: isScreenSmall));
@@ -203,7 +203,7 @@ class HomeSettingState with _$HomeSettingState {
           ? MenuStatus.hidden
           : MenuStatus.expanded,
       isNotificationPanelCollapsed: true,
-      isScreenSmall: screenWidthPx < PageBreaks.tabletLandscape,
+      isScreenSmall: WorkspaceLayout.sidebarIsDrawer(screenWidthPx),
       hasColappsedMenuManually: false,
       resizeOffset: appearanceSettingsState.menuOffset,
       resizeStart: 0,

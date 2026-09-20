@@ -1,5 +1,6 @@
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/deferred_page_embed.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -186,7 +187,9 @@ class _ResizableMediaState extends State<ResizableMedia> {
               children: [
                 SizedBox(
                   key: mediaSizeKey,
-                  child: widget.frameBuilder?.call(frame) ?? frame,
+                  child: PreviewToolbarRegion(
+                    child: widget.frameBuilder?.call(frame) ?? frame,
+                  ),
                 ),
                 if (widget.footer != null)
                   SizedBox(width: width, child: widget.footer),

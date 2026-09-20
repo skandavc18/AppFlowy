@@ -2,6 +2,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/charts/chart_color_menu.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/charts/chart_data.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -78,21 +79,29 @@ class ChartToolbar extends StatelessWidget {
     final numeric = table.numericColumns.map(table.keyOf).toList();
     final measured = spec.plotsAgainstValues;
 
-    return Wrap(
-      spacing: 6,
-      runSpacing: 7,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        _typeChip(),
-        _horizontalChip(numeric, measured),
-        _verticalChip(numeric),
-        if (!measured && !spec.type.drawsPoints && spec.valueColumns.isNotEmpty)
-          _aggregateChip(),
-        if (spec.type.sizesPoints) _sizeChip(numeric),
-        if (measured || spec.type.drawsPoints) _labelChip(),
-        _colorChip(),
-        if (!compact) _optionsChip(measured),
-      ],
+    return PreviewToolbar(
+      keepVisible: table.isEmpty || (data?.isEmpty ?? false),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 7,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _typeChip(),
+            _horizontalChip(numeric, measured),
+            _verticalChip(numeric),
+            if (!measured &&
+                !spec.type.drawsPoints &&
+                spec.valueColumns.isNotEmpty)
+              _aggregateChip(),
+            if (spec.type.sizesPoints) _sizeChip(numeric),
+            if (measured || spec.type.drawsPoints) _labelChip(),
+            _colorChip(),
+            if (!compact) _optionsChip(measured),
+          ],
+        ),
+      ),
     );
   }
 
@@ -412,18 +421,29 @@ class _ChartChipState extends State<ChartChip> {
   final GlobalKey _anchor = GlobalKey();
   bool _hovered = false;
   bool _open = false;
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
-    final lit = _hovered || _open;
+    final lit = _hovered || _open || _focused;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
+      child: TextButton(
         key: _anchor,
-        onTap: _openMenu,
+        onPressed: _openMenu,
+        onFocusChange: (value) => setState(() => _focused = value),
+        style: TextButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: palette.strongLabel,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ChartMetrics.chipRadius),
+          ),
+        ),
         child: AnimatedContainer(
           duration: ChartMetrics.hoverDuration,
           curve: ChartMetrics.hoverCurve,
@@ -488,6 +508,7 @@ class _ChartChipState extends State<ChartChip> {
   }
 
   Future<void> _openMenu() async {
+    if (_open) return;
     final box = _anchor.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) {
       return;

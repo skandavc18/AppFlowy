@@ -8,12 +8,14 @@ import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/shared/charts/app_chart.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/charts/chart_data.dart';
 import 'package:appflowy/workspace/application/charts/chart_number.dart';
 import 'package:appflowy/workspace/application/charts/chart_source.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_action.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_data_source.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -112,11 +114,13 @@ final _database = DashboardWidgetDefinition(
         value: const DatabasePluginWidgetBuilderSize(horizontalPadding: 0),
         // Keyed on the view: switching table reuses the previous database's
         // controllers otherwise, and the grid draws the wrong rows.
-        child: DatabaseTabBarView(
-          key: ValueKey('dashboard-database-${view.id}'),
-          view: view,
-          shrinkWrap: false,
-          showActions: false,
+        child: PreviewToolbarRegion(
+          child: DatabaseTabBarView(
+            key: ValueKey('dashboard-database-${view.id}'),
+            view: view,
+            shrinkWrap: false,
+            showActions: false,
+          ),
         ),
       ),
     );
@@ -258,7 +262,12 @@ class _ChartBodyState extends State<_ChartBody> {
     return AppChart(
       data: buildChartData(source.table, spec),
       spec: spec,
-      palette: chartPaletteOf(context, background: widget.context.tone.surface),
+      palette: chartPaletteOf(
+        context,
+        background: widget.context.spec.accent == DashboardAccent.neutral
+            ? null
+            : widget.context.tone.surface,
+      ),
       allowZoom: false,
     );
   }

@@ -7,6 +7,7 @@ import 'package:appflowy/shared/encryption/encryption.dart';
 import 'package:appflowy/shared/encryption/sensitive_clipboard.dart';
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/map_suggestions.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/plugins/database/widgets/cell/desktop_grid/location_picker_card.dart';
 import 'package:appflowy/shared/table_views/form_field_dialog.dart';
 import 'package:appflowy/shared/table_views/form_field_input.dart';
@@ -311,41 +312,46 @@ class FormStageState extends State<FormStage> with WidgetsBindingObserver {
                   color: palette.textPrimary,
                 ),
           ),
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 6,
-            children: [
-              if (widget.editable) ...[
-                TextButton.icon(
-                  key: const ValueKey('form-new-entry'),
-                  onPressed: _busy ? null : () => unawaited(_chooseEntry(null)),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: Text(LocaleKeys.form_newEntry.tr()),
-                ),
-                TextButton.icon(
-                  key: const ValueKey('form-add-field'),
-                  onPressed: _busy ? null : () => unawaited(_addField()),
-                  icon: const Icon(Icons.add_box_rounded, size: 17),
-                  label: Text(LocaleKeys.form_addField.tr()),
-                ),
-              ] else
-                Text(LocaleKeys.form_readOnly.tr()),
-              Builder(
-                builder: (context) => FormIconAction(
-                  actionKey: 'form-options',
-                  label: LocaleKeys.tableViews_options.tr(),
-                  icon: Icons.more_horiz_rounded,
-                  onPressed: _busy
-                      ? null
-                      : () => unawaited(
-                            showAppMenuForWidget<void>(
-                              context: context,
-                              entries: _options(fields),
+          if (!widget.editable) Text(LocaleKeys.form_readOnly.tr()),
+          PreviewToolbar(
+            // Creating the first field is setup, and pending work stays legible.
+            keepVisible: fields.isEmpty || _busy || _noticeIsError,
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              children: [
+                if (widget.editable) ...[
+                  TextButton.icon(
+                    key: const ValueKey('form-new-entry'),
+                    onPressed:
+                        _busy ? null : () => unawaited(_chooseEntry(null)),
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: Text(LocaleKeys.form_newEntry.tr()),
+                  ),
+                  TextButton.icon(
+                    key: const ValueKey('form-add-field'),
+                    onPressed: _busy ? null : () => unawaited(_addField()),
+                    icon: const Icon(Icons.add_box_rounded, size: 17),
+                    label: Text(LocaleKeys.form_addField.tr()),
+                  ),
+                ],
+                Builder(
+                  builder: (context) => FormIconAction(
+                    actionKey: 'form-options',
+                    label: LocaleKeys.tableViews_options.tr(),
+                    icon: Icons.more_horiz_rounded,
+                    onPressed: _busy
+                        ? null
+                        : () => unawaited(
+                              showAppMenuForWidget<void>(
+                                context: context,
+                                entries: _options(fields),
+                              ),
                             ),
-                          ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       );

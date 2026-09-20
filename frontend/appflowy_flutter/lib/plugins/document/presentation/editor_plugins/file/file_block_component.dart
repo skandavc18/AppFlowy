@@ -16,6 +16,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_cloud_auth.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/util/xfile_ext.dart';
@@ -41,6 +42,8 @@ import 'package:universal_platform/universal_platform.dart';
 
 import 'file_block_menu.dart';
 import 'archive/archive_explorer.dart';
+import 'file_icon_binding.dart';
+import 'file_icon_picker.dart';
 import 'file_media_player.dart';
 import 'file_preview.dart';
 import 'file_preview_kind.dart';
@@ -91,6 +94,10 @@ class FileBlockKeys {
   static const String displayMode = 'display_mode';
   static const String previewMetadata = 'preview_metadata';
   static const String workspaceFileId = 'workspace_file_id';
+
+  /// Native attachment identity, encoded by EmojiIconData.toStorageString.
+  /// Workspace references use their ViewPB icon instead of this attribute.
+  static const String icon = 'icon';
 
   /// The GlobalKey of the FileBlockComponentState.
   ///
@@ -241,9 +248,11 @@ class FileBlockComponent extends BlockComponentStatefulWidget {
     super.actionTrailingBuilder,
     super.configuration = const BlockComponentConfiguration(),
     this.mediaActions = const MediaActionService(),
+    this.iconBackend = const FileIconBackend(),
   });
 
   final MediaActionService mediaActions;
+  final FileIconBackend iconBackend;
 
   static const uploadDragKey = 'FileUploadMenu';
 
@@ -270,10 +279,13 @@ class FileBlockComponentState extends State<FileBlockComponent>
   final controller = PopoverController();
   final menuController = PopoverController();
   final previewScrollController = PdfPreviewScrollController();
+  final _fileIconKey = GlobalKey<FileBlockIconButtonState>();
+  FileBlockIconBinding? _iconBinding;
 
-  late final editorState = Provider.of<EditorState>(context, listen: false);
+  late EditorState editorState;
 
   bool alwaysShowMenu = false;
+  VoidCallback? _releasePreviewToolbar;
   bool isDragging = false;
   bool isHovering = false;
 
@@ -296,14 +308,37 @@ class FileBlockComponentState extends State<FileBlockComponent>
 
   @override
   void didChangeDependencies() {
+    editorState = Provider.of<EditorState>(context);
     if (!UniversalPlatform.isMobile) {
       dropManagerState = context.read<EditorDropManagerState?>();
     }
+    _bindFileIcon();
     super.didChangeDependencies();
   }
 
   @override
+  void didUpdateWidget(covariant FileBlockComponent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _bindFileIcon();
+  }
+
+  void _bindFileIcon() {
+    if (_iconBinding?.matches(editorState, node) == true &&
+        identical(_iconBinding?.backend, widget.iconBackend)) {
+      return;
+    }
+    _iconBinding?.dispose();
+    _iconBinding = FileBlockIconBinding(
+      editorState: editorState,
+      node: node,
+      backend: widget.iconBackend,
+    );
+  }
+
+  @override
   void dispose() {
+    _iconBinding?.dispose();
+    _releasePreviewToolbar?.call();
     showActionsNotifier.dispose();
     super.dispose();
   }
@@ -314,13 +349,18 @@ class FileBlockComponentState extends State<FileBlockComponent>
     showActionsNotifier.value = hovering || alwaysShowMenu;
   }
 
-  void _pinMenu() {
+  void _pinMenu([BuildContext? menuContext]) {
     if (!mounted) return;
+    if (menuContext != null) {
+      _releasePreviewToolbar ??= PreviewToolbarRegion.hold(menuContext);
+    }
     alwaysShowMenu = true;
     showActionsNotifier.value = true;
   }
 
   void _unpinMenu() {
+    _releasePreviewToolbar?.call();
+    _releasePreviewToolbar = null;
     if (!mounted) return;
     alwaysShowMenu = false;
     showActionsNotifier.value = isHovering;
@@ -529,10 +569,12 @@ class FileBlockComponentState extends State<FileBlockComponent>
     return Positioned(
       top: 8,
       right: 8,
-      child: _revealFileActions(
-        Row(
+      child: PreviewToolbar(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            _buildFileIcon(buttonSize: 28),
+            const HSpace(4),
             _buildMediaActionButtons(),
             const HSpace(4),
             DecoratedBox(
@@ -595,25 +637,30 @@ class FileBlockComponentState extends State<FileBlockComponent>
         },
       );
 
-  Widget _buildFilePopover() => AppFlowyPopover(
-        controller: menuController,
-        triggerActions: PopoverTriggerFlags.none,
-        direction: PopoverDirection.bottomWithRightAligned,
-        onOpen: _pinMenu,
-        onClose: _unpinMenu,
-        popupBuilder: (_) => FileBlockMenu(
+  Widget _buildFilePopover() => Builder(
+        builder: (menuContext) => AppFlowyPopover(
           controller: menuController,
-          actionContext: context,
-          mediaActions: widget.mediaActions,
-          node: node,
-          editorState: editorState,
-        ),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _showMediaMenu,
-          child: const SizedBox.square(
+          triggerActions: PopoverTriggerFlags.none,
+          direction: PopoverDirection.bottomWithRightAligned,
+          onOpen: () => _pinMenu(menuContext),
+          onClose: _unpinMenu,
+          popupBuilder: (_) => FileBlockMenu(
+            controller: menuController,
+            actionContext: context,
+            mediaActions: widget.mediaActions,
+            node: node,
+            editorState: editorState,
+            onChangeIcon: () => _showFileIconPicker(menuContext),
+          ),
+          child: SizedBox.square(
             dimension: 28,
-            child: FileMenuTrigger(),
+            child: IconButton(
+              tooltip: 'More actions',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
+              onPressed: () => _showMediaMenu(menuContext),
+              icon: const FileMenuTrigger(),
+            ),
           ),
         ),
       );
@@ -629,10 +676,16 @@ class FileBlockComponentState extends State<FileBlockComponent>
       children: [
         frame,
         Positioned(
+          key: const ValueKey('file-preview-identity-icon'),
+          left: 48,
+          bottom: 20,
+          child: _buildFileIcon(),
+        ),
+        Positioned(
           key: const ValueKey('file-preview-media-actions'),
           right: 48,
           bottom: 20,
-          child: _revealFileActions(_buildMediaActionButtons()),
+          child: PreviewToolbar(child: _buildMediaActionButtons()),
         ),
       ],
     );
@@ -964,40 +1017,35 @@ class FileBlockComponentState extends State<FileBlockComponent>
 
   Widget _buildPreviewMenu() {
     final theme = AppFlowyTheme.of(context);
-    final hoverColor = Theme.of(context).brightness == Brightness.dark
-        ? const Color(0x12FFFFFF)
-        : const Color(0x0F302D28);
-    return AppFlowyPopover(
-      controller: menuController,
-      triggerActions: PopoverTriggerFlags.none,
-      direction: PopoverDirection.bottomWithRightAligned,
-      onOpen: _pinMenu,
-      onClose: _unpinMenu,
-      popupBuilder: (_) => FileBlockMenu(
+    final hoverColor = theme.fillColorScheme.contentHover;
+    return Builder(
+      builder: (menuContext) => AppFlowyPopover(
         controller: menuController,
-        actionContext: context,
-        mediaActions: widget.mediaActions,
-        node: node,
-        editorState: editorState,
-      ),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: _showMediaMenu,
-        child: Tooltip(
-          message: 'More actions',
-          child: SizedBox.square(
-            dimension: 30,
-            child: FlowyHover(
-              resetHoverOnRebuild: false,
-              style: HoverStyle(
-                hoverColor: hoverColor,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Icon(
-                Icons.more_horiz_rounded,
-                size: 19,
-                color: theme.iconColorScheme.secondary,
-              ),
+        triggerActions: PopoverTriggerFlags.none,
+        direction: PopoverDirection.bottomWithRightAligned,
+        onOpen: () => _pinMenu(menuContext),
+        onClose: _unpinMenu,
+        popupBuilder: (_) => FileBlockMenu(
+          controller: menuController,
+          actionContext: context,
+          mediaActions: widget.mediaActions,
+          node: node,
+          editorState: editorState,
+          onChangeIcon: () => _showFileIconPicker(menuContext),
+        ),
+        child: SizedBox.square(
+          dimension: 30,
+          child: IconButton(
+            tooltip: 'More actions',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+            hoverColor: hoverColor,
+            focusColor: hoverColor,
+            onPressed: () => _showMediaMenu(menuContext),
+            icon: Icon(
+              Icons.more_horiz_rounded,
+              size: 19,
+              color: theme.iconColorScheme.secondary,
             ),
           ),
         ),
@@ -1016,7 +1064,23 @@ class FileBlockComponentState extends State<FileBlockComponent>
       mediaActions: widget.mediaActions,
       node: node,
       editorState: editorState,
+      onChangeIcon: () => _showFileIconPicker(menuContext),
     );
+  }
+
+  Widget _buildFileIcon({Color? color, double buttonSize = 34}) =>
+      FileBlockIconButton(
+        key: _fileIconKey,
+        binding: _iconBinding!,
+        name: node.attributes[FileBlockKeys.name] as String?,
+        documentId: context.read<DocumentBloc?>()?.documentId,
+        color: color,
+        buttonSize: buttonSize,
+      );
+
+  void _showFileIconPicker(BuildContext toolbarContext) {
+    if (!mounted || _iconBinding?.canEdit != true) return;
+    _fileIconKey.currentState?.open(toolbarContext: toolbarContext);
   }
 
   void _savePreviewMetadata(Map<String, dynamic> metadata) {
@@ -1037,10 +1101,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
     editorState.apply(transaction);
   }
 
-  void _showMediaMenu() {
+  void _showMediaMenu(BuildContext menuContext) {
     // Keep the anchor mounted before opening the overlay. Waiting for the
     // popover's onOpen callback is too late when the overlay triggers onExit.
-    _pinMenu();
+    _pinMenu(menuContext);
     menuController.show();
   }
 
@@ -1149,11 +1213,13 @@ class FileBlockComponentState extends State<FileBlockComponent>
               borderRadius: BorderRadius.circular(11),
             ),
             alignment: Alignment.center,
-            child: Icon(
-              fileIconForName(name),
-              size: 19,
-              color: palette.accent,
-            ),
+            child: hasFile
+                ? _buildFileIcon(color: palette.accent)
+                : Icon(
+                    fileIconForName(name),
+                    size: 19,
+                    color: palette.accent,
+                  ),
           ),
           const HSpace(11),
           Flexible(

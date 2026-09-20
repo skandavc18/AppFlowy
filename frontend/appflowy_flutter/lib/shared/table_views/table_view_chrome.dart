@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:appflowy/workspace/application/table_views/table_query.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
@@ -9,7 +10,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
 /// One of the small buttons every table view's chrome is made of.
-class TableViewButton extends StatefulWidget {
+class TableViewButton extends StatelessWidget {
   const TableViewButton({
     super.key,
     required this.palette,
@@ -26,52 +27,31 @@ class TableViewButton extends StatefulWidget {
   final bool active;
 
   @override
-  State<TableViewButton> createState() => _TableViewButtonState();
-}
-
-class _TableViewButtonState extends State<TableViewButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
     // Fading from a transparent black would pass through grey; the hover
     // colour at zero alpha keeps the tween in one hue.
-    final resting = widget.active
-        ? palette.accent.withValues(alpha: 0.14)
-        : palette.hoverAtRest;
-    final button = MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: TableViewMetrics.hover,
-          curve: TableViewMetrics.enterCurve,
-          width: TableViewMetrics.controlSize,
-          height: TableViewMetrics.controlSize,
-          decoration: BoxDecoration(
-            color: _hovered && !widget.active ? palette.hover : resting,
+    final resting =
+        active ? palette.accent.withValues(alpha: 0.14) : palette.hoverAtRest;
+    return SizedBox.square(
+      dimension: TableViewMetrics.controlSize,
+      child: IconButton(
+        tooltip: tooltip,
+        isSelected: active,
+        onPressed: onTap,
+        icon: Icon(icon, size: 17),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size.square(TableViewMetrics.controlSize),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: active ? palette.accent : palette.textSecondary,
+          backgroundColor: resting,
+          hoverColor: palette.hover,
+          focusColor: palette.hover,
+          shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(TableViewMetrics.controlRadius),
-          ),
-          child: Icon(
-            widget.icon,
-            size: 17,
-            color: widget.active ? palette.accent : palette.textSecondary,
           ),
         ),
       ),
-    );
-
-    final tooltip = widget.tooltip;
-    if (tooltip == null || tooltip.isEmpty) {
-      return button;
-    }
-    return Tooltip(
-      message: tooltip,
-      waitDuration: TableViewMetrics.hover,
-      child: button,
     );
   }
 }
@@ -179,82 +159,100 @@ class TableViewHeaderState extends State<TableViewHeader> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  widget.subtitle,
-                  style: TextStyle(fontSize: 12, color: palette.textMuted),
+                Flexible(
+                  child: Text(
+                    widget.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: palette.textMuted),
+                  ),
                 ),
               ],
             ),
           ),
-          ...widget.actions,
-          if (widget.actions.isNotEmpty)
-            const SizedBox(width: TableViewMetrics.controlGap),
-          if (_open)
-            _buildSearchField(palette)
-          else
-            TableViewButton(
-              palette: palette,
-              icon: Icons.search_rounded,
-              tooltip: LocaleKeys.tableViews_search.tr(),
-              onTap: openSearch,
-            ),
-          const SizedBox(width: TableViewMetrics.controlGap),
-          Builder(
-            builder: (context) => TableViewButton(
-              palette: palette,
-              icon: Icons.swap_vert_rounded,
-              tooltip: LocaleKeys.tableViews_sort.tr(),
-              active: query.isSorting,
-              onTap: () => unawaited(_showSortMenu(context)),
-            ),
-          ),
-          const SizedBox(width: TableViewMetrics.controlGap),
-          Builder(
-            builder: (context) => TableViewButton(
-              palette: palette,
-              icon: Icons.filter_alt_rounded,
-              tooltip: LocaleKeys.tableViews_filter.tr(),
-              active: query.isFiltering,
-              onTap: () => unawaited(_showFilterMenu(context)),
-            ),
-          ),
-          if (widget.allowGrouping) ...[
-            const SizedBox(width: TableViewMetrics.controlGap),
-            Builder(
-              builder: (context) => TableViewButton(
-                palette: palette,
-                icon: Icons.workspaces_rounded,
-                tooltip: LocaleKeys.tableViews_group.tr(),
-                active: query.isGrouping,
-                onTap: () => unawaited(_showGroupMenu(context)),
-              ),
-            ),
-          ],
-          if (widget.onAdd != null) ...[
-            const SizedBox(width: TableViewMetrics.controlGap),
-            TableViewButton(
-              palette: palette,
-              icon: Icons.add_rounded,
-              tooltip: LocaleKeys.tableViews_addRow.tr(),
-              onTap: widget.onAdd!,
-            ),
-          ],
-          if (widget.optionsBuilder != null) ...[
-            const SizedBox(width: TableViewMetrics.controlGap),
-            Builder(
-              builder: (context) => TableViewButton(
-                palette: palette,
-                icon: Icons.more_horiz_rounded,
-                tooltip: LocaleKeys.tableViews_options.tr(),
-                onTap: () => unawaited(
-                  showAppMenuForWidget<void>(
-                    context: context,
-                    entries: widget.optionsBuilder!(),
-                  ),
+          Flexible(
+            child: PreviewToolbar(
+              keepVisible: _open,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                reverse: true,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ...widget.actions,
+                    if (widget.actions.isNotEmpty)
+                      const SizedBox(width: TableViewMetrics.controlGap),
+                    if (_open)
+                      _buildSearchField(palette)
+                    else
+                      TableViewButton(
+                        palette: palette,
+                        icon: Icons.search_rounded,
+                        tooltip: LocaleKeys.tableViews_search.tr(),
+                        onTap: openSearch,
+                      ),
+                    const SizedBox(width: TableViewMetrics.controlGap),
+                    Builder(
+                      builder: (context) => TableViewButton(
+                        palette: palette,
+                        icon: Icons.swap_vert_rounded,
+                        tooltip: LocaleKeys.tableViews_sort.tr(),
+                        active: query.isSorting,
+                        onTap: () => unawaited(_showSortMenu(context)),
+                      ),
+                    ),
+                    const SizedBox(width: TableViewMetrics.controlGap),
+                    Builder(
+                      builder: (context) => TableViewButton(
+                        palette: palette,
+                        icon: Icons.filter_alt_rounded,
+                        tooltip: LocaleKeys.tableViews_filter.tr(),
+                        active: query.isFiltering,
+                        onTap: () => unawaited(_showFilterMenu(context)),
+                      ),
+                    ),
+                    if (widget.allowGrouping) ...[
+                      const SizedBox(width: TableViewMetrics.controlGap),
+                      Builder(
+                        builder: (context) => TableViewButton(
+                          palette: palette,
+                          icon: Icons.workspaces_rounded,
+                          tooltip: LocaleKeys.tableViews_group.tr(),
+                          active: query.isGrouping,
+                          onTap: () => unawaited(_showGroupMenu(context)),
+                        ),
+                      ),
+                    ],
+                    if (widget.onAdd != null) ...[
+                      const SizedBox(width: TableViewMetrics.controlGap),
+                      TableViewButton(
+                        palette: palette,
+                        icon: Icons.add_rounded,
+                        tooltip: LocaleKeys.tableViews_addRow.tr(),
+                        onTap: widget.onAdd!,
+                      ),
+                    ],
+                    if (widget.optionsBuilder != null) ...[
+                      const SizedBox(width: TableViewMetrics.controlGap),
+                      Builder(
+                        builder: (context) => TableViewButton(
+                          palette: palette,
+                          icon: Icons.more_horiz_rounded,
+                          tooltip: LocaleKeys.tableViews_options.tr(),
+                          onTap: () => unawaited(
+                            showAppMenuForWidget<void>(
+                              context: context,
+                              entries: widget.optionsBuilder!(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );

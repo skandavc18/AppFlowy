@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/plugins/collection/views/email/email_file_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_explorer.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_icon_picker.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_media_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
@@ -17,13 +18,16 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/medi
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_migrator.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/application/collections/email/email_message.dart';
+import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -41,10 +45,16 @@ class WorkspaceFileView extends StatefulWidget {
     this.mediaActions = const MediaActionService(),
     this.resolveStorageUrl,
     this.materializeFile = materializeMediaFile,
+    this.editable = true,
+    this.iconListenerFactory,
   });
 
   final ViewPB view;
   final MediaActionService mediaActions;
+
+  /// Identity editing is independent of whether materialized bytes are local.
+  final bool editable;
+  final ViewListener Function(String viewId)? iconListenerFactory;
 
   /// Optional IO boundaries; the normal storage migration and materialization
   /// remain the defaults, and every renderer still receives the resolved file.
@@ -217,24 +227,14 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
                   16,
                   4,
                 ),
-                child: Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: ExcludeFocus(
-                    excluding: file == null,
-                    child: Visibility(
-                      visible: file != null,
-                      maintainState: true,
-                      maintainAnimation: true,
-                      maintainSize: true,
-                      child: MediaActionReveal(
-                        visible: visible,
-                        child: MediaActionButtons(
-                          source: source,
-                          actions: widget.mediaActions,
-                        ),
-                      ),
-                    ),
-                  ),
+                child: _WorkspaceFileIdentityActions(
+                  view: widget.view,
+                  editable: widget.editable,
+                  listenerFactory: widget.iconListenerFactory,
+                  visible: visible,
+                  fileAvailable: file != null,
+                  source: source,
+                  actions: widget.mediaActions,
                 ),
               ),
               // Capture the renderer outside the hover builder: revealing the
@@ -345,6 +345,163 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
               )
             : null,
       ),
+    );
+  }
+}
+
+/// ViewPluginNotifier does not rebuild every file host on identity changes.
+/// Keep that subscription (and the open picker) in the chrome, so neither an
+/// icon notification nor a hover can rematerialize bytes or replace a renderer.
+class _WorkspaceFileIdentityActions extends StatefulWidget {
+  const _WorkspaceFileIdentityActions({
+    required this.view,
+    required this.editable,
+    required this.visible,
+    required this.fileAvailable,
+    required this.source,
+    required this.actions,
+    this.listenerFactory,
+  });
+
+  final ViewPB view;
+  final bool editable;
+  final bool visible;
+  final bool fileAvailable;
+  final MediaActionSource source;
+  final MediaActionService actions;
+  final ViewListener Function(String viewId)? listenerFactory;
+
+  @override
+  State<_WorkspaceFileIdentityActions> createState() =>
+      _WorkspaceFileIdentityActionsState();
+}
+
+class _WorkspaceFileIdentityActionsState
+    extends State<_WorkspaceFileIdentityActions> {
+  late ViewPB _view;
+  ViewListener? _listener;
+  int _generation = 0;
+  bool _available = true;
+  bool _pickerOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bind();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WorkspaceFileIdentityActions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.view.id != widget.view.id ||
+        oldWidget.listenerFactory != widget.listenerFactory) {
+      unawaited(_listener?.stop());
+      _bind();
+    } else if (oldWidget.view.icon != widget.view.icon) {
+      _view = widget.view;
+    }
+    if (!widget.editable) _pickerOpen = false;
+  }
+
+  void _bind() {
+    final generation = ++_generation;
+    _view = widget.view;
+    _available = true;
+    _pickerOpen = false;
+    _listener = (widget.listenerFactory?.call(_view.id) ??
+        ViewListener(viewId: _view.id))
+      ..start(
+        onViewUpdated: (view) => _accept(generation, view),
+        onViewDeleted: (result) =>
+            result.onSuccess((_) => _unavailable(generation)),
+        onViewMoveToTrash: (result) =>
+            result.onSuccess((_) => _unavailable(generation)),
+        onViewRestored: (result) =>
+            result.onSuccess((view) => _accept(generation, view)),
+      );
+  }
+
+  void _accept(int generation, ViewPB view) {
+    if (!mounted || generation != _generation || view.id != widget.view.id) {
+      return;
+    }
+    setState(() {
+      _view = view;
+      _available = true;
+    });
+  }
+
+  void _unavailable(int generation) {
+    if (!mounted || generation != _generation) return;
+    setState(() {
+      _available = false;
+      _pickerOpen = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    unawaited(_listener?.stop());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final generation = _generation;
+    final glyph = SizedBox.square(
+      dimension: 30,
+      child: Center(
+        child: FileIdentityGlyph(
+          icon: _view.icon.toEmojiIconData(),
+          name: widget.view.name,
+          color: AppFlowyTheme.of(context).iconColorScheme.secondary,
+        ),
+      ),
+    );
+    return Row(
+      children: [
+        KeyedSubtree(
+          key: const ValueKey('workspace-file-identity-icon'),
+          child: widget.editable && _available
+              ? ViewIconPicker(
+                  key: ValueKey((widget.view.id, generation)),
+                  view: _view,
+                  onViewChanged: (view) {
+                    if (mounted && widget.editable && _available) {
+                      _accept(generation, view);
+                    }
+                  },
+                  onOpenChanged: (open) {
+                    if (mounted &&
+                        generation == _generation &&
+                        widget.editable &&
+                        _available) {
+                      setState(() => _pickerOpen = open);
+                    }
+                  },
+                  child: glyph,
+                )
+              : glyph,
+        ),
+        const Spacer(),
+        ExcludeFocus(
+          excluding: !widget.fileAvailable,
+          child: Visibility(
+            visible: widget.fileAvailable,
+            maintainState: true,
+            maintainAnimation: true,
+            maintainSize: true,
+            child: MediaActionReveal(
+              visible: widget.visible || _pickerOpen,
+              child: MediaActionButtons(
+                source: widget.source,
+                actions: widget.actions,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

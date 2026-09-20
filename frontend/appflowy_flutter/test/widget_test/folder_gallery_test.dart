@@ -7,6 +7,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/upload_image_menu/upload_image_menu.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
@@ -745,7 +746,10 @@ void main() {
     await tester.pumpAndSettle();
 
     final title = tester.widget<Text>(find.text('Roadmap'));
-    expect(title.style?.fontSize, 40);
+    expect(
+      title.style?.fontSize,
+      WorkspaceChrome.title(tester.element(find.text('Roadmap'))).fontSize,
+    );
     expect(
       find.byKey(const ValueKey('database-page-title-icon')),
       findsOneWidget,

@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_to
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/link_embed_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/shared.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/menu/menu_extension.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -33,14 +34,16 @@ class CustomLinkPreviewMenu extends StatefulWidget {
 class _CustomLinkPreviewMenuState extends State<CustomLinkPreviewMenu> {
   final popoverController = PopoverController();
   final buttonKey = GlobalKey();
-  bool closed = false;
   bool selected = false;
+  bool _disposing = false;
+  VoidCallback? _releasePreview;
 
   @override
   void dispose() {
-    super.dispose();
+    _disposing = true;
     popoverController.close();
-    widget.onMenuHided.call();
+    _didClose();
+    super.dispose();
   }
 
   @override
@@ -50,25 +53,14 @@ class _CustomLinkPreviewMenuState extends State<CustomLinkPreviewMenu> {
       direction: PopoverDirection.bottomWithRightAligned,
       margin: EdgeInsets.zero,
       controller: popoverController,
-      onOpen: () => keepEditorFocusNotifier.increase(),
-      onClose: () {
-        keepEditorFocusNotifier.decrease();
-        if (!closed) {
-          closed = true;
-          return;
-        } else {
-          closed = false;
-          widget.onMenuHided.call();
-        }
-        setState(() {
-          selected = false;
-        });
-      },
+      triggerActions: PopoverTriggerFlags.none,
+      onClose: _didClose,
       popupBuilder: (context) => buildMenu(),
       child: FlowyIconButton(
         key: buttonKey,
         isSelected: selected,
         icon: FlowySvg(FlowySvgs.toolbar_more_m),
+        tooltipText: LocaleKeys.document_toolbar_moreOptions.tr(),
         onPressed: showPopover,
       ),
     );
@@ -87,7 +79,9 @@ class _CustomLinkPreviewMenuState extends State<CustomLinkPreviewMenu> {
               List.generate(LinkPreviewMenuCommand.values.length, (index) {
             final command = LinkPreviewMenuCommand.values[index];
             final isCopyCommand = command == LinkPreviewMenuCommand.copyLink;
-            final enableButton = editable || (!editable && isCopyCommand);
+            final enableButton = editable ||
+                isCopyCommand ||
+                command == LinkPreviewMenuCommand.reload;
             return SizedBox(
               height: 36,
               child: FlowyButton(
@@ -161,6 +155,8 @@ class _CustomLinkPreviewMenuState extends State<CustomLinkPreviewMenu> {
   }
 
   void showPopover() {
+    if (selected) return;
+    _releasePreview = PreviewToolbarRegion.hold(context);
     widget.onMenuShowed.call();
     keepEditorFocusNotifier.increase();
     popoverController.show();
@@ -171,7 +167,19 @@ class _CustomLinkPreviewMenuState extends State<CustomLinkPreviewMenu> {
 
   void closePopover() {
     popoverController.close();
-    widget.onMenuHided.call();
+    _didClose();
+  }
+
+  void _didClose() {
+    final release = _releasePreview;
+    if (release == null) return;
+    _releasePreview = null;
+    release();
+    keepEditorFocusNotifier.decrease();
+    if (!_disposing) widget.onMenuHided.call();
+    if (mounted && !_disposing) {
+      setState(() => selected = false);
+    }
   }
 }
 

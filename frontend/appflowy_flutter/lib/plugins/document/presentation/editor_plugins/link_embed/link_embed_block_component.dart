@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/link_previ
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/default_selectable_mixin.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -71,9 +72,6 @@ class LinkEmbedBlockComponentState
   final parser = LinkParser();
   late LinkInfo linkInfo = LinkInfo(url: url);
 
-  final showActionsNotifier = ValueNotifier<bool>(false);
-  bool isMenuShowing = false, isHovering = false;
-
   /// The real ratio of the embedded video, once the decoder has reported it.
   double? videoAspectRatio;
 
@@ -111,20 +109,7 @@ class LinkEmbedBlockComponentState
 
   @override
   Widget build(BuildContext context) {
-    Widget result = MouseRegion(
-      onEnter: (_) {
-        isHovering = true;
-        showActionsNotifier.value = true;
-      },
-      onExit: (_) {
-        isHovering = false;
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (isMenuShowing || isHovering) return;
-          if (mounted) showActionsNotifier.value = false;
-        });
-      },
-      child: buildChild(context),
-    );
+    Widget result = buildChild(context);
     final parent = node.parent;
     EdgeInsets newPadding = padding;
     if (parent?.type == CalloutBlockKeys.type) {
@@ -220,34 +205,23 @@ class LinkEmbedBlockComponentState
     return Positioned(
       top: 12,
       right: 12,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: showActionsNotifier,
-        builder: (context, showActions, child) {
-          if (!showActions || UniversalPlatform.isMobile) {
-            return SizedBox.shrink();
-          }
-          return LinkEmbedMenu(
-            editorState: context.read<EditorState>(),
-            node: node,
-            onReload: () {
-              setState(() {
-                status = LinkLoadingStatus.loading;
-              });
-              Future.delayed(const Duration(milliseconds: 200), () {
-                if (mounted) parser.start(url);
-              });
-            },
-            onMenuShowed: () {
-              isMenuShowing = true;
-            },
-            onMenuHided: () {
-              isMenuShowing = false;
-              if (!isHovering && mounted) {
-                showActionsNotifier.value = false;
-              }
-            },
-          );
-        },
+      child: PreviewToolbar(
+        keepVisible:
+            !isYoutubeVideoUrl(url) && status == LinkLoadingStatus.error,
+        child: LinkEmbedMenu(
+          editorState: context.read<EditorState>(),
+          node: node,
+          onReload: () {
+            setState(() {
+              status = LinkLoadingStatus.loading;
+            });
+            Future.delayed(const Duration(milliseconds: 200), () {
+              if (mounted) parser.start(url);
+            });
+          },
+          onMenuShowed: () {},
+          onMenuHided: () {},
+        ),
       ),
     );
   }

@@ -9,6 +9,8 @@ import 'package:appflowy/plugins/database/application/cell/cell_controller.dart'
 import 'package:appflowy/plugins/database/application/cell/cell_controller_builder.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/widgets/cell/property_style_cell.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -35,6 +37,7 @@ class TextCardCell extends CardCell<TextCardCellStyle> with EditableCell {
     required super.style,
     required this.databaseController,
     required this.cellContext,
+    this.cellController,
     this.showNotes = false,
     this.editableNotifier,
   });
@@ -42,6 +45,10 @@ class TextCardCell extends CardCell<TextCardCellStyle> with EditableCell {
   final DatabaseController databaseController;
   final CellContext cellContext;
   final bool showNotes;
+
+  /// Optional cell-data boundary; the cell bloc owns and disposes it.
+  /// By default the controller is created from the database's row cache.
+  final TextCellController? cellController;
 
   @override
   final EditableCardNotifier? editableNotifier;
@@ -52,10 +59,11 @@ class TextCardCell extends CardCell<TextCardCellStyle> with EditableCell {
 
 class _TextCellState extends State<TextCardCell> {
   late final cellBloc = TextCellBloc(
-    cellController: makeCellController(
-      widget.databaseController,
-      widget.cellContext,
-    ).as(),
+    cellController: widget.cellController ??
+        makeCellController(
+          widget.databaseController,
+          widget.cellContext,
+        ).as(),
   );
   late final TextEditingController _textEditingController;
   final focusNode = SingleListenerFocusNode();
@@ -136,11 +144,12 @@ class _TextCellState extends State<TextCardCell> {
     super.dispose();
   }
 
-  Widget? _buildIcon(TextCellState state) {
-    if (state.emoji?.value.isNotEmpty ?? false) {
-      return FlowyText.emoji(
-        optimizeEmojiAlign: true,
-        state.emoji?.value ?? '',
+  Widget? _buildIcon(String? value) {
+    final icon = EmojiIconData.fromStorageString(value);
+    if (icon.isNotEmpty) {
+      return RawEmojiIconWidget(
+        emoji: icon,
+        emojiSize: Theme.of(context).textTheme.bodyMedium?.fontSize ?? 16,
       );
     }
 
@@ -192,10 +201,6 @@ class _TextCellState extends State<TextCardCell> {
     final textField = _buildTextField();
     return BlocBuilder<TextCellBloc, TextCellState>(
       builder: (context, state) {
-        final icon = _buildIcon(state);
-        if (icon == null) {
-          return textField;
-        }
         final resolved =
             widget.style.padding.resolve(Directionality.of(context));
         final padding = EdgeInsetsDirectional.only(
@@ -203,13 +208,23 @@ class _TextCellState extends State<TextCardCell> {
           top: resolved.top,
           bottom: resolved.bottom,
         );
+        Widget buildIcon(String? value) {
+          final icon = _buildIcon(value);
+          return icon == null
+              ? const SizedBox.shrink()
+              : Padding(padding: padding, child: icon);
+        }
+
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: padding,
-              child: icon,
-            ),
+            state.emoji == null
+                ? buildIcon(null)
+                : ValueListenableBuilder<String>(
+                    valueListenable: state.emoji!,
+                    builder: (context, value, _) => buildIcon(value),
+                  ),
+            // Keep the editor at the same depth when the row icon changes.
             Expanded(child: textField),
           ],
         );

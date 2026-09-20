@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
@@ -874,10 +875,12 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     if (!widget.embedded) {
       return ColoredBox(color: palette.background, child: child);
     }
-    return ViewerCard(
-      color: palette.background,
-      borderRadius: BorderRadius.circular(22),
-      child: child,
+    return PreviewToolbarRegion(
+      child: ViewerCard(
+        color: palette.background,
+        borderRadius: BorderRadius.circular(22),
+        child: child,
+      ),
     );
   }
 
@@ -925,33 +928,33 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
                 onRenameSubmitted: _commitRename,
                 onRenameCancelled: () => setState(() => renamingPath = null),
                 onMore: (entry, position) =>
-                    unawaited(_showEntryMenu(entry.entry, position)),
+                    unawaited(_showEntryMenu(context, entry.entry, position)),
                 onBackgroundContextMenu: (position) =>
-                    unawaited(_showBackgroundMenu(position)),
+                    unawaited(_showBackgroundMenu(context, position)),
                 emptyMessage: query.isEmpty
                     ? 'This archive is empty'
                     : 'No entries match your search',
-                header: _responsiveHeader(
-                  ArchiveGalleryHeader(
-                    title: widget.name.isEmpty ? 'Archive' : widget.name,
-                    breadcrumbs: breadcrumbs,
-                    rootLabel: widget.name.isEmpty ? 'Archive' : widget.name,
-                    subtitle: _subtitle,
-                    searchController: searchController,
-                    searchFocusNode: searchFocusNode,
-                    searching: searching,
-                    onSearchChanged: _scheduleSearch,
-                    onSearchDismissed: _closeSearch,
-                    onSearchRequested: _openSearch,
-                    onNavigate: _navigateTo,
-                    editable: widget.editable &&
-                        (value?.supportsMultipleEntries ?? false),
-                    busy: saving,
-                    onAddFiles: () => unawaited(_addFiles()),
-                    onNewFolder: () => unawaited(_createFolder()),
-                    onRefresh: () => unawaited(_load()),
-                    trailing: _buildHeaderTrailing(),
-                  ),
+                header: ArchiveGalleryHeader(
+                  title: widget.name.isEmpty ? 'Archive' : widget.name,
+                  breadcrumbs: breadcrumbs,
+                  rootLabel: widget.name.isEmpty ? 'Archive' : widget.name,
+                  subtitle: _subtitle,
+                  searchController: searchController,
+                  searchFocusNode: searchFocusNode,
+                  searching: searching,
+                  onSearchChanged: _scheduleSearch,
+                  onSearchDismissed: _closeSearch,
+                  onSearchRequested: _openSearch,
+                  onNavigate: _navigateTo,
+                  editable: widget.editable &&
+                      (value?.supportsMultipleEntries ?? false),
+                  busy: saving,
+                  keepActionsVisible: renamingPath != null ||
+                      (widget.editable && value?.fileCount == 0),
+                  onAddFiles: () => unawaited(_addFiles()),
+                  onNewFolder: () => unawaited(_createFolder()),
+                  onRefresh: () => unawaited(_load()),
+                  trailing: _buildHeaderTrailing(),
                 ),
               ),
             ),
@@ -960,21 +963,6 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
       },
     );
   }
-
-  Widget _responsiveHeader(Widget header) => LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            // The existing header has fixed-width tools and an optional search
-            // field. Scroll just those tools in a tight window, not the cards.
-            width: math.max(
-              constraints.maxWidth,
-              (widget.editable ? 420.0 : 340.0) + (searching ? 208 : 0),
-            ),
-            child: header,
-          ),
-        ),
-      );
 
   /// The controls at the end of the heading.
   ///
@@ -1048,11 +1036,14 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   ///
   /// The same operations the heading offers, brought to wherever the pointer
   /// happens to be.
-  Future<void> _showBackgroundMenu(Offset position) async {
+  Future<void> _showBackgroundMenu(
+    BuildContext menuContext,
+    Offset position,
+  ) async {
     final canEdit =
         widget.editable && (document?.supportsMultipleEntries ?? false);
     final action = await showAppMenu<_ArchiveBackgroundAction>(
-      context: context,
+      context: menuContext,
       globalPosition: position,
       entries: [
         if (canEdit) ...[
@@ -1096,11 +1087,15 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     }
   }
 
-  Future<void> _showEntryMenu(ArchiveEntry entry, Offset position) async {
+  Future<void> _showEntryMenu(
+    BuildContext menuContext,
+    ArchiveEntry entry,
+    Offset position,
+  ) async {
     final canEdit =
         widget.editable && (document?.supportsMultipleEntries ?? false);
     final action = await showAppMenu<_ArchiveEntryAction>(
-      context: context,
+      context: menuContext,
       globalPosition: position,
       entries: [
         AppMenuItem(

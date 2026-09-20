@@ -503,6 +503,7 @@ class _GalleryHeading extends StatelessWidget {
         key: const ValueKey('workspace-gallery-icon'),
         workspaceIcon: currentWorkspace.icon,
         workspaceName: currentWorkspace.name,
+        documentId: currentWorkspace.workspaceId,
         iconSize: 48,
         isEditable: true,
         fontSize: 25,
@@ -513,7 +514,7 @@ class _GalleryHeading extends StatelessWidget {
         onSelected: (result) => context.read<UserWorkspaceBloc>().add(
               UserWorkspaceEvent.updateWorkspaceIcon(
                 workspaceId: currentWorkspace.workspaceId,
-                icon: result.emoji,
+                icon: result.toStorageString(),
               ),
             ),
       );

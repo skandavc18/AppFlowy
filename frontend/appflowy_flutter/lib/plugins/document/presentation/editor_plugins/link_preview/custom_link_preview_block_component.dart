@@ -3,11 +3,11 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/callout/ca
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/link_embed_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/custom_link_parser.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:universal_platform/universal_platform.dart';
 
 import 'custom_link_preview.dart';
 import 'default_selectable_mixin.dart';
@@ -77,7 +77,6 @@ class CustomLinkPreviewBlockComponentState
   late LinkInfo linkInfo = LinkInfo(url: url);
 
   final showActionsNotifier = ValueNotifier<bool>(false);
-  bool isMenuShowing = false, isHovering = false;
 
   @override
   void initState() {
@@ -101,6 +100,7 @@ class CustomLinkPreviewBlockComponentState
   @override
   void dispose() {
     parser.dispose();
+    showActionsNotifier.dispose();
     super.dispose();
   }
 
@@ -108,15 +108,10 @@ class CustomLinkPreviewBlockComponentState
   Widget build(BuildContext context) {
     return MouseRegion(
       onEnter: (_) {
-        isHovering = true;
         showActionsNotifier.value = true;
       },
       onExit: (_) {
-        isHovering = false;
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (isMenuShowing || isHovering) return;
-          if (mounted) showActionsNotifier.value = false;
-        });
+        showActionsNotifier.value = false;
       },
       hitTestBehavior: HitTestBehavior.opaque,
       opaque: false,
@@ -149,20 +144,14 @@ class CustomLinkPreviewBlockComponentState
     child = Stack(
       children: [
         Positioned.fill(child: child),
-        if (showActions && UniversalPlatform.isDesktopOrWeb)
-          Positioned(
-            top: 12,
-            right: 12,
+        Positioned(
+          top: 12,
+          right: 12,
+          child: PreviewToolbar(
+            keepVisible: status == LinkLoadingStatus.error,
             child: CustomLinkPreviewMenu(
-              onMenuShowed: () {
-                isMenuShowing = true;
-              },
-              onMenuHided: () {
-                isMenuShowing = false;
-                if (!isHovering && mounted) {
-                  showActionsNotifier.value = false;
-                }
-              },
+              onMenuShowed: () {},
+              onMenuHided: () {},
               onReload: () {
                 setState(() {
                   status = LinkLoadingStatus.loading;
@@ -174,6 +163,7 @@ class CustomLinkPreviewBlockComponentState
               node: node,
             ),
           ),
+        ),
       ],
     );
 

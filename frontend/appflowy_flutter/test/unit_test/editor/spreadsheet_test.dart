@@ -191,6 +191,23 @@ void main() {
   });
 
   group('structure', () {
+    test('saved fills remain explicit, including an otherwise empty cell', () {
+      final data = SpreadsheetData.empty()
+        ..setStyle(
+          const CellRef(1, 0),
+          const CellStyle(backgroundColor: 0xFFF3DFB9),
+        )
+        ..setStyle(
+          const CellRef(3, 0),
+          const CellStyle(backgroundColor: 0x996D8792),
+        );
+      final restored = SpreadsheetData.fromJson(data.toJson());
+      expect(restored.rawAt(const CellRef(1, 0)), '');
+      expect(restored.styleAt(const CellRef(1, 0)).backgroundColor, 0xFFF3DFB9);
+      expect(restored.styleAt(const CellRef(3, 0)).backgroundColor, 0x996D8792);
+      expect(restored.styleAt(const CellRef(2, 0)).backgroundColor, isNull);
+    });
+
     test('inserting rows moves the cells below down', () {
       final data = _sheet([
         ['a'],
@@ -519,6 +536,88 @@ void main() {
     });
 
     tearDown(() => controller.dispose());
+
+    test('silent draft adoption keeps fresh data and records no history', () {
+      controller
+        ..selectRange(const CellRef(0, 0), const CellRef(1, 1))
+        ..startEditing(initialText: '=B1*2', fromKeystroke: true);
+      final fresh = controller.data.clone()
+        ..setRaw(const CellRef(0, 0), 'Remote')
+        ..setRaw(const CellRef(1, 1), '300');
+      final next = SpreadsheetController(data: fresh);
+      var notifications = 0;
+      next.addListener(() => notifications++);
+      expect(next.restoreEditingFrom(controller, notify: false), isTrue);
+      expect(notifications, 0);
+      expect(next.editing, const CellRef(1, 1));
+      expect(next.editingText, '=B1*2');
+      expect(next.editingFromKeystroke, isTrue);
+      expect(next.selection, controller.selection);
+      expect(next.data, same(fresh));
+      expect(next.canUndo, isFalse);
+      expect(next.revision, 0);
+
+      next.commitEditing();
+      expect(notifications, 1);
+      expect(next.data.rawAt(const CellRef(1, 1)), '=B1*2');
+      next.undo();
+      expect(next.data.rawAt(const CellRef(1, 1)), '300');
+      expect(next.data.rawAt(const CellRef(0, 0)), 'Remote');
+      expect(next.canUndo, isFalse);
+      next.dispose();
+    });
+
+    test('a header draft can be adopted then cancelled without changing data',
+        () {
+      controller
+        ..selectColumn(1)
+        ..startEditingHeader(1)
+        ..updateEditingText('Uncommitted title');
+      final fresh = controller.data.clone()..setColumnTitle(1, 'Remote title');
+      final next = SpreadsheetController(data: fresh);
+      var notifications = 0;
+      next.addListener(() => notifications++);
+      expect(next.restoreEditingFrom(controller), isTrue);
+      expect(notifications, 1);
+      expect(next.editingHeader, 1);
+      expect(next.editingText, 'Uncommitted title');
+      expect(next.selectedColumnHeader, 1);
+      expect(next.data.columnTitle(1), 'Remote title');
+      next.cancelEditing();
+      expect(next.data.columnTitle(1), 'Remote title');
+      expect(next.canUndo, isFalse);
+      next.dispose();
+    });
+
+    test('draft adoption respects readonly and an incoming active edit', () {
+      controller.startEditing(initialText: 'Old draft');
+      final readOnly = SpreadsheetController(
+        data: controller.data.clone(),
+        editable: false,
+      );
+      final editing = SpreadsheetController(data: controller.data.clone())
+        ..startEditing(initialText: 'Incoming draft');
+      expect(readOnly.restoreEditingFrom(controller), isFalse);
+      expect(readOnly.isEditing, isFalse);
+      expect(editing.restoreEditingFrom(controller), isFalse);
+      expect(editing.editingText, 'Incoming draft');
+      readOnly.dispose();
+      editing.dispose();
+    });
+
+    test('a removed draft target is never clamped onto a different cell', () {
+      controller
+        ..selectCell(const CellRef(2, 1))
+        ..startEditing(initialText: 'Do not move me');
+      final smaller = SpreadsheetController(
+        data: SpreadsheetData.empty(rows: 1, columns: 1),
+      );
+      expect(smaller.restoreEditingFrom(controller), isFalse);
+      expect(smaller.isEditing, isFalse);
+      expect(smaller.data.rawAt(const CellRef(0, 0)), '');
+      expect(smaller.canUndo, isFalse);
+      smaller.dispose();
+    });
 
     test('undo and redo walk the edit history', () {
       controller
@@ -933,6 +1032,22 @@ void main() {
   });
 
   group('table conversion', () {
+    test('an explicit table row fill survives conversion, not as UI banding',
+        () {
+      final table = createSimpleTableBlockNode(
+        columnCount: 2,
+        rowCount: 3,
+        defaultContent: 'saved',
+      )..updateAttributes({
+          SimpleTableBlockKeys.rowColors: {'1': '0xFFF3DFB9'},
+        });
+      final data = spreadsheetFromTable(table);
+      expect(data.styleAt(const CellRef(1, 0)).backgroundColor, 0xFFF3DFB9);
+      expect(data.styleAt(const CellRef(1, 1)).backgroundColor, 0xFFF3DFB9);
+      expect(data.styleAt(const CellRef(0, 0)).backgroundColor, isNull);
+      expect(data.styleAt(const CellRef(2, 0)).backgroundColor, isNull);
+    });
+
     test("a table's header row becomes the sheet's column names", () {
       final table = createSimpleTableBlockNode(
         columnCount: 2,

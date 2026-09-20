@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/interactive/interactive_view_picker.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
@@ -268,36 +269,50 @@ class _CanvasBlockComponentState extends State<CanvasBlockComponent>
               ),
             ),
           ),
-          CanvasButton(
-            icon: _collapsed
-                ? Icons.unfold_more_rounded
-                : Icons.unfold_less_rounded,
-            palette: palette,
-            size: 26,
-            iconSize: 15,
-            tooltip: _collapsed
-                ? LocaleKeys.canvas_embed_expand.tr()
-                : LocaleKeys.canvas_embed_collapse.tr(),
-            onPressed: () => _write(CanvasBlockKeys.collapsed, !_collapsed),
+          Flexible(
+            child: PreviewToolbar(
+              keepVisible: _collapsed,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CanvasButton(
+                      icon: _collapsed
+                          ? Icons.unfold_more_rounded
+                          : Icons.unfold_less_rounded,
+                      palette: palette,
+                      size: 26,
+                      iconSize: 15,
+                      tooltip: _collapsed
+                          ? LocaleKeys.canvas_embed_expand.tr()
+                          : LocaleKeys.canvas_embed_collapse.tr(),
+                      onPressed: () =>
+                          _write(CanvasBlockKeys.collapsed, !_collapsed),
+                    ),
+                    if (_controller != null) ...[
+                      CanvasButton(
+                        icon: Icons.open_in_full_rounded,
+                        palette: palette,
+                        size: 26,
+                        iconSize: 15,
+                        tooltip: LocaleKeys.canvas_embed_fullscreen.tr(),
+                        onPressed: _openFullscreen,
+                      ),
+                      CanvasButton(
+                        icon: Icons.arrow_outward_rounded,
+                        palette: palette,
+                        size: 26,
+                        iconSize: 15,
+                        tooltip: LocaleKeys.canvas_openStandalone.tr(),
+                        onPressed: _openStandalone,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           ),
-          if (_controller != null) ...[
-            CanvasButton(
-              icon: Icons.open_in_full_rounded,
-              palette: palette,
-              size: 26,
-              iconSize: 15,
-              tooltip: LocaleKeys.canvas_embed_fullscreen.tr(),
-              onPressed: _openFullscreen,
-            ),
-            CanvasButton(
-              icon: Icons.arrow_outward_rounded,
-              palette: palette,
-              size: 26,
-              iconSize: 15,
-              tooltip: LocaleKeys.canvas_openStandalone.tr(),
-              onPressed: _openStandalone,
-            ),
-          ],
         ],
       ),
     );

@@ -1,6 +1,14 @@
 import 'package:appflowy/mobile/presentation/home/tab/_round_underline_tab_indicator.dart';
 import 'package:flutter/material.dart';
 
+/// Item identities that can persist all icon kinds use the same picker tabs.
+/// Default symbols are inserted by [pickerTabsWithDefaults].
+const kAllIconPickerTabs = [
+  PickerTabType.emoji,
+  PickerTabType.icon,
+  PickerTabType.custom,
+];
+
 enum PickerTabType {
   emoji,
   icon,

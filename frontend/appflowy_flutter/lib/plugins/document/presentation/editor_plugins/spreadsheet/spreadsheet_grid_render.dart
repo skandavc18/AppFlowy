@@ -259,7 +259,7 @@ class _CachedText {
   final TextPainter painter;
 }
 
-/// Paints the scrolling body: banding, cell text, grid lines and selection.
+/// Paints the uniform scrolling surface, stored fills, text and interaction.
 class SheetBodyPainter extends CustomPainter {
   SheetBodyPainter({
     required this.controller,
@@ -276,6 +276,9 @@ class SheetBodyPainter extends CustomPainter {
     required this.addRowLabel,
     required this.addRowHovered,
     required Listenable repaint,
+    this.previousHoveredCell,
+    this.previousHoverOpacity = 1,
+    this.hoverSettle = const AlwaysStoppedAnimation<double>(1),
   }) : super(repaint: repaint);
 
   final SpreadsheetController controller;
@@ -287,6 +290,11 @@ class SheetBodyPainter extends CustomPainter {
   final ScrollController vertical;
   final CellRange? fillPreview;
   final CellRef? hoveredCell;
+  final CellRef? previousHoveredCell;
+  final double previousHoverOpacity;
+
+  /// Only the old and new cell wash cross-fade; text never moves or reshapes.
+  final Animation<double> hoverSettle;
 
   /// Runs 0 to 1 as the focus ring settles onto a newly selected cell. Held as
   /// the animation rather than its value: the painter repaints without
@@ -307,6 +315,7 @@ class SheetBodyPainter extends CustomPainter {
 
     canvas.save();
     canvas.clipRect(Offset.zero & size);
+    canvas.drawRect(Offset.zero & size, Paint()..color = palette.surface);
     canvas.translate(-dx, -dy);
 
     final (firstColumn, endColumn) =
@@ -317,14 +326,15 @@ class SheetBodyPainter extends CustomPainter {
     final selection = controller.selection;
     final search = controller.searchMatches.toSet();
     final currentMatch = controller.currentSearchMatch;
-    final selectedColumns = controller.selectedColumnHeader;
+    final hover = Curves.easeOutCubic.transform(
+      hoverSettle.value.clamp(0.0, 1.0),
+    );
 
     // Backgrounds.
     for (var index = firstRow; index < endRow; index++) {
       final sourceRow = geometry.bodyRows[index];
       final top = geometry.rowTop(index);
       final height = geometry.rowHeight(index);
-      final rowHovered = controller.hoveredRow == sourceRow;
       for (var column = firstColumn; column < endColumn; column++) {
         if (controller.data.isColumnHidden(column)) {
           continue;
@@ -337,14 +347,21 @@ class SheetBodyPainter extends CustomPainter {
           height,
         );
         final style = controller.data.styleAt(ref);
+        // A saved fill is content, not banding. Composite it onto the same
+        // surface even when the stored colour is translucent.
         var color = style.backgroundColor != null
-            ? Color(style.backgroundColor!)
+            ? Color.alphaBlend(Color(style.backgroundColor!), palette.surface)
             : palette.surface;
-        if (rowHovered || selectedColumns == column) {
-          color = Color.alphaBlend(palette.hover, color);
-        }
-        if (hoveredCell == ref) {
-          color = Color.alphaBlend(palette.hover, color);
+        final hoverOpacity = hoveredCell == ref
+            ? hover
+            : previousHoveredCell == ref
+                ? (1 - hover) * previousHoverOpacity
+                : 0.0;
+        if (hoverOpacity > 0 && controller.editing != ref) {
+          color = Color.alphaBlend(
+            palette.hover.withValues(alpha: palette.hover.a * hoverOpacity),
+            color,
+          );
         }
         if (selection.contains(ref) && ref != controller.active) {
           color = Color.alphaBlend(palette.selection, color);
@@ -395,7 +412,9 @@ class SheetBodyPainter extends CustomPainter {
 
     _paintPlaceholder(canvas);
     _paintAddRow(canvas);
-    _paintSelection(canvas, selection);
+    if (controller.editing == null) {
+      _paintSelection(canvas, selection);
+    }
     if (fillPreview != null) {
       _paintFillPreview(canvas, fillPreview!);
     }
@@ -414,8 +433,7 @@ class SheetBodyPainter extends CustomPainter {
   }) {
     final line = Paint()
       ..color = palette.gridLine
-      ..strokeWidth = 1
-      ..isAntiAlias = false;
+      ..strokeWidth = SpreadsheetMetrics.gridStrokeWidth;
     final top = geometry.rowTop(firstRow);
     final bottom = geometry.rowTop(endRow);
 
@@ -493,14 +511,8 @@ class SheetBodyPainter extends CustomPainter {
     if (addRowHovered) {
       canvas.drawRect(band, Paint()..color = palette.hover);
     }
-    canvas.drawLine(
-      Offset(band.left, band.top - 0.5),
-      Offset(band.right, band.top - 0.5),
-      Paint()
-        ..color = palette.gridLine
-        ..strokeWidth = 1
-        ..isAntiAlias = false,
-    );
+    // The body already paints this boundary once. Painting it again here
+    // doubled the alpha and made the last row's rule look heavier.
 
     final color = addRowHovered ? palette.textSecondary : palette.textMuted;
     final painter = TextPainter(
@@ -577,37 +589,29 @@ class SheetBodyPainter extends CustomPainter {
     canvas.restore();
   }
 
-  /// A soft halo, then a rounded ring — the cursor announces itself the way a
-  /// focused field does, not with a hard square outline.
+  /// A quiet, fixed-size outline. Only its opacity settles, never its geometry.
   void _paintSelection(Canvas canvas, CellRange range) {
     final rect = _rangeRect(range);
     if (rect == null) {
       return;
     }
-    final settle = selectionSettle.value.clamp(0.0, 1.0);
-    final radius = Radius.circular(range.isSingle ? 5 : 4);
-    final ring = rect.deflate(1);
-
-    if (settle > 0) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          ring.inflate(2.5 * settle),
-          Radius.circular(radius.x + 2),
-        ),
-        Paint()
-          ..color = palette.focusHalo.withValues(
-            alpha: palette.focusHalo.a * settle,
-          ),
-      );
-    }
+    final settle = Curves.easeOutCubic.transform(
+      selectionSettle.value.clamp(0.0, 1.0),
+    );
+    const radius = Radius.circular(SpreadsheetMetrics.selectionRadius);
+    final ring = rect.deflate(SpreadsheetMetrics.selectionStrokeWidth / 2);
+    final color = range.isSingle ? palette.focusRing : palette.selectionBorder;
     canvas.drawRRect(
       RRect.fromRectAndRadius(ring, radius),
       Paint()
-        ..color = range.isSingle ? palette.focusRing : palette.selectionBorder
+        ..color = color.withValues(alpha: color.a * (0.65 + 0.35 * settle))
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8,
+        ..strokeWidth = SpreadsheetMetrics.selectionStrokeWidth,
     );
 
+    if (!geometry.showAddAffordances) {
+      return;
+    }
     // Fill handle at the bottom-right corner.
     const size = SpreadsheetMetrics.fillHandleSize;
     final handleBounds =
@@ -691,7 +695,11 @@ class SheetBodyPainter extends CustomPainter {
   bool shouldRepaint(SheetBodyPainter oldDelegate) =>
       oldDelegate.geometry != geometry ||
       oldDelegate.palette != palette ||
+      oldDelegate.typography != typography ||
       oldDelegate.hoveredCell != hoveredCell ||
+      oldDelegate.previousHoveredCell != previousHoveredCell ||
+      oldDelegate.previousHoverOpacity != previousHoverOpacity ||
+      oldDelegate.hoverSettle != hoverSettle ||
       oldDelegate.selectionSettle != selectionSettle ||
       oldDelegate.placeholder != placeholder ||
       oldDelegate.addRowLabel != addRowLabel ||
@@ -743,8 +751,7 @@ class SheetHeaderPainter extends CustomPainter {
     final selection = controller.selection;
     final line = Paint()
       ..color = palette.gridLine
-      ..strokeWidth = 1
-      ..isAntiAlias = false;
+      ..strokeWidth = SpreadsheetMetrics.gridStrokeWidth;
 
     for (var column = firstColumn; column < endColumn; column++) {
       final width = geometry.columnWidth(column);
@@ -768,8 +775,8 @@ class SheetHeaderPainter extends CustomPainter {
         // An accent underline instead of a box: the column reads as active
         // without boxing the header in.
         canvas.drawRect(
-          Rect.fromLTWH(rect.left, rect.bottom - 2, rect.width, 2),
-          Paint()..color = palette.focusRing,
+          Rect.fromLTWH(rect.left, rect.bottom - 1, rect.width, 1),
+          Paint()..color = palette.selectionBorder,
         );
       }
 
@@ -869,8 +876,7 @@ class SheetHeaderPainter extends CustomPainter {
       Offset(size.width, size.height - 0.5),
       Paint()
         ..color = palette.divider
-        ..strokeWidth = 1
-        ..isAntiAlias = false,
+        ..strokeWidth = SpreadsheetMetrics.gridStrokeWidth,
     );
   }
 
@@ -913,6 +919,7 @@ class SheetHeaderPainter extends CustomPainter {
   bool shouldRepaint(SheetHeaderPainter oldDelegate) =>
       oldDelegate.geometry != geometry ||
       oldDelegate.palette != palette ||
+      oldDelegate.typography != typography ||
       oldDelegate.hoveredColumn != hoveredColumn ||
       oldDelegate.resizingEdge != resizingEdge ||
       oldDelegate.addColumnHovered != addColumnHovered ||
@@ -1005,8 +1012,7 @@ class SheetGutterPainter extends CustomPainter {
       Offset(size.width - 0.5, size.height),
       Paint()
         ..color = palette.gridLine
-        ..strokeWidth = 1
-        ..isAntiAlias = false,
+        ..strokeWidth = SpreadsheetMetrics.gridStrokeWidth,
     );
   }
 
@@ -1014,6 +1020,7 @@ class SheetGutterPainter extends CustomPainter {
   bool shouldRepaint(SheetGutterPainter oldDelegate) =>
       oldDelegate.geometry != geometry ||
       oldDelegate.palette != palette ||
+      oldDelegate.typography != typography ||
       oldDelegate.pointerInside != pointerInside;
 }
 
@@ -1080,6 +1087,99 @@ class MouseDragGestureRecognizer extends PanGestureRecognizer {
   MouseDragGestureRecognizer({super.debugOwner})
       : super(supportedDevices: const {PointerDeviceKind.mouse}) {
     dragStartBehavior = DragStartBehavior.down;
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerCancelEvent) {
+      _cancelSheetDrag(this, () => super.handleEvent(event));
+    } else {
+      super.handleEvent(event);
+    }
+  }
+}
+
+/// Header resizing/reordering retains the normal horizontal drag arena.
+class SheetHorizontalDragGestureRecognizer
+    extends HorizontalDragGestureRecognizer {
+  SheetHorizontalDragGestureRecognizer({super.debugOwner}) {
+    dragStartBehavior = DragStartBehavior.down;
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerCancelEvent) {
+      _cancelSheetDrag(this, () => super.handleEvent(event));
+    } else {
+      super.handleEvent(event);
+    }
+  }
+}
+
+/// Gutter resizing retains the normal vertical drag arena.
+class SheetVerticalDragGestureRecognizer extends VerticalDragGestureRecognizer {
+  SheetVerticalDragGestureRecognizer({super.debugOwner}) {
+    dragStartBehavior = DragStartBehavior.down;
+  }
+
+  @override
+  void handleEvent(PointerEvent event) {
+    if (event is PointerCancelEvent) {
+      _cancelSheetDrag(this, () => super.handleEvent(event));
+    } else {
+      super.handleEvent(event);
+    }
+  }
+}
+
+/// Flutter reports an accepted drag's PointerCancel through onEnd. Translate
+/// just that terminal callback into onCancel while letting the recognizer
+/// release its own pointer/arena state normally. A tap that wins the arena
+/// still cancels the pending drag exactly once; an ordinary UP still commits.
+void _cancelSheetDrag(DragGestureRecognizer recognizer, VoidCallback dispatch) {
+  final end = recognizer.onEnd;
+  recognizer.onEnd = (_) {
+    recognizer.onCancel?.call();
+  };
+  try {
+    dispatch();
+  } finally {
+    recognizer.onEnd = end;
+  }
+}
+
+/// RawGestureDetector's default delegate looks up the exact built-in drag
+/// types, not subclasses. Keep the header/gutter's existing semantic tap and
+/// axis-drag sequence when installing the cancellation-aware recognizers.
+class SheetAxisDragSemantics extends SemanticsGestureDelegate {
+  SheetAxisDragSemantics({
+    required this.axis,
+    required this.onTapUp,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+  });
+
+  final Axis axis;
+  final GestureTapUpCallback onTapUp;
+  final GestureDragStartCallback onStart;
+  final GestureDragUpdateCallback onUpdate;
+  final GestureDragEndCallback onEnd;
+
+  @override
+  void assignSemantics(RenderSemanticsGestureHandler renderObject) {
+    renderObject
+      ..onTap = () {
+        onTapUp(TapUpDetails(kind: PointerDeviceKind.unknown));
+      }
+      ..onHorizontalDragUpdate = axis == Axis.horizontal ? _drag : null
+      ..onVerticalDragUpdate = axis == Axis.vertical ? _drag : null;
+  }
+
+  void _drag(DragUpdateDetails details) {
+    onStart(DragStartDetails());
+    onUpdate(details);
+    onEnd(DragEndDetails(primaryVelocity: 0));
   }
 }
 

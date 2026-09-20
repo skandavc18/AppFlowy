@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
@@ -233,6 +234,7 @@ class ArchiveGalleryHeader extends StatelessWidget {
     required this.onNewFolder,
     required this.onRefresh,
     this.trailing,
+    this.keepActionsVisible = false,
   });
 
   final String title;
@@ -252,6 +254,7 @@ class ArchiveGalleryHeader extends StatelessWidget {
   final VoidCallback onNewFolder;
   final VoidCallback onRefresh;
   final Widget? trailing;
+  final bool keepActionsVisible;
 
   @override
   Widget build(BuildContext context) {
@@ -261,6 +264,13 @@ class ArchiveGalleryHeader extends StatelessWidget {
         final horizontal =
             KnowledgeGalleryLayout.horizontalPadding(constraints.maxWidth);
         final compact = constraints.maxWidth < 860;
+        final available =
+            (constraints.maxWidth - horizontal * 2).clamp(0.0, double.infinity);
+        final scale = MediaQuery.textScalerOf(context).scale(13) / 13;
+        final stacked = constraints.maxWidth < (searching ? 1000 : 720) * scale;
+        final actionsWidth = stacked ? available : available * 0.62;
+        final identityWidth =
+            stacked ? available : available - actionsWidth - 12;
         return Padding(
           padding: EdgeInsets.fromLTRB(horizontal, 20, horizontal, 14),
           child: ConstrainedBox(
@@ -278,118 +288,134 @@ class ArchiveGalleryHeader extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                 ],
-                Row(
+                // Keep both groups at the same depth when a narrow preview
+                // wraps. In particular the live search field must not remount.
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color: palette.accent.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(13),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.folder_zip_rounded,
-                        size: 20,
-                        color: palette.accent,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                    SizedBox(
+                      width: identityWidth,
+                      child: Row(
                         children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.textPrimary,
-                              fontFamily: 'Inter',
-                              fontSize: compact ? 17 : 19,
-                              height: 1.2,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.4,
+                          Container(
+                            width: 38,
+                            height: 38,
+                            decoration: BoxDecoration(
+                              color: palette.accent.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(13),
+                            ),
+                            alignment: Alignment.center,
+                            child: Icon(
+                              Icons.folder_zip_rounded,
+                              size: 20,
+                              color: palette.accent,
                             ),
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.textMuted,
-                              fontFamily: 'Inter',
-                              fontSize: 11.5,
-                              height: 1.2,
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: palette.textPrimary,
+                                    fontFamily: 'Inter',
+                                    fontSize: compact ? 17 : 19,
+                                    height: 1.2,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: palette.textMuted,
+                                    fontFamily: 'Inter',
+                                    fontSize: 11.5,
+                                    height: 1.2,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    if (searching)
-                      _ArchiveSearchField(
-                        controller: searchController,
-                        focusNode: searchFocusNode,
-                        onChanged: onSearchChanged,
-                        onDismissed: onSearchDismissed,
-                      )
-                    else
-                      ArchivePillButton(
-                        icon: Icons.search_rounded,
-                        tooltip: 'Search this archive  ·  Ctrl+F',
-                        onPressed: onSearchRequested,
-                      ),
-                    const SizedBox(width: 8),
-                    if (editable) ...[
-                      ArchivePillButton(
-                        icon: Icons.add_rounded,
-                        label: compact ? null : 'Add files',
-                        tooltip: 'Add files to this archive',
-                        onPressed: busy ? null : onAddFiles,
-                        primary: true,
-                      ),
-                      const SizedBox(width: 8),
-                      ArchivePillButton(
-                        icon: Icons.create_new_folder_rounded,
-                        tooltip: 'New folder',
-                        onPressed: busy ? null : onNewFolder,
-                      ),
-                      const SizedBox(width: 8),
-                    ],
-                    Builder(
-                      builder: (buttonContext) => ArchivePillButton(
-                        icon: Icons.tune_rounded,
-                        tooltip: 'Card size',
-                        onPressed: () {
-                          final box =
-                              buttonContext.findRenderObject() as RenderBox?;
-                          if (box == null) {
-                            return;
-                          }
-                          unawaited(
-                            showGalleryCardSizeMenu(
-                              context: buttonContext,
-                              globalPosition: box.localToGlobal(
-                                Offset(0, box.size.height + 4),
+                    SizedBox(
+                      width: actionsWidth,
+                      child: PreviewToolbar(
+                        keepVisible: searching || busy || keepActionsVisible,
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          alignment: WrapAlignment.end,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            if (searching)
+                              _ArchiveSearchField(
+                                controller: searchController,
+                                focusNode: searchFocusNode,
+                                onChanged: onSearchChanged,
+                                onDismissed: onSearchDismissed,
+                              )
+                            else
+                              ArchivePillButton(
+                                icon: Icons.search_rounded,
+                                tooltip: 'Search this archive  ·  Ctrl+F',
+                                onPressed: onSearchRequested,
+                              ),
+                            if (editable) ...[
+                              ArchivePillButton(
+                                icon: Icons.add_rounded,
+                                label: compact ? null : 'Add files',
+                                tooltip: 'Add files to this archive',
+                                onPressed: busy ? null : onAddFiles,
+                                primary: true,
+                              ),
+                              ArchivePillButton(
+                                icon: Icons.create_new_folder_rounded,
+                                tooltip: 'New folder',
+                                onPressed: busy ? null : onNewFolder,
+                              ),
+                            ],
+                            Builder(
+                              builder: (buttonContext) => ArchivePillButton(
+                                icon: Icons.tune_rounded,
+                                tooltip: 'Card size',
+                                onPressed: () {
+                                  final box = buttonContext.findRenderObject()
+                                      as RenderBox?;
+                                  if (box == null) return;
+                                  unawaited(
+                                    showGalleryCardSizeMenu(
+                                      context: buttonContext,
+                                      globalPosition: box.localToGlobal(
+                                        Offset(0, box.size.height + 4),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
-                          );
-                        },
+                            ArchivePillButton(
+                              icon: Icons.refresh_rounded,
+                              tooltip: 'Reload archive',
+                              onPressed: onRefresh,
+                            ),
+                            if (trailing != null) trailing!,
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    ArchivePillButton(
-                      icon: Icons.refresh_rounded,
-                      tooltip: 'Reload archive',
-                      onPressed: onRefresh,
-                    ),
-                    if (trailing != null) ...[
-                      const SizedBox(width: 8),
-                      trailing!,
-                    ],
                   ],
                 ),
               ],
@@ -425,6 +451,7 @@ class ArchivePillButton extends StatefulWidget {
 
 class _ArchivePillButtonState extends State<ArchivePillButton> {
   bool hovered = false;
+  bool focused = false;
 
   @override
   Widget build(BuildContext context) {
@@ -432,7 +459,7 @@ class _ArchivePillButtonState extends State<ArchivePillButton> {
     final enabled = widget.onPressed != null;
     final background = widget.primary
         ? palette.accent.withValues(alpha: enabled ? (hovered ? 1 : 0.92) : 0.4)
-        : hovered
+        : hovered || focused
             ? Color.alphaBlend(palette.hover, palette.surface)
             : palette.surface;
     final foreground = widget.primary
@@ -441,7 +468,7 @@ class _ArchivePillButtonState extends State<ArchivePillButton> {
             ? palette.textSecondary
             : palette.textMuted.withValues(alpha: 0.5);
 
-    final button = MouseRegion(
+    final pointerButton = MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
       onEnter: (_) => setState(() => hovered = true),
       onExit: (_) => setState(() => hovered = false),
@@ -457,9 +484,11 @@ class _ArchivePillButtonState extends State<ArchivePillButton> {
           decoration: BoxDecoration(
             color: background,
             borderRadius: BorderRadius.circular(18),
-            border: widget.primary
-                ? null
-                : Border.all(color: palette.border, width: 0.8),
+            border: focused
+                ? Border.all(color: palette.accent, width: 1.2)
+                : widget.primary
+                    ? null
+                    : Border.all(color: palette.border, width: 0.8),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -485,11 +514,34 @@ class _ArchivePillButtonState extends State<ArchivePillButton> {
     );
 
     final tooltip = widget.tooltip ?? widget.label;
+    final button = Semantics(
+      button: true,
+      enabled: enabled,
+      label: tooltip,
+      child: FocusableActionDetector(
+        enabled: enabled,
+        onShowFocusHighlight: (value) => setState(() => focused = value),
+        shortcuts: const {
+          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+          SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+        },
+        actions: {
+          ActivateIntent: CallbackAction<ActivateIntent>(
+            onInvoke: (_) {
+              widget.onPressed?.call();
+              return null;
+            },
+          ),
+        },
+        child: pointerButton,
+      ),
+    );
     if (tooltip == null) {
       return button;
     }
     return Tooltip(
       message: tooltip,
+      excludeFromSemantics: true,
       waitDuration: const Duration(milliseconds: 450),
       child: button,
     );

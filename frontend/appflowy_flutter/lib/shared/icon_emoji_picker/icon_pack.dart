@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:appflowy/shared/icon_emoji_picker/default_icons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon.dart';
+import 'package:appflowy/shared/icon_emoji_picker/vivid_icons.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -68,9 +69,21 @@ const kAppFlowyDefaultIconPack = IconPack(
 const _kPhosphorAttribution = 'Phosphor Icons';
 const _kPhosphorUrl = 'https://phosphoricons.com/';
 
+/// Original, compiled-in illustrations; unrelated to the MIT Fluent Color pack.
+const kVividIconPack = IconPack(
+  id: appFlowyVividIconPackId,
+  displayName: 'Vivid',
+  asset: '',
+  groupPrefix: appFlowyVividIconGroupPrefix,
+  attribution: 'AppFlowy (original artwork)',
+  attributionUrl: 'https://github.com/AppFlowy-IO/AppFlowy',
+  isColorful: true,
+);
+
 /// Library styles in the Icons tab. AppFlowy's defaults have their own tab.
 const List<IconPack> kIconPacks = [
   kDefaultIconPack,
+  kVividIconPack,
   IconPack(
     id: 'color',
     displayName: 'Color',
@@ -146,12 +159,15 @@ final Map<String, Future<List<IconGroup>>> _pendingPacks = {};
 final ValueNotifier<int> iconPacksVersion = ValueNotifier<int>(0);
 
 bool isIconPackLoaded(IconPack pack) =>
-    pack.id == appFlowyDefaultIconPackId || _loadedPacks.containsKey(pack.id);
+    pack.id == appFlowyDefaultIconPackId ||
+    pack.id == appFlowyVividIconPackId ||
+    _loadedPacks.containsKey(pack.id);
 
-List<IconGroup> loadedIconGroupsOf(IconPack pack) =>
-    pack.id == appFlowyDefaultIconPackId
-        ? appFlowyDefaultIconGroups
-        : _loadedPacks[pack.id] ?? const [];
+List<IconGroup> loadedIconGroupsOf(IconPack pack) => switch (pack.id) {
+      appFlowyDefaultIconPackId => appFlowyDefaultIconGroups,
+      appFlowyVividIconPackId => appFlowyVividIconGroups,
+      _ => _loadedPacks[pack.id] ?? const [],
+    };
 
 /// Loads [pack] once and returns its groups. Concurrent calls share one load.
 Future<List<IconGroup>> loadIconPack(IconPack pack) {

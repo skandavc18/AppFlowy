@@ -28,6 +28,7 @@ class FileBlockMenu extends StatefulWidget {
     this.controller,
     this.onClose,
     this.actionContext,
+    this.onChangeIcon,
     this.showDownload = true,
     this.mediaActions = const MediaActionService(),
     required this.node,
@@ -37,6 +38,7 @@ class FileBlockMenu extends StatefulWidget {
   final PopoverController? controller;
   final VoidCallback? onClose;
   final BuildContext? actionContext;
+  final VoidCallback? onChangeIcon;
   final bool showDownload;
   final MediaActionService mediaActions;
   final Node node;
@@ -75,6 +77,22 @@ class _FileBlockMenuState extends State<FileBlockMenu> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (widget.editorState.editable && widget.onChangeIcon != null) ...[
+          HoverButton(
+            itemHeight: 20,
+            leftIcon: const FlowySvg(FlowySvgs.add_icon_s),
+            name: LocaleKeys.document_plugins_cover_changeIcon.tr(),
+            onTap: () {
+              _closeMenu();
+              if (!widget.editorState.isDisposed &&
+                  widget.editorState.editable &&
+                  widget.node.parent != null) {
+                widget.onChangeIcon?.call();
+              }
+            },
+          ),
+          const VSpace(4),
+        ],
         if (canPreview) ...[
           HoverButton(
             itemHeight: 20,

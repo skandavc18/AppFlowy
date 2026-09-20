@@ -44,6 +44,7 @@ double coverTitleLineHeight(BuildContext context) {
   final painter = TextPainter(
     text: TextSpan(text: 'A', style: coverTitleTextStyle(context)),
     textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
     maxLines: 1,
   )..layout();
   final height = painter.height;

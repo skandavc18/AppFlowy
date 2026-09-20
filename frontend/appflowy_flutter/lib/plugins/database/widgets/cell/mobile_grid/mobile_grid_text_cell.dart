@@ -1,5 +1,7 @@
 import 'package:appflowy/plugins/database/application/cell/bloc/text_cell_bloc.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -21,13 +23,21 @@ class MobileGridTextCellSkin extends IEditableTextCellSkin {
         const HSpace(10),
         BlocBuilder<TextCellBloc, TextCellState>(
           buildWhen: (p, c) => p.emoji != c.emoji,
-          builder: (context, state) => Center(
-            child: FlowyText.emoji(
-              state.emoji?.value ?? "",
-              fontSize: 15,
-              optimizeEmojiAlign: true,
-            ),
-          ),
+          builder: (context, state) {
+            final notifier = state.emoji;
+            if (notifier == null) return const SizedBox.shrink();
+            return ValueListenableBuilder<String>(
+              valueListenable: notifier,
+              builder: (context, value, _) {
+                final icon = EmojiIconData.fromStorageString(value);
+                return icon.isEmpty
+                    ? const SizedBox.shrink()
+                    : Center(
+                        child: RawEmojiIconWidget(emoji: icon, emojiSize: 15),
+                      );
+              },
+            );
+          },
         ),
         Expanded(
           child: TextField(

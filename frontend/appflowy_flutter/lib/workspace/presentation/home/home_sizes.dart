@@ -1,5 +1,6 @@
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_layout.dart';
 
 class HomeSizes {
   static const double menuAddButtonHeight = 60;
@@ -12,7 +13,7 @@ class HomeSizes {
   static const double workspaceSectionHeight = 32;
   static const double searchSectionHeight = 34;
   static const double newPageSectionHeight = 34;
-  static const double minimumSidebarWidth = 260;
+  static const double minimumSidebarWidth = WorkspaceLayout.minimumSidebarWidth;
   static const double sidebarHorizontalInset = SidebarMetrics.gutter;
   static const double sidebarButtonHorizontalMargin = 0;
   static const double sidebarActionIconSize = SidebarMetrics.iconSize;

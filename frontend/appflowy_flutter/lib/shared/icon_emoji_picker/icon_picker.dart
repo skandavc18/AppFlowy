@@ -12,9 +12,9 @@ import 'package:appflowy/shared/icon_emoji_picker/icon.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_search_bar.dart';
 import 'package:appflowy/shared/icon_emoji_picker/recent_icons.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/util/debounce.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/space_icon_popup.dart';
-import 'package:appflowy_backend/log.dart';
 import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -28,16 +28,39 @@ import 'icon_color_picker.dart';
 List<IconGroup>? kIconGroups;
 const _kRecentIconGroupName = 'Recent';
 
-/// Defaults are always available; library artwork joins when its pack loads.
+/// Compiled catalogues are available on request; asset packs join when loaded.
 Iterable<IconGroup> get allLoadedIconGroups sync* {
   yield* appFlowyDefaultIconGroups;
   yield* kIconPacks.expand(loadedIconGroupsOf);
 }
 
-Icon? findLoadedIcon(String groupName, String iconName) => allLoadedIconGroups
-    .firstWhereOrNull((group) => group.name == groupName)
-    ?.icons
-    .firstWhereOrNull((icon) => icon.name == iconName);
+// Resolve only the requested pack. Iterating every compiled catalogue here
+// would initialize Vivid even when a cold sidebar only needs a line icon.
+Icon? findLoadedIcon(String groupName, String iconName) =>
+    loadedIconGroupsOf(iconPackForGroup(groupName))
+        .firstWhereOrNull((group) => group.name == groupName)
+        ?.icons
+        .firstWhereOrNull((icon) => icon.name == iconName);
+
+// A mixed Recent group is presentation only. Keep each item's persisted group
+// attached even after filtering or a selection changes the stored recent order.
+class _RecentPickerIcon extends Icon {
+  _RecentPickerIcon(RecentIcon recent)
+      : groupName = recent.groupName,
+        super(
+          name: recent.name,
+          keywords: recent.keywords,
+          content: recent.content,
+        );
+
+  final String groupName;
+
+  @override
+  bool get isColorful => iconPackForGroup(groupName).isColorful;
+}
+
+String _storedIconGroupName(IconGroup group, Icon icon) =>
+    icon is _RecentPickerIcon ? icon.groupName : group.name;
 
 extension IconGroupFilter on List<IconGroup> {
   String? findSvgContent(String key) {
@@ -128,7 +151,7 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
               min(recentIcons.length, widget.iconPerLine),
             )
             .skipWhile((e) => e.groupName.isEmpty)
-            .map((e) => e.icon)
+            .map(_RecentPickerIcon.new)
             .toList();
         if (filterRecentIcons.isNotEmpty) {
           groups.add(
@@ -204,17 +227,19 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
               if (value == null) {
                 return;
               }
-              final color = widget.enableBackgroundColorSelection
+              final groupName = _storedIconGroupName(value.$1, value.$2);
+              final color = widget.enableBackgroundColorSelection &&
+                      !iconPackForGroup(groupName).isColorful
                   ? generateRandomSpaceColor()
                   : null;
               widget.onSelectedIcon(
                 IconsData(
-                  value.$1.name,
+                  groupName,
                   value.$2.name,
                   color,
                 ).toResult(isRandom: true),
               );
-              RecentIcons.putIcon(RecentIcon(value.$2, value.$1.name));
+              RecentIcons.putIcon(RecentIcon(value.$2, groupName));
             },
             onKeywordChanged: (keyword) => {
               debounce.call(() {
@@ -243,18 +268,28 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
   Widget _buildStyleSelector(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16.0, 0, 16.0, 10.0),
-      child: Wrap(
-        spacing: 6.0,
-        runSpacing: 6.0,
-        children: kIconPacks
-            .map(
-              (pack) => _IconStyleChip(
-                label: pack.displayName,
-                isSelected: pack == selectedPack,
-                onTap: () => _selectPack(pack),
-              ),
-            )
-            .toList(),
+      // Large text can wrap onto several lines in a narrow popup. Keep the
+      // grid usable; later styles remain scrollable and keyboard reachable.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 144),
+        child: SingleChildScrollView(
+          key: const ValueKey('icon-picker-styles'),
+          primary: false,
+          child: Wrap(
+            spacing: 6.0,
+            runSpacing: 6.0,
+            children: kIconPacks
+                .map(
+                  (pack) => _IconStyleChip(
+                    key: ValueKey('icon-pack-${pack.id}'),
+                    label: pack.displayName,
+                    isSelected: pack == selectedPack,
+                    onTap: () => _selectPack(pack),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
       ),
     );
   }
@@ -291,6 +326,7 @@ class _FlowyIconPickerState extends State<FlowyIconPicker> {
 
 class _IconStyleChip extends StatelessWidget {
   const _IconStyleChip({
+    super.key,
     required this.label,
     required this.isSelected,
     required this.onTap,
@@ -303,37 +339,52 @@ class _IconStyleChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selectedColor = Theme.of(context).colorScheme.primary;
-    return GestureDetector(
-      onTap: onTap,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          // no `alignment`: a Container that aligns its child expands to fill
-          // the constraints, which makes every chip claim a whole row
-          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 3.0),
-          decoration: BoxDecoration(
-            color: isSelected
-                ? selectedColor.withValues(alpha: 0.12)
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(8.0),
-            border: Border.all(
-              color: isSelected
-                  ? selectedColor.withValues(alpha: 0.5)
-                  : context.pickerButtonBoarderColor,
-            ),
+    return TextButton(
+      onPressed: onTap,
+      style: ButtonStyle(
+        minimumSize: const WidgetStatePropertyAll(Size.zero),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 8.0, vertical: 3.0),
+        ),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        visualDensity: VisualDensity.standard,
+        splashFactory: NoSplash.splashFactory,
+        animationDuration: const Duration(milliseconds: 120),
+        backgroundColor: WidgetStatePropertyAll(
+          isSelected
+              ? selectedColor.withValues(alpha: 0.12)
+              : Colors.transparent,
+        ),
+        overlayColor: WidgetStatePropertyAll(_pickerHoverColor(context)),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+        side: WidgetStateProperty.resolveWith(
+          (states) => BorderSide(
+            color: states.contains(WidgetState.focused)
+                ? selectedColor
+                : isSelected
+                    ? selectedColor.withValues(alpha: 0.5)
+                    : context.pickerButtonBoarderColor,
           ),
-          child: FlowyText(
-            label,
-            fontSize: 12,
-            figmaLineHeight: 18.0,
-            color: isSelected ? selectedColor : context.pickerTextColor,
-          ),
+        ),
+      ),
+      child: Semantics(
+        selected: isSelected,
+        child: FlowyText(
+          label,
+          fontSize: 12,
+          figmaLineHeight: 18.0,
+          color: isSelected ? selectedColor : context.pickerTextColor,
         ),
       ),
     );
   }
 }
+
+Color _pickerHoverColor(BuildContext context) => PaperTheme.isEnabled(context)
+    ? PaperTheme.hoverOverlay
+    : Theme.of(context).colorScheme.primary.withValues(alpha: 0.08);
 
 class IconsData {
   IconsData(this.groupName, this.iconName, this.color);
@@ -419,60 +470,66 @@ class _IconPickerState extends State<IconPicker> {
                   color: context.pickerTextColor,
                 ),
                 const VSpace(4.0),
-                GridView.builder(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: widget.iconPerLine,
+                LayoutBuilder(
+                  builder: (context, constraints) => GridView.builder(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: min(
+                        widget.iconPerLine,
+                        max(1, (constraints.maxWidth / 36).floor()),
+                      ),
+                    ),
+                    itemCount: iconGroup.icons.length,
+                    physics: const NeverScrollableScrollPhysics(),
+                    shrinkWrap: true,
+                    itemBuilder: (context, index) {
+                      final icon = iconGroup.icons[index];
+                      final groupName = _storedIconGroupName(iconGroup, icon);
+                      // Recents deserialize without runtime metadata and can
+                      // mix packs. Their persisted identity owns the palette.
+                      final isColorful = iconPackForGroup(groupName).isColorful;
+                      // a multi-color icon brings its own palette, so there is
+                      // nothing to tint
+                      return widget.enableBackgroundColorSelection &&
+                              !isColorful
+                          ? _Icon(
+                              icon: icon,
+                              mutex: mutex,
+                              onOpen: (childPopoverController) {
+                                this.childPopoverController =
+                                    childPopoverController;
+                              },
+                              onSelectedColor: (context, color) {
+                                widget.onSelectedIcon(
+                                  IconsData(
+                                    groupName,
+                                    icon.name,
+                                    color,
+                                  ),
+                                );
+                                RecentIcons.putIcon(
+                                    RecentIcon(icon, groupName),);
+                                PopoverContainer.of(context).close();
+                              },
+                            )
+                          : _IconNoBackground(
+                              key: ValueKey(
+                                  'picker-icon-$groupName/${icon.name}',),
+                              icon: icon,
+                              isColorful: isColorful,
+                              onSelectedIcon: () {
+                                widget.onSelectedIcon(
+                                  IconsData(
+                                    groupName,
+                                    icon.name,
+                                    null,
+                                  ),
+                                );
+                                RecentIcons.putIcon(
+                                    RecentIcon(icon, groupName),);
+                              },
+                            );
+                    },
                   ),
-                  itemCount: iconGroup.icons.length,
-                  physics: const NeverScrollableScrollPhysics(),
-                  shrinkWrap: true,
-                  itemBuilder: (context, index) {
-                    final icon = iconGroup.icons[index];
-                    // a multi-color icon brings its own palette, so there is
-                    // nothing to tint
-                    return widget.enableBackgroundColorSelection &&
-                            !icon.isColorful
-                        ? _Icon(
-                            icon: icon,
-                            mutex: mutex,
-                            onOpen: (childPopoverController) {
-                              this.childPopoverController =
-                                  childPopoverController;
-                            },
-                            onSelectedColor: (context, color) {
-                              String groupName = iconGroup.name;
-                              if (groupName == _kRecentIconGroupName) {
-                                groupName = getGroupName(index);
-                              }
-                              widget.onSelectedIcon(
-                                IconsData(
-                                  groupName,
-                                  icon.name,
-                                  color,
-                                ),
-                              );
-                              RecentIcons.putIcon(RecentIcon(icon, groupName));
-                              PopoverContainer.of(context).close();
-                            },
-                          )
-                        : _IconNoBackground(
-                            icon: icon,
-                            onSelectedIcon: () {
-                              String groupName = iconGroup.name;
-                              if (groupName == _kRecentIconGroupName) {
-                                groupName = getGroupName(index);
-                              }
-                              widget.onSelectedIcon(
-                                IconsData(
-                                  groupName,
-                                  icon.name,
-                                  null,
-                                ),
-                              );
-                              RecentIcons.putIcon(RecentIcon(icon, groupName));
-                            },
-                          );
-                  },
                 ),
                 const VSpace(12.0),
                 if (index == widget.iconGroups.length - 1) ...[
@@ -491,31 +548,67 @@ class _IconPickerState extends State<IconPicker> {
     childPopoverController?.close();
     childPopoverController = null;
   }
-
-  String getGroupName(int index) {
-    final recentIcons = RecentIcons.getIconsSync();
-    try {
-      return recentIcons[index].groupName;
-    } catch (e) {
-      Log.error('getGroupName with index: $index error', e);
-      return '';
-    }
-  }
 }
 
 class _IconNoBackground extends StatelessWidget {
   const _IconNoBackground({
+    super.key,
     required this.icon,
     required this.onSelectedIcon,
     this.isSelected = false,
+    this.isColorful = false,
   });
 
   final Icon icon;
   final bool isSelected;
+  final bool isColorful;
   final VoidCallback onSelectedIcon;
 
   @override
   Widget build(BuildContext context) {
+    if (isColorful) {
+      return Tooltip(
+        message: icon.displayName,
+        preferBelow: false,
+        excludeFromSemantics: true,
+        child: TextButton(
+          onPressed: onSelectedIcon,
+          style: ButtonStyle(
+            minimumSize: const WidgetStatePropertyAll(Size.zero),
+            padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.standard,
+            splashFactory: NoSplash.splashFactory,
+            backgroundColor: const WidgetStatePropertyAll(Colors.transparent),
+            overlayColor: WidgetStatePropertyAll(_pickerHoverColor(context)),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            side: WidgetStateProperty.resolveWith(
+              (states) => states.contains(WidgetState.focused)
+                  ? BorderSide(color: Theme.of(context).colorScheme.primary)
+                  : BorderSide.none,
+            ),
+          ),
+          child: Semantics(
+            label: icon.displayName,
+            child: ExcludeSemantics(
+              child: Center(
+                // These are illustrations in fixed grid cells, not text.
+                // FlowySvg otherwise scales its paint outside the cell at 2x.
+                child: MediaQuery.withNoTextScaling(
+                  child: FlowySvg.string(
+                    icon.content,
+                    size: const Size.square(24),
+                    blendMode: null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return FlowyTooltip(
       message: icon.displayName,
       preferBelow: false,
@@ -528,10 +621,8 @@ class _IconNoBackground extends StatelessWidget {
           child: FlowySvg.string(
             icon.content,
             size: const Size.square(20),
-            // a null blend mode keeps the artwork's own colors
-            blendMode: icon.isColorful ? null : BlendMode.srcIn,
-            color: icon.isColorful ? null : context.pickerIconColor,
-            opacity: icon.isColorful ? null : 0.7,
+            color: context.pickerIconColor,
+            opacity: 0.7,
           ),
         ),
       ),
@@ -615,12 +706,13 @@ class StreamlinePermit extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Open source icons from <the library the current style comes from>
-    final textStyle = TextStyle(
-      fontSize: 12.0,
-      height: 18.0 / 12.0,
-      fontWeight: FontWeight.w500,
-      color: context.pickerTextColor,
-    );
+    // RichText does not inherit the theme's font the way Text does.
+    final textStyle = DefaultTextStyle.of(context).style.copyWith(
+          fontSize: 12.0,
+          height: 18.0 / 12.0,
+          fontWeight: FontWeight.w500,
+          color: context.pickerTextColor,
+        );
     return RichText(
       text: TextSpan(
         children: [

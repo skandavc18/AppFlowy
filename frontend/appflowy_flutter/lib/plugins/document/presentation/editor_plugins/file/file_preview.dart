@@ -8,6 +8,7 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -122,7 +123,11 @@ class _FilePreviewState extends State<FilePreview> {
         if (snapshot.hasError) {
           return _PreviewError(
             message: snapshot.error.toString(),
-            onRetry: () => setState(() => preview = _buildPreview()),
+            onRetry: () {
+              setState(() {
+                preview = _buildPreview();
+              });
+            },
           );
         }
         return snapshot.data ??
@@ -151,7 +156,13 @@ class _FilePreviewState extends State<FilePreview> {
       child: content,
     );
     return widget.framed
-        ? ViewerCard(color: backgroundColor, child: sized)
+        ? PreviewToolbarRegion(
+            // Source editing is an explicit mode. Keep its Done/menu actions
+            // available even when the pointer returns to the surrounding page.
+            enabled: widget.metadata[filePreviewEditModeKey] != true ||
+                !widget.kind.supportsSourceEditing,
+            child: ViewerCard(color: backgroundColor, child: sized),
+          )
         : ColoredBox(color: backgroundColor, child: sized);
   }
 

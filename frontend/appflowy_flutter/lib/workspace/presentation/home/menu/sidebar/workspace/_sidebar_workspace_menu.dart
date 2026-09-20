@@ -202,6 +202,7 @@ class _WorkspaceMenuItemState extends State<WorkspaceMenuItem> {
       child: WorkspaceIcon(
         workspaceName: widget.workspace.name,
         workspaceIcon: widget.workspace.icon,
+        documentId: widget.workspace.workspaceId,
         iconSize: 36,
         emojiSize: 24.0,
         fontSize: 18.0,
@@ -211,7 +212,7 @@ class _WorkspaceMenuItemState extends State<WorkspaceMenuItem> {
         onSelected: (result) => context.read<UserWorkspaceBloc>().add(
               UserWorkspaceEvent.updateWorkspaceIcon(
                 workspaceId: widget.workspace.workspaceId,
-                icon: result.emoji,
+                icon: result.toStorageString(),
               ),
             ),
       ),

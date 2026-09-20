@@ -48,14 +48,14 @@ class SpreadsheetPalette {
         surface: PaperTheme.editorBackground,
         headerSurface: PaperTheme.editorBackground,
         gutterSurface: PaperTheme.editorBackground,
-        bandedSurface: Color(0xFFF3EDE1),
-        gridLine: Color(0x1F675443),
-        divider: Color(0x2E675443),
-        hover: Color(0x0F675443),
-        selection: Color(0x14715438),
+        bandedSurface: PaperTheme.editorBackground,
+        gridLine: Color(0x18675443),
+        divider: Color(0x26675443),
+        hover: Color(0x09675443),
+        selection: Color(0x12715438),
         selectionBorder: Color(0x66715438),
         focusRing: PaperTheme.accent,
-        focusHalo: Color(0x24715438),
+        focusHalo: Color(0x0A715438),
         textPrimary: PaperTheme.textPrimary,
         textSecondary: PaperTheme.textSecondary,
         textMuted: PaperTheme.textMuted,
@@ -76,23 +76,20 @@ class SpreadsheetPalette {
     final accent = premium?.accent ?? scheme.primary;
     final onSurface = premium?.textPrimary ?? scheme.onSurface;
 
-    Color tint(double amount) =>
-        Color.alphaBlend(onSurface.withValues(alpha: amount), canvas);
-
     return SpreadsheetPalette(
       surface: canvas,
       headerSurface: canvas,
       gutterSurface: canvas,
-      bandedSurface: tint(isDark ? 0.016 : 0.011),
+      bandedSurface: canvas,
       gridLine: (premium?.border ?? scheme.outlineVariant)
-          .withValues(alpha: isDark ? 0.18 : 0.26),
+          .withValues(alpha: isDark ? 0.16 : 0.22),
       divider: (premium?.border ?? scheme.outlineVariant)
-          .withValues(alpha: isDark ? 0.28 : 0.38),
-      hover: onSurface.withValues(alpha: isDark ? 0.045 : 0.030),
-      selection: accent.withValues(alpha: isDark ? 0.16 : 0.10),
+          .withValues(alpha: isDark ? 0.24 : 0.32),
+      hover: onSurface.withValues(alpha: isDark ? 0.036 : 0.024),
+      selection: accent.withValues(alpha: isDark ? 0.11 : 0.07),
       selectionBorder: accent.withValues(alpha: isDark ? 0.55 : 0.45),
       focusRing: accent,
-      focusHalo: accent.withValues(alpha: isDark ? 0.24 : 0.16),
+      focusHalo: accent.withValues(alpha: isDark ? 0.05 : 0.035),
       textPrimary: onSurface,
       textSecondary: premium?.textSecondary ?? scheme.onSurfaceVariant,
       textMuted:
@@ -111,6 +108,8 @@ class SpreadsheetPalette {
   final Color surface;
   final Color headerSurface;
   final Color gutterSurface;
+
+  /// Kept for palette compatibility. Unformatted rows all use [surface].
   final Color bandedSurface;
 
   /// The hairline between cells. Barely there by design.
@@ -170,6 +169,13 @@ abstract final class SpreadsheetMetrics {
   static const double controlRadius = 7;
   static const double cellPaddingHorizontal = 12;
   static const double cellPaddingVertical = 6;
+  static const double editorCursorWidth = 1.6;
+
+  /// RenderEditable's one-logical-pixel caret gap plus the visible cursor.
+  static const double editorCaretAllowance = 1 + editorCursorWidth;
+  static const double gridStrokeWidth = 0.6;
+  static const double selectionStrokeWidth = 1;
+  static const double selectionRadius = 2;
   static const double resizeHandleWidth = 10;
   static const double fillHandleSize = 8;
 

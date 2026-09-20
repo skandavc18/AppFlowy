@@ -388,6 +388,44 @@ class SpreadsheetController extends ChangeNotifier {
   // Editing
   // -------------------------------------------------------------------
 
+  /// Carries an open draft across a source/controller rebind, not the old
+  /// sheet, history or persistence state. An incoming edit takes precedence.
+  ///
+  /// The retained grid uses [notify] = false during its build: sibling block
+  /// controls may already be building against this new controller. Adoption
+  /// itself is not a document edit; a later commit records one normal undo.
+  bool restoreEditingFrom(
+    SpreadsheetController previous, {
+    bool notify = true,
+  }) {
+    if (!editable || isEditing || !previous.isEditing) {
+      return false;
+    }
+    final ref = previous.editing;
+    final header = previous.editingHeader;
+    if ((ref != null &&
+            (ref.row < 0 ||
+                ref.row >= _data.rowCount ||
+                ref.column < 0 ||
+                ref.column >= _data.columnCount)) ||
+        (header != null && (header < 0 || header >= _data.columnCount))) {
+      return false;
+    }
+    _active = _clamp(previous.active);
+    _anchor = _clamp(previous.anchor);
+    final column = previous.selectedColumnHeader;
+    _selectedColumnHeader =
+        column != null && column < _data.columnCount ? column : null;
+    _editing = ref;
+    _editingHeader = header;
+    _editingText = previous.editingText;
+    _editingFromKeystroke = previous.editingFromKeystroke;
+    if (notify) {
+      notifyListeners();
+    }
+    return true;
+  }
+
   void startEditing({String? initialText, bool fromKeystroke = false}) {
     if (!editable) {
       return;

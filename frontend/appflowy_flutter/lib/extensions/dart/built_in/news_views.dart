@@ -1,4 +1,5 @@
 import 'package:appflowy/extensions/dart/built_in/news_extension.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:flutter/material.dart';
 
 /// The headline list, shared by the document block and the dashboard card.
@@ -30,6 +31,11 @@ class NewsBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // A dashboard also uses this directly, without a ResizableMedia host.
+    return PreviewToolbarRegion(child: _buildBody(context));
+  }
+
+  Widget _buildBody(BuildContext context) {
     final theme = Theme.of(context);
     final soft = muted ?? theme.colorScheme.onSurfaceVariant;
     final feed = channel;
@@ -76,14 +82,17 @@ class NewsBody extends StatelessWidget {
                     ?.copyWith(color: soft, fontSize: 11),
               ),
             if (onConfigure != null)
-              IconButton(
-                onPressed: onConfigure,
-                icon: const Icon(Icons.tune_rounded, size: 16),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-                color: soft,
-                tooltip: 'Feed and headline count',
+              PreviewToolbar(
+                child: IconButton(
+                  onPressed: onConfigure,
+                  icon: const Icon(Icons.tune_rounded, size: 16),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 24),
+                  color: soft,
+                  tooltip: 'Feed and headline count',
+                ),
               ),
           ],
         ),

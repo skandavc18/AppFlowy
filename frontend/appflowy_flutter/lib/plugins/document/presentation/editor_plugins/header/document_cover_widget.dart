@@ -6,7 +6,6 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/mobile/presentation/bottom_sheet/bottom_sheet.dart';
 import 'package:appflowy/plugins/base/emoji/emoji_picker_screen.dart';
-import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/desktop_cover.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
@@ -20,6 +19,7 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/cover_image_download.dart';
@@ -41,6 +41,42 @@ const double kCoverHeight = 280.0;
 const double kDesktopCoverHeight = 218.0;
 const double kTitleIconSize = 54.0;
 const double kToolbarHeight = 40.0; // with padding to the top
+
+/// The cover and title share the body's reading edges, but do not contain its
+/// leading block-action row. Changing constraints only relays out this frame;
+/// the title's focus and draft stay at the same element-tree depth.
+class DocumentHeaderContent extends StatelessWidget {
+  const DocumentHeaderContent({
+    super.key,
+    required this.editorStyle,
+    required this.child,
+    this.includeVerticalPadding = true,
+  });
+
+  final EditorStyle editorStyle;
+  final Widget child;
+  final bool includeVerticalPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    final padding = EditorStyleCustomizer.documentHeaderPadding(
+      editorStyle.padding,
+      textDirection: Directionality.of(context),
+    );
+    return Center(
+      child: Container(
+        width: double.infinity,
+        constraints: BoxConstraints(
+          maxWidth: editorStyle.maxWidth ?? double.infinity,
+        ),
+        padding: includeVerticalPadding
+            ? padding
+            : EdgeInsets.only(left: padding.left, right: padding.right),
+        child: child,
+      ),
+    );
+  }
+}
 
 // Remove this widget if the desktop support immersive cover.
 class DocumentHeaderBlockKeys {
@@ -115,7 +151,6 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
   PageStyleCover? cover;
   late ViewPB view;
   late final ViewListener viewListener;
-  int retryCount = 0;
 
   final isCoverTitleHovered = ValueNotifier<bool>(false);
 
@@ -164,7 +199,7 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
       ignoring: !widget.editorState.editable,
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final offset = _calculateIconLeft(context, constraints);
+          final offset = _calculateIconLeft(constraints);
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -212,46 +247,40 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
     final iconTopInset = max(0.0, (titleLineHeight - kTitleIconSize) / 2);
     final titleTopInset = max(0.0, (kTitleIconSize - titleLineHeight) / 2);
 
-    return Center(
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: widget.editorState.editorStyle.maxWidth ?? double.infinity,
-        ),
-        padding: widget.editorState.editorStyle.padding +
-            const EdgeInsets.symmetric(horizontal: 44),
-        child: MouseRegion(
-          onEnter: (event) => isCoverTitleHovered.value = true,
-          onExit: (event) => isCoverTitleHovered.value = false,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (hasIcon) ...[
-                Padding(
-                  padding: EdgeInsets.only(top: iconTopInset),
-                  child: SizedBox.square(
-                    dimension: kTitleIconSize,
-                    child: DocumentIcon(
-                      editorState: widget.editorState,
-                      node: widget.node,
-                      icon: viewIcon,
-                      documentId: view.id,
-                      emojiSize: kTitleIconSize,
-                      onChangeIcon: (icon) => _saveIconOrCover(icon: icon),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-              ],
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.only(top: hasIcon ? titleTopInset : 0.0),
-                  child: CoverTitle(
-                    view: widget.view,
+    return DocumentHeaderContent(
+      editorStyle: widget.editorState.editorStyle,
+      child: MouseRegion(
+        onEnter: (event) => isCoverTitleHovered.value = true,
+        onExit: (event) => isCoverTitleHovered.value = false,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasIcon) ...[
+              Padding(
+                padding: EdgeInsets.only(top: iconTopInset),
+                child: SizedBox.square(
+                  dimension: kTitleIconSize,
+                  child: DocumentIcon(
+                    editorState: widget.editorState,
+                    node: widget.node,
+                    icon: viewIcon,
+                    documentId: view.id,
+                    emojiSize: kTitleIconSize,
+                    onChangeIcon: (icon) => _saveIconOrCover(icon: icon),
                   ),
                 ),
               ),
+              const SizedBox(width: 14),
             ],
-          ),
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(top: hasIcon ? titleTopInset : 0.0),
+                child: CoverTitle(
+                  view: widget.view,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -259,37 +288,18 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
 
   void _reload() => setState(() {});
 
-  double _calculateIconLeft(BuildContext context, BoxConstraints constraints) {
-    final editorState = context.read<EditorState>();
-    final appearanceCubit = context.read<DocumentAppearanceCubit>();
-
-    final renderBox = editorState.renderBox;
-
-    if (renderBox == null || !renderBox.hasSize) {}
-
-    var renderBoxWidth = 0.0;
-    if (renderBox != null && renderBox.hasSize) {
-      renderBoxWidth = renderBox.size.width;
-    } else if (retryCount <= 3) {
-      retryCount++;
-      // this is a workaround for the issue that the renderBox is not initialized
-      WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
-        _reload();
-      });
-      return 0;
-    }
-
-    // if the renderBox width equals to 0, it means the editor is not initialized
-    final editorWidth = renderBoxWidth != 0
-        ? min(renderBoxWidth, appearanceCubit.state.width)
-        : appearanceCubit.state.width;
-
-    // left padding + editor width + right padding = the width of the editor
-    final leftOffset = (constraints.maxWidth - editorWidth) / 2.0 +
-        EditorStyleCustomizer.documentPadding.right;
-
-    // ensure the offset is not negative
-    return max(0, leftOffset);
+  double _calculateIconLeft(BoxConstraints constraints) {
+    final style = widget.editorState.editorStyle;
+    final available = WorkspaceLayout.availableWidth(
+      constraints,
+      fallbackWidth: style.maxWidth ?? WorkspaceLayout.headerBreakpoint,
+    );
+    final editorWidth = min(available, style.maxWidth ?? available);
+    return (available - editorWidth) / 2 +
+        EditorStyleCustomizer.documentHeaderPadding(
+          style.padding,
+          textDirection: Directionality.of(context),
+        ).left;
   }
 
   double _calculateOverallHeight() {
@@ -550,40 +560,29 @@ class DocumentCoverState extends State<DocumentCover> {
   }
 
   Widget _buildDesktopCover() {
-    final editorPadding = widget.editorState.editorStyle.padding;
     return SizedBox(
       height: kDesktopCoverHeight,
-      child: Center(
-        child: Container(
-          width: double.infinity,
-          constraints: BoxConstraints(
-            maxWidth:
-                widget.editorState.editorStyle.maxWidth ?? double.infinity,
-          ),
-          padding: EdgeInsets.only(
-            left: editorPadding.left + 44,
-            right: editorPadding.right + 44,
-          ),
-          child: MouseRegion(
-            onEnter: (event) => setOverlayButtonsHidden(false),
-            onExit: (event) =>
-                setOverlayButtonsHidden(isPopoverOpen ? false : true),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  DesktopCover(
-                    view: widget.view,
-                    editorState: widget.editorState,
-                    node: widget.node,
-                    coverType: widget.coverType,
-                    coverDetails: widget.coverDetails,
-                  ),
-                  if (!isOverlayButtonsHidden)
-                    _buildCoverOverlayButtons(context),
-                ],
-              ),
+      child: DocumentHeaderContent(
+        editorStyle: widget.editorState.editorStyle,
+        includeVerticalPadding: false,
+        child: MouseRegion(
+          onEnter: (event) => setOverlayButtonsHidden(false),
+          onExit: (event) =>
+              setOverlayButtonsHidden(isPopoverOpen ? false : true),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                DesktopCover(
+                  view: widget.view,
+                  editorState: widget.editorState,
+                  node: widget.node,
+                  coverType: widget.coverType,
+                  coverDetails: widget.coverDetails,
+                ),
+                if (!isOverlayButtonsHidden) _buildCoverOverlayButtons(context),
+              ],
             ),
           ),
         ),

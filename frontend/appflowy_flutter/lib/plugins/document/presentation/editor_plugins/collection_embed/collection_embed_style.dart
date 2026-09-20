@@ -272,7 +272,7 @@ class CollectionEmbedSurface extends StatelessWidget {
 }
 
 /// A borderless control that only shades under the pointer.
-class CollectionEmbedButton extends StatefulWidget {
+class CollectionEmbedButton extends StatelessWidget {
   const CollectionEmbedButton({
     super.key,
     required this.theme,
@@ -293,53 +293,35 @@ class CollectionEmbedButton extends StatefulWidget {
   final bool active;
 
   @override
-  State<CollectionEmbedButton> createState() => _CollectionEmbedButtonState();
-}
-
-class _CollectionEmbedButtonState extends State<CollectionEmbedButton> {
-  bool hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final enabled = widget.onPressed != null;
     // Never fade from Colors.transparent: the tween would pass through grey.
-    final resting = widget.active
+    final resting = active
         ? theme.accent.withValues(alpha: theme.isDark ? 0.20 : 0.12)
         : theme.rowHover.withValues(alpha: 0);
-    final button = MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: CollectionEmbedMetrics.hover,
-          curve: CollectionEmbedMetrics.ease,
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: hovered && enabled ? theme.rowHover : resting,
-            borderRadius:
-                BorderRadius.circular(CollectionEmbedMetrics.controlRadius),
-          ),
-          child: Icon(
-            widget.icon,
-            size: widget.iconSize,
-            color: !enabled
-                ? theme.textFaint.withValues(alpha: 0.45)
-                : widget.active
-                    ? theme.accent
-                    : hovered
-                        ? theme.textPrimary
-                        : theme.textMuted,
+    return SizedBox.square(
+      dimension: size,
+      child: IconButton(
+        tooltip: tooltip,
+        isSelected: active,
+        onPressed: onPressed,
+        icon: Icon(icon, size: iconSize),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.square(size),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: active ? theme.accent : theme.textMuted,
+          disabledForegroundColor: theme.textFaint.withValues(alpha: 0.45),
+          backgroundColor: resting,
+          hoverColor: theme.rowHover,
+          focusColor: theme.rowHover,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(
+              CollectionEmbedMetrics.controlRadius,
+            ),
           ),
         ),
       ),
     );
-    final tooltip = widget.tooltip;
-    return tooltip == null ? button : Tooltip(message: tooltip, child: button);
   }
 }
 

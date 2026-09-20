@@ -122,7 +122,7 @@ abstract final class VisualBlockMetrics {
 
 /// A borderless, 26px control used across the four blocks' headers and
 /// toolbars.
-class VisualBlockButton extends StatefulWidget {
+class VisualBlockButton extends StatelessWidget {
   const VisualBlockButton({
     super.key,
     required this.icon,
@@ -141,56 +141,27 @@ class VisualBlockButton extends StatefulWidget {
   final double size;
 
   @override
-  State<VisualBlockButton> createState() => _VisualBlockButtonState();
-}
-
-class _VisualBlockButtonState extends State<VisualBlockButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette ?? VisualBlockPalette.of(context);
-    final enabled = widget.onTap != null;
-    final background = widget.selected
-        ? palette.accentSoft
-        : _hovered
-            ? palette.hover
-            : palette.hoverBase;
-    final foreground = !enabled
-        ? palette.textMuted.withValues(alpha: 0.5)
-        : widget.selected
-            ? palette.accent
-            : _hovered
-                ? palette.text
-                : palette.textSecondary;
-
-    return Tooltip(
-      message: widget.tooltip,
-      waitDuration: const Duration(milliseconds: 420),
-      child: Semantics(
-        button: true,
-        enabled: enabled,
-        label: widget.tooltip,
-        selected: widget.selected,
-        child: MouseRegion(
-          cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-          onEnter: (_) => setState(() => _hovered = true),
-          onExit: (_) => setState(() => _hovered = false),
-          child: GestureDetector(
-            onTap: widget.onTap,
-            behavior: HitTestBehavior.opaque,
-            child: AnimatedContainer(
-              duration: VisualBlockMetrics.hover,
-              curve: VisualBlockMetrics.curve,
-              width: widget.size,
-              height: widget.size,
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius:
-                    BorderRadius.circular(VisualBlockMetrics.controlRadius),
-              ),
-              child: Icon(widget.icon, size: 16, color: foreground),
-            ),
+    final colours = palette ?? VisualBlockPalette.of(context);
+    return SizedBox.square(
+      dimension: size,
+      child: IconButton(
+        tooltip: tooltip,
+        isSelected: selected,
+        onPressed: onTap,
+        icon: Icon(icon, size: 16),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.square(size),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: selected ? colours.accent : colours.textSecondary,
+          disabledForegroundColor: colours.textMuted.withValues(alpha: 0.5),
+          backgroundColor: selected ? colours.accentSoft : colours.hoverBase,
+          hoverColor: colours.hover,
+          focusColor: colours.hover,
+          shape: RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(VisualBlockMetrics.controlRadius),
           ),
         ),
       ),
@@ -258,14 +229,21 @@ class _Segment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      button: true,
       selected: selected,
-      label: label,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: onTap,
-          behavior: HitTestBehavior.opaque,
+        child: TextButton(
+          onPressed: onTap,
+          style: TextButton.styleFrom(
+            padding: EdgeInsets.zero,
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            foregroundColor: palette.text,
+            overlayColor: palette.hover,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
           child: AnimatedContainer(
             duration: VisualBlockMetrics.hover,
             curve: VisualBlockMetrics.curve,

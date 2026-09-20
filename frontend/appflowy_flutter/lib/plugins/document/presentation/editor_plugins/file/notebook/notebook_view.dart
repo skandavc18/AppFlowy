@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
@@ -63,6 +64,7 @@ class _NotebookViewState extends State<NotebookView> {
 
   String? _runningCellId;
   bool _runningAll = false;
+  bool _editing = false;
   String? _selectedCellId;
   Timer? _saveTimer;
   Timer? _outputFlush;
@@ -483,6 +485,7 @@ class _NotebookViewState extends State<NotebookView> {
             kernel: kernel,
             editable: widget.editable,
             running: _runningCellId != null || _runningAll,
+            editing: widget.editable && _editing,
             onRunAll: () => unawaited(_runAll()),
             onRestartAndRun: () => unawaited(_runAll(restart: true)),
             onStop: () => unawaited(_stop()),
@@ -494,63 +497,77 @@ class _NotebookViewState extends State<NotebookView> {
           if (kernel.blockedReason.isNotEmpty)
             _NotebookNotice(palette: palette, message: kernel.blockedReason),
           Expanded(
-            child: SelectionArea(
-              child: ListView.builder(
-                controller: _scroll,
-                padding: const EdgeInsets.fromLTRB(14, 10, 18, 60),
-                itemCount: document.cells.length + 1,
-                itemBuilder: (context, index) {
-                  if (index == document.cells.length) {
-                    return _NotebookInsertStrip(
-                      palette: palette,
-                      visible: widget.editable,
-                      alwaysVisible: true,
-                      onInsert: (type) => _insertCell(index, type),
-                    );
-                  }
-                  final cell = document.cells[index];
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (index > 0)
-                        _NotebookInsertStrip(
-                          palette: palette,
-                          visible: widget.editable,
-                          onInsert: (type) => _insertCell(index, type),
-                        ),
-                      _NotebookCellView(
-                        key: ValueKey(cell.id),
-                        cell: cell,
-                        editor: _editorFor(cell, document.language),
+            child: Focus(
+              canRequestFocus: false,
+              skipTraversal: true,
+              includeSemantics: false,
+              onFocusChange: (value) {
+                if (mounted && _editing != value) {
+                  setState(() => _editing = value);
+                }
+              },
+              child: SelectionArea(
+                child: ListView.builder(
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(14, 10, 18, 60),
+                  itemCount: document.cells.length + 1,
+                  itemBuilder: (context, index) {
+                    if (index == document.cells.length) {
+                      return _NotebookInsertStrip(
                         palette: palette,
-                        language: document.language,
-                        editable: widget.editable,
-                        canRun: kernel.canRun,
-                        running: _runningCellId == cell.id,
-                        selected: _selectedCellId == cell.id,
-                        baseDirectory: p.dirname(widget.file.path),
-                        awaitingInput:
-                            _runningCellId == cell.id && kernel.awaitingInput,
-                        inputPrompt: kernel.inputPrompt,
-                        onInputSubmitted: kernel.provideInput,
-                        onSelected: () =>
-                            setState(() => _selectedCellId = cell.id),
-                        onSourceChanged: (value) =>
-                            _updateSource(cell.id, value),
-                        onRun: ({bool advance = false}) =>
-                            unawaited(_runCell(cell.id, advance: advance)),
-                        onStop: () => unawaited(_stop()),
-                        onMove: (delta) => _mutate(
-                          _doc.withCellMoved(_doc.indexOfCell(cell.id), delta),
+                        visible: widget.editable,
+                        alwaysVisible: true,
+                        onInsert: (type) => _insertCell(index, type),
+                      );
+                    }
+                    final cell = document.cells[index];
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (index > 0)
+                          _NotebookInsertStrip(
+                            palette: palette,
+                            visible: widget.editable,
+                            onInsert: (type) => _insertCell(index, type),
+                          ),
+                        _NotebookCellView(
+                          key: ValueKey(cell.id),
+                          cell: cell,
+                          editor: _editorFor(cell, document.language),
+                          palette: palette,
+                          language: document.language,
+                          editable: widget.editable,
+                          canRun: kernel.canRun,
+                          running: _runningCellId == cell.id,
+                          selected: _selectedCellId == cell.id,
+                          baseDirectory: p.dirname(widget.file.path),
+                          awaitingInput:
+                              _runningCellId == cell.id && kernel.awaitingInput,
+                          inputPrompt: kernel.inputPrompt,
+                          onInputSubmitted: kernel.provideInput,
+                          onSelected: () =>
+                              setState(() => _selectedCellId = cell.id),
+                          onSourceChanged: (value) =>
+                              _updateSource(cell.id, value),
+                          onRun: ({bool advance = false}) =>
+                              unawaited(_runCell(cell.id, advance: advance)),
+                          onStop: () => unawaited(_stop()),
+                          onMove: (delta) => _mutate(
+                            _doc.withCellMoved(
+                              _doc.indexOfCell(cell.id),
+                              delta,
+                            ),
+                          ),
+                          onDuplicate: () => _duplicateCell(cell.id),
+                          onDelete: () => _removeCell(cell.id),
+                          onChangeType: (type) =>
+                              _changeCellType(cell.id, type),
+                          onClearOutput: () => _clearOutputs(cell.id),
                         ),
-                        onDuplicate: () => _duplicateCell(cell.id),
-                        onDelete: () => _removeCell(cell.id),
-                        onChangeType: (type) => _changeCellType(cell.id, type),
-                        onClearOutput: () => _clearOutputs(cell.id),
-                      ),
-                    ],
-                  );
-                },
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ),
@@ -612,6 +629,7 @@ class _NotebookToolbar extends StatelessWidget {
     required this.kernel,
     required this.editable,
     required this.running,
+    required this.editing,
     required this.onRunAll,
     required this.onRestartAndRun,
     required this.onStop,
@@ -627,6 +645,7 @@ class _NotebookToolbar extends StatelessWidget {
   final NotebookKernel kernel;
   final bool editable;
   final bool running;
+  final bool editing;
   final VoidCallback onRunAll;
   final VoidCallback onRestartAndRun;
   final VoidCallback onStop;
@@ -638,67 +657,108 @@ class _NotebookToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 42,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      constraints: const BoxConstraints(minHeight: 42),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       color: palette.header,
-      child: Row(
-        children: [
-          Icon(Icons.menu_book_rounded, size: 15, color: palette.textSecondary),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              name,
-              overflow: TextOverflow.ellipsis,
-              style: codeUiTextStyle(
-                color: palette.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final scale = MediaQuery.textScalerOf(context).scale(12) / 12;
+          final available = constraints.maxWidth;
+          final stacked = available < 560 * scale;
+          final actionsWidth = stacked ? available : available * 0.52;
+          final identityWidth =
+              stacked ? available : available - actionsWidth - 14;
+          return Wrap(
+            spacing: 14,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: identityWidth,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.menu_book_rounded,
+                      size: 15,
+                      color: palette.textSecondary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: codeUiTextStyle(
+                          color: palette.textSecondary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _KernelStatus(palette: palette, kernel: kernel),
+                  ],
+                ),
               ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          _KernelStatus(palette: palette, kernel: kernel),
-          const Flexible(child: SizedBox(width: 14)),
-          if (running)
-            CodeToolbarButton(
-              palette: palette,
-              tooltip: 'Stop the running cell',
-              icon: Icons.stop_rounded,
-              label: 'Stop',
-              foregroundColor: palette.error,
-              onPressed: onStop,
-            )
-          else
-            CodeToolbarButton(
-              palette: palette,
-              tooltip: 'Run every cell in order',
-              icon: Icons.play_arrow_rounded,
-              label: 'Run all',
-              foregroundColor: kernel.canRun ? palette.accent : null,
-              onPressed: kernel.canRun ? onRunAll : null,
-            ),
-          if (editable) ...[
-            CodeToolbarButton(
-              palette: palette,
-              tooltip: 'Add a code cell',
-              icon: Icons.add_rounded,
-              onPressed: () => onAddCell(NotebookCellType.code),
-            ),
-          ],
-          CodeHeaderDivider(palette: palette),
-          Builder(
-            builder: (context) => CodeToolbarButton(
-              palette: palette,
-              tooltip: 'Notebook actions',
-              icon: Icons.more_horiz_rounded,
-              onPressed: () => _showMenu(context),
-            ),
-          ),
-          if (trailing != null) ...[
-            CodeHeaderDivider(palette: palette),
-            trailing!,
-          ],
-        ],
+              SizedBox(
+                width: actionsWidth,
+                child: PreviewToolbar(
+                  keepVisible: running ||
+                      editing ||
+                      kernel.state == NotebookKernelState.unavailable ||
+                      (editable && document.cells.isEmpty),
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (running)
+                          CodeToolbarButton(
+                            palette: palette,
+                            tooltip: 'Stop the running cell',
+                            icon: Icons.stop_rounded,
+                            label: 'Stop',
+                            foregroundColor: palette.error,
+                            onPressed: onStop,
+                          )
+                        else
+                          CodeToolbarButton(
+                            palette: palette,
+                            tooltip: 'Run every cell in order',
+                            icon: Icons.play_arrow_rounded,
+                            label: 'Run all',
+                            foregroundColor:
+                                kernel.canRun ? palette.accent : null,
+                            onPressed: kernel.canRun ? onRunAll : null,
+                          ),
+                        if (editable)
+                          CodeToolbarButton(
+                            palette: palette,
+                            tooltip: 'Add a code cell',
+                            icon: Icons.add_rounded,
+                            onPressed: () => onAddCell(NotebookCellType.code),
+                          ),
+                        CodeHeaderDivider(palette: palette),
+                        Builder(
+                          builder: (context) => CodeToolbarButton(
+                            palette: palette,
+                            tooltip: 'Notebook actions',
+                            icon: Icons.more_horiz_rounded,
+                            onPressed: () => _showMenu(context),
+                          ),
+                        ),
+                        if (trailing != null) ...[
+                          CodeHeaderDivider(palette: palette),
+                          trailing!,
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

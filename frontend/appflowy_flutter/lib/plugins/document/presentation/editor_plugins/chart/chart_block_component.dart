@@ -5,7 +5,6 @@ import 'package:appflowy/shared/charts/chart_stage.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
 import 'package:appflowy/workspace/application/collections/database/database_table.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -230,45 +229,37 @@ class _EmptyFrame extends StatelessWidget {
   final VoidCallback onPick;
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: palette.background,
-          borderRadius: BorderRadius.circular(ChartMetrics.cardRadius),
-          border: Border.all(color: palette.border),
-          boxShadow: chartCardShadow(palette),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.insert_chart_outlined_rounded,
-                size: 26,
-                color: palette.label,
+  Widget build(BuildContext context) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.insert_chart_outlined_rounded,
+              size: 26,
+              color: palette.label,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              LocaleKeys.charts_chooseTable.tr(),
+              style: palette.text(
+                size: 13.5,
+                color: palette.strongLabel,
+                weight: FontWeight.w600,
               ),
-              const SizedBox(height: 12),
-              Text(
-                LocaleKeys.charts_chooseTable.tr(),
-                style: palette.text(
-                  size: 13.5,
-                  color: palette.strongLabel,
-                  weight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 5),
-              Text(
-                LocaleKeys.charts_chooseTableHint.tr(),
-                style: palette.text(size: 12, height: 1.4),
-              ),
-              const SizedBox(height: 16),
-              _PlainButton(
-                icon: Icons.table_chart_rounded,
-                label: LocaleKeys.charts_pickTable.tr(),
-                onTap: onPick,
-                filled: true,
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              LocaleKeys.charts_chooseTableHint.tr(),
+              style: palette.text(size: 12, height: 1.4),
+            ),
+            const SizedBox(height: 16),
+            _PlainButton(
+              icon: Icons.table_chart_rounded,
+              label: LocaleKeys.charts_pickTable.tr(),
+              onTap: onPick,
+              filled: true,
+            ),
+          ],
         ),
       );
 }

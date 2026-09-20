@@ -390,6 +390,7 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
               WorkspaceIcon(
                 workspaceIcon: currentWorkspace.icon,
                 workspaceName: currentWorkspace.name,
+                documentId: currentWorkspace.workspaceId,
                 iconSize: 20,
                 fontSize: 12,
                 emojiSize: 14,
@@ -400,7 +401,7 @@ class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
                 onSelected: (result) => context.read<UserWorkspaceBloc>().add(
                       UserWorkspaceEvent.updateWorkspaceIcon(
                         workspaceId: currentWorkspace.workspaceId,
-                        icon: result.emoji,
+                        icon: result.toStorageString(),
                       ),
                     ),
               ),

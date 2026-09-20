@@ -5,6 +5,7 @@ import 'package:appflowy/shared/charts/app_chart.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
 import 'package:appflowy/shared/charts/chart_toolbar.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/charts/chart_data.dart';
 import 'package:appflowy/workspace/application/charts/chart_source.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
@@ -28,7 +29,7 @@ class ChartStage extends StatefulWidget {
     this.background,
     this.showToolbar = true,
     this.compactToolbar = false,
-    this.framed = true,
+    this.framed = false,
     this.trailing = const [],
     this.padding = const EdgeInsets.all(16),
     this.source,
@@ -38,14 +39,17 @@ class ChartStage extends StatefulWidget {
   final ChartSpec spec;
   final ValueChanged<ChartSpec> onSpecChanged;
 
-  /// What the chart is called, shown at the head of the card.
+  /// What the chart is called, shown above the plot.
   final String? title;
+
+  /// An explicit surface choice, independent of [framed]. When absent, an
+  /// unframed chart paints no background, including on custom page canvases.
   final Color? background;
   final bool showToolbar;
   final bool compactToolbar;
 
-  /// Whether the chart draws its own card. A host that already supplies one
-  /// turns this off.
+  /// Opts into a card with a fill, border and shadow. Charts normally draw
+  /// directly on the page; tooltips and hover controls keep their own surfaces.
   final bool framed;
   final List<Widget> trailing;
   final EdgeInsets padding;
@@ -103,7 +107,11 @@ class ChartStageState extends State<ChartStage> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = chartPaletteOf(context, background: widget.background);
+    final palette = chartPaletteOf(
+      context,
+      background: widget.background,
+      framed: widget.framed,
+    );
     final table = _source.table;
     // Resolving a name to an id is not permission to replace a choice. Null
     // category and empty values mean "Every row" and "Count rows".
@@ -125,6 +133,7 @@ class ChartStageState extends State<ChartStage> {
             onRefresh: reload,
             onExport: () => _copyNumbers(context, table, data, spec),
             busy: _source.isLoading,
+            hasError: _source.error != null,
             trailing: widget.trailing,
           ),
           SizedBox(
@@ -137,15 +146,14 @@ class ChartStageState extends State<ChartStage> {
       ],
     );
 
-    if (!widget.framed) {
-      return Padding(padding: widget.padding, child: body);
-    }
+    // Keep the same subtree when a host changes its surface choice: a frame
+    // must never own the lifetime of the plot, viewport or focused controls.
     return Container(
       decoration: BoxDecoration(
-        color: palette.background,
+        color: widget.background ?? (widget.framed ? palette.background : null),
         borderRadius: BorderRadius.circular(ChartMetrics.cardRadius),
-        border: Border.all(color: palette.border),
-        boxShadow: chartCardShadow(palette),
+        border: widget.framed ? Border.all(color: palette.border) : null,
+        boxShadow: widget.framed ? chartCardShadow(palette) : null,
       ),
       padding: widget.padding,
       child: body,
@@ -239,6 +247,7 @@ class _Header extends StatelessWidget {
     required this.onRefresh,
     required this.onExport,
     required this.busy,
+    required this.hasError,
     required this.trailing,
   });
 
@@ -252,6 +261,7 @@ class _Header extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final VoidCallback onExport;
   final bool busy;
+  final bool hasError;
   final List<Widget> trailing;
 
   @override
@@ -276,7 +286,13 @@ class _Header extends StatelessWidget {
                   ),
                 ),
               ),
-              _actions(context),
+              Expanded(
+                child: Align(
+                  alignment: AlignmentDirectional.centerEnd,
+                  heightFactor: 1,
+                  child: _actions(context),
+                ),
+              ),
             ],
           )
         else if (!spec.showControls)
@@ -295,6 +311,7 @@ class _Header extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
+            flex: 4,
             child: ChartToolbar(
               table: table,
               spec: spec,
@@ -306,86 +323,103 @@ class _Header extends StatelessWidget {
           ),
           if (withActions) ...[
             const SizedBox(width: 12),
-            _actions(context),
+            Flexible(
+              child: Align(
+                alignment: AlignmentDirectional.centerEnd,
+                heightFactor: 1,
+                child: _actions(context),
+              ),
+            ),
           ],
         ],
       );
 
-  Widget _actions(BuildContext context) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ...trailing,
-          if (trailing.isNotEmpty) const SizedBox(width: 4),
-          ChartIconAction(
-            icon: Icons.refresh_rounded,
-            tooltip: LocaleKeys.charts_refresh.tr(),
-            palette: palette,
-            busy: busy,
-            onTap: onRefresh,
-          ),
-          const SizedBox(width: 2),
-          ChartIconAction(
-            icon: Icons.more_horiz_rounded,
-            tooltip: LocaleKeys.charts_options.tr(),
-            palette: palette,
-            onTap: () => showAppMenuForWidget<void>(
-              context: context,
-              width: 232,
-              offset: const Offset(0, 4),
-              entries: [
-                AppMenuItem(
-                  label: LocaleKeys.charts_showOptions.tr(),
-                  icon: Icons.tune_rounded,
-                  selected: spec.showControls,
-                  onSelected: () => onChanged(
-                    spec.copyWith(showControls: !spec.showControls),
+  Widget _actions(BuildContext context) => PreviewToolbar(
+        // Refresh and configuration are the way out of an empty/failed read.
+        keepVisible: hasError || busy || table.isEmpty || data.isEmpty,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ...trailing,
+              if (trailing.isNotEmpty) const SizedBox(width: 4),
+              ChartIconAction(
+                icon: Icons.refresh_rounded,
+                tooltip: LocaleKeys.charts_refresh.tr(),
+                palette: palette,
+                busy: busy,
+                onTap: onRefresh,
+              ),
+              const SizedBox(width: 2),
+              Builder(
+                builder: (buttonContext) => ChartIconAction(
+                  icon: Icons.more_horiz_rounded,
+                  tooltip: LocaleKeys.charts_options.tr(),
+                  palette: palette,
+                  onTap: () => showAppMenuForWidget<void>(
+                    context: buttonContext,
+                    width: 232,
+                    offset: const Offset(0, 4),
+                    entries: [
+                      AppMenuItem(
+                        label: LocaleKeys.charts_showOptions.tr(),
+                        icon: Icons.tune_rounded,
+                        selected: spec.showControls,
+                        onSelected: () => onChanged(
+                          spec.copyWith(showControls: !spec.showControls),
+                        ),
+                      ),
+                      const AppMenuSeparator(),
+                      AppMenuHeader(LocaleKeys.charts_display.tr()),
+                      // With the controls put away these are the only way to reach
+                      // what the chart shows.
+                      AppMenuItem(
+                        label: LocaleKeys.charts_showLegend.tr(),
+                        icon: Icons.legend_toggle_rounded,
+                        selected: spec.showLegend,
+                        onSelected: () => onChanged(
+                          spec.copyWith(showLegend: !spec.showLegend),
+                        ),
+                      ),
+                      AppMenuItem(
+                        label: LocaleKeys.charts_showValues.tr(),
+                        icon: Icons.numbers_rounded,
+                        selected: spec.showValues,
+                        onSelected: () => onChanged(
+                          spec.copyWith(showValues: !spec.showValues),
+                        ),
+                      ),
+                      AppMenuItem(
+                        label: LocaleKeys.charts_showGrid.tr(),
+                        icon: Icons.grid_on_rounded,
+                        selected: spec.showGrid,
+                        onSelected: () =>
+                            onChanged(spec.copyWith(showGrid: !spec.showGrid)),
+                      ),
+                      const AppMenuSeparator(),
+                      AppMenuItem(
+                        label: LocaleKeys.charts_refresh.tr(),
+                        icon: Icons.refresh_rounded,
+                        onSelected: () => unawaited(onRefresh()),
+                      ),
+                      AppMenuItem(
+                        label: LocaleKeys.charts_export.tr(),
+                        icon: Icons.download_rounded,
+                        onSelected: onExport,
+                      ),
+                    ],
                   ),
                 ),
-                const AppMenuSeparator(),
-                AppMenuHeader(LocaleKeys.charts_display.tr()),
-                // With the controls put away these are the only way to reach
-                // what the chart shows.
-                AppMenuItem(
-                  label: LocaleKeys.charts_showLegend.tr(),
-                  icon: Icons.legend_toggle_rounded,
-                  selected: spec.showLegend,
-                  onSelected: () =>
-                      onChanged(spec.copyWith(showLegend: !spec.showLegend)),
-                ),
-                AppMenuItem(
-                  label: LocaleKeys.charts_showValues.tr(),
-                  icon: Icons.numbers_rounded,
-                  selected: spec.showValues,
-                  onSelected: () =>
-                      onChanged(spec.copyWith(showValues: !spec.showValues)),
-                ),
-                AppMenuItem(
-                  label: LocaleKeys.charts_showGrid.tr(),
-                  icon: Icons.grid_on_rounded,
-                  selected: spec.showGrid,
-                  onSelected: () =>
-                      onChanged(spec.copyWith(showGrid: !spec.showGrid)),
-                ),
-                const AppMenuSeparator(),
-                AppMenuItem(
-                  label: LocaleKeys.charts_refresh.tr(),
-                  icon: Icons.refresh_rounded,
-                  onSelected: () => unawaited(onRefresh()),
-                ),
-                AppMenuItem(
-                  label: LocaleKeys.charts_export.tr(),
-                  icon: Icons.download_rounded,
-                  onSelected: onExport,
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       );
 }
 
 /// A quiet square button in a chart's header.
-class ChartIconAction extends StatefulWidget {
+class ChartIconAction extends StatelessWidget {
   const ChartIconAction({
     super.key,
     required this.icon,
@@ -402,51 +436,38 @@ class ChartIconAction extends StatefulWidget {
   final bool busy;
 
   @override
-  State<ChartIconAction> createState() => _ChartIconActionState();
-}
-
-class _ChartIconActionState extends State<ChartIconAction> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
-    return Tooltip(
-      message: widget.tooltip,
-      waitDuration: const Duration(milliseconds: 500),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: () => widget.onTap(),
-          child: AnimatedContainer(
-            duration: ChartMetrics.hoverDuration,
-            curve: ChartMetrics.hoverCurve,
-            width: ChartMetrics.chipHeight,
-            height: ChartMetrics.chipHeight,
-            decoration: BoxDecoration(
-              color: _hovered ? palette.chipHover : Colors.transparent,
-              borderRadius: BorderRadius.circular(ChartMetrics.chipRadius),
-            ),
-            child: widget.busy
-                ? Center(
-                    child: SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.6,
-                        color: palette.label,
-                      ),
-                    ),
-                  )
-                : Icon(
-                    widget.icon,
-                    size: 15,
-                    color: _hovered ? palette.strongLabel : palette.label,
-                  ),
+    return SizedBox.square(
+      dimension: ChartMetrics.chipHeight,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: () => onTap(),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: const Size.square(ChartMetrics.chipHeight),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: palette.label,
+          hoverColor: palette.chipHover,
+          focusColor: palette.chipHover,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ChartMetrics.chipRadius),
           ),
         ),
+        icon: busy
+            ? Center(
+                child: SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    color: palette.label,
+                  ),
+                ),
+              )
+            : Icon(
+                icon,
+                size: 15,
+              ),
       ),
     );
   }

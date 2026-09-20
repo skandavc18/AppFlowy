@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
@@ -12,6 +13,7 @@ import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/object_type_typography.dart';
+import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:appflowy/util/font_family_extension.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/util/theme_extension.dart';
@@ -41,6 +43,42 @@ class EditorStyleCustomizer {
     this.width,
     this.editorState,
   });
+
+  /// Main-page layout is derived from this pane, not a previous render box or
+  /// the physical window. Other editor hosts retain their explicit padding.
+  factory EditorStyleCustomizer.document({
+    required BuildContext context,
+    required BoxConstraints constraints,
+    required double preferredMaxWidth,
+    EditorState? editorState,
+    ui.TextDirection textDirection = ui.TextDirection.ltr,
+  }) {
+    final geometry = WorkspaceDocumentGeometry.resolve(
+      availableWidth: WorkspaceLayout.availableWidth(
+        constraints,
+        fallbackWidth: preferredMaxWidth,
+      ),
+      preferredMaxWidth: preferredMaxWidth,
+      actionGutterWidth: BlockActionList.gutterWidth,
+    );
+    return EditorStyleCustomizer(
+      context: context,
+      padding: geometry.editorPaddingFor(textDirection),
+      width: geometry.pageWidth,
+      editorState: editorState,
+    );
+  }
+
+  /// Page headers do not have an action row. Reserve exactly the space the
+  /// body row uses, on its leading side only, so their reading edges coincide.
+  static EdgeInsets documentHeaderPadding(
+    EdgeInsets editorPadding, {
+    ui.TextDirection textDirection = ui.TextDirection.ltr,
+  }) =>
+      editorPadding +
+      (textDirection == ui.TextDirection.rtl
+          ? const EdgeInsets.only(right: BlockActionList.gutterWidth)
+          : const EdgeInsets.only(left: BlockActionList.gutterWidth));
 
   final BuildContext context;
   final EdgeInsets padding;

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -49,7 +50,7 @@ class SpreadsheetGrid extends StatefulWidget {
 enum _DragMode { none, select, fill, resizeColumn, resizeRow, reorderColumn }
 
 class SpreadsheetGridState extends State<SpreadsheetGrid>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final ScrollController _horizontal = ScrollController();
   final ScrollController _vertical = ScrollController();
   final FocusNode _gridFocus = FocusNode(debugLabel: 'spreadsheet-grid');
@@ -57,18 +58,35 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   final TextEditingController _editorController = TextEditingController();
   final SheetTextCache _textCache = SheetTextCache();
   final GlobalKey _bodyKey = GlobalKey(debugLabel: 'spreadsheet-body');
+  final GlobalKey _editorKey = GlobalKey(debugLabel: 'spreadsheet-cell-editor');
 
-  /// Settles the focus ring onto a newly selected cell.
+  /// Interaction-only fades repaint the canvas without rebuilding the sheet.
   late final AnimationController _selectionSettle = AnimationController(
     vsync: this,
     duration: AppFlowyMotion.fast,
     value: 1,
   );
+  late final AnimationController _hoverSettle = AnimationController(
+    vsync: this,
+    duration: AppFlowyMotion.fast,
+    value: 1,
+  );
+  late final Listenable _scrollRepaint =
+      Listenable.merge([_horizontal, _vertical]);
+  late final TapGestureRecognizer _outsideTap;
 
   late SheetGeometry _geometry;
   late Listenable _repaint;
+  late Listenable _bodyRepaint;
   int _lastRevision = -1;
   CellRef? _lastActive;
+  Object? _editorTarget;
+  Object? _outsideTapTarget;
+  int _editorSession = 0;
+  int? _outsideTapSession;
+  SpreadsheetController? _outsideTapController;
+  bool _restoreGridFocus = true;
+  bool _reduceMotion = false;
 
   _DragMode _dragMode = _DragMode.none;
   int? _resizingColumn;
@@ -81,12 +99,15 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   CellRange? _fillPreview;
   CellRange? _fillSource;
   Offset _pressOrigin = Offset.zero;
-  DateTime? _lastTapTime;
-  CellRef? _lastTapCell;
+  bool _bodyPressExtends = false;
+  bool _bodyPressModified = false;
+  bool _bodyPressOnHandle = false;
   DateTime? _lastHeaderTapTime;
   int? _lastHeaderTapColumn;
   bool _lastHeaderTapWasEdge = false;
   CellRef? _hoveredCell;
+  CellRef? _previousHoveredCell;
+  double _previousHoverOpacity = 1;
   bool _pointerInside = false;
   bool _gridFocused = false;
   bool _formatMenuOpen = false;
@@ -94,22 +115,41 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   bool _addColumnHovered = false;
 
   SpreadsheetController get controller => widget.controller;
+  bool get _canEdit => widget.editable && controller.editable;
 
   SheetGeometry _buildGeometry() =>
-      SheetGeometry.from(controller, showAddAffordances: widget.editable);
+      SheetGeometry.from(controller, showAddAffordances: _canEdit);
+
+  void _bindRepaint() {
+    _repaint = Listenable.merge([controller, _scrollRepaint]);
+    _bodyRepaint = Listenable.merge(
+      [_repaint, _selectionSettle, _hoverSettle],
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     _geometry = _buildGeometry();
     _lastRevision = controller.revision;
-    _repaint = Listenable.merge(
-      [controller, _horizontal, _vertical, _selectionSettle],
-    );
+    _lastActive = controller.active;
+    _bindRepaint();
+    _outsideTap = TapGestureRecognizer(debugOwner: this)
+      ..onTap = () {
+        if (identical(_outsideTapController, controller) &&
+            _outsideTapTarget == _editorTarget &&
+            _outsideTapSession == _editorSession) {
+          _commitOutsideEdit();
+        }
+        _clearOutsideTap();
+      }
+      ..onTapCancel = _clearOutsideTap;
+    _editorFocus.addListener(_onEditorFocusChanged);
     controller.addListener(_onControllerChanged);
+    _syncEditor();
     if (widget.autofocus) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
+        if (mounted && !controller.isEditing) {
           _gridFocus.requestFocus();
         }
       });
@@ -117,40 +157,75 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final media = MediaQuery.maybeOf(context);
+    _reduceMotion = (media?.disableAnimations ?? false) ||
+        (media?.accessibleNavigation ?? false);
+    if (_reduceMotion) {
+      _selectionSettle
+        ..stop()
+        ..value = 1;
+      _hoverSettle
+        ..stop()
+        ..value = 1;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant SpreadsheetGrid oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != controller) {
-      oldWidget.controller.removeListener(_onControllerChanged);
+      final previous = oldWidget.controller;
+      previous.removeListener(_onControllerChanged);
+      // The block may replace its controller when source attributes arrive.
+      // Carry only the open draft into that fresh data, not a stale sheet
+      // snapshot. The retained TextEditingController keeps caret/composition.
+      if (_canEdit) {
+        controller.restoreEditingFrom(previous, notify: false);
+      }
       controller.addListener(_onControllerChanged);
-      _repaint = Listenable.merge(
-        [controller, _horizontal, _vertical, _selectionSettle],
-      );
+      _bindRepaint();
+      _dragMode = _DragMode.none;
+      _resizingColumn = null;
+      _resizingRow = null;
+      _reorderColumn = null;
+      _dropIndicator = null;
+      _fillSource = null;
+      _fillPreview = null;
       _lastRevision = -1;
+      _lastActive = controller.active;
+      _selectionSettle
+        ..stop()
+        ..value = 1;
       _onControllerChanged();
+    }
+    if (oldWidget.editable != widget.editable) {
+      _geometry = _buildGeometry();
+    }
+    if (!_canEdit && controller.isEditing) {
+      controller.cancelEditing();
     }
   }
 
   @override
   void dispose() {
     controller.removeListener(_onControllerChanged);
+    _outsideTap.dispose();
     _selectionSettle.dispose();
+    _hoverSettle.dispose();
     _horizontal.dispose();
     _vertical.dispose();
     _gridFocus.dispose();
-    _editorFocus.dispose();
+    _editorFocus
+      ..removeListener(_onEditorFocusChanged)
+      ..dispose();
     _editorController.dispose();
     super.dispose();
   }
 
   void _onControllerChanged() {
-    final editing = controller.editing;
-    if (editing != null && _editorController.text != controller.editingText) {
-      _editorController.value = TextEditingValue(
-        text: controller.editingText,
-        selection:
-            TextSelection.collapsed(offset: controller.editingText.length),
-      );
-    }
+    _syncEditor();
     if (controller.revision != _lastRevision) {
       _lastRevision = controller.revision;
       _textCache.invalidate();
@@ -158,20 +233,114 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
     } else {
       setState(() {});
     }
-    if (editing != null && !_editorFocus.hasFocus) {
+    if (_lastActive != controller.active) {
+      _lastActive = controller.active;
+      _settle(_selectionSettle);
+      _scheduleReveal();
+    }
+  }
+
+  void _syncEditor() {
+    final target = controller.editing ?? controller.editingHeader;
+    if (_editorTarget != target) {
+      _editorSession++;
+    }
+    if (target != null &&
+        (_editorTarget != target ||
+            _editorController.text != controller.editingText)) {
+      _editorController.value = TextEditingValue(
+        text: controller.editingText,
+        selection:
+            TextSelection.collapsed(offset: controller.editingText.length),
+      );
+    }
+    _editorTarget = target;
+    if (target != null && !_editorFocus.hasFocus) {
+      final owner = controller;
+      final session = _editorSession;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && controller.editing != null) {
+        if (mounted &&
+            _canEdit &&
+            identical(owner, controller) &&
+            _editorTarget == target &&
+            _editorSession == session) {
           _editorFocus.requestFocus();
         }
       });
-    } else if (editing == null && _editorFocus.hasFocus) {
+    } else if (target == null && _editorFocus.hasFocus && _restoreGridFocus) {
       _gridFocus.requestFocus();
     }
-    if (_lastActive != controller.active) {
-      _lastActive = controller.active;
-      _selectionSettle.forward(from: 0);
-      _scheduleReveal();
+  }
+
+  void _settle(AnimationController animation) {
+    if (_reduceMotion) {
+      animation
+        ..stop()
+        ..value = 1;
+    } else {
+      animation.forward(from: 0);
     }
+  }
+
+  void _onEditorFocusChanged() {
+    if (_editorFocus.hasFocus || !controller.isEditing) {
+      return;
+    }
+    final owner = controller;
+    final target = _editorTarget;
+    final session = _editorSession;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted &&
+          identical(owner, controller) &&
+          target == _editorTarget &&
+          session == _editorSession &&
+          _editorKey.currentContext != null &&
+          !_editorFocus.hasFocus) {
+        _commitOutsideEdit();
+      }
+    });
+  }
+
+  void _commitOutsideEdit() {
+    if (!mounted || !controller.isEditing) {
+      return;
+    }
+    _restoreGridFocus = false;
+    try {
+      controller.commitEditing();
+      _editorFocus.unfocus();
+    } finally {
+      _restoreGridFocus = true;
+    }
+  }
+
+  void _clearOutsideTap() {
+    _outsideTapController = null;
+    _outsideTapTarget = null;
+    _outsideTapSession = null;
+  }
+
+  bool _containsPoint(BuildContext? target, Offset position) {
+    final box = target?.findRenderObject();
+    return box is RenderBox &&
+        box.hasSize &&
+        (Offset.zero & box.size).contains(box.globalToLocal(position));
+  }
+
+  void _onEditorTapOutside(PointerDownEvent event) {
+    if (event.buttons != kPrimaryMouseButton ||
+        _containsPoint(_editorKey.currentContext, event.position) ||
+        _containsPoint(context, event.position)) {
+      return;
+    }
+    // Do not mutate on DOWN: an outside press can become an embed resize.
+    // Compete normally for the accepted tap, never consume the next cell's
+    // pointer. If another field wins, focus loss commits without taking focus
+    // back from it. No editor/document ancestor key guards are replaced.
+    _outsideTapController = controller;
+    _outsideTapTarget = _editorTarget;
+    _outsideTapSession = _editorSession;
+    _outsideTap.addPointer(event);
   }
 
   // -------------------------------------------------------------------
@@ -296,6 +465,9 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   bool _isOnFillHandle(Offset local) {
+    if (!_canEdit || controller.isEditing) {
+      return false;
+    }
     final rect = _selectionRect();
     if (rect == null) {
       return false;
@@ -383,15 +555,26 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
 
   Widget _buildCorner(SpreadsheetPalette palette) {
     return GestureDetector(
-      onTap: controller.selectAll,
+      onTap: () {
+        controller
+          ..commitEditing()
+          ..selectAll();
+        _gridFocus.requestFocus();
+      },
       child: Container(
         width: SpreadsheetMetrics.gutterWidth,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           color: palette.headerSurface,
           border: Border(
-            right: BorderSide(color: palette.gridLine),
-            bottom: BorderSide(color: palette.divider),
+            right: BorderSide(
+              color: palette.gridLine,
+              width: SpreadsheetMetrics.gridStrokeWidth,
+            ),
+            bottom: BorderSide(
+              color: palette.divider,
+              width: SpreadsheetMetrics.gridStrokeWidth,
+            ),
           ),
         ),
       ),
@@ -411,18 +594,40 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       onHover: _onHeaderHover,
       onExit: (_) => setState(() {
         _hoveredColumn = null;
+        _hoveredColumnEdge = null;
         _addColumnHovered = false;
       }),
       cursor: _headerCursor(),
       child: Listener(
         onPointerDown: _onHeaderPointerDown,
-        child: GestureDetector(
+        child: RawGestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTapUp: _onHeaderTap,
-          onSecondaryTapUp: _onHeaderSecondaryTap,
-          onHorizontalDragStart: _onHeaderDragStart,
-          onHorizontalDragUpdate: _onHeaderDragUpdate,
-          onHorizontalDragEnd: _onHeaderDragEnd,
+          semantics: SheetAxisDragSemantics(
+            axis: Axis.horizontal,
+            onTapUp: _onHeaderTap,
+            onStart: _onHeaderDragStart,
+            onUpdate: _onHeaderDragUpdate,
+            onEnd: _onHeaderDragEnd,
+          ),
+          gestures: {
+            TapGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+              () => TapGestureRecognizer(debugOwner: this),
+              (instance) => instance
+                ..onTapUp = _onHeaderTap
+                ..onSecondaryTapUp = _onHeaderSecondaryTap,
+            ),
+            SheetHorizontalDragGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                    SheetHorizontalDragGestureRecognizer>(
+              () => SheetHorizontalDragGestureRecognizer(debugOwner: this),
+              (instance) => instance
+                ..onStart = _onHeaderDragStart
+                ..onUpdate = _onHeaderDragUpdate
+                ..onEnd = _onHeaderDragEnd
+                ..onCancel = _onHeaderDragCancel,
+            ),
+          },
           child: Stack(
             children: [
               Positioned.fill(
@@ -442,7 +647,10 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
                 ),
               ),
               if (controller.editingHeader != null)
-                _buildHeaderEditor(palette, typography),
+                ListenableBuilder(
+                  listenable: _scrollRepaint,
+                  builder: (_, __) => _buildHeaderEditor(palette, typography),
+                ),
             ],
           ),
         ),
@@ -481,11 +689,11 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   void _onHeaderHover(PointerHoverEvent event) {
     final sheet = event.localPosition.dx +
         (_horizontal.hasClients ? _horizontal.offset : 0);
-    final onAdd = widget.editable && _geometry.isInAddColumn(sheet);
+    final onAdd = _canEdit && _geometry.isInAddColumn(sheet);
     if (onAdd != _addColumnHovered) {
       setState(() => _addColumnHovered = onAdd);
     }
-    final edge = onAdd ? null : _columnEdgeAt(sheet);
+    final edge = onAdd || !_canEdit ? null : _columnEdgeAt(sheet);
     final column = _geometry.columnAt(sheet);
     if (edge != _hoveredColumnEdge || column != _hoveredColumn) {
       setState(() {
@@ -508,7 +716,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   void _onHeaderPointerDown(PointerDownEvent event) {
-    if (!widget.editable) {
+    if (!_canEdit || event.buttons != kPrimaryMouseButton) {
       return;
     }
     final sheet = event.localPosition.dx +
@@ -518,7 +726,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   void _onHeaderDragStart(DragStartDetails details) {
-    if (!widget.editable) {
+    if (!_canEdit) {
       return;
     }
     final sheet = details.localPosition.dx +
@@ -533,6 +741,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
     }
     final column = _geometry.columnAt(sheet);
     if (column != null) {
+      controller.commitEditing();
       _dragMode = _DragMode.reorderColumn;
       _reorderColumn = column;
       _dropIndicator = column;
@@ -540,6 +749,9 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   void _onHeaderDragUpdate(DragUpdateDetails details) {
+    if (!_canEdit) {
+      return;
+    }
     if (_dragMode == _DragMode.resizeColumn && _resizingColumn != null) {
       final width = _resizeOrigin + (details.localPosition.dx - _resizeStart);
       setState(() {
@@ -547,7 +759,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
           _resizingColumn!,
           controller.data.column(_resizingColumn!).copyWith(width: width),
         );
-        _geometry = SheetGeometry.from(controller);
+        _geometry = _buildGeometry();
       });
       return;
     }
@@ -573,6 +785,10 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   void _onHeaderDragEnd(DragEndDetails details) {
+    if (!_canEdit) {
+      _onHeaderDragCancel();
+      return;
+    }
     if (_dragMode == _DragMode.resizeColumn && _resizingColumn != null) {
       final column = _resizingColumn!;
       final width = controller.data.column(column).width;
@@ -603,15 +819,35 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
     });
   }
 
+  void _onHeaderDragCancel() {
+    if (_dragMode == _DragMode.resizeColumn && _resizingColumn != null) {
+      final column = _resizingColumn!;
+      controller.data.setColumn(
+        column,
+        controller.data.column(column).copyWith(width: _resizeOrigin),
+      );
+    }
+    setState(() {
+      _geometry = _buildGeometry();
+      _dragMode = _DragMode.none;
+      _resizingColumn = null;
+      _reorderColumn = null;
+      _dropIndicator = null;
+    });
+  }
+
   void _onHeaderTap(TapUpDetails details) {
     final offset = _horizontal.hasClients ? _horizontal.offset : 0.0;
     final sheet = details.localPosition.dx + offset;
-    if (widget.editable && _geometry.isInAddColumn(sheet)) {
+    if (_canEdit && _geometry.isInAddColumn(sheet)) {
       addColumn();
       return;
     }
     final edge = _columnEdgeAt(sheet);
     final column = _geometry.columnAt(sheet);
+    if (_resizingColumn != null) {
+      setState(() => _resizingColumn = null);
+    }
 
     final now = DateTime.now();
     final last = _lastHeaderTapTime;
@@ -625,7 +861,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
 
     if (edge != null) {
       // Double clicking the divider is the standard "fit to content" gesture.
-      if (isDoubleTap) {
+      if (isDoubleTap && _canEdit) {
         _lastHeaderTapTime = null;
         autoFitColumn(edge);
       }
@@ -634,9 +870,10 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
     if (column == null) {
       return;
     }
+    controller.commitEditing();
     _gridFocus.requestFocus();
 
-    if (isDoubleTap && _geometry.showHeader && widget.editable) {
+    if (isDoubleTap && _geometry.showHeader && _canEdit) {
       _lastHeaderTapTime = null;
       controller.startEditingHeader(column);
       return;
@@ -663,19 +900,24 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   Future<void> _openColumnMenu(int column, Offset position) async {
-    controller.selectColumn(column);
+    controller
+      ..commitEditing()
+      ..selectColumn(column);
     await showSpreadsheetColumnMenu(
       context: context,
       controller: controller,
       column: column,
       position: position,
       onAutoFit: () => autoFitColumn(column),
-      editable: widget.editable,
+      editable: _canEdit,
     );
   }
 
   /// Widens a column to fit its widest visible value.
   void autoFitColumn(int column) {
+    if (!_canEdit) {
+      return;
+    }
     final palette = SpreadsheetPalette.of(context);
     final typography = SpreadsheetTypography.of(
       context,
@@ -723,13 +965,34 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       cursor: _hoveredRowEdge != null
           ? SystemMouseCursors.resizeRow
           : SystemMouseCursors.basic,
-      child: GestureDetector(
+      child: RawGestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTapUp: _onGutterTap,
-        onSecondaryTapUp: _onGutterSecondaryTap,
-        onVerticalDragStart: _onGutterDragStart,
-        onVerticalDragUpdate: _onGutterDragUpdate,
-        onVerticalDragEnd: _onGutterDragEnd,
+        semantics: SheetAxisDragSemantics(
+          axis: Axis.vertical,
+          onTapUp: _onGutterTap,
+          onStart: _onGutterDragStart,
+          onUpdate: _onGutterDragUpdate,
+          onEnd: _onGutterDragEnd,
+        ),
+        gestures: {
+          TapGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+            () => TapGestureRecognizer(debugOwner: this),
+            (instance) => instance
+              ..onTapUp = _onGutterTap
+              ..onSecondaryTapUp = _onGutterSecondaryTap,
+          ),
+          SheetVerticalDragGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                  SheetVerticalDragGestureRecognizer>(
+            () => SheetVerticalDragGestureRecognizer(debugOwner: this),
+            (instance) => instance
+              ..onStart = _onGutterDragStart
+              ..onUpdate = _onGutterDragUpdate
+              ..onEnd = _onGutterDragEnd
+              ..onCancel = _onGutterDragCancel,
+          ),
+        },
         child: SizedBox(
           width: SpreadsheetMetrics.gutterWidth,
           child: CustomPaint(
@@ -753,7 +1016,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   void _onGutterHover(PointerHoverEvent event) {
     final y =
         event.localPosition.dy + (_vertical.hasClients ? _vertical.offset : 0);
-    final edge = _rowEdgeAt(y);
+    final edge = _canEdit ? _rowEdgeAt(y) : null;
     if (edge != _hoveredRowEdge) {
       setState(() => _hoveredRowEdge = edge);
     }
@@ -775,7 +1038,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   void _onGutterDragStart(DragStartDetails details) {
-    if (!widget.editable) {
+    if (!_canEdit) {
       return;
     }
     final y = details.localPosition.dy +
@@ -791,7 +1054,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   void _onGutterDragUpdate(DragUpdateDetails details) {
-    if (_dragMode != _DragMode.resizeRow || _resizingRow == null) {
+    if (!_canEdit || _dragMode != _DragMode.resizeRow || _resizingRow == null) {
       return;
     }
     final height = _resizeOrigin + (details.localPosition.dy - _resizeStart);
@@ -800,11 +1063,15 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
         _resizingRow!,
         controller.data.row(_resizingRow!).copyWith(height: height),
       );
-      _geometry = SheetGeometry.from(controller);
+      _geometry = _buildGeometry();
     });
   }
 
   void _onGutterDragEnd(DragEndDetails details) {
+    if (!_canEdit) {
+      _onGutterDragCancel();
+      return;
+    }
     if (_dragMode == _DragMode.resizeRow && _resizingRow != null) {
       final row = _resizingRow!;
       final height = controller.data.row(row).height;
@@ -820,6 +1087,21 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
     });
   }
 
+  void _onGutterDragCancel() {
+    if (_dragMode == _DragMode.resizeRow && _resizingRow != null) {
+      final row = _resizingRow!;
+      controller.data.setRowSpec(
+        row,
+        controller.data.row(row).copyWith(height: _resizeOrigin),
+      );
+    }
+    setState(() {
+      _geometry = _buildGeometry();
+      _dragMode = _DragMode.none;
+      _resizingRow = null;
+    });
+  }
+
   void _onGutterTap(TapUpDetails details) {
     final y = details.localPosition.dy +
         (_vertical.hasClients ? _vertical.offset : 0);
@@ -827,8 +1109,10 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
     if (index == null) {
       return;
     }
+    controller
+      ..commitEditing()
+      ..selectRow(_geometry.bodyRows[index]);
     _gridFocus.requestFocus();
-    controller.selectRow(_geometry.bodyRows[index]);
   }
 
   void _onGutterSecondaryTap(TapUpDetails details) {
@@ -839,13 +1123,15 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       return;
     }
     final row = _geometry.bodyRows[index];
-    controller.selectRow(row);
+    controller
+      ..commitEditing()
+      ..selectRow(row);
     showSpreadsheetRowMenu(
       context: context,
       controller: controller,
       row: row,
       position: details.globalPosition,
-      editable: widget.editable,
+      editable: _canEdit,
     );
   }
 
@@ -888,55 +1174,69 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
                 vertical: _vertical,
                 fillPreview: _fillPreview,
                 hoveredCell: _hoveredCell,
+                previousHoveredCell: _previousHoveredCell,
+                previousHoverOpacity: _previousHoverOpacity,
+                hoverSettle: _hoverSettle,
                 selectionSettle: _selectionSettle,
                 placeholder:
                     controller.data.isEmpty ? widget.placeholder : null,
-                addRowLabel: widget.editable ? widget.addRowLabel : null,
+                addRowLabel: _canEdit ? widget.addRowLabel : null,
                 addRowHovered: _addRowHovered,
-                repaint: _repaint,
+                repaint: _bodyRepaint,
               ),
             ),
           ),
         ),
-        if (controller.editing != null) _buildBodyEditor(palette, typography),
         Positioned.fill(
           child: MouseRegion(
             opaque: false,
             onHover: _onBodyHover,
             onExit: (_) {
               controller.setHoveredRow(null);
-              if (_hoveredCell != null || _addRowHovered) {
+              _setHoveredCell(null);
+              if (_hoveringFillHandle || _addRowHovered) {
                 setState(() {
-                  _hoveredCell = null;
+                  _hoveringFillHandle = false;
                   _addRowHovered = false;
                 });
               }
             },
             cursor: _bodyCursor,
-            child: RawGestureDetector(
+            child: Listener(
+              onPointerDown: _onBodyPointerDown,
               behavior: HitTestBehavior.translucent,
-              gestures: {
-                TapGestureRecognizer:
-                    GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
-                  () => TapGestureRecognizer(debugOwner: this),
-                  (instance) => instance
-                    ..onTapDown = _onBodyTapDown
-                    ..onSecondaryTapUp = _onBodySecondaryTap,
-                ),
-                MouseDragGestureRecognizer:
-                    GestureRecognizerFactoryWithHandlers<
-                        MouseDragGestureRecognizer>(
-                  () => MouseDragGestureRecognizer(debugOwner: this),
-                  (instance) => instance
-                    ..onStart = _onBodyDragStart
-                    ..onUpdate = _onBodyDragUpdate
-                    ..onEnd = _onBodyDragEnd
-                    ..onCancel = _onBodyDragCancel,
-                ),
-              },
+              child: RawGestureDetector(
+                behavior: HitTestBehavior.translucent,
+                gestures: {
+                  TapGestureRecognizer: GestureRecognizerFactoryWithHandlers<
+                      TapGestureRecognizer>(
+                    () => TapGestureRecognizer(debugOwner: this),
+                    (instance) => instance
+                      ..onTapUp = _onBodyTap
+                      ..onSecondaryTapUp = _onBodySecondaryTap,
+                  ),
+                  MouseDragGestureRecognizer:
+                      GestureRecognizerFactoryWithHandlers<
+                          MouseDragGestureRecognizer>(
+                    () => MouseDragGestureRecognizer(debugOwner: this),
+                    (instance) => instance
+                      ..onStart = _onBodyDragStart
+                      ..onUpdate = _onBodyDragUpdate
+                      ..onEnd = _onBodyDragEnd
+                      ..onCancel = _onBodyDragCancel,
+                  ),
+                },
+              ),
             ),
           ),
         ),
+        // Later Stack children own the hit. The field must sit ABOVE the
+        // all-body gesture layer so native caret/word/drag selection wins.
+        if (controller.editing != null)
+          ListenableBuilder(
+            listenable: _scrollRepaint,
+            builder: (_, __) => _buildBodyEditor(palette, typography),
+          ),
         ..._buildFloatingToolbar(),
       ],
     );
@@ -957,8 +1257,8 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   /// would sit over the sheet permanently and swallow clicks. Formatting one
   /// cell is on the shortcuts and the right-click menu.
   List<Widget> _buildFloatingToolbar() {
-    if (!widget.editable ||
-        controller.editing != null ||
+    if (!_canEdit ||
+        controller.isEditing ||
         controller.selection.isSingle ||
         !(_gridFocused || _formatMenuOpen)) {
       return const [];
@@ -1014,13 +1314,11 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
 
   void _onBodyHover(PointerHoverEvent event) {
     final sheet = _toSheet(event.localPosition);
-    final onAddRow =
-        widget.editable && _geometry.isInAddRow(sheet.dx, sheet.dy);
+    final onAddRow = _canEdit && _geometry.isInAddRow(sheet.dx, sheet.dy);
     if (onAddRow != _addRowHovered) {
       setState(() => _addRowHovered = onAddRow);
     }
-    final onHandle =
-        widget.editable && !onAddRow && _isOnFillHandle(event.localPosition);
+    final onHandle = !onAddRow && _isOnFillHandle(event.localPosition);
     if (onHandle != _hoveringFillHandle) {
       setState(() => _hoveringFillHandle = onHandle);
     }
@@ -1028,18 +1326,28 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
     controller.setHoveredRow(
       index == null ? null : _geometry.bodyRows[index],
     );
-    final cell = _cellAt(event.localPosition);
-    if (cell != _hoveredCell) {
-      setState(() => _hoveredCell = cell);
+    _setHoveredCell(onHandle ? null : _cellAt(event.localPosition));
+  }
+
+  void _setHoveredCell(CellRef? cell) {
+    if (cell == _hoveredCell) {
+      return;
     }
+    setState(() {
+      _previousHoveredCell = _hoveredCell;
+      _previousHoverOpacity = Curves.easeOutCubic.transform(_hoverSettle.value);
+      _hoveredCell = cell;
+    });
+    _settle(_hoverSettle);
   }
 
   /// Appends a row and puts the cursor in it, the way "New row" behaves in a
   /// database grid.
   void addRow() {
-    if (!widget.editable) {
+    if (!_canEdit) {
       return;
     }
+    controller.commitEditing();
     final target = controller.data.rowCount;
     controller.insertRowsAt(target, 1);
     controller.selectCell(CellRef(target, 0));
@@ -1047,9 +1355,10 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   void addColumn() {
-    if (!widget.editable) {
+    if (!_canEdit) {
       return;
     }
+    controller.commitEditing();
     final target = controller.data.columnCount;
     controller.insertColumnsAt(target, 1);
     controller.selectColumn(target);
@@ -1069,6 +1378,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
         (_horizontal.hasClients ? _horizontal.offset : 0);
     final top =
         _geometry.rowTop(index) - (_vertical.hasClients ? _vertical.offset : 0);
+    final cellStyle = controller.data.styleAt(ref);
     return Positioned(
       left: left,
       top: top,
@@ -1077,103 +1387,151 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
         SheetColumn.minWidth,
       ),
       height: _geometry.rowHeight(index),
-      child: _buildEditorField(palette, typography.cell),
+      child: _buildEditorField(
+        palette,
+        cellTextStyle(
+          base: typography.cell,
+          style: cellStyle,
+          palette: palette,
+          isError: false,
+        ),
+        align: resolveAlign(cellStyle, controller.valueAt(ref)),
+        fill: cellStyle.backgroundColor,
+      ),
     );
   }
 
   /// The in-place editor. It shows the formula while typing and the value the
   /// moment it is committed, which is the whole point of "no formula bar".
-  Widget _buildEditorField(SpreadsheetPalette palette, TextStyle style) {
-    return Material(
-      color: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          color: palette.surface,
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: palette.focusRing, width: 1.8),
-          boxShadow: [
-            BoxShadow(
-              color: palette.focusHalo,
-              spreadRadius: 2.5,
+  Widget _buildEditorField(
+    SpreadsheetPalette palette,
+    TextStyle style, {
+    TextAlign align = TextAlign.left,
+    int? fill,
+  }) {
+    return TextEntryShortcuts(
+      // The sheet's commit/navigation keys are nearer than the native text
+      // shortcuts; all other text editing stays local to the real field.
+      child: Shortcuts(
+        shortcuts: _activeShortcuts(),
+        child: Material(
+          key: _editorKey,
+          color: Colors.transparent,
+          child: Container(
+            decoration: BoxDecoration(
+              color: fill == null
+                  ? palette.surface
+                  : Color.alphaBlend(Color(fill), palette.surface),
             ),
-            BoxShadow(
-              color: palette.shadow,
-              blurRadius: 12,
-              spreadRadius: -2,
-              offset: const Offset(0, 4),
+            // Foreground decoration does not add border padding or shift text.
+            foregroundDecoration: BoxDecoration(
+              borderRadius:
+                  BorderRadius.circular(SpreadsheetMetrics.selectionRadius),
+              border: Border.all(
+                color: palette.focusRing,
+              ),
             ),
-          ],
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: SpreadsheetMetrics.cellPaddingHorizontal - 2,
-        ),
-        alignment: Alignment.centerLeft,
-        child: TextField(
-          controller: _editorController,
-          focusNode: _editorFocus,
-          style: style.copyWith(color: palette.textPrimary),
-          cursorColor: palette.accent,
-          cursorWidth: 1.6,
-          cursorRadius: const Radius.circular(1),
-          decoration: const InputDecoration(
-            isCollapsed: true,
-            border: InputBorder.none,
-            filled: false,
-            hoverColor: Colors.transparent,
-            contentPadding: EdgeInsets.zero,
+            // RenderEditable reserves a caret gap inside its text width.
+            // Give it that space from the trailing padding so left, centre
+            // and right-aligned text share the painter's exact text measure.
+            padding: const EdgeInsets.only(
+              left: SpreadsheetMetrics.cellPaddingHorizontal,
+              right: SpreadsheetMetrics.cellPaddingHorizontal -
+                  SpreadsheetMetrics.editorCaretAllowance,
+            ),
+            alignment: Alignment.centerLeft,
+            child: TextField(
+              controller: _editorController,
+              focusNode: _editorFocus,
+              readOnly: !_canEdit,
+              style: style,
+              textAlign: align,
+              textDirection: TextDirection.ltr,
+              cursorColor: palette.accent,
+              cursorWidth: SpreadsheetMetrics.editorCursorWidth,
+              cursorRadius: const Radius.circular(1),
+              decoration: const InputDecoration(
+                isCollapsed: true,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                disabledBorder: InputBorder.none,
+                filled: false,
+                hoverColor: Colors.transparent,
+                contentPadding: EdgeInsets.zero,
+              ),
+              onChanged: controller.updateEditingText,
+              onTap: _useCaretEditing,
+              onTapOutside: _onEditorTapOutside,
+            ),
           ),
-          onChanged: controller.updateEditingText,
-          onTapOutside: (_) => controller.commitEditing(),
         ),
       ),
     );
+  }
+
+  void _useCaretEditing() {
+    if (controller.editing != null && controller.editingFromKeystroke) {
+      // Retain the draft and native selection when a typed edit is entered
+      // with the mouse or F2; do not reload the last saved cell value.
+      controller.startEditing(initialText: controller.editingText);
+    }
   }
 
   // -------------------------------------------------------------------
   // Body gestures
   // -------------------------------------------------------------------
 
-  void _onBodyTapDown(TapDownDetails details) {
-    _gridFocus.requestFocus();
-    // The tap recognizer fires on pointer down, before the pan is recognised.
-    // Selecting here would collapse a multi-cell range to one cell and rob the
-    // fill of the series it was dragged from.
-    if (widget.editable && _isOnFillHandle(details.localPosition)) {
+  void _onBodyPointerDown(PointerDownEvent event) {
+    if (event.buttons != kPrimaryMouseButton) {
+      return;
+    }
+    // Record intent only. Selection/editing must wait for an accepted tap or
+    // drag, otherwise the newly mounted field steals that same gesture.
+    _bodyPressExtends = HardwareKeyboard.instance.isShiftPressed;
+    _bodyPressModified = _bodyPressExtends ||
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isAltPressed;
+    _bodyPressOnHandle = _isOnFillHandle(event.localPosition);
+  }
+
+  void _onBodyTap(TapUpDetails details) {
+    if (_bodyPressOnHandle) {
       return;
     }
     final sheet = _toSheet(details.localPosition);
-    if (widget.editable && _geometry.isInAddRow(sheet.dx, sheet.dy)) {
+    if (_canEdit && _geometry.isInAddRow(sheet.dx, sheet.dy)) {
       addRow();
       return;
     }
     final ref = _cellAt(details.localPosition);
-    if (ref == null) {
-      return;
-    }
-    // Double clicks are detected by hand rather than with a
-    // DoubleTapGestureRecognizer: sharing an arena with one would hold the
-    // single tap back for kDoubleTapTimeout, and a spreadsheet has to select
-    // the instant it is clicked.
-    final now = DateTime.now();
-    final last = _lastTapTime;
-    final isDoubleTap = last != null &&
-        _lastTapCell == ref &&
-        now.difference(last) < kDoubleTapTimeout;
-    _lastTapTime = now;
-    _lastTapCell = ref;
-
-    if (isDoubleTap) {
-      _lastTapTime = null;
-      if (widget.editable) {
-        controller
-          ..selectCell(ref)
-          ..startEditing();
+    // A new cell can reuse the focused field in this same accepted tap.
+    // Both commit and selection notify before startEditing: neither may queue
+    // grid focus, which would immediately commit the newly opened cell.
+    _restoreGridFocus = false;
+    try {
+      controller.commitEditing();
+      if (ref == null) {
+        _gridFocus.requestFocus();
+        return;
       }
-      return;
+      final extend =
+          _bodyPressExtends || HardwareKeyboard.instance.isShiftPressed;
+      final modified = _bodyPressModified ||
+          extend ||
+          HardwareKeyboard.instance.isControlPressed ||
+          HardwareKeyboard.instance.isMetaPressed ||
+          HardwareKeyboard.instance.isAltPressed;
+      controller.selectCell(ref, extend: extend);
+      if (_canEdit && !modified) {
+        controller.startEditing();
+      } else {
+        _gridFocus.requestFocus();
+      }
+    } finally {
+      _restoreGridFocus = true;
     }
-
-    final extend = HardwareKeyboard.instance.isShiftPressed;
-    controller.selectCell(ref, extend: extend);
   }
 
   void _onBodySecondaryTap(TapUpDetails details) {
@@ -1181,6 +1539,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
     if (ref == null) {
       return;
     }
+    controller.commitEditing();
     _gridFocus.requestFocus();
     if (!controller.selection.contains(ref)) {
       controller.selectCell(ref);
@@ -1189,22 +1548,27 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       context: context,
       controller: controller,
       position: details.globalPosition,
-      editable: widget.editable,
+      editable: _canEdit,
     );
   }
 
   void _onBodyDragStart(DragStartDetails details) {
     _pressOrigin = details.localPosition;
-    if (widget.editable && _isOnFillHandle(details.localPosition)) {
+    controller.commitEditing();
+    _gridFocus.requestFocus();
+    if (_bodyPressOnHandle && _canEdit) {
       _dragMode = _DragMode.fill;
       _fillSource = controller.selection;
       _fillPreview = _fillSource;
       setState(() {});
       return;
     }
+    if (_cellAt(details.localPosition) == null) {
+      return;
+    }
     _dragMode = _DragMode.select;
     final ref = _nearestCell(details.localPosition);
-    controller.selectCell(ref);
+    controller.selectCell(ref, extend: _bodyPressExtends);
   }
 
   void _onBodyDragUpdate(DragUpdateDetails details) {
@@ -1249,7 +1613,8 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   void _onBodyDragEnd(DragEndDetails details) {
-    if (_dragMode == _DragMode.fill &&
+    if (_canEdit &&
+        _dragMode == _DragMode.fill &&
         _fillSource != null &&
         _fillPreview != null) {
       controller.fill(_fillSource!, _fillPreview!);
@@ -1302,10 +1667,10 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   // -------------------------------------------------------------------
 
   KeyEventResult _onGridKey(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent || !widget.editable) {
+    if (event is! KeyDownEvent || !_canEdit) {
       return KeyEventResult.ignored;
     }
-    if (controller.editing != null) {
+    if (controller.isEditing) {
       return KeyEventResult.ignored;
     }
     if (HardwareKeyboard.instance.isControlPressed ||
@@ -1327,7 +1692,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
   }
 
   Map<ShortcutActivator, Intent> _activeShortcuts() {
-    if (controller.editing == null) {
+    if (!controller.isEditing) {
       return buildSheetShortcuts();
     }
     final editing = <ShortcutActivator, Intent>{
@@ -1343,10 +1708,11 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
           const SheetEnterIntent(backwards: true),
       const SingleActivator(LogicalKeyboardKey.escape):
           const SheetEscapeIntent(),
+      const SingleActivator(LogicalKeyboardKey.f2): const SheetEditIntent(),
     };
     if (controller.editingFromKeystroke) {
       // Typing straight into a cell keeps arrow keys as navigation, the way a
-      // spreadsheet behaves; F2 or a double click gives caret editing instead.
+      // spreadsheet behaves; F2 or an accepted click gives caret editing.
       editing.addAll({
         const SingleActivator(LogicalKeyboardKey.arrowUp):
             const SheetMoveIntent(-1, 0),
@@ -1382,7 +1748,9 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       ),
       SheetEditIntent: CallbackAction<SheetEditIntent>(
         onInvoke: (_) {
-          if (widget.editable) {
+          if (_canEdit && controller.isEditing) {
+            _useCaretEditing();
+          } else if (_canEdit) {
             controller.startEditing();
           }
           return null;
@@ -1390,7 +1758,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       ),
       SheetClearIntent: CallbackAction<SheetClearIntent>(
         onInvoke: (_) {
-          if (widget.editable) {
+          if (_canEdit) {
             controller.clearSelection();
           }
           return null;
@@ -1398,17 +1766,26 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       ),
       SheetTabIntent: CallbackAction<SheetTabIntent>(
         onInvoke: (intent) {
+          final header = controller.editingHeader;
           controller.commitEditing();
-          controller.advance(horizontal: true, backwards: intent.backwards);
+          if (header != null) {
+            controller.selectColumn(header + (intent.backwards ? -1 : 1));
+          } else {
+            controller.advance(horizontal: true, backwards: intent.backwards);
+          }
           return null;
         },
       ),
       SheetEnterIntent: CallbackAction<SheetEnterIntent>(
         onInvoke: (intent) {
-          if (controller.editing != null) {
+          if (controller.editingHeader != null) {
+            // A column name is metadata, not the last row selected beneath
+            // it. Committing a rename must not append a body row.
+            controller.commitEditing();
+          } else if (controller.isEditing) {
             controller.commitEditing();
             controller.advance(horizontal: false, backwards: intent.backwards);
-          } else if (widget.editable) {
+          } else if (_canEdit) {
             controller.startEditing();
           }
           return null;
@@ -1416,7 +1793,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       ),
       SheetEscapeIntent: CallbackAction<SheetEscapeIntent>(
         onInvoke: (_) {
-          if (controller.editing != null) {
+          if (controller.isEditing) {
             controller.cancelEditing();
           } else if (controller.searchQuery.isNotEmpty) {
             controller.setSearch('');
@@ -1426,7 +1803,7 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       ),
       SheetCopyIntent: CallbackAction<SheetCopyIntent>(
         onInvoke: (intent) {
-          if (intent.cut && widget.editable) {
+          if (intent.cut && _canEdit) {
             controller.cutSelection();
           } else {
             controller.copySelection();
@@ -1436,12 +1813,17 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       ),
       SheetPasteIntent: CallbackAction<SheetPasteIntent>(
         onInvoke: (_) {
-          controller.pasteFromClipboard();
+          if (_canEdit) {
+            controller.pasteFromClipboard();
+          }
           return null;
         },
       ),
       SheetUndoIntent: CallbackAction<SheetUndoIntent>(
         onInvoke: (intent) {
+          if (!_canEdit) {
+            return null;
+          }
           if (intent.redo) {
             controller.redo();
           } else {
@@ -1464,19 +1846,25 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       ),
       SheetBoldIntent: CallbackAction<SheetBoldIntent>(
         onInvoke: (_) {
-          controller.toggleBold();
+          if (_canEdit) {
+            controller.toggleBold();
+          }
           return null;
         },
       ),
       SheetItalicIntent: CallbackAction<SheetItalicIntent>(
         onInvoke: (_) {
-          controller.toggleItalic();
+          if (_canEdit) {
+            controller.toggleItalic();
+          }
           return null;
         },
       ),
       SheetUnderlineIntent: CallbackAction<SheetUnderlineIntent>(
         onInvoke: (_) {
-          controller.toggleUnderline();
+          if (_canEdit) {
+            controller.toggleUnderline();
+          }
           return null;
         },
       ),

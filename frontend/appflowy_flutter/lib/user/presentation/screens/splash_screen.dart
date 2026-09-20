@@ -1,6 +1,7 @@
 import 'package:appflowy/env/cloud_env.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/startup/startup_profile.dart';
 import 'package:appflowy/user/application/auth/auth_service.dart';
 import 'package:appflowy/user/application/splash_bloc.dart';
 import 'package:appflowy/user/domain/auth_state.dart';
@@ -60,7 +61,10 @@ class SplashScreen extends StatelessWidget {
     BuildContext context,
     Authenticated authenticated,
   ) async {
-    final result = await FolderEventGetCurrentWorkspaceSetting().send();
+    final result = await startupProfile.measure(
+      'splash.workspace',
+      () => FolderEventGetCurrentWorkspaceSetting().send(),
+    );
     result.fold(
       (workspaceSetting) {
         // After login, replace Splash screen by corresponding home screen

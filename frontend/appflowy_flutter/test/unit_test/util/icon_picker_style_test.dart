@@ -65,7 +65,7 @@ void main() {
     testWidgets('picking the color style shows untinted icons', (tester) async {
       await pumpPicker(tester, enableBackgroundColorSelection: true);
 
-      final colorPack = kIconPacks.firstWhere((pack) => pack.isColorful);
+      final colorPack = kIconPacks.firstWhere((pack) => pack.id == 'color');
       await tester.tap(find.text(colorPack.displayName));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));

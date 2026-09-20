@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -51,6 +52,7 @@ class PdfPreviewToolbar extends StatelessWidget {
     this.showDocumentTitle = true,
     this.subtitle,
     this.onActualSize,
+    this.onMenuVisibilityChanged,
   });
 
   final String title;
@@ -78,6 +80,9 @@ class PdfPreviewToolbar extends StatelessWidget {
   final VoidCallback? onPrint;
   final VoidCallback onFullscreen;
   final Widget overflow;
+
+  /// Fullscreen hosts also have an independent idle timer to keep alive.
+  final ValueChanged<bool>? onMenuVisibilityChanged;
 
   /// Page layout, page animation and toolbar auto-hide live here.
   final Widget? viewMenu;
@@ -175,6 +180,7 @@ class PdfPreviewToolbar extends StatelessWidget {
                           radius: 7,
                           iconColor: palette.icon,
                           enabled: ready,
+                          onVisibilityChanged: onMenuVisibilityChanged,
                           entries: () => [
                             AppMenuItem(
                               label: 'Fit whole page',
@@ -258,7 +264,10 @@ class PdfPreviewToolbar extends StatelessWidget {
             ),
             toolbar: controls,
           )
-        : DocumentViewportBar(background: palette.canvas, child: controls);
+        : DocumentViewportBar(
+            background: palette.canvas,
+            child: PreviewToolbar(child: controls),
+          );
   }
 }
 

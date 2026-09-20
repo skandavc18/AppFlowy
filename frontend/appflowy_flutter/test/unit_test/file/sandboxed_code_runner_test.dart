@@ -229,6 +229,11 @@ void main() {
       await tester.pump(codeBlockAnimationDuration);
       expect(find.textContaining('Copied'), findsOneWidget);
 
+      // Copy feedback no longer replaces the language identity. Extra tools
+      // remain reachable in the retained horizontal action row.
+      expect(find.text('Python'), findsOneWidget);
+      await tester.ensureVisible(find.byKey(const ValueKey('code-collapse')));
+      await tester.pumpAndSettle();
       await tester.tap(find.byIcon(Icons.unfold_less_rounded));
       await tester.pump();
       await tester.pump(codeBlockAnimationDuration);

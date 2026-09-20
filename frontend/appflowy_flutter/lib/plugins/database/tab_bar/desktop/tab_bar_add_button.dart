@@ -3,6 +3,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/widgets/database_layout_ext.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/setting_entities.pbenum.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -40,8 +41,10 @@ class DatabaseTabKind {
   static const grid = DatabaseTabKind._(DatabaseLayoutPB.Grid);
   static const board = DatabaseTabKind._(DatabaseLayoutPB.Board);
   static const calendar = DatabaseTabKind._(DatabaseLayoutPB.Calendar);
-  static const gallery = DatabaseTabKind._(DatabaseLayoutPB.Grid,
-      tableView: TableViewKind.gallery);
+  static const gallery = DatabaseTabKind._(
+    DatabaseLayoutPB.Grid,
+    tableView: TableViewKind.gallery,
+  );
   static const timeline = DatabaseTabKind._(
     DatabaseLayoutPB.Grid,
     tableView: TableViewKind.timeline,
@@ -50,8 +53,10 @@ class DatabaseTabKind {
       DatabaseTabKind._(DatabaseLayoutPB.Grid, tableView: TableViewKind.feed);
   static const form =
       DatabaseTabKind._(DatabaseLayoutPB.Grid, tableView: TableViewKind.form);
-  static const mailbox = DatabaseTabKind._(DatabaseLayoutPB.Grid,
-      tableView: TableViewKind.mailbox);
+  static const mailbox = DatabaseTabKind._(
+    DatabaseLayoutPB.Grid,
+    tableView: TableViewKind.mailbox,
+  );
   static const chart = DatabaseTabKind._(DatabaseLayoutPB.Grid, charted: true);
   static const map = DatabaseTabKind._(DatabaseLayoutPB.Grid, mapped: true);
   static const slides = DatabaseTabKind._(DatabaseLayoutPB.Grid, slided: true);
@@ -148,6 +153,24 @@ class AddDatabaseViewButton extends StatefulWidget {
 
 class _AddDatabaseViewButtonState extends State<AddDatabaseViewButton> {
   final popoverController = PopoverController();
+  VoidCallback? _releasePreview;
+
+  void _showPopover() {
+    if (_releasePreview != null) return;
+    _releasePreview = PreviewToolbarRegion.hold(context);
+    popoverController.show();
+  }
+
+  void _release() {
+    _releasePreview?.call();
+    _releasePreview = null;
+  }
+
+  @override
+  void dispose() {
+    _release();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -158,6 +181,7 @@ class _AddDatabaseViewButtonState extends State<AddDatabaseViewButton> {
       offset: const Offset(0, 8),
       margin: EdgeInsets.zero,
       triggerActions: PopoverTriggerFlags.none,
+      onClose: _release,
       child: Padding(
         padding: const EdgeInsetsDirectional.only(
           top: 2.0,
@@ -167,7 +191,8 @@ class _AddDatabaseViewButtonState extends State<AddDatabaseViewButton> {
         child: FlowyIconButton(
           width: 26,
           hoverColor: AFThemeExtension.of(context).greyHover,
-          onPressed: () => popoverController.show(),
+          tooltipText: LocaleKeys.grid_createView.tr(),
+          onPressed: _showPopover,
           radius: Corners.s4Border,
           icon: FlowySvg(
             FlowySvgs.add_s,

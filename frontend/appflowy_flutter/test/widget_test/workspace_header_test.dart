@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/cov
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -18,12 +19,17 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   for (final appearance in ['light', 'dark', 'paper']) {
-    for (final width in [320.0, 600.0, 1100.0]) {
-      for (final scale in [1.0, 1.5]) {
-        testWidgets('$appearance header fits $width at text scale $scale',
+    for (final width in [320.0, 480.0, 800.0, 1280.0, 1920.0, 2560.0]) {
+      for (final (dpr, scale) in [
+        (1.0, 1.0),
+        (1.0, 2.0),
+        (2.0, 1.0),
+        (2.0, 2.0),
+      ]) {
+        testWidgets('$appearance header fits $width at scale $scale DPR $dpr',
             (tester) async {
-          tester.view.physicalSize = const Size(1400, 1000);
-          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = Size(width * dpr, 1200 * dpr);
+          tester.view.devicePixelRatio = dpr;
           addTearDown(tester.view.reset);
           await tester.pumpWidget(
             _app(
@@ -47,6 +53,7 @@ void main() {
           );
           final field = tester.getRect(find.byType(TextField));
           final button = tester.getRect(find.widgetWithText(TextButton, 'Add'));
+          expect(header.width, width);
           for (final rect in [title, field, button]) {
             expect(rect.left, greaterThanOrEqualTo(header.left));
             expect(rect.right, lessThanOrEqualTo(header.right + 0.5));
@@ -56,6 +63,9 @@ void main() {
             find.widgetWithText(TextButton, 'Add').hitTestable(),
             findsOneWidget,
           );
+          if (width < WorkspaceLayout.headerBreakpoint * scale) {
+            expect(field.top, greaterThanOrEqualTo(title.bottom));
+          }
         });
       }
     }
@@ -170,10 +180,11 @@ void main() {
 
   testWidgets('resizing the header preserves the focused search field',
       (tester) async {
-    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.physicalSize = const Size(2560, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     var width = 1100.0;
+    var scale = 1.0;
     late StateSetter resize;
     final focus = FocusNode();
     final controller = TextEditingController();
@@ -183,10 +194,15 @@ void main() {
         StatefulBuilder(
           builder: (context, setState) {
             resize = setState;
-            return Center(
-              child: SizedBox(
-                width: width,
-                child: _header(context, focus: focus, controller: controller),
+            return MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(scale),
+              ),
+              child: Center(
+                child: SizedBox(
+                  width: width,
+                  child: _header(context, focus: focus, controller: controller),
+                ),
               ),
             );
           },
@@ -195,16 +211,82 @@ void main() {
     );
     await tester.tap(find.byType(TextField));
     await tester.enterText(find.byType(TextField), 'Retain this query');
+    controller.selection = const TextSelection(baseOffset: 2, extentOffset: 7);
     final field = tester.state(find.byType(EditableText));
-    resize(() => width = 320);
-    await tester.pumpAndSettle();
-    expect(tester.state(find.byType(EditableText)), same(field));
-    expect(focus.hasFocus, isTrue);
-    expect(controller.text, 'Retain this query');
-    expect(tester.takeException(), isNull);
+    for (final nextWidth in [320.0, 480.0, 800.0, 1280.0, 1920.0, 2560.0]) {
+      for (final nextScale in [2.0, 1.0]) {
+        resize(() {
+          width = nextWidth;
+          scale = nextScale;
+        });
+        await tester.pumpAndSettle();
+        expect(tester.state(find.byType(EditableText)), same(field));
+        expect(focus.hasFocus, isTrue);
+        expect(controller.text, 'Retain this query');
+        expect(
+          controller.selection,
+          const TextSelection(baseOffset: 2, extentOffset: 7),
+        );
+        expect(tester.takeException(), isNull);
+      }
+    }
     await tester.pumpWidget(const SizedBox());
     focus.dispose();
     controller.dispose();
+  });
+
+  for (final width in [320.0, 480.0, 800.0, 1280.0, 1920.0, 2560.0]) {
+    testWidgets('$width logical header geometry is independent of DPR',
+        (tester) async {
+      addTearDown(tester.view.reset);
+      List<Rect>? baseline;
+      for (final dpr in [1.0, 2.0]) {
+        tester.view.devicePixelRatio = dpr;
+        tester.view.physicalSize = Size(width * dpr, 1200 * dpr);
+        await tester.pumpWidget(
+          _app(
+            'paper',
+            Builder(
+              builder: (context) => Align(
+                alignment: Alignment.topLeft,
+                child: _header(context),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final rects = [
+          tester.getRect(find.byType(WorkspaceHeaderLayout)),
+          tester.getRect(find.byType(TextField)),
+          tester.getRect(find.widgetWithText(TextButton, 'Add')),
+        ];
+        if (baseline != null) expect(rects, baseline);
+        baseline = rects;
+        expect(tester.takeException(), isNull);
+      }
+    });
+  }
+
+  testWidgets('an unbounded header host gets a finite wrapping width',
+      (tester) async {
+    tester.view.physicalSize = const Size(480, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _app(
+        'light',
+        Builder(
+          builder: (context) => SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: _header(context),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(WorkspaceHeaderLayout)).width, 480);
+    expect(find.byType(TextField).hitTestable(), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('width presets and header controls honour reduced motion',

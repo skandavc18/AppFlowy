@@ -541,6 +541,11 @@ class _AppMapViewState extends State<AppMapView> with TickerProviderStateMixin {
                     if (widget.showSearch && widget.onSearch != null)
                       Positioned(
                         left: MapMetrics.controlInset + widget.padding.left,
+                        right: MapMetrics.controlInset +
+                            widget.padding.right +
+                            (widget.showControls
+                                ? MapMetrics.controlSize + MapMetrics.controlGap
+                                : 0),
                         top: MapMetrics.controlInset + widget.padding.top,
                         child: Listener(
                           // A search result list keeps its wheel even at an

@@ -11,6 +11,7 @@ import 'package:appflowy/plugins/database/calendar/presentation/views/time_grid_
 import 'package:appflowy/plugins/database/calendar/presentation/views/year_view.dart';
 import 'package:appflowy/shared/calendar/calendar_layout.dart';
 import 'package:appflowy/shared/calendar/calendar_provider.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -182,6 +183,13 @@ class CalendarShellState extends State<CalendarShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Quiet calendars are also hosted directly by dashboard cards.
+    return widget.quiet
+        ? PreviewToolbarRegion(child: Builder(builder: _buildCalendar))
+        : _buildCalendar(context);
+  }
+
+  Widget _buildCalendar(BuildContext context) {
     final palette = calendarPaletteOf(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -228,16 +236,28 @@ class CalendarShellState extends State<CalendarShell> {
                       ),
                     ),
                   ),
-                  CalendarControlButton(
-                    icon: Icons.chevron_left_rounded,
-                    tooltip: LocaleKeys.calendarView_previous.tr(),
-                    onPressed: () => _step(-1),
-                  ),
-                  _TodayButton(onTap: _goToToday),
-                  CalendarControlButton(
-                    icon: Icons.chevron_right_rounded,
-                    tooltip: LocaleKeys.calendarView_next.tr(),
-                    onPressed: () => _step(1),
+                  Flexible(
+                    child: PreviewToolbar(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CalendarControlButton(
+                              icon: Icons.chevron_left_rounded,
+                              tooltip: LocaleKeys.calendarView_previous.tr(),
+                              onPressed: () => _step(-1),
+                            ),
+                            _TodayButton(onTap: _goToToday),
+                            CalendarControlButton(
+                              icon: Icons.chevron_right_rounded,
+                              tooltip: LocaleKeys.calendarView_next.tr(),
+                              onPressed: () => _step(1),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -245,31 +265,36 @@ class CalendarShellState extends State<CalendarShell> {
             const SizedBox(height: CalendarMetrics.space1),
             SizedBox(
               height: CalendarMetrics.controlSize,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: CalendarViewSwitcher(
-                        mode: _mode,
-                        onChanged: setMode,
-                        labels: _labelFor,
-                        available: _availableModes,
+              child: PreviewToolbar(
+                keepVisible: !widget.hasDateField ||
+                    widget.workspace.status.state.needsAttention ||
+                    widget.workspace.status.state.isBusy,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: CalendarViewSwitcher(
+                          mode: _mode,
+                          onChanged: setMode,
+                          labels: _labelFor,
+                          available: _availableModes,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: CalendarMetrics.space1),
-                  if (!widget.quiet) ...[
-                    CalendarControlButton(
-                      icon: Icons.search_rounded,
-                      tooltip: LocaleKeys.calendarView_search.tr(),
-                      active: widget.workspace.filter.query.isNotEmpty,
-                      onPressed: _openSearchSheet,
-                    ),
-                    CalendarFilterButton(workspace: widget.workspace),
-                    CalendarSyncIndicator(workspace: widget.workspace),
+                    const SizedBox(width: CalendarMetrics.space1),
+                    if (!widget.quiet) ...[
+                      CalendarControlButton(
+                        icon: Icons.search_rounded,
+                        tooltip: LocaleKeys.calendarView_search.tr(),
+                        active: widget.workspace.filter.query.isNotEmpty,
+                        onPressed: _openSearchSheet,
+                      ),
+                      CalendarFilterButton(workspace: widget.workspace),
+                      CalendarSyncIndicator(workspace: widget.workspace),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ],
@@ -328,21 +353,33 @@ class CalendarShellState extends State<CalendarShell> {
           height: CalendarMetrics.controlSize,
           child: Row(
             children: [
-              CalendarControlButton(
-                icon: Icons.chevron_left_rounded,
-                tooltip: LocaleKeys.calendarView_previous.tr(),
-                onPressed: () => _step(-1),
-              ),
-              const SizedBox(width: 2),
-              CalendarControlButton(
-                icon: Icons.chevron_right_rounded,
-                tooltip: LocaleKeys.calendarView_next.tr(),
-                onPressed: () => _step(1),
-              ),
-              const SizedBox(width: CalendarMetrics.space2),
-              _TodayButton(onTap: _goToToday),
-              const SizedBox(width: CalendarMetrics.space3),
               Flexible(
+                child: PreviewToolbar(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CalendarControlButton(
+                          icon: Icons.chevron_left_rounded,
+                          tooltip: LocaleKeys.calendarView_previous.tr(),
+                          onPressed: () => _step(-1),
+                        ),
+                        const SizedBox(width: 2),
+                        CalendarControlButton(
+                          icon: Icons.chevron_right_rounded,
+                          tooltip: LocaleKeys.calendarView_next.tr(),
+                          onPressed: () => _step(1),
+                        ),
+                        const SizedBox(width: CalendarMetrics.space2),
+                        _TodayButton(onTap: _goToToday),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: CalendarMetrics.space3),
+              Expanded(
                 child: AnimatedSwitcher(
                   duration: CalendarMetrics.change,
                   child: Text(
@@ -361,51 +398,62 @@ class CalendarShellState extends State<CalendarShell> {
                 ),
               ),
               const SizedBox(width: CalendarMetrics.space3),
-              if (!widget.quiet) ...[
-                if (_searching)
-                  _SearchField(
-                    controller: _search,
-                    onChanged: (value) => widget.workspace.setFilter(
-                      widget.workspace.filter.copyWith(query: value),
-                    ),
-                    onClose: () {
-                      setState(() => _searching = false);
-                      _search.clear();
-                      widget.workspace.setFilter(
-                        widget.workspace.filter.copyWith(query: ''),
-                      );
-                    },
-                  )
-                else
-                  CalendarControlButton(
-                    icon: Icons.search_rounded,
-                    tooltip: LocaleKeys.calendarView_search.tr(),
-                    onPressed: () => setState(() => _searching = true),
-                  ),
-                const SizedBox(width: 2),
-                CalendarFilterButton(workspace: widget.workspace),
-                const SizedBox(width: CalendarMetrics.space2),
-                CalendarSyncIndicator(workspace: widget.workspace),
-                const SizedBox(width: CalendarMetrics.space2),
-              ],
-              // At a middle width the switcher is what runs out of room, so
-              // it scrolls rather than overflowing the toolbar.
               Flexible(
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  reverse: true,
-                  child: CalendarViewSwitcher(
-                    mode: _mode,
-                    onChanged: setMode,
-                    labels: _labelFor,
-                    available: _availableModes,
+                flex: 2,
+                child: PreviewToolbar(
+                  keepVisible: _searching ||
+                      !widget.hasDateField ||
+                      widget.workspace.status.state.needsAttention ||
+                      widget.workspace.status.state.isBusy,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    reverse: true,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!widget.quiet) ...[
+                          if (_searching)
+                            _SearchField(
+                              controller: _search,
+                              onChanged: (value) => widget.workspace.setFilter(
+                                widget.workspace.filter.copyWith(query: value),
+                              ),
+                              onClose: () {
+                                setState(() => _searching = false);
+                                _search.clear();
+                                widget.workspace.setFilter(
+                                  widget.workspace.filter.copyWith(query: ''),
+                                );
+                              },
+                            )
+                          else
+                            CalendarControlButton(
+                              icon: Icons.search_rounded,
+                              tooltip: LocaleKeys.calendarView_search.tr(),
+                              onPressed: () =>
+                                  setState(() => _searching = true),
+                            ),
+                          const SizedBox(width: 2),
+                          CalendarFilterButton(workspace: widget.workspace),
+                          const SizedBox(width: CalendarMetrics.space2),
+                          CalendarSyncIndicator(workspace: widget.workspace),
+                          const SizedBox(width: CalendarMetrics.space2),
+                        ],
+                        CalendarViewSwitcher(
+                          mode: _mode,
+                          onChanged: setMode,
+                          labels: _labelFor,
+                          available: _availableModes,
+                        ),
+                        if (widget.toolbarTrailing != null) ...[
+                          const SizedBox(width: CalendarMetrics.space2),
+                          widget.toolbarTrailing!,
+                        ],
+                      ],
+                    ),
                   ),
                 ),
               ),
-              if (widget.toolbarTrailing != null) ...[
-                const SizedBox(width: CalendarMetrics.space2),
-                widget.toolbarTrailing!,
-              ],
             ],
           ),
         ),
@@ -539,9 +587,14 @@ class _TodayButtonState extends State<_TodayButton> {
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        behavior: HitTestBehavior.opaque,
+      child: TextButton(
+        onPressed: widget.onTap,
+        style: TextButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: palette.textSecondary,
+        ),
         child: AnimatedContainer(
           duration: CalendarMetrics.hover,
           curve: CalendarMetrics.hoverCurve,

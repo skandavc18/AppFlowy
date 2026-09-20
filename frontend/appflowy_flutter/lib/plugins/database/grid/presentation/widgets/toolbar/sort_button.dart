@@ -2,6 +2,7 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/grid/application/sort/sort_editor_bloc.dart';
 import 'package:appflowy/plugins/database/grid/presentation/grid_page.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -21,6 +22,18 @@ class SortButton extends StatefulWidget {
 
 class _SortButtonState extends State<SortButton> {
   final _popoverController = PopoverController();
+  VoidCallback? _releasePreview;
+
+  void _release() {
+    _releasePreview?.call();
+    _releasePreview = null;
+  }
+
+  @override
+  void dispose() {
+    _release();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +51,8 @@ class _SortButtonState extends State<SortButton> {
               icon: const FlowySvg(FlowySvgs.database_sort_s),
               onPressed: () {
                 if (state.sorts.isEmpty) {
+                  if (_releasePreview != null) return;
+                  _releasePreview = PreviewToolbarRegion.hold(context);
                   _popoverController.show();
                 } else {
                   widget.toggleExtension.toggle();
@@ -57,6 +72,7 @@ class _SortButtonState extends State<SortButton> {
       constraints: BoxConstraints.loose(const Size(200, 300)),
       offset: const Offset(0, 8),
       triggerActions: PopoverTriggerFlags.none,
+      onClose: _release,
       popupBuilder: (popoverContext) {
         return BlocProvider.value(
           value: context.read<SortEditorBloc>(),

@@ -149,7 +149,6 @@ class _Charts extends StatelessWidget {
                     key: ValueKey(active.id),
                     viewId: active.id,
                     title: active.name,
-                    background: theme.panel,
                     spec: controller.chartSpecFor(active.id),
                     onSpecChanged: (spec) =>
                         controller.setChartSpec(active.id, spec),

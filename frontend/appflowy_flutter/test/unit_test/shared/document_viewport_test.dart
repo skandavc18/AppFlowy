@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
@@ -22,6 +24,7 @@ Future<void> _pump(
   Widget child, {
   AppTheme? appTheme,
   Brightness brightness = Brightness.light,
+  bool settle = true,
 }) async {
   final defaultTheme = AppFlowyDefaultTheme();
   final materialTheme = DesktopAppearance().getThemeData(
@@ -46,7 +49,9 @@ Future<void> _pump(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  }
 }
 
 ScrollMetrics _metrics({
@@ -61,6 +66,59 @@ ScrollMetrics _metrics({
       axisDirection: AxisDirection.down,
       devicePixelRatio: 2,
     );
+
+const _lifecycleRendererKey = ValueKey('viewport-lifecycle-renderer');
+
+Widget _withMotionPreferences(
+  Widget child, {
+  bool disableAnimations = false,
+  bool accessibleNavigation = false,
+}) =>
+    Builder(
+      builder: (context) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          disableAnimations: disableAnimations,
+          accessibleNavigation: accessibleNavigation,
+        ),
+        child: child,
+      ),
+    );
+
+Widget _lifecycleViewport({Object? revealKey}) => DocumentViewport(
+      identity: _identity,
+      revealKey: revealKey,
+      child: StatefulBuilder(
+        key: _lifecycleRendererKey,
+        builder: (_, __) => const SizedBox.expand(),
+      ),
+    );
+
+Animation<double> _revealAnimation(WidgetTester tester) {
+  final fade = find.descendant(
+    of: find.byType(DocumentViewport),
+    matching: find.byType(FadeTransition),
+  );
+  expect(fade, findsOneWidget);
+  return tester.widget<FadeTransition>(fade).opacity;
+}
+
+Future<void> _unmountViewport(WidgetTester tester) async {
+  await tester.pumpWidget(const SizedBox.shrink());
+  expect(find.byType(DocumentViewport), findsNothing);
+  // Reading the old lazy controller during dispose created a ticker using an
+  // already-deactivated context. Assert here, not only before tree teardown.
+  expect(
+    tester.takeException(),
+    isNull,
+    reason: 'Disposal must not lazily activate a reveal ticker.',
+  );
+  expect(tester.binding.transientCallbackCount, 0);
+  await tester
+      .pump(AppFlowyMotion.deliberate + const Duration(milliseconds: 1));
+  expect(tester.takeException(), isNull);
+  expect(tester.binding.transientCallbackCount, 0);
+  expect(tester.binding.hasScheduledFrame, isFalse);
+}
 
 void main() {
   group('DocumentViewport chrome', () {
@@ -268,6 +326,245 @@ void main() {
       expect(decoration.border, isNull);
       expect(decoration.boxShadow, isNotEmpty);
       expect(DocumentViewportStyle.radius, 20);
+    });
+  });
+
+  group('DocumentViewport reveal lifecycle', () {
+    const preferences = [
+      (
+        name: 'normal motion',
+        disableAnimations: false,
+        accessibleNavigation: false,
+      ),
+      (
+        name: 'disabled animations',
+        disableAnimations: true,
+        accessibleNavigation: false,
+      ),
+      (
+        name: 'accessible navigation',
+        disableAnimations: false,
+        accessibleNavigation: true,
+      ),
+      (
+        name: 'both accessibility flags',
+        disableAnimations: true,
+        accessibleNavigation: true,
+      ),
+    ];
+
+    for (final settings in preferences) {
+      final reduced =
+          settings.disableAnimations || settings.accessibleNavigation;
+
+      testWidgets('${settings.name}: unmount before the first timed frame',
+          (tester) async {
+        await _pump(
+          tester,
+          _withMotionPreferences(
+            _lifecycleViewport(),
+            disableAnimations: settings.disableAnimations,
+            accessibleNavigation: settings.accessibleNavigation,
+          ),
+          settle: false,
+        );
+
+        expect(find.byKey(_lifecycleRendererKey), findsOneWidget);
+        expect(
+          tester.getSize(find.byKey(_lifecycleRendererKey)).isEmpty,
+          isFalse,
+        );
+        final reveal = _revealAnimation(tester);
+        expect(reveal.value, reduced ? 1.0 : 0.0);
+        if (reduced) {
+          expect(reveal, isA<AlwaysStoppedAnimation<double>>());
+          expect(tester.binding.transientCallbackCount, 0);
+        } else {
+          expect(reveal.status, AnimationStatus.forward);
+        }
+        expect(tester.takeException(), isNull);
+
+        // No revealKey update or elapsed animation time before disposal.
+        await _unmountViewport(tester);
+      });
+
+      if (!reduced) continue;
+
+      testWidgets(
+          '${settings.name}: normal-motion round trip retains renderer state and bounds',
+          (tester) async {
+        Future<void> pumpMotion({required bool reduced}) => _pump(
+              tester,
+              _withMotionPreferences(
+                _lifecycleViewport(revealKey: 'same-document'),
+                disableAnimations: reduced && settings.disableAnimations,
+                accessibleNavigation: reduced && settings.accessibleNavigation,
+              ),
+              settle: false,
+            );
+
+        await pumpMotion(reduced: true);
+        final renderer = find.byKey(_lifecycleRendererKey);
+        final rendererState = tester.state(renderer);
+        final viewportState = tester.state(find.byType(DocumentViewport));
+        final bounds = tester.getRect(renderer);
+
+        void expectRetained() {
+          expect(tester.state(renderer), same(rendererState));
+          expect(
+            tester.state(find.byType(DocumentViewport)),
+            same(viewportState),
+          );
+          expect(tester.getRect(renderer), bounds);
+          expect(rendererState.mounted, isTrue);
+          expect(tester.takeException(), isNull);
+        }
+
+        expect(_revealAnimation(tester).value, 1);
+        expect(tester.binding.transientCallbackCount, 0);
+        expectRetained();
+
+        await pumpMotion(reduced: false);
+        final activeReveal = _revealAnimation(tester);
+        expect(activeReveal.status, AnimationStatus.forward);
+        expect(activeReveal.value, 0);
+        expectRetained();
+        await tester.pump();
+        await tester.pump(AppFlowyMotion.deliberate ~/ 2);
+        expect(activeReveal.value, allOf(greaterThan(0), lessThan(1)));
+        expectRetained();
+
+        await pumpMotion(reduced: true);
+        expect(_revealAnimation(tester), isA<AlwaysStoppedAnimation<double>>());
+        expect(_revealAnimation(tester).value, 1);
+        expectRetained();
+
+        // Dispose while the previously created controller is still running.
+        expect(activeReveal.status, AnimationStatus.forward);
+        await _unmountViewport(tester);
+        expect(rendererState.mounted, isFalse);
+        expect(viewportState.mounted, isFalse);
+      });
+
+      testWidgets(
+          '${settings.name}: revealKey changes never activate an unused controller',
+          (tester) async {
+        Future<void> pumpSource(String source) => _pump(
+              tester,
+              _withMotionPreferences(
+                _lifecycleViewport(revealKey: source),
+                disableAnimations: settings.disableAnimations,
+                accessibleNavigation: settings.accessibleNavigation,
+              ),
+              settle: false,
+            );
+
+        await pumpSource('original');
+        final renderer = find.byKey(_lifecycleRendererKey);
+        final rendererState = tester.state(renderer);
+        final viewportState = tester.state(find.byType(DocumentViewport));
+        final bounds = tester.getRect(renderer);
+        expect(tester.takeException(), isNull);
+        expect(tester.binding.transientCallbackCount, 0);
+
+        for (final source in ['replacement', 'third-document']) {
+          await pumpSource(source);
+          expect(
+            tester
+                .widget<DocumentViewport>(find.byType(DocumentViewport))
+                .revealKey,
+            source,
+          );
+          expect(
+            tester.state(find.byType(DocumentViewport)),
+            same(viewportState),
+          );
+          expect(tester.state(renderer), same(rendererState));
+          expect(tester.getRect(renderer), bounds);
+          expect(
+            _revealAnimation(tester),
+            isA<AlwaysStoppedAnimation<double>>(),
+          );
+          expect(_revealAnimation(tester).value, 1);
+          // Check before settling so a mistakenly started ticker cannot hide.
+          expect(tester.binding.transientCallbackCount, 0);
+          expect(tester.takeException(), isNull);
+          await tester.pump(AppFlowyMotion.deliberate);
+          expect(tester.binding.transientCallbackCount, 0);
+          expect(_revealAnimation(tester).value, 1);
+          expect(tester.takeException(), isNull);
+        }
+
+        await _unmountViewport(tester);
+        expect(rendererState.mounted, isFalse);
+      });
+    }
+
+    testWidgets(
+        'explicitly hidden actions retain geometry but not live semantics',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      const actionKey = ValueKey('explicit-header-action');
+      const label = 'Download document';
+      var activations = 0;
+
+      Future<void> pumpHeader({required bool showActions}) => _pump(
+            tester,
+            _withMotionPreferences(
+              DocumentViewportHeader(
+                identity: _identity,
+                showActions: showActions,
+                actions: [
+                  DocumentViewportButton(
+                    key: actionKey,
+                    icon: Icons.download_rounded,
+                    tooltip: label,
+                    onPressed: () => activations++,
+                  ),
+                ],
+              ),
+              accessibleNavigation: true,
+            ),
+          );
+
+      try {
+        await pumpHeader(showActions: true);
+        final action = find.byKey(actionKey);
+        final actionState = tester.state(action);
+        final actionBounds = tester.getRect(action);
+        final headerBounds =
+            tester.getRect(find.byType(DocumentViewportHeader));
+        final node = find.semantics.byLabel(label).evaluate().single;
+        expect(node.hasFlag(ui.SemanticsFlag.isButton), isTrue);
+        expect(
+          node.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+          isTrue,
+        );
+
+        await pumpHeader(showActions: false);
+        expect(tester.state(action), same(actionState));
+        expect(tester.getRect(action), actionBounds);
+        expect(
+          tester.getRect(find.byType(DocumentViewportHeader)),
+          headerBounds,
+        );
+        expect(find.semantics.byLabel(label), findsNothing);
+        expect(action.hitTestable(), findsNothing);
+        await tester.tapAt(actionBounds.center);
+        await tester.pump();
+        expect(activations, 0);
+
+        await pumpHeader(showActions: true);
+        expect(tester.state(action), same(actionState));
+        expect(find.semantics.byLabel(label), findsOne);
+        await tester.tap(action);
+        expect(activations, 1);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        semantics.dispose();
+      }
+      expect(tester.takeException(), isNull);
     });
   });
 

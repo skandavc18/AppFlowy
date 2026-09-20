@@ -2,10 +2,11 @@ import 'dart:ui' as ui;
 
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/map_suggestions.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:flutter/material.dart';
 
 /// One control on the map.
-class MapControlButton extends StatefulWidget {
+class MapControlButton extends StatelessWidget {
   const MapControlButton({
     super.key,
     required this.icon,
@@ -24,47 +25,27 @@ class MapControlButton extends StatefulWidget {
   final double size;
 
   @override
-  State<MapControlButton> createState() => _MapControlButtonState();
-}
-
-class _MapControlButtonState extends State<MapControlButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = widget.palette;
-    final enabled = widget.onPressed != null;
-    final tint = widget.selected
-        ? palette.accent
-        : enabled
-            ? palette.textPrimary
-            : palette.textMuted.withValues(alpha: 0.5);
-
-    return Tooltip(
-      message: widget.tooltip,
-      waitDuration: const Duration(milliseconds: 420),
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: MapMetrics.hover,
-            curve: Curves.easeOutCubic,
-            width: widget.size,
-            height: widget.size,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(MapMetrics.controlRadius - 2),
-              color: widget.selected
-                  ? palette.accent.withValues(alpha: 0.14)
-                  // Fading from the hover colour at zero alpha keeps the tween
-                  // in one hue; transparent black would flash grey.
-                  : palette.hover
-                      .withValues(alpha: _hovered && enabled ? 1 : 0),
-            ),
-            child: Icon(widget.icon, size: 17.5, color: tint),
+    return SizedBox.square(
+      dimension: size,
+      child: IconButton(
+        tooltip: tooltip,
+        isSelected: selected,
+        onPressed: onPressed,
+        icon: Icon(icon, size: 17.5),
+        style: IconButton.styleFrom(
+          padding: EdgeInsets.zero,
+          minimumSize: Size.square(size),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          foregroundColor: selected ? palette.accent : palette.textPrimary,
+          disabledForegroundColor: palette.textMuted.withValues(alpha: 0.5),
+          backgroundColor: selected
+              ? palette.accent.withValues(alpha: 0.14)
+              : palette.hover.withValues(alpha: 0),
+          hoverColor: palette.hover,
+          focusColor: palette.hover,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(MapMetrics.controlRadius - 2),
           ),
         ),
       ),
@@ -176,71 +157,73 @@ class AppMapToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        MapControlGroup(
-          palette: palette,
-          children: [
-            MapControlButton(
-              icon: Icons.add_rounded,
-              tooltip: zoomInLabel,
-              palette: palette,
-              onPressed: canZoomIn ? onZoomIn : null,
-            ),
-            MapControlButton(
-              icon: Icons.remove_rounded,
-              tooltip: zoomOutLabel,
-              palette: palette,
-              onPressed: canZoomOut ? onZoomOut : null,
-            ),
-          ],
-        ),
-        const SizedBox(height: MapMetrics.controlGap),
-        MapControlGroup(
-          palette: palette,
-          children: [
-            MapControlButton(
-              icon: Icons.explore_rounded,
-              tooltip: resetLabel,
-              palette: palette,
-              onPressed: onResetView,
-            ),
-            if (onLocate != null)
+    return PreviewToolbar(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          MapControlGroup(
+            palette: palette,
+            children: [
               MapControlButton(
-                icon: Icons.my_location_rounded,
-                tooltip: locateLabel,
+                icon: Icons.add_rounded,
+                tooltip: zoomInLabel,
                 palette: palette,
-                onPressed: onLocate,
+                onPressed: canZoomIn ? onZoomIn : null,
               ),
-          ],
-        ),
-        if (onLayers != null || onFullscreen != null) ...[
+              MapControlButton(
+                icon: Icons.remove_rounded,
+                tooltip: zoomOutLabel,
+                palette: palette,
+                onPressed: canZoomOut ? onZoomOut : null,
+              ),
+            ],
+          ),
           const SizedBox(height: MapMetrics.controlGap),
           MapControlGroup(
             palette: palette,
             children: [
-              if (onLayers != null)
+              MapControlButton(
+                icon: Icons.explore_rounded,
+                tooltip: resetLabel,
+                palette: palette,
+                onPressed: onResetView,
+              ),
+              if (onLocate != null)
                 MapControlButton(
-                  icon: Icons.layers_rounded,
-                  tooltip: layersLabel,
+                  icon: Icons.my_location_rounded,
+                  tooltip: locateLabel,
                   palette: palette,
-                  onPressed: onLayers,
-                ),
-              if (onFullscreen != null)
-                MapControlButton(
-                  icon: isFullscreen
-                      ? Icons.fullscreen_exit_rounded
-                      : Icons.fullscreen_rounded,
-                  tooltip: fullscreenLabel,
-                  palette: palette,
-                  onPressed: onFullscreen,
+                  onPressed: onLocate,
                 ),
             ],
           ),
+          if (onLayers != null || onFullscreen != null) ...[
+            const SizedBox(height: MapMetrics.controlGap),
+            MapControlGroup(
+              palette: palette,
+              children: [
+                if (onLayers != null)
+                  MapControlButton(
+                    icon: Icons.layers_rounded,
+                    tooltip: layersLabel,
+                    palette: palette,
+                    onPressed: onLayers,
+                  ),
+                if (onFullscreen != null)
+                  MapControlButton(
+                    icon: isFullscreen
+                        ? Icons.fullscreen_exit_rounded
+                        : Icons.fullscreen_rounded,
+                    tooltip: fullscreenLabel,
+                    palette: palette,
+                    onPressed: onFullscreen,
+                  ),
+              ],
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
@@ -295,25 +278,28 @@ class _AppMapSearchFieldState extends State<AppMapSearchField> {
 
   @override
   Widget build(BuildContext context) {
-    return MapSuggestionBox(
-      controller: _controller,
-      focusNode: _focus,
-      enabled: widget.onPicked != null,
-      extra: widget.suggestPins,
-      builder: (context, status) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildField(),
-          if (status.suggestions.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            MapSuggestionList(
-              palette: widget.palette,
-              suggestions: status.suggestions,
-              onPicked: _pick,
-            ),
+    return PreviewToolbar(
+      keepVisible: widget.busy,
+      child: MapSuggestionBox(
+        controller: _controller,
+        focusNode: _focus,
+        enabled: widget.onPicked != null,
+        extra: widget.suggestPins,
+        builder: (context, status) => Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _buildField(),
+            if (status.suggestions.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              MapSuggestionList(
+                palette: widget.palette,
+                suggestions: status.suggestions,
+                onPicked: _pick,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

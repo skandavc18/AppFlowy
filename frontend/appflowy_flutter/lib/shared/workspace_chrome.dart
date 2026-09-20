@@ -1,4 +1,5 @@
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:flutter/material.dart';
 
 /// Shared hierarchy for workspace chrome, not a replacement theme or renderer.
@@ -83,22 +84,27 @@ class WorkspaceHeaderLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
-          final available = constraints.maxWidth;
-          final stacked = available < 840 ||
-              MediaQuery.textScalerOf(context).scale(14) > 20;
-          final actionsWidth =
-              stacked ? available : (available * 0.5).clamp(0.0, 480.0);
-          return Wrap(
-            spacing: 24,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: stacked ? available : available - actionsWidth - 24,
-                child: identity,
-              ),
-              SizedBox(width: actionsWidth, child: actions),
-            ],
+          final geometry = WorkspaceHeaderGeometry.resolve(
+            availableWidth: WorkspaceLayout.availableWidth(
+              constraints,
+              fallbackWidth: MediaQuery.maybeSizeOf(context)?.width ??
+                  WorkspaceLayout.headerBreakpoint,
+            ),
+            textScale: MediaQuery.textScalerOf(context).scale(14) / 14,
+          );
+          // Always constrain the Wrap, including under unbounded hosts. The
+          // same SizedBoxes retain their children at every width/text scale.
+          return SizedBox(
+            width: geometry.width,
+            child: Wrap(
+              spacing: WorkspaceHeaderGeometry.gap,
+              runSpacing: WorkspaceHeaderGeometry.runGap,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(width: geometry.identityWidth, child: identity),
+                SizedBox(width: geometry.actionsWidth, child: actions),
+              ],
+            ),
           );
         },
       );

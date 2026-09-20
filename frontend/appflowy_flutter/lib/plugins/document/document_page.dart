@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
@@ -21,6 +22,7 @@ import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/action_navigation/action_navigation_bloc.dart';
 import 'package:appflowy/workspace/application/action_navigation/navigation_action.dart';
 import 'package:appflowy/workspace/application/page_versions/page_versions.dart';
+import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/view/prelude.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy_backend/log.dart';
@@ -215,22 +217,31 @@ class _DocumentPageState extends State<DocumentPage>
         viewId: widget.view.id,
         editorState: editorState,
         isLocalMode: context.read<DocumentBloc>().isLocalMode,
-        child: AppFlowyEditorPage(
-          editorState: editorState,
-          // if the view's name is empty, focus on the title
-          autoFocus: widget.view.name.isEmpty ? false : null,
-          styleCustomizer: EditorStyleCustomizer(
-            context: context,
-            width: width,
-            padding: EditorStyleCustomizer.documentPadding,
+        child: LayoutBuilder(
+          builder: (context, constraints) => AppFlowyEditorPage(
             editorState: editorState,
+            // if the view's name is empty, focus on the title
+            autoFocus: widget.view.name.isEmpty ? false : null,
+            styleCustomizer: EditorStyleCustomizer.document(
+              context: context,
+              constraints: constraints,
+              preferredMaxWidth: width,
+              editorState: editorState,
+              textDirection: context
+                          .read<AppearanceSettingsCubit>()
+                          .state
+                          .layoutDirection ==
+                      LayoutDirection.rtlLayout
+                  ? ui.TextDirection.rtl
+                  : ui.TextDirection.ltr,
+            ),
+            header: buildCoverAndIcon(context, state),
+            initialSelection: initialSelection,
+            placeholderText: (node) =>
+                node.type == ParagraphBlockKeys.type && !node.isInTable
+                    ? LocaleKeys.editor_slashPlaceHolder.tr()
+                    : '',
           ),
-          header: buildCoverAndIcon(context, state),
-          initialSelection: initialSelection,
-          placeholderText: (node) =>
-              node.type == ParagraphBlockKeys.type && !node.isInTable
-                  ? LocaleKeys.editor_slashPlaceHolder.tr()
-                  : '',
         ),
       );
     }

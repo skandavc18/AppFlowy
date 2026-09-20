@@ -5,6 +5,8 @@ import 'package:appflowy/plugins/database/widgets/cell/desktop_grid/location_cel
 import 'package:appflowy/plugins/database/widgets/cell/encrypted_cell.dart';
 import 'package:appflowy/plugins/database/widgets/cell/property_style_cell.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -66,7 +68,7 @@ class DesktopGridTextCellSkin extends IEditableTextCellSkin {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const _IconOrEmoji(),
+                  const DesktopGridRowIcon(),
                   Expanded(
                     child: LocationCellSuggestions(
                       viewId: bloc.cellController.viewId,
@@ -109,8 +111,9 @@ class DesktopGridTextCellSkin extends IEditableTextCellSkin {
   }
 }
 
-class _IconOrEmoji extends StatelessWidget {
-  const _IconOrEmoji();
+/// The primary row's identity, separate from the column's field-type icon.
+class DesktopGridRowIcon extends StatelessWidget {
+  const DesktopGridRowIcon({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -124,12 +127,15 @@ class _IconOrEmoji extends StatelessWidget {
         return ValueListenableBuilder<String>(
           valueListenable: state.emoji!,
           builder: (context, emoji, _) {
-            return emoji.isNotEmpty
+            final icon = EmojiIconData.fromStorageString(emoji);
+            return icon.isNotEmpty
                 ? Padding(
                     padding: const EdgeInsetsDirectional.only(end: 6.0),
-                    child: FlowyText.emoji(
-                      optimizeEmojiAlign: true,
-                      emoji,
+                    child: RawEmojiIconWidget(
+                      emoji: icon,
+                      emojiSize:
+                          Theme.of(context).textTheme.bodyMedium?.fontSize ??
+                              16,
                     ),
                   )
                 : ValueListenableBuilder<bool>(

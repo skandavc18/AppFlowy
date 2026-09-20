@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/collection
 import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_style.dart';
 import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -354,63 +355,71 @@ class FolderExplorerBlockComponentState
     final subtitle = collectionKind == null
         ? LocaleKeys.workspaceFolderExplorer_workspaceFolder.tr()
         : CollectionRegistry.typeFor(collectionKind).label;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.deferToChild,
-        onSecondaryTapDown: (details) => unawaited(
-          _showBlockContextMenu(folder, details.globalPosition),
-        ),
-        child: ViewerCard(
-          color: palette.surface,
-          borderRadius: BorderRadius.circular(10),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              hoverColor: palette.hover,
-              onTap: () => context.read<TabsBloc>().openPlugin(folder),
-              child: Container(
-                height: 54,
-                padding: const EdgeInsets.only(left: 13, right: 4),
-                child: Row(
-                  children: [
-                    WorkspaceItemIcon.fromView(
-                      view: folder,
-                      size: 21,
-                      color: palette.accent,
-                    ),
-                    const SizedBox(width: 11),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            folder.name.isEmpty
-                                ? LocaleKeys
-                                    .workspaceFolderExplorer_untitledFolder
-                                    .tr()
-                                : folder.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.textPrimary,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            ),
+    return PreviewToolbarRegion(
+      child: Builder(
+        builder: (previewContext) => MouseRegion(
+          cursor: SystemMouseCursors.click,
+          child: GestureDetector(
+            behavior: HitTestBehavior.deferToChild,
+            onSecondaryTapDown: (details) => unawaited(
+              _showBlockContextMenu(
+                previewContext,
+                folder,
+                details.globalPosition,
+              ),
+            ),
+            child: ViewerCard(
+              color: palette.surface,
+              borderRadius: BorderRadius.circular(10),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  hoverColor: palette.hover,
+                  onTap: () => context.read<TabsBloc>().openPlugin(folder),
+                  child: Container(
+                    height: 54,
+                    padding: const EdgeInsets.only(left: 13, right: 4),
+                    child: Row(
+                      children: [
+                        WorkspaceItemIcon.fromView(
+                          view: folder,
+                          size: 21,
+                          color: palette.accent,
+                        ),
+                        const SizedBox(width: 11),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                folder.name.isEmpty
+                                    ? LocaleKeys
+                                        .workspaceFolderExplorer_untitledFolder
+                                        .tr()
+                                    : folder.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: palette.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                subtitle,
+                                style: TextStyle(
+                                  color: palette.textMuted,
+                                  fontSize: 10.5,
+                                ),
+                              ),
+                            ],
                           ),
-                          Text(
-                            subtitle,
-                            style: TextStyle(
-                              color: palette.textMuted,
-                              fontSize: 10.5,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                        PreviewToolbar(child: _buildMenu(folder)),
+                      ],
                     ),
-                    _buildMenu(folder),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -529,7 +538,11 @@ class FolderExplorerBlockComponentState
     ];
   }
 
-  Future<void> _showBlockContextMenu(ViewPB folder, Offset position) =>
+  Future<void> _showBlockContextMenu(
+    BuildContext context,
+    ViewPB folder,
+    Offset position,
+  ) =>
       showAppMenu<void>(
         context: context,
         globalPosition: position,

@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../startup.dart';
+import '../startup_profile.dart';
 
 class InitRustSDKTask extends LaunchTask {
   const InitRustSDKTask({
@@ -25,10 +26,16 @@ class InitRustSDKTask extends LaunchTask {
   Future<void> initialize(LaunchContext context) async {
     await super.initialize(context);
 
-    final root = await getApplicationSupportDirectory();
-    final applicationPath = await appFlowyApplicationDataDirectory();
+    final root = await startupProfile.measure(
+      'sdk.support_directory',
+      getApplicationSupportDirectory,
+    );
+    final applicationPath = await startupProfile.measure(
+      'sdk.application_directory',
+      appFlowyApplicationDataDirectory,
+    );
     final dir = customApplicationPath ?? applicationPath;
-    final deviceId = await getDeviceId();
+    final deviceId = await startupProfile.measure('sdk.device_id', getDeviceId);
 
     // Pass the environment variables to the Rust SDK
     final env = _makeAppFlowyConfiguration(
@@ -39,7 +46,10 @@ class InitRustSDKTask extends LaunchTask {
       deviceId,
       rustEnvs: context.config.rustEnvs,
     );
-    await context.getIt<FlowySDK>().init(jsonEncode(env.toJson()));
+    await startupProfile.measure(
+      'sdk.native_init',
+      () => context.getIt<FlowySDK>().init(jsonEncode(env.toJson())),
+    );
   }
 }
 

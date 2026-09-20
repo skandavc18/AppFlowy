@@ -165,7 +165,8 @@ void main() {
     expect(sheet.data.rawAt(const CellRef(0, 0)), 'Desk');
   });
 
-  testWidgets('a single click selects immediately', (tester) async {
+  testWidgets('a single accepted click selects and edits immediately',
+      (tester) async {
     final sheet = await pumpGrid(tester);
     final origin = tester.getTopLeft(find.byType(SpreadsheetGrid));
     await tester.tapAt(
@@ -178,9 +179,11 @@ void main() {
     await tester.pump();
     // The frozen strip holds column names, so the first body row is row 1.
     expect(sheet.active, const CellRef(0, 1));
+    expect(sheet.editing, const CellRef(0, 1));
+    expect(find.byType(TextField), findsOneWidget);
   });
 
-  testWidgets('a double click opens the editor', (tester) async {
+  testWidgets('a second click keeps the already open editor', (tester) async {
     final sheet = await pumpGrid(tester);
     final origin = tester.getTopLeft(find.byType(SpreadsheetGrid));
     final target = origin +
@@ -190,10 +193,15 @@ void main() {
         );
     await tester.tapAt(target);
     await tester.pump(const Duration(milliseconds: 40));
+    expect(sheet.editing, const CellRef(0, 0));
+    await tester.enterText(find.byType(TextField), 'Unsaved');
     await tester.tapAt(target);
     await tester.pump();
 
     expect(sheet.editing, const CellRef(0, 0));
+    expect(sheet.editingText, 'Unsaved');
+    expect(sheet.data.rawAt(const CellRef(0, 0)), 'Desk');
+    expect(sheet.canUndo, isFalse);
   });
 
   testWidgets('dragging the fill handle extends the series', (tester) async {
@@ -552,7 +560,7 @@ void main() {
       expect(palette.surface, isNot(PaperTheme.editorBackground));
     });
 
-    testWidgets('banding and grid lines stay quieter than the surface',
+    testWidgets('resting rows share one surface and rules stay quiet',
         (tester) async {
       for (final brightness in Brightness.values) {
         final palette = await resolve(
@@ -560,7 +568,7 @@ void main() {
           brightness: brightness,
           paper: false,
         );
-        expect(palette.bandedSurface, isNot(palette.surface));
+        expect(palette.bandedSurface, palette.surface);
         expect(palette.gridLine.a, lessThan(palette.divider.a));
       }
     });

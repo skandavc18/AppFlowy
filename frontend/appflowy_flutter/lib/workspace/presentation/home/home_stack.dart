@@ -13,6 +13,7 @@ import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/window_title_bar.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/startup/startup_profile.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -817,7 +818,10 @@ class PageManager {
                       viewId: notifier.plugin.id,
                       child: PageVersionHost(
                         viewId: notifier.plugin.id,
-                        child: pluginWidget,
+                        child: StartupProfileFrame(
+                          phase: 'page_host_frame',
+                          child: pluginWidget,
+                        ),
                       ),
                     ),
                   );

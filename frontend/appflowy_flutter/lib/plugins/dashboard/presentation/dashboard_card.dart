@@ -129,6 +129,11 @@ class _DashboardCardState extends State<DashboardCard> {
         : definition.builder(widgetContext);
 
     final bare = definition?.paintsOwnSurface ?? false;
+    // Only a chart's automatic card disappears. Keep this shell (rather than
+    // paintsOwnSurface) so its title, padding, selection ring and grips survive,
+    // and honour a saved non-neutral accent as an explicit surface choice.
+    final integratedChart =
+        spec.type == 'chart' && spec.accent == DashboardAccent.neutral;
     final showsTitle = spec.showTitle && spec.title.isNotEmpty;
     final trailing = definition?.headerTrailing?.call(widgetContext);
     final showsHeader = showsTitle || trailing != null;
@@ -183,12 +188,14 @@ class _DashboardCardState extends State<DashboardCard> {
         duration: DashboardMetrics.hover,
         curve: DashboardMetrics.curve,
         decoration: BoxDecoration(
-          color: tone.surface,
+          color: integratedChart ? null : tone.surface,
           borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
-          boxShadow: palette.cardShadow(
-            raised: _hovered,
-            dragging: widget.dragging,
-          ),
+          boxShadow: integratedChart
+              ? const []
+              : palette.cardShadow(
+                  raised: _hovered,
+                  dragging: widget.dragging,
+                ),
         ),
         foregroundDecoration: palette.selectionRing(
           selected: selected,

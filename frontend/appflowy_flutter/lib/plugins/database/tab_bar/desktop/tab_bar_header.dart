@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/mention/me
 import 'package:appflowy/shared/context_menu_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialog_v2.dart';
@@ -55,40 +56,48 @@ class TabBarHeader extends StatelessWidget {
                     // The add button sits outside the strip, so a table with
                     // more tabs than fit is still one another view can be
                     // added to.
-                    AddDatabaseViewButton(
-                      onTap: (kind) {
-                        final bloc = context.read<DatabaseTabBarBloc>();
-                        final fromExtension = kind.extensionView;
-                        if (fromExtension != null) {
-                          bloc.createExtensionTableView(fromExtension);
-                        } else if (kind.charted) {
-                          bloc.createChartView(kind.label);
-                        } else if (kind.mapped) {
-                          bloc.createMapView(kind.label);
-                        } else if (kind.slided) {
-                          bloc.createSlideView(kind.label);
-                        } else if (kind.tableView != null) {
-                          bloc.createTableView(kind.tableView!, kind.label);
-                        } else {
-                          bloc.add(
-                            DatabaseTabBarEvent.createView(kind.layout, null),
-                          );
-                        }
-                      },
+                    PreviewToolbar(
+                      child: AddDatabaseViewButton(
+                        onTap: (kind) {
+                          final bloc = context.read<DatabaseTabBarBloc>();
+                          final fromExtension = kind.extensionView;
+                          if (fromExtension != null) {
+                            bloc.createExtensionTableView(fromExtension);
+                          } else if (kind.charted) {
+                            bloc.createChartView(kind.label);
+                          } else if (kind.mapped) {
+                            bloc.createMapView(kind.label);
+                          } else if (kind.slided) {
+                            bloc.createSlideView(kind.label);
+                          } else if (kind.tableView != null) {
+                            bloc.createTableView(kind.tableView!, kind.label);
+                          } else {
+                            bloc.add(
+                              DatabaseTabBarEvent.createView(kind.layout, null),
+                            );
+                          }
+                        },
+                      ),
                     ),
                   ],
                 ),
               ),
-              // The settings take only what they need; a flexible box here
-              // would halve the strip and cut a tab off with the rest of the
-              // row standing empty.
-              BlocBuilder<DatabaseTabBarBloc, DatabaseTabBarState>(
-                builder: (context, state) {
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 6.0),
-                    child: pageSettingBarFromState(context, state),
-                  );
-                },
+              // Retain the strip and controls at one depth when the pane
+              // narrows; only the action group scrolls, not the table body.
+              Flexible(
+                child: PreviewToolbar(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: BlocBuilder<DatabaseTabBarBloc, DatabaseTabBarState>(
+                      builder: (context, state) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6.0),
+                          child: pageSettingBarFromState(context, state),
+                        );
+                      },
+                    ),
+                  ),
+                ),
               ),
             ],
           ),

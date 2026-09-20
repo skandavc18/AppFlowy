@@ -14,6 +14,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resi
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -788,7 +789,7 @@ class _StockBlockComponentState extends State<StockBlockComponent>
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          _header(context, symbol, muted),
+          _header(context, symbol, muted, keepVisible: true),
           const SizedBox(height: 8),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -959,7 +960,12 @@ class _StockBlockComponentState extends State<StockBlockComponent>
           ? DateFormat.MMMd().add_Hm().format(at)
           : DateFormat.yMMMd().format(at);
 
-  Widget _header(BuildContext context, String symbol, Color muted) {
+  Widget _header(
+    BuildContext context,
+    String symbol,
+    Color muted, {
+    bool keepVisible = false,
+  }) {
     final theme = Theme.of(context);
     final label = _label;
     return Row(
@@ -984,14 +990,17 @@ class _StockBlockComponentState extends State<StockBlockComponent>
         if (!_compact) ...[
           const Spacer(),
           // A chart swallows taps for scrubbing, so settings need their own way in.
-          IconButton(
-            onPressed: () => _configure(context),
-            icon: const Icon(Icons.tune_rounded, size: 16),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
-            color: muted,
-            tooltip: 'Ticker and period',
+          PreviewToolbar(
+            keepVisible: keepVisible,
+            child: IconButton(
+              onPressed: () => _configure(context),
+              icon: const Icon(Icons.tune_rounded, size: 16),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 24),
+              color: muted,
+              tooltip: 'Ticker and period',
+            ),
           ),
         ],
       ],
@@ -1016,6 +1025,7 @@ class _StockBlockComponentState extends State<StockBlockComponent>
 
   Future<void> _configure(BuildContext context) async {
     final editorState = context.read<EditorState>();
+    final releasePreview = PreviewToolbarRegion.hold(context);
     final result = await showDialog<
         ({String symbol, String label, StockRange range, bool compact})>(
       context: context,
@@ -1025,7 +1035,7 @@ class _StockBlockComponentState extends State<StockBlockComponent>
         range: _range,
         compact: _compact,
       ),
-    );
+    ).whenComplete(releasePreview);
     if (result == null) {
       return;
     }

@@ -382,27 +382,20 @@ class _WorkspaceIconSetting extends StatelessWidget {
       );
     }
 
-    Widget child = WorkspaceIcon(
+    return WorkspaceIcon(
       workspaceIcon: workspace!.icon,
       workspaceName: workspace!.name,
+      documentId: workspace!.workspaceId,
       iconSize: 64.0,
       emojiSize: 24.0,
       fontSize: 24.0,
       figmaLineHeight: 26.0,
       borderRadius: 18.0,
-      isEditable: true,
-      onSelected: (r) => context
-          .read<WorkspaceSettingsBloc>()
-          .add(WorkspaceSettingsEvent.updateWorkspaceIcon(r.emoji)),
+      isEditable: enableEdit,
+      onSelected: (r) => context.read<WorkspaceSettingsBloc>().add(
+            WorkspaceSettingsEvent.updateWorkspaceIcon(r.toStorageString()),
+          ),
     );
-
-    if (!enableEdit) {
-      child = IgnorePointer(
-        child: child,
-      );
-    }
-
-    return child;
   }
 }
 

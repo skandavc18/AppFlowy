@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/menu/menu_extension.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -22,9 +23,18 @@ void showReplaceMenu({
   required ValueChanged<String> onReplace,
 }) {
   OverlayEntry? overlay;
+  final releasePreview = PreviewToolbarRegion.hold(context);
+  var focusHeld = true;
+
+  void releaseFocus() {
+    if (!focusHeld) return;
+    focusHeld = false;
+    releasePreview();
+    keepEditorFocusNotifier.decrease();
+  }
 
   void dismissOverlay() {
-    keepEditorFocusNotifier.decrease();
+    releaseFocus();
     overlay?.remove();
     overlay = null;
   }
@@ -35,7 +45,7 @@ void showReplaceMenu({
     bottom: ltrb.bottom,
     left: ltrb.left,
     right: ltrb.right,
-    dismissCallback: () => keepEditorFocusNotifier.decrease(),
+    dismissCallback: releaseFocus,
     builder: (context) {
       return EditorChromeTheme(
         child: LinkReplaceMenu(

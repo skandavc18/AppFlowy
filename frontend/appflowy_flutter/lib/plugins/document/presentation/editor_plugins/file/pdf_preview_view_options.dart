@@ -317,6 +317,7 @@ class PdfViewOptionsMenu extends StatelessWidget {
     required this.enabled,
     required this.onPresetChanged,
     this.onAutoHideToolbarChanged,
+    this.onMenuVisibilityChanged,
   });
 
   final PdfViewPreset preset;
@@ -326,6 +327,7 @@ class PdfViewOptionsMenu extends StatelessWidget {
 
   /// Only full-screen hosts offer immersive hiding. Normal viewers stay fixed.
   final ValueChanged<bool>? onAutoHideToolbarChanged;
+  final ValueChanged<bool>? onMenuVisibilityChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -340,6 +342,7 @@ class PdfViewOptionsMenu extends StatelessWidget {
       iconColor: palette.icon,
       enabled: enabled,
       width: 268,
+      onVisibilityChanged: onMenuVisibilityChanged,
       entries: () => [
         const AppMenuHeader('Reading mode'),
         for (final value in PdfViewPreset.values)

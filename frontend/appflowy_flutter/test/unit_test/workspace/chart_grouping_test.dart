@@ -6,6 +6,7 @@ import 'package:appflowy/shared/charts/app_chart.dart';
 import 'package:appflowy/shared/charts/chart_painter.dart';
 import 'package:appflowy/shared/charts/chart_stage.dart';
 import 'package:appflowy/shared/charts/chart_toolbar.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/workspace/application/charts/chart_data.dart';
 import 'package:appflowy/workspace/application/charts/chart_metadata.dart';
@@ -875,9 +876,15 @@ void main() {
           ['Open', 'Closed', 'Open'],
         );
         expect(_chart(tester).spec.xColumn, 'Rank');
-        await tester.tap(find.byKey(const ValueKey('chart-horizontal-column')));
-        await tester.pumpAndSettle();
-        expect(find.text(LocaleKeys.charts_groupBy.tr()), findsNothing);
+        await _openChartMenu(tester, 'chart-horizontal-column');
+        expect(
+          find.byWidgetPredicate(
+            (widget) =>
+                widget is AppMenuSectionLabel &&
+                widget.label == LocaleKeys.charts_groupBy.tr(),
+          ),
+          findsNothing,
+        );
         await tester.tapAt(const Offset(1180, 700));
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
@@ -1267,11 +1274,46 @@ String _tooltipLabel(WidgetTester tester) {
       .points[tooltip.hit.pointIndex].label;
 }
 
+Future<void> _openChartMenu(WidgetTester tester, String control) async {
+  final chip = find.byKey(ValueKey(control));
+  expect(chip, findsOneWidget);
+  final entries =
+      tester.widget<ChartChip>(chip).entries.whereType<AppMenuItem>();
+  final button = find.descendant(
+    of: chip,
+    matching: find.byType(TextButton),
+  );
+  expect(button, findsOneWidget);
+  // The toolbar scrolls horizontally; a mounted chip can still be clipped.
+  // Reveal its native button instead of tapping through to a sibling action.
+  await tester.ensureVisible(button);
+  await tester.pumpAndSettle();
+  expect(button.hitTestable(), findsOneWidget, reason: control);
+  await tester.tap(button);
+  await tester.pumpAndSettle();
+  expect(find.byType(AppMenuSurface), findsOneWidget);
+  expect(
+    tester
+        .widgetList<AppMenuRow>(find.byType(AppMenuRow))
+        .map((row) => row.label),
+    entries.map((entry) => entry.label),
+    reason: 'The opened menu must belong to $control.',
+  );
+}
+
 Future<void> _choose(WidgetTester tester, String control, String label) async {
-  await tester.tap(find.byKey(ValueKey(control)));
+  await _openChartMenu(tester, control);
+  // Match the menu action, not an identically labelled toolbar value.
+  final row = find.byWidgetPredicate(
+    (widget) => widget is AppMenuRow && widget.label == label,
+  );
+  expect(row, findsOneWidget, reason: '$control must offer $label.');
+  await tester.ensureVisible(row);
   await tester.pumpAndSettle();
-  await tester.tap(find.text(label).last);
+  expect(row.hitTestable(), findsOneWidget);
+  await tester.tap(row);
   await tester.pumpAndSettle();
+  expect(find.byType(AppMenuSurface), findsNothing);
 }
 
 Future<ValueChanged<ChartSpec>> _pumpChart(
