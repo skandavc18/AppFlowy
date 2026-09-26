@@ -40,8 +40,9 @@ abstract final class SidebarTypography {
   static const pageWeight = FontWeight.w500;
   static const headingWeight = FontWeight.w600;
 
-  // Prevent FlowyText from synthesizing a variable weight axis.
-  static const fontVariations = <FontVariation>[];
+  // Match the non-variable fallback weight instead of synthesizing axis 550.
+  static const fontVariations = [FontVariation.weight(500)];
+  static const headingFontVariations = [FontVariation.weight(600)];
 
   static double letterSpacingForFontSize(double fontSize) =>
       ObjectTypeTypography.letterSpacingForFontSize(fontSize);
@@ -92,7 +93,9 @@ abstract final class SidebarTypography {
       fontFamilyFallback: fontFamilyFallbackForPlatform(theme.platform),
       fontSize: resolvedFontSize,
       fontWeight: fontWeightForRole(role),
-      fontVariations: fontVariations,
+      fontVariations: role == SidebarTextRole.heading
+          ? headingFontVariations
+          : fontVariations,
       height: resolvedLineHeight / resolvedFontSize,
       letterSpacing: role == SidebarTextRole.section
           ? sectionLetterSpacing

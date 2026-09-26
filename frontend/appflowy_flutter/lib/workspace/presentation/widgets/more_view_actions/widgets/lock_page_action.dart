@@ -1,6 +1,7 @@
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -42,9 +43,9 @@ class _LockPageActionState extends State<LockPageAction> {
       child: FlowyIconTextButton(
         margin: const EdgeInsets.symmetric(horizontal: 6),
         onTap: () => _toggle(context),
-        leftIconBuilder: (onHover) => FlowySvg(
+        leftIconBuilder: (onHover) => const WorkspaceGlyph.svg(
           FlowySvgs.lock_page_s,
-          size: const Size.square(16.0),
+          size: 16,
         ),
         iconPadding: 10.0,
         textBuilder: (onHover) => FlowyText(
@@ -105,7 +106,11 @@ class LockPageButtonWrapper extends StatelessWidget {
     return FlowyTooltip(
       message: LocaleKeys.lockPage_lockedOperationTooltip.tr(),
       child: IgnorePointer(
-        child: child,
+        child: WorkspaceGlyphScope(
+          color: Theme.of(context).disabledColor,
+          role: WorkspaceGlyphRole.preserveInk,
+          child: child,
+        ),
       ),
     );
   }

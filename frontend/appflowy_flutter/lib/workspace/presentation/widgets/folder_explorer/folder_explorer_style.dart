@@ -41,9 +41,14 @@ class FolderExplorerPalette {
       floatingSurface: usePaperPalette
           ? PaperTheme.popupBackground
           : premium?.floatingSurface ?? fallback.surfaceContainer,
-      hover: usePaperPalette
-          ? PaperTheme.controlHover
-          : premium?.hover ?? fallback.onSurface.withValues(alpha: 0.06),
+      hover: premium?.subtleHover ??
+          (usePaperPalette
+              ? PaperTheme.hoverOverlay.withValues(
+                  alpha: PaperTheme.hoverOverlay.a * 0.65,
+                )
+              : fallback.onSurface.withValues(
+                  alpha: fallback.onSurface.a * 0.04,
+                )),
       selected: usePaperPalette
           ? PaperTheme.controlSelected
           : premium?.selected ??
@@ -77,6 +82,9 @@ class FolderExplorerPalette {
   final Color background;
   final Color surface;
   final Color floatingSurface;
+
+  /// A translucent wash, not a replacement surface. Attenuate by multiplying
+  /// its existing alpha; use [selected] for selection rather than boosting it.
   final Color hover;
   final Color selected;
   final Color border;
@@ -86,6 +94,21 @@ class FolderExplorerPalette {
   final Color accent;
   final Color danger;
   final Color shadow;
+}
+
+/// One reading measure for folder identity, actions and every presentation.
+/// Embeds use the same alignment without inheriting desktop-sized gutters.
+abstract final class FolderExplorerLayout {
+  static const maxContentWidth = 1200.0;
+
+  static double horizontalPadding(double width, {bool embedded = false}) {
+    if (!width.isFinite || width <= 0) return 0;
+    final minimum =
+        (embedded || width < 600 ? 16.0 : 36.0).clamp(0.0, width / 2);
+    return ((width - maxContentWidth) / 2)
+        .clamp(minimum, double.infinity)
+        .toDouble();
+  }
 }
 
 abstract final class KnowledgeGalleryLayout {

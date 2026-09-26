@@ -10,9 +10,16 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'settings_user_bloc.freezed.dart';
 
 class SettingsUserViewBloc extends Bloc<SettingsUserEvent, SettingsUserState> {
-  SettingsUserViewBloc(this.userProfile)
-      : _userListener = UserListener(userProfile: userProfile),
-        _userService = UserBackendService(userId: userProfile.id),
+  SettingsUserViewBloc(
+    this.userProfile, {
+    UserListener? userListener,
+    UserBackendService? userService,
+    Future<FlowyResult<UserProfilePB, FlowyError>> Function()? loadUserProfile,
+  })  : _userListener = userListener ?? UserListener(userProfile: userProfile),
+        _userService =
+            userService ?? UserBackendService(userId: userProfile.id),
+        _loadProfile =
+            loadUserProfile ?? UserBackendService.getCurrentUserProfile,
         super(SettingsUserState.initial(userProfile)) {
     _dispatch();
   }
@@ -20,9 +27,21 @@ class SettingsUserViewBloc extends Bloc<SettingsUserEvent, SettingsUserState> {
   final UserBackendService _userService;
   final UserListener _userListener;
   final UserProfilePB userProfile;
+  final Future<FlowyResult<UserProfilePB, FlowyError>> Function() _loadProfile;
+  bool _started = false;
+  bool _closing = false;
+  int _profileRevision = 0;
+
+  Future<FlowyResult<void, FlowyError>> saveUserIcon(String iconUrl) {
+    if (_closing || isClosed) {
+      return Future.error(StateError('The profile is no longer active'));
+    }
+    return _userService.updateUserProfile(iconUrl: iconUrl);
+  }
 
   @override
   Future<void> close() async {
+    _closing = true;
     await _userListener.stop();
     return super.close();
   }
@@ -32,10 +51,14 @@ class SettingsUserViewBloc extends Bloc<SettingsUserEvent, SettingsUserState> {
       (event, emit) async {
         await event.when(
           initial: () async {
-            _loadUserProfile();
+            if (_started || _closing) return;
+            _started = true;
             _userListener.start(onProfileUpdated: _profileUpdated);
+            await _loadUserProfile();
           },
           didReceiveUserProfile: (UserProfilePB newUserProfile) {
+            if (_closing || newUserProfile.id != userProfile.id) return;
+            _profileRevision++;
             emit(state.copyWith(userProfile: newUserProfile));
           },
           updateUserName: (String name) {
@@ -47,7 +70,7 @@ class SettingsUserViewBloc extends Bloc<SettingsUserEvent, SettingsUserState> {
             });
           },
           updateUserIcon: (String iconUrl) {
-            _userService.updateUserProfile(iconUrl: iconUrl).then((result) {
+            saveUserIcon(iconUrl).then((result) {
               result.fold(
                 (l) => null,
                 (err) => Log.error(err),
@@ -74,7 +97,7 @@ class SettingsUserViewBloc extends Bloc<SettingsUserEvent, SettingsUserState> {
           },
           removeUserIcon: () {
             // Empty Icon URL = No icon
-            _userService.updateUserProfile(iconUrl: "").then((result) {
+            saveUserIcon('').then((result) {
               result.fold(
                 (l) => null,
                 (err) => Log.error(err),
@@ -86,29 +109,26 @@ class SettingsUserViewBloc extends Bloc<SettingsUserEvent, SettingsUserState> {
     );
   }
 
-  void _loadUserProfile() {
-    UserBackendService.getCurrentUserProfile().then((result) {
-      if (isClosed) {
-        return;
-      }
-
-      result.fold(
-        (userProfile) => add(
-          SettingsUserEvent.didReceiveUserProfile(userProfile),
-        ),
-        (err) => Log.error(err),
-      );
-    });
+  Future<void> _loadUserProfile() async {
+    final revision = _profileRevision;
+    final result = await _loadProfile();
+    if (_closing || isClosed || revision != _profileRevision) return;
+    _profileUpdated(result);
   }
 
   void _profileUpdated(
     FlowyResult<UserProfilePB, FlowyError> userProfileOrFailed,
-  ) =>
-      userProfileOrFailed.fold(
-        (newUserProfile) =>
-            add(SettingsUserEvent.didReceiveUserProfile(newUserProfile)),
-        (err) => Log.error(err),
-      );
+  ) {
+    if (_closing || isClosed) return;
+    userProfileOrFailed.fold(
+      (profile) {
+        if (profile.id != userProfile.id) return;
+        _profileRevision++;
+        add(SettingsUserEvent.didReceiveUserProfile(profile));
+      },
+      (err) => Log.error(err),
+    );
+  }
 }
 
 @freezed

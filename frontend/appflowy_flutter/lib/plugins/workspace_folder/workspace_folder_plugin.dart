@@ -90,13 +90,18 @@ class WorkspaceFolderPluginWidgetBuilder extends PluginWidgetBuilder
         context.onDeleted?.call(view, deletedViewIndex);
       }
     });
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 18, 28, 26),
-      child: WorkspaceFolderStage(
-        key: ValueKey(view.id),
-        view: view,
-      ),
+    final stage = WorkspaceFolderStage(
+      key: ValueKey(view.id),
+      view: view,
     );
+    // A synthetic workspace root has no page-access record; its identity and
+    // creation controls use the workspace role. Real folders use page access.
+    return isWorkspaceRoot
+        ? stage
+        : BlocProvider<PageAccessLevelBloc>.value(
+            value: pageAccessLevelBloc,
+            child: stage,
+          );
   }
 
   @override

@@ -73,6 +73,22 @@ void main() {
     expect(controller.root.name, 'Knowledge HQ');
   });
 
+  test('adopting unchanged roots is silent and keeps selection', () async {
+    await controller.initialize();
+    controller.selection.selectOnly(file.id);
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+    controller.updateRoot(ViewPB.fromBuffer(root.writeToBuffer()));
+    expect(notifications, 0);
+    expect(controller.selection.ids, {file.id});
+    controller
+        .updateRoot(ViewPB.fromBuffer(root.writeToBuffer())..name = 'New');
+    expect(notifications, 1);
+    expect(controller.root.name, 'New');
+    controller.updateRoot(controller.viewForId(root.id)!);
+    expect(notifications, 1);
+  });
+
   test('search loads the flat index and restores normal expansion', () async {
     await controller.initialize();
     await controller.toggleFolder(folder.id);

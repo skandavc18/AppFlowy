@@ -6,14 +6,43 @@ import 'package:appflowy/plugins/database/calendar/presentation/calendar_chrome.
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_style.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_sync_indicator.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/views/agenda_view.dart';
+import 'package:appflowy/plugins/database/calendar/presentation/views/month_agenda_view.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/views/month_view.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/views/time_grid_view.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/views/year_view.dart';
 import 'package:appflowy/shared/calendar/calendar_layout.dart';
 import 'package:appflowy/shared/calendar/calendar_provider.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+
+/// An embedded host can own its presentation without changing the table's
+/// saved page layout. A null mode follows that page until the host chooses one;
+/// a null callback makes runtime navigation local, never a table-setting write.
+class CalendarPresentationScope extends InheritedWidget {
+  const CalendarPresentationScope({
+    super.key,
+    required super.child,
+    this.mode,
+    this.onModeChanged,
+    this.embedded = true,
+  });
+
+  final CalendarViewMode? mode;
+  final ValueChanged<CalendarViewMode>? onModeChanged;
+  final bool embedded;
+
+  static CalendarPresentationScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<CalendarPresentationScope>();
+
+  @override
+  bool updateShouldNotify(CalendarPresentationScope oldWidget) =>
+      mode != oldWidget.mode ||
+      onModeChanged != oldWidget.onModeChanged ||
+      embedded != oldWidget.embedded;
+}
 
 /// The calendar, whatever it is showing.
 ///
@@ -29,12 +58,16 @@ class CalendarShell extends StatefulWidget {
     this.showWeekends = true,
     this.showWeekNumbers = false,
     this.initialMode = CalendarViewMode.month,
+    this.mode,
     this.onModeChanged,
     this.toolbarTrailing,
     this.onConnectCalendar,
     this.hasDateField = true,
     this.compact = false,
     this.quiet = false,
+    this.embedded = false,
+    this.initialDate,
+    this.now = DateTime.now,
   });
 
   final CalendarWorkspace workspace;
@@ -43,6 +76,11 @@ class CalendarShell extends StatefulWidget {
   final bool showWeekends;
   final bool showWeekNumbers;
   final CalendarViewMode initialMode;
+
+  /// When supplied, the host's saved choice is authoritative, including a
+  /// failed save that rolls back before the next frame. Read-only hosts can
+  /// leave this null so navigating layouts remains a local viewing action.
+  final CalendarViewMode? mode;
   final ValueChanged<CalendarViewMode>? onModeChanged;
   final Widget? toolbarTrailing;
   final VoidCallback? onConnectCalendar;
@@ -59,22 +97,82 @@ class CalendarShell extends StatefulWidget {
   /// else. Searching and filtering belong to the calendar's own page.
   final bool quiet;
 
+  /// Card density is independent of toolbar visibility. Pages share their
+  /// available height between month and events; embeds retain a compact grid.
+  final bool embedded;
+
+  final DateTime? initialDate;
+  final DateTime Function() now;
+
   @override
   State<CalendarShell> createState() => CalendarShellState();
 }
 
 class CalendarShellState extends State<CalendarShell> {
-  late CalendarViewMode _mode = widget.initialMode;
-  DateTime _anchor = startOfDay(DateTime.now());
+  late CalendarViewMode _mode = widget.mode ?? widget.initialMode;
+  late DateTime _anchor = startOfDay(widget.initialDate ?? widget.now());
   DateTime? _selectedDay;
   bool _searching = false;
   final TextEditingController _search = TextEditingController();
+  final PageStorageBucket _scrollState = PageStorageBucket();
+  CalendarPresentationScope? _presentation;
+
+  bool get _quiet => widget.quiet || _presentation != null;
+
+  CalendarViewMode get _preferredMode =>
+      _presentation?.mode ?? widget.mode ?? widget.initialMode;
+
+  CalendarViewMode? get _controlledMode => _presentation == null
+      ? widget.mode
+      : _presentation!.onModeChanged == null
+          ? null
+          : _presentation!.mode ?? widget.mode;
 
   @override
   void initState() {
     super.initState();
+    _search.text = widget.workspace.filter.query;
     widget.workspace.addListener(_onWorkspaceChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadWindow());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final previous = _presentation;
+    _presentation = CalendarPresentationScope.maybeOf(context);
+    final changed = previous?.mode != _presentation?.mode ||
+        (previous == null) != (_presentation == null) ||
+        (previous?.onModeChanged == null) !=
+            (_presentation?.onModeChanged == null);
+    final controlled = _controlledMode;
+    if ((controlled != null && controlled != _mode) ||
+        (changed && _preferredMode != _mode)) {
+      _adoptMode(controlled ?? _preferredMode);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadWindow());
+    }
+  }
+
+  @override
+  void didUpdateWidget(CalendarShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final rebound = oldWidget.workspace != widget.workspace;
+    if (rebound) {
+      oldWidget.workspace.removeListener(_onWorkspaceChanged);
+      widget.workspace.addListener(_onWorkspaceChanged);
+      _search.text = widget.workspace.filter.query;
+    }
+    final controlled = _controlledMode;
+    final modeChanged = controlled != null
+        ? controlled != _mode
+        : oldWidget.initialMode != widget.initialMode;
+    if (modeChanged) _adoptMode(controlled ?? _preferredMode);
+    if (rebound ||
+        modeChanged ||
+        oldWidget.firstDayOfWeek != widget.firstDayOfWeek) {
+      // load notifies synchronously. Do not dirty ancestors during their build.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _loadWindow());
+    }
   }
 
   @override
@@ -91,13 +189,26 @@ class CalendarShellState extends State<CalendarShell> {
   }
 
   void _loadWindow() {
+    if (!mounted) return;
     unawaited(widget.workspace.load(CalendarWindow(_windowStart, _windowEnd)));
+  }
+
+  void _reportMode(CalendarViewMode mode) {
+    final presentation = _presentation;
+    if (presentation != null) {
+      presentation.onModeChanged?.call(mode);
+    } else {
+      widget.onModeChanged?.call(mode);
+    }
   }
 
   // --- what is on screen -----------------------------------------------------
 
   DateTime get _windowStart => switch (_mode) {
-        CalendarViewMode.month => startOfWeek(
+        CalendarViewMode.month ||
+        CalendarViewMode.monthAgenda ||
+        CalendarViewMode.monthSplit =>
+          startOfWeek(
             DateTime(_anchor.year, _anchor.month),
             widget.firstDayOfWeek,
           ),
@@ -109,6 +220,9 @@ class CalendarShellState extends State<CalendarShell> {
 
   DateTime get _windowEnd => switch (_mode) {
         CalendarViewMode.month => _windowStart.add(const Duration(days: 42)),
+        CalendarViewMode.monthAgenda ||
+        CalendarViewMode.monthSplit =>
+          calendarDayOffset(_windowStart, 42),
         CalendarViewMode.week => _windowStart.add(const Duration(days: 7)),
         CalendarViewMode.day => _windowStart.add(const Duration(days: 1)),
         CalendarViewMode.agenda => _windowStart.add(const Duration(days: 60)),
@@ -116,7 +230,10 @@ class CalendarShellState extends State<CalendarShell> {
       };
 
   String get _title => switch (_mode) {
-        CalendarViewMode.month => DateFormat.yMMMM().format(_anchor),
+        CalendarViewMode.month ||
+        CalendarViewMode.monthAgenda ||
+        CalendarViewMode.monthSplit =>
+          DateFormat.yMMMM().format(_anchor),
         CalendarViewMode.week => _weekTitle(),
         CalendarViewMode.day => DateFormat.yMMMMEEEEd().format(_anchor),
         CalendarViewMode.agenda => DateFormat.yMMMM().format(_anchor),
@@ -139,27 +256,44 @@ class CalendarShellState extends State<CalendarShell> {
       _anchor = switch (_mode) {
         CalendarViewMode.month =>
           DateTime(_anchor.year, _anchor.month + direction),
+        CalendarViewMode.monthAgenda ||
+        CalendarViewMode.monthSplit =>
+          calendarMonthOffset(_selectedDay ?? _anchor, direction),
         CalendarViewMode.week => _anchor.add(Duration(days: 7 * direction)),
         CalendarViewMode.day => _anchor.add(Duration(days: direction)),
         CalendarViewMode.agenda => _anchor.add(Duration(days: 30 * direction)),
         CalendarViewMode.year => DateTime(_anchor.year + direction),
       };
+      if (_mode.hasMonthAgenda) _selectedDay = _anchor;
     });
     _loadWindow();
   }
 
   void _goToToday() {
-    setState(() => _anchor = startOfDay(DateTime.now()));
+    setState(() {
+      _anchor = startOfDay(widget.now());
+      _selectedDay = _anchor;
+    });
     _loadWindow();
+  }
+
+  void _selectAgendaDay(DateTime day) {
+    final changedMonth = day.month != _anchor.month || day.year != _anchor.year;
+    setState(() {
+      _selectedDay = startOfDay(day);
+      _anchor = _selectedDay!;
+    });
+    if (changedMonth) _loadWindow();
   }
 
   /// Open a day in the day reading — what "+3 more" and a date click do.
   void showDay(DateTime day) {
     setState(() {
       _anchor = startOfDay(day);
+      _selectedDay = _anchor;
       _mode = CalendarViewMode.day;
     });
-    widget.onModeChanged?.call(_mode);
+    _reportMode(_mode);
     _loadWindow();
   }
 
@@ -167,16 +301,28 @@ class CalendarShellState extends State<CalendarShell> {
   void showMonth(DateTime month) {
     setState(() {
       _anchor = DateTime(month.year, month.month);
+      _selectedDay = _anchor;
       _mode = CalendarViewMode.month;
     });
-    widget.onModeChanged?.call(_mode);
+    _reportMode(_mode);
     _loadWindow();
   }
 
   void setMode(CalendarViewMode mode) {
-    setState(() => _mode = mode);
-    widget.onModeChanged?.call(mode);
+    if (_mode == mode) return;
+    setState(() => _adoptMode(mode));
+    _reportMode(mode);
     _loadWindow();
+  }
+
+  void _adoptMode(CalendarViewMode mode) {
+    _mode = mode;
+    if (mode.hasMonthAgenda &&
+        (_selectedDay == null ||
+            _selectedDay!.month != _anchor.month ||
+            _selectedDay!.year != _anchor.year)) {
+      _selectedDay = _anchor;
+    }
   }
 
   // --- build -----------------------------------------------------------------
@@ -184,28 +330,153 @@ class CalendarShellState extends State<CalendarShell> {
   @override
   Widget build(BuildContext context) {
     // Quiet calendars are also hosted directly by dashboard cards.
-    return widget.quiet
+    return _quiet
         ? PreviewToolbarRegion(child: Builder(builder: _buildCalendar))
         : _buildCalendar(context);
   }
 
-  Widget _buildCalendar(BuildContext context) {
+  Widget _buildCalendar(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) => _buildContent(
+          context,
+          compactMonthAgenda: widget.compact ||
+              widget.embedded ||
+              (_presentation?.embedded ?? false) ||
+              constraints.maxWidth < 760 ||
+              constraints.maxHeight < 480,
+        ),
+      );
+
+  Widget _buildContent(
+    BuildContext context, {
+    required bool compactMonthAgenda,
+  }) {
     final palette = calendarPaletteOf(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.compact)
+        if (_mode.hasMonthAgenda)
+          _buildMonthAgendaToolbar(compact: compactMonthAgenda)
+        else if (widget.compact)
           _buildCompactToolbar(palette)
         else
           _buildToolbar(palette),
         Expanded(
           // No `AnimatedSwitcher`: it keeps the outgoing reading alive, and
           // two scroll views cannot share the page's scroll controller.
-          child: _buildBody(),
+          child: PageStorage(
+            bucket: _scrollState,
+            child: _buildBody(compactMonthAgenda: compactMonthAgenda),
+          ),
         ),
       ],
     );
   }
+
+  /// Date identity plus icon-sized actions leave room for six weeks and an
+  /// agenda in a dashboard-sized box. Text grows instead of being clipped into
+  /// a fixed-height toolbar, and resizing never changes this tree's shape.
+  Widget _buildMonthAgendaToolbar({required bool compact}) =>
+      CalendarMonthAgendaMeasure(
+        sideBySide: _mode == CalendarViewMode.monthSplit,
+        compact: compact,
+        child: Padding(
+          key: const ValueKey('calendar-month-agenda-toolbar'),
+          padding: const EdgeInsets.symmetric(
+            horizontal: WorkspaceTokens.space3,
+            vertical: WorkspaceTokens.space1,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: WorkspaceTypography.style(
+                        context,
+                        WorkspaceTextRole.cardTitle,
+                      ),
+                    ),
+                  ),
+                  PreviewToolbar(
+                    keepVisible: _searching ||
+                        widget.workspace.status.state.needsAttention,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CalendarControlButton(
+                          icon: Icons.chevron_left_rounded,
+                          tooltip: LocaleKeys.calendarView_previous.tr(),
+                          onPressed: () => _step(-1),
+                        ),
+                        CalendarControlButton(
+                          key: const ValueKey('calendar-go-today'),
+                          icon: Icons.today_rounded,
+                          tooltip: LocaleKeys.calendarView_today.tr(),
+                          onPressed: _goToToday,
+                        ),
+                        CalendarControlButton(
+                          icon: Icons.chevron_right_rounded,
+                          tooltip: LocaleKeys.calendarView_next.tr(),
+                          onPressed: () => _step(1),
+                        ),
+                        CalendarViewSwitcher(
+                          mode: _mode,
+                          onChanged: setMode,
+                          labels: calendarViewModeLabel,
+                          popup: true,
+                          iconOnly: true,
+                        ),
+                        if (!_quiet)
+                          CalendarControlButton(
+                            icon: Icons.search_rounded,
+                            tooltip: LocaleKeys.calendarView_search.tr(),
+                            onPressed: () =>
+                                setState(() => _searching = !_searching),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (!_quiet)
+                PreviewToolbar(
+                  keepVisible: _searching ||
+                      widget.workspace.status.state.needsAttention ||
+                      widget.workspace.status.state.isBusy,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        CalendarFilterButton(workspace: widget.workspace),
+                        CalendarSyncIndicator(workspace: widget.workspace),
+                        if (widget.toolbarTrailing != null)
+                          widget.toolbarTrailing!,
+                      ],
+                    ),
+                  ),
+                ),
+              if (_searching && !_quiet)
+                _SearchField(
+                  controller: _search,
+                  onChanged: (value) => widget.workspace.setFilter(
+                    widget.workspace.filter.copyWith(query: value),
+                  ),
+                  onClose: () {
+                    setState(() => _searching = false);
+                    _search.clear();
+                    widget.workspace
+                        .setFilter(widget.workspace.filter.copyWith(query: ''));
+                  },
+                ),
+            ],
+          ),
+        ),
+      );
 
   /// Two short rows: navigation and title above, readings below.
   Widget _buildCompactToolbar(CalendarPalette palette) => Padding(
@@ -279,11 +550,12 @@ class CalendarShellState extends State<CalendarShell> {
                           onChanged: setMode,
                           labels: _labelFor,
                           available: _availableModes,
+                          popup: true,
                         ),
                       ),
                     ),
                     const SizedBox(width: CalendarMetrics.space1),
-                    if (!widget.quiet) ...[
+                    if (!_quiet) ...[
                       CalendarControlButton(
                         icon: Icons.search_rounded,
                         tooltip: LocaleKeys.calendarView_search.tr(),
@@ -334,13 +606,7 @@ class CalendarShellState extends State<CalendarShell> {
     }
   }
 
-  List<CalendarViewMode> get _availableModes => const [
-        CalendarViewMode.month,
-        CalendarViewMode.week,
-        CalendarViewMode.day,
-        CalendarViewMode.agenda,
-        CalendarViewMode.year,
-      ];
+  List<CalendarViewMode> get _availableModes => CalendarViewMode.values;
 
   Widget _buildToolbar(CalendarPalette palette) => Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -381,7 +647,8 @@ class CalendarShellState extends State<CalendarShell> {
               const SizedBox(width: CalendarMetrics.space3),
               Expanded(
                 child: AnimatedSwitcher(
-                  duration: CalendarMetrics.change,
+                  duration:
+                      WorkspaceTokens.motion(context, CalendarMetrics.change),
                   child: Text(
                     _title,
                     key: ValueKey(_title),
@@ -411,7 +678,7 @@ class CalendarShellState extends State<CalendarShell> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (!widget.quiet) ...[
+                        if (!_quiet) ...[
                           if (_searching)
                             _SearchField(
                               controller: _search,
@@ -444,6 +711,7 @@ class CalendarShellState extends State<CalendarShell> {
                           onChanged: setMode,
                           labels: _labelFor,
                           available: _availableModes,
+                          popup: true,
                         ),
                         if (widget.toolbarTrailing != null) ...[
                           const SizedBox(width: CalendarMetrics.space2),
@@ -459,15 +727,9 @@ class CalendarShellState extends State<CalendarShell> {
         ),
       );
 
-  static String _labelFor(CalendarViewMode mode) => switch (mode) {
-        CalendarViewMode.month => LocaleKeys.calendarView_views_month.tr(),
-        CalendarViewMode.week => LocaleKeys.calendarView_views_week.tr(),
-        CalendarViewMode.day => LocaleKeys.calendarView_views_day.tr(),
-        CalendarViewMode.agenda => LocaleKeys.calendarView_views_agenda.tr(),
-        CalendarViewMode.year => LocaleKeys.calendarView_views_year.tr(),
-      };
+  static String _labelFor(CalendarViewMode mode) => calendarViewModeLabel(mode);
 
-  Widget _buildBody() {
+  Widget _buildBody({required bool compactMonthAgenda}) {
     if (!widget.hasDateField) {
       return CalendarEmptyState(
         icon: Icons.event_busy_rounded,
@@ -476,10 +738,19 @@ class CalendarShellState extends State<CalendarShell> {
       );
     }
 
-    final events = widget.workspace.eventsBetween(_windowStart, _windowEnd);
+    final events = _mode.hasMonthAgenda
+        ? widget.workspace.events
+            .where(
+              (event) =>
+                  !event.endDay.isBefore(_windowStart) &&
+                  event.startDay.isBefore(_windowEnd),
+            )
+            .toList()
+        : widget.workspace.eventsBetween(_windowStart, _windowEnd);
 
     return switch (_mode) {
       CalendarViewMode.month => CalendarMonthView(
+          key: const PageStorageKey('calendar-month'),
           month: _anchor,
           events: events,
           delegate: widget.delegate,
@@ -490,6 +761,7 @@ class CalendarShellState extends State<CalendarShell> {
           onSelectDay: (day) => setState(() => _selectedDay = day),
         ),
       CalendarViewMode.week => CalendarTimeGridView(
+          key: const PageStorageKey('calendar-week'),
           days: weekDays(
             _anchor,
             firstDayOfWeek: widget.firstDayOfWeek,
@@ -499,11 +771,13 @@ class CalendarShellState extends State<CalendarShell> {
           delegate: widget.delegate,
         ),
       CalendarViewMode.day => CalendarTimeGridView(
+          key: const PageStorageKey('calendar-day'),
           days: [startOfDay(_anchor)],
           events: events,
           delegate: widget.delegate,
         ),
       CalendarViewMode.agenda => CalendarAgendaView(
+          key: const PageStorageKey('calendar-agenda'),
           from: _windowStart,
           to: _windowEnd,
           events: events,
@@ -513,12 +787,29 @@ class CalendarShellState extends State<CalendarShell> {
           emptyState: _emptyState(),
         ),
       CalendarViewMode.year => CalendarYearView(
+          key: const PageStorageKey('calendar-year'),
           year: _anchor.year,
           events: events,
           delegate: widget.delegate,
           firstDayOfWeek: widget.firstDayOfWeek,
           onOpenMonth: showMonth,
           onOpenDay: showDay,
+        ),
+      CalendarViewMode.monthAgenda ||
+      CalendarViewMode.monthSplit =>
+        CalendarMonthAgendaView(
+          key: const PageStorageKey('calendar-month-with-agenda'),
+          month: _anchor,
+          selectedDay: _selectedDay ?? _anchor,
+          events: events,
+          delegate: widget.delegate,
+          onSelectDay: _selectAgendaDay,
+          sideBySide: _mode == CalendarViewMode.monthSplit,
+          compact: compactMonthAgenda,
+          firstDayOfWeek: widget.firstDayOfWeek,
+          showWeekends: widget.showWeekends,
+          showWeekNumbers: widget.showWeekNumbers,
+          now: widget.now,
         ),
     };
   }
@@ -596,7 +887,7 @@ class _TodayButtonState extends State<_TodayButton> {
           foregroundColor: palette.textSecondary,
         ),
         child: AnimatedContainer(
-          duration: CalendarMetrics.hover,
+          duration: WorkspaceTokens.motion(context, CalendarMetrics.hover),
           curve: CalendarMetrics.hoverCurve,
           height: CalendarMetrics.controlSize,
           padding: const EdgeInsets.symmetric(horizontal: 11),
@@ -636,7 +927,7 @@ class _SearchField extends StatelessWidget {
     final palette = calendarPaletteOf(context);
     return SizedBox(
       width: 208,
-      height: CalendarMetrics.controlSize,
+      height: MediaQuery.textScalerOf(context).scale(12.5) + 18,
       child: TextField(
         controller: controller,
         autofocus: true,
@@ -649,20 +940,18 @@ class _SearchField extends StatelessWidget {
           hintText: LocaleKeys.calendarView_searchHint.tr(),
           hintStyle: TextStyle(fontSize: 12.5, color: palette.textMuted),
           contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-          prefixIcon: Icon(
+          prefixIcon: WorkspaceGlyph(
             Icons.search_rounded,
             size: 15,
             color: palette.textMuted,
           ),
           prefixIconConstraints:
               const BoxConstraints(minWidth: 30, minHeight: 30),
-          suffixIcon: GestureDetector(
-            onTap: onClose,
-            child: Icon(
-              Icons.close_rounded,
-              size: 15,
-              color: palette.textMuted,
-            ),
+          suffixIcon: CalendarControlButton(
+            icon: Icons.close_rounded,
+            tooltip: MaterialLocalizations.of(context).closeButtonLabel,
+            onPressed: onClose,
+            size: 26,
           ),
           suffixIconConstraints:
               const BoxConstraints(minWidth: 30, minHeight: 30),

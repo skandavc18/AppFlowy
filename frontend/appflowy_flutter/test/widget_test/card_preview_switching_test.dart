@@ -8,7 +8,10 @@ import 'package:appflowy/plugins/database/board/presentation/toolbar/card_previe
 import 'package:appflowy/plugins/database/widgets/card/card.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/table_views/row_page_preview.dart';
+import 'package:appflowy/shared/workspace_icons.dart'
+    show DSWorkspaceGlyph, WorkspaceGlyphs;
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy_backend/log.dart';
@@ -879,6 +882,14 @@ _SelectionSnapshot _selected(CardPreviewMode mode) => (
       checked: _labels[mode]!.tr(),
     );
 
+Finder _glyph(IconData icon) => find.byWidgetPredicate(
+      (widget) =>
+          widget is DSWorkspaceGlyph &&
+          widget.icon == icon &&
+          widget.name == WorkspaceGlyphs.nameForIcon(icon),
+      description: 'WorkspaceGlyph(${WorkspaceGlyphs.nameForIcon(icon)})',
+    );
+
 _SelectionSnapshot _capture(WidgetTester tester, String appearance) {
   final faces = [
     for (final mode in CardPreviewMode.values)
@@ -959,27 +970,37 @@ _SelectionSnapshot _capture(WidgetTester tester, String appearance) {
   );
   final checked = rows.where((row) => row.selected).toList();
   expect(checked, hasLength(1));
-  expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+  expect(_glyph(Icons.check_rounded), findsOneWidget);
   expect(
     find.descendant(
       of: find.byWidget(checked.single),
-      matching: find.byIcon(Icons.check_rounded),
+      matching: _glyph(Icons.check_rounded),
     ),
     findsOneWidget,
   );
   final style =
       tester.widget<AppMenuSurface>(find.byType(AppMenuSurface)).style!;
+  final buttonContext = tester.element(find.byType(CardPreviewButton));
+  final palette = PremiumThemeExtension.of(buttonContext);
+  expect(style.hover, palette.subtleHover);
+  expect(
+    style.hover.a,
+    allOf(greaterThan(0), lessThanOrEqualTo(0.07)),
+  );
   expect(
     style.brightness,
     appearance == 'dark' ? Brightness.dark : Brightness.light,
   );
   expect(
-    PaperTheme.isEnabled(tester.element(find.byType(CardPreviewButton))),
+    PaperTheme.isEnabled(buttonContext),
     appearance == 'paper',
   );
   if (appearance == 'paper') {
     expect(style.surface, PaperTheme.popupBackground);
-    expect(style.hover, PaperTheme.controlHover);
+    final painted = Color.alphaBlend(style.hover, style.surface);
+    expect(painted, isNot(style.surface));
+    expect(painted.r, greaterThanOrEqualTo(painted.g));
+    expect(painted.g, greaterThan(painted.b));
     expect(style.accent, PaperTheme.accent);
   }
   return (face: 'row-card-face-${mode.id}', checked: checked.single.label);

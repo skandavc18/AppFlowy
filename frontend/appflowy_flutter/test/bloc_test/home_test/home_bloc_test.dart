@@ -1,115 +1,112 @@
-import 'package:appflowy/plugins/document/application/document_bloc.dart';
+import 'dart:async';
+
+import 'package:appflowy/user/application/user_listener.dart';
 import 'package:appflowy/workspace/application/home/home_bloc.dart';
-import 'package:appflowy/workspace/application/view/view_bloc.dart';
-import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
-import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart';
+import 'package:appflowy_result/appflowy_result.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import '../../util.dart';
+import '../../util/home_profile_test_support.dart';
 
 void main() {
-  late AppFlowyUnitTest testContext;
-  setUpAll(() async {
-    testContext = await AppFlowyUnitTest.ensureInitialized();
-  });
-
-  test('init home screen', () async {
-    final workspaceSetting = await FolderEventGetCurrentWorkspaceSetting()
-        .send()
-        .then((result) => result.fold((l) => l, (r) => throw Exception()));
-    await blocResponseFuture();
-
-    final homeBloc = HomeBloc(workspaceSetting)..add(const HomeEvent.initial());
-    await blocResponseFuture();
-
-    assert(homeBloc.state.workspaceSetting.hasLatestView());
-  });
-
-  test('open the document', () async {
-    final workspaceSetting = await FolderEventGetCurrentWorkspaceSetting()
-        .send()
-        .then((result) => result.fold((l) => l, (r) => throw Exception()));
-    await blocResponseFuture();
-
-    final homeBloc = HomeBloc(workspaceSetting)..add(const HomeEvent.initial());
-    await blocResponseFuture();
-
-    final app = await testContext.createWorkspace();
-    final appBloc = ViewBloc(view: app)..add(const ViewEvent.initial());
-    assert(appBloc.state.lastCreatedView == null);
-
-    appBloc.add(
-      const ViewEvent.createView(
-        "New document",
-        ViewLayoutPB.Document,
-        section: ViewSectionPB.Public,
-      ),
-    );
-    await blocResponseFuture();
-
-    assert(appBloc.state.lastCreatedView != null);
-    final latestView = appBloc.state.lastCreatedView!;
-    final _ = DocumentBloc(documentId: latestView.id)
-      ..add(const DocumentEvent.initial());
-
-    await FolderEventSetLatestView(ViewIdPB(value: latestView.id)).send();
-    await blocResponseFuture();
-
-    final actual = homeBloc.state.workspaceSetting.latestView.id;
-    assert(actual == latestView.id);
-  });
-
-  test('clears a workspace root saved as the latest document view', () async {
-    final original = await FolderEventGetCurrentWorkspaceSetting().send().then(
-          (result) => result.fold(
-            (setting) => setting,
-            (error) => throw Exception(error),
-          ),
+  for (final latest in [null, 'workspace', 'last-crash-collection']) {
+    testWidgets(
+      'startup leaves saved latest $latest untouched',
+      (tester) async {
+        final setting = WorkspaceLatestPB(
+          workspaceId: 'workspace',
+          latestView: latest == null ? null : ViewPB(id: latest),
         );
-    final originalLatestId =
-        original.hasLatestView() ? original.latestView.id : null;
-    addTearDown(() async {
-      await FolderEventSetLatestView(
-        ViewIdPB(value: originalLatestId ?? ''),
-      ).send();
-    });
-
-    final poisoned = WorkspaceLatestPB(
-      workspaceId: 'workspace',
-      latestView: ViewPB(
-        id: 'workspace',
-        parentViewId: '',
-        layout: ViewLayoutPB.Document,
-      ),
+        final bytes = setting.writeToBuffer();
+        final listener = _FolderListener();
+        final home = HomeBloc(setting, workspaceListener: listener)
+          ..add(const HomeEvent.initial())
+          ..add(const HomeEvent.initial());
+        Future<void>? closing;
+        try {
+          await tester.pump();
+          await tester
+              .pump(const Duration(seconds: 1)); // Past the old 300ms restore.
+          expect(listener.starts, 1);
+          expect(home.state.latestView, isNull);
+          expect(home.state.workspaceSetting.writeToBuffer(), bytes);
+          expect(setting.writeToBuffer(), bytes);
+          closing = home.close();
+          await pumpHomeProfileClose(tester, closing);
+          expect(listener.stops, 1);
+        } finally {
+          await pumpHomeProfileClose(tester, closing ?? home.close());
+        }
+      },
+      timeout: homeProfileTestTimeout,
     );
+  }
 
-    final homeBloc = HomeBloc(poisoned)..add(const HomeEvent.initial());
-    addTearDown(homeBloc.close);
-    await blocResponseFuture(millisecond: 800);
-
-    expect(homeBloc.state.latestView?.id, 'workspace');
-    expect(homeBloc.state.latestView?.isWorkspaceFolder, isTrue);
-    final repaired = await FolderEventGetCurrentWorkspaceSetting().send().then(
-          (result) => result.fold(
-            (setting) => setting,
-            (error) => throw Exception(error),
-          ),
+  testWidgets(
+    'latest notifications update metadata, never a navigation target',
+    (tester) async {
+      final listener = _FolderListener();
+      final home = HomeBloc(
+        WorkspaceLatestPB(workspaceId: 'workspace'),
+        workspaceListener: listener,
+      )..add(const HomeEvent.initial());
+      Future<void>? closing;
+      try {
+        await tester.pump();
+        final latest = WorkspaceLatestPB(
+          workspaceId: 'workspace',
+          latestView: ViewPB(id: 'remote-latest'),
         );
-    expect(repaired.hasLatestView(), isFalse);
-  });
+        listener.notify(latest);
+        await tester.pump();
+        expect(home.state.workspaceSetting, latest);
+        expect(home.state.latestView, isNull);
+        listener.notify(WorkspaceLatestPB(workspaceId: 'old-workspace'));
+        await tester.pump();
+        expect(home.state.workspaceSetting, latest);
 
-  test('opens the workspace folder when no latest view exists', () async {
-    final homeBloc = HomeBloc(
-      WorkspaceLatestPB(workspaceId: 'workspace'),
-    )..add(const HomeEvent.initial());
-    addTearDown(homeBloc.close);
-    await blocResponseFuture(millisecond: 500);
+        // Even a callback already captured by the native listener is safe during
+        // its asynchronous stop, and after close. There is no native listener here.
+        listener.stopping = Completer<void>();
+        closing = home.close();
+        listener.notify(WorkspaceLatestPB(workspaceId: 'workspace'));
+        listener.stopping!.complete();
+        await pumpHomeProfileClose(tester, closing);
+        listener.notify(latest);
+        await tester.pump();
+        expect(home.state.workspaceSetting, latest);
+        expect(tester.takeException(), isNull);
+      } finally {
+        final stopping = listener.stopping;
+        if (stopping != null && !stopping.isCompleted) stopping.complete();
+        await pumpHomeProfileClose(tester, closing ?? home.close());
+      }
+    },
+    timeout: homeProfileTestTimeout,
+  );
+}
 
-    final latestView = homeBloc.state.latestView;
-    expect(latestView?.id, 'workspace');
-    expect(latestView?.parentViewId, isEmpty);
-    expect(latestView?.isWorkspaceFolder, isTrue);
-  });
+class _FolderListener extends FolderListener {
+  _FolderListener() : super(workspaceId: 'workspace');
+
+  void Function(WorkspaceLatestNotifyValue)? callback;
+  Completer<void>? stopping;
+  int starts = 0;
+  int stops = 0;
+
+  @override
+  void start({void Function(WorkspaceLatestNotifyValue)? onLatestUpdated}) {
+    starts++;
+    callback = onLatestUpdated;
+  }
+
+  void notify(WorkspaceLatestPB setting) =>
+      callback?.call(FlowyResult.success(setting));
+
+  @override
+  Future<void> stop() async {
+    stops++;
+    await stopping?.future;
+  }
 }

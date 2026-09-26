@@ -1,3 +1,5 @@
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
@@ -87,8 +89,9 @@ abstract final class SidebarStyle {
         size: HomeSizes.sidebarActionIconSize,
       ),
       textTheme: base.textTheme.copyWith(
-        bodyMedium: SidebarTypography.textStyle(
+        bodyMedium: WorkspaceTypography.style(
           context,
+          WorkspaceTextRole.body,
           color: palette.textPrimary,
         ),
       ),
@@ -109,11 +112,9 @@ class SidebarSearchIcon extends StatelessWidget {
   static const iconData = Icons.search_rounded;
 
   @override
-  Widget build(BuildContext context) => Icon(
+  Widget build(BuildContext context) => WorkspaceGlyph(
         iconData,
         size: size,
         color: color ?? SidebarStyle.searchIconColor(context),
-        opticalSize: size,
-        applyTextScaling: false,
       );
 }

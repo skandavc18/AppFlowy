@@ -31,6 +31,7 @@ import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy/workspace/application/notification/notification_service.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
+import 'package:appflowy/workspace/application/settings/default_icon_style.dart';
 import 'package:appflowy/workspace/application/settings/notifications/notification_settings_cubit.dart';
 import 'package:appflowy/workspace/application/sidebar/rename_view/rename_view_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -81,6 +82,10 @@ class InitAppWidgetTask extends LaunchTask {
 
     // Extensions read their folder, watch it, and start their own scheduler.
     unawaited(ExtensionManager.instance.start());
+
+    // Restore device-only glyph appearance before any application UI mounts.
+    // Failure keeps the safe default and remains retryable from Settings.
+    await DefaultIconStyleStore.instance.ensureLoaded();
 
     await loadIconGroups();
 

@@ -6,11 +6,16 @@ import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/providers/external_context_menu.dart';
 import 'package:appflowy/plugins/collection/providers/external_file_stage.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/providers/provider_controller.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// How external content is laid out.
 ///
@@ -90,52 +95,249 @@ class ExternalContentView extends StatefulWidget {
 
 class _ExternalContentViewState extends State<ExternalContentView> {
   final List<ProviderNode> trail = <ProviderNode>[];
+  final _findController = TextEditingController();
+  final _findFocusNode = FocusNode(debugLabel: 'Search this external folder');
+  bool _findOpen = false;
+  int _findEpoch = 0;
+  ModalRoute<dynamic>? _route;
 
   String? get containerId => trail.isEmpty ? widget.parentId : trail.last.id;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if ((_route != null && _route != route) ||
+        !_hasCurrentRoute ||
+        !TickerMode.of(context)) {
+      _resetFind(afterBuild: true);
+    }
+    _route = route;
+  }
+
+  @override
+  void didUpdateWidget(ExternalContentView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller ||
+        oldWidget.parentId != widget.parentId) {
+      trail.clear();
+      _resetFind(afterBuild: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _findController.dispose();
+    _findFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _resetFind({bool afterBuild = false}) {
+    _findOpen = false;
+    final epoch = ++_findEpoch;
+    _findFocusNode.unfocus();
+    if (afterBuild) {
+      // The old field (including selection overlays) may still be listening
+      // during dependency/target rebuilds. Hide it now, notify only afterwards.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && epoch == _findEpoch) _findController.clear();
+      });
+    } else {
+      _findController.clear();
+    }
+  }
+
+  void _dismissFind() {
+    if (mounted) setState(_resetFind);
+  }
+
+  bool get _hasCurrentRoute {
+    final seen = <ModalRoute<dynamic>>{};
+    var route = ModalRoute.of(context);
+    while (route != null && seen.add(route)) {
+      if (!route.isCurrent) return false;
+      final navigator = route.navigator;
+      route = navigator != null && navigator.mounted
+          ? ModalRoute.of(navigator.context)
+          : null;
+    }
+    return true;
+  }
+
+  bool _isCurrentFolder(ProviderController controller, String? folder) =>
+      mounted &&
+      identical(widget.controller, controller) &&
+      containerId == folder &&
+      TickerMode.of(context) &&
+      _hasCurrentRoute;
+
+  void _openFind(ProviderController controller, String? folder) {
+    if (!_isCurrentFolder(controller, folder)) return;
+    // An explicit reopen can precede a queued lifecycle clear.
+    if (!_findOpen) _findController.clear();
+    final epoch = ++_findEpoch;
+    setState(() => _findOpen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || epoch != _findEpoch || !_findOpen) return;
+      if (!_isCurrentFolder(controller, folder)) {
+        _dismissFind();
+        return;
+      }
+      _findFocusNode.requestFocus();
+      _findController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _findController.text.length,
+      );
+      _watchFind(epoch, controller, folder);
+    });
+  }
+
+  void _watchFind(int epoch, ProviderController controller, String? folder) {
+    if (!mounted || epoch != _findEpoch || !_findOpen) return;
+    if (!_isCurrentFolder(controller, folder)) {
+      _dismissFind();
+      return;
+    }
+    // A non-opaque root dialog need not change a nested route or its ticker.
+    // Observe existing frames while open; never schedule frames or provider IO.
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _watchFind(epoch, controller, folder),
+    );
+  }
+
+  void _changeFolder(VoidCallback navigate) {
+    setState(() {
+      _resetFind();
+      navigate();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final palette = widget.palette;
-    final nodes = controller.isSearching
+    final folder = containerId;
+    // Local Find must not invoke the provider's global/network search, or
+    // accidentally filter cached siblings from a different folder.
+    final loaded = controller.isSearching && !_findOpen
         ? controller.nodes
-        : controller.childrenOf(containerId);
+        : controller.childrenOf(folder);
+    final query = _findOpen ? _findController.text.trim().toLowerCase() : '';
+    final nodes = query.isEmpty
+        ? loaded
+        : loaded.where((node) {
+            return node.name.toLowerCase().contains(query) ||
+                node.kind.name.contains(query) ||
+                (node.mimeType?.toLowerCase().contains(query) ?? false);
+          }).toList(growable: false);
 
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onSecondaryTapDown: (details) => unawaited(
-        showExternalBackgroundMenu(
-          context,
-          controller: controller,
-          containerId: containerId,
-          position: details.globalPosition,
-          onAllowChanges: widget.onAllowChanges,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.header != null) widget.header!,
-          if (trail.isNotEmpty)
-            _Trail(
-              trail: trail,
-              palette: palette,
-              onSelect: (index) {
-                setState(() => trail.removeRange(index + 1, trail.length));
-              },
-              onRoot: () => setState(trail.clear),
-            ),
-          Expanded(
-            child: nodes.isEmpty
-                ? _empty(palette, controller)
-                : widget.layout.isGrid
-                    ? _grid(nodes, palette)
-                    : _list(nodes, palette),
+    return ContextualFindRegion(
+      debugLabel: 'External folder',
+      onFind: () => _openFind(controller, folder),
+      onDismiss: _dismissFind,
+      findOpen: _findOpen,
+      findFocusNode: _findFocusNode,
+      isActive: () => _isCurrentFolder(controller, folder),
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onSecondaryTapDown: (details) => unawaited(
+          showExternalBackgroundMenu(
+            context,
+            controller: controller,
+            containerId: containerId,
+            position: details.globalPosition,
+            onAllowChanges: widget.onAllowChanges,
           ),
-        ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (widget.header != null) widget.header!,
+            if (_findOpen) _findBar(palette),
+            if (trail.isNotEmpty)
+              _Trail(
+                trail: trail,
+                palette: palette,
+                onSelect: (index) {
+                  _changeFolder(
+                    () => trail.removeRange(index + 1, trail.length),
+                  );
+                },
+                onRoot: () => _changeFolder(trail.clear),
+              ),
+            Expanded(
+              child: nodes.isEmpty
+                  ? _empty(palette, controller)
+                  : widget.layout.isGrid
+                      ? _grid(nodes, palette)
+                      : _list(nodes, palette),
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  Widget _findBar(CollectionPalette palette) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): _dismissFind,
+          },
+          child: Row(
+            children: [
+              Expanded(
+                child: TextEntryShortcuts(
+                  child: TextField(
+                    key: const ValueKey('external-folder-find'),
+                    controller: _findController,
+                    focusNode: _findFocusNode,
+                    onChanged: (_) => setState(() {}),
+                    textInputAction: TextInputAction.search,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    style: TextStyle(color: palette.textPrimary, fontSize: 13),
+                    cursorColor: palette.accent,
+                    decoration: InputDecoration(
+                      labelText: 'Search this folder',
+                      hintText: 'Name or type',
+                      floatingLabelBehavior: FloatingLabelBehavior.always,
+                      labelStyle: TextStyle(color: palette.textSecondary),
+                      hintStyle: TextStyle(color: palette.textMuted),
+                      isDense: true,
+                      filled: true,
+                      fillColor: palette.surface,
+                      hoverColor: palette.hover,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      prefixIcon: WorkspaceGlyph(
+                        Icons.search_rounded,
+                        size: 16,
+                        color: palette.textMuted,
+                      ),
+                      prefixIconConstraints: const BoxConstraints(minWidth: 34),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(
+                          WorkspaceChrome.controlRadius,
+                        ),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              WorkspaceControlButton(
+                icon: Icons.close_rounded,
+                tooltip: 'Close folder search',
+                onPressed: _dismissFind,
+              ),
+            ],
+          ),
+        ),
+      );
 
   /// The menu a row or a card shows, so both offer exactly the same thing.
   void _showItemMenu(ProviderNode node, Offset position) => unawaited(
@@ -160,9 +362,11 @@ class _ExternalContentViewState extends State<ExternalContentView> {
     }
     return Center(
       child: Text(
-        controller.isSearching
-            ? LocaleKeys.providers_noMatches.tr()
-            : LocaleKeys.providers_nothingHere.tr(),
+        _findOpen && _findController.text.trim().isNotEmpty
+            ? 'No matches in this folder'
+            : controller.isSearching && !_findOpen
+                ? LocaleKeys.providers_noMatches.tr()
+                : LocaleKeys.providers_nothingHere.tr(),
         style: TextStyle(color: palette.textMuted, fontSize: 13),
       ),
     );
@@ -228,10 +432,11 @@ class _ExternalContentViewState extends State<ExternalContentView> {
     if (node.isFolder) {
       final handler = widget.onOpenContainer;
       if (handler != null) {
+        _dismissFind();
         handler(node);
         return;
       }
-      setState(() => trail.add(node));
+      _changeFolder(() => trail.add(node));
       unawaited(widget.controller.ensureLoaded(node.id));
       return;
     }
@@ -449,7 +654,7 @@ class _RowState extends State<_Row> {
           margin: const EdgeInsets.symmetric(vertical: 1),
           padding: EdgeInsets.symmetric(horizontal: widget.compact ? 8 : 10),
           decoration: BoxDecoration(
-            color: palette.hover.withValues(alpha: hovered ? 1 : 0),
+            color: hovered ? palette.hover : palette.hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(

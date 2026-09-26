@@ -150,13 +150,13 @@ void main() {
           }
           expect(find.byType(ChartTooltip), findsNothing);
           expect(
-            find.byIcon(Icons.more_horiz_rounded).hitTestable(),
+            find.byKey(const ValueKey('chart-more-controls')).hitTestable(),
             findsOneWidget,
           );
           final more = find
               .descendant(
                 of: _stage(ChartType.donut),
-                matching: find.byType(ChartIconAction),
+                matching: find.byKey(const ValueKey('chart-more-controls')),
               )
               .last;
           expect(

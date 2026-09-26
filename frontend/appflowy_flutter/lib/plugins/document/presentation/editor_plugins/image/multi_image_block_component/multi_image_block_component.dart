@@ -1,13 +1,21 @@
+import 'dart:io';
+
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mobile_block_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/layouts/multi_image_layouts.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/multi_image_block_component/multi_image_placeholder.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
+import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 import 'package:universal_platform/universal_platform.dart';
 
@@ -50,10 +58,14 @@ class MultiImageBlockComponentBuilder extends BlockComponentBuilder {
     super.configuration,
     this.showMenu = false,
     this.menuBuilder,
+    this.ocrService,
+    this.ocrSourceBuilder,
   });
 
   final bool showMenu;
   final MultiImageBlockComponentMenuBuilder? menuBuilder;
+  final OcrService? ocrService;
+  final ImageOcrSourceBuilder? ocrSourceBuilder;
 
   @override
   BlockComponentWidget build(BlockComponentContext blockComponentContext) {
@@ -66,6 +78,8 @@ class MultiImageBlockComponentBuilder extends BlockComponentBuilder {
       actionBuilder: (_, state) => actionBuilder(blockComponentContext, state),
       showMenu: showMenu,
       menuBuilder: menuBuilder,
+      ocrService: ocrService,
+      ocrSourceBuilder: ocrSourceBuilder,
     );
   }
 
@@ -83,11 +97,15 @@ class MultiImageBlockComponent extends BlockComponentStatefulWidget {
     super.configuration = const BlockComponentConfiguration(),
     super.actionBuilder,
     super.actionTrailingBuilder,
+    this.ocrService,
+    this.ocrSourceBuilder,
   });
 
   final bool showMenu;
 
   final MultiImageBlockComponentMenuBuilder? menuBuilder;
+  final OcrService? ocrService;
+  final ImageOcrSourceBuilder? ocrSourceBuilder;
 
   @override
   State<MultiImageBlockComponent> createState() =>
@@ -103,6 +121,9 @@ class MultiImageBlockComponentState extends State<MultiImageBlockComponent>
   Node get node => widget.node;
 
   final multiImageKey = GlobalKey();
+  final _findContentKey = GlobalKey();
+  PointerEvent? _findPointer;
+  DocumentBloc? _documentBloc;
 
   RenderBox? get _renderBox => context.findRenderObject() as RenderBox?;
 
@@ -126,15 +147,159 @@ class MultiImageBlockComponentState extends State<MultiImageBlockComponent>
   @override
   void initState() {
     super.initState();
+    _documentBloc = context.read<DocumentBloc?>();
     editorState.selectionService.registerGestureInterceptor(interceptor);
   }
 
   @override
   void dispose() {
-    editorState.selectionService.unregisterGestureInterceptor(_interceptorKey);
+    if (!editorState.isDisposed) {
+      editorState.selectionService
+          .unregisterGestureInterceptor(_interceptorKey);
+    }
     showActionsNotifier.dispose();
     indexNotifier.dispose();
     super.dispose();
+  }
+
+  bool get _canFindImage =>
+      mounted &&
+      !editorState.isDisposed &&
+      _documentBloc?.isClosed != true &&
+      node.parent != null &&
+      identical(editorState.getNodeAtPath(node.path), node);
+
+  bool _selectedForFind() {
+    if (!_canFindImage) return false;
+    final selection = editorState.selection;
+    return selection != null &&
+        listEquals(selection.start.path, node.path) &&
+        listEquals(selection.end.path, node.path);
+  }
+
+  ImageEditorSource _ocrSource(ImageBlockData image) {
+    final uri = Uri.tryParse(image.url);
+    return widget.ocrSourceBuilder?.call(image) ??
+        ImageEditorSource(
+          url: image.type == CustomImageType.local &&
+                  uri?.isScheme('file') == true
+              ? File.fromUri(uri!).path
+              : image.url,
+          type: image.type,
+          userProfile: image.type == CustomImageType.internal
+              ? _documentBloc?.state.userProfilePB
+              : null,
+        );
+  }
+
+  bool _sourceIsCurrent(ImageEditorSource source) {
+    if (!_canFindImage) return false;
+    final images = MultiImageData.fromJson(
+      node.attributes[MultiImageBlockKeys.images] ?? const [],
+    ).images;
+    final index = indexNotifier.value;
+    if (index < 0 || index >= images.length) return false;
+    final current = _ocrSource(images[index]);
+    return current.url == source.url &&
+        current.type == source.type &&
+        current.userProfile == source.userProfile;
+  }
+
+  ImageEditorSource? _findSource(List<ImageBlockData> renderedImages) {
+    if (!_canFindImage || renderedImages.isEmpty) return null;
+    final pointer = _findPointer;
+    ImageBlockData? hovered;
+    if (pointer != null) {
+      final hit = HitTestResult();
+      RendererBinding.instance
+          .hitTestInView(hit, pointer.position, pointer.viewId);
+      final hitObjects = hit.path.map((entry) => entry.target).toSet();
+      // The existing layouts own all their images/drag/drop/actions and expose
+      // no builder hook. Inspect ONLY this gallery's mounted image units, once
+      // on Find (never on a hover frame), and require an actual painted hit.
+      var ordinal = 0;
+      final grid = node.attributes[MultiImageBlockKeys.layout] ==
+          MultiImageLayout.grid.toIntValue();
+      void visit(Element element) {
+        final unit = element.widget;
+        String? url;
+        if (unit is FlowyNetworkImage) {
+          url = unit.url;
+        } else if (unit is Image) {
+          final provider = unit.image;
+          if (provider is FileImage) url = provider.file.path;
+          if (provider is NetworkImage) url = provider.url;
+        }
+        if (url != null) {
+          // Grid units are in reading order. Browser units are the hero first,
+          // then its visible thumbnails. This also distinguishes duplicate URLs.
+          final imageIndex = grid
+              ? ordinal
+              : ordinal == 0
+                  ? indexNotifier.value
+                  : ordinal - 1;
+          ordinal++;
+          if (imageIndex < 0 ||
+              imageIndex >= renderedImages.length ||
+              renderedImages[imageIndex].url != url) {
+            return;
+          }
+          void inspect(RenderObject object) {
+            if (hovered != null) return;
+            if (object is RenderImage &&
+                object.attached &&
+                object.hasSize &&
+                object.image != null &&
+                hitObjects.contains(object)) {
+              final image = object.image!;
+              final fitted = applyBoxFit(
+                object.fit ?? BoxFit.scaleDown,
+                Size(image.width / object.scale, image.height / object.scale),
+                object.size,
+              );
+              final alignment =
+                  object.alignment.resolve(Directionality.of(element));
+              final painted = alignment.inscribe(
+                fitted.destination,
+                Offset.zero & object.size,
+              );
+              if (painted.contains(object.globalToLocal(pointer.position))) {
+                hovered = renderedImages[imageIndex];
+              }
+            } else {
+              object.visitChildren(inspect);
+            }
+          }
+
+          final render = element.findRenderObject();
+          if (render != null) inspect(render);
+          return;
+        }
+        element.visitChildElements(visit);
+      }
+
+      _findContentKey.currentContext?.visitChildElements(visit);
+      // A gap/letterbox or overlaid action is not a different selected photo.
+      if (hovered == null) return null;
+    }
+    final candidate = hovered ??
+        renderedImages[indexNotifier.value.clamp(0, renderedImages.length - 1)];
+    final images = MultiImageData.fromJson(
+      node.attributes[MultiImageBlockKeys.images] ?? const [],
+    ).images;
+    var index = renderedImages.indexOf(candidate);
+    bool same(ImageBlockData image) =>
+        image.url == candidate.url &&
+        image.type == candidate.type &&
+        image.workspaceFileId == candidate.workspaceFileId;
+    if (index < 0 || index >= images.length || !same(images[index])) {
+      index = images.indexWhere(same);
+    }
+    if (index < 0) return null;
+    // Activation selects the nearest IMAGE unit, without stealing the editor's
+    // caret during passive hover or persisting any document change.
+    setState(() => indexNotifier.value = index);
+    return _ocrSource(images[index]);
   }
 
   bool _isTapInBounds(Offset offset) {
@@ -172,13 +337,32 @@ class MultiImageBlockComponentState extends State<MultiImageBlockComponent>
         node: node,
       );
     } else {
-      child = ImageLayoutRender(
-        node: node,
-        images: data.images,
-        editorState: editorState,
-        indexNotifier: indexNotifier,
-        isLocalMode: context.read<DocumentBloc?>()?.isLocalMode ?? true,
-        onIndexChanged: (index) => setState(() => indexNotifier.value = index),
+      child = MouseRegion(
+        opaque: false,
+        onEnter: (event) => _findPointer = event,
+        onHover: (event) => _findPointer = event,
+        onExit: (_) => _findPointer = null,
+        child: ImageOcrFindRegion(
+          source: _ocrSource(data.images[indexNotifier.value]),
+          name: 'Photo gallery — image text',
+          service: widget.ocrService,
+          isAvailable: () => _canFindImage,
+          isSelected: _selectedForFind,
+          resolveSource: () => _findSource(data.images),
+          isSourceCurrent: _sourceIsCurrent,
+          debugLabel: 'Photo gallery content',
+          child: ImageLayoutRender(
+            key: _findContentKey,
+            node: node,
+            images: data.images,
+            editorState: editorState,
+            indexNotifier: indexNotifier,
+            isLocalMode: context.read<DocumentBloc?>()?.isLocalMode ?? true,
+            onIndexChanged: (index) {
+              if (_canFindImage) setState(() => indexNotifier.value = index);
+            },
+          ),
+        ),
       );
     }
 

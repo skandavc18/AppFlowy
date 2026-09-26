@@ -1,15 +1,19 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/shared_widget.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/size.dart';
+import 'package:flowy_infra_ui/flowy_infra_ui.dart'
+    show FlowyDialog, showFlowyDialog;
 import 'package:flowy_infra_ui/style_widget/text.dart';
 import 'package:flowy_infra_ui/widget/buttons/primary_button.dart';
 import 'package:flowy_infra_ui/widget/buttons/secondary_button.dart';
 import 'package:flowy_infra_ui/widget/dialog/styled_dialogs.dart';
 import 'package:flowy_infra_ui/widget/spacing.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:toastification/toastification.dart';
 import 'package:universal_platform/universal_platform.dart';
 
@@ -107,12 +111,13 @@ class _CreateFlowyAlertDialog extends State<NavigatorAlertDialog> {
                     maxWidth: 400,
                     maxHeight: 260,
                   ),
-              child: FlowyText.medium(
+              child: Text(
                 widget.title,
-                fontSize: FontSizes.s16,
                 textAlign: TextAlign.center,
-                color: Theme.of(context).colorScheme.tertiary,
-                maxLines: null,
+                style: WorkspaceTypography.style(
+                  context,
+                  WorkspaceTextRole.section,
+                ),
               ),
             ),
           ],
@@ -178,22 +183,17 @@ class NavigatorOkCancelDialog extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           if (title != null) ...[
-            FlowyText.medium(
+            Text(
               titleUpperCase ? title!.toUpperCase() : title!,
-              fontSize: FontSizes.s16,
-              maxLines: 3,
+              style:
+                  WorkspaceTypography.style(context, WorkspaceTextRole.section),
             ),
-            VSpace(Insets.sm * 1.5),
-            Container(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              height: 1,
-            ),
-            VSpace(Insets.m * 1.5),
+            const VSpace(WorkspaceTokens.space4),
           ],
           if (message != null)
-            FlowyText.medium(
+            Text(
               message!,
-              maxLines: 3,
+              style: WorkspaceTypography.style(context, WorkspaceTextRole.body),
             ),
           SizedBox(height: Insets.l),
           OkCancelButton(
@@ -235,10 +235,12 @@ class OkCancelButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 48,
-      child: Row(
-        mainAxisAlignment: alignment,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: minHeight ?? 48),
+      child: OverflowBar(
+        alignment: alignment,
+        spacing: WorkspaceTokens.space4,
+        overflowSpacing: WorkspaceTokens.space2,
         children: <Widget>[
           if (onCancelPressed != null)
             SecondaryTextButton(
@@ -246,7 +248,6 @@ class OkCancelButton extends StatelessWidget {
               onPressed: onCancelPressed,
               mode: mode,
             ),
-          if (onCancelPressed != null) HSpace(Insets.m),
           if (onOkPressed != null)
             PrimaryTextButton(
               okTitle ?? LocaleKeys.button_ok.tr(),
@@ -491,22 +492,14 @@ Future<void> showConfirmDeletionDialog({
   required String description,
   required VoidCallback onConfirm,
 }) {
-  return showDialog(
+  return showFlowyDialog(
     context: context,
     builder: (_) {
       final title = LocaleKeys.space_deleteConfirmation.tr() + name;
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12.0),
-        ),
-        child: SizedBox(
-          width: 440,
-          child: ConfirmPopup(
-            title: title,
-            description: description,
-            onConfirm: (_) => onConfirm(),
-          ),
-        ),
+      return _ConfirmationDialog(
+        title: title,
+        description: description,
+        onConfirm: (_) => onConfirm(),
       );
     },
   );
@@ -525,28 +518,20 @@ Future<void> showConfirmDialog({
   WidgetBuilder? confirmButtonBuilder,
   Color? confirmButtonColor,
 }) {
-  return showDialog(
+  return showFlowyDialog(
     context: context,
     builder: (context) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12.0),
-        ),
-        child: SizedBox(
-          width: 440,
-          child: ConfirmPopup(
-            title: title,
-            description: description,
-            titleStyle: titleStyle,
-            descriptionStyle: descriptionStyle,
-            confirmButtonBuilder: confirmButtonBuilder,
-            onConfirm: (_) => onConfirm?.call(context),
-            onCancel: () => onCancel?.call(),
-            confirmLabel: confirmLabel,
-            style: style,
-            confirmButtonColor: confirmButtonColor,
-          ),
-        ),
+      return _ConfirmationDialog(
+        title: title,
+        description: description,
+        titleStyle: titleStyle,
+        descriptionStyle: descriptionStyle,
+        confirmButtonBuilder: confirmButtonBuilder,
+        onConfirm: (_) => onConfirm?.call(context),
+        onCancel: () => onCancel?.call(),
+        confirmLabel: confirmLabel,
+        style: style,
+        confirmButtonColor: confirmButtonColor,
       );
     },
   );
@@ -560,24 +545,16 @@ Future<void> showCancelAndConfirmDialog({
   VoidCallback? onCancel,
   String? confirmLabel,
 }) {
-  return showDialog(
+  return showFlowyDialog(
     context: context,
     builder: (_) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12.0),
-        ),
-        child: SizedBox(
-          width: 440,
-          child: ConfirmPopup(
-            title: title,
-            description: description,
-            onConfirm: (context) => onConfirm?.call(context),
-            confirmLabel: confirmLabel,
-            confirmButtonColor: Theme.of(context).colorScheme.primary,
-            onCancel: () => onCancel?.call(),
-          ),
-        ),
+      return _ConfirmationDialog(
+        title: title,
+        description: description,
+        onConfirm: (context) => onConfirm?.call(context),
+        confirmLabel: confirmLabel,
+        confirmButtonColor: Theme.of(context).colorScheme.primary,
+        onCancel: () => onCancel?.call(),
       );
     },
   );
@@ -597,30 +574,22 @@ Future<void> showCustomConfirmDialog({
   bool enableKeyboardListener = true,
   bool barrierDismissible = true,
 }) {
-  return showDialog(
+  return showFlowyDialog(
     context: context,
     barrierDismissible: barrierDismissible,
     builder: (context) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12.0),
-        ),
-        child: SizedBox(
-          width: 440,
-          child: ConfirmPopup(
-            title: title,
-            description: description,
-            onConfirm: (_) => onConfirm?.call(),
-            onCancel: onCancel,
-            confirmLabel: confirmLabel,
-            confirmButtonColor: Theme.of(context).colorScheme.primary,
-            style: style,
-            closeOnAction: closeOnConfirm,
-            showCloseButton: showCloseButton,
-            enableKeyboardListener: enableKeyboardListener,
-            child: builder(context),
-          ),
-        ),
+      return _ConfirmationDialog(
+        title: title,
+        description: description,
+        onConfirm: (_) => onConfirm?.call(),
+        onCancel: onCancel,
+        confirmLabel: confirmLabel,
+        confirmButtonColor: Theme.of(context).colorScheme.primary,
+        style: style,
+        closeOnAction: closeOnConfirm,
+        showCloseButton: showCloseButton,
+        enableKeyboardListener: enableKeyboardListener,
+        child: builder(context),
       );
     },
   );
@@ -635,26 +604,235 @@ Future<void> showCancelAndDeleteDialog({
   String? confirmLabel,
   bool closeOnAction = false,
 }) {
-  return showDialog(
+  return showFlowyDialog(
     context: context,
     builder: (_) {
-      return Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12.0),
-        ),
-        child: SizedBox(
-          width: 440,
-          child: ConfirmPopup(
-            title: title,
-            description: description,
-            onConfirm: (_) => onDelete?.call(),
-            closeOnAction: closeOnAction,
-            confirmLabel: confirmLabel,
-            confirmButtonColor: Theme.of(context).colorScheme.error,
-            child: builder?.call(context),
-          ),
-        ),
+      return _ConfirmationDialog(
+        title: title,
+        description: description,
+        onConfirm: (_) => onDelete?.call(),
+        closeOnAction: closeOnAction,
+        confirmLabel: confirmLabel,
+        confirmButtonColor: Theme.of(context).colorScheme.error,
+        child: builder?.call(context),
       );
     },
   );
+}
+
+/// App confirmations share their own content-first body. The sidebar's legacy
+/// popup is intentionally not restyled or wrapped in a second filled panel.
+class _ConfirmationDialog extends StatefulWidget {
+  const _ConfirmationDialog({
+    required this.title,
+    required this.description,
+    required this.onConfirm,
+    this.onCancel,
+    this.confirmLabel,
+    this.titleStyle,
+    this.descriptionStyle,
+    this.confirmButtonColor,
+    this.confirmButtonBuilder,
+    this.child,
+    this.style = ConfirmPopupStyle.cancelAndOk,
+    this.closeOnAction = true,
+    this.showCloseButton = true,
+    this.enableKeyboardListener = true,
+  });
+
+  final String title;
+  final String description;
+  final ValueChanged<BuildContext> onConfirm;
+  final VoidCallback? onCancel;
+  final String? confirmLabel;
+  final TextStyle? titleStyle;
+  final TextStyle? descriptionStyle;
+  final Color? confirmButtonColor;
+  final WidgetBuilder? confirmButtonBuilder;
+  final Widget? child;
+  final ConfirmPopupStyle style;
+  final bool closeOnAction;
+  final bool showCloseButton;
+  final bool enableKeyboardListener;
+
+  @override
+  State<_ConfirmationDialog> createState() => _ConfirmationDialogState();
+}
+
+class _ConfirmationDialogState extends State<_ConfirmationDialog> {
+  final _focusNode = FocusNode(debugLabel: 'workspace-confirmation');
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    // A native button may already have dismissed this route on key-down.
+    if (ModalRoute.of(context)?.isCurrent != true) return;
+    widget.onConfirm(context);
+    if (mounted &&
+        widget.closeOnAction &&
+        ModalRoute.of(context)?.isCurrent == true) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = WorkspacePalette.of(context);
+    final hasCancel = widget.style == ConfirmPopupStyle.cancelAndOk;
+    final tone = widget.confirmButtonColor ??
+        (hasCancel ? palette.destructive : palette.accent);
+    final controlStyle = TextButton.styleFrom(
+      foregroundColor: palette.secondaryText,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
+      ),
+      textStyle: WorkspaceTypography.style(context, WorkspaceTextRole.body),
+    ).copyWith(
+      animationDuration:
+          WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
+    );
+
+    return KeyboardListener(
+      focusNode: _focusNode,
+      autofocus: true,
+      onKeyEvent: (event) {
+        if (!widget.enableKeyboardListener ||
+            ModalRoute.of(context)?.isCurrent != true) {
+          return;
+        }
+        if (event is KeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.escape) {
+          Navigator.of(context).pop();
+        } else if (event is KeyUpEvent &&
+            event.logicalKey == LogicalKeyboardKey.enter) {
+          _confirm();
+        }
+      },
+      child: FlowyDialog(
+        width: 440,
+        expandHeight: false,
+        padding: const EdgeInsets.all(WorkspaceTokens.space6),
+        insetPadding: const EdgeInsets.all(WorkspaceTokens.space6),
+        backgroundColor: palette.elevatedSurface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(WorkspaceTokens.dialogRadius),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Semantics(
+                    header: true,
+                    child: Text(
+                      widget.title,
+                      style: widget.titleStyle ??
+                          WorkspaceTypography.style(
+                            context,
+                            WorkspaceTextRole.section,
+                          ),
+                    ),
+                  ),
+                ),
+                if (widget.showCloseButton)
+                  IconButton(
+                    tooltip:
+                        MaterialLocalizations.of(context).closeButtonTooltip,
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: controlStyle.copyWith(
+                      padding: const WidgetStatePropertyAll(EdgeInsets.all(8)),
+                    ),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: WorkspaceTokens.iconSize,
+                    ),
+                  ),
+              ],
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(top: WorkspaceTokens.space4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.description.isNotEmpty)
+                      Text(
+                        widget.description,
+                        style: widget.descriptionStyle ??
+                            WorkspaceTypography.style(
+                              context,
+                              WorkspaceTextRole.body,
+                              color: palette.secondaryText,
+                            ),
+                      ),
+                    if (widget.child != null) ...[
+                      const VSpace(WorkspaceTokens.space4),
+                      widget.child!,
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const VSpace(WorkspaceTokens.space6),
+            Focus(
+              canRequestFocus: false,
+              skipTraversal: true,
+              // Native footer buttons already activate on key-down. Do not
+              // replay that activation in the legacy key-up confirmation path.
+              onKeyEvent: (_, event) => widget.enableKeyboardListener &&
+                      event is KeyUpEvent &&
+                      event.logicalKey == LogicalKeyboardKey.enter
+                  ? KeyEventResult.handled
+                  : KeyEventResult.ignored,
+              child: OverflowBar(
+                alignment: MainAxisAlignment.end,
+                overflowAlignment: OverflowBarAlignment.end,
+                spacing: WorkspaceTokens.space2,
+                overflowSpacing: WorkspaceTokens.space2,
+                children: [
+                  if (hasCancel)
+                    TextButton(
+                      style: controlStyle,
+                      onPressed: () {
+                        widget.onCancel?.call();
+                        if (mounted &&
+                            ModalRoute.of(context)?.isCurrent == true) {
+                          Navigator.of(context).pop();
+                        }
+                      },
+                      child: Text(LocaleKeys.button_cancel.tr()),
+                    ),
+                  widget.confirmButtonBuilder?.call(context) ??
+                      TextButton(
+                        style: controlStyle.copyWith(
+                          foregroundColor: WidgetStatePropertyAll(tone),
+                          backgroundColor: WidgetStatePropertyAll(
+                            tone.withValues(alpha: 0.12),
+                          ),
+                        ),
+                        onPressed: _confirm,
+                        child: Text(
+                          widget.confirmLabel ??
+                              (hasCancel
+                                  ? LocaleKeys.space_delete.tr()
+                                  : LocaleKeys.button_ok.tr()),
+                        ),
+                      ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

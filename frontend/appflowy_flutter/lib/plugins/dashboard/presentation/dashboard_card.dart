@@ -1,8 +1,11 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
+import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
@@ -76,6 +79,10 @@ class _DashboardCardState extends State<DashboardCard> {
 
   bool get _editable => controller.isEditable;
 
+  Duration get _motion => controller.document.settings.reduceMotion
+      ? Duration.zero
+      : WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration);
+
   @override
   Widget build(BuildContext context) {
     final definition = DashboardWidgetRegistry.definitionFor(spec.type);
@@ -136,25 +143,34 @@ class _DashboardCardState extends State<DashboardCard> {
         spec.type == 'chart' && spec.accent == DashboardAccent.neutral;
     final showsTitle = spec.showTitle && spec.title.isNotEmpty;
     final trailing = definition?.headerTrailing?.call(widgetContext);
-    final showsHeader = showsTitle || trailing != null;
+    final showsHeader = showsTitle || trailing != null || _editable;
     final scale = spec.number(dashboardTextScaleKey, fallback: 1);
-    final headerHeight = trailing == null
-        ? DashboardMetrics.headerHeight
-        : (MediaQuery.textScalerOf(context).scale(13) * scale * 1.25 + 16)
-            .clamp(40.0, double.infinity);
+    final headerHeight = showsTitle || trailing != null
+        ? (MediaQuery.textScalerOf(context).scale(13) * scale * 1.25 +
+                (trailing == null ? 8 : 16))
+            .clamp(
+            trailing == null ? DashboardMetrics.headerHeight : 40.0,
+            double.infinity,
+          )
+        : DashboardMetrics.headerHeight;
 
     Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (showsHeader)
-          _buildTitle(
-            tone,
-            showsTitle: showsTitle,
-            height: headerHeight,
-            trailing: trailing,
-          ),
+        // Management owns layout space, even without a title. An overlay at
+        // top: 0 covered calendar navigation (or an embedded database header)
+        // at any width. Keep both slots mounted across access/title changes;
+        // hover/focus only reveal controls, never move or reparent the body.
+        _buildTitle(
+          tone,
+          showsTitle: showsTitle,
+          height: showsHeader ? headerHeight : 0,
+          selected: selected,
+          trailing: trailing,
+        ),
         if (!spec.collapsed)
           Expanded(
+            key: ValueKey('dashboard-card-body-${spec.id}'),
             child: Padding(
               padding: definition?.padding ??
                   EdgeInsets.fromLTRB(
@@ -171,21 +187,21 @@ class _DashboardCardState extends State<DashboardCard> {
 
     // One setting sizes everything the widget says, whatever it is made of:
     // a note, a reminder list and a callout all answer to it.
-    if (scale != 1) {
-      final ambient = MediaQuery.textScalerOf(context);
-      content = MediaQuery(
-        data: MediaQuery.of(context).copyWith(
-          // `scale(100) / 100` reads back the factor already in force (the
-          // board sets one while presenting) so the two compose.
-          textScaler: TextScaler.linear(scale * ambient.scale(100) / 100),
-        ),
-        child: content,
-      );
-    }
+    final ambient = MediaQuery.textScalerOf(context);
+    content = MediaQuery(
+      data: MediaQuery.of(context).copyWith(
+        // Keep the wrapper even at the default size: changing a setting must
+        // not replace the field/renderer underneath it.
+        textScaler: scale == 1
+            ? ambient
+            : TextScaler.linear(scale * ambient.scale(100) / 100),
+      ),
+      child: content,
+    );
 
     if (!bare) {
       content = AnimatedContainer(
-        duration: DashboardMetrics.hover,
+        duration: _motion,
         curve: DashboardMetrics.curve,
         decoration: BoxDecoration(
           color: integratedChart ? null : tone.surface,
@@ -216,15 +232,18 @@ class _DashboardCardState extends State<DashboardCard> {
       // A control inside the card is deeper in the tree, so it wins the arena
       // and these only fire on the card's own surface. That is what lets the
       // whole card be grabbed without the widget inside it losing its taps.
-      onTap: _handleTap,
-      onSecondaryTapDown: (details) => _showMenuAt(details.globalPosition),
+      onTap: _editable ? _handleTap : null,
+      onSecondaryTapDown:
+          _editable ? (details) => _showMenuAt(details.globalPosition) : null,
       child: content,
     );
 
-    if (_editable) {
-      card = RawGestureDetector(
-        behavior: HitTestBehavior.translucent,
-        gestures: {
+    // Access changes remove recognizers and editing chrome, never ancestors
+    // of the body. Removing these wrappers disposed unsaved text fields.
+    card = RawGestureDetector(
+      behavior: HitTestBehavior.translucent,
+      gestures: {
+        if (_editable)
           _CardPanRecognizer:
               GestureRecognizerFactoryWithHandlers<_CardPanRecognizer>(
             _CardPanRecognizer.new,
@@ -243,45 +262,34 @@ class _DashboardCardState extends State<DashboardCard> {
               recognizer.onCancel = _panStart;
             },
           ),
-        },
-        child: card,
-      );
-    }
+      },
+      child: card,
+    );
 
-    if (_editable) {
-      card = Stack(
-        children: [
-          Positioned.fill(child: card),
-          // The controls float over the card rather than sitting in its
-          // column, so revealing them never moves what is underneath.
-          Positioned(
-            left: 0,
-            right: 0,
-            top: 0,
-            height: headerHeight,
-            child: _buildFloatingControls(),
+    card = Stack(
+      children: [
+        Positioned.fill(child: card),
+        if (_editable && !widget.dragging) ..._buildGrips(),
+      ],
+    );
+    card = DashboardEditingScope(controller: controller, child: card);
+
+    return PreviewToolbarRegion(
+      child: MouseRegion(
+        // The header and body share one hover boundary, so moving onto a
+        // management control does not make it flicker away.
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        cursor: _editable ? SystemMouseCursors.grab : MouseCursor.defer,
+        child: AnimatedScale(
+          duration: _motion,
+          curve: DashboardMetrics.curve,
+          scale: widget.dragging && _motion != Duration.zero ? 1.015 : 1,
+          child: AnimatedOpacity(
+            duration: _motion,
+            opacity: spec.hidden ? 0.45 : 1,
+            child: card,
           ),
-          if (!widget.dragging) ..._buildGrips(),
-        ],
-      );
-    }
-
-    return MouseRegion(
-      // Wraps the whole stack, so moving onto a floating control is not read
-      // as leaving the card and does not make it flicker away.
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      cursor: _editable ? SystemMouseCursors.grab : MouseCursor.defer,
-      child: AnimatedScale(
-        duration: DashboardMetrics.hover,
-        curve: DashboardMetrics.curve,
-        scale: widget.dragging && !controller.document.settings.reduceMotion
-            ? 1.015
-            : 1,
-        child: AnimatedOpacity(
-          duration: DashboardMetrics.hover,
-          opacity: spec.hidden ? 0.45 : 1,
-          child: card,
         ),
       ),
     );
@@ -291,16 +299,18 @@ class _DashboardCardState extends State<DashboardCard> {
     DashboardTone tone, {
     required bool showsTitle,
     required double height,
+    required bool selected,
     Widget? trailing,
   }) =>
       SizedBox(
+        key: ValueKey('dashboard-card-header-${spec.id}'),
         height: height,
         child: Padding(
-          // Do not put widget controls under the floating Configure/More
-          // buttons or the right-edge resize grip. Legacy headers stay put.
-          padding: EdgeInsets.only(
+          // Both widget and management controls participate in the Row. The
+          // last target also stays clear of the overlaid right resize grip.
+          padding: const EdgeInsets.only(
             left: 14,
-            right: trailing != null && !_editable ? 14 : 60,
+            right: DashboardMetrics.resizeHandle + 4,
           ),
           child: Row(
             children: [
@@ -334,39 +344,40 @@ class _DashboardCardState extends State<DashboardCard> {
                   ),
                 ),
               ],
+              if (_editable) ...[
+                const SizedBox(width: 8),
+                _buildManagementControls(selected: selected),
+              ],
             ],
           ),
         ),
       );
 
-  Widget _buildFloatingControls() => AnimatedOpacity(
-        duration: DashboardMetrics.hover,
-        opacity: _hovered ? 1 : 0,
-        child: IgnorePointer(
-          ignoring: !_hovered,
-          child: Row(
-            children: [
-              const Spacer(),
-              DashboardIconButton(
-                icon: Icons.tune_rounded,
+  Widget _buildManagementControls({required bool selected}) => PreviewToolbar(
+        key: ValueKey('dashboard-card-management-${spec.id}'),
+        keepVisible: selected,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DashboardIconButton(
+              icon: Icons.tune_rounded,
+              palette: palette,
+              size: 24,
+              iconSize: 15,
+              tooltip: LocaleKeys.dashboard_card_configure.tr(),
+              onPressed: () => controller.configure(spec.id),
+            ),
+            const SizedBox(width: 4),
+            Builder(
+              builder: (anchor) => DashboardIconButton(
+                icon: Icons.more_horiz_rounded,
                 palette: palette,
                 size: 24,
-                iconSize: 15,
-                tooltip: LocaleKeys.dashboard_card_configure.tr(),
-                onPressed: () => controller.configure(spec.id),
+                tooltip: LocaleKeys.dashboard_card_more.tr(),
+                onPressed: () => _showMenuForCard(anchor),
               ),
-              Builder(
-                builder: (anchor) => DashboardIconButton(
-                  icon: Icons.more_horiz_rounded,
-                  palette: palette,
-                  size: 24,
-                  tooltip: LocaleKeys.dashboard_card_more.tr(),
-                  onPressed: () => _showMenuForCard(anchor),
-                ),
-              ),
-              const SizedBox(width: 4),
-            ],
-          ),
+            ),
+          ],
         ),
       );
 
@@ -417,11 +428,17 @@ class _DashboardCardState extends State<DashboardCard> {
       MouseRegion(
         cursor: cursor,
         child: _EagerPan(
-          onStart: () => widget.onResizeStart?.call(edge),
-          onUpdate: (delta) => widget.onResizeUpdate?.call(edge, delta),
-          onEnd: () => widget.onResizeEnd?.call(),
+          onStart: () {
+            if (_editable) widget.onResizeStart?.call(edge);
+          },
+          onUpdate: (delta) {
+            if (_editable) widget.onResizeUpdate?.call(edge, delta);
+          },
+          onEnd: () {
+            if (_editable) widget.onResizeEnd?.call();
+          },
           child: AnimatedOpacity(
-            duration: DashboardMetrics.hover,
+            duration: _motion,
             opacity: _hovered || widget.selected ? 1 : 0,
             child: Center(child: _buildMarker(marker)),
           ),
@@ -469,13 +486,14 @@ class _DashboardCardState extends State<DashboardCard> {
   /// opens its settings. Opening them on every click would narrow the canvas
   /// under the pointer, which is what made a card impossible to move.
   void _handleTap() {
+    if (!_editable) return;
     final now = DateTime.now();
     final again =
         _lastTap != null && now.difference(_lastTap!) < kDoubleTapTimeout;
     _lastTap = now;
     if (again) {
       controller.configure(spec.id);
-    } else if (_editable) {
+    } else {
       controller.select(spec.id);
     }
   }
@@ -490,6 +508,7 @@ class _DashboardCardState extends State<DashboardCard> {
   /// until the pointer has gone somewhere, so a click that wobbles is still a
   /// click.
   void _panUpdate(Offset delta, Offset globalPosition) {
+    if (!_editable) return;
     _travel += delta;
     if (_moving) {
       widget.onDragUpdate?.call(delta, globalPosition);
@@ -504,6 +523,10 @@ class _DashboardCardState extends State<DashboardCard> {
   }
 
   void _panEnd() {
+    if (!_editable) {
+      _panStart();
+      return;
+    }
     if (!_moving) {
       // The pointer wandered a pixel or two before it was let go. That was
       // somebody clicking, not somebody moving the card.
@@ -696,6 +719,7 @@ class _DashboardCardState extends State<DashboardCard> {
       });
 
   Future<void> _rename() async {
+    if (!_editable) return;
     final controllerText = TextEditingController(text: spec.title);
     final route = DialogRoute<String>(
       context: context,
@@ -710,7 +734,7 @@ class _DashboardCardState extends State<DashboardCard> {
     // TextField. Its controller must live until the route is really gone.
     await route.completed;
     controllerText.dispose();
-    if (!mounted || name == null) {
+    if (!mounted || name == null || !_editable) {
       return;
     }
     controller.edit(

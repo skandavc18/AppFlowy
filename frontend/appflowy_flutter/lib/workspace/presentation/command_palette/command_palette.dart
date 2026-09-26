@@ -1,12 +1,10 @@
 import 'dart:async';
-import 'dart:math' as math;
 
 import 'package:appflowy/features/workspace/application/workspace_cover_codec.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
-import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
@@ -22,14 +20,13 @@ import 'package:appflowy/workspace/presentation/command_palette/widgets/command_
 import 'package:appflowy/workspace/presentation/command_palette/widgets/recent_views_list.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_field.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_filter_bar.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/search_layout.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_results_list.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -108,6 +105,7 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
   late ValueNotifier<CommandPaletteNotifierValue> _toggleNotifier =
       widget.notifier;
   bool _isOpen = false;
+  ModalRoute<dynamic>? _paletteRoute;
 
   @override
   void initState() {
@@ -144,21 +142,33 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
       FlowyOverlay.show(
         context: context,
         barrierColor: Colors.transparent,
-        builder: (_) => MultiBlocProvider(
-          providers: [
-            BlocProvider.value(value: commandBloc),
-            if (workspaceBloc != null) BlocProvider.value(value: workspaceBloc),
-            if (spaceBloc != null) BlocProvider.value(value: spaceBloc),
-          ],
-          child: CommandPaletteModal(shortcutBuilder: _buildShortcut),
-        ),
+        builder: (dialogContext) {
+          _paletteRoute = ModalRoute.of(dialogContext);
+          return MultiBlocProvider(
+            providers: [
+              BlocProvider.value(value: commandBloc),
+              if (workspaceBloc != null)
+                BlocProvider.value(value: workspaceBloc),
+              if (spaceBloc != null) BlocProvider.value(value: spaceBloc),
+            ],
+            child: CommandPaletteModal(shortcutBuilder: _buildShortcut),
+          );
+        },
       ).then((_) {
         _isOpen = false;
-        _toggleNotifier.value = _toggleNotifier.value.copyWith(isOpen: false);
+        _paletteRoute = null;
+        if (mounted) {
+          _toggleNotifier.value = _toggleNotifier.value.copyWith(isOpen: false);
+        }
       });
     } else if (!_toggleNotifier.value.isOpen && _isOpen) {
-      FlowyOverlay.pop(context);
-      _isOpen = false;
+      final route = _paletteRoute;
+      if (route != null && route.isCurrent) {
+        route.navigator?.pop();
+      } else {
+        // A newer modal owns dismissal; the palette is still open behind it.
+        _toggleNotifier.value = _toggleNotifier.value.copyWith(isOpen: true);
+      }
     }
   }
 
@@ -200,8 +210,9 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
 
   void _dismiss() {
     if (!mounted) return;
-    if (Navigator.canPop(context)) {
-      FlowyOverlay.pop(context);
+    final route = ModalRoute.of(context);
+    if (route != null && route.isCurrent && Navigator.canPop(context)) {
+      route.navigator?.pop();
     }
   }
 
@@ -230,7 +241,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
       },
       child: BlocBuilder<CommandPaletteBloc, CommandPaletteState>(
         builder: (context, state) {
-          final theme = AppFlowyTheme.of(context);
+          final palette = WorkspacePalette.of(context);
           final noQuery = state.query?.isEmpty ?? true, hasQuery = !noQuery;
           final currentUserId = workspaceState?.userProfile.id;
           final currentWorkspace = workspaceState?.currentWorkspace;
@@ -301,67 +312,72 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
           final commandRunQuery = commandQuery ?? rawQuery;
           final spaces =
               context.read<SpaceBloc?>()?.state.spaces ?? const <ViewPB>[];
-          final spaceXl = theme.spacing.xl;
-          final viewportSize = MediaQuery.sizeOf(context);
-          final dialogWidth = math.min(
-            960.0,
-            math.min(
-              viewportSize.width - 80,
-              (viewportSize.height - 96) * 4 / 3,
-            ),
+          final media = MediaQuery.of(context);
+          final dialogSize = commandPaletteDialogSize(
+            media.size,
+            viewInsets: media.viewInsets,
           );
-          final dialogHeight = dialogWidth * 3 / 4;
+          final contentInset = media.size.width < 640
+              ? WorkspaceTokens.space4
+              : WorkspaceTokens.space6;
           return FlowyDialog(
-            backgroundColor: EditorSurfaceStyle.canvasBackgroundFor(
-              Theme.of(context).brightness,
-              theme.surfaceColorScheme.layer01,
-              isPaper: PaperTheme.isEnabled(context),
-            ),
-            width: dialogWidth,
+            backgroundColor: palette.elevatedSurface,
+            width: dialogSize.width,
             elevation: 1,
-            shadowColor: Theme.of(context).shadowColor,
+            shadowColor: palette.shadow,
             surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(17),
-              side: BorderSide(
-                color: theme.borderColorScheme.primary,
-                width: 0.5,
-              ),
+              borderRadius: BorderRadius.circular(WorkspaceTokens.dialogRadius),
             ),
             alignment: Alignment.center,
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 40,
-              vertical: 48,
-            ),
-            constraints: BoxConstraints.tightFor(
-              width: dialogWidth,
-              height: dialogHeight,
-            ),
+            insetPadding: commandPaletteDialogInsets(media.size),
+            padding: EdgeInsets.zero,
+            constraints: BoxConstraints.tight(dialogSize),
             expandHeight: false,
             child: widget.shortcutBuilder(
-              // Change mainAxisSize to max so Expanded works correctly.
               Padding(
-                padding: EdgeInsets.fromLTRB(spaceXl, spaceXl, spaceXl, 0),
+                padding: EdgeInsets.fromLTRB(
+                  contentInset,
+                  contentInset,
+                  contentInset,
+                  0,
+                ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    SearchField(
-                      query: state.query,
-                      isLoading: searching,
-                      onSubmit: inCommandMode && hasCommands
-                          ? () => _runCommand(
-                                matchedCommands.first,
-                                commandRunQuery,
+                    ConstrainedBox(
+                      constraints:
+                          BoxConstraints(maxHeight: dialogSize.height * 0.4),
+                      child: SingleChildScrollView(
+                        primary: false,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SearchField(
+                              query: state.query,
+                              isLoading: searching,
+                              onSubmit: inCommandMode && hasCommands
+                                  ? () => _runCommand(
+                                        matchedCommands.first,
+                                        commandRunQuery,
+                                      )
+                                  : null,
+                            ),
+                            if (!inCommandMode)
+                              SearchFilterBar(
+                                filter: filter,
+                                spaces: spaces,
+                                onChanged: (value) =>
+                                    setState(() => filter = value),
                               )
-                          : null,
-                    ),
-                    if (!inCommandMode)
-                      SearchFilterBar(
-                        filter: filter,
-                        spaces: spaces,
-                        onChanged: (value) => setState(() => filter = value),
+                            else
+                              const VSpace(WorkspaceTokens.space4),
+                          ],
+                        ),
                       ),
+                    ),
                     if (inCommandMode)
-                      Flexible(
+                      Expanded(
                         child: CommandPalettePanel(
                           commands: matchedCommands,
                           onRun: (command) =>
@@ -369,9 +385,9 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                         ),
                       )
                     else if (noQuery)
-                      Flexible(
+                      Expanded(
                         child: RecentViewsList(
-                          onSelected: () => FlowyOverlay.pop(context),
+                          onSelected: _dismiss,
                           filter: filter,
                           cachedViews: cachedViews,
                           currentUserId: currentUserId,
@@ -382,7 +398,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                         ),
                       )
                     else if (hasQuery && (hasResult || hasCommands))
-                      Flexible(
+                      Expanded(
                         child: SearchResultList(
                           cachedViews: cachedViews,
                           resultItems: resultItems,
@@ -417,7 +433,23 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                           ),
                         ),
                       ),
-                    CommandPaletteHintBar(commandMode: inCommandMode),
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final minimumWidth =
+                            MediaQuery.textScalerOf(context).scale(400);
+                        return SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SizedBox(
+                            width: constraints.maxWidth < minimumWidth
+                                ? minimumWidth
+                                : constraints.maxWidth,
+                            child: CommandPaletteHintBar(
+                              commandMode: inCommandMode,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -435,49 +467,48 @@ class NoSearchResultsHint extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context),
-        textColor = theme.textColorScheme.secondary;
+    final palette = WorkspacePalette.of(context);
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FlowySvg(
-            FlowySvgs.m_home_search_icon_m,
-            color: theme.iconColorScheme.secondary,
-            size: Size.square(24),
-          ),
-          const VSpace(8),
-          Text(
-            LocaleKeys.search_noResultForSearching.tr(),
-            style: theme.textStyle.body.enhanced(color: textColor),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const VSpace(4),
-          RichText(
-            textAlign: TextAlign.center,
-            text: TextSpan(
-              text: LocaleKeys.search_noResultForSearchingHintWithoutTrash.tr(),
-              style: theme.textStyle.caption.standard(color: textColor),
-              children: [
-                TextSpan(
-                  text: LocaleKeys.trash_text.tr(),
-                  style: theme.textStyle.caption.underline(color: textColor),
-                  recognizer: TapGestureRecognizer()
-                    ..onTap = () {
-                      FlowyOverlay.pop(context);
-                      getIt<MenuSharedState>().latestOpenView = null;
-                      getIt<TabsBloc>().add(
-                        TabsEvent.openPlugin(
-                          plugin: makePlugin(pluginType: PluginType.trash),
-                        ),
-                      );
-                    },
-                ),
-              ],
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(WorkspaceTokens.space6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FlowySvg(
+              FlowySvgs.m_home_search_icon_m,
+              color: palette.secondaryText,
+              size: const Size.square(32),
             ),
-          ),
-        ],
+            const VSpace(WorkspaceTokens.space4),
+            Text(
+              LocaleKeys.search_noResultForSearching.tr(),
+              textAlign: TextAlign.center,
+              style:
+                  WorkspaceTypography.style(context, WorkspaceTextRole.section),
+            ),
+            const VSpace(WorkspaceTokens.space2),
+            Text(
+              LocaleKeys.search_noResultForSearchingHintWithoutTrash.tr(),
+              textAlign: TextAlign.center,
+              style: WorkspaceTypography.style(
+                context,
+                WorkspaceTextRole.metadata,
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                FlowyOverlay.pop(context);
+                getIt<MenuSharedState>().latestOpenView = null;
+                getIt<TabsBloc>().add(
+                  TabsEvent.openPlugin(
+                    plugin: makePlugin(pluginType: PluginType.trash),
+                  ),
+                );
+              },
+              child: Text(LocaleKeys.trash_text.tr()),
+            ),
+          ],
+        ),
       ),
     );
   }

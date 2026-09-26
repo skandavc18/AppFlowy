@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -144,11 +147,15 @@ class SpreadsheetFindBar extends StatefulWidget {
     required this.controller,
     required this.onClose,
     required this.editable,
+    this.findFocusNode,
+    this.onTapOutside,
   });
 
   final SpreadsheetController controller;
   final VoidCallback onClose;
   final bool editable;
+  final FocusNode? findFocusNode;
+  final VoidCallback? onTapOutside;
 
   @override
   State<SpreadsheetFindBar> createState() => _SpreadsheetFindBarState();
@@ -157,39 +164,127 @@ class SpreadsheetFindBar extends StatefulWidget {
 class _SpreadsheetFindBarState extends State<SpreadsheetFindBar> {
   final TextEditingController _find = TextEditingController();
   final TextEditingController _replace = TextEditingController();
-  final FocusNode _findFocus = FocusNode(debugLabel: 'spreadsheet-find');
+  final FocusNode _localFindFocus = FocusNode(debugLabel: 'spreadsheet-find');
+  FocusNode get _findFocus => widget.findFocusNode ?? _localFindFocus;
+  FocusOnKeyEventCallback? _previousFindKeyHandler;
+  int? _outsidePointer;
+  Offset _outsideOrigin = Offset.zero;
+  bool _active = true;
 
   @override
   void initState() {
     super.initState();
     _find.text = widget.controller.searchQuery;
-    _findFocus.onKeyEvent = (node, event) {
-      if (!node.hasPrimaryFocus ||
-          (event is! KeyDownEvent && event is! KeyRepeatEvent)) {
-        return KeyEventResult.ignored;
-      }
-      final key = event.logicalKey;
-      if (key == LogicalKeyboardKey.enter ||
-          key == LogicalKeyboardKey.numpadEnter) {
-        // Keep hardware submit/repeat local, without completing text editing
-        // or handing focus back to the document's Enter shortcut.
-        widget.controller.stepSearch(1);
-        return KeyEventResult.handled;
-      }
-      return KeyEventResult.ignored;
-    };
+    _bindFindKeys();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (mounted && _active) {
         _findFocus.requestFocus();
       }
     });
   }
 
+  void _bindFindKeys() {
+    _previousFindKeyHandler = _findFocus.onKeyEvent;
+    // Keep this on the actual query node, BEFORE TextEntryShortcuts. An
+    // ancestor Focus would lose Enter to native submit before seeing repeats.
+    _findFocus.onKeyEvent = _onFindKey;
+  }
+
+  void _unbindFindKeys(FocusNode node) {
+    if (node.onKeyEvent == _onFindKey) {
+      node.onKeyEvent = _previousFindKeyHandler;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant SpreadsheetFindBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.findFocusNode != widget.findFocusNode) {
+      _unbindFindKeys(oldWidget.findFocusNode ?? _localFindFocus);
+      _bindFindKeys();
+    }
+  }
+
+  KeyEventResult _onFindKey(FocusNode node, KeyEvent event) {
+    if (!_findFocus.hasPrimaryFocus ||
+        (event is! KeyDownEvent && event is! KeyRepeatEvent)) {
+      return _previousFindKeyHandler?.call(node, event) ??
+          KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      // Keep hardware submit/repeat local without completing text editing.
+      widget.controller.stepSearch(1);
+      return KeyEventResult.handled;
+    }
+    return _previousFindKeyHandler?.call(node, event) ?? KeyEventResult.ignored;
+  }
+
+  void _dismiss({bool outside = false}) {
+    if (!mounted || !_active) return;
+    _stopWatchingOutside();
+    widget.controller.setSearch('');
+    if (outside) {
+      (widget.onTapOutside ?? widget.onClose)();
+    } else {
+      widget.onClose();
+    }
+  }
+
+  void _onTapOutside(PointerDownEvent event) {
+    if (!_active || event.buttons != kPrimaryMouseButton) return;
+    _stopWatchingOutside();
+    _outsidePointer = event.pointer;
+    _outsideOrigin = event.position;
+    GestureBinding.instance.pointerRouter
+        .addRoute(event.pointer, _watchOutside);
+  }
+
+  void _watchOutside(PointerEvent event) {
+    if (event is PointerCancelEvent ||
+        (event.position - _outsideOrigin).distance > kTouchSlop) {
+      _stopWatchingOutside();
+    } else if (event is PointerUpEvent) {
+      _stopWatchingOutside();
+      // The find strip takes layout space. Let the grid resolve the accepted
+      // click at its original coordinates before removing that space. This
+      // observes, never joins/claims the cell's gesture arena or restores focus.
+      scheduleMicrotask(() {
+        if (mounted && _active && (ModalRoute.of(context)?.isCurrent ?? true)) {
+          _dismiss(outside: true);
+        }
+      });
+    }
+  }
+
+  void _stopWatchingOutside() {
+    final pointer = _outsidePointer;
+    if (pointer == null) return;
+    GestureBinding.instance.pointerRouter.removeRoute(pointer, _watchOutside);
+    _outsidePointer = null;
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    _stopWatchingOutside();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+  }
+
   @override
   void dispose() {
+    _stopWatchingOutside();
+    _unbindFindKeys(_findFocus);
     _find.dispose();
     _replace.dispose();
-    _findFocus.dispose();
+    _localFindFocus.dispose();
     super.dispose();
   }
 
@@ -198,7 +293,7 @@ class _SpreadsheetFindBarState extends State<SpreadsheetFindBar> {
     final palette = SpreadsheetPalette.of(context);
     final controller = widget.controller;
     final matches = controller.searchMatches.length;
-    return Padding(
+    final content = Padding(
       padding: const EdgeInsets.fromLTRB(0, 6, 0, 8),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -261,10 +356,7 @@ class _SpreadsheetFindBarState extends State<SpreadsheetFindBar> {
                     SpreadsheetToolbarButton(
                       icon: Icons.close_rounded,
                       tooltip: LocaleKeys.button_close.tr(),
-                      onPressed: () {
-                        controller.setSearch('');
-                        widget.onClose();
-                      },
+                      onPressed: _dismiss,
                     ),
                     // Keep the action clear of the embed's resize hit target.
                     const SizedBox(width: 14),
@@ -306,6 +398,17 @@ class _SpreadsheetFindBarState extends State<SpreadsheetFindBar> {
             ],
           );
         },
+      ),
+    );
+    return TapRegion(
+      onTapOutside: _onTapOutside,
+      child: TextFieldTapRegion(
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.escape): _dismiss,
+          },
+          child: content,
+        ),
       ),
     );
   }

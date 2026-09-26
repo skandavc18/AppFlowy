@@ -689,7 +689,9 @@ class _DialogButtonState extends State<_DialogButton> {
     final accent = Theme.of(context).colorScheme.primary;
     final background = widget.primary
         ? accent.withValues(alpha: enabled ? (hovered ? 0.22 : 0.15) : 0.07)
-        : palette.hover.withValues(alpha: hovered && enabled ? 1 : 0);
+        : hovered && enabled
+            ? palette.hover
+            : palette.hover.withValues(alpha: 0);
 
     return MouseRegion(
       cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,

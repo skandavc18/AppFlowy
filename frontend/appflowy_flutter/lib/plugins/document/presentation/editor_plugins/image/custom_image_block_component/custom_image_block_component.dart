@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/generated/flowy_svgs.g.dart';
@@ -8,6 +9,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/mo
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/custom_image_block_component/unsupport_image_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_caption.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_placeholder.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/resizeable_image.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
@@ -19,6 +22,7 @@ import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provi
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide ResizableImage;
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -99,6 +103,8 @@ class CustomImageBlockComponentBuilder extends BlockComponentBuilder {
     super.configuration,
     this.showMenu = false,
     this.menuBuilder,
+    this.ocrService,
+    this.ocrSourceBuilder,
   });
 
   /// Whether to show the menu of this block component.
@@ -106,6 +112,8 @@ class CustomImageBlockComponentBuilder extends BlockComponentBuilder {
 
   ///
   final CustomImageBlockComponentMenuBuilder? menuBuilder;
+  final OcrService? ocrService;
+  final ImageOcrSourceBuilder? ocrSourceBuilder;
 
   @override
   BlockComponentWidget build(BlockComponentContext blockComponentContext) {
@@ -118,6 +126,8 @@ class CustomImageBlockComponentBuilder extends BlockComponentBuilder {
       actionBuilder: (_, state) => actionBuilder(blockComponentContext, state),
       showMenu: showMenu,
       menuBuilder: menuBuilder,
+      ocrService: ocrService,
+      ocrSourceBuilder: ocrSourceBuilder,
     );
   }
 
@@ -135,12 +145,16 @@ class CustomImageBlockComponent extends BlockComponentStatefulWidget {
     super.configuration = const BlockComponentConfiguration(),
     this.showMenu = false,
     this.menuBuilder,
+    this.ocrService,
+    this.ocrSourceBuilder,
   });
 
   /// Whether to show the menu of this block component.
   final bool showMenu;
 
   final CustomImageBlockComponentMenuBuilder? menuBuilder;
+  final OcrService? ocrService;
+  final ImageOcrSourceBuilder? ocrSourceBuilder;
 
   @override
   State<CustomImageBlockComponent> createState() =>
@@ -168,6 +182,28 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
   final captionFocusRequest = ValueNotifier<int>(0);
 
   bool alwaysShowMenu = false;
+  DocumentBloc? _documentBloc;
+
+  bool get _canFindImage =>
+      mounted &&
+      !editorState.isDisposed &&
+      _documentBloc?.isClosed != true &&
+      node.parent != null &&
+      identical(editorState.getNodeAtPath(node.path), node);
+
+  bool _selectedForFind() {
+    if (!_canFindImage) return false;
+    final selection = editorState.selection;
+    return selection != null &&
+        listEquals(selection.start.path, node.path) &&
+        listEquals(selection.end.path, node.path);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _documentBloc = context.read<DocumentBloc?>();
+  }
 
   void requestCaptionFocus() => captionFocusRequest.value++;
 
@@ -223,6 +259,14 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
         editable: editorState.editable,
         alignment: alignment,
         type: imageType,
+        ocrService: widget.ocrService,
+        ocrSourceBuilder: widget.ocrSourceBuilder,
+        canFind: () =>
+            _canFindImage &&
+            node.attributes[CustomImageBlockKeys.url] == src &&
+            (node.attributes[CustomImageBlockKeys.imageType] ?? 0) ==
+                rawImageType,
+        isSelectedForFind: _selectedForFind,
         overlay: menuIsDocked ? _buildHoverMenu() : null,
         caption: ImageCaption(
           node: node,
@@ -231,29 +275,64 @@ class CustomImageBlockComponentState extends State<CustomImageBlockComponent>
           isHovering: showActionsNotifier,
           focusRequest: captionFocusRequest,
         ),
-        onStateChange: (state) => imageStateNotifier.value = state,
-        onDoubleTap: () => showDialog(
-          context: context,
-          builder: (_) => InteractiveImageViewer(
-            userProfile: context.read<DocumentBloc?>()?.state.userProfilePB,
-            imageProvider: AFBlockImageProvider(
-              images: [ImageBlockData(url: src, type: imageType)],
-              onDeleteImage: editorState.editable
-                  ? (_) async {
-                      final transaction = editorState.transaction
-                        ..deleteNode(node);
-                      await editorState.apply(transaction);
-                    }
-                  : null,
+        onStateChange: (state) {
+          if (_canFindImage) imageStateNotifier.value = state;
+        },
+        onDoubleTap: () {
+          if (!_canFindImage ||
+              node.attributes[CustomImageBlockKeys.url] != src ||
+              (node.attributes[CustomImageBlockKeys.imageType] ?? 0) !=
+                  rawImageType) {
+            return;
+          }
+          final profile = _documentBloc?.state.userProfilePB;
+          final ocrService = widget.ocrService;
+          final ocrSourceBuilder = widget.ocrSourceBuilder;
+          final canDelete = editorState.editable;
+          unawaited(
+            showDialog<void>(
+              context: context,
+              builder: (_) => InteractiveImageViewer(
+                userProfile: profile,
+                ocrService: ocrService,
+                ocrSourceBuilder: ocrSourceBuilder,
+                canReadImage: () =>
+                    _canFindImage &&
+                    node.attributes[CustomImageBlockKeys.url] == src &&
+                    (node.attributes[CustomImageBlockKeys.imageType] ?? 0) ==
+                        rawImageType,
+                imageProvider: AFBlockImageProvider(
+                  images: [ImageBlockData(url: src, type: imageType)],
+                  onDeleteImage: canDelete
+                      ? (_) async {
+                          if (!_canFindImage ||
+                              !editorState.editable ||
+                              node.attributes[CustomImageBlockKeys.url] !=
+                                  src ||
+                              (node.attributes[
+                                          CustomImageBlockKeys.imageType] ??
+                                      0) !=
+                                  rawImageType) {
+                            return;
+                          }
+                          final transaction = editorState.transaction
+                            ..deleteNode(node);
+                          await editorState.apply(transaction);
+                        }
+                      : null,
+                ),
+              ),
             ),
-          ),
-        ),
+          );
+        },
         onResize: (width) {
+          if (!_canFindImage || !editorState.editable) return;
           final transaction = editorState.transaction
             ..updateNode(node, {CustomImageBlockKeys.width: width});
           editorState.apply(transaction);
         },
         onResizeHeight: (height) {
+          if (!_canFindImage || !editorState.editable) return;
           final transaction = editorState.transaction
             ..updateNode(node, {CustomImageBlockKeys.height: height});
           editorState.apply(transaction);

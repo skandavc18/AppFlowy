@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/email/email_account_dialog.dart';
 import 'package:appflowy/plugins/collection/views/email/email_chrome.dart';
 import 'package:appflowy/plugins/collection/views/email/email_host.dart';
@@ -55,7 +56,7 @@ class _EmailThreePaneViewState extends State<EmailThreePaneView> {
               return Padding(
                 padding: const EdgeInsets.fromLTRB(
                   EmailMetrics.gutter,
-                  EmailMetrics.space2,
+                  CollectionWorkspaceMetrics.topGap,
                   EmailMetrics.gutter,
                   EmailMetrics.space5,
                 ),

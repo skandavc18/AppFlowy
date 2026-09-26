@@ -5,6 +5,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/medi
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -340,48 +342,58 @@ class _MediaActionButtonsState extends State<MediaActionButtons> {
                       buttonContext: buttonContext,
                     ),
                   ),
-          style: _buttonStyle(palette, duration),
+          style: _buttonStyle(buttonContext, palette, duration),
           // Inside the native button's boundary, the label and live feedback
           // share its enabled/focus state and tap action, not an empty parent.
-          icon: Semantics(
-            label: tooltip,
-            liveRegion: copied || failed,
-            excludeSemantics: true,
-            child: SizedBox.square(
-              dimension: 16,
-              child: AnimatedSwitcher(
-                // Rebinding a source drops outgoing feedback immediately while
-                // retaining the actual button and its keyboard focus state.
-                key: ValueKey((revision, action)),
-                duration: duration,
-                switchInCurve: Curves.easeOut,
-                switchOutCurve: Curves.easeIn,
-                child: pending
-                    ? SizedBox.square(
-                        key: ValueKey('media-${action.name}-progress'),
-                        dimension: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: palette.ink.withValues(alpha: 0.65),
-                          value: duration == Duration.zero ? 0.65 : null,
+          icon: Builder(
+            builder: (iconContext) => Semantics(
+              label: tooltip,
+              liveRegion: copied || failed,
+              excludeSemantics: true,
+              child: SizedBox.square(
+                dimension: 16,
+                child: AnimatedSwitcher(
+                  // Rebinding a source drops outgoing feedback immediately while
+                  // retaining the actual button and its keyboard focus state.
+                  key: ValueKey((revision, action)),
+                  duration: duration,
+                  switchInCurve: Curves.easeOut,
+                  switchOutCurve: Curves.easeIn,
+                  child: pending
+                      ? SizedBox.square(
+                          key: ValueKey('media-${action.name}-progress'),
+                          dimension: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.5,
+                            color: palette.ink.withValues(alpha: 0.65),
+                            value: duration == Duration.zero ? 0.65 : null,
+                          ),
+                        )
+                      : WorkspaceGlyph(
+                          copied
+                              ? Icons.check_rounded
+                              : failed
+                                  ? Icons.error_outline_rounded
+                                  : action == _MediaAction.copy
+                                      ? Icons.copy_rounded
+                                      : Icons.ios_share_rounded,
+                          key: ValueKey((action, copied, failed)),
+                          size: 16,
+                          color: failed
+                              ? palette.error
+                              : copied
+                                  ? palette.accent
+                                  : IconTheme.of(iconContext).color,
+                          // Status/disabled ink and the photo overlay's white
+                          // contrast must never follow a decorative preference.
+                          role: widget.onDarkSurface ||
+                                  _pending != null ||
+                                  copied ||
+                                  failed
+                              ? WorkspaceGlyphRole.preserveInk
+                              : WorkspaceGlyphRole.standard,
                         ),
-                      )
-                    : Icon(
-                        copied
-                            ? Icons.check_rounded
-                            : failed
-                                ? Icons.error_outline_rounded
-                                : action == _MediaAction.copy
-                                    ? Icons.copy_rounded
-                                    : Icons.ios_share_rounded,
-                        key: ValueKey((action, copied, failed)),
-                        size: 16,
-                        color: failed
-                            ? palette.error
-                            : copied
-                                ? palette.accent
-                                : null,
-                      ),
+                ),
               ),
             ),
           ),
@@ -391,49 +403,67 @@ class _MediaActionButtonsState extends State<MediaActionButtons> {
   }
 
   ButtonStyle _buttonStyle(
+    BuildContext context,
     _MediaActionPalette palette,
     Duration duration,
-  ) =>
-      IconButton.styleFrom(
-        foregroundColor: palette.ink,
-        disabledForegroundColor: palette.ink.withValues(alpha: 0.4),
-        minimumSize: Size.square(widget.buttonSize),
-        maximumSize: Size.square(widget.buttonSize),
-        padding: EdgeInsets.zero,
-        visualDensity: VisualDensity.standard,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        splashFactory: NoSplash.splashFactory,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(widget.onDarkSurface ? 4 : 8),
-        ),
-      ).copyWith(
-        animationDuration: duration,
-        iconColor: WidgetStateProperty.resolveWith(
-          (states) => states.contains(WidgetState.disabled)
-              ? palette.ink.withValues(alpha: 0.4)
-              : palette.ink,
-        ),
-        backgroundColor: WidgetStateProperty.resolveWith((states) {
-          final alpha = states.contains(WidgetState.disabled)
-              ? 0.0
-              : states.contains(WidgetState.pressed)
-                  ? 0.12
-                  : states.contains(WidgetState.hovered)
-                      ? widget.onDarkSurface
-                          ? 0.1
-                          : 0.07
-                      : 0.0;
-          return palette.accent.withValues(alpha: alpha);
-        }),
-        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-        side: WidgetStateProperty.resolveWith(
-          (states) => BorderSide(
-            color: states.contains(WidgetState.focused)
-                ? palette.focusRing
-                : palette.focusRing.withValues(alpha: 0),
-          ),
-        ),
+  ) {
+    if (!widget.onDarkSurface) {
+      // Keep the established disabled ink, but share every hover/press/focus
+      // token and the native rounded shape with the neighbouring controls.
+      final foreground = WidgetStateProperty.resolveWith<Color>(
+        (states) => states.contains(WidgetState.disabled)
+            ? palette.ink.withValues(alpha: 0.4)
+            : palette.ink,
       );
+      return WorkspaceChrome.controlStyle(context).copyWith(
+        foregroundColor: foreground,
+        iconColor: foreground,
+        minimumSize: WidgetStatePropertyAll(Size.square(widget.buttonSize)),
+        maximumSize: WidgetStatePropertyAll(Size.square(widget.buttonSize)),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        visualDensity: VisualDensity.standard,
+      );
+    }
+    // The image viewer owns a dark overlay independently of the app theme.
+    return IconButton.styleFrom(
+      foregroundColor: palette.ink,
+      disabledForegroundColor: palette.ink.withValues(alpha: 0.4),
+      minimumSize: Size.square(widget.buttonSize),
+      maximumSize: Size.square(widget.buttonSize),
+      padding: EdgeInsets.zero,
+      visualDensity: VisualDensity.standard,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      splashFactory: NoSplash.splashFactory,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(4),
+      ),
+    ).copyWith(
+      animationDuration: duration,
+      iconColor: WidgetStateProperty.resolveWith(
+        (states) => states.contains(WidgetState.disabled)
+            ? palette.ink.withValues(alpha: 0.4)
+            : palette.ink,
+      ),
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        final alpha = states.contains(WidgetState.disabled)
+            ? 0.0
+            : states.contains(WidgetState.pressed)
+                ? 0.12
+                : states.contains(WidgetState.hovered)
+                    ? 0.1
+                    : 0.0;
+        return palette.accent.withValues(alpha: alpha);
+      }),
+      overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+      side: WidgetStateProperty.resolveWith(
+        (states) => BorderSide(
+          color: states.contains(WidgetState.focused)
+              ? palette.focusRing
+              : palette.focusRing.withValues(alpha: 0),
+        ),
+      ),
+    );
+  }
 }
 
 /// Hides pointer/semantics immediately, but keeps descendants in the Tab order.

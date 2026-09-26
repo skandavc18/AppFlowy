@@ -38,7 +38,7 @@ void main() {
   for (final appearance in vividIconTestAppearances) {
     for (final colors in [true, false]) {
       testWidgets(
-          '$appearance: Vivid is visible and all 24 choices select '
+          '$appearance: Vivid is visible and all workspace choices select '
           '(color selection $colors)', (tester) async {
         final selections = <SelectedEmojiIconResult>[];
         await tester.pumpWidget(
@@ -70,10 +70,64 @@ void main() {
         await settleVividIconPictures(tester);
         final picker = tester.widget<IconPicker>(find.byType(IconPicker));
         expect(picker.pack, kVividIconPack);
-        expect(picker.iconGroups.single.icons, hasLength(24));
+        final choices = picker.iconGroups
+            .expand((group) => group.icons.map((icon) => (group, icon)))
+            .toList();
+        expect(picker.iconGroups, hasLength(12));
+        expect(choices, hasLength(150));
+        expect(
+          picker.iconGroups
+              .firstWhere((group) => group.name == vividIconTestGroup)
+              .icons,
+          hasLength(56),
+        );
         expect(find.byType(CircularProgressIndicator), findsNothing);
         expect(iconPacksVersion.value, version);
         expect(isIconPackLoaded(iconPackForGroup('color_activities')), isFalse);
+
+        for (final (group, icon) in choices) {
+          final identity = '${group.name}/${icon.name}';
+          // The enlarged catalogue scrolls. Search through the real picker so
+          // every lazy cell is mounted before testing its native activation.
+          await tester.enterText(find.byType(TextField), icon.name);
+          await tester.pump(const Duration(milliseconds: 200));
+          await tester.pumpAndSettle();
+          final button = find.descendant(
+            of: find.byKey(
+              ValueKey('picker-icon-${group.name}/${icon.name}'),
+            ),
+            matching: find.byType(TextButton),
+          );
+          expect(button, findsOneWidget, reason: identity);
+          await tester.ensureVisible(button);
+          await tester.pumpAndSettle();
+          expect(button.hitTestable(), findsOneWidget, reason: identity);
+          expect(
+            tester.widget<TextButton>(button).onPressed,
+            isNotNull,
+            reason: identity,
+          );
+          final selectionCount = selections.length;
+          await tester.tap(button);
+          await tester.pump();
+          expect(selections, hasLength(selectionCount + 1), reason: identity);
+          final selected = selections.last;
+          expect(selected.keepOpen, isFalse);
+          final stored = ViewIconPB.fromBuffer(
+            selected.data.toViewIcon().writeToBuffer(),
+          );
+          final restored = IconsData.fromJson(jsonDecode(stored.value));
+          expect(stored.ty, ViewIconTypePB.Icon);
+          expect(restored.groupName, group.name, reason: identity);
+          expect(restored.iconName, icon.name);
+          expect(restored.color, isNull);
+          expect(restored.svgString, icon.content);
+          expect(find.byType(IconColorPicker), findsNothing);
+        }
+        expect(selections, hasLength(150));
+
+        // The footer belongs to the last lazy group. Searching above mounts it
+        // without assuming that all twelve unfiltered groups fit onscreen.
         expect(find.byType(StreamlinePermit), findsOneWidget);
         expect(
           tester.widget<StreamlinePermit>(find.byType(StreamlinePermit)).pack,
@@ -92,26 +146,6 @@ void main() {
         for (final span in (permit.text as TextSpan).children!) {
           expect(span.style!.fontFamily, expectedFont);
         }
-
-        for (final icon in picker.iconGroups.single.icons) {
-          final button = vividIconOption(icon.name);
-          expect(button.hitTestable(), findsOneWidget, reason: icon.name);
-          await tester.tap(button);
-          await tester.pump();
-          final selected = selections.last;
-          expect(selected.keepOpen, isFalse);
-          final stored = ViewIconPB.fromBuffer(
-            selected.data.toViewIcon().writeToBuffer(),
-          );
-          final restored = IconsData.fromJson(jsonDecode(stored.value));
-          expect(stored.ty, ViewIconTypePB.Icon);
-          expect(restored.groupName, vividIconTestGroup);
-          expect(restored.iconName, icon.name);
-          expect(restored.color, isNull);
-          expect(restored.svgString, icon.content);
-          expect(find.byType(IconColorPicker), findsNothing);
-        }
-        expect(selections, hasLength(24));
         expect(tester.takeException(), isNull);
         await disposeVividIconPicker(tester);
       });
@@ -152,13 +186,12 @@ void main() {
       await tester.enterText(find.byType(TextField), '');
       await tester.pump(const Duration(milliseconds: 200));
       await tester.pumpAndSettle();
+      final restoredGroups =
+          tester.widget<IconPicker>(find.byType(IconPicker)).iconGroups;
+      expect(restoredGroups, hasLength(12));
       expect(
-        tester
-            .widget<IconPicker>(find.byType(IconPicker))
-            .iconGroups
-            .single
-            .icons,
-        hasLength(24),
+        restoredGroups.expand((group) => group.icons),
+        hasLength(150),
       );
       expect(tester.takeException(), isNull);
       await disposeVividIconPicker(tester);
@@ -183,14 +216,22 @@ void main() {
             matching: find.byType(FlowyButton),
           )
           .last;
+      final groupNames =
+          appFlowyVividIconGroups.map((group) => group.name).toSet();
       for (var i = 0; i < 12; i++) {
+        result = null;
         await tester.tap(random);
         await tester.pump();
+        expect(result, isNotNull);
         expect(result!.keepOpen, isTrue);
         final data = IconsData.fromJson(jsonDecode(result!.emoji));
-        expect(data.groupName, vividIconTestGroup);
+        expect(groupNames, contains(data.groupName));
+        expect(iconPackForGroup(data.groupName), same(kVividIconPack));
         expect(data.color, isNull);
-        expect(data.svgString, isNotNull);
+        final icon = findLoadedIcon(data.groupName, data.iconName);
+        expect(icon, isNotNull, reason: data.iconString);
+        expect(icon!.iconGroup?.name, data.groupName);
+        expect(data.svgString, icon.content);
       }
       expect(find.byType(IconColorPicker), findsNothing);
       expect(tester.takeException(), isNull);
@@ -203,7 +244,13 @@ void main() {
       await tester.pumpWidget(vividIconTestApp(appearance, const SizedBox()));
       await tester.pumpAndSettle();
       resetIconPacksForTesting();
-      final names = appFlowyVividIconGroups.single.icons
+      final names = appFlowyVividIconGroups
+          .firstWhere((group) => group.name == vividIconTestGroup)
+          .icons
+          // Preserve the existing pixel contract for the original, saturated
+          // illustrations. Workspace object faces have separate exact-artwork
+          // tests and a new visual fixture, not a retroactive palette rewrite.
+          .take(24)
           .map((icon) => icon.name)
           .toList();
       for (final size in [18.0, 32.0, 54.0]) {

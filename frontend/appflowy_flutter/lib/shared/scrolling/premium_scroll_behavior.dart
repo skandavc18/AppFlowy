@@ -235,6 +235,52 @@ class _PremiumScrollOwner extends InheritedWidget {
   bool updateShouldNotify(_PremiumScrollOwner oldWidget) => false;
 }
 
+/// Opts one [NestedScrollView] into smoothed, coordinated mouse-wheel routing.
+///
+/// Wrap the owning [NestedScrollView] itself, not just its body. Only regions
+/// using that view's exact [NestedScrollViewState.innerController] or
+/// [NestedScrollViewState.outerController] opt in. Independent secondary and
+/// horizontal controllers, and other nested views below it, keep their existing
+/// behavior; this is not a subtree-wide [PremiumScrollExclusion].
+///
+/// Header and body share one premium wheel queue. Its incremental frame deltas
+/// go through the outer position's public [ScrollPosition.pointerScroll], so
+/// Flutter still distributes travel between the header and body. Writing either
+/// position's pixels directly would bypass that coordination. Exhausted or
+/// unsupported coordinators leave the original event to native routing, rather
+/// than smoothing an ancestor or replaying an already consumed packet.
+///
+/// Touch/trackpad physics and frame pacing are unchanged. This marker does not
+/// enable premium scrolling or override its global/reduced-motion opt-out.
+class PremiumCoordinatedScrollScope extends InheritedWidget {
+  const PremiumCoordinatedScrollScope({
+    super.key,
+    required NestedScrollView super.child,
+  });
+
+  static NestedScrollViewState? _ownerForController(
+    BuildContext context,
+    ScrollController? controller,
+  ) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<PremiumCoordinatedScrollScope>();
+    if (scope == null || controller == null) return null;
+    final nested = context.findAncestorStateOfType<NestedScrollViewState>();
+    // Checking the owning widget as well as the controllers keeps an embedded,
+    // independently coordinated view from implicitly inheriting this opt-in.
+    return nested != null &&
+            identical(scope.child, nested.widget) &&
+            (identical(controller, nested.innerController) ||
+                identical(controller, nested.outerController))
+        ? nested
+        : null;
+  }
+
+  @override
+  bool updateShouldNotify(PremiumCoordinatedScrollScope oldWidget) =>
+      !identical(child, oldWidget.child);
+}
+
 /// Adds controlled desktop coasting and elastic edges without a second input
 /// engine. Native macOS/mobile physics and discrete wheel routing are retained.
 class PremiumScrollBehavior extends ScrollBehavior {
@@ -1332,6 +1378,12 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
   List<_RenderPremiumScrollRegion> _hitRegions = const [];
   bool _hitPremiumExclusion = false;
 
+  void _cancelCoordinatedWheels({_RenderPremiumScrollRegion? except}) {
+    for (final region in _hitRegions) {
+      if (!identical(region, except)) region.cancelCoordinatedWheel();
+    }
+  }
+
   @override
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
     if (!size.contains(position)) {
@@ -1359,6 +1411,7 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
     // Flutter's tracker samples updates, not the end packet, and its stopwatch
     // cannot detect an event-time pause when packets are delivered in a batch.
     if (event is PointerPanZoomStartEvent) {
+      _cancelCoordinatedWheels();
       _panSessions.remove(event.pointer)?.finish(flush: false);
       _panSessions[event.pointer] = _DesktopPanSession(
         event.timeStamp,
@@ -1376,22 +1429,46 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
       session?.endedAt = event.timeStamp;
       session?.finish();
     } else if (event is PointerCancelEvent) {
+      _cancelCoordinatedWheels();
       _panSessions.remove(event.pointer)?.finish(flush: false);
     } else if (event is PointerDownEvent) {
+      _cancelCoordinatedWheels();
       for (final region in _hitRegions) {
         region.cancelTrackpadPans(flush: true);
       }
     }
     if (_hitPremiumExclusion) {
+      if (event is PointerScrollEvent ||
+          event is PointerScrollInertiaCancelEvent) {
+        _cancelCoordinatedWheels();
+      }
       return;
     }
 
     if (event is PointerScrollEvent) {
       for (final region in _hitRegions) {
+        if (region.coordinatesWheel(event)) {
+          final owner = region.coordinatedWheelOwner;
+          final candidate = event.kind == PointerDeviceKind.mouse
+              ? owner?.coordinatedCandidateFor(event)
+              : null;
+          _cancelCoordinatedWheels(except: candidate == null ? null : owner);
+          if (candidate != null && owner != null) {
+            GestureBinding.instance.pointerSignalResolver.register(
+              event,
+              (_) => owner.startKineticScroll(event, candidate),
+            );
+          }
+          // A body at zero can still move its header. Only a fully exhausted
+          // coordinator falls back; stop the premium ancestor search either
+          // way, leaving native boundary/unsupported-input handling intact.
+          return;
+        }
         final candidate = region.candidateFor(event);
         if (candidate == null) {
           continue;
         }
+        _cancelCoordinatedWheels();
         // Precision trackpads already provide direct pan/zoom updates and a
         // platform velocity estimate. Let Flutter consume those unchanged.
         if (event.kind != PointerDeviceKind.mouse) {
@@ -1403,6 +1480,7 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
         );
         return;
       }
+      _cancelCoordinatedWheels();
     } else if (event is PointerScrollInertiaCancelEvent) {
       for (final region in _hitRegions) {
         region.resetMomentumTracking(stopActivity: true);
@@ -1444,6 +1522,10 @@ class _PremiumScrollRegion extends SingleChildRenderObjectWidget {
       pointerAxisModifiers: pointerAxisModifiers,
       config: config,
       paceTrackpad: paceTrackpad,
+      coordinatedView: PremiumCoordinatedScrollScope._ownerForController(
+        context,
+        controller,
+      ),
       scrollable: context.findAncestorStateOfType<ScrollableState>(),
     );
   }
@@ -1459,6 +1541,8 @@ class _PremiumScrollRegion extends SingleChildRenderObjectWidget {
       ..axisDirection = axisDirection
       ..pointerAxisModifiers = pointerAxisModifiers
       ..paceTrackpad = paceTrackpad
+      ..coordinatedView =
+          PremiumCoordinatedScrollScope._ownerForController(context, controller)
       ..config = config;
   }
 }
@@ -1467,11 +1551,46 @@ class _PremiumScrollCandidate {
   const _PremiumScrollCandidate({
     required this.position,
     required this.delta,
+    this.coordinatedView,
   });
 
   final ScrollPosition position;
   final double delta;
+  final NestedScrollViewState? coordinatedView;
 }
+
+// Read live geometry, not a cached combined extent: collapsing the header and
+// resizing the viewport both change the inner range. Page snapping and mixed
+// axes retain native handling rather than becoming a pixel-distance animation.
+List<ScrollPosition>? _coordinatedWheelPositions(NestedScrollViewState view) {
+  if (!view.mounted || view.outerController.positions.length != 1) return null;
+  final outer = view.outerController.position;
+  final positions = [outer, ...view.innerController.positions];
+  for (final position in positions) {
+    if (!position.hasPixels ||
+        !position.hasContentDimensions ||
+        position.outOfRange ||
+        position.axisDirection != outer.axisDirection) {
+      return null;
+    }
+    for (ScrollPhysics? physics = position.physics;
+        physics != null;
+        physics = physics.parent) {
+      if (physics is PageScrollPhysics) return null;
+    }
+  }
+  return positions;
+}
+
+bool _canScrollCoordinated(Iterable<ScrollPosition> positions, double delta) =>
+    delta != 0 &&
+    positions.any(
+      (position) =>
+          position.physics.shouldAcceptUserOffset(position) &&
+          (delta > 0
+              ? position.pixels < position.maxScrollExtent
+              : position.pixels > position.minScrollExtent),
+    );
 
 class _RenderPremiumScrollRegion extends RenderProxyBox {
   _RenderPremiumScrollRegion({
@@ -1480,15 +1599,45 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
     required this.pointerAxisModifiers,
     required PremiumScrollPhysicsConfig config,
     required this.paceTrackpad,
+    required NestedScrollViewState? coordinatedView,
     required this.scrollable,
   })  : _controller = controller,
         _axisDirection = axisDirection,
+        _coordinatedView = coordinatedView,
         _config = config;
 
   _PremiumWheelScrollActivity? _activeActivity;
   final _panBindings = <FrameSyncedScrollPan>{};
   bool paceTrackpad;
   ScrollableState? scrollable;
+
+  NestedScrollViewState? get coordinatedView => _coordinatedView;
+  NestedScrollViewState? _coordinatedView;
+  set coordinatedView(NestedScrollViewState? value) {
+    if (identical(_coordinatedView, value)) return;
+    cancelCoordinatedWheel();
+    _coordinatedView = value;
+  }
+
+  void cancelCoordinatedWheel() {
+    final activity = _activeActivity;
+    if (activity?.coordinatedView != null) activity!.cancelMomentum();
+  }
+
+  _RenderPremiumScrollRegion? get coordinatedWheelOwner {
+    final view = coordinatedView;
+    if (view == null || !view.mounted) return null;
+    RenderObject? current = this;
+    while (current != null) {
+      if (current is _RenderPremiumScrollRegion &&
+          identical(current.coordinatedView, view) &&
+          identical(current.controller, view.outerController)) {
+        return current;
+      }
+      current = current.parent;
+    }
+    return null;
+  }
 
   List<FrameSyncedScrollPan> prepareTrackpadPan() {
     final controller = _controller;
@@ -1569,6 +1718,24 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
     return true;
   }
 
+  bool coordinatesWheel(PointerScrollEvent event) =>
+      coordinatedView != null && _eventDelta(event, axisDirection) != 0;
+
+  _PremiumScrollCandidate? coordinatedCandidateFor(PointerScrollEvent event) {
+    final view = coordinatedView;
+    if (!attached || view == null) return null;
+    final positions = _coordinatedWheelPositions(view);
+    final delta = _eventDelta(event, axisDirection);
+    if (positions == null || !_canScrollCoordinated(positions, delta)) {
+      return null;
+    }
+    return _PremiumScrollCandidate(
+      position: positions.first,
+      delta: delta,
+      coordinatedView: view,
+    );
+  }
+
   _PremiumScrollCandidate? candidateFor(PointerScrollEvent event) {
     final scrollController = controller;
     if (scrollController == null || !scrollController.hasClients) {
@@ -1635,24 +1802,43 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
 
     final activeActivity = _activeActivity;
     if (activeActivity != null &&
-        !activeActivity.isDisposed &&
-        identical(activeActivity.delegate, position)) {
+        activeActivity.canReuse &&
+        identical(activeActivity.delegate, position) &&
+        identical(activeActivity.coordinatedView, candidate.coordinatedView)) {
       activeActivity.addScrollDistance(distance);
       return;
     }
 
-    _launchActivity(position, delegate, distance);
+    cancelCoordinatedWheel();
+    _launchActivity(
+      position,
+      delegate,
+      distance,
+      coordinatedView: candidate.coordinatedView,
+    );
   }
 
   void _launchActivity(
     ScrollPosition position,
     ScrollActivityDelegate delegate,
-    double distance,
-  ) {
+    double distance, {
+    NestedScrollViewState? coordinatedView,
+  }) {
     if (!attached || !position.hasPixels || distance == 0) {
       delegate.goBallistic(0);
       resetMomentumTracking();
       return;
+    }
+
+    final coordinatedPositions = coordinatedView == null
+        ? <ScrollPosition>[]
+        : _coordinatedWheelPositions(coordinatedView);
+    if (coordinatedPositions == null) return;
+    if (coordinatedView != null) {
+      // Stop native motion without moving either viewport. The wheel queue
+      // lives on the outer region, not on either position: pointerScroll itself
+      // replaces both native activities on each call.
+      position.pointerScroll(0);
     }
 
     final notificationContext = position.context.notificationContext;
@@ -1675,6 +1861,8 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
       vsync: position.context.vsync,
       config: config,
       initialFrameDuration: initialFrameDuration,
+      coordinatedView: coordinatedView,
+      coordinatedPositions: coordinatedPositions,
       onDispose: (disposedActivity) {
         if (identical(_activeActivity, disposedActivity)) {
           _activeActivity = null;
@@ -1682,7 +1870,7 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
       },
     )..addScrollDistance(distance);
     _activeActivity = activity;
-    position.beginActivity(activity);
+    if (coordinatedView == null) position.beginActivity(activity);
   }
 
   void resetMomentumTracking({bool stopActivity = false}) {
@@ -1710,20 +1898,39 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
     required this.config,
     required this.initialFrameDuration,
     required this.onDispose,
+    this.coordinatedView,
+    this.coordinatedPositions = const [],
   }) {
     _ticker = vsync.createTicker(_tick)..start();
+    for (final position in coordinatedPositions) {
+      position.addListener(_nativeScrollTookOver);
+      position.isScrollingNotifier.addListener(_nativeScrollTookOver);
+    }
   }
 
   final PremiumScrollPhysicsConfig config;
   final Duration initialFrameDuration;
   final ValueChanged<_PremiumWheelScrollActivity> onDispose;
+  final NestedScrollViewState? coordinatedView;
+  final List<ScrollPosition> coordinatedPositions;
 
   late final Ticker _ticker;
   Duration? _lastElapsed;
   double _remainingDistance = 0;
   bool _isDisposed = false;
+  bool _applyingCoordinatedDelta = false;
 
-  bool get isDisposed => _isDisposed;
+  bool get canReuse =>
+      !_isDisposed &&
+      (coordinatedView == null ||
+          _hasSameCoordinatedPositions(
+            _coordinatedWheelPositions(coordinatedView!),
+          ));
+
+  bool _hasSameCoordinatedPositions(List<ScrollPosition>? positions) =>
+      positions != null &&
+      positions.length == coordinatedPositions.length &&
+      positions.every(coordinatedPositions.contains);
 
   void addScrollDistance(double distance) {
     if (_isDisposed || distance == 0) {
@@ -1743,7 +1950,42 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
 
   void cancelMomentum() {
     if (!_isDisposed) {
-      delegate.goBallistic(0);
+      if (coordinatedView == null) {
+        delegate.goBallistic(0);
+      } else {
+        dispose();
+      }
+    }
+  }
+
+  void _nativeScrollTookOver() {
+    // Programmatic jumps/animations and native input take ownership. Layout
+    // corrections do not notify position listeners, so viewport resizing alone
+    // does not discard queued input or restart its easing.
+    if (!_applyingCoordinatedDelta) dispose();
+  }
+
+  void _tickCoordinated(double displacement) {
+    final positions = _coordinatedWheelPositions(coordinatedView!);
+    if (positions == null ||
+        !_hasSameCoordinatedPositions(positions) ||
+        !_canScrollCoordinated(positions, displacement)) {
+      dispose();
+      return;
+    }
+    _applyingCoordinatedDelta = true;
+    try {
+      // Exactly one public coordinator call per frame, never setPixels on the
+      // inner or outer position and never redispatch the pointer event.
+      positions.first.pointerScroll(displacement);
+    } finally {
+      _applyingCoordinatedDelta = false;
+    }
+    if (_isDisposed) return;
+    _remainingDistance -= displacement;
+    if (_remainingDistance.abs() <= config.wheelStopDistance ||
+        !_canScrollCoordinated(positions, _remainingDistance)) {
+      dispose();
     }
   }
 
@@ -1764,7 +2006,7 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
     }
 
     if (_remainingDistance.abs() <= config.wheelStopDistance) {
-      delegate.goBallistic(0);
+      cancelMomentum();
       return;
     }
 
@@ -1776,6 +2018,11 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
       config: config,
     );
     if (displacement == 0) {
+      return;
+    }
+
+    if (coordinatedView != null) {
+      _tickCoordinated(displacement);
       return;
     }
 
@@ -1845,6 +2092,10 @@ class _PremiumWheelScrollActivity extends ScrollActivity {
     }
     _isDisposed = true;
     _ticker.dispose();
+    for (final position in coordinatedPositions) {
+      position.removeListener(_nativeScrollTookOver);
+      position.isScrollingNotifier.removeListener(_nativeScrollTookOver);
+    }
     onDispose(this);
     super.dispose();
   }

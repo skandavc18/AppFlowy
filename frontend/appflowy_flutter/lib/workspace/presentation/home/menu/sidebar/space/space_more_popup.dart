@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/af_role_pb_extension.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/space_action_type.dart';
 import 'package:appflowy/workspace/presentation/widgets/pop_up_action.dart';
@@ -41,8 +42,9 @@ class SpaceMorePopup extends StatelessWidget {
       buildChild: (popover) {
         return FlowyIconButton(
           width: 24,
-          icon: FlowySvg(
+          icon: WorkspaceGlyph.svg(
             FlowySvgs.workspace_three_dots_s,
+            size: 16,
             color: isHovered ? Theme.of(context).colorScheme.onSurface : null,
           ),
           tooltipText: LocaleKeys.space_manage.tr(),
@@ -180,11 +182,15 @@ class SpaceMoreActionTypeWrapper extends CustomActionCell {
           margin: const EdgeInsets.symmetric(horizontal: 6),
           iconPadding: 10.0,
           onTap: onTap,
-          leftIconBuilder: (onHover) => FlowySvg(
+          leftIconBuilder: (onHover) => WorkspaceGlyph.svg(
             inner.leftIconSvg,
+            size: 16,
             color: inner == SpaceMoreActionType.delete && onHover
                 ? Theme.of(context).colorScheme.error
                 : null,
+            role: disable || inner == SpaceMoreActionType.delete
+                ? WorkspaceGlyphRole.preserveInk
+                : WorkspaceGlyphRole.standard,
           ),
           rightIconBuilder: (_) => inner.rightIcon,
           textBuilder: (onHover) => FlowyText.regular(

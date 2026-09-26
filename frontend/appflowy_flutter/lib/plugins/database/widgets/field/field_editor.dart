@@ -15,6 +15,7 @@ import 'package:appflowy/plugins/database/grid/presentation/widgets/common/type_
 import 'package:appflowy/plugins/database/grid/presentation/widgets/header/desktop_field_cell.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/util/field_type_extension.dart';
 import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy/workspace/presentation/encryption/column_encryption_action.dart';
@@ -176,7 +177,7 @@ class _EditFieldButton extends StatelessWidget {
       height: GridSize.popoverItemHeight,
       padding: padding,
       child: FlowyButton(
-        leftIcon: const FlowySvg(FlowySvgs.edit_s),
+        leftIcon: const WorkspaceGlyph.svg(FlowySvgs.edit_s),
         text: FlowyText(
           lineHeight: 1.0,
           LocaleKeys.grid_field_editProperty.tr(),
@@ -255,42 +256,32 @@ enum FieldAction {
   wrap;
 
   Widget? leading(FieldInfo fieldInfo, Color? color) {
-    if (this == FieldAction.encrypt) {
-      return Icon(Icons.shield_outlined, size: 16, color: color);
-    }
-    FlowySvgData? svgData;
-    switch (this) {
-      case FieldAction.insertLeft:
-        svgData = FlowySvgs.arrow_s;
-      case FieldAction.insertRight:
-        svgData = FlowySvgs.arrow_s;
-      case FieldAction.toggleVisibility:
-        if (fieldInfo.visibility != null &&
-            fieldInfo.visibility == FieldVisibility.AlwaysHidden) {
-          svgData = FlowySvgs.show_m;
-        } else {
-          svgData = FlowySvgs.hide_s;
-        }
-      case FieldAction.duplicate:
-        svgData = FlowySvgs.copy_s;
-      case FieldAction.clearData:
-        svgData = FlowySvgs.reload_s;
-      case FieldAction.delete:
-        svgData = FlowySvgs.delete_s;
-      default:
-    }
-
-    if (svgData == null) {
-      return null;
-    }
-    final icon = FlowySvg(
-      svgData,
-      size: const Size.square(16),
+    final name = switch (this) {
+      FieldAction.insertLeft => 'insert-left',
+      FieldAction.insertRight => 'insert-right',
+      FieldAction.toggleVisibility =>
+        fieldInfo.visibility == FieldVisibility.AlwaysHidden
+            ? 'eye'
+            : 'eye-off',
+      FieldAction.duplicate => 'duplicate',
+      FieldAction.clearData => 'broom',
+      FieldAction.delete => 'trash',
+      FieldAction.encrypt => 'shield',
+      FieldAction.wrap => null,
+    };
+    if (name == null) return null;
+    return WorkspaceGlyph.named(
+      name,
+      size: 16,
       color: color,
+      // The caller supplies disabled/error ink. Destructive actions keep
+      // their outline even before hover, regardless of the device style.
+      role: color != null ||
+              this == FieldAction.delete ||
+              this == FieldAction.clearData
+          ? WorkspaceGlyphRole.preserveInk
+          : WorkspaceGlyphRole.standard,
     );
-    return this == FieldAction.insertRight
-        ? Transform.flip(flipX: true, child: icon)
-        : icon;
   }
 
   Widget? trailing(BuildContext context, FieldInfo fieldInfo) {
@@ -759,13 +750,15 @@ class _SwitchFieldButtonState extends State<SwitchFieldButton> {
                     lineHeight: 1.0,
                     color: Theme.of(context).disabledColor,
                   ),
-                  leftIcon: FlowySvg(
+                  leftIcon: WorkspaceGlyph.svg(
                     state.field.fieldType.svgData,
                     color: Theme.of(context).disabledColor,
+                    role: WorkspaceGlyphRole.preserveInk,
                   ),
-                  rightIcon: FlowySvg(
+                  rightIcon: WorkspaceGlyph.svg(
                     FlowySvgs.more_s,
                     color: Theme.of(context).disabledColor,
+                    role: WorkspaceGlyphRole.preserveInk,
                   ),
                 ),
               ),
@@ -826,9 +819,9 @@ class _SwitchFieldButtonState extends State<SwitchFieldButton> {
                           lineHeight: 1.0,
                         ),
                         leftIcon: entry == null
-                            ? FlowySvg(state.field.fieldType.svgData)
-                            : Icon(entry.icon, size: 16),
-                        rightIcon: const FlowySvg(FlowySvgs.more_s),
+                            ? WorkspaceGlyph.svg(state.field.fieldType.svgData)
+                            : WorkspaceGlyph(entry.icon, size: 16),
+                        rightIcon: const WorkspaceGlyph.svg(FlowySvgs.more_s),
                       ),
                     ),
                   ),

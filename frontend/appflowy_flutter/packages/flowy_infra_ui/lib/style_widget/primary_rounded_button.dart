@@ -80,9 +80,10 @@ class OutlinedRoundedButton extends StatelessWidget {
     return DecoratedBox(
       decoration: ShapeDecoration(
         shape: RoundedRectangleBorder(
-          side: Theme.of(context).brightness == Brightness.light
-              ? const BorderSide(color: Color(0x1E14171B))
-              : const BorderSide(color: Colors.white10),
+          side: BorderSide(
+            color: Theme.of(context).colorScheme.outlineVariant,
+            width: 0.6,
+          ),
           borderRadius: BorderRadius.circular(radius ?? 8),
         ),
       ),

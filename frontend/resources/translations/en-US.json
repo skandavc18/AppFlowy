@@ -846,6 +846,18 @@
           "dark": "Dark"
         }
       },
+      "defaultIconStyle": {
+        "title": "Default icon set",
+        "description": "Applies to default icons across the app on this device. Your chosen emoji, library icons and uploaded images stay unchanged. No workspace content is changed.",
+        "monochrome": "Monochrome",
+        "monochromeDescription": "Black-and-white outlines adapted to your theme.",
+        "vivid": "Colored / Vivid",
+        "vividDescription": "Vivid illustrations and matching theme-accent outlines. Disabled and destructive actions keep their state colors.",
+        "loading": "Loading your icon preference…",
+        "saving": "Saving your icon preference…",
+        "loadFailed": "Your saved icon preference could not be read. Retry before changing it.",
+        "saveFailed": "Your icon preference could not be saved. The previous style is still active. Please try again."
+      },
       "resetCursorColor": {
         "title": "Reset document cursor color",
         "description": "Are you sure you want to reset the cursor color?"
@@ -3380,6 +3392,7 @@
       },
       "image": {
         "addAnImage": "Add images",
+        "extractText": "Extract text",
         "copiedToPasteBoard": "The image link has been copied to the clipboard",
         "addAnImageDesktop": "Add an image",
         "addAnImageMobile": "Click to add one or more images",
@@ -3764,6 +3777,8 @@
   },
   "calendarView": {
     "views": {
+      "monthAgenda": "Month with list below",
+      "monthSplit": "Month with list beside",
       "month": "Month",
       "week": "Week",
       "day": "Day",
@@ -3788,6 +3803,7 @@
     "addReminder": "Add reminder",
     "openInGoogle": "Open in Google Calendar",
     "allDay": "All day",
+    "upcoming": "Upcoming",
     "relative": {
       "today": "Today",
       "tomorrow": "Tomorrow",
@@ -3818,6 +3834,7 @@
       "retry": "Try again"
     },
     "empty": {
+      "selectedDay": "Nothing scheduled for this day.",
       "dayTitle": "No events today",
       "dayBody": "Your day is clear.",
       "rangeTitle": "Nothing scheduled",

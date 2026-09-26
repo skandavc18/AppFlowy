@@ -177,25 +177,42 @@ void main() {
               greaterThan(4.5),
             );
             expect(_contrast(palette.label, palette.surface), greaterThan(2.5));
-            final tooltipCard = find
+            // The annotation intentionally replaces the old opaque card.
+            // Keep the ink/contrast/data contracts, and forbid a replacement
+            // panel rather than merely accepting a different golden.
+            expect(_contrast(palette.strongLabel, pageColor), greaterThan(4.5));
+            expect(_contrast(palette.label, pageColor), greaterThan(2.5));
+            final readout = find.byKey(const ValueKey('chart-readout'));
+            final readoutBounds = tester.getRect(readout);
+            expect(bounds.contains(readoutBounds.topLeft), isTrue);
+            expect(bounds.contains(readoutBounds.bottomRight), isTrue);
+            expect(
+              tester
+                  .widget<Text>(
+                    find.byKey(const ValueKey('chart-readout-value')),
+                  )
+                  .data,
+              ChartPainter.formatValue(
+                tooltip.data.series[tooltip.hit.seriesIndex]
+                    .points[tooltip.hit.pointIndex].value,
+              ),
+            );
+            for (final box in find
                 .descendant(
                   of: find.byType(ChartTooltip),
                   matching: find.byType(DecoratedBox),
                 )
-                .first;
-            final decoration = tester
-                .widget<DecoratedBox>(tooltipCard)
-                .decoration as BoxDecoration;
-            expect(decoration.color, palette.surface);
-            expect(decoration.boxShadow, isNotEmpty);
-            final hoveredPixels = await _capture(tester, _page);
-            _expectPixel(
-              hoveredPixels,
-              tester.getTopLeft(tooltipCard) +
-                  const Offset(8, 8) -
-                  tester.getTopLeft(find.byKey(_page)),
-              palette.surface,
-            );
+                .evaluate()) {
+              final decoration =
+                  (box.widget as DecoratedBox).decoration as BoxDecoration;
+              expect(decoration.border, isNull);
+              expect(decoration.boxShadow, isNull);
+              expect(
+                tester.getSize(find.byWidget(box.widget)),
+                const Size(7, 7),
+                reason: 'Only the explicit colour swatch paints a fill.',
+              );
+            }
             await _expectPageShowingThrough(tester, pageColor);
             expect(tester.state(find.byType(AppChart)), same(chartState));
             expect(tester.renderObject(_plot), same(plot));
@@ -313,7 +330,11 @@ void main() {
         expect(_painter(tester).viewport, viewport);
         expect(_painter(tester).hidden, {0});
 
-        await _click(tester, mouse, _icon(LocaleKeys.charts_options.tr()));
+        await _click(
+          tester,
+          mouse,
+          find.byKey(const ValueKey('chart-more-controls')),
+        );
         expect(find.byType(AppMenuSurface), findsOneWidget);
         final menuStyle =
             AppMenuStyle.of(tester.element(find.byType(AppMenuSurface)));
@@ -785,7 +806,10 @@ Finder _icon(String tooltip) => find.byWidgetPredicate(
 Future<void> _hoverValue(WidgetTester tester, TestGesture mouse) async {
   final painter = _painter(tester);
   final hit = painter.hits.lastWhere((hit) => hit.pointIndex == 1);
-  await mouse.moveTo(tester.getTopLeft(_plot) + hit.rect.center);
+  await mouse.moveTo(
+    tester.getTopLeft(_plot) +
+        (painter.spec.type.isCircular ? hit.anchor : hit.rect.center),
+  );
   await tester.pumpAndSettle();
   expect(find.byType(ChartTooltip), findsOneWidget);
 }
@@ -795,11 +819,12 @@ Future<void> _click(
   TestGesture mouse,
   Finder target,
 ) async {
+  await tester.ensureVisible(target);
+  await tester.pumpAndSettle();
   final position = tester.getCenter(target);
   await mouse.moveTo(position);
   await tester.pumpAndSettle();
-  await mouse.down(position);
-  await mouse.up();
+  await tester.tapAt(position, kind: PointerDeviceKind.mouse);
   // Do not let a stationary pointer accidentally open a submenu beneath it.
   await mouse.moveTo(const Offset(2, 2));
   await tester.pump(kDoubleTapTimeout);

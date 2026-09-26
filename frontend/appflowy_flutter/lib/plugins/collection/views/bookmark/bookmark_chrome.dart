@@ -1,7 +1,9 @@
 import 'package:appflowy/plugins/collection/collection_style.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:flutter/material.dart';
@@ -16,7 +18,7 @@ abstract final class BookmarkMetrics {
   static const double space6 = 24;
   static const double space8 = 32;
 
-  static const double gutter = 24;
+  static const double gutter = CollectionWorkspaceMetrics.gutter;
   static const double toolbarHeight = 40;
   static const double railWidth = 232;
 
@@ -25,9 +27,9 @@ abstract final class BookmarkMetrics {
   static const double feedWidth = 940;
 
   /// Cards.
-  static const double cardRadius = EditorSurfaceStyle.embedCornerRadius;
+  static const double cardRadius = WorkspaceTokens.cardRadius;
   static const double coverRatio = 16 / 9;
-  static const double controlRadius = 9;
+  static const double controlRadius = WorkspaceTokens.controlRadius;
   static const double chipRadius = 999;
   static const double faviconSize = 16;
 
@@ -42,12 +44,12 @@ abstract final class BookmarkMetrics {
   static const double titleSize = 14.5;
   static const double bodySize = 12.5;
   static const double metaSize = 11.5;
-  static const double sectionSize = 10.5;
+  static const double sectionSize = 12;
   static const double tracking = -0.006;
-  static const double sectionTracking = 0.07;
-  static const double bodyWeightAxis = 545;
+  static const double sectionTracking = 0;
+  static const double bodyWeightAxis = 500;
   static const double strongWeightAxis = 620;
-  static const double sectionWeightAxis = 640;
+  static const double sectionWeightAxis = 500;
 
   static const Duration hover = Duration(milliseconds: 140);
   static const Duration reveal = Duration(milliseconds: 220);
@@ -87,10 +89,12 @@ class BookmarkTheme {
       panel: palette.surface,
       raised: palette.floatingSurface,
       sunken: Color.alphaBlend(
-        palette.hover.withValues(alpha: isDark ? 0.42 : 0.6),
+        palette.hover
+            .withValues(alpha: palette.hover.a * (isDark ? 0.42 : 0.6)),
         palette.background,
       ),
-      hover: palette.hover.withValues(alpha: isDark ? 0.62 : 0.8),
+      hover: palette.hover
+          .withValues(alpha: palette.hover.a * (isDark ? 0.62 : 0.8)),
       selected: palette.accent.withValues(alpha: isDark ? 0.16 : 0.10),
       textStrong: palette.textPrimary,
       textBody: Color.lerp(palette.textSecondary, palette.textPrimary, 0.5)!,
@@ -163,7 +167,6 @@ class BookmarkTheme {
   TextStyle get body => face(
         fontSize: BookmarkMetrics.bodySize,
         color: textSoft,
-        axis: 500,
         weight: FontWeight.w400,
         height: 1.45,
       );
@@ -171,7 +174,6 @@ class BookmarkTheme {
   TextStyle get meta => face(
         fontSize: BookmarkMetrics.metaSize,
         color: textFaint,
-        axis: 500,
         weight: FontWeight.w400,
       );
 
@@ -179,20 +181,18 @@ class BookmarkTheme {
 
   TextStyle get sectionLabel => face(
         fontSize: BookmarkMetrics.sectionSize,
-        color: textFaint,
-        axis: BookmarkMetrics.sectionWeightAxis,
-        weight: FontWeight.w600,
+        color: textSoft,
         tracking: BookmarkMetrics.sectionTracking,
       );
 }
 
-/// A region of the library, drawn as the application's own card.
+/// A continuous reader surface; rounded containment is explicit, not per pane.
 class BookmarkPanel extends StatelessWidget {
   const BookmarkPanel({
     super.key,
     required this.child,
     this.padding = EdgeInsets.zero,
-    this.elevation = ViewerCardElevation.resting,
+    this.elevation = ViewerCardElevation.flush,
     this.color,
   });
 
@@ -202,13 +202,12 @@ class BookmarkPanel extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => ViewerCard(
-        reactsToPointer: false,
-        elevation: elevation,
-        // The card shadow is drawn behind the whole rounded rect, so a
-        // surface that is left transparent shows the blur through itself.
-        color: color ?? bookmarkThemeOf(context).panel,
-        child: Padding(padding: padding, child: child),
+  Widget build(BuildContext context) => CollectionWorkspaceSurface(
+        color: color,
+        tonal: elevation != ViewerCardElevation.flush,
+        rounded: elevation != ViewerCardElevation.flush,
+        padding: padding,
+        child: child,
       );
 }
 
@@ -244,55 +243,15 @@ class BookmarkAction extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) {
-    final fill = active
-        ? theme.accent.withValues(alpha: theme.isDark ? 0.18 : 0.11)
-        : theme.transparentAs(theme.hover);
-
-    return Tooltip(
-      message: tooltip,
-      waitDuration: const Duration(milliseconds: 500),
-      child: SizedBox(
-        width: label == null ? size : null,
-        height: size,
-        child: TextButton(
-          onPressed: onPressed,
-          style: TextButton.styleFrom(
-            padding: EdgeInsets.symmetric(
-              horizontal: label == null ? 0 : BookmarkMetrics.space2 + 2,
-            ),
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            foregroundColor: active ? theme.accent : theme.iconRest,
-            disabledForegroundColor: theme.textFaint.withValues(alpha: 0.5),
-            backgroundColor: fill,
-            overlayColor: theme.hover,
-            shape: RoundedRectangleBorder(
-              borderRadius:
-                  BorderRadius.circular(BookmarkMetrics.controlRadius),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, size: 16),
-              if (label != null) ...[
-                const SizedBox(width: BookmarkMetrics.space1 + 2),
-                Text(
-                  label!,
-                  style: theme.face(
-                    fontSize: BookmarkMetrics.metaSize + 0.5,
-                    color: active ? theme.accent : theme.textBody,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => CollectionWorkspaceAction(
+        icon: icon,
+        tooltip: tooltip,
+        label: label,
+        onPressed: onPressed,
+        selected: active,
+        size: size,
+        color: theme.textSoft,
+      );
 }
 
 /// A tag, a site or a state, shown as a soft pill.
@@ -335,7 +294,7 @@ class BookmarkChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 12, color: foreground),
+            WorkspaceGlyph(icon!, size: 12, color: foreground),
             const SizedBox(width: 4),
           ],
           Text(
@@ -343,9 +302,6 @@ class BookmarkChip extends StatelessWidget {
             style: theme.face(
               fontSize: BookmarkMetrics.metaSize,
               color: foreground,
-              axis: selected
-                  ? BookmarkMetrics.strongWeightAxis
-                  : BookmarkMetrics.bodyWeightAxis,
             ),
           ),
           if (count != null) ...[
@@ -355,7 +311,6 @@ class BookmarkChip extends StatelessWidget {
               style: theme.face(
                 fontSize: BookmarkMetrics.metaSize - 0.5,
                 color: theme.textFaint,
-                axis: 500,
                 weight: FontWeight.w400,
               ),
             ),
@@ -364,8 +319,11 @@ class BookmarkChip extends StatelessWidget {
             const SizedBox(width: 2),
             GestureDetector(
               onTap: onRemove,
-              child:
-                  Icon(Icons.close_rounded, size: 12, color: theme.textFaint),
+              child: WorkspaceGlyph(
+                Icons.close_rounded,
+                size: 12,
+                color: theme.textFaint,
+              ),
             ),
           ],
         ],
@@ -438,7 +396,6 @@ class BookmarkFavicon extends StatelessWidget {
         style: theme.face(
           fontSize: size * 0.58,
           color: theme.isDark ? Color.lerp(hue, Colors.white, 0.5)! : hue,
-          axis: BookmarkMetrics.sectionWeightAxis,
           weight: FontWeight.w700,
           tracking: 0,
         ),
@@ -571,7 +528,7 @@ class BookmarkSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final field = SizedBox(
-      height: 34,
+      height: MediaQuery.textScalerOf(context).scale(13) + 22,
       child: TextField(
         controller: controller,
         onChanged: onChanged,
@@ -586,7 +543,7 @@ class BookmarkSearchField extends StatelessWidget {
           fillColor: theme.sunken,
           hoverColor: theme.sunken,
           contentPadding: const EdgeInsets.symmetric(vertical: 9),
-          prefixIcon: Icon(
+          prefixIcon: WorkspaceGlyph(
             Icons.search_rounded,
             size: 16,
             color: theme.textFaint,
@@ -607,7 +564,7 @@ class BookmarkSearchField extends StatelessWidget {
   }
 
   OutlineInputBorder get _border => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
         borderSide: BorderSide.none,
       );
 }
@@ -636,7 +593,7 @@ class BookmarkEmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
+              WorkspaceGlyph(
                 icon,
                 size: 30,
                 color: theme.textFaint.withValues(alpha: 0.7),

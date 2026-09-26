@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_style.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_controller.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_state.dart';
 import 'package:appflowy/workspace/application/collections/repository/source_outline.dart';
@@ -60,18 +64,18 @@ String symbolKindLabel(SymbolKind kind) => switch (kind) {
 IconData symbolKindIcon(SymbolKind kind) => switch (kind) {
       SymbolKind.module => Icons.workspaces_rounded,
       SymbolKind.classType => Icons.category_rounded,
-      SymbolKind.interfaceType => Icons.polyline_rounded,
+      SymbolKind.interfaceType => Icons.hub_rounded,
       SymbolKind.enumType => Icons.format_list_bulleted_rounded,
       SymbolKind.structType => Icons.view_module_rounded,
       SymbolKind.traitType => Icons.extension_rounded,
-      SymbolKind.mixinType => Icons.blender_rounded,
-      SymbolKind.extensionType => Icons.add_box_rounded,
+      SymbolKind.mixinType => Icons.layers_rounded,
+      SymbolKind.extensionType => Icons.extension_rounded,
       SymbolKind.typeAlias => Icons.label_rounded,
       SymbolKind.function => Icons.functions_rounded,
       SymbolKind.constant => Icons.lock_rounded,
       SymbolKind.property => Icons.tag_rounded,
       SymbolKind.heading => Icons.title_rounded,
-      SymbolKind.section => Icons.segment_rounded,
+      SymbolKind.section => Icons.notes_rounded,
     };
 
 /// A stable hue per declaration kind, so an outline is scannable by shape and
@@ -151,32 +155,34 @@ class RepoScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = repoThemeOf(context, palette);
-    return ColoredBox(
-      color: theme.canvas,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _RepoToolbar(
-            theme: theme,
-            controller: controller,
-            leading: leading,
-            trailing: trailing,
-            showStats: showStats,
-          ),
-          Expanded(
-            child: Padding(
-              padding: padded
-                  ? const EdgeInsets.fromLTRB(
-                      RepoMetrics.gutter,
-                      RepoMetrics.space4,
-                      RepoMetrics.gutter,
-                      RepoMetrics.space6,
-                    )
-                  : EdgeInsets.zero,
-              child: child,
+    return PreviewToolbarRegion(
+      child: CollectionWorkspaceSurface(
+        padding: const EdgeInsets.only(top: CollectionWorkspaceMetrics.topGap),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _RepoToolbar(
+              theme: theme,
+              controller: controller,
+              leading: leading,
+              trailing: trailing,
+              showStats: showStats,
             ),
-          ),
-        ],
+            Expanded(
+              child: Padding(
+                padding: padded
+                    ? const EdgeInsets.fromLTRB(
+                        RepoMetrics.gutter,
+                        RepoMetrics.space4,
+                        RepoMetrics.gutter,
+                        RepoMetrics.space6,
+                      )
+                    : EdgeInsets.zero,
+                child: child,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -201,50 +207,43 @@ class _RepoToolbar extends StatelessWidget {
   Widget build(BuildContext context) {
     final stats = controller.stats;
     final primary = stats.languages.isEmpty ? null : stats.languages.first;
-    return SizedBox(
-      height: RepoMetrics.toolbarHeight,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: RepoMetrics.gutter),
-        child: Row(
-          children: [
-            if (showStats) ...[
-              if (controller.isAnalysing)
-                _AnalysingMeta(theme: theme, controller: controller)
-              else ...[
-                if (primary != null) ...[
+    return CollectionWorkspaceToolbar(
+      identity: showStats
+          ? Wrap(
+              spacing: RepoMetrics.space3,
+              runSpacing: RepoMetrics.space1,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (controller.isAnalysing)
+                  _AnalysingMeta(theme: theme, controller: controller)
+                else ...[
+                  if (primary != null)
+                    RepoMeta(
+                      theme: theme,
+                      label: '${primary.label} ${primary.percent}%',
+                      dotColor: primary.color,
+                      strong: true,
+                    ),
                   RepoMeta(
                     theme: theme,
-                    label: '${primary.label} ${primary.percent}%',
-                    dotColor: primary.color,
-                    strong: true,
+                    label: repoCountLabel(
+                      stats.fileCount,
+                      LocaleKeys.collections_repository_oneFile,
+                      LocaleKeys.collections_repository_fileCount,
+                    ),
                   ),
-                  RepoMetaDot(theme: theme),
-                ],
-                RepoMeta(
-                  theme: theme,
-                  label: repoCountLabel(
-                    stats.fileCount,
-                    LocaleKeys.collections_repository_oneFile,
-                    LocaleKeys.collections_repository_fileCount,
-                  ),
-                ),
-                if (stats.lineCount > 0) ...[
-                  RepoMetaDot(theme: theme),
-                  RepoMeta(
-                    theme: theme,
-                    label: LocaleKeys.collections_repository_lineCount
-                        .tr(args: [repoGroupedNumber(stats.lineCount)]),
-                  ),
+                  if (stats.lineCount > 0)
+                    RepoMeta(
+                      theme: theme,
+                      label: LocaleKeys.collections_repository_lineCount
+                          .tr(args: [repoGroupedNumber(stats.lineCount)]),
+                    ),
                 ],
               ],
-              const SizedBox(width: RepoMetrics.space6),
-            ],
-            ...leading,
-            const Spacer(),
-            ...trailing,
-          ],
-        ),
-      ),
+            )
+          : null,
+      keepVisible: controller.isAnalysing,
+      actions: [...leading, ...trailing],
     );
   }
 }
@@ -350,22 +349,35 @@ Widget repoViewControls({
     );
 
 /// Opens a menu underneath whatever control asked for it.
-class RepoAnchored extends StatelessWidget {
+class RepoAnchored extends StatefulWidget {
   const RepoAnchored({super.key, required this.builder});
 
-  final Widget Function(GlobalKey anchor, void Function(ValueChanged<Offset>))
-      builder;
+  final Widget Function(
+    GlobalKey anchor,
+    void Function(FutureOr<void> Function(Offset)),
+  ) builder;
+
+  @override
+  State<RepoAnchored> createState() => _RepoAnchoredState();
+}
+
+class _RepoAnchoredState extends State<RepoAnchored> {
+  final anchor = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
-    final anchor = GlobalKey();
     return Builder(
-      builder: (context) => builder(anchor, (open) {
+      builder: (context) => widget.builder(anchor, (open) async {
         final box = anchor.currentContext?.findRenderObject() as RenderBox?;
         if (box == null) {
           return;
         }
-        open(box.localToGlobal(Offset(0, box.size.height + 6)));
+        final release = PreviewToolbarRegion.hold(context);
+        try {
+          await open(box.localToGlobal(Offset(0, box.size.height + 6)));
+        } finally {
+          release();
+        }
       }),
     );
   }
@@ -444,7 +456,6 @@ class RepoLanguageLegend extends StatelessWidget {
                 style: theme.face(
                   fontSize: 11.5,
                   color: theme.textBody,
-                  axis: 580,
                 ),
               ),
               const SizedBox(width: 6),

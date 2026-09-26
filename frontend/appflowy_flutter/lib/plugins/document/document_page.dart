@@ -16,6 +16,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/shared_con
 import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/spell_check_page_settings.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/transaction_handler/editor_transaction_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/flowy_error_page.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -108,7 +109,12 @@ class _DocumentPageState extends State<DocumentPage>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ColoredBox(
+        color: EditorSurfaceStyle.canvasBackground(context),
+        child: _buildDocument(context),
+      );
+
+  Widget _buildDocument(BuildContext context) {
     return MultiBlocProvider(
       providers: [
         BlocProvider.value(value: getIt<ActionNavigationBloc>()),

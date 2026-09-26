@@ -21,9 +21,9 @@ class AFMenuItem extends StatelessWidget {
 
   /// Row geometry shared with every other menu in the application.
   static const double rowRadius = 8;
-  static const double iconGap = 10;
+  static const double iconGap = 12;
   static const EdgeInsets rowPadding = EdgeInsets.symmetric(
-    horizontal: 9,
+    horizontal: 12,
     vertical: 6,
   );
 

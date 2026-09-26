@@ -13,6 +13,8 @@ import 'package:appflowy/plugins/database/widgets/cell/editable_cell_builder.dar
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_skeleton/text.dart';
 import 'package:appflowy/plugins/database/widgets/row/cells/cell_container.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_action.dart';
+import 'package:appflowy/plugins/document/application/document_bloc.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_title.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_util.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/upload_image_menu/upload_image_menu.dart';
@@ -713,7 +715,10 @@ class _BannerTitle extends StatelessWidget {
                   rowId: rowController.rowId,
                 ),
                 skinMap: EditableCellSkinMap(
-                  textSkin: _TitleSkin(spacious: spacious),
+                  textSkin: _TitleSkin(
+                    spacious: spacious,
+                    documentId: rowController.rowMeta.documentId,
+                  ),
                 ),
               ),
             ),
@@ -732,9 +737,10 @@ class _BannerTitle extends StatelessWidget {
 }
 
 class _TitleSkin extends IEditableTextCellSkin {
-  _TitleSkin({required this.spacious});
+  _TitleSkin({required this.spacious, required this.documentId});
 
   final bool spacious;
+  final String documentId;
 
   @override
   Widget build(
@@ -748,6 +754,7 @@ class _TitleSkin extends IEditableTextCellSkin {
     return RowBannerTitleField(
       controller: textEditingController,
       focusNode: focusNode,
+      findDocumentId: documentId,
       spacious: spacious,
       onEditingComplete: () {
         bloc.add(TextCellEvent.updateText(textEditingController.text));
@@ -765,15 +772,34 @@ class RowBannerTitleField extends StatelessWidget {
     required this.focusNode,
     required this.onEditingComplete,
     this.spacious = false,
+    this.findDocumentId,
   });
 
   final TextEditingController controller;
   final FocusNode focusNode;
   final VoidCallback onEditingComplete;
   final bool spacious;
+  final String? findDocumentId;
 
   @override
-  Widget build(BuildContext context) => CallbackShortcuts(
+  Widget build(BuildContext context) {
+    final document = context.watch<DocumentBloc?>();
+    final editor = context.watch<EditorState?>();
+    // A popup header also mounts while its document loads. It must not lend
+    // this cell to an unrelated editor inherited from behind the dialog.
+    final matchesDocument = findDocumentId != null &&
+        findDocumentId!.isNotEmpty &&
+        document?.documentId == findDocumentId &&
+        identical(document?.state.editorState, editor);
+    // A late primary-cell load must not autofocus its route over the query in
+    // a separate overlay scope. Normal title autofocus/click focus is unchanged.
+    final findOwnsFocus = matchesDocument &&
+        editor != null &&
+        identical(DocumentFindMenu.activeEditor, editor);
+    return DocumentFindTitleBinding(
+      editorState: matchesDocument ? editor : null,
+      controller: controller,
+      child: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.escape): () =>
               focusNode.unfocus(),
@@ -784,7 +810,7 @@ class RowBannerTitleField extends StatelessWidget {
           key: const ValueKey('row-banner-title'),
           controller: controller,
           focusNode: focusNode,
-          autofocus: !spacious,
+          autofocus: !spacious && !findOwnsFocus,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 fontSize: spacious ? 40 : 28,
                 height: spacious ? 1.18 : null,
@@ -808,7 +834,9 @@ class RowBannerTitleField extends StatelessWidget {
           ),
           onEditingComplete: onEditingComplete,
         ),
-      );
+      ),
+    );
+  }
 }
 
 class RowActionButton extends StatelessWidget {

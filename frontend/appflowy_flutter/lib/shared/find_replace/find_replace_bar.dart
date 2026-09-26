@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -122,6 +125,8 @@ class FindReplaceBar extends StatelessWidget {
     this.hintText,
     this.supportsWholeWord = true,
     this.autofocus = true,
+    this.onTapOutside,
+    this.dismissOnTapOutside = true,
   });
 
   final TextEditingController findController;
@@ -155,56 +160,87 @@ class FindReplaceBar extends StatelessWidget {
   final bool supportsWholeWord;
   final bool autofocus;
 
+  /// Unlike the close button, outside dismissal must not restore old focus:
+  /// the pointer is already activating another field, cell or page.
+  final VoidCallback? onTapOutside;
+  final bool dismissOnTapOutside;
+
   bool get _canReplace => replaceController != null;
 
   @override
   Widget build(BuildContext context) {
     final palette = FindBarPalette.of(context);
-    return TextFieldTapRegion(
-      child: Shortcuts(
-        shortcuts: const {
-          SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
-        },
-        child: Actions(
-          actions: {
-            DismissIntent: CallbackAction<DismissIntent>(
-              onInvoke: (_) {
-                onClose();
-                return null;
-              },
-            ),
+    return TapRegion(
+      groupId: findController,
+      onTapOutside: dismissOnTapOutside
+          ? (_) {
+              if (context.mounted &&
+                  ModalRoute.of(context)?.isCurrent != false) {
+                (onTapOutside ?? onClose)();
+              }
+            }
+          : null,
+      child: TextFieldTapRegion(
+        child: Shortcuts(
+          shortcuts: const {
+            SingleActivator(LogicalKeyboardKey.escape): DismissIntent(),
           },
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: palette.surface,
-              borderRadius: BorderRadius.circular(FindBarMetrics.cardRadius),
-              border: Border.all(color: palette.border, width: 0.6),
-              boxShadow: [
-                BoxShadow(
-                  color: palette.shadow.withValues(alpha: 0.16),
-                  blurRadius: 26,
-                  offset: const Offset(0, 10),
-                  spreadRadius: -12,
-                ),
-                BoxShadow(
-                  color: palette.shadow.withValues(alpha: 0.10),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                  spreadRadius: -4,
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildFindRow(context, palette),
-                if (showReplace && _canReplace) ...[
-                  const SizedBox(height: FindBarMetrics.gap),
-                  _buildReplaceRow(context, palette),
-                ],
-              ],
+          child: Actions(
+            actions: {
+              DismissIntent: CallbackAction<DismissIntent>(
+                onInvoke: (_) {
+                  onClose();
+                  return null;
+                },
+              ),
+            },
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final available = constraints.hasBoundedWidth
+                    ? constraints.maxWidth
+                    : math.max(0.0, MediaQuery.sizeOf(context).width - 32);
+                final width = math.min(560.0, available);
+                return Container(
+                  width: width,
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: palette.surface,
+                    borderRadius:
+                        BorderRadius.circular(FindBarMetrics.cardRadius),
+                    border: Border.all(color: palette.border, width: 0.6),
+                    boxShadow: [
+                      BoxShadow(
+                        color: palette.shadow,
+                        blurRadius: 26,
+                        offset: const Offset(0, 10),
+                        spreadRadius: -12,
+                      ),
+                      BoxShadow(
+                        color: palette.shadow
+                            .withValues(alpha: palette.shadow.a * 0.6),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                        spreadRadius: -4,
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildFindRow(
+                        context,
+                        palette,
+                        math.max(0, width - 13.2),
+                      ),
+                      if (showReplace && _canReplace) ...[
+                        const SizedBox(height: FindBarMetrics.gap),
+                        _buildReplaceRow(context, palette),
+                      ],
+                    ],
+                  ),
+                );
+              },
             ),
           ),
         ),
@@ -212,90 +248,127 @@ class FindReplaceBar extends StatelessWidget {
     );
   }
 
-  Widget _buildFindRow(BuildContext context, FindBarPalette palette) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  Widget _buildFindRow(
+    BuildContext context,
+    FindBarPalette palette,
+    double width,
+  ) {
+    final controlSize = _controlSize(context);
+    final controlsWidth = math.min(
+      width,
+      MediaQuery.textScalerOf(context).scale(100) + controlSize * 3 + 8,
+    );
+    final inline = width >=
+        controlsWidth +
+            FindBarMetrics.fieldWidth +
+            controlSize +
+            FindBarMetrics.gap * 2;
+    // One Wrap, including on wide panes: reflow never reparents the fields,
+    // loses the draft/IME selection or recreates a focused EditableText.
+    return Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: FindBarMetrics.gap,
+      runSpacing: FindBarMetrics.gap,
       children: [
-        if (_canReplace && onToggleReplace != null)
-          _FindBarButton(
-            buttonKey: const ValueKey('findToggleReplace'),
-            palette: palette,
-            icon: showReplace
-                ? Icons.keyboard_arrow_down_rounded
-                : Icons.keyboard_arrow_right_rounded,
-            tooltip: showReplace
-                ? LocaleKeys.findAndReplace_hideReplace.tr()
-                : LocaleKeys.findAndReplace_showReplace.tr(),
-            onPressed: onToggleReplace,
-          )
-        else
-          const SizedBox(width: FindBarMetrics.controlSize),
-        const SizedBox(width: FindBarMetrics.gap),
-        _buildField(
-          context,
-          palette,
-          controller: findController,
-          focusNode: findFocusNode,
-          hint: hintText ?? LocaleKeys.findAndReplace_find.tr(),
-          autofocus: autofocus,
-          invalid: queryInvalid,
-          onSubmitted: () => (onSubmitted ?? onNext)?.call(),
-          fieldKey: const ValueKey('findTextField'),
-          trailing: [
-            _FindBarToggle(
-              palette: palette,
-              label: 'Aa',
-              tooltip: LocaleKeys.findAndReplace_caseSensitive.tr(),
-              selected: options.caseSensitive,
-              onPressed: () => onOptionsChanged(
-                options.copyWith(caseSensitive: !options.caseSensitive),
-              ),
-            ),
-            if (supportsWholeWord)
-              _FindBarToggle(
-                palette: palette,
-                label: 'ab',
-                underlined: true,
-                tooltip: LocaleKeys.findAndReplace_wholeWord.tr(),
-                selected: options.wholeWord,
-                onPressed: () => onOptionsChanged(
-                  options.copyWith(wholeWord: !options.wholeWord),
+        SizedBox(
+          key: const ValueKey('findQueryGroup'),
+          width: inline ? width - controlsWidth - FindBarMetrics.gap : width,
+          child: Row(
+            children: [
+              if (_canReplace && onToggleReplace != null)
+                _FindBarButton(
+                  buttonKey: const ValueKey('findToggleReplace'),
+                  palette: palette,
+                  icon: showReplace
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.keyboard_arrow_right_rounded,
+                  tooltip: showReplace
+                      ? LocaleKeys.findAndReplace_hideReplace.tr()
+                      : LocaleKeys.findAndReplace_showReplace.tr(),
+                  onPressed: onToggleReplace,
+                )
+              else
+                SizedBox(width: controlSize),
+              const SizedBox(width: FindBarMetrics.gap),
+              Expanded(
+                child: _buildField(
+                  context,
+                  palette,
+                  controller: findController,
+                  focusNode: findFocusNode,
+                  hint: hintText ?? LocaleKeys.findAndReplace_find.tr(),
+                  autofocus: autofocus,
+                  invalid: queryInvalid,
+                  onSubmitted: () => (onSubmitted ?? onNext)?.call(),
+                  fieldKey: const ValueKey('findTextField'),
+                  trailing: [
+                    _FindBarToggle(
+                      palette: palette,
+                      label: 'Aa',
+                      tooltip: LocaleKeys.findAndReplace_caseSensitive.tr(),
+                      selected: options.caseSensitive,
+                      onPressed: () => onOptionsChanged(
+                        options.copyWith(caseSensitive: !options.caseSensitive),
+                      ),
+                    ),
+                    if (supportsWholeWord)
+                      _FindBarToggle(
+                        palette: palette,
+                        label: 'ab',
+                        underlined: true,
+                        tooltip: LocaleKeys.findAndReplace_wholeWord.tr(),
+                        selected: options.wholeWord,
+                        onPressed: () => onOptionsChanged(
+                          options.copyWith(wholeWord: !options.wholeWord),
+                        ),
+                      ),
+                    _FindBarToggle(
+                      palette: palette,
+                      label: '.*',
+                      tooltip: LocaleKeys.findAndReplace_useRegex.tr(),
+                      selected: options.useRegex,
+                      onPressed: () => onOptionsChanged(
+                        options.copyWith(useRegex: !options.useRegex),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            _FindBarToggle(
-              palette: palette,
-              label: '.*',
-              tooltip: LocaleKeys.findAndReplace_useRegex.tr(),
-              selected: options.useRegex,
-              onPressed: () => onOptionsChanged(
-                options.copyWith(useRegex: !options.useRegex),
+            ],
+          ),
+        ),
+        SizedBox(
+          key: const ValueKey('findNavigationGroup'),
+          width: controlsWidth,
+          child: Row(
+            children: [
+              const SizedBox(width: FindBarMetrics.gap),
+              Expanded(child: _buildCount(context, palette)),
+              const SizedBox(width: FindBarMetrics.gap),
+              _FindBarButton(
+                buttonKey: const ValueKey('findPreviousMatch'),
+                palette: palette,
+                icon: Icons.keyboard_arrow_up_rounded,
+                tooltip: LocaleKeys.findAndReplace_previousMatch.tr(),
+                onPressed: onPrevious,
               ),
-            ),
-          ],
-        ),
-        const SizedBox(width: FindBarMetrics.gap),
-        _buildCount(context, palette),
-        const SizedBox(width: FindBarMetrics.gap),
-        _FindBarButton(
-          buttonKey: const ValueKey('findPreviousMatch'),
-          palette: palette,
-          icon: Icons.keyboard_arrow_up_rounded,
-          tooltip: LocaleKeys.findAndReplace_previousMatch.tr(),
-          onPressed: onPrevious,
-        ),
-        _FindBarButton(
-          buttonKey: const ValueKey('findNextMatch'),
-          palette: palette,
-          icon: Icons.keyboard_arrow_down_rounded,
-          tooltip: LocaleKeys.findAndReplace_nextMatch.tr(),
-          onPressed: onNext,
-        ),
-        _FindBarButton(
-          buttonKey: const ValueKey('findClose'),
-          palette: palette,
-          icon: Icons.close_rounded,
-          tooltip: LocaleKeys.findAndReplace_close.tr(),
-          onPressed: onClose,
+              _FindBarButton(
+                buttonKey: const ValueKey('findNextMatch'),
+                palette: palette,
+                icon: Icons.keyboard_arrow_down_rounded,
+                tooltip: LocaleKeys.findAndReplace_nextMatch.tr(),
+                onPressed: onNext,
+              ),
+              _FindBarButton(
+                buttonKey: const ValueKey('findClose'),
+                palette: palette,
+                icon: Icons.close_rounded,
+                tooltip: LocaleKeys.findAndReplace_close.tr(),
+                onPressed: onClose,
+              ),
+            ],
+          ),
         ),
       ],
     );
@@ -305,20 +378,22 @@ class FindReplaceBar extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const SizedBox(
-          width: FindBarMetrics.controlSize + FindBarMetrics.gap,
+        SizedBox(
+          width: _controlSize(context) + FindBarMetrics.gap,
         ),
-        _buildField(
-          context,
-          palette,
-          controller: replaceController!,
-          focusNode: replaceFocusNode,
-          hint: LocaleKeys.findAndReplace_replace.tr(),
-          autofocus: false,
-          invalid: false,
-          onSubmitted: () => onReplace?.call(),
-          fieldKey: const ValueKey('replaceTextField'),
-          trailing: const [],
+        Expanded(
+          child: _buildField(
+            context,
+            palette,
+            controller: replaceController!,
+            focusNode: replaceFocusNode,
+            hint: LocaleKeys.findAndReplace_replace.tr(),
+            autofocus: false,
+            invalid: false,
+            onSubmitted: () => onReplace?.call(),
+            fieldKey: const ValueKey('replaceTextField'),
+            trailing: const [],
+          ),
         ),
         const SizedBox(width: FindBarMetrics.gap),
         _FindBarButton(
@@ -352,8 +427,10 @@ class FindReplaceBar extends StatelessWidget {
     required List<Widget> trailing,
   }) {
     return Container(
-      width: FindBarMetrics.fieldWidth,
-      height: FindBarMetrics.rowHeight,
+      height: math.max(
+        FindBarMetrics.rowHeight,
+        MediaQuery.textScalerOf(context).scale(13) + 12,
+      ),
       padding: const EdgeInsets.only(left: 8, right: 2),
       decoration: BoxDecoration(
         color: palette.field,
@@ -372,15 +449,10 @@ class FindReplaceBar extends StatelessWidget {
               focusNode: focusNode,
               autofocus: autofocus,
               textInputAction: TextInputAction.search,
-              onSubmitted: (_) {
-                onSubmitted();
-                // Enter ends the editing session and drops the focus, so the
-                // next press would land on the document rather than repeat
-                // the search or the replacement.
-                WidgetsBinding.instance.addPostFrameCallback(
-                  (_) => focusNode?.requestFocus(),
-                );
-              },
+              // Keep native field focus on Enter without a delayed request
+              // that could steal a later outside click or touch a disposed node.
+              onEditingComplete: () {},
+              onSubmitted: (_) => onSubmitted(),
               style: TextStyle(
                 fontSize: 13,
                 color: palette.textPrimary,
@@ -416,22 +488,29 @@ class FindReplaceBar extends StatelessWidget {
                     : LocaleKeys.findAndReplace_matchOfTotal.tr(
                         args: ['$currentMatch', '$matchCount'],
                       );
-    return Container(
-      constraints: const BoxConstraints(minWidth: 84, maxWidth: 132),
-      alignment: Alignment.centerLeft,
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 11.5,
-          color: queryInvalid ? palette.danger : palette.textSecondary,
-          fontFeatures: const [FontFeature.tabularFigures()],
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 11.5,
+            color: queryInvalid ? palette.danger : palette.textSecondary,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
         ),
       ),
     );
   }
 }
+
+double _controlSize(BuildContext context) => math.max(
+      FindBarMetrics.controlSize,
+      MediaQuery.textScalerOf(context).scale(11) + 8,
+    );
 
 class _FindBarButton extends StatelessWidget {
   const _FindBarButton({
@@ -451,27 +530,24 @@ class _FindBarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
-    return Tooltip(
-      message: tooltip,
-      waitDuration: const Duration(milliseconds: 400),
-      child: SizedBox.square(
-        dimension: FindBarMetrics.controlSize,
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(FindBarMetrics.controlRadius),
-          child: InkWell(
-            key: buttonKey,
-            onTap: onPressed,
-            borderRadius: BorderRadius.circular(FindBarMetrics.controlRadius),
-            hoverColor: palette.hover,
-            child: Icon(
-              icon,
-              size: FindBarMetrics.iconSize,
-              color: enabled
-                  ? palette.textSecondary
-                  : palette.textSecondary.withValues(alpha: 0.35),
-            ),
-          ),
+    return SizedBox.square(
+      dimension: _controlSize(context),
+      child: IconButton(
+        key: buttonKey,
+        tooltip: tooltip,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        hoverColor: palette.hover,
+        icon: WorkspaceGlyph(
+          icon,
+          size: FindBarMetrics.iconSize,
+          role: enabled
+              ? WorkspaceGlyphRole.standard
+              : WorkspaceGlyphRole.preserveInk,
+          color: enabled
+              ? palette.textSecondary
+              : palette.textSecondary.withValues(alpha: 0.35),
         ),
       ),
     );
@@ -497,31 +573,37 @@ class _FindBarToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: tooltip,
-      waitDuration: const Duration(milliseconds: 400),
-      child: SizedBox.square(
-        dimension: FindBarMetrics.controlSize,
-        child: Material(
-          color: selected ? palette.selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(FindBarMetrics.controlRadius),
-          child: InkWell(
-            onTap: onPressed,
+    return Semantics(
+      button: true,
+      toggled: selected,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        excludeFromSemantics: true,
+        waitDuration: const Duration(milliseconds: 400),
+        child: SizedBox.square(
+          dimension: _controlSize(context),
+          child: Material(
+            color: selected ? palette.selected : Colors.transparent,
             borderRadius: BorderRadius.circular(FindBarMetrics.controlRadius),
-            hoverColor: palette.hover,
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1,
-                  fontWeight: FontWeight.w600,
-                  color: selected ? palette.accent : palette.textSecondary,
-                  decoration: underlined
-                      ? TextDecoration.underline
-                      : TextDecoration.none,
-                  decorationColor:
-                      selected ? palette.accent : palette.textSecondary,
+            child: InkWell(
+              onTap: onPressed,
+              borderRadius: BorderRadius.circular(FindBarMetrics.controlRadius),
+              hoverColor: palette.hover,
+              child: Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    height: 1,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? palette.accent : palette.textSecondary,
+                    decoration: underlined
+                        ? TextDecoration.underline
+                        : TextDecoration.none,
+                    decorationColor:
+                        selected ? palette.accent : palette.textSecondary,
+                  ),
                 ),
               ),
             ),

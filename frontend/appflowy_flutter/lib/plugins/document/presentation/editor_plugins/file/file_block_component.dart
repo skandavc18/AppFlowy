@@ -16,6 +16,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_cloud_auth.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
@@ -665,7 +666,7 @@ class FileBlockComponentState extends State<FileBlockComponent>
         ),
       );
 
-  Widget _withPreviewActions(Widget frame) {
+  Widget _withPreviewActions(Widget frame, {bool showIdentity = true}) {
     if (!UniversalPlatform.isDesktopOrWeb) return frame;
     // FilePreview caches its toolbar and clips its card. A sibling keeps the
     // source fresh and the Copied badge unclipped, without replacing either
@@ -675,12 +676,13 @@ class FileBlockComponentState extends State<FileBlockComponent>
       clipBehavior: Clip.none,
       children: [
         frame,
-        Positioned(
-          key: const ValueKey('file-preview-identity-icon'),
-          left: 48,
-          bottom: 20,
-          child: _buildFileIcon(),
-        ),
+        if (showIdentity)
+          Positioned(
+            key: const ValueKey('file-preview-identity-icon'),
+            left: 48,
+            bottom: 20,
+            child: _buildFileIcon(),
+          ),
         Positioned(
           key: const ValueKey('file-preview-media-actions'),
           right: 48,
@@ -777,7 +779,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
                       previewScrollController.handlePointerPanZoomUpdate,
                   onPointerPanZoomEnd:
                       previewScrollController.handlePointerPanZoomEnd,
-                  child: _withPreviewActions(frame),
+                  child: _withPreviewActions(
+                    frame,
+                    showIdentity: kind != FilePreviewKind.pdf,
+                  ),
                 ),
               )
           : _withPreviewActions,
@@ -858,7 +863,8 @@ class FileBlockComponentState extends State<FileBlockComponent>
         editable: editorState.editable,
         onResize: _saveMediaWidth,
         onResizeHeight: _saveMediaHeight,
-        frameBuilder: _withPreviewActions,
+        frameBuilder: (frame) =>
+            _withPreviewActions(frame, showIdentity: false),
         child: MaterializedFileBuilder(
           source: url,
           name: name,
@@ -888,6 +894,26 @@ class FileBlockComponentState extends State<FileBlockComponent>
               key: ValueKey('archive_${node.id}_$url'),
               file: file,
               name: name,
+              headerIcon: _buildFileIcon(buttonSize: 38),
+              canEdit: () =>
+                  mounted &&
+                  _iconBinding?.canEdit == true &&
+                  editorState.editable &&
+                  node.attributes[FileBlockKeys.url] == url &&
+                  urlType == FileUrlType.local,
+              metadata: Map<String, dynamic>.from(
+                node.attributes[FileBlockKeys.previewMetadata] as Map? ??
+                    const {},
+              ),
+              onMetadataChanged: (metadata) {
+                if (!mounted ||
+                    _iconBinding?.canEdit != true ||
+                    !editorState.editable ||
+                    node.attributes[FileBlockKeys.url] != url) {
+                  return;
+                }
+                _savePreviewMetadata(metadata);
+              },
               editable: editorState.editable && urlType == FileUrlType.local,
               toolbarTrailing:
                   UniversalPlatform.isDesktopOrWeb ? _buildPreviewMenu() : null,
@@ -1003,15 +1029,32 @@ class FileBlockComponentState extends State<FileBlockComponent>
     );
   }
 
+  bool _selectedForFind() {
+    if (!mounted || editorState.isDisposed || node.parent == null) return false;
+    final path = node.path;
+    if (path.isEmpty || !identical(editorState.getNodeAtPath(path), node)) {
+      return false;
+    }
+    final selection = editorState.selection;
+    return selection != null &&
+        selection.start.path.equals(path) &&
+        selection.end.path.equals(path);
+  }
+
   Widget _wrapInteractivePreview(Widget preview) {
-    return FocusScope(
-      skipTraversal: true,
-      onFocusChange: (hasFocus) {
-        if (hasFocus && keepEditorFocusNotifier.value == 0) {
-          editorState.selection = null;
-        }
-      },
-      child: preview,
+    // Always keep the same wrapper: live block selection must not rebuild or
+    // reparent a loaded PDF/source renderer, or change its keyboard ownership.
+    return ContextualFindSelection(
+      isSelected: _selectedForFind,
+      child: FocusScope(
+        skipTraversal: true,
+        onFocusChange: (hasFocus) {
+          if (hasFocus && keepEditorFocusNotifier.value == 0) {
+            editorState.selection = null;
+          }
+        },
+        child: preview,
+      ),
     );
   }
 
@@ -1054,28 +1097,42 @@ class FileBlockComponentState extends State<FileBlockComponent>
   }
 
   Widget _buildPdfMenu(
-    BuildContext menuContext,
+    BuildContext _,
     VoidCallback closeMenu,
   ) {
-    return FileBlockMenu(
-      onClose: closeMenu,
-      actionContext: context,
-      showDownload: false,
-      mediaActions: widget.mediaActions,
-      node: node,
-      editorState: editorState,
-      onChangeIcon: () => _showFileIconPicker(menuContext),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Keep the real picker anchor alive inside More, not on the PDF page.
+        _buildFileIcon(showLabel: true),
+        const VSpace(4),
+        FileBlockMenu(
+          onClose: closeMenu,
+          actionContext: context,
+          showDownload: false,
+          mediaActions: widget.mediaActions,
+          node: node,
+          editorState: editorState,
+        ),
+      ],
     );
   }
 
-  Widget _buildFileIcon({Color? color, double buttonSize = 34}) =>
+  Widget _buildFileIcon({
+    Color? color,
+    double buttonSize = 34,
+    bool showLabel = false,
+  }) =>
       FileBlockIconButton(
-        key: _fileIconKey,
+        // A closing PDF menu must not share a GlobalKey with a new file chip.
+        key: showLabel ? null : _fileIconKey,
         binding: _iconBinding!,
         name: node.attributes[FileBlockKeys.name] as String?,
         documentId: context.read<DocumentBloc?>()?.documentId,
         color: color,
         buttonSize: buttonSize,
+        showLabel: showLabel,
       );
 
   void _showFileIconPicker(BuildContext toolbarContext) {

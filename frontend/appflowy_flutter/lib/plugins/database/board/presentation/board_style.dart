@@ -1,5 +1,6 @@
 import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
@@ -20,17 +21,17 @@ abstract final class BoardMetrics {
   static const double columnGap = 7;
 
   /// A card is a document, not a form: rounder and softer than a card control.
-  static const double cardRadius = 14;
+  static const double cardRadius = WorkspaceTokens.cardRadius;
   static const double cardGap = 4;
 
   /// How far a column holds its cards in from its own edge.
   static const double columnInset = 8;
 
   /// How far a card rises under the pointer.
-  static const double cardLift = 2;
-  static const double cardGrowth = 1.008;
+  static const double cardLift = 0;
+  static const double cardGrowth = 1;
 
-  static const Duration hover = Duration(milliseconds: 140);
+  static const Duration hover = WorkspaceTokens.hoverDuration;
   static const Duration settle = Duration(milliseconds: 220);
   static const Curve hoverCurve = Curves.easeOutCubic;
 }

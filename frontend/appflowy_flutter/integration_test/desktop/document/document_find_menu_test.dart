@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
+import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
@@ -58,11 +59,15 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // go back to beginning of document
-      // FIXME: Cannot run Ctrl+F unless selection is on screen
-      await tester.editor
-          .updateSelection(Selection.collapsed(Position(path: [0])));
+      // Find must not require a mounted selection rectangle. Keep real editor
+      // keyboard focus, but deliberately remove the selection before Ctrl+F.
+      final editorState = tester
+          .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+          .editorState;
+      editorState.selection = null;
+      editorState.service.keyboardService?.enable();
       await tester.pumpAndSettle();
+      expect(editorState.selection, isNull);
 
       expect(find.byType(FindAndReplaceMenuWidget), findsNothing);
 
@@ -88,6 +93,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.pumpAndSettle();
+
+      expect(
+        tester.widget<FindReplaceBar>(find.byType(FindReplaceBar)).matchCount,
+        3,
+      );
 
       expect(
         find.descendant(

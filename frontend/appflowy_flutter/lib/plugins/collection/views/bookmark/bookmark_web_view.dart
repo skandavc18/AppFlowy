@@ -6,6 +6,8 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_web_environment.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -49,6 +51,16 @@ class BookmarkWebPage extends StatefulWidget {
 
 class _BookmarkWebPageState extends State<BookmarkWebPage> {
   InAppWebViewController? _controller;
+  final _findSession = WebViewFindSession();
+  final _findController = TextEditingController();
+  final _findFocus = FocusNode(debugLabel: 'bookmark-page-find');
+  final _pageFocus = FocusNode(debugLabel: 'bookmark-page');
+  FindOptions _findOptions = const FindOptions();
+  WebViewFindResult _findResult = WebViewFindResult.empty;
+  Timer? _findDebounce;
+  bool _findVisible = false;
+  bool _active = true;
+  String? _loadingUrl;
   Animation<double>? _routeAnimation;
   Brightness? _appliedBrightness;
   double _progress = 0;
@@ -59,6 +71,7 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
   @override
   void initState() {
     super.initState();
+    _findController.addListener(_scheduleFind);
     unawaited(_prepareEnvironment());
   }
 
@@ -77,12 +90,55 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
   }
 
   @override
+  void didUpdateWidget(covariant BookmarkWebPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.url != widget.url) {
+      _findDebounce?.cancel();
+      _findSession.attach(null);
+      _findResult = WebViewFindResult.empty;
+      _loadingUrl = widget.url;
+      unawaited(
+        _controller?.loadUrl(
+          urlRequest: URLRequest(url: WebUri(widget.url)),
+        ),
+      );
+    }
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    _findDebounce?.cancel();
+    _findSession.invalidatePending();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final controller = _controller;
+      if (_alive && _active && controller != null) {
+        unawaited(_installFindEngine(controller));
+      }
+    });
+  }
+
+  @override
   void dispose() {
     // Every callback checks this: a platform call that lands after the native
     // view is gone is what takes the renderer down.
     _closing = true;
     _routeAnimation?.removeStatusListener(_onRouteStatus);
     _controller = null;
+    _findDebounce?.cancel();
+    _findSession.dispose();
+    _findController
+      ..removeListener(_scheduleFind)
+      ..dispose();
+    _findFocus.dispose();
+    _pageFocus.dispose();
     super.dispose();
   }
 
@@ -119,6 +175,8 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
     // compositor.
     if (status == AnimationStatus.reverse && _alive && _ready) {
       _controller = null;
+      _findSession.attach(null);
+      _findDebounce?.cancel();
       setState(() => _ready = false);
     }
   }
@@ -131,6 +189,62 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
 
   @override
   Widget build(BuildContext context) {
+    return ContextualFindRegion(
+      debugLabel: 'Bookmark web page',
+      onFind: _openFind,
+      onDismiss: () => _closeFind(restoreFocus: false),
+      findOpen: _findVisible,
+      findFocusNode: _findFocus,
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+              _openFind,
+          const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openFind,
+        },
+        child: Focus(
+          focusNode: _pageFocus,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _buildPage(),
+              if (_findVisible)
+                Positioned(
+                  top: 8,
+                  left: 16,
+                  right: 16,
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: FindReplaceBar(
+                      findController: _findController,
+                      findFocusNode: _findFocus,
+                      options: _findOptions,
+                      onOptionsChanged: (value) {
+                        setState(() => _findOptions = value);
+                        _scheduleFind();
+                      },
+                      matchCount: _findResult.count,
+                      currentMatch: _findResult.index,
+                      queryInvalid: _findResult.invalid,
+                      busy: _findSession.pending,
+                      onPrevious: _findResult.count == 0
+                          ? null
+                          : () => unawaited(_moveFind(forward: false)),
+                      onNext: _findResult.count == 0
+                          ? null
+                          : () => unawaited(_moveFind(forward: true)),
+                      onClose: _closeFind,
+                      onTapOutside: () => _closeFind(restoreFocus: false),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPage() {
     final theme = widget.theme;
     if (_failed) {
       return BookmarkEmptyState(
@@ -213,10 +327,30 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
             return;
           }
           _controller = controller;
+          _attachFindController(controller);
+          unawaited(_installFindBridge(controller));
           _appliedBrightness = null;
           unawaited(_applyColorScheme());
         },
-        onLoadStop: (controller, _) => unawaited(_dress(controller)),
+        onLoadStart: (controller, url) {
+          if (!_alive || !sameWebViewController(controller, _controller)) {
+            return;
+          }
+          _loadingUrl = url?.toString();
+          _findDebounce?.cancel();
+          _attachFindController(controller);
+          if (_active) setState(() => _findResult = WebViewFindResult.empty);
+        },
+        onLoadStop: (controller, url) {
+          if (!_alive ||
+              !sameWebViewController(controller, _controller) ||
+              (_loadingUrl != null && url?.toString() != _loadingUrl)) {
+            return;
+          }
+          unawaited(_dress(controller));
+          // Scrollbar decoration and find have independent readiness/results.
+          unawaited(_installFindEngine(controller));
+        },
         onProgressChanged: (_, progress) {
           if (_alive) {
             setState(() => _progress = progress / 100);
@@ -224,6 +358,9 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
         },
         onReceivedError: (_, request, __) {
           if (_alive && request.isForMainFrame == true) {
+            _findDebounce?.cancel();
+            _findSession.attach(null);
+            _controller = null;
             setState(() => _failed = true);
           }
         },
@@ -261,6 +398,116 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
         },
       );
 
+  void _attachFindController(InAppWebViewController controller) {
+    _findSession.attach(
+      (source) => controller.evaluateJavascript(
+        source: source,
+        contentWorld: Platform.isWindows ? htmlPreviewScrollContentWorld : null,
+      ),
+    );
+  }
+
+  Future<void> _installFindBridge(InAppWebViewController controller) async {
+    try {
+      await installWebViewFindOpenBridge(
+        controller,
+        contentWorld: htmlPreviewScrollContentWorld,
+        onFind: _openFind,
+        isCurrent: () =>
+            _alive && sameWebViewController(controller, _controller),
+      );
+    } on PlatformException catch (error, stackTrace) {
+      Log.error('Failed to install bookmark find shortcut', error, stackTrace);
+    }
+  }
+
+  Future<void> _installFindEngine(InAppWebViewController controller) async {
+    if (!_alive ||
+        !_active ||
+        !sameWebViewController(controller, _controller)) {
+      return;
+    }
+    final palette = FindBarPalette.of(context);
+    _findDebounce?.cancel();
+    await _acceptFindResponse(
+      _findSession.install(
+        buildWebViewFindInstallScript(
+          matchColor:
+              _findCssColor(FindHighlightColors.match(widget.theme.brightness)),
+          currentColor: _findCssColor(
+            FindHighlightColors.current(widget.theme.brightness),
+          ),
+          currentTextColor: _findCssColor(palette.textPrimary),
+        ),
+      ),
+    );
+  }
+
+  void _openFind() {
+    if (!_alive || !_active) return;
+    final wasVisible = _findVisible;
+    _findSession
+      ..setQuery(_findController.text, _findOptions)
+      ..open();
+    setState(() => _findVisible = true);
+    if (!wasVisible) unawaited(_runFind());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_alive || !_active || !_findVisible) return;
+      _findFocus.requestFocus();
+      _findController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _findController.text.length,
+      );
+    });
+  }
+
+  void _closeFind({bool restoreFocus = true}) {
+    if (!_alive || !_active || !_findVisible) return;
+    _findDebounce?.cancel();
+    setState(() {
+      _findVisible = false;
+      _findResult = WebViewFindResult.empty;
+    });
+    unawaited(_clearFind());
+    if (restoreFocus) _pageFocus.requestFocus();
+  }
+
+  Future<void> _clearFind() async {
+    try {
+      await _findSession.close();
+    } on PlatformException catch (error, stackTrace) {
+      Log.error('Failed to clear bookmark find highlights', error, stackTrace);
+    }
+  }
+
+  void _scheduleFind() {
+    if (!_findSession.setQuery(_findController.text, _findOptions)) return;
+    _findDebounce?.cancel();
+    if (!_alive || !_active || !_findVisible) return;
+    setState(() => _findResult = WebViewFindResult.empty);
+    _findDebounce = Timer(
+      const Duration(milliseconds: 180),
+      () => unawaited(_runFind()),
+    );
+  }
+
+  Future<void> _runFind() => _acceptFindResponse(_findSession.find());
+
+  Future<void> _moveFind({required bool forward}) =>
+      _acceptFindResponse(_findSession.move(forward: forward));
+
+  Future<void> _acceptFindResponse(Future<WebViewFindResult?> request) async {
+    try {
+      final result = await request;
+      if (!_alive || !_active || !_findVisible || result == null) return;
+      setState(() => _findResult = result);
+    } on PlatformException catch (error, stackTrace) {
+      Log.error('Bookmark find failed', error, stackTrace);
+    } on FormatException catch (error, stackTrace) {
+      Log.error('Invalid bookmark find response', error, stackTrace);
+    }
+  }
+
   /// Makes the page answer `prefers-color-scheme` with AppFlowy's own
   /// appearance, so a site that follows the system does not open dark inside a
   /// light workspace.
@@ -291,7 +538,7 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
 
   /// Dresses the page in the application's scrollbars once it has loaded.
   Future<void> _dress(InAppWebViewController controller) async {
-    if (!_alive || controller != _controller) {
+    if (!_alive || !sameWebViewController(controller, _controller)) {
       return;
     }
     await _run(
@@ -305,7 +552,7 @@ ${buildHtmlPreviewScrollbarAutoHideScript()}
   }
 
   Future<void> _run(InAppWebViewController controller, String source) async {
-    if (!_alive || controller != _controller) {
+    if (!_alive || !sameWebViewController(controller, _controller)) {
       return;
     }
     try {
@@ -319,13 +566,19 @@ ${buildHtmlPreviewScrollbarAutoHideScript()}
     if (!_alive) {
       return;
     }
+    _findDebounce?.cancel();
+    _findSession.attach(null);
     setState(() {
       _failed = false;
       _progress = 0;
+      _findResult = WebViewFindResult.empty;
     });
     unawaited(_controller?.reload());
   }
 }
+
+String _findCssColor(Color color) => 'rgba(${(color.r * 255).round()}, '
+    '${(color.g * 255).round()}, ${(color.b * 255).round()}, ${color.a})';
 
 String _colorSchemeScript(String scheme) => '''
 (function () {

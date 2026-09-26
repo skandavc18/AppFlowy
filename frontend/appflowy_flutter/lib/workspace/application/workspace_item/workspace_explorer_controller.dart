@@ -23,8 +23,10 @@ class WorkspaceExplorerController extends ChangeNotifier {
     required ViewPB root,
     WorkspaceItemRepository? repository,
     WorkspaceItemClipboard? clipboard,
+    bool Function()? canWrite,
     this.listenForUpdates = true,
   })  : _rootId = root.id,
+        _canWrite = canWrite,
         _repository = repository ?? const WorkspaceItemService(),
         clipboard = clipboard ?? WorkspaceItemClipboard.instance {
     _cacheView(root);
@@ -37,6 +39,8 @@ class WorkspaceExplorerController extends ChangeNotifier {
   }
 
   final String _rootId;
+  final bool Function()? _canWrite;
+  final Set<_ExplorerWriteGuard> _writeGuards = {};
   final WorkspaceItemRepository _repository;
   final WorkspaceItemClipboard clipboard;
   final bool listenForUpdates;
@@ -71,14 +75,62 @@ class WorkspaceExplorerController extends ChangeNotifier {
         _breadcrumbs.map((id) => WorkspaceExplorerItem.fromView(_views[id]!)),
       );
   List<WorkspaceExplorerRow> get rows => _searchRows ?? _rows;
-  WorkspaceExplorerDraft? get draft => _draft;
-  String? get editingId => _editingId;
+  WorkspaceExplorerDraft? get draft =>
+      _draft != null && canWriteTo(_draft!.parentId) ? _draft : null;
+  String? get editingId =>
+      _editingId != null && canRename(_editingId!) ? _editingId : null;
   String get query => _query;
   String? get errorMessage => _errorMessage;
   bool get isSearching => _isSearching;
   bool get isLoading => _loadingFolders.contains(currentFolder.id);
-  bool get canPaste => clipboard.hasData;
+
+  /// Current host permission only. Child-specific authorization remains with
+  /// the repository/backend; omitted callbacks preserve standalone behavior.
+  bool get canWrite =>
+      !_isDisposed &&
+      (_canWrite?.call() ?? true) &&
+      _writeGuards.every((guard) => guard.allowsWrite());
+  bool get canPaste => canWrite && clipboard.hasData;
   String get selectedOrCurrentFolderId => _selectedFolderId ?? currentFolder.id;
+
+  /// Compose a mounted host's restrictions with the owner's callback. A
+  /// borrowed graph must never have its provider's permissions overwritten.
+  /// Removing the guard restores the owner's policy for subsequent actions;
+  /// already-started actions retain the retired guard and cannot resume.
+  VoidCallback restrictWrites({
+    required bool Function() canWrite,
+    required bool Function(String) canRename,
+  }) {
+    final guard = _ExplorerWriteGuard(canWrite, canRename);
+    _writeGuards.add(guard);
+    return () {
+      guard.active = false;
+      _writeGuards.remove(guard);
+    };
+  }
+
+  bool get _hasWriteGuard => _canWrite != null || _writeGuards.isNotEmpty;
+
+  bool canWriteTo(String id) =>
+      canWrite && (!_hasWriteGuard || _views[id]?.isLocked != true);
+
+  bool canRename(String id) =>
+      canWriteTo(id) && _writeGuards.every((guard) => guard.canRename(id));
+
+  bool get canMutateSelection =>
+      canWrite && _selectedViews.every((view) => canWriteTo(view.id));
+
+  bool Function() _writeContinuation({String? renameId}) {
+    final guards = _writeGuards.toList(growable: false);
+    final folderId = currentFolder.id;
+    return () =>
+        canWrite &&
+        currentFolder.id == folderId &&
+        guards.every((guard) => guard.allowsWrite()) &&
+        (renameId == null ||
+            (canRename(renameId) &&
+                guards.every((guard) => guard.canRename(renameId))));
+  }
 
   int get visibleFolderCount => rows.where((row) => row.item.isFolder).length;
   int get visibleFileCount => rows.where((row) => !row.item.isFolder).length;
@@ -211,6 +263,7 @@ class WorkspaceExplorerController extends ChangeNotifier {
     String? suggestedName,
   }) {
     final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    if (!canWriteTo(resolvedParent)) return;
     if (resolvedParent != currentFolder.id) {
       _expandedFolders.add(resolvedParent);
       unawaited(_loadChildren(resolvedParent));
@@ -236,6 +289,9 @@ class WorkspaceExplorerController extends ChangeNotifier {
     WorkspaceFileMenuAction action, {
     String? parentId,
   }) async {
+    final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    final canContinue = _writeContinuation();
+    if (!canContinue() || !canWriteTo(resolvedParent)) return null;
     if (action.source == WorkspaceFileSource.create) {
       beginCreate(
         WorkspaceExplorerDraftKind.file,
@@ -245,28 +301,15 @@ class WorkspaceExplorerController extends ChangeNotifier {
       return null;
     }
 
-    final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
     final result = await createWorkspaceFile(
       parentViewId: resolvedParent,
       action: action,
+      canWrite: () => canContinue() && canWriteTo(resolvedParent),
     );
-    if (result == null) {
+    if (result == null || !canContinue() || !canWriteTo(resolvedParent)) {
       return null;
     }
-    return result.fold(
-      (view) async {
-        _cacheView(view);
-        _insertChild(resolvedParent, view.id);
-        selection.selectOnly(view.id);
-        _refreshRows();
-        await _refreshActiveSearch();
-        return view;
-      },
-      (error) {
-        _setError(error.msg);
-        return null;
-      },
-    );
+    return _adopt(resolvedParent, result, canContinue);
   }
 
   void cancelEditing() {
@@ -288,15 +331,18 @@ class WorkspaceExplorerController extends ChangeNotifier {
     String? name,
   }) async {
     final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    final canContinue = _writeContinuation();
+    if (!canContinue() || !canWriteTo(resolvedParent)) return null;
     final result = await createWorkspaceFile(
       parentViewId: resolvedParent,
       action: action,
       name: name ?? action.kind.defaultFileName,
+      canWrite: () => canContinue() && canWriteTo(resolvedParent),
     );
     if (result == null) {
       return null;
     }
-    return _adopt(resolvedParent, result);
+    return _adopt(resolvedParent, result, canContinue);
   }
 
   Future<ViewPB?> createFolderImmediately({
@@ -304,11 +350,13 @@ class WorkspaceExplorerController extends ChangeNotifier {
     String? name,
   }) async {
     final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    final canContinue = _writeContinuation();
+    if (!canContinue() || !canWriteTo(resolvedParent)) return null;
     final result = await _repository.createFolder(
       parentViewId: resolvedParent,
       name: name ?? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
     );
-    return _adopt(resolvedParent, result);
+    return _adopt(resolvedParent, result, canContinue);
   }
 
   /// Creates a page written in AppFlowy itself, rather than a file taken from
@@ -319,18 +367,22 @@ class WorkspaceExplorerController extends ChangeNotifier {
     String? name,
   }) async {
     final resolvedParent = parentId ?? _selectedFolderId ?? currentFolder.id;
+    final canContinue = _writeContinuation();
+    if (!canContinue() || !canWriteTo(resolvedParent)) return null;
     final result = await ViewBackendService.createView(
       layoutType: ViewLayoutPB.Document,
       parentViewId: resolvedParent,
       name: name ?? '',
     );
-    return _adopt(resolvedParent, result);
+    return _adopt(resolvedParent, result, canContinue);
   }
 
   Future<ViewPB?> _adopt(
     String parentId,
     FlowyResult<ViewPB, FlowyError> result,
+    bool Function() canContinue,
   ) async {
+    if (!canContinue() || !canWriteTo(parentId)) return null;
     return result.fold(
       (view) async {
         _cacheView(view);
@@ -338,7 +390,7 @@ class WorkspaceExplorerController extends ChangeNotifier {
         selection.selectOnly(view.id);
         _refreshRows();
         await _refreshActiveSearch();
-        return view;
+        return canContinue() && canWriteTo(parentId) ? view : null;
       },
       (error) {
         _setError(error.msg);
@@ -348,7 +400,7 @@ class WorkspaceExplorerController extends ChangeNotifier {
   }
 
   void beginRename(String id) {
-    if (!_views.containsKey(id)) {
+    if (!canRename(id) || !_views.containsKey(id)) {
       return;
     }
     _draft = null;
@@ -358,6 +410,10 @@ class WorkspaceExplorerController extends ChangeNotifier {
 
   Future<bool> commitDraft(String rawName) async {
     final draft = _draft;
+    final canContinue = _writeContinuation();
+    if (!canContinue() || (draft != null && !canWriteTo(draft.parentId))) {
+      return false;
+    }
     final name = rawName.trim();
     if (draft == null || name.isEmpty) {
       _setError(LocaleKeys.workspaceFolderExplorer_nameRequired.tr());
@@ -376,6 +432,11 @@ class WorkspaceExplorerController extends ChangeNotifier {
         ),
     };
     final created = await result;
+    if (!canContinue() ||
+        !canWriteTo(draft.parentId) ||
+        !identical(_draft, draft)) {
+      return false;
+    }
     return created.fold(
       (view) async {
         _draft = null;
@@ -384,7 +445,7 @@ class WorkspaceExplorerController extends ChangeNotifier {
         selection.selectOnly(view.id);
         _refreshRows();
         await _refreshActiveSearch();
-        return true;
+        return canContinue() && canWriteTo(draft.parentId);
       },
       (error) async {
         _setError(error.msg);
@@ -414,19 +475,22 @@ class WorkspaceExplorerController extends ChangeNotifier {
 
   Future<bool> commitRename(String rawName) async {
     final id = _editingId;
+    final canContinue = _writeContinuation(renameId: id);
+    if (!canContinue()) return false;
     final name = rawName.trim();
     if (id == null || name.isEmpty) {
       _setError(LocaleKeys.workspaceFolderExplorer_renameNameRequired.tr());
       return false;
     }
     final result = await _repository.rename(viewId: id, name: name);
+    if (!canContinue() || _editingId != id) return false;
     return result.fold(
       (view) async {
         _editingId = null;
         _cacheView(view);
         _refreshRows();
         await _refreshActiveSearch();
-        return true;
+        return canContinue();
       },
       (error) async {
         _setError(error.msg);
@@ -443,6 +507,7 @@ class WorkspaceExplorerController extends ChangeNotifier {
   }
 
   void cutSelection() {
+    if (!canMutateSelection) return;
     final views = _selectedViews;
     if (views.isNotEmpty) {
       clipboard.cut(views);
@@ -450,13 +515,19 @@ class WorkspaceExplorerController extends ChangeNotifier {
   }
 
   Future<void> duplicateSelection() async {
+    final canContinue = _writeContinuation();
+    if (!canContinue() || !canMutateSelection) return;
     final targetIds = <String>{};
     for (final view in _selectedViews) {
       final targetId = view.parentViewId;
+      if (!canContinue() || !canWriteTo(view.id) || !canWriteTo(targetId)) {
+        return;
+      }
       final result = await _repository.duplicate(
         view: view,
         parentViewId: targetId,
       );
+      if (!canContinue()) return;
       final shouldContinue = result.fold(
         (duplicate) {
           _cacheView(duplicate);
@@ -474,27 +545,39 @@ class WorkspaceExplorerController extends ChangeNotifier {
       }
     }
     for (final targetId in targetIds) {
+      if (!canContinue()) return;
       await _loadChildren(targetId, force: true);
     }
+    if (!canContinue()) return;
     await _refreshActiveSearch();
   }
 
   Future<void> paste({String? parentId}) async {
+    final canContinue = _writeContinuation();
+    if (!canContinue()) return;
     final data = clipboard.data;
     if (data == null || data.views.isEmpty) {
       _setError(LocaleKeys.workspaceFolderExplorer_nothingToPaste.tr());
       return;
     }
     final targetId = parentId ?? _selectedFolderId ?? currentFolder.id;
+    if (!canWriteTo(targetId)) return;
     final currentFolderId = currentFolder.id;
     final affectedParentIds = <String>{targetId, currentFolderId};
 
     for (final view in data.views) {
+      if (!canContinue() ||
+          !canWriteTo(targetId) ||
+          (data.operation == WorkspaceItemClipboardOperation.cut &&
+              ((_hasWriteGuard && view.isLocked) || !canWriteTo(view.id)))) {
+        return;
+      }
       if (data.operation == WorkspaceItemClipboardOperation.copy &&
           view.isWorkspaceFile) {
         continue;
       }
       final canPaste = await _canMove(view.id, targetId);
+      if (!canContinue()) return;
       if (canPaste == null) {
         return;
       }
@@ -510,10 +593,12 @@ class WorkspaceExplorerController extends ChangeNotifier {
 
     if (data.operation == WorkspaceItemClipboardOperation.copy) {
       for (final view in data.views) {
+        if (!canContinue() || !canWriteTo(targetId)) return;
         final result = await _repository.duplicate(
           view: view,
           parentViewId: targetId,
         );
+        if (!canContinue()) return;
         if (result.isFailure) {
           result.onFailure((error) => _setError(error.msg));
           return;
@@ -522,6 +607,9 @@ class WorkspaceExplorerController extends ChangeNotifier {
     } else {
       String? previousViewId;
       for (final view in data.views) {
+        if (!canContinue() || !canWriteTo(targetId) || !canWriteTo(view.id)) {
+          return;
+        }
         if (_loadedFolders.contains(view.parentViewId)) {
           affectedParentIds.add(view.parentViewId);
         }
@@ -530,27 +618,33 @@ class WorkspaceExplorerController extends ChangeNotifier {
           parentViewId: targetId,
           previousViewId: previousViewId,
         );
+        if (!canContinue()) return;
         if (result.isFailure) {
           result.onFailure((error) => _setError(error.msg));
           return;
         }
         previousViewId = view.id;
       }
-      clipboard.clear();
+      if (identical(clipboard.data, data)) clipboard.clear();
     }
     for (final folderId in affectedParentIds) {
+      if (!canContinue()) return;
       await _loadChildren(folderId, force: true);
     }
+    if (!canContinue()) return;
     _rebuildCurrentBreadcrumbs();
     await _refreshActiveSearch();
   }
 
   Future<void> deleteSelection() async {
+    final canContinue = _writeContinuation();
+    if (!canContinue() || !canMutateSelection) return;
     final ids = _selectedViews.map((view) => view.id).toList(growable: false);
     if (ids.isEmpty) {
       return;
     }
     final result = await _repository.delete(ids);
+    if (!canContinue()) return;
     await result.fold(
       (_) async {
         if (_query.isNotEmpty) {
@@ -573,7 +667,10 @@ class WorkspaceExplorerController extends ChangeNotifier {
     required String parentId,
     String? previousViewId,
   }) async {
+    final canContinue = _writeContinuation();
+    if (!canContinue() || !canWriteTo(itemId) || !canWriteTo(parentId)) return;
     final canMove = await _canMove(itemId, parentId);
+    if (!canContinue() || !canWriteTo(itemId) || !canWriteTo(parentId)) return;
     if (canMove == null) {
       return;
     }
@@ -587,12 +684,15 @@ class WorkspaceExplorerController extends ChangeNotifier {
       parentViewId: parentId,
       previousViewId: previousViewId,
     );
+    if (!canContinue()) return;
     await result.fold(
       (_) async {
         if (previousParentId != null) {
           await _loadChildren(previousParentId, force: true);
         }
+        if (!canContinue()) return;
         await _loadChildren(parentId, force: true);
+        if (!canContinue()) return;
         _rebuildCurrentBreadcrumbs();
         await _refreshActiveSearch();
       },
@@ -668,7 +768,7 @@ class WorkspaceExplorerController extends ChangeNotifier {
   void updateView(ViewPB view) => _handleViewUpdated(view);
 
   void updateRoot(ViewPB root) {
-    if (root.id != _rootId) {
+    if (_isDisposed || root.id != _rootId || _views[_rootId] == root) {
       return;
     }
     _searchIndex = null;
@@ -1031,10 +1131,13 @@ class WorkspaceExplorerController extends ChangeNotifier {
   }
 
   Future<bool?> _canMove(String itemId, String parentId) async {
+    final canContinue = _writeContinuation();
+    if (!canContinue()) return null;
     if (itemId == parentId) {
       return false;
     }
     final result = await _repository.getAncestors(parentId);
+    if (!canContinue()) return null;
     return result.fold(
       (ancestors) => ancestors.every((view) => view.id != itemId),
       (error) {
@@ -1117,6 +1220,10 @@ class WorkspaceExplorerController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    for (final guard in _writeGuards) {
+      guard.active = false;
+    }
+    _writeGuards.clear();
     _searchGeneration++;
     for (final listener in _listeners.values) {
       listener.stop();
@@ -1129,4 +1236,14 @@ class WorkspaceExplorerController extends ChangeNotifier {
     clipboard.removeListener(notifyListeners);
     super.dispose();
   }
+}
+
+class _ExplorerWriteGuard {
+  _ExplorerWriteGuard(this.canWrite, this.canRename);
+
+  final bool Function() canWrite;
+  final bool Function(String) canRename;
+  bool active = true;
+
+  bool allowsWrite() => active && canWrite();
 }

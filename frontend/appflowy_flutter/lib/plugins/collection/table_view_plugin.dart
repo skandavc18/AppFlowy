@@ -110,9 +110,18 @@ class TableViewPluginWidgetBuilder extends PluginWidgetBuilder
     required bool shrinkWrap,
     Map<String, dynamic>? data,
   }) =>
-      BlocProvider<PageAccessLevelBloc>.value(
-        value: pageAccessLevelBloc,
-        child: TableViewPage(key: ValueKey(view.id), view: view, kind: kind),
+      MultiBlocProvider(
+        providers: [
+          BlocProvider<ViewInfoBloc>.value(value: viewInfoBloc),
+          BlocProvider<PageAccessLevelBloc>.value(value: pageAccessLevelBloc),
+        ],
+        child: DatabasePageDecorationHost(
+          view: view,
+          enabled:
+              !shrinkWrap && data?[kDatabasePluginWidgetBuilderNode] == null,
+          builder: (view) =>
+              TableViewPage(key: ValueKey(view.id), view: view, kind: kind),
+        ),
       );
 
   @override

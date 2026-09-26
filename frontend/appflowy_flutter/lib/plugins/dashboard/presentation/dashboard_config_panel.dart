@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_actions.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_card.dart';
@@ -42,9 +44,26 @@ class DashboardConfigPanel extends StatelessWidget {
       spec: spec,
       palette: palette,
     );
+    final fields = definition?.configure?.call(widgetContext);
+    final calendarFirst =
+        fields?.any((field) => field is DashboardConfigCalendarView) ?? false;
+    final widgetSettings = fields == null
+        ? null
+        : _Group(
+            label: LocaleKeys.dashboard_config_widget.tr(),
+            palette: palette,
+            children: [
+              for (final field in fields) _buildField(context, field),
+            ],
+          );
 
     return Container(
-      width: DashboardMetrics.panelWidth,
+      width: calendarFirst
+          ? math.min(
+              DashboardMetrics.panelWidth,
+              MediaQuery.sizeOf(context).width,
+            )
+          : DashboardMetrics.panelWidth,
       decoration: BoxDecoration(
         color: palette.raised,
         border: Border(
@@ -57,8 +76,10 @@ class DashboardConfigPanel extends StatelessWidget {
           _buildHeader(context, definition),
           Expanded(
             child: ListView(
+              key: ValueKey('dashboard-widget-configuration-${spec.id}'),
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
               children: [
+                if (calendarFirst) widgetSettings!,
                 _Group(
                   label: LocaleKeys.dashboard_config_general.tr(),
                   palette: palette,
@@ -128,15 +149,7 @@ class DashboardConfigPanel extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (definition?.configure != null)
-                  _Group(
-                    label: LocaleKeys.dashboard_config_widget.tr(),
-                    palette: palette,
-                    children: [
-                      for (final field in definition!.configure!(widgetContext))
-                        _buildField(context, field),
-                    ],
-                  ),
+                if (!calendarFirst && widgetSettings != null) widgetSettings,
                 _Group(
                   label: LocaleKeys.dashboard_config_visibility.tr(),
                   palette: palette,
@@ -244,9 +257,15 @@ class DashboardConfigPanel extends StatelessWidget {
             value: field.value,
             onChanged: field.onChanged,
           ),
+        DashboardConfigCalendarView() => _CalendarViewRow(
+            palette: palette,
+            field: field,
+            enabled: controller.isEditable,
+          ),
         DashboardConfigChoice() => _ChoiceRow(
             palette: palette,
             field: field,
+            wrapLabels: spec.type == 'calendar',
           ),
         DashboardConfigAccent() => _AccentRow(
             palette: palette,
@@ -254,7 +273,11 @@ class DashboardConfigPanel extends StatelessWidget {
             value: field.value,
             onChanged: field.onChanged,
           ),
-        DashboardConfigView() => _ViewRow(palette: palette, field: field),
+        DashboardConfigView() => _ViewRow(
+            palette: palette,
+            field: field,
+            stacked: spec.type == 'database',
+          ),
         DashboardConfigPlace() => _PlaceRow(palette: palette, field: field),
         DashboardConfigOptions() => _OptionsRow(palette: palette, field: field),
         DashboardConfigAction() => _ActionRow(
@@ -518,11 +541,82 @@ class _ToggleRow extends StatelessWidget {
       );
 }
 
+class _CalendarViewRow extends StatelessWidget {
+  const _CalendarViewRow({
+    required this.palette,
+    required this.field,
+    required this.enabled,
+  });
+
+  final DashboardPalette palette;
+  final DashboardConfigCalendarView field;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    // Keep the month family together without changing the persisted enum or
+    // the schema's list of choices. The two compositions are visible here,
+    // not hidden in a runtime menu or behind a clipped selected label.
+    const monthFamily = ['', 'month', 'monthAgenda', 'monthSplit'];
+    final choices = [
+      for (final value in monthFamily)
+        ...field.choices.where((choice) => choice.value == value),
+      ...field.choices.where((choice) => !monthFamily.contains(choice.value)),
+    ];
+    return Padding(
+      key: const ValueKey('dashboard-calendar-view-choices'),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Label(label: field.label, palette: palette, hint: field.hint),
+          Material(
+            color: palette.sunken,
+            borderRadius: BorderRadius.circular(10),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                for (final choice in choices)
+                  RadioListTile<String>(
+                    key: ValueKey(
+                      'dashboard-calendar-mode-${choice.value.isEmpty ? 'source' : choice.value}',
+                    ),
+                    value: choice.value,
+                    groupValue: field.value,
+                    selected: choice.value == field.value,
+                    activeColor: palette.accent,
+                    selectedTileColor: palette.accentSoft,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    title: Text(
+                      choice.label,
+                      softWrap: true,
+                      style: DashboardType.body(palette),
+                    ),
+                    onChanged: !enabled
+                        ? null
+                        : (value) {
+                            if (value != null) field.onChanged(value);
+                          },
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ChoiceRow extends StatelessWidget {
-  const _ChoiceRow({required this.palette, required this.field});
+  const _ChoiceRow({
+    required this.palette,
+    required this.field,
+    this.wrapLabels = false,
+  });
 
   final DashboardPalette palette;
   final DashboardConfigChoice field;
+  final bool wrapLabels;
 
   @override
   Widget build(BuildContext context) {
@@ -549,6 +643,7 @@ class _ChoiceRow extends StatelessWidget {
                         icon: choice.icon,
                         selected: choice.value == field.value,
                         onTap: () => field.onChanged(choice.value),
+                        wrapLabel: wrapLabels,
                       ),
                     ),
                 ],
@@ -604,6 +699,7 @@ class _Segment extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.icon,
+    this.wrapLabel = false,
   });
 
   final DashboardPalette palette;
@@ -611,6 +707,7 @@ class _Segment extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final IconData? icon;
+  final bool wrapLabel;
 
   @override
   Widget build(BuildContext context) => MouseRegion(
@@ -619,7 +716,11 @@ class _Segment extends StatelessWidget {
           onTap: onTap,
           child: AnimatedContainer(
             duration: DashboardMetrics.hover,
-            height: 28,
+            height: wrapLabel ? null : 28,
+            constraints: const BoxConstraints(minHeight: 28),
+            padding: wrapLabel
+                ? const EdgeInsets.symmetric(horizontal: 4, vertical: 6)
+                : EdgeInsets.zero,
             decoration: BoxDecoration(
               color: selected ? palette.raised : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
@@ -638,14 +739,30 @@ class _Segment extends StatelessWidget {
                   if (icon != null && label.isNotEmpty)
                     const SizedBox(width: 6),
                   if (label.isNotEmpty)
-                    Text(
-                      label,
-                      style: DashboardType.cardTitle(
-                        palette,
-                        color:
-                            selected ? palette.textPrimary : palette.textMuted,
+                    if (wrapLabel)
+                      Flexible(
+                        child: Text(
+                          label,
+                          textAlign: TextAlign.center,
+                          softWrap: true,
+                          style: DashboardType.cardTitle(
+                            palette,
+                            color: selected
+                                ? palette.textPrimary
+                                : palette.textMuted,
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        label,
+                        style: DashboardType.cardTitle(
+                          palette,
+                          color: selected
+                              ? palette.textPrimary
+                              : palette.textMuted,
+                        ),
                       ),
-                    ),
                 ],
               ),
             ),
@@ -710,50 +827,64 @@ class _AccentRow extends StatelessWidget {
 }
 
 class _ViewRow extends StatelessWidget {
-  const _ViewRow({required this.palette, required this.field});
+  const _ViewRow({
+    required this.palette,
+    required this.field,
+    this.stacked = false,
+  });
 
   final DashboardPalette palette;
   final DashboardConfigView field;
+  final bool stacked;
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: _Label(
-          label: field.label,
-          palette: palette,
-          hint: field.hint,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              DashboardButton(
-                label: field.name.isEmpty
-                    ? LocaleKeys.dashboard_config_choose.tr()
-                    : field.name,
-                palette: palette,
-                icon: Icons.description_rounded,
-                onPressed: () async {
-                  final view = await showInteractiveViewPicker(
-                    context,
-                    selectedViewId: field.viewId.isEmpty ? null : field.viewId,
-                    filter: field.filter,
-                  );
-                  if (view != null) {
-                    field.onChanged(view.id, view.name);
-                  }
-                },
-              ),
-              if (field.viewId.isNotEmpty)
-                DashboardIconButton(
-                  icon: Icons.close_rounded,
-                  palette: palette,
-                  size: 24,
-                  iconSize: 14,
-                  onPressed: () => field.onChanged('', ''),
-                ),
-            ],
+  Widget build(BuildContext context) {
+    final choose = DashboardButton(
+      label: field.name.isEmpty
+          ? LocaleKeys.dashboard_config_choose.tr()
+          : field.name,
+      tooltip: field.name,
+      palette: palette,
+      icon: Icons.description_rounded,
+      onPressed: () async {
+        final view = await showInteractiveViewPicker(
+          context,
+          selectedViewId: field.viewId.isEmpty ? null : field.viewId,
+          filter: field.filter,
+        );
+        if (view != null) field.onChanged(view.id, view.name);
+      },
+    );
+    final controls = Row(
+      mainAxisSize: stacked ? MainAxisSize.max : MainAxisSize.min,
+      children: [
+        if (stacked) Expanded(child: choose) else choose,
+        if (field.viewId.isNotEmpty)
+          DashboardIconButton(
+            icon: Icons.close_rounded,
+            palette: palette,
+            size: 24,
+            iconSize: 14,
+            onPressed: () => field.onChanged('', ''),
           ),
-        ),
-      );
+      ],
+    );
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _Label(
+            label: field.label,
+            palette: palette,
+            hint: field.hint,
+            trailing: stacked ? null : controls,
+          ),
+          if (stacked) controls,
+        ],
+      ),
+    );
+  }
 }
 
 class _PlaceRow extends StatelessWidget {

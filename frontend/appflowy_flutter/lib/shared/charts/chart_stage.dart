@@ -1,11 +1,15 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/spreadsheet/spreadsheet_codec.dart'
+    show encodeDelimitedText;
 import 'package:appflowy/shared/charts/app_chart.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
 import 'package:appflowy/shared/charts/chart_toolbar.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
-import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/charts/chart_data.dart';
 import 'package:appflowy/workspace/application/charts/chart_source.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
@@ -17,8 +21,8 @@ export 'package:appflowy/shared/charts/chart_style.dart' show chartPaletteOf;
 
 /// A chart over one table: the controls, the plot, and the numbers behind it.
 ///
-/// The data is always the table's own — the chart holds no copy of it, so it
-/// is never out of step with the rows someone is editing.
+/// The data is always the table's own. Empty results hide the last valid plot
+/// without discarding its interactions or drawing stale rows.
 class ChartStage extends StatefulWidget {
   const ChartStage({
     super.key,
@@ -49,7 +53,7 @@ class ChartStage extends StatefulWidget {
   final bool compactToolbar;
 
   /// Opts into a card with a fill, border and shadow. Charts normally draw
-  /// directly on the page; tooltips and hover controls keep their own surfaces.
+  /// directly on the page; readouts are transparent and menus own their surfaces.
   final bool framed;
   final List<Widget> trailing;
   final EdgeInsets padding;
@@ -64,6 +68,7 @@ class ChartStage extends StatefulWidget {
 class ChartStageState extends State<ChartStage> {
   late ChartSource _source =
       widget.source ?? ChartSource(viewId: widget.viewId);
+  AppChart? _lastChart;
 
   @override
   void initState() {
@@ -81,6 +86,7 @@ class ChartStageState extends State<ChartStage> {
       if (oldWidget.source == null) {
         _source.dispose();
       }
+      _lastChart = null;
       _source = widget.source ?? ChartSource(viewId: widget.viewId);
       _source.addListener(_onChanged);
       unawaited(_source.load());
@@ -117,32 +123,61 @@ class ChartStageState extends State<ChartStage> {
     // category and empty values mean "Every row" and "Count rows".
     final spec = table.resolveSpec(widget.spec);
     final data = buildChartData(table, spec);
+    final content = _body(palette, table, spec, data);
 
-    final body = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (widget.showToolbar) ...[
-          _Header(
-            title: widget.title,
-            palette: palette,
-            table: table,
-            spec: spec,
-            data: data,
-            compact: widget.compactToolbar,
-            onChanged: widget.onSpecChanged,
-            onRefresh: reload,
-            onExport: () => _copyNumbers(context, table, data, spec),
-            busy: _source.isLoading,
-            hasError: _source.error != null,
-            trailing: widget.trailing,
+    final body = CustomScrollView(
+      primary: false,
+      slivers: [
+        if (widget.showToolbar)
+          SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _Header(
+                  title: widget.title,
+                  palette: palette,
+                  table: table,
+                  spec: spec,
+                  data: data,
+                  compact: widget.compactToolbar,
+                  onChanged: widget.onSpecChanged,
+                  onRefresh: reload,
+                  onExport: _copyNumbers,
+                  busy: _source.isLoading,
+                  error: _source.error,
+                  trailing: widget.trailing,
+                ),
+                SizedBox(
+                  height: spec.showControls
+                      ? ChartMetrics.plotGap
+                      : ChartMetrics.headerGap,
+                ),
+              ],
+            ),
           ),
-          SizedBox(
-            height: spec.showControls
-                ? ChartMetrics.plotGap
-                : ChartMetrics.headerGap,
-          ),
-        ],
-        Expanded(child: _body(palette, table, spec, data)),
+        SliverLayoutBuilder(
+          key: const ValueKey('chart-stage-body'),
+          builder: (context, constraints) {
+            // A wrapped header must not squeeze the drawing below its usable
+            // size. Reserve headroom and three scaled control rows for the
+            // plot/legend; short hosts scroll, rather than hiding any data.
+            final minimumHeight = ChartMetrics.plotHeadroom +
+                MediaQuery.textScalerOf(context)
+                    .scale(ChartMetrics.chipHeight * 3);
+            return SliverToBoxAdapter(
+              child: SizedBox(
+                height: math.max(
+                  minimumHeight,
+                  // Use total preceding extent, not remaining paint extent:
+                  // scrolling the header away must not resize the live plot.
+                  constraints.viewportMainAxisExtent -
+                      constraints.precedingScrollExtent,
+                ),
+                child: content,
+              ),
+            );
+          },
+        ),
       ],
     );
 
@@ -166,36 +201,9 @@ class ChartStageState extends State<ChartStage> {
     ChartSpec spec,
     ChartData data,
   ) {
-    if (_source.isLoading && table.isEmpty) {
-      return _ChartSkeleton(palette: palette);
-    }
-    final error = _source.error;
-    if (error != null) {
-      return ChartEmptyState(
-        palette: palette,
-        icon: Icons.error_outline_rounded,
-        title: LocaleKeys.charts_empty.tr(),
-        message: error,
-      );
-    }
-    if (table.isEmpty || data.isEmpty) {
-      return ChartEmptyState(
-        palette: palette,
-        icon: Icons.insert_chart_outlined_rounded,
-        title: LocaleKeys.charts_empty.tr(),
-        message: LocaleKeys.charts_emptyDescription.tr(),
-      );
-    }
-
-    return AnimatedSwitcher(
-      duration: ChartMetrics.morphDuration,
-      switchInCurve: ChartMetrics.revealCurve,
-      switchOutCurve: Curves.easeIn,
-      layoutBuilder: (current, previous) => Stack(
-        fit: StackFit.expand,
-        children: [...previous, if (current != null) current],
-      ),
-      child: AppChart(
+    final empty = table.isEmpty || data.isEmpty;
+    if (!empty) {
+      _lastChart = AppChart(
         // A different source or type owns a new drawing and interactions;
         // reloading the same source must not discard the reader's viewport.
         key: ValueKey((_source, spec.type)),
@@ -207,33 +215,153 @@ class ChartStageState extends State<ChartStage> {
               .toList(),
         ),
         palette: palette,
-      ),
+      );
+    }
+    final error = _source.error;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Never feed an empty projection into the retained chart: its missing
+        // series/axes would reset interactions before the next valid reading.
+        Offstage(
+          key: const ValueKey('chart-stage-plot'),
+          offstage: empty,
+          child: TickerMode(
+            enabled: !empty,
+            child: ExcludeFocus(
+              excluding: empty,
+              child: _ChartTransitionScope(
+                currentKey: _lastChart?.key,
+                // No extra entrance fade before the first valid reading.
+                child: _lastChart == null
+                    ? const SizedBox.expand()
+                    : AnimatedSwitcher(
+                        duration: WorkspaceTokens.motion(
+                          context,
+                          ChartMetrics.morphDuration,
+                        ),
+                        switchInCurve: ChartMetrics.revealCurve,
+                        switchOutCurve: Curves.easeIn,
+                        transitionBuilder: _chartTransition,
+                        layoutBuilder: (current, previous) => Stack(
+                          fit: StackFit.expand,
+                          children: [...previous, if (current != null) current],
+                        ),
+                        child: _lastChart,
+                      ),
+              ),
+            ),
+          ),
+        ),
+        if (empty)
+          if (_source.isLoading && table.isEmpty)
+            _ChartSkeleton(palette: palette)
+          else
+            ChartEmptyState(
+              palette: palette,
+              icon: error != null && table.isEmpty
+                  ? Icons.error_outline_rounded
+                  : Icons.insert_chart_outlined_rounded,
+              title: LocaleKeys.charts_empty.tr(),
+              message: error != null && table.isEmpty
+                  ? error
+                  : LocaleKeys.charts_emptyDescription.tr(),
+            ),
+      ],
     );
   }
 
-  Future<void> _copyNumbers(
-    BuildContext context,
-    ChartTable table,
-    ChartData data,
-    ChartSpec spec,
-  ) async {
-    final rows = <String>[
+  Future<void> _copyNumbers() async {
+    // An open menu may outlive a row refresh or field rename. Export the
+    // current reading, never its captured snapshot or the offstage plot.
+    final table = _source.table;
+    final spec = table.resolveSpec(widget.spec);
+    final display = table.displaySpec(spec);
+    final data = buildChartData(table, spec);
+    final measured = spec.plotsAgainstValues;
+    final label = measured ? display.categoryColumn : null;
+    final size = measured && spec.type.sizesPoints ? display.sizeColumn : null;
+    final rows = <List<String>>[
       [
-        table.displaySpec(spec).xAxisLabel ?? '',
+        display.xAxisLabel ?? '',
+        if (label != null) label,
         ...data.series.map((one) => one.name),
-      ].join(','),
-      for (var index = 0; index < data.categories.length; index++)
-        [
-          data.categories[index],
-          for (final series in data.series)
-            index < series.points.length
-                ? series.points[index].value.toString()
-                : '',
-        ].join(','),
+        if (size != null) size,
+      ],
+      if (measured)
+        // Series can omit different rows and repeat X/label pairs. One row per
+        // point preserves all values without inventing cross-series matches.
+        for (var series = 0; series < data.series.length; series++)
+          for (final point in data.series[series].points)
+            [
+              point.x?.toString() ?? '',
+              if (label != null) point.label,
+              for (var column = 0; column < data.series.length; column++)
+                column == series ? point.value.toString() : '',
+              if (size != null) point.size?.toString() ?? '',
+            ]
+      else
+        for (var index = 0; index < data.categories.length; index++)
+          [
+            data.categories[index],
+            for (final series in data.series)
+              index < series.points.length
+                  ? series.points[index].value.toString()
+                  : '',
+          ],
     ];
-    await Clipboard.setData(ClipboardData(text: rows.join('\n')));
+    await Clipboard.setData(ClipboardData(text: encodeDelimitedText(rows)));
   }
 }
+
+// Updating the marker rebuilds cached outgoing transitions before their first
+// reverse tick. Keep this scope and the transition structure stable throughout.
+class _ChartTransitionScope extends InheritedWidget {
+  const _ChartTransitionScope({required this.currentKey, required super.child});
+
+  final Key? currentKey;
+
+  @override
+  bool updateShouldNotify(_ChartTransitionScope oldWidget) =>
+      currentKey != oldWidget.currentKey;
+}
+
+Widget _chartTransition(Widget child, Animation<double> animation) =>
+    AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final currentKey = context
+            .dependOnInheritedWidgetOfExactType<_ChartTransitionScope>()!
+            .currentKey;
+        // A rapid A -> B -> A can leave an older A with the same key outgoing.
+        final outgoing = child!.key != currentKey ||
+            animation.status == AnimationStatus.reverse ||
+            animation.status == AnimationStatus.dismissed;
+        final reduced =
+            WorkspaceTokens.motion(context, ChartMetrics.morphDuration) ==
+                Duration.zero;
+        return ExcludeFocus(
+          excluding: outgoing,
+          child: IgnorePointer(
+            ignoring: outgoing,
+            child: ExcludeSemantics(
+              excluding: outgoing,
+              child: FadeTransition(
+                // Switcher controllers capture their original duration. A
+                // motion change must snap paint, not replace the live chart.
+                opacity: reduced
+                    ? outgoing
+                        ? kAlwaysDismissedAnimation
+                        : kAlwaysCompleteAnimation
+                    : animation,
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
+    );
 
 class _Header extends StatelessWidget {
   const _Header({
@@ -247,7 +375,7 @@ class _Header extends StatelessWidget {
     required this.onRefresh,
     required this.onExport,
     required this.busy,
-    required this.hasError,
+    required this.error,
     required this.trailing,
   });
 
@@ -261,7 +389,7 @@ class _Header extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final VoidCallback onExport;
   final bool busy;
-  final bool hasError;
+  final String? error;
   final List<Widget> trailing;
 
   @override
@@ -270,152 +398,97 @@ class _Header extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (hasTitle)
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  title!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: palette.text(
-                    size: 15,
-                    color: palette.strongLabel,
-                    weight: FontWeight.w600,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  heightFactor: 1,
-                  child: _actions(context),
-                ),
-              ),
-            ],
-          )
-        else if (!spec.showControls)
-          // Without a title there is nothing to sit beside, so the actions
-          // hold the row on their own.
-          Align(alignment: Alignment.centerRight, child: _actions(context)),
-        if (spec.showControls) ...[
-          if (hasTitle) const SizedBox(height: ChartMetrics.headerGap + 2),
-          _controls(context, withActions: !hasTitle),
+        if (hasTitle) ...[
+          Text(
+            title!,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: palette.text(
+              size: 15,
+              color: palette.strongLabel,
+              weight: FontWeight.w600,
+              letterSpacing: -0.1,
+            ),
+          ),
+          const SizedBox(height: ChartMetrics.headerGap),
         ],
+        // One stable wrap owns configuration AND host actions. No 4:1 Row,
+        // horizontal scroll viewport or width-dependent reparenting.
+        ChartToolbar(
+          key: const ValueKey('chart-header-toolbar'),
+          table: table,
+          spec: spec,
+          data: data,
+          palette: palette,
+          compact: compact,
+          showControls: spec.showControls,
+          keepVisible: error != null || busy,
+          onChanged: onChanged,
+          trailing: [
+            ...trailing,
+            ChartIconAction(
+              key: const ValueKey('chart-refresh'),
+              icon: error == null
+                  ? Icons.refresh_rounded
+                  : Icons.error_outline_rounded,
+              tooltip: error == null
+                  ? LocaleKeys.charts_refresh.tr()
+                  : '${LocaleKeys.charts_refresh.tr()}\n$error',
+              palette: palette,
+              busy: busy,
+              onTap: onRefresh,
+            ),
+          ],
+          additionalEntries: _entries(),
+        ),
       ],
     );
   }
 
-  Widget _controls(BuildContext context, {required bool withActions}) => Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            flex: 4,
-            child: ChartToolbar(
-              table: table,
-              spec: spec,
-              data: data,
-              palette: palette,
-              compact: compact,
-              onChanged: onChanged,
-            ),
-          ),
-          if (withActions) ...[
-            const SizedBox(width: 12),
-            Flexible(
-              child: Align(
-                alignment: AlignmentDirectional.centerEnd,
-                heightFactor: 1,
-                child: _actions(context),
-              ),
-            ),
-          ],
-        ],
-      );
-
-  Widget _actions(BuildContext context) => PreviewToolbar(
-        // Refresh and configuration are the way out of an empty/failed read.
-        keepVisible: hasError || busy || table.isEmpty || data.isEmpty,
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ...trailing,
-              if (trailing.isNotEmpty) const SizedBox(width: 4),
-              ChartIconAction(
-                icon: Icons.refresh_rounded,
-                tooltip: LocaleKeys.charts_refresh.tr(),
-                palette: palette,
-                busy: busy,
-                onTap: onRefresh,
-              ),
-              const SizedBox(width: 2),
-              Builder(
-                builder: (buttonContext) => ChartIconAction(
-                  icon: Icons.more_horiz_rounded,
-                  tooltip: LocaleKeys.charts_options.tr(),
-                  palette: palette,
-                  onTap: () => showAppMenuForWidget<void>(
-                    context: buttonContext,
-                    width: 232,
-                    offset: const Offset(0, 4),
-                    entries: [
-                      AppMenuItem(
-                        label: LocaleKeys.charts_showOptions.tr(),
-                        icon: Icons.tune_rounded,
-                        selected: spec.showControls,
-                        onSelected: () => onChanged(
-                          spec.copyWith(showControls: !spec.showControls),
-                        ),
-                      ),
-                      const AppMenuSeparator(),
-                      AppMenuHeader(LocaleKeys.charts_display.tr()),
-                      // With the controls put away these are the only way to reach
-                      // what the chart shows.
-                      AppMenuItem(
-                        label: LocaleKeys.charts_showLegend.tr(),
-                        icon: Icons.legend_toggle_rounded,
-                        selected: spec.showLegend,
-                        onSelected: () => onChanged(
-                          spec.copyWith(showLegend: !spec.showLegend),
-                        ),
-                      ),
-                      AppMenuItem(
-                        label: LocaleKeys.charts_showValues.tr(),
-                        icon: Icons.numbers_rounded,
-                        selected: spec.showValues,
-                        onSelected: () => onChanged(
-                          spec.copyWith(showValues: !spec.showValues),
-                        ),
-                      ),
-                      AppMenuItem(
-                        label: LocaleKeys.charts_showGrid.tr(),
-                        icon: Icons.grid_on_rounded,
-                        selected: spec.showGrid,
-                        onSelected: () =>
-                            onChanged(spec.copyWith(showGrid: !spec.showGrid)),
-                      ),
-                      const AppMenuSeparator(),
-                      AppMenuItem(
-                        label: LocaleKeys.charts_refresh.tr(),
-                        icon: Icons.refresh_rounded,
-                        onSelected: () => unawaited(onRefresh()),
-                      ),
-                      AppMenuItem(
-                        label: LocaleKeys.charts_export.tr(),
-                        icon: Icons.download_rounded,
-                        onSelected: onExport,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+  List<AppMenuEntry> _entries() => [
+        AppMenuItem(
+          label: LocaleKeys.charts_showOptions.tr(),
+          icon: Icons.tune_rounded,
+          selected: spec.showControls,
+          onSelected: () => onChanged(
+            spec.copyWith(showControls: !spec.showControls),
           ),
         ),
-      );
+        const AppMenuSeparator(),
+        AppMenuItem(
+          label: LocaleKeys.charts_showLegend.tr(),
+          icon: Icons.legend_toggle_rounded,
+          selected: spec.showLegend,
+          onSelected: () => onChanged(
+            spec.copyWith(showLegend: !spec.showLegend),
+          ),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.charts_showValues.tr(),
+          icon: Icons.numbers_rounded,
+          selected: spec.showValues,
+          onSelected: () => onChanged(
+            spec.copyWith(showValues: !spec.showValues),
+          ),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.charts_showGrid.tr(),
+          icon: Icons.grid_on_rounded,
+          selected: spec.showGrid,
+          onSelected: () => onChanged(spec.copyWith(showGrid: !spec.showGrid)),
+        ),
+        const AppMenuSeparator(),
+        AppMenuItem(
+          label: LocaleKeys.charts_refresh.tr(),
+          icon: Icons.refresh_rounded,
+          onSelected: () => unawaited(onRefresh()),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.charts_export.tr(),
+          icon: Icons.download_rounded,
+          onSelected: onExport,
+        ),
+      ];
 }
 
 /// A quiet square button in a chart's header.
@@ -452,8 +525,13 @@ class ChartIconAction extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(ChartMetrics.chipRadius),
           ),
+        ).copyWith(
+          animationDuration:
+              WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
         ),
-        icon: busy
+        icon: busy &&
+                WorkspaceTokens.motion(context, ChartMetrics.hoverDuration) !=
+                    Duration.zero
             ? Center(
                 child: SizedBox(
                   width: 12,
@@ -464,7 +542,7 @@ class ChartIconAction extends StatelessWidget {
                   ),
                 ),
               )
-            : Icon(
+            : WorkspaceGlyph(
                 icon,
                 size: 15,
               ),
@@ -490,31 +568,34 @@ class ChartEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _Illustration(palette: palette, icon: icon),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                style: palette.text(
-                  size: 13.5,
-                  color: palette.strongLabel,
-                  weight: FontWeight.w600,
+        child: SingleChildScrollView(
+          primary: false,
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _Illustration(palette: palette, icon: icon),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  style: palette.text(
+                    size: 13.5,
+                    color: palette.strongLabel,
+                    weight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 5),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 300),
-                child: Text(
-                  message,
-                  textAlign: TextAlign.center,
-                  style: palette.text(size: 12, height: 1.45),
+                const SizedBox(height: 5),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 300),
+                  child: Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: palette.text(size: 12, height: 1.45),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       );
@@ -564,7 +645,7 @@ class _Illustration extends StatelessWidget {
                   color: palette.background,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
+                child: WorkspaceGlyph(
                   icon,
                   size: 16,
                   color: palette.label.withValues(alpha: palette.label.a * 0.8),
@@ -588,49 +669,65 @@ class _ChartSkeleton extends StatefulWidget {
 
 class _ChartSkeletonState extends State<_ChartSkeleton>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..repeat(reverse: true);
+  AnimationController? _pulse;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final reduced =
+        WorkspaceTokens.motion(context, ChartMetrics.hoverDuration) ==
+            Duration.zero;
+    if (reduced) {
+      _pulse?.stop();
+      _pulse?.value = 1;
+    } else {
+      _pulse ??= AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1100),
+      );
+      if (!_pulse!.isAnimating) _pulse!.repeat(reverse: true);
+    }
+  }
 
   @override
   void dispose() {
-    _pulse.dispose();
+    _pulse?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: _pulse,
-        builder: (context, _) => Opacity(
-          opacity: 0.45 + _pulse.value * 0.35,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(28, 8, 8, 24),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (final fraction in const [0.55, 0.85, 0.4, 0.68, 0.32])
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: FractionallySizedBox(
-                        heightFactor: fraction,
-                        child: Container(
-                          constraints: const BoxConstraints(
-                            maxWidth: ChartMetrics.maximumBarWidth,
-                          ),
-                          decoration: BoxDecoration(
-                            color: widget.palette.grid,
-                            borderRadius: const BorderRadius.vertical(
-                              top: Radius.circular(ChartMetrics.barRadius),
-                            ),
+        animation: _pulse ?? kAlwaysCompleteAnimation,
+        builder: (context, child) => Opacity(
+          opacity: 0.45 + (_pulse?.value ?? 1) * 0.35,
+          child: child,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 8, 8, 24),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              for (final fraction in const [0.55, 0.85, 0.4, 0.68, 0.32])
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: FractionallySizedBox(
+                      heightFactor: fraction,
+                      child: Container(
+                        constraints: const BoxConstraints(
+                          maxWidth: ChartMetrics.maximumBarWidth,
+                        ),
+                        decoration: BoxDecoration(
+                          color: widget.palette.grid,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(ChartMetrics.barRadius),
                           ),
                         ),
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
         ),
       );

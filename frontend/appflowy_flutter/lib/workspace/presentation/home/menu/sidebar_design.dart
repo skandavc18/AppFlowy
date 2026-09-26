@@ -1,15 +1,14 @@
-import 'dart:async';
-
-import 'package:appflowy/generated/flowy_svgs.g.dart';
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
-import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/scroll_hover_suppression.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar_icon_artwork.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// Geometry and motion for the sidebar.
 ///
@@ -18,25 +17,25 @@ import 'package:flutter/material.dart';
 abstract final class SidebarMetrics {
   // A 4px spacing scale. Nothing in the sidebar should use a value that is
   // not on it.
-  static const space1 = 4.0;
-  static const space2 = 8.0;
-  static const space3 = 12.0;
-  static const space4 = 16.0;
-  static const space6 = 24.0;
+  static const space1 = WorkspaceTokens.space1;
+  static const space2 = WorkspaceTokens.space2;
+  static const space3 = WorkspaceTokens.space3;
+  static const space4 = WorkspaceTokens.space4;
+  static const space6 = WorkspaceTokens.space6;
 
   /// Distance from the window edge to the hover pill.
   static const gutter = 8.0;
 
   /// Height of an ordinary page row.
-  static const rowHeight = 32.0;
+  static const rowHeight = WorkspaceTokens.navigationHeight;
 
   /// Height of a top level action (search, new page, trash…).
-  static const actionRowHeight = 34.0;
+  static const actionRowHeight = WorkspaceTokens.navigationHeight;
 
   /// Height of a section heading.
   static const headingHeight = 30.0;
 
-  static const rowRadius = 8.0;
+  static const rowRadius = WorkspaceTokens.controlRadius;
 
   /// Horizontal padding inside the hover pill.
   static const rowInset = 4.0;
@@ -48,8 +47,8 @@ abstract final class SidebarMetrics {
   static const disclosureSlot = 16.0;
   static const disclosureIconSize = 12.0;
 
-  static const iconSlot = 22.0;
-  static const iconSize = 18.0;
+  static const iconSlot = 24.0;
+  static const iconSize = WorkspaceTokens.iconSize;
   static const iconGap = 8.0;
 
   /// One contextual action button.
@@ -61,21 +60,21 @@ abstract final class SidebarMetrics {
   static double trailingReserve(int slots) =>
       slots <= 0 ? 0 : slots * actionSlot + (slots - 1) * actionGap;
 
-  static const hover = Duration(milliseconds: 140);
-  static const reveal = Duration(milliseconds: 150);
-  static const disclosure = Duration(milliseconds: 180);
-  static const structural = Duration(milliseconds: 280);
-  static const curve = Curves.easeOutCubic;
+  static const hover = WorkspaceTokens.hoverDuration;
+  static const reveal = WorkspaceTokens.hoverDuration;
+  static const disclosure = WorkspaceTokens.entranceDuration;
+  static const structural = WorkspaceTokens.transitionDuration;
+  static const curve = WorkspaceTokens.curve;
 
-  /// Opacity an icon rests at before the pointer arrives.
-  static const iconRestingOpacity = 0.86;
+  /// Ink is already muted; hover/selection changes the row, not its artwork.
+  static const iconRestingOpacity = 1.0;
 }
 
 /// The sidebar's icon family.
 ///
 /// Stable picker identities, drawn with a small, rounded navigation set rather
 /// than the picker's heavy bold artwork. Keep these names for compatibility;
-/// an unmapped future symbol can still fall back to its bundled picker glyph.
+/// an unmapped future symbol uses the shared diagnostic outline fallback.
 enum SidebarIcon {
   search('editor', 'magnifying-glass'),
   newPage('office', 'note-pencil'),
@@ -145,21 +144,12 @@ SidebarIcon sidebarCollectionIcon(CollectionKind kind) => switch (kind) {
 
 const _sidebarIconPackId = 'phosphor_bold';
 
-/// The compatibility pack for sidebar symbols without local artwork.
+/// Legacy compatibility identity; default glyph rendering never loads it.
 final IconPack sidebarIconPack =
     kIconPacks.firstWhere((pack) => pack.id == _sidebarIconPackId);
 
-/// Current defaults are synchronous. Only warm the compatibility pack when a
-/// new symbol has not yet been added to the local navigation artwork.
-void warmSidebarIcons() {
-  if (SidebarIcon.values
-      .every((icon) => roundedSidebarIconSvg(icon.name) != null)) {
-    return;
-  }
-  if (!isIconPackLoaded(sidebarIconPack)) {
-    unawaited(loadIconPack(sidebarIconPack));
-  }
-}
+/// Kept for existing startup callers. WorkspaceGlyph defaults are synchronous.
+void warmSidebarIcons() {}
 
 class SidebarGlyph extends StatelessWidget {
   const SidebarGlyph(
@@ -175,31 +165,10 @@ class SidebarGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final artwork = roundedSidebarIconSvg(icon.name);
-    if (artwork != null) {
-      return FlowySvg.string(
-        artwork,
-        size: Size.square(size),
-        color: color ?? SidebarPalette.of(context).icon,
-      );
-    }
-    return ValueListenableBuilder<int>(
-      valueListenable: iconPacksVersion,
-      builder: (context, _, __) {
-        if (!isIconPackLoaded(sidebarIconPack)) {
-          warmSidebarIcons();
-          return SizedBox.square(dimension: size);
-        }
-        final svg = findLoadedIcon(icon.group, icon.name)?.content;
-        if (svg == null) {
-          return SizedBox.square(dimension: size);
-        }
-        return FlowySvg.string(
-          svg,
-          size: Size.square(size),
-          color: color ?? SidebarPalette.of(context).icon,
-        );
-      },
+    return WorkspaceGlyph.named(
+      icon.name,
+      size: size,
+      color: color ?? workspaceGlyphInk(context),
     );
   }
 }
@@ -278,7 +247,7 @@ class SidebarPalette {
         textPrimary: const Color(0xFF2B2A28),
         textSecondary: const Color(0xFF6B6963),
         textTertiary: const Color(0xFF96938C),
-        icon: const Color(0xFF6F6C66),
+        icon: premium?.textSecondary ?? const Color(0xFF6F6C66),
         hover: const Color(0x0A16150F),
         selected: const Color(0x1416150F),
         selectedHover: const Color(0x1C16150F),
@@ -295,7 +264,7 @@ class SidebarPalette {
         textPrimary: PaperTheme.textPrimary,
         textSecondary: PaperTheme.textSecondary,
         textTertiary: PaperTheme.textMuted,
-        icon: const Color(0xFF7B6F62),
+        icon: PaperTheme.textSecondary,
         hover: const Color(0x0F6A5947),
         selected: const Color(0x1F6A5947),
         selectedHover: const Color(0x2A6A5947),
@@ -312,7 +281,7 @@ class SidebarPalette {
         textPrimary: const Color(0xE8FFFFFF),
         textSecondary: const Color(0x9EFFFFFF),
         textTertiary: const Color(0x70FFFFFF),
-        icon: const Color(0xAEFFFFFF),
+        icon: premium?.textSecondary ?? const Color(0xAEFFFFFF),
         hover: const Color(0x0FFFFFFF),
         selected: const Color(0x1FFFFFFF),
         selectedHover: const Color(0x29FFFFFF),
@@ -363,8 +332,8 @@ class SidebarRow extends StatefulWidget {
   /// Leaf rows reserve the same gutter as their expandable siblings.
   final bool reserveLeadingSpace;
 
-  /// Built only while the row is hovered or [active], so a sidebar of a
-  /// thousand pages does not carry a thousand popovers.
+  /// Built only while hovered, focused or [active], so a sidebar of a thousand
+  /// pages does not carry a thousand popovers. Focusing a row reveals its tools.
   final List<Widget> Function(BuildContext context)? trailingBuilder;
 
   /// How many action slots to keep clear on the right.
@@ -388,7 +357,29 @@ class SidebarRow extends StatefulWidget {
 }
 
 class _SidebarRowState extends State<SidebarRow> {
+  final _focusNode = FocusNode(debugLabel: 'Sidebar row');
   bool _hovered = false;
+  bool _focused = false;
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeListener(_syncFocus);
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  void _syncFocus() {
+    final focused = _focusNode.hasFocus;
+    if (!mounted || _focused == focused) return;
+    // Only the focused row observes the global focus tree. Removing a focused
+    // rename field can detach it before the ancestor's blur callback arrives.
+    if (focused) {
+      FocusManager.instance.addListener(_syncFocus);
+    } else {
+      FocusManager.instance.removeListener(_syncFocus);
+    }
+    setState(() => _focused = focused);
+  }
 
   void _setHovered(bool value) {
     if (_hovered == value || !widget.hoverEnabled) {
@@ -401,7 +392,10 @@ class _SidebarRowState extends State<SidebarRow> {
   @override
   Widget build(BuildContext context) {
     final palette = SidebarPalette.of(context);
-    final revealed = _hovered || widget.active;
+    final revealed = _hovered ||
+        _focused ||
+        widget.active ||
+        MediaQuery.accessibleNavigationOf(context);
     final background = widget.selected
         ? (revealed ? palette.selectedHover : palette.selected)
         : revealed
@@ -424,7 +418,7 @@ class _SidebarRowState extends State<SidebarRow> {
               // Keep the picker mounted when a save changes a dimmed default
               // into an undimmed custom icon (including keep-open selections).
               child: AnimatedOpacity(
-                duration: SidebarMetrics.hover,
+                duration: WorkspaceTokens.motion(context, SidebarMetrics.hover),
                 curve: SidebarMetrics.curve,
                 opacity: !widget.dimIcon || revealed || widget.selected
                     ? 1
@@ -441,7 +435,7 @@ class _SidebarRowState extends State<SidebarRow> {
     );
 
     Widget row = AnimatedContainer(
-      duration: SidebarMetrics.hover,
+      duration: WorkspaceTokens.motion(context, SidebarMetrics.hover),
       curve: SidebarMetrics.curve,
       height: widget.height,
       decoration: BoxDecoration(
@@ -477,16 +471,45 @@ class _SidebarRowState extends State<SidebarRow> {
       );
     }
 
-    return MouseRegion(
-      opaque: false,
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => _setHovered(true),
-      onExit: (_) => _setHovered(false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.translucent,
+    return Focus(
+      focusNode: _focusNode,
+      canRequestFocus: widget.onTap != null,
+      skipTraversal: widget.onTap == null,
+      onFocusChange: (_) => _syncFocus(),
+      onKeyEvent: (_, event) {
+        // Editing a name or activating a child button must never open the page.
+        if (!_focusNode.hasPrimaryFocus ||
+            widget.onTap == null ||
+            event is! KeyDownEvent ||
+            HardwareKeyboard.instance.isControlPressed ||
+            HardwareKeyboard.instance.isMetaPressed ||
+            HardwareKeyboard.instance.isAltPressed) {
+          return KeyEventResult.ignored;
+        }
+        if (event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.space) {
+          widget.onTap!();
+          return KeyEventResult.handled;
+        }
+        return KeyEventResult.ignored;
+      },
+      child: Semantics(
+        button: widget.onTap != null,
+        selected: widget.selected,
         onTap: widget.onTap,
-        onTertiaryTapDown: widget.onTertiaryTapDown,
-        child: row,
+        child: MouseRegion(
+          opaque: false,
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => _setHovered(true),
+          onExit: (_) => _setHovered(false),
+          child: GestureDetector(
+            excludeFromSemantics: true,
+            behavior: HitTestBehavior.translucent,
+            onTap: widget.onTap,
+            onTertiaryTapDown: widget.onTertiaryTapDown,
+            child: row,
+          ),
+        ),
       ),
     );
   }
@@ -506,27 +529,36 @@ class SidebarActionReveal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: SidebarMetrics.reveal,
-      switchInCurve: SidebarMetrics.curve,
-      switchOutCurve: SidebarMetrics.curve,
-      transitionBuilder: (child, animation) => FadeTransition(
-        opacity: animation,
-        child: SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0.18, 0),
-            end: Offset.zero,
-          ).animate(animation),
-          child: child,
+    return ExcludeFocus(
+      excluding: !revealed,
+      child: IgnorePointer(
+        ignoring: !revealed,
+        child: ExcludeSemantics(
+          excluding: !revealed,
+          child: AnimatedSwitcher(
+            duration: WorkspaceTokens.motion(context, SidebarMetrics.reveal),
+            switchInCurve: SidebarMetrics.curve,
+            switchOutCurve: SidebarMetrics.curve,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0.18, 0),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+            child: revealed && builder != null
+                ? Row(
+                    key: const ValueKey('revealed'),
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: builder!(context),
+                  )
+                : const SizedBox.shrink(key: ValueKey('hidden')),
+          ),
         ),
       ),
-      child: revealed && builder != null
-          ? Row(
-              key: const ValueKey('revealed'),
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: builder!(context),
-            )
-          : const SizedBox.shrink(key: ValueKey('hidden')),
     );
   }
 }
@@ -547,30 +579,37 @@ class SidebarDisclosure extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = SidebarPalette.of(context);
-    Widget child = AnimatedRotation(
-      duration: SidebarMetrics.disclosure,
+    final label = tooltip ??
+        (expanded
+            ? MaterialLocalizations.of(context).expandedIconTapHint
+            : MaterialLocalizations.of(context).collapsedIconTapHint);
+    final child = AnimatedRotation(
+      duration: WorkspaceTokens.motion(context, SidebarMetrics.disclosure),
       curve: SidebarMetrics.curve,
       turns: expanded ? 0.25 : 0,
       child: SidebarGlyph(
         SidebarIcon.disclosure,
         size: SidebarMetrics.disclosureIconSize,
-        color: palette.textSecondary,
+        color: palette.icon,
       ),
     );
 
-    if (tooltip != null) {
-      child = Tooltip(message: tooltip!, child: child);
-    }
-
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: SizedBox(
-          width: SidebarMetrics.disclosureSlot,
-          height: SidebarMetrics.iconSlot,
-          child: Center(child: child),
+    return Tooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: SizedBox(
+        width: SidebarMetrics.disclosureSlot,
+        height: SidebarMetrics.iconSlot,
+        child: IconButton(
+          onPressed: onTap,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(
+            width: SidebarMetrics.disclosureSlot,
+            height: SidebarMetrics.iconSlot,
+          ),
+          hoverColor: palette.hover,
+          focusColor: palette.selected,
+          icon: Semantics(label: label, excludeSemantics: true, child: child),
         ),
       ),
     );
@@ -578,61 +617,72 @@ class SidebarDisclosure extends StatelessWidget {
 }
 
 /// A borderless icon button sized to one action slot.
-class SidebarIconButton extends StatefulWidget {
+class SidebarIconButton extends StatelessWidget {
   const SidebarIconButton({
     super.key,
     required this.icon,
     required this.onPressed,
     this.tooltip,
     this.size = 16,
+    this.dimension = SidebarMetrics.actionSlot,
+    this.focusNode,
   });
 
   final SidebarIcon icon;
   final VoidCallback onPressed;
   final String? tooltip;
   final double size;
-
-  @override
-  State<SidebarIconButton> createState() => _SidebarIconButtonState();
-}
-
-class _SidebarIconButtonState extends State<SidebarIconButton> {
-  bool _hovered = false;
+  final double dimension;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
     final palette = SidebarPalette.of(context);
-    Widget button = MouseRegion(
-      opaque: false,
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: SidebarMetrics.hover,
-          curve: SidebarMetrics.curve,
-          width: SidebarMetrics.actionSlot,
-          height: SidebarMetrics.actionSlot,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: _hovered ? palette.selected : palette.hoverAtRest,
-            borderRadius: BorderRadius.circular(6),
+    final label = tooltip ??
+        switch (icon) {
+          SidebarIcon.settings => LocaleKeys.settings_menu_open.tr(),
+          SidebarIcon.bell =>
+            LocaleKeys.settings_notifications_titles_notifications.tr(),
+          SidebarIcon.collapse => LocaleKeys.sideBar_closeSidebar.tr(),
+          SidebarIcon.add || SidebarIcon.newPage => LocaleKeys.newPageText.tr(),
+          _ => LocaleKeys.button_more.tr(),
+        };
+    return Tooltip(
+      message: label,
+      excludeFromSemantics: true,
+      child: SizedBox.square(
+        dimension: dimension,
+        child: IconButton(
+          focusNode: focusNode,
+          onPressed: onPressed,
+          style: IconButton.styleFrom(
+            foregroundColor: palette.icon,
+            backgroundColor: palette.hoverAtRest,
+            hoverColor: palette.hover,
+            focusColor: palette.selected,
+            highlightColor: palette.selected,
+            padding: EdgeInsets.zero,
+            minimumSize: Size.square(dimension),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
+            ),
+          ).copyWith(
+            animationDuration:
+                WorkspaceTokens.motion(context, SidebarMetrics.hover),
           ),
-          child: SidebarGlyph(
-            widget.icon,
-            size: widget.size,
-            color: _hovered ? palette.textPrimary : palette.textSecondary,
+          icon: Semantics(
+            label: label,
+            excludeSemantics: true,
+            child: SidebarGlyph(
+              icon,
+              size: size,
+              color: palette.icon,
+            ),
           ),
         ),
       ),
     );
-
-    if (widget.tooltip != null) {
-      button = Tooltip(message: widget.tooltip!, child: button);
-    }
-    return button;
   }
 }
 
@@ -681,9 +731,13 @@ class SidebarNavItem extends StatelessWidget {
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: SidebarTypography.textStyle(
+              style: WorkspaceTypography.style(
                 context,
+                WorkspaceTextRole.body,
                 color: palette.textSecondary,
+              ).copyWith(
+                fontWeight: FontWeight.w500,
+                fontVariations: const [FontVariation.weight(500)],
               ),
             ),
           ),
@@ -692,10 +746,10 @@ class SidebarNavItem extends StatelessWidget {
               padding: const EdgeInsets.only(left: SidebarMetrics.space2),
               child: Text(
                 shortcut!,
-                style: SidebarTypography.textStyle(
+                style: WorkspaceTypography.style(
                   context,
+                  WorkspaceTextRole.caption,
                   color: palette.textTertiary,
-                  role: SidebarTextRole.meta,
                 ),
               ),
             ),
@@ -720,10 +774,10 @@ class SidebarSectionLabel extends StatelessWidget {
       text,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: SidebarTypography.textStyle(
+      style: WorkspaceTypography.style(
         context,
+        WorkspaceTextRole.caption,
         color: color ?? palette.textTertiary,
-        role: SidebarTextRole.section,
       ),
     );
   }
@@ -749,7 +803,7 @@ class SidebarScrollbar extends StatelessWidget {
       radius: const Radius.circular(3),
       thickness: 4,
       thumbVisibility: false,
-      fadeDuration: SidebarMetrics.structural,
+      fadeDuration: WorkspaceTokens.motion(context, SidebarMetrics.structural),
       timeToFade: const Duration(milliseconds: 700),
       crossAxisMargin: 2,
       mainAxisMargin: 4,

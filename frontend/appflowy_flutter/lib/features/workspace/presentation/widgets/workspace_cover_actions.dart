@@ -6,8 +6,14 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_util.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/upload_image_menu/upload_image_menu.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_action_row.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/cover_image_download.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
@@ -26,6 +32,11 @@ class WorkspaceCoverActions extends StatefulWidget {
     this.userProfile,
     this.generateDefaultWhenMissing = false,
     this.onCoverChanged,
+    this.visible = true,
+    this.children = const [],
+    this.layoutBuilder,
+    this.editable = true,
+    this.showIconAction = false,
   });
 
   final UserWorkspacePB workspace;
@@ -33,12 +44,23 @@ class WorkspaceCoverActions extends StatefulWidget {
   final bool generateDefaultWhenMissing;
   final ValueChanged<PageStyleCover?>? onCoverChanged;
 
+  /// Preserve standalone visibility unless the page opts into contextual tools.
+  final bool visible;
+
+  /// Individual page controls sharing the automatic cover actions' single row.
+  final List<Widget> children;
+  final PageDecorationLayoutBuilder? layoutBuilder;
+  final bool editable;
+  final bool showIconAction;
+
   @override
   State<WorkspaceCoverActions> createState() => _WorkspaceCoverActionsState();
 }
 
 class _WorkspaceCoverActionsState extends State<WorkspaceCoverActions> {
   final coverPopoverController = PopoverController();
+  final iconPopoverController = PopoverController();
+  int _iconGeneration = 0;
   PageStyleCover? cover;
   bool saving = false;
   bool hasQueuedCover = false;
@@ -53,6 +75,13 @@ class _WorkspaceCoverActionsState extends State<WorkspaceCoverActions> {
   @override
   void didUpdateWidget(covariant WorkspaceCoverActions oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.workspace.workspaceId != widget.workspace.workspaceId ||
+        !_canEdit ||
+        !widget.showIconAction) {
+      _iconGeneration++;
+      iconPopoverController.close();
+    }
+    if (!_canEdit) coverPopoverController.close();
     if (oldWidget.workspace.workspaceId != widget.workspace.workspaceId) {
       saving = false;
       hasQueuedCover = false;
@@ -65,73 +94,190 @@ class _WorkspaceCoverActionsState extends State<WorkspaceCoverActions> {
 
   @override
   Widget build(BuildContext context) {
-    final actions = _canEdit
-        ? Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              AppFlowyPopover(
-                controller: coverPopoverController,
-                direction: PopoverDirection.bottomWithLeftAligned,
-                offset: const Offset(0, 8),
-                margin: EdgeInsets.zero,
-                constraints: const BoxConstraints(
-                  maxWidth: 540,
-                  maxHeight: 360,
-                  minHeight: 80,
-                ),
-                child: DecorationActionButton(
-                  icon: FlowySvgs.add_cover_s,
-                  label: cover == null || cover!.isNone
-                      ? LocaleKeys.document_plugins_cover_addCover.tr()
-                      : LocaleKeys.document_plugins_cover_changeCover.tr(),
-                ),
-                popupBuilder: (_) => UploadImageMenu(
-                  limitMaximumImageSize:
-                      widget.workspace.workspaceType == WorkspaceTypePB.ServerW,
-                  supportTypes: const [
-                    UploadImageType.color,
-                    UploadImageType.local,
-                    UploadImageType.url,
-                    UploadImageType.unsplash,
-                  ],
-                  onSelectedLocalImages: (files) async {
-                    if (files.isNotEmpty) {
-                      await _saveLocalSelection(files.first.path);
-                    }
-                  },
-                  onSelectedNetworkImage: (url) => _saveCover(
-                    PageStyleCover(
-                      type: PageStyleCoverImageType.unsplashImage,
-                      value: url,
+    final iconAction =
+        _canEdit && widget.showIconAction ? _buildIconAction() : null;
+    final layoutBuilder = widget.layoutBuilder;
+    final Widget row;
+    if (layoutBuilder == null) {
+      final actions = [
+        ...widget.children,
+        if (iconAction != null) iconAction,
+        ..._buildCoverActions(),
+      ];
+      if (actions.isEmpty) return const SizedBox.shrink();
+      row = WorkspaceActionRow(
+        keepVisible: widget.visible,
+        children: actions,
+      );
+    } else {
+      row = LayoutBuilder(
+        builder: (context, constraints) {
+          final hasCover = cover != null && !cover!.isNone;
+          final coverActions = _buildCoverActions(
+            compact: hasCover &&
+                (constraints.maxWidth < 480 ||
+                    MediaQuery.textScalerOf(context).scale(14) > 20),
+          );
+          final iconActions = [
+            if (iconAction != null) iconAction,
+            if (!hasCover) ...coverActions,
+          ];
+          return layoutBuilder(
+            iconActions.isEmpty
+                ? null
+                : PreviewToolbar(
+                    key: const ValueKey('workspace-decoration-icon-actions'),
+                    keepVisible: widget.visible,
+                    child: Wrap(
+                      spacing: WorkspaceTokens.space2,
+                      runSpacing: WorkspaceTokens.space1,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: iconActions,
                     ),
                   ),
-                  onSelectedColor: (color) => _saveCover(
-                    PageStyleCover(
-                      type: PageStyleCoverImageType.pureColor,
-                      value: color,
-                    ),
+            !hasCover || coverActions.isEmpty
+                ? null
+                : Wrap(
+                    key: const ValueKey('workspace-decoration-cover-actions'),
+                    spacing: WorkspaceTokens.space1,
+                    runSpacing: WorkspaceTokens.space1,
+                    children: coverActions,
                   ),
-                  onSelectedAIImage: (_) {
-                    Log.warn(
-                      'AI image selection is not enabled for workspace covers',
-                    );
-                  },
-                ),
-              ),
-              if (cover != null && !cover!.isNone)
-                DecorationActionButton(
-                  icon: FlowySvgs.delete_s,
-                  label: LocaleKeys.document_plugins_cover_removeCover.tr(),
-                  onTap: () => _saveCover(const PageStyleCover.none()),
-                ),
-            ],
-          )
-        : const SizedBox.shrink();
-    return actions;
+            widget.children.isEmpty
+                ? null
+                : WorkspaceActionRow(
+                    keepVisible: widget.visible,
+                    children: widget.children,
+                  ),
+          );
+        },
+      );
+    }
+    return context.findAncestorWidgetOfExactType<PreviewToolbarRegion>() == null
+        ? PreviewToolbarRegion(child: row)
+        : row;
   }
 
+  Widget _buildIconAction() {
+    final icon = EmojiIconData.fromStorageString(widget.workspace.icon);
+    return AppFlowyPopover(
+      key: const ValueKey('workspace-decoration-icon'),
+      controller: iconPopoverController,
+      direction: PopoverDirection.bottomWithLeftAligned,
+      offset: const Offset(0, 8),
+      constraints: BoxConstraints.loose(const Size(364, 356)),
+      margin: EdgeInsets.zero,
+      onClose: () => _iconGeneration++,
+      child: DecorationActionButton(
+        icon: FlowySvgs.add_icon_s,
+        label: icon.isEmpty
+            ? LocaleKeys.document_plugins_cover_addIcon.tr()
+            : LocaleKeys.document_plugins_cover_changeIcon.tr(),
+      ),
+      popupBuilder: (_) {
+        final generation = _iconGeneration;
+        final workspaceId = widget.workspace.workspaceId;
+        return FlowyIconEmojiPicker(
+          tabs: kAllIconPickerTabs,
+          initialType: icon.toPickerTabType(),
+          documentId: workspaceId,
+          onSelectedEmoji: (result) {
+            if (!mounted ||
+                !_canEdit ||
+                !widget.showIconAction ||
+                generation != _iconGeneration ||
+                workspaceId != widget.workspace.workspaceId) {
+              return;
+            }
+            context.read<UserWorkspaceBloc>().add(
+                  UserWorkspaceEvent.updateWorkspaceIcon(
+                    workspaceId: workspaceId,
+                    icon: result.data.toStorageString(),
+                  ),
+                );
+            if (!result.keepOpen) iconPopoverController.close();
+          },
+        );
+      },
+    );
+  }
+
+  List<Widget> _buildCoverActions({bool compact = false}) => [
+        if (_canEdit) ...[
+          AppFlowyPopover(
+            key: const ValueKey('workspace-decoration-cover'),
+            controller: coverPopoverController,
+            direction: PopoverDirection.bottomWithLeftAligned,
+            offset: const Offset(0, 8),
+            margin: EdgeInsets.zero,
+            constraints: const BoxConstraints(
+              maxWidth: 540,
+              maxHeight: 360,
+              minHeight: 80,
+            ),
+            child: DecorationActionButton(
+              icon: FlowySvgs.add_cover_s,
+              label: cover == null || cover!.isNone
+                  ? LocaleKeys.document_plugins_cover_addCover.tr()
+                  : LocaleKeys.document_plugins_cover_changeCover.tr(),
+              compact: compact,
+            ),
+            popupBuilder: (_) => UploadImageMenu(
+              limitMaximumImageSize:
+                  widget.workspace.workspaceType == WorkspaceTypePB.ServerW,
+              supportTypes: const [
+                UploadImageType.color,
+                UploadImageType.local,
+                UploadImageType.url,
+                UploadImageType.unsplash,
+              ],
+              onSelectedLocalImages: (files) async {
+                if (files.isNotEmpty) {
+                  await _saveLocalSelection(files.first.path);
+                }
+              },
+              onSelectedNetworkImage: (url) => _saveCover(
+                PageStyleCover(
+                  type: PageStyleCoverImageType.unsplashImage,
+                  value: url,
+                ),
+              ),
+              onSelectedColor: (color) => _saveCover(
+                PageStyleCover(
+                  type: PageStyleCoverImageType.pureColor,
+                  value: color,
+                ),
+              ),
+              onSelectedAIImage: (_) {
+                Log.warn(
+                  'AI image selection is not enabled for workspace covers',
+                );
+              },
+            ),
+          ),
+          if (cover != null && !cover!.isNone)
+            DecorationActionButton(
+              key: const ValueKey('workspace-decoration-remove'),
+              icon: FlowySvgs.delete_s,
+              label: LocaleKeys.document_plugins_cover_removeCover.tr(),
+              compact: compact,
+              onTap: () => _saveCover(const PageStyleCover.none()),
+            ),
+        ],
+        if (DownloadableCoverImage.fromPageStyleCover(cover) case final image?)
+          DecorationActionButton(
+            key: const ValueKey('workspace-decoration-download'),
+            icon: FlowySvgs.download_s,
+            label: LocaleKeys.document_plugins_cover_downloadCover.tr(),
+            compact: compact,
+            onTap: () =>
+                downloadCoverImage(image, userProfile: widget.userProfile),
+          ),
+      ];
+
   Future<void> _saveLocalSelection(String path) async {
+    if (!_canEdit) return;
+    final workspaceId = widget.workspace.workspaceId;
     final PageStyleCoverImageType type;
     final String? value;
     String? errorMessage;
@@ -145,7 +291,7 @@ class _WorkspaceCoverActionsState extends State<WorkspaceCoverActions> {
       value = await saveImageToLocalStorage(path);
       type = PageStyleCoverImageType.localImage;
     }
-    if (!mounted) {
+    if (!mounted || !_canEdit || widget.workspace.workspaceId != workspaceId) {
       return;
     }
     if (value == null) {
@@ -171,10 +317,12 @@ class _WorkspaceCoverActionsState extends State<WorkspaceCoverActions> {
   }
 
   bool get _canEdit =>
-      widget.workspace.workspaceType == WorkspaceTypePB.LocalW ||
-      widget.workspace.role == AFRolePB.Owner;
+      widget.editable &&
+      (widget.workspace.workspaceType == WorkspaceTypePB.LocalW ||
+          widget.workspace.role == AFRolePB.Owner);
 
   Future<void> _saveCover(PageStyleCover nextCover) async {
+    if (!_canEdit) return;
     coverPopoverController.close();
     if (nextCover == cover) {
       return;

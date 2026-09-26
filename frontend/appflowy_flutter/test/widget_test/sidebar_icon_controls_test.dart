@@ -3,16 +3,21 @@ import 'dart:io';
 import 'package:appflowy/plugins/base/emoji/emoji_picker.dart';
 import 'package:appflowy/plugins/collection/collection_icon_button.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/shared/icon_emoji_picker/default_icon_artwork.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart'
     show IconsData;
 import 'package:appflowy/shared/icon_emoji_picker/recent_icons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
+import 'package:appflowy/shared/icon_emoji_picker/vivid_icon_artwork.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
+import 'package:appflowy/workspace/application/settings/default_icon_style.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/footer/sidebar_footer_button.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_icon_artwork.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
@@ -29,7 +34,10 @@ import 'package:flutter_emoji_mart/flutter_emoji_mart.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'vivid_icon_test_support.dart' show settleVividIconPictures;
+
 void main() {
+  final loadedFontFamilies = <String>{};
   setUpAll(() async {
     RecentIcons.enable = false;
     SharedPreferences.setMockInitialValues({});
@@ -37,14 +45,17 @@ void main() {
     await EasyLocalization.ensureInitialized();
     kCachedEmojiData = await EmojiData.builtIn();
     await loadIconPack(kDefaultIconPack);
-    // Sidebar typography uses the platform family explicitly. Supply fixed,
-    // bundled metrics under that family so goldens do not depend on OS fonts.
-    await (FontLoader(
+    // Keep the actual selected theme. Supply bundled metrics for both shared
+    // workspace typography and platform sidebar text, without fetching fonts.
+    final font =
+        rootBundle.load('assets/google_fonts/DM_Sans/DMSans-Variable.ttf');
+    for (final family in {
       SidebarTypography.fontFamilyForPlatform(TargetPlatform.windows),
-    )..addFont(
-            rootBundle.load('assets/google_fonts/DM_Sans/DMSans-Variable.ttf'),
-          ))
-        .load();
+      _theme('light').textTheme.bodyMedium!.fontFamily!,
+    }) {
+      await (FontLoader(family)..addFont(font)).load();
+      loadedFontFamilies.add(family);
+    }
   });
 
   tearDownAll(() => RecentIcons.enable = true);
@@ -83,31 +94,101 @@ void main() {
   });
 
   for (final appearance in ['light', 'dark', 'paper']) {
-    testWidgets('$appearance defaults render without a loaded picker pack',
-        (tester) async {
-      resetIconPacksForTesting();
-      await tester.pumpWidget(
-        _app(
-          appearance,
-          Wrap(
-            children: [
-              for (final icon in SidebarIcon.values) SidebarGlyph(icon),
-            ],
+    for (final style in DefaultIconStyle.values) {
+      final vivid = style == DefaultIconStyle.vivid;
+      final preference = vivid ? 'unset Vivid' : 'saved Monochrome';
+      testWidgets(
+          '$appearance/$preference defaults render without a loaded picker pack',
+          (tester) async {
+        final styles = ValueNotifier(DefaultIconStyle.fromId(style.name));
+        addTearDown(styles.dispose);
+        const additionalSources = [
+          Icons.toc_rounded,
+          Icons.queue_music_rounded,
+          Icons.apps_rounded,
+          Icons.reorder_rounded,
+        ];
+        final sourceCount =
+            SidebarIcon.values.length + additionalSources.length;
+        resetIconPacksForTesting();
+        final icons = Wrap(
+          children: [
+            for (final icon in SidebarIcon.values) SidebarGlyph(icon),
+            for (final icon in additionalSources) WorkspaceGlyph(icon),
+          ],
+        );
+        await tester.pumpWidget(
+          _app(
+            appearance,
+            // No scope for Vivid: exercise the actual unset device default.
+            vivid ? icons : DefaultIconStyleScope(styles: styles, child: icons),
           ),
-        ),
-      );
-      expect(isIconPackLoaded(sidebarIconPack), isFalse);
-      expect(find.byType(FlowySvg), findsNWidgets(SidebarIcon.values.length));
-      await tester.pumpAndSettle();
-      for (final element in find.byType(FlowySvg).evaluate()) {
-        final svg = element.widget as FlowySvg;
-        expect(svg.color, SidebarPalette.of(element).icon);
-        expect(tester.getSize(find.byWidget(svg)), const Size.square(18));
-      }
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-      await tester.runAsync(() => loadIconPack(kDefaultIconPack));
-    });
+        );
+        expect(isIconPackLoaded(sidebarIconPack), isFalse);
+        final glyphs = find.byType(WorkspaceGlyph);
+        expect(sourceCount, 50);
+        expect(glyphs, findsNWidgets(sourceCount));
+        expect(find.byType(SvgPicture), findsNWidgets(sourceCount));
+        expect(find.byType(FlowySvg), findsNothing);
+        expect(
+          DefaultIconStyleScope.of(tester.element(glyphs.first)).value,
+          style,
+        );
+        await settleVividIconPictures(tester);
+        expect(
+          tester.widgetList<WorkspaceGlyph>(glyphs).map((glyph) => glyph.name),
+          [
+            for (final icon in SidebarIcon.values) icon.name,
+            for (final icon in additionalSources)
+              WorkspaceGlyphs.nameForIcon(icon),
+          ],
+        );
+        for (final element in glyphs.evaluate()) {
+          final glyph = element.widget as WorkspaceGlyph;
+          expect(glyph.name, isNot('unknown'));
+          expect(glyph.style, isNull);
+          final picture = tester.widget<SvgPicture>(
+            find.descendant(
+              of: find.byWidget(glyph),
+              matching: find.byType(SvgPicture),
+            ),
+          );
+          final artwork = vivid
+              ? vividIconSvg(WorkspaceGlyphs.vividNameFor(glyph.name)!)!
+              : defaultIconSvg(glyph.name)!;
+          final loader = picture.bytesLoader as SvgStringLoader;
+          expect(
+            loader,
+            SvgStringLoader(
+              artwork,
+              theme: loader.theme,
+              colorMapper: loader.colorMapper,
+            ),
+            reason: glyph.name,
+          );
+          expect(
+            picture.colorFilter,
+            vivid
+                ? isNull
+                : ColorFilter.mode(
+                    SidebarPalette.of(element).icon,
+                    BlendMode.srcIn,
+                  ),
+          );
+          expect(tester.getSize(find.byWidget(glyph)), const Size.square(18));
+        }
+        expect(iconPacksVersion.value, 0);
+        expect(
+          kIconPacks
+              .where((pack) => pack.asset.isNotEmpty)
+              .where(isIconPackLoaded),
+          isEmpty,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        await tester.runAsync(() => loadIconPack(kDefaultIconPack));
+      });
+    }
 
     for (final kind in [
       CollectionKind.book,
@@ -209,8 +290,8 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(
-        tester.widget<SidebarGlyph>(find.byType(SidebarGlyph)).icon,
-        SidebarIcon.album,
+        tester.widget<WorkspaceGlyph>(find.byType(WorkspaceGlyph)).name,
+        SidebarIcon.album.name,
       );
       await tester.tap(find.byType(CollectionIconButton));
       await tester.pumpAndSettle();
@@ -251,8 +332,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(
-          tester.widget<SidebarGlyph>(find.byType(SidebarGlyph)).icon,
-          sidebarCollectionIcon(kind),
+          tester.widget<WorkspaceGlyph>(find.byType(WorkspaceGlyph)).name,
+          sidebarCollectionIcon(kind).name,
         );
         final updated = ViewPB()
           ..mergeFromMessage(view)
@@ -261,7 +342,7 @@ void main() {
             .widget<ViewIconPicker>(find.byType(ViewIconPicker))
             .onViewChanged!(updated);
         await tester.pumpAndSettle();
-        expect(find.byType(SidebarGlyph), findsNothing);
+        expect(find.byType(WorkspaceGlyph), findsNothing);
         expect(
           tester
               .widget<RawEmojiIconWidget>(find.byType(RawEmojiIconWidget))
@@ -278,8 +359,8 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.byType(RawEmojiIconWidget), findsNothing);
         expect(
-          tester.widget<SidebarGlyph>(find.byType(SidebarGlyph)).icon,
-          sidebarCollectionIcon(kind),
+          tester.widget<WorkspaceGlyph>(find.byType(WorkspaceGlyph)).name,
+          sidebarCollectionIcon(kind).name,
         );
         expect(tester.takeException(), isNull);
       }
@@ -289,6 +370,7 @@ void main() {
     testWidgets('$appearance chosen library icons keep their artwork and color',
         (tester) async {
       for (final pack in [
+        kAppFlowyDefaultIconPack,
         sidebarIconPack,
         kIconPacks.firstWhere((pack) => pack.isColorful),
       ]) {
@@ -322,9 +404,11 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
-        expect(find.byType(SidebarGlyph), findsNothing);
-        expect(tester.widget<SidebarRow>(find.byType(SidebarRow)).dimIcon,
-            isFalse);
+        expect(find.byType(WorkspaceGlyph), findsNothing);
+        expect(
+          tester.widget<SidebarRow>(find.byType(SidebarRow)).dimIcon,
+          isFalse,
+        );
         expect(find.byType(FlowySvg), findsNWidgets(2));
         for (final svg in tester.widgetList<FlowySvg>(find.byType(FlowySvg))) {
           expect(svg.svgString, artwork.content);
@@ -348,7 +432,11 @@ void main() {
         Center(child: CollectionIconButton(view: view, onViewChanged: (_) {})),
       ),
     );
-    expect(find.byType(SidebarGlyph), findsOneWidget);
+    expect(find.byType(WorkspaceGlyph), findsOneWidget);
+    expect(
+      tester.widget<WorkspaceGlyph>(find.byType(WorkspaceGlyph)).name,
+      SidebarIcon.book.name,
+    );
     expect(find.byType(ViewIconPicker), findsNothing);
   });
 
@@ -384,36 +472,109 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('rounded sidebar visual reference in light dark and paper',
+  testWidgets('Monochrome sidebar visual reference in light dark and paper',
       (tester) async {
+    // This fixture documents the outline style, not the unset device default.
+    final styles = ValueNotifier(DefaultIconStyle.monochrome);
+    addTearDown(styles.dispose);
     tester.view.physicalSize = const Size(900, 670);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       _app(
         'light',
-        RepaintBoundary(
-          key: const ValueKey('sidebar-icon-preview'),
-          child: Row(
-            children: [
-              for (final appearance in ['light', 'dark', 'paper'])
-                Expanded(
-                  child: Theme(
-                    data: _theme(appearance),
-                    child: _SidebarPreview(appearance),
+        DefaultIconStyleScope(
+          styles: styles,
+          child: RepaintBoundary(
+            key: const ValueKey('sidebar-icon-preview'),
+            child: Row(
+              children: [
+                for (final appearance in ['light', 'dark', 'paper'])
+                  Expanded(
+                    child: Theme(
+                      data: _theme(appearance),
+                      child: _SidebarPreview(appearance),
+                    ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settleVividIconPictures(tester);
     expect(tester.takeException(), isNull);
+    for (final appearance in ['light', 'dark', 'paper']) {
+      final preview = find.byWidgetPredicate(
+        (widget) =>
+            widget is _SidebarPreview && widget.appearance == appearance,
+      );
+      final selectedFamily =
+          Theme.of(tester.element(preview)).textTheme.bodyMedium!.fontFamily;
+      expect(
+        loadedFontFamilies,
+        contains(selectedFamily),
+        reason: 'The selected theme font must have bundled fixture metrics.',
+      );
+      final bounds = tester.getRect(preview);
+      expect(bounds.size, const Size(300, 670));
+      final utilities = find.descendant(
+        of: preview,
+        matching: find.byKey(const ValueKey('sidebar-preview-utilities')),
+      );
+      expect(
+        find.descendant(of: utilities, matching: find.byType(SidebarNavItem)),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widgetList<SidebarIconButton>(
+              find.descendant(
+                of: utilities,
+                matching: find.byType(SidebarIconButton),
+              ),
+            )
+            .map((button) => button.icon),
+        [SidebarIcon.templates, SidebarIcon.extensions, SidebarIcon.trash],
+      );
+      expect(
+        find
+            .descendant(of: utilities, matching: find.byType(IconButton))
+            .hitTestable(),
+        findsNWidgets(3),
+      );
+      final newPage = find.descendant(
+        of: preview,
+        matching: find.widgetWithText(SidebarNavItem, 'New page'),
+      );
+      expect(newPage, findsOneWidget);
+      expect(
+        tester.getRect(newPage).top,
+        greaterThanOrEqualTo(tester.getRect(utilities).bottom),
+      );
+      for (final element in find
+          .descendant(
+            of: preview,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is SidebarRow || widget is IconButton,
+            ),
+          )
+          .evaluate()) {
+        final control = tester.getRect(find.byWidget(element.widget));
+        expect(control.isEmpty, isFalse);
+        expect(
+          control.intersect(bounds),
+          control,
+          reason:
+              'Rows and buttons must fit the unchanged viewport, unclipped.',
+        );
+      }
+    }
     await expectLater(
       find.byKey(const ValueKey('sidebar-icon-preview')),
       matchesGoldenFile('goldens/sidebar_rounded_icons.png'),
     );
+    await tester.pumpWidget(const SizedBox());
   });
 }
 
@@ -508,16 +669,26 @@ class _SidebarPreview extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
-              child: SidebarSectionLabel(appearance.toUpperCase()),
+              padding: const EdgeInsets.all(SidebarMetrics.space2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SidebarText.heading(
+                      'Workspace',
+                      color: palette.textPrimary,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  SidebarSectionLabel(appearance.toUpperCase()),
+                ],
+              ),
             ),
             const SidebarNavItem(icon: SidebarIcon.search, label: 'Search'),
-            const SidebarNavItem(icon: SidebarIcon.newPage, label: 'New page'),
             const SidebarNavItem(icon: SidebarIcon.home, label: 'Home'),
             const SizedBox(height: 16),
             const Padding(
               padding: EdgeInsets.all(8),
-              child: SidebarSectionLabel('Workspace'),
+              child: SidebarSectionLabel('Pages'),
             ),
             row('Reading list', SidebarIcon.book, collection: true),
             row('Research.pdf', SidebarIcon.pdf, indent: 14),
@@ -531,15 +702,32 @@ class _SidebarPreview extends StatelessWidget {
             row('Tasks', SidebarIcon.grid),
             row('Saved links', SidebarIcon.link),
             const Spacer(),
-            const SidebarNavItem(
-              icon: SidebarIcon.templates,
-              label: 'Templates',
+            Wrap(
+              key: const ValueKey('sidebar-preview-utilities'),
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: SidebarMetrics.space1,
+              runSpacing: SidebarMetrics.space1,
+              children: [
+                for (final (icon, label) in const [
+                  (SidebarIcon.templates, 'Templates'),
+                  (SidebarIcon.extensions, 'Extensions'),
+                  (SidebarIcon.trash, 'Trash'),
+                ])
+                  SidebarFooterButton(
+                    compact: true,
+                    icon: icon,
+                    text: label,
+                    onTap: () {},
+                  ),
+              ],
             ),
-            const SidebarNavItem(
-              icon: SidebarIcon.extensions,
-              label: 'Extensions',
+            const SizedBox(height: SidebarMetrics.space1),
+            SidebarNavItem(
+              icon: SidebarIcon.newPage,
+              label: 'New page',
+              onTap: () {},
             ),
-            const SidebarNavItem(icon: SidebarIcon.trash, label: 'Trash'),
           ],
         ),
       ),

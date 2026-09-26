@@ -16,6 +16,7 @@ class ChartHit {
     required this.pointIndex,
     required this.rect,
     required this.anchor,
+    this.path,
   });
 
   final int seriesIndex;
@@ -23,6 +24,13 @@ class ChartHit {
 
   /// The area that answers the pointer.
   final Rect rect;
+
+  /// Exact mark geometry inside [rect], including a donut's hole. Rectangles
+  /// alone cannot distinguish neighbouring slices or overlapping point bounds.
+  final Path? path;
+
+  bool contains(Offset position) =>
+      rect.contains(position) && (path?.contains(position) ?? true);
 
   /// Where a tooltip should point, which is the top of a bar or the centre of
   /// a dot rather than the middle of its hit area.
@@ -145,6 +153,7 @@ class ChartPainter extends CustomPainter {
     required this.viewport,
     required this.crosshair,
     required this.hits,
+    this.textScaler = TextScaler.noScaling,
   }) : super(repaint: Listenable.merge([reveal, emphasis]));
 
   final ChartData data;
@@ -167,6 +176,7 @@ class ChartPainter extends CustomPainter {
 
   /// Filled while painting; read by hit testing.
   final List<ChartHit> hits;
+  final TextScaler textScaler;
 
   double get _t => reveal.value;
 
@@ -307,16 +317,31 @@ class ChartPainter extends CustomPainter {
 
   // ------------------------------------------------------------------ layout
 
+  /// The readable data area, excluding axis labels. Hover annotations share
+  /// this geometry instead of covering the labels in a short or scaled chart.
+  Rect plotBoundsFor(Size size) =>
+      spec.type.isCircular ? Offset.zero & size : _frame(size).plot;
+
   /// The plot area, after the axes have taken what they need.
   ({Rect plot, List<_Tick> value, List<_Tick> across}) _frame(Size size) {
     final horizontal = spec.type.isHorizontal;
     final valueTicks = _scaleTicks;
     final acrossTicks = _acrossScaleTicks;
 
-    // The measured axis sits along whichever edge carries the numbers.
-    final valueLabels = horizontal ? acrossTicks : valueTicks;
-    final gutter = _widestLabel(valueLabels) + ChartMetrics.axisGap;
-    final bottom = ChartMetrics.axisLabelSize + ChartMetrics.axisGap + 4;
+    // Horizontal bars put category names on the left. Measuring the (empty)
+    // numeric X tick list there used to truncate every name to a few letters.
+    final valueLabels = horizontal
+        ? [for (final label in data.categories) _Tick(0, label)]
+        : valueTicks;
+    final measuredGutter = _widestLabel(valueLabels) + ChartMetrics.axisGap;
+    final gutter = horizontal
+        ? math.min(size.width * 0.32, measuredGutter)
+        : measuredGutter;
+    final right = horizontal
+        ? math.max(ChartMetrics.plotSideroom, _widestLabel(valueTicks) / 2 + 4)
+        : ChartMetrics.plotSideroom;
+    final bottom =
+        textScaler.scale(ChartMetrics.axisLabelSize + 4) + ChartMetrics.axisGap;
     // A short chart cannot afford the full headroom and still say anything.
     final headroom = math.min(ChartMetrics.plotHeadroom, size.height * 0.12);
 
@@ -324,7 +349,7 @@ class ChartPainter extends CustomPainter {
       plot: Rect.fromLTRB(
         gutter,
         headroom,
-        size.width - ChartMetrics.plotSideroom,
+        size.width - right,
         size.height - bottom,
       ),
       value: valueTicks,
@@ -388,6 +413,7 @@ class ChartPainter extends CustomPainter {
       final painter =
           _text(tick.label, ChartMetrics.axisLabelSize, palette.label);
       widest = math.max(widest, painter.width);
+      painter.dispose();
     }
     return math.max(widest, 16);
   }
@@ -718,9 +744,19 @@ class ChartPainter extends CustomPainter {
 
         final hovered = highlight?.seriesIndex == seriesIndex &&
             highlight?.pointIndex == index;
+        final shape = _barShape(rect, radius, horizontal, point.value);
+        // Zero is still an inspectable value, but empty space over a short
+        // bar must never select a taller neighbour or the last series.
+        final hitRect = rect.isEmpty
+            ? Rect.fromCenter(
+                center: rect.center,
+                width: horizontal ? 4 : thickness,
+                height: horizontal ? thickness : 4,
+              )
+            : rect;
         marks.add(
           (
-            shape: _barShape(rect, radius, horizontal, point.value),
+            shape: shape,
             color: color,
             value: point.value,
             progress: progress,
@@ -728,22 +764,17 @@ class ChartPainter extends CustomPainter {
             hit: ChartHit(
               seriesIndex: seriesIndex,
               pointIndex: index,
-              rect: horizontal
-                  ? Rect.fromLTRB(
-                      plot.left,
-                      centre - span / 2,
-                      plot.right,
-                      centre + span / 2,
-                    )
-                  : Rect.fromLTRB(
-                      centre - span / 2,
-                      plot.top,
-                      centre + span / 2,
-                      plot.bottom,
-                    ),
+              rect: hitRect.intersect(plot.inflate(9)),
+              path: rect.isEmpty ? null : (Path()..addRRect(shape)),
               anchor: horizontal
-                  ? Offset(rect.right, rect.center.dy)
-                  : Offset(rect.center.dx, rect.top),
+                  ? Offset(
+                      point.value >= 0 ? rect.right : rect.left,
+                      rect.center.dy,
+                    )
+                  : Offset(
+                      rect.center.dx,
+                      point.value >= 0 ? rect.top : rect.bottom,
+                    ),
             ),
           ),
         );
@@ -765,7 +796,17 @@ class ChartPainter extends CustomPainter {
     // In particular, no segment's shadow may be painted over an earlier fill.
     _paintMarkShadows(canvas, plot.inflate(9), shadows, [occluder]);
     for (final mark in marks) {
-      _drawBar(canvas, mark.shape, mark.color, horizontal, mark.hovered);
+      _drawBar(
+        canvas,
+        mark.shape,
+        mark.color,
+        horizontal,
+        mark.hovered,
+        colors.isChosen(
+          mark.hit.seriesIndex,
+          data.series[mark.hit.seriesIndex].name,
+        ),
+      );
       hits.add(mark.hit);
       if (spec.showValues && mark.progress > 0.9) {
         _paintValueLabel(canvas, mark.shape.outerRect, mark.value, horizontal);
@@ -805,6 +846,7 @@ class ChartPainter extends CustomPainter {
     Color color,
     bool horizontal,
     bool hovered,
+    bool chosen,
   ) {
     final rect = shape.outerRect;
     if (rect.width <= 0 || rect.height <= 0) {
@@ -813,14 +855,22 @@ class ChartPainter extends CustomPainter {
     final lift = hovered ? emphasis.value : 0.0;
     final fill = Paint()
       ..isAntiAlias = true
-      ..shader = ui.Gradient.linear(
+      ..color = color;
+    if (!chosen) {
+      // The shader already carries the series alpha. Paint alpha must stay
+      // one or muted/translucent marks would be attenuated a second time.
+      fill.color = Colors.white;
+      fill.shader = ui.Gradient.linear(
         horizontal ? rect.centerLeft : rect.bottomCenter,
         horizontal ? rect.centerRight : rect.topCenter,
         [
-          Color.lerp(color, palette.background, 0.16)!,
-          Color.lerp(color, Colors.white, lift * 0.14) ?? color,
+          chartMarkShade(color, -0.075),
+          color,
+          chartMarkShade(color, 0.025 + lift * 0.025),
         ],
+        const [0, 0.6, 1],
       );
+    }
     canvas.drawRRect(shape, fill);
 
     if (lift > 0.01) {
@@ -969,8 +1019,9 @@ class ChartPainter extends CustomPainter {
     Path? area;
     if (spec.type.fillsArea && drawn.length > 1) {
       area = Path.from(line);
+      final drawnBaseline = _revealed(baseline);
       for (var index = drawn.length - 1; index >= 0; index--) {
-        area.lineTo(baseline[index].dx, baseline[index].dy);
+        area.lineTo(drawnBaseline[index].dx, drawnBaseline[index].dy);
       }
       area.close();
     }
@@ -1004,7 +1055,9 @@ class ChartPainter extends CustomPainter {
         // Shadow the actual curve, including dense lines and collapsed areas.
         shadows.add((path: mark.line, opacity: opacity, stroke: true));
       }
-      for (var index = 0; index < mark.drawn.length; index++) {
+      for (var index = 0;
+          index < _revealedPointCount(mark.points.length);
+          index++) {
         final hovered = highlight?.seriesIndex == mark.seriesIndex &&
             highlight?.pointIndex == index;
         if (mark.points.length > 40 && !hovered) {
@@ -1017,7 +1070,9 @@ class ChartPainter extends CustomPainter {
                 : 0) +
             1.6;
         final dot = Path()
-          ..addOval(Rect.fromCircle(center: mark.drawn[index], radius: radius));
+          ..addOval(
+            Rect.fromCircle(center: mark.points[index], radius: radius),
+          );
         dots.addPath(dot, Offset.zero);
         // A singleton has no stroke to cast a shadow. Do not double-shadow
         // the dots on a longer run or change their existing hover halos.
@@ -1041,6 +1096,8 @@ class ChartPainter extends CustomPainter {
 
   void _drawSeriesPath(Canvas canvas, Rect plot, _SeriesMark mark) {
     final color = _colorFor(mark.seriesIndex);
+    final chosen =
+        colors.isChosen(mark.seriesIndex, data.series[mark.seriesIndex].name);
     final area = mark.area;
     if (area != null) {
       canvas.drawPath(
@@ -1051,8 +1108,8 @@ class ChartPainter extends CustomPainter {
             Offset(plot.center.dx, plot.top),
             Offset(plot.center.dx, plot.bottom),
             [
-              color.withValues(alpha: color.a * 0.30),
-              color.withValues(alpha: color.a * 0.02),
+              color.withValues(alpha: color.a * (chosen ? 0.30 : 0.38)),
+              color.withValues(alpha: color.a * (chosen ? 0.02 : 0.045)),
             ],
           ),
       );
@@ -1071,7 +1128,13 @@ class ChartPainter extends CustomPainter {
       );
     }
 
-    _plotDots(canvas, plot, mark.seriesIndex, mark.points, mark.drawn.length);
+    _plotDots(
+      canvas,
+      plot,
+      mark.seriesIndex,
+      mark.points,
+      _revealedPointCount(mark.points.length),
+    );
   }
 
   List<_CloudMark> _cloudMarks(
@@ -1141,21 +1204,31 @@ class ChartPainter extends CustomPainter {
       shadows.add(
         (
           path: shape,
-          opacity: mark.color.a * mark.progress * (mark.bubbles ? 0.55 : 0.9),
+          opacity: mark.color.a * mark.progress * _cloudOpacity(mark),
           stroke: false,
         ),
       );
     }
     _paintMarkShadows(canvas, plot.inflate(9), shadows, [occluder]);
     for (final mark in marks) {
+      final ink =
+          mark.color.withValues(alpha: mark.color.a * _cloudOpacity(mark));
+      final chosen =
+          colors.isChosen(mark.seriesIndex, data.series[mark.seriesIndex].name);
       canvas.drawCircle(
         mark.centre,
         mark.radius,
         Paint()
           ..isAntiAlias = true
-          ..color = mark.color.withValues(
-            alpha: mark.color.a * (mark.bubbles ? 0.55 : 0.9),
-          ),
+          ..color = chosen ? ink : Colors.white
+          ..shader = chosen
+              ? null
+              : ui.Gradient.radial(
+                  mark.centre - Offset(mark.radius * 0.25, mark.radius * 0.35),
+                  mark.radius * 1.5,
+                  [chartMarkShade(ink, 0.04), ink, chartMarkShade(ink, -0.05)],
+                  const [0, 0.55, 1],
+                ),
       );
       canvas.drawCircle(
         mark.centre,
@@ -1176,11 +1249,24 @@ class ChartPainter extends CustomPainter {
           rect: Rect.fromCircle(
             center: mark.centre,
             radius: math.max(mark.radius, 9),
-          ),
+          ).intersect(plot.inflate(9)),
+          path: Path()
+            ..addOval(
+              Rect.fromCircle(
+                center: mark.centre,
+                radius: math.max(mark.radius, 9),
+              ),
+            ),
           anchor: Offset(mark.centre.dx, mark.centre.dy - mark.radius),
         ),
       );
     }
+  }
+
+  double _cloudOpacity(_CloudMark mark) {
+    final chosen =
+        colors.isChosen(mark.seriesIndex, data.series[mark.seriesIndex].name);
+    return mark.bubbles ? (chosen ? 0.55 : 0.74) : (chosen ? 0.9 : 1);
   }
 
   void _plotDots(
@@ -1194,11 +1280,11 @@ class ChartPainter extends CustomPainter {
     // Dots crowd a dense line, so they appear only when there is room.
     final dense = points.length > 40;
 
-    for (var index = 0; index < points.length; index++) {
+    for (var index = 0; index < drawnCount; index++) {
       final centre = points[index];
       final hovered = highlight?.seriesIndex == seriesIndex &&
           highlight?.pointIndex == index;
-      if (index < drawnCount && (!dense || hovered)) {
+      if (!dense || hovered) {
         final radius = ChartMetrics.pointRadius +
             (hovered
                 ? (ChartMetrics.pointHoverRadius - ChartMetrics.pointRadius) *
@@ -1230,7 +1316,9 @@ class ChartPainter extends CustomPainter {
         ChartHit(
           seriesIndex: seriesIndex,
           pointIndex: index,
-          rect: Rect.fromCircle(center: centre, radius: 12),
+          rect: Rect.fromCircle(center: centre, radius: 12)
+              .intersect(plot.inflate(9)),
+          path: Path()..addOval(Rect.fromCircle(center: centre, radius: 12)),
           anchor: Offset(centre.dx, centre.dy - ChartMetrics.pointHoverRadius),
         ),
       );
@@ -1239,12 +1327,24 @@ class ChartPainter extends CustomPainter {
 
   /// The stretch of a line that has been drawn so far.
   List<Offset> _revealed(List<Offset> points) {
+    if (_t <= 0 || points.isEmpty) return const [];
     if (_t >= 1) {
       return points;
     }
-    final shown = (points.length * _t).ceil().clamp(0, points.length);
-    return points.take(shown).toList();
+    final position = (points.length - 1) * _t;
+    final whole = position.floor();
+    return [
+      ...points.take(whole + 1),
+      if (whole < points.length - 1 && position > whole)
+        Offset.lerp(points[whole], points[whole + 1], position - whole)!,
+    ];
   }
+
+  int _revealedPointCount(int count) => count == 0 || _t <= 0
+      ? 0
+      : _t >= 1
+          ? count
+          : ((count - 1) * _t).floor() + 1;
 
   /// A gently rounded path, which reads better than hard corners without
   /// inventing values between the points.
@@ -1254,7 +1354,9 @@ class ChartPainter extends CustomPainter {
       return path;
     }
     path.moveTo(points.first.dx, points.first.dy);
-    if (points.length < 3 || spec.type.drawsPoints) {
+    // Keep one curve rule while a path reveals. Switching from a straight
+    // two-point path to cubics when the third arrives makes the old ink snap.
+    if (spec.type.drawsPoints) {
       for (final point in points.skip(1)) {
         path.lineTo(point.dx, point.dy);
       }
@@ -1410,7 +1512,20 @@ class ChartPainter extends CustomPainter {
           ..isAntiAlias = true
           ..style = donut ? PaintingStyle.stroke : PaintingStyle.fill
           ..strokeWidth = thickness
-          ..color = slice.color,
+          ..color =
+              colors.isChosen(index, point.label) ? slice.color : Colors.white
+          ..shader = colors.isChosen(index, point.label)
+              ? null
+              : ui.Gradient.radial(
+                  centre + shift - Offset(outer * 0.3, outer * 0.4),
+                  outer * 1.8,
+                  [
+                    chartMarkShade(slice.color, 0.04),
+                    slice.color,
+                    chartMarkShade(slice.color, -0.065),
+                  ],
+                  const [0, 0.5, 1],
+                ),
       );
 
       // A hairline between slices keeps neighbouring colours from merging.
@@ -1428,16 +1543,34 @@ class ChartPainter extends CustomPainter {
         );
       }
 
+      final hitBounds = Rect.fromCircle(center: centre + shift, radius: outer);
+      var hitPath = sweep >= math.pi * 2
+          ? (Path()..addOval(hitBounds))
+          : (Path()
+            ..moveTo(centre.dx + shift.dx, centre.dy + shift.dy)
+            ..arcTo(hitBounds, angle, sweep, false)
+            ..close());
+      if (donut) {
+        hitPath = Path.combine(
+          PathOperation.difference,
+          hitPath,
+          Path()
+            ..addOval(
+              Rect.fromCircle(
+                center: centre + shift,
+                radius: outer - thickness,
+              ),
+            ),
+        );
+      }
       hits.add(
         ChartHit(
           seriesIndex: visible.first,
           pointIndex: index,
-          rect: Rect.fromCircle(
-            center: centre +
-                Offset(math.cos(middle), math.sin(middle)) * (outer * 0.7),
-            radius: math.max(outer * 0.22, 10),
-          ),
+          rect: hitBounds,
+          path: hitPath,
           anchor: centre +
+              shift +
               Offset(math.cos(middle), math.sin(middle)) * (outer * 0.72),
         ),
       );
@@ -1446,7 +1579,10 @@ class ChartPainter extends CustomPainter {
         final painter = _text(
           '${(point.value.abs() / total * 100).round()}%',
           11,
-          Colors.white,
+          Color.alphaBlend(slice.color, palette.background).computeLuminance() >
+                  0.43
+              ? const Color(0xFF17212B)
+              : const Color(0xFFFDFDFC),
           weight: FontWeight.w600,
         );
         final anchor = centre +
@@ -1460,7 +1596,7 @@ class ChartPainter extends CustomPainter {
       }
     }
 
-    if (donut) {
+    if (donut && highlight == null) {
       _paintDonutCentre(canvas, centre, outer - thickness, series);
     }
   }
@@ -1523,15 +1659,21 @@ class ChartPainter extends CustomPainter {
         style: palette.text(size: size, color: color, weight: weight),
       ),
       textDirection: TextDirection.ltr,
+      textScaler: textScaler,
       maxLines: 1,
       ellipsis: '…',
     )..layout(maxWidth: maxWidth ?? double.infinity);
     return painter;
   }
 
-  /// The number a tooltip shows, in full.
-  static String formatValue(double value) =>
-      formatChartNumber(value, compact: false);
+  /// Exact tooltip values, not the rounded axis reading. Even non-compact
+  /// axis formatting rounds numbers >=100, which loses meaningful decimals.
+  static String formatValue(double value) {
+    if (!value.isFinite) return '—';
+    return value == value.truncateToDouble()
+        ? value.toStringAsFixed(0)
+        : value.toString();
+  }
 
   @override
   bool shouldRepaint(covariant ChartPainter oldDelegate) =>
@@ -1541,10 +1683,18 @@ class ChartPainter extends CustomPainter {
       oldDelegate.focusedSeries != focusedSeries ||
       oldDelegate.viewport != viewport ||
       oldDelegate.crosshair != crosshair ||
+      oldDelegate.reveal != reveal ||
+      oldDelegate.emphasis != emphasis ||
+      oldDelegate.textScaler != textScaler ||
       !setEquals(oldDelegate.hidden, hidden) ||
       oldDelegate.palette.background != palette.background ||
       oldDelegate.palette.shadow != palette.shadow ||
       oldDelegate.palette.isDark != palette.isDark ||
+      oldDelegate.palette.label != palette.label ||
+      oldDelegate.palette.strongLabel != palette.strongLabel ||
+      oldDelegate.palette.grid != palette.grid ||
+      oldDelegate.palette.axis != palette.axis ||
+      oldDelegate.palette.baseTextStyle != palette.baseTextStyle ||
       !listEquals(oldDelegate.colors.palette.series, colors.palette.series) ||
       !mapEquals(oldDelegate.colors.chosen, colors.chosen);
 }

@@ -65,8 +65,8 @@ class _SidebarNewPageButtonState extends State<SidebarNewPageButton> {
             bottom: 0,
             child: Center(
               child: PopoverActionList<PopoverAction>(
-                direction: PopoverDirection.bottomWithRightAligned,
-                offset: const Offset(0, 6),
+                direction: PopoverDirection.topWithRightAligned,
+                offset: const Offset(0, -6),
                 constraints: const BoxConstraints(minWidth: 200),
                 actions: [
                   WorkspaceItemAddAction(WorkspaceItemAddKind.folder),

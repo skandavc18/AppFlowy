@@ -134,21 +134,23 @@ Future<ViewPB?> createWorkspaceExtensionTable({
   required String parentViewId,
   required ExtensionTableView view,
   ViewSectionPB? section,
+  bool Function()? canWrite,
 }) async {
+  if (canWrite != null && !canWrite()) return null;
   final created = await const DatabaseTableService().createTable(
     parentViewId: parentViewId,
     name: view.name,
     section: section,
   );
   final made = created.fold((view) => view, (_) => null);
-  if (made == null) {
+  if (made == null || (canWrite != null && !canWrite())) {
     return null;
   }
   await ViewBackendService.updateView(
     viewId: made.id,
     extra: TableViewMark.newExtraForKey(view.envelopeKey),
   );
-  return made;
+  return canWrite?.call() == false ? null : made;
 }
 
 /// Creates a table under [parentViewId] and hands back the view.
@@ -156,7 +158,9 @@ Future<ViewPB?> createWorkspaceDatabase({
   required String parentViewId,
   required WorkspaceTableKind kind,
   ViewSectionPB? section,
+  bool Function()? canWrite,
 }) async {
+  if (canWrite != null && !canWrite()) return null;
   final created = await const DatabaseTableService().createTable(
     parentViewId: parentViewId,
     layout: kind.layout,
@@ -164,6 +168,7 @@ Future<ViewPB?> createWorkspaceDatabase({
     section: section,
   );
   final view = created.fold((view) => view, (_) => null);
+  if (canWrite != null && !canWrite()) return null;
   if (view == null) {
     return view;
   }
@@ -190,5 +195,5 @@ Future<ViewPB?> createWorkspaceDatabase({
       extra: TableViewMark.newExtra(kind.tableView!),
     );
   }
-  return view;
+  return canWrite?.call() == false ? null : view;
 }

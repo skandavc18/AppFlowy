@@ -8,10 +8,12 @@ class PageHistoryEntry {
     required this.pluginType,
     this.viewId,
     this.workspaceRoot,
+    this.tabId,
   });
 
   final PluginType pluginType;
   final String? viewId;
+  final String? tabId;
 
   /// The workspace root is a synthetic folder, not a backend View record.
   /// Other views are re-read before opening, so deleted/stale pages are skipped.
@@ -19,9 +21,11 @@ class PageHistoryEntry {
 
   Object get previewKey => (pluginType, viewId);
 
-  bool sameDestination(PageHistoryEntry other) => viewId != null
-      ? viewId == other.viewId
-      : other.viewId == null && pluginType == other.pluginType;
+  bool sameDestination(PageHistoryEntry other) =>
+      (tabId == null || other.tabId == null || tabId == other.tabId) &&
+      (viewId != null
+          ? viewId == other.viewId
+          : other.viewId == null && pluginType == other.pluginType);
 }
 
 /// Bounded, session-only workspace visit history, independent of tab order.
@@ -47,6 +51,19 @@ class PageNavigationHistory {
     _entries.add(entry);
     if (_entries.length > capacity) _entries.removeAt(0);
     _index = _entries.length - 1;
+  }
+
+  /// Resolve visits to this exact loading Home without adding an invisible
+  /// intermediate destination or truncating the user's forward branch.
+  void resolveHomeTab(String tabId, PageHistoryEntry entry) {
+    for (var i = 0; i < _entries.length; i++) {
+      final previous = _entries[i];
+      if (previous.tabId == tabId &&
+          previous.pluginType == PluginType.blank &&
+          previous.viewId == null) {
+        _entries[i] = entry;
+      }
+    }
   }
 
   PageHistoryEntry? peek({required bool forward}) =>

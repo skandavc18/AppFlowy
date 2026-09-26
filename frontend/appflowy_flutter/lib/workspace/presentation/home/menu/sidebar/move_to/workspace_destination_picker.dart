@@ -4,6 +4,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
@@ -249,7 +250,7 @@ class _WorkspaceDestinationPickerState
               IconButton(
                 tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
                 onPressed: () => Navigator.of(context).pop(),
-                icon: Icon(
+                icon: WorkspaceGlyph(
                   Icons.close_rounded,
                   color: palette.textSecondary,
                   size: 19,
@@ -400,10 +401,14 @@ class _DestinationSearchField extends StatelessWidget {
       decoration: InputDecoration(
         hintText: LocaleKeys.workspaceFolderExplorer_searchFolders.tr(),
         hintStyle: TextStyle(color: palette.textMuted, fontSize: 14),
-        prefixIcon: Icon(
-          Icons.search_rounded,
-          color: palette.textMuted,
-          size: 19,
+        prefixIcon: Center(
+          widthFactor: 1,
+          heightFactor: 1,
+          child: WorkspaceGlyph(
+            Icons.search_rounded,
+            color: palette.textMuted,
+            size: 19,
+          ),
         ),
         filled: true,
         fillColor: background,
@@ -475,7 +480,7 @@ class _DestinationBreadcrumbs extends StatelessWidget {
         children: [
           for (var index = 0; index < path.length; index++) ...[
             if (index > 0)
-              Icon(
+              WorkspaceGlyph(
                 Icons.chevron_right_rounded,
                 size: 16,
                 color: palette.textMuted,
@@ -572,10 +577,18 @@ class _DestinationItemTile extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: SizedBox.square(
                       dimension: 20,
-                      child: WorkspaceItemIcon.fromView(
-                        view: view,
+                      child: WorkspaceGlyphScope(
                         color:
                             canOpen ? palette.textSecondary : palette.textMuted,
+                        role: canOpen
+                            ? WorkspaceGlyphRole.standard
+                            : WorkspaceGlyphRole.preserveInk,
+                        child: WorkspaceItemIcon.fromView(
+                          view: view,
+                          color: canOpen
+                              ? palette.textSecondary
+                              : palette.textMuted,
+                        ),
                       ),
                     ),
                   ),
@@ -622,10 +635,9 @@ class _DestinationItemTile extends StatelessWidget {
               ),
               if (canOpen) ...[
                 const SizedBox(width: 5),
-                Icon(
+                WorkspaceGlyph(
                   Icons.chevron_right_rounded,
                   color: palette.textMuted,
-                  size: 18,
                 ),
               ],
             ],

@@ -1,8 +1,7 @@
-import 'package:appflowy_ui/appflowy_ui.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/material.dart';
 
-/// This is used to create a uniform space and divider
-/// between categories in settings.
+/// Settings sections are separated by breathing room, not nested rules.
 ///
 class SettingsCategorySpacer extends StatelessWidget {
   const SettingsCategorySpacer({
@@ -16,15 +15,9 @@ class SettingsCategorySpacer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-    return Padding(
-      padding: EdgeInsets.only(
-        top: topSpacing ?? theme.spacing.l,
-        bottom: bottomSpacing ?? theme.spacing.l,
-      ),
-      child: Divider(
-        color: theme.borderColorScheme.primary,
-      ),
+    return SizedBox(
+      height: (topSpacing ?? WorkspaceTokens.space6) +
+          (bottomSpacing ?? WorkspaceTokens.space6),
     );
   }
 }

@@ -1,7 +1,9 @@
 import 'package:appflowy/plugins/collection/collection_style.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/email/email_message.dart';
 import 'package:flutter/material.dart';
@@ -15,7 +17,7 @@ abstract final class EmailMetrics {
   static const double space5 = 20;
   static const double space6 = 24;
 
-  static const double gutter = 20;
+  static const double gutter = CollectionWorkspaceMetrics.gutter;
   static const double toolbarHeight = 40;
 
   /// The three panes.
@@ -26,8 +28,8 @@ abstract final class EmailMetrics {
   /// The measure a message is read at.
   static const double readingWidth = 760;
 
-  static const double panelRadius = EditorSurfaceStyle.embedCornerRadius;
-  static const double controlRadius = 9;
+  static const double panelRadius = WorkspaceTokens.cardRadius;
+  static const double controlRadius = WorkspaceTokens.controlRadius;
   static const double rowRadius = 8;
 
   static const double avatarSize = 30;
@@ -40,12 +42,12 @@ abstract final class EmailMetrics {
   static const double bodySize = 13.5;
   static const double snippetSize = 12;
   static const double metaSize = 11.5;
-  static const double sectionSize = 10.5;
+  static const double sectionSize = 12;
   static const double tracking = -0.006;
-  static const double sectionTracking = 0.07;
-  static const double bodyWeightAxis = 545;
+  static const double sectionTracking = 0;
+  static const double bodyWeightAxis = 500;
   static const double strongWeightAxis = 640;
-  static const double sectionWeightAxis = 640;
+  static const double sectionWeightAxis = 500;
 
   static const Duration hover = Duration(milliseconds: 140);
   static const Duration reveal = Duration(milliseconds: 220);
@@ -85,10 +87,12 @@ class EmailTheme {
       panel: palette.surface,
       raised: palette.floatingSurface,
       sunken: Color.alphaBlend(
-        palette.hover.withValues(alpha: isDark ? 0.42 : 0.6),
+        palette.hover
+            .withValues(alpha: palette.hover.a * (isDark ? 0.42 : 0.6)),
         palette.background,
       ),
-      hover: palette.hover.withValues(alpha: isDark ? 0.62 : 0.8),
+      hover: palette.hover
+          .withValues(alpha: palette.hover.a * (isDark ? 0.62 : 0.8)),
       selected: palette.accent.withValues(alpha: isDark ? 0.18 : 0.11),
       textStrong: palette.textPrimary,
       textBody: Color.lerp(palette.textSecondary, palette.textPrimary, 0.5)!,
@@ -171,7 +175,6 @@ class EmailTheme {
   TextStyle get snippet => face(
         fontSize: EmailMetrics.snippetSize,
         color: textFaint,
-        axis: 500,
         weight: FontWeight.w400,
         height: 1.4,
       );
@@ -179,7 +182,6 @@ class EmailTheme {
   TextStyle get body => face(
         fontSize: EmailMetrics.bodySize,
         color: textBody,
-        axis: 500,
         weight: FontWeight.w400,
         height: 1.6,
       );
@@ -187,7 +189,6 @@ class EmailTheme {
   TextStyle get meta => face(
         fontSize: EmailMetrics.metaSize,
         color: textFaint,
-        axis: 500,
         weight: FontWeight.w400,
       );
 
@@ -195,9 +196,7 @@ class EmailTheme {
 
   TextStyle get sectionLabel => face(
         fontSize: EmailMetrics.sectionSize,
-        color: textFaint,
-        axis: EmailMetrics.sectionWeightAxis,
-        weight: FontWeight.w600,
+        color: textSoft,
         tracking: EmailMetrics.sectionTracking,
       );
 }
@@ -207,13 +206,13 @@ EmailTheme emailThemeOf(BuildContext context) => EmailTheme.of(
       CollectionPalette.of(context, CollectionKind.email),
     );
 
-/// A region of the mailbox, drawn as the application's own card.
+/// An unboxed mailbox region on the common canvas.
 class EmailPanel extends StatelessWidget {
   const EmailPanel({
     super.key,
     required this.child,
     this.padding = EdgeInsets.zero,
-    this.elevation = ViewerCardElevation.resting,
+    this.elevation = ViewerCardElevation.flush,
     this.color,
   });
 
@@ -223,12 +222,12 @@ class EmailPanel extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => ViewerCard(
-        reactsToPointer: false,
-        elevation: elevation,
-        // A card left transparent shows its own shadow through its face.
-        color: color ?? emailThemeOf(context).panel,
-        child: Padding(padding: padding, child: child),
+  Widget build(BuildContext context) => CollectionWorkspaceSurface(
+        color: color,
+        tonal: elevation != ViewerCardElevation.flush,
+        rounded: elevation != ViewerCardElevation.flush,
+        padding: padding,
+        child: child,
       );
 }
 
@@ -244,7 +243,7 @@ class EmailGap extends StatelessWidget {
 }
 
 /// A borderless control: the toolbar buttons and the row actions.
-class EmailAction extends StatefulWidget {
+class EmailAction extends StatelessWidget {
   const EmailAction({
     super.key,
     required this.icon,
@@ -267,81 +266,22 @@ class EmailAction extends StatefulWidget {
   final double size;
 
   @override
-  State<EmailAction> createState() => _EmailActionState();
-}
-
-class _EmailActionState extends State<EmailAction> {
-  bool _hovered = false;
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final enabled = widget.onPressed != null;
-    final tint = widget.tint ??
-        (widget.active
-            ? theme.accent
-            : enabled
-                ? theme.iconRest
-                : theme.textFaint.withValues(alpha: 0.5));
-    final fill = widget.active
-        ? theme.accent.withValues(alpha: theme.isDark ? 0.18 : 0.11)
-        : _hovered
-            ? theme.hover
-            : theme.transparentAs(theme.hover);
-
-    final label = widget.label;
-    return Tooltip(
-      message: widget.tooltip,
-      waitDuration: const Duration(milliseconds: 500),
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-          onTapUp: enabled ? (_) => setState(() => _pressed = false) : null,
-          onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
-          onTap: widget.onPressed,
-          child: Opacity(
-            opacity: _pressed ? 0.6 : 1,
-            child: AnimatedContainer(
-              duration: EmailMetrics.hover,
-              curve: EmailMetrics.curve,
-              height: widget.size,
-              padding: EdgeInsets.symmetric(
-                horizontal: label == null ? 0 : EmailMetrics.space2 + 2,
-              ),
-              constraints: BoxConstraints(
-                minWidth: label == null ? widget.size : 0,
-              ),
-              decoration: BoxDecoration(
-                color: fill,
-                borderRadius: BorderRadius.circular(EmailMetrics.controlRadius),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(widget.icon, size: 16, color: tint),
-                  if (label != null) ...[
-                    const SizedBox(width: EmailMetrics.space1 + 2),
-                    Text(
-                      label,
-                      style: theme.face(
-                        fontSize: EmailMetrics.metaSize + 0.5,
-                        color: widget.active ? theme.accent : theme.textBody,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => CollectionWorkspaceAction(
+        icon: icon == Icons.file_download_outlined
+            ? Icons.file_download_rounded
+            : icon == Icons.segment_rounded ||
+                    icon == Icons.view_headline_rounded
+                ? Icons.notes_rounded
+                : icon == Icons.all_inbox_rounded
+                    ? Icons.inbox_rounded
+                    : icon,
+        tooltip: tooltip,
+        label: label,
+        onPressed: onPressed,
+        selected: active,
+        color: tint ?? theme.textSoft,
+        size: size,
+      );
 }
 
 /// A label or a state, shown as a soft pill.
@@ -377,7 +317,13 @@ class EmailChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 11, color: colour),
+            WorkspaceGlyph(
+              icon == Icons.hourglass_empty_rounded
+                  ? Icons.hourglass_bottom_rounded
+                  : icon!,
+              size: 11,
+              color: colour,
+            ),
             const SizedBox(width: EmailMetrics.space1 + 1),
           ],
           Text(
@@ -385,8 +331,6 @@ class EmailChip extends StatelessWidget {
             style: theme.face(
               fontSize: EmailMetrics.metaSize - 0.5,
               color: colour,
-              axis: 580,
-              weight: FontWeight.w600,
             ),
           ),
         ],
@@ -493,7 +437,7 @@ class EmailSearchField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final field = Container(
-      height: 30,
+      height: MediaQuery.textScalerOf(context).scale(13) + 20,
       padding: const EdgeInsets.symmetric(horizontal: EmailMetrics.space2 + 2),
       decoration: BoxDecoration(
         color: theme.sunken,
@@ -501,7 +445,11 @@ class EmailSearchField extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.search_rounded, size: 15, color: theme.textFaint),
+          WorkspaceGlyph(
+            Icons.search_rounded,
+            size: 15,
+            color: theme.textFaint,
+          ),
           const SizedBox(width: EmailMetrics.space2 - 1),
           Expanded(
             child: TextField(
@@ -534,8 +482,11 @@ class EmailSearchField extends StatelessWidget {
                 controller.clear();
                 onChanged?.call('');
               },
-              child:
-                  Icon(Icons.close_rounded, size: 14, color: theme.textFaint),
+              child: WorkspaceGlyph(
+                Icons.close_rounded,
+                size: 14,
+                color: theme.textFaint,
+              ),
             ),
         ],
       ),
@@ -579,7 +530,7 @@ class EmailEmptyState extends StatelessWidget {
                 color: theme.sunken,
                 borderRadius: BorderRadius.circular(11),
               ),
-              child: Icon(icon, size: 19, color: theme.textFaint),
+              child: WorkspaceGlyph(icon, size: 19, color: theme.textFaint),
             ),
             const SizedBox(height: EmailMetrics.space3),
             Text(

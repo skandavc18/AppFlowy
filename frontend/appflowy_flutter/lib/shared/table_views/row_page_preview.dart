@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/document/application/document_data_pb_extension
 import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy_backend/protobuf/flowy-document/protobuf.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -223,7 +224,10 @@ class _RowPagePreviewState extends State<RowPagePreview> {
     final page = FocusScope(
       canRequestFocus: false,
       descendantsAreFocusable: false,
-      child: _buildCanvas(context, editorState),
+      child: EditorCanvasScope(
+        color: Colors.transparent,
+        child: _buildCanvas(context, editorState),
+      ),
     );
     final body = widget.interactive ? page : IgnorePointer(child: page);
     final height = widget.height;

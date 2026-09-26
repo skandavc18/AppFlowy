@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/size.dart';
@@ -31,7 +32,7 @@ class CardPreviewButton extends StatelessWidget {
             message: LocaleKeys.cardPreview_tooltip.tr(),
             child: FlowyIconButton(
               width: 24,
-              icon: Icon(
+              icon: WorkspaceGlyph(
                 _iconOf(mode),
                 size: 16,
                 color: mode == CardPreviewMode.pageAndTitle ||
@@ -65,7 +66,7 @@ class CardPreviewButton extends StatelessWidget {
               button: true,
               selected: choice == mode,
               inMutuallyExclusiveGroup: true,
-              child: Icon(_iconOf(choice)),
+              child: WorkspaceGlyph(_iconOf(choice)),
             ),
             selected: choice == mode,
             onSelected: () => unawaited(registry.set(view, choice)),

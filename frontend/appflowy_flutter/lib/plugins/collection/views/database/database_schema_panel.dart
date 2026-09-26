@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/database/database_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/database/database_collection_controller.dart';
 import 'package:appflowy/workspace/application/collections/database/database_schema.dart';
 import 'package:appflowy/workspace/application/collections/database/database_table.dart';
@@ -35,6 +36,7 @@ class DatabaseSchemaPanel extends StatelessWidget {
     final outgoing = controller.relationsFrom(table.id);
     final incoming = controller.relationsTo(table.id);
     return ListView(
+      primary: false,
       padding: const EdgeInsets.fromLTRB(
         DatabaseMetrics.space4,
         0,
@@ -43,7 +45,7 @@ class DatabaseSchemaPanel extends StatelessWidget {
       ),
       children: [
         Text(
-          LocaleKeys.collections_database_columns.tr().toUpperCase(),
+          LocaleKeys.collections_database_columns.tr(),
           style: theme.sectionLabel,
         ),
         const SizedBox(height: DatabaseMetrics.space2),
@@ -52,7 +54,7 @@ class DatabaseSchemaPanel extends StatelessWidget {
         if (outgoing.isNotEmpty || incoming.isNotEmpty) ...[
           const SizedBox(height: DatabaseMetrics.space5),
           Text(
-            LocaleKeys.collections_database_relations.tr().toUpperCase(),
+            LocaleKeys.collections_database_relations.tr(),
             style: theme.sectionLabel,
           ),
           const SizedBox(height: DatabaseMetrics.space2),
@@ -92,7 +94,7 @@ class _FieldRow extends StatelessWidget {
         theme: theme,
         child: Row(
           children: [
-            Icon(
+            WorkspaceGlyph(
               databaseFieldIcon(field.type),
               size: 15,
               color: field.isRelation ? theme.accent : theme.iconRest,
@@ -113,7 +115,14 @@ class _FieldRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: DatabaseMetrics.space2),
-            Text(databaseFieldTypeLabel(field.type), style: theme.meta),
+            Flexible(
+              child: Text(
+                databaseFieldTypeLabel(field.type),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.meta,
+              ),
+            ),
           ],
         ),
       );
@@ -145,8 +154,8 @@ class _RelationRow extends StatelessWidget {
       onTap: other == null ? null : () => controller.openTable(other.id),
       child: Row(
         children: [
-          Icon(
-            outgoing ? Icons.arrow_outward_rounded : Icons.south_west_rounded,
+          WorkspaceGlyph(
+            outgoing ? Icons.arrow_outward_rounded : Icons.arrow_back_rounded,
             size: 15,
             color: other == null ? theme.textFaint : theme.accent,
           ),

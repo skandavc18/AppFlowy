@@ -7,7 +7,7 @@ import 'package:flutter/widgets.dart';
 abstract final class WorkspaceLayout {
   static const sidebarBreakpoint = 1024.0;
   static const minimumContentWidth = 320.0;
-  static const minimumSidebarWidth = 260.0;
+  static const minimumSidebarWidth = 248.0;
   static const drawerEdge = 32.0;
   static const headerBreakpoint = 840.0;
 

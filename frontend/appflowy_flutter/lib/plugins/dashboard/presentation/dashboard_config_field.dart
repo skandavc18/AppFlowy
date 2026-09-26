@@ -33,6 +33,19 @@ typedef DashboardConfigChoice = SettingsChoiceField;
 
 typedef DashboardChoice = SettingsChoice;
 
+/// Calendar layouts need visible, wrapping words in customization, not an
+/// icon-only segment or a long selected value squeezed beside its label.
+/// It remains a choice field for schema consumers, with a dedicated renderer.
+class DashboardConfigCalendarView extends DashboardConfigChoice {
+  const DashboardConfigCalendarView({
+    required super.label,
+    required super.value,
+    required super.choices,
+    required super.onChanged,
+    super.hint,
+  });
+}
+
 /// A heading with its own rows underneath.
 typedef DashboardConfigGroup = SettingsGroupField;
 

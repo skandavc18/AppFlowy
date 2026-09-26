@@ -85,7 +85,10 @@ class CollectionPluginWidgetBuilder extends PluginWidgetBuilder
         context.onDeleted?.call(view, deletedViewIndex);
       }
     });
-    return CollectionPage(key: ValueKey(view.id), view: view);
+    return BlocProvider<PageAccessLevelBloc>.value(
+      value: pageAccessLevelBloc,
+      child: CollectionPage(key: ValueKey(view.id), view: view),
+    );
   }
 
   @override

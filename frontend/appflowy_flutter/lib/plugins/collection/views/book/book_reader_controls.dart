@@ -1,10 +1,11 @@
 import 'dart:math' as math;
 
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/book/book_reader_palette.dart';
 import 'package:flutter/material.dart';
 
 /// A borderless control on the reading chrome. Quiet until it is pointed at.
-class BookControlButton extends StatefulWidget {
+class BookControlButton extends StatelessWidget {
   const BookControlButton({
     super.key,
     required this.icon,
@@ -23,73 +24,19 @@ class BookControlButton extends StatefulWidget {
   final String? label;
 
   @override
-  State<BookControlButton> createState() => _BookControlButtonState();
-}
-
-class _BookControlButtonState extends State<BookControlButton> {
-  bool hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = widget.palette;
-    final enabled = widget.onPressed != null;
-    final foreground = !enabled
-        ? palette.inkFaint
-        : widget.selected
-            ? palette.accent
-            : hovered
-                ? palette.ink
-                : palette.inkMuted;
-    final label = widget.label;
-    final child = AnimatedContainer(
-      duration: BookReaderMetrics.motion,
-      curve: BookReaderMetrics.curve,
-      height: BookReaderMetrics.controlSize,
-      padding: EdgeInsets.symmetric(horizontal: label == null ? 0 : 10),
-      width: label == null ? BookReaderMetrics.controlSize : null,
-      decoration: BoxDecoration(
-        color: widget.selected
-            ? palette.selected
-            : hovered && enabled
-                ? palette.hover
-                : palette.hover.withValues(alpha: 0),
-        borderRadius: BorderRadius.circular(BookReaderMetrics.controlRadius),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(widget.icon, size: 17, color: foreground),
-          if (label != null) ...[
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: foreground,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-
-    return Tooltip(
-      message: widget.tooltip,
-      waitDuration: const Duration(milliseconds: 500),
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-        onEnter: (_) => setState(() => hovered = true),
-        onExit: (_) => setState(() => hovered = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onPressed,
-          child: child,
+  Widget build(BuildContext context) => Theme(
+        data: palette.themeFor(Theme.of(context)),
+        child: CollectionWorkspaceAction(
+          icon:
+              icon == Icons.remove_done_rounded ? Icons.history_rounded : icon,
+          tooltip: tooltip,
+          label: label,
+          selected: selected,
+          onPressed: onPressed,
+          size: BookReaderMetrics.controlSize,
+          color: palette.inkMuted,
         ),
-      ),
-    );
-  }
+      );
 }
 
 /// The hairline reading progress line under the chapter.

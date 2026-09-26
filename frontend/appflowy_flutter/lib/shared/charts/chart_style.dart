@@ -1,6 +1,7 @@
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
 import 'package:flutter/material.dart';
 
@@ -10,13 +11,13 @@ import 'package:flutter/material.dart';
 /// visibly the same object.
 abstract final class ChartMetrics {
   static const cardRadius = 14.0;
-  static const chipRadius = 8.0;
+  static const chipRadius = WorkspaceTokens.controlRadius;
   static const tooltipRadius = 12.0;
 
-  static const chipHeight = 28.0;
-  static const headerGap = 8.0;
-  static const plotGap = 24.0;
-  static const legendGap = 16.0;
+  static const chipHeight = WorkspaceTokens.controlHeight;
+  static const headerGap = WorkspaceTokens.space2;
+  static const plotGap = WorkspaceTokens.space3;
+  static const legendGap = WorkspaceTokens.space2;
 
   /// Air above the highest gridline, so the top label and the tallest point
   /// are not pressed against whatever sits above the chart.
@@ -76,33 +77,33 @@ class ChartPalette {
     required this.isDark,
   });
 
-  /// Muted and evenly spaced, in the manner of Numbers and Linear rather than
-  /// a set of primaries.
+  /// Clear, balanced hues: saturation lives in the data, not in a card behind
+  /// it. Named alternative sets and individually chosen colours stay intact.
   static const List<Color> defaultSeries = [
-    Color(0xFF5B8DEF),
-    Color(0xFF3FBFA0),
-    Color(0xFFE8A552),
-    Color(0xFFE4738C),
-    Color(0xFF9B87F5),
-    Color(0xFF4EBBD5),
-    Color(0xFFBE9A63),
-    Color(0xFF7F8CA3),
-    Color(0xFFD183C9),
-    Color(0xFF8FAE68),
+    Color(0xFF4978EB),
+    Color(0xFF12A88E),
+    Color(0xFFE59A2F),
+    Color(0xFFE56383),
+    Color(0xFF9267DB),
+    Color(0xFF159FBF),
+    Color(0xFFC27643),
+    Color(0xFF647BC3),
+    Color(0xFFC456B1),
+    Color(0xFF73A23B),
   ];
 
-  /// A slightly brighter set, so a muted palette still reads on a dark canvas.
+  /// A brighter companion with the same hue order for a dark canvas.
   static const List<Color> darkSeries = [
-    Color(0xFF7BA5F5),
-    Color(0xFF52D0B0),
-    Color(0xFFF0B66B),
-    Color(0xFFF08AA0),
-    Color(0xFFB09CFF),
-    Color(0xFF66CDE4),
-    Color(0xFFD1AC76),
-    Color(0xFF95A2B8),
-    Color(0xFFE29ADA),
-    Color(0xFFA5C37D),
+    Color(0xFF80A2FF),
+    Color(0xFF36CFB0),
+    Color(0xFFF2B654),
+    Color(0xFFFA88A3),
+    Color(0xFFB491FA),
+    Color(0xFF45C4DF),
+    Color(0xFFE39A66),
+    Color(0xFF92A5EA),
+    Color(0xFFE080D0),
+    Color(0xFFA2CD64),
   ];
 
   /// The sets a chart can be drawn in, each already balanced against itself.
@@ -200,7 +201,11 @@ class ChartPalette {
       label: label,
       strongLabel: strongLabel,
       // A dark canvas needs its colours lifted, whichever set was chosen.
-      series: isDark ? [for (final color in chosen) _lift(color)] : chosen,
+      series: isDark
+          ? name == ChartPaletteName.classic
+              ? darkSeries
+              : [for (final color in chosen) _lift(color)]
+          : chosen,
       baseTextStyle: baseTextStyle,
       shadow: shadow,
       border: border,
@@ -372,7 +377,16 @@ class ChartMarkShadow {
   final Offset offset;
 }
 
-/// The shadow under an explicitly framed chart card and its tooltip.
+/// Hue-preserving light on a mark. Never blend against an opaque page colour:
+/// transparent and explicitly chosen ink must keep its original alpha.
+Color chartMarkShade(Color color, double lightness) {
+  final hsl = HSLColor.fromColor(color);
+  return hsl
+      .withLightness((hsl.lightness + lightness).clamp(0.0, 1.0))
+      .toColor();
+}
+
+/// The shadow under an explicitly framed chart card.
 List<BoxShadow> chartCardShadow(ChartPalette palette) => [
       BoxShadow(
         color: palette.shadow.withValues(alpha: palette.shadow.a * 0.55),

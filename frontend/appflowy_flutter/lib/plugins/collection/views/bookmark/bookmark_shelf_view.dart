@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_grid_view.da
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_host.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_reader.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_toolbar.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_state.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -71,6 +72,7 @@ class _ShelvesState extends State<_Shelves> {
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
+    final scroll = CollectionPageScrollScope.maybeOf(context) ?? _scroll;
     if (controller.entries.isEmpty) {
       return bookmarkEmptyView(
         context: context,
@@ -95,9 +97,9 @@ class _ShelvesState extends State<_Shelves> {
         position: details.globalPosition,
       ),
       child: BookmarkScrollArea(
-        controller: _scroll,
+        controller: scroll,
         child: ListView.builder(
-          controller: _scroll,
+          controller: scroll,
           padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
           itemCount: groups.length,
           itemBuilder: (context, index) => _Shelf(
@@ -227,6 +229,10 @@ class _ShelfState extends State<_Shelf> {
                       entry: entry,
                       controller: widget.controller,
                       collection: widget.collection,
+                      readOnly: bookmarkCollectionReadOnly(
+                        context,
+                        widget.collection,
+                      ),
                     ),
                     onToggleStar: () => widget.controller
                         .setStarred(entry, !entry.metadata.starred),

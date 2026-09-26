@@ -9,6 +9,10 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandboxed_code_runner.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
@@ -37,6 +41,7 @@ class RepoFileStage extends StatefulWidget {
     this.editingSource = false,
     this.onEditingSourceChanged,
     this.fetcher,
+    this.ocrService,
   });
 
   final RepoEntry entry;
@@ -53,6 +58,8 @@ class RepoFileStage extends StatefulWidget {
   /// Fetches the file when the repository keeps its contents remote. Null when
   /// the whole project is already on disk.
   final RepoFileFetcher? fetcher;
+
+  final OcrService? ocrService;
 
   /// Whether this file can be written to at all.
   ///
@@ -160,7 +167,26 @@ class _RepoFileStageState extends State<RepoFileStage> {
     final file = File(entry.storageUrl);
 
     if (imgExtensionRegex.hasMatch(entry.name)) {
-      return _RepoImageStage(file: file, theme: theme);
+      final id = entry.id;
+      final path = file.path;
+      final name = entry.name;
+      return ImageOcrFindRegion(
+        key: ValueKey((id, path, name)),
+        source: ImageEditorSource(url: path, type: CustomImageType.local),
+        name: name,
+        service: widget.ocrService,
+        isAvailable: () =>
+            mounted &&
+            !fetching &&
+            !unavailable &&
+            widget.entry.id == id &&
+            widget.entry.storageUrl == path &&
+            widget.entry.name == name &&
+            widget.entry.isLocalFile &&
+            TickerMode.of(context) &&
+            ModalRoute.of(context)?.isActive != false,
+        child: _RepoImageStage(file: file, theme: theme),
+      );
     }
 
     final kind = filePreviewKindFromName(entry.name);

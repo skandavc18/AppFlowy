@@ -1,10 +1,14 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/database/database_chrome.dart';
 import 'package:appflowy/plugins/collection/views/database/database_context_menu.dart';
 import 'package:appflowy/plugins/collection/views/database/database_host.dart';
 import 'package:appflowy/plugins/collection/views/database/database_schema_panel.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/database/database_collection_controller.dart';
 import 'package:appflowy/workspace/application/collections/database/database_table.dart';
@@ -27,7 +31,7 @@ class DatabaseWorkbenchView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DatabaseHost(
         collection: collection,
-        builder: (context, controller, theme) => _Workbench(
+        builder: (context, controller, theme) => DatabaseWorkbenchBody(
           collection: collection,
           controller: controller,
           theme: theme,
@@ -35,16 +39,22 @@ class DatabaseWorkbenchView extends StatelessWidget {
       );
 }
 
-class _Workbench extends StatelessWidget {
-  const _Workbench({
+/// The production rail/stage composition, independent of native data loading.
+/// [tableBuilder] replaces only the native table boundary in offline fixtures.
+class DatabaseWorkbenchBody extends StatelessWidget {
+  const DatabaseWorkbenchBody({
+    super.key,
     required this.collection,
     required this.controller,
     required this.theme,
+    this.tableBuilder,
   });
 
   final CollectionViewContext collection;
   final DatabaseCollectionController controller;
   final DatabaseTheme theme;
+  final Widget Function(BuildContext context, DatabaseTable table)?
+      tableBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -54,8 +64,10 @@ class _Workbench extends StatelessWidget {
         icon: Icons.table_chart_rounded,
         title: LocaleKeys.collections_database_empty.tr(),
         message: LocaleKeys.collections_database_emptyDescription.tr(),
-        action: Row(
-          mainAxisSize: MainAxisSize.min,
+        action: Wrap(
+          spacing: DatabaseMetrics.space2,
+          runSpacing: DatabaseMetrics.space2,
+          alignment: WrapAlignment.center,
           children: [
             DatabaseAction(
               icon: Icons.add_rounded,
@@ -69,7 +81,6 @@ class _Workbench extends StatelessWidget {
                 layout: ViewLayoutPB.Grid,
               ),
             ),
-            const SizedBox(width: DatabaseMetrics.space2),
             DatabaseAction(
               icon: Icons.playlist_add_rounded,
               tooltip: LocaleKeys.collections_database_addExisting.tr(),
@@ -87,55 +98,105 @@ class _Workbench extends StatelessWidget {
     }
 
     final active = controller.activeTable;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        DatabaseMetrics.gutter,
-        DatabaseMetrics.space1,
-        DatabaseMetrics.gutter,
-        DatabaseMetrics.space4,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (controller.state.showRail) ...[
-            SizedBox(
-              width: DatabaseMetrics.railWidth,
-              child: _TableRail(
-                collection: collection,
-                controller: controller,
-                theme: theme,
-              ),
-            ),
-            const DatabaseGap(),
-          ],
-          Expanded(
-            child: DatabasePanel(
-              child: active == null
-                  ? const SizedBox.shrink()
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _StageHeader(
-                          table: active,
-                          collection: collection,
-                          controller: controller,
-                          theme: theme,
-                        ),
-                        Expanded(
-                          child: controller.state.showSchema
-                              ? DatabaseSchemaPanel(
-                                  table: active,
-                                  controller: controller,
-                                  theme: theme,
-                                )
-                              : _Stage(table: active),
-                        ),
-                      ],
-                    ),
-            ),
+    return PreviewToolbarRegion(
+      child: CollectionWorkspaceSurface(
+        child: CollectionWorkspaceSplit(
+          navigationVisible: controller.state.showRail,
+          minimumStageWidth: 600,
+          navigation: DatabaseTableRail(
+            collection: collection,
+            controller: controller,
+            theme: theme,
           ),
-        ],
+          compactNavigation: const SizedBox.shrink(),
+          headerBuilder: (context, railVisible) => active == null
+              ? const SizedBox.shrink()
+              : Offstage(
+                  offstage: railVisible,
+                  child: ExcludeFocus(
+                    excluding: railVisible,
+                    child: _StageHeader(
+                      table: active,
+                      collection: collection,
+                      controller: controller,
+                      theme: theme,
+                      railVisible: railVisible,
+                    ),
+                  ),
+                ),
+          child: active == null
+              ? const SizedBox.shrink()
+              : _RetainedTableStage(
+                  key: ValueKey('collection-table-${active.id}'),
+                  table: active,
+                  controller: controller,
+                  theme: theme,
+                  tableBuilder: tableBuilder,
+                ),
+        ),
       ),
+    );
+  }
+}
+
+/// Mount each reading only on first use, then keep it at the same depth. A
+/// schema-only visit must not acquire a live table editor behind the scenes.
+class _RetainedTableStage extends StatefulWidget {
+  const _RetainedTableStage({
+    super.key,
+    required this.table,
+    required this.controller,
+    required this.theme,
+    this.tableBuilder,
+  });
+
+  final DatabaseTable table;
+  final DatabaseCollectionController controller;
+  final DatabaseTheme theme;
+  final Widget Function(BuildContext context, DatabaseTable table)?
+      tableBuilder;
+
+  @override
+  State<_RetainedTableStage> createState() => _RetainedTableStageState();
+}
+
+class _RetainedTableStageState extends State<_RetainedTableStage> {
+  bool _tableOpened = false;
+  bool _schemaOpened = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final schema = widget.controller.state.showSchema;
+    _tableOpened |= !schema;
+    _schemaOpened |= schema;
+    return IndexedStack(
+      index: schema ? 1 : 0,
+      sizing: StackFit.expand,
+      children: [
+        ExcludeFocus(
+          excluding: schema,
+          child: TickerMode(
+            enabled: !schema,
+            child: _tableOpened
+                ? widget.tableBuilder?.call(context, widget.table) ??
+                    _Stage(table: widget.table)
+                : const SizedBox.shrink(),
+          ),
+        ),
+        ExcludeFocus(
+          excluding: !schema,
+          child: TickerMode(
+            enabled: schema,
+            child: _schemaOpened
+                ? DatabaseSchemaPanel(
+                    table: widget.table,
+                    controller: widget.controller,
+                    theme: widget.theme,
+                  )
+                : const SizedBox.shrink(),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -174,99 +235,94 @@ class _StageHeader extends StatelessWidget {
     required this.collection,
     required this.controller,
     required this.theme,
+    required this.railVisible,
   });
 
   final DatabaseTable table;
   final CollectionViewContext collection;
   final DatabaseCollectionController controller;
   final DatabaseTheme theme;
+  final bool railVisible;
 
   @override
   Widget build(BuildContext context) {
     final summary = controller.summaryFor(table.id);
     final showSchema = controller.state.showSchema;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        DatabaseMetrics.space4,
-        DatabaseMetrics.space3,
-        DatabaseMetrics.space2,
+    return CollectionWorkspaceToolbar(
+      // Match the actual grid's required header inset rather than inventing a
+      // second nested-card gutter. Grid sizing/controllers remain untouched.
+      padding: EdgeInsets.fromLTRB(
+        GridSize.horizontalHeaderPadding,
+        0,
+        GridSize.horizontalHeaderPadding,
         DatabaseMetrics.space2,
       ),
-      child: Row(
-        children: [
-          if (!controller.state.showRail) ...[
-            DatabaseAction(
-              icon: Icons.menu_open_rounded,
-              tooltip: LocaleKeys.collections_database_showTables.tr(),
-              theme: theme,
-              onPressed: () => controller.setRailVisible(true),
-            ),
-            const SizedBox(width: DatabaseMetrics.space2),
-          ],
-          Expanded(
-            child: Row(
-              children: [
-                Icon(
-                  databaseLayoutIcon(table.layout),
-                  size: 17,
-                  color: theme.accent,
-                ),
-                const SizedBox(width: DatabaseMetrics.space2),
-                Flexible(
-                  child: Text(
-                    table.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.title,
-                  ),
-                ),
-                if (summary != null) ...[
-                  const SizedBox(width: DatabaseMetrics.space3),
-                  Text(
-                    LocaleKeys.collections_database_tableSummary.tr(
-                      args: [
-                        '${summary.rowCount}',
-                        '${summary.fields.length}',
-                      ],
+      identity: railVisible
+          ? Text(
+              summary == null
+                  ? ''
+                  : LocaleKeys.collections_database_tableSummary.tr(
+                      args: ['${summary.rowCount}', '${summary.fields.length}'],
                     ),
-                    style: theme.meta,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.meta,
+            )
+          : CollectionWorkspacePicker(
+              label: table.name,
+              tooltip: LocaleKeys.collections_database_showTables.tr(),
+              icon: databaseLayoutIcon(table.layout),
+              entries: [
+                for (final item in controller.tables)
+                  AppMenuItem(
+                    label: item.name,
+                    icon: databaseLayoutIcon(item.layout),
+                    selected: item.id == table.id,
+                    onSelected: () => controller.openTable(item.id),
                   ),
-                ],
+                const AppMenuSeparator(),
+                AppMenuItem(
+                  label: LocaleKeys.collections_database_showTables.tr(),
+                  icon: Icons.menu_open_rounded,
+                  selected: controller.state.showRail,
+                  onSelected: () => controller.setRailVisible(true),
+                ),
               ],
             ),
+      keepVisible: showSchema,
+      actions: [
+        DatabaseAction(
+          icon: Icons.view_column_rounded,
+          tooltip: LocaleKeys.collections_database_columns.tr(),
+          theme: theme,
+          active: showSchema,
+          onPressed: () => controller.setSchemaVisible(!showSchema),
+        ),
+        DatabaseAction(
+          icon: Icons.open_in_full_rounded,
+          tooltip: LocaleKeys.collections_database_openTable.tr(),
+          theme: theme,
+          onPressed: () => collection.onOpen(table.view),
+        ),
+        DatabaseAction(
+          icon: Icons.more_horiz_rounded,
+          tooltip: LocaleKeys.collections_database_moreActions.tr(),
+          theme: theme,
+          onPressed: () => showDatabaseTableMenu(
+            context: context,
+            table: table,
+            controller: controller,
+            collection: collection,
           ),
-          DatabaseAction(
-            icon: Icons.view_column_rounded,
-            tooltip: LocaleKeys.collections_database_columns.tr(),
-            theme: theme,
-            active: showSchema,
-            onPressed: () => controller.setSchemaVisible(!showSchema),
-          ),
-          DatabaseAction(
-            icon: Icons.open_in_full_rounded,
-            tooltip: LocaleKeys.collections_database_openTable.tr(),
-            theme: theme,
-            onPressed: () => collection.onOpen(table.view),
-          ),
-          DatabaseAction(
-            icon: Icons.more_horiz_rounded,
-            tooltip: LocaleKeys.collections_database_moreActions.tr(),
-            theme: theme,
-            onPressed: () => showDatabaseTableMenu(
-              context: context,
-              table: table,
-              controller: controller,
-              collection: collection,
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-class _TableRail extends StatelessWidget {
-  const _TableRail({
+class DatabaseTableRail extends StatelessWidget {
+  const DatabaseTableRail({
+    super.key,
     required this.collection,
     required this.controller,
     required this.theme,
@@ -279,8 +335,7 @@ class _TableRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final active = controller.activeTable;
-    return DatabasePanel(
-      padding: const EdgeInsets.all(DatabaseMetrics.space2),
+    return CollectionWorkspaceSurface(
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onSecondaryTapDown: (details) => showDatabaseBackgroundMenu(
@@ -292,22 +347,35 @@ class _TableRail extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                DatabaseMetrics.space2,
-                DatabaseMetrics.space2,
-                DatabaseMetrics.space1,
-                DatabaseMetrics.space2,
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      LocaleKeys.collections_database_tables.tr().toUpperCase(),
-                      style: theme.sectionLabel,
+            CollectionWorkspaceRailHeader(
+              label: LocaleKeys.collections_database_tables.tr(),
+              actions: [
+                DatabaseAction(
+                  icon: Icons.view_column_rounded,
+                  tooltip: LocaleKeys.collections_database_columns.tr(),
+                  theme: theme,
+                  active: controller.state.showSchema,
+                  size: 24,
+                  onPressed: () =>
+                      controller.setSchemaVisible(!controller.state.showSchema),
+                ),
+                if (active != null)
+                  Builder(
+                    builder: (anchor) => DatabaseAction(
+                      icon: Icons.more_horiz_rounded,
+                      tooltip: LocaleKeys.collections_database_moreActions.tr(),
+                      theme: theme,
+                      size: 24,
+                      onPressed: () => showDatabaseTableMenu(
+                        context: anchor,
+                        table: active,
+                        controller: controller,
+                        collection: collection,
+                      ),
                     ),
                   ),
-                  DatabaseAction(
+                Builder(
+                  builder: (anchor) => DatabaseAction(
                     icon: Icons.add_rounded,
                     tooltip: LocaleKeys.collections_database_newTable.tr(),
                     theme: theme,
@@ -316,21 +384,22 @@ class _TableRail extends StatelessWidget {
                       context: context,
                       controller: controller,
                       collection: collection,
-                      position: _anchorOf(context),
+                      position: _anchorOf(anchor),
                     ),
                   ),
-                  DatabaseAction(
-                    icon: Icons.menu_open_rounded,
-                    tooltip: LocaleKeys.collections_database_hideTables.tr(),
-                    theme: theme,
-                    size: 24,
-                    onPressed: () => controller.setRailVisible(false),
-                  ),
-                ],
-              ),
+                ),
+                DatabaseAction(
+                  icon: Icons.menu_open_rounded,
+                  tooltip: LocaleKeys.collections_database_hideTables.tr(),
+                  theme: theme,
+                  size: 24,
+                  onPressed: () => controller.setRailVisible(false),
+                ),
+              ],
             ),
             Expanded(
               child: ListView.builder(
+                primary: false,
                 padding: EdgeInsets.zero,
                 itemCount: controller.tables.length,
                 itemBuilder: (context, index) {
@@ -340,6 +409,7 @@ class _TableRail extends StatelessWidget {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 2),
                     child: DatabaseRow(
+                      key: ValueKey('collection-table-row-${table.id}'),
                       theme: theme,
                       selected: table.id == active?.id,
                       onTap: () => controller.openTable(table.id),
@@ -352,12 +422,10 @@ class _TableRail extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          Icon(
+                          WorkspaceGlyph(
                             databaseLayoutIcon(table.layout),
                             size: 15,
-                            color: table.id == active?.id
-                                ? theme.accent
-                                : theme.iconRest,
+                            color: theme.iconRest,
                           ),
                           const SizedBox(width: DatabaseMetrics.space2),
                           Expanded(
@@ -370,9 +438,6 @@ class _TableRail extends StatelessWidget {
                                 color: table.id == active?.id
                                     ? theme.textStrong
                                     : theme.textBody,
-                                axis: table.id == active?.id
-                                    ? DatabaseMetrics.strongWeightAxis
-                                    : DatabaseMetrics.bodyWeightAxis,
                               ),
                             ),
                           ),

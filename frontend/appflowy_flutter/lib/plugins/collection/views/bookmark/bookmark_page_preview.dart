@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_reader.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_web_view.dart';
@@ -7,6 +8,7 @@ import 'package:appflowy/workspace/application/collections/bookmark/bookmark_con
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/link_bookmark_store.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Opens a link written into a page in the bookmark reader.
@@ -28,14 +30,21 @@ Future<void> openBookmarkPagePreview({
     return;
   }
 
+  // Dialogs do not inherit providers below the navigator. Borrow the source
+  // page's live access bloc without taking ownership or restricting its URL.
+  final access = context.read<PageAccessLevelBloc?>();
   await showGeneralDialog<void>(
     context: context,
     barrierDismissible: true,
     barrierLabel: title ?? target,
     barrierColor: Colors.black.withValues(alpha: 0.52),
     transitionDuration: BookmarkMetrics.reveal,
-    pageBuilder: (context, animation, secondaryAnimation) =>
-        _LinkReader(url: target, title: title),
+    pageBuilder: (context, animation, secondaryAnimation) => access == null
+        ? _LinkReader(url: target, title: title)
+        : BlocProvider<PageAccessLevelBloc>.value(
+            value: access,
+            child: _LinkReader(url: target, title: title),
+          ),
     transitionBuilder: (context, animation, secondary, child) => FadeTransition(
       opacity: CurvedAnimation(parent: animation, curve: BookmarkMetrics.curve),
       child: child,
@@ -56,6 +65,12 @@ class _LinkReader extends StatefulWidget {
 class _LinkReaderState extends State<_LinkReader> {
   final LinkBookmarkStore _store = const LinkBookmarkStore();
   BookmarkController? _controller;
+
+  // Without a page-access provider, keep the existing standalone-link default.
+  bool get _readOnly {
+    final state = context.read<PageAccessLevelBloc?>()?.state;
+    return state != null && (state.view.isLocked || !state.isEditable);
+  }
 
   @override
   void initState() {
@@ -79,17 +94,21 @@ class _LinkReaderState extends State<_LinkReader> {
     )..setViews([view]);
     // Nothing is known about a link the first time it is opened, so it reads
     // itself the way a library does when it catches up.
-    unawaited(controller.refreshMissing());
+    if (!_readOnly) {
+      unawaited(controller.refreshMissing());
+    }
     setState(() => _controller = controller);
   }
 
   @override
   Widget build(BuildContext context) {
+    context.watch<PageAccessLevelBloc?>();
     final controller = _controller;
     if (controller != null) {
       return BookmarkReader(
         entryId: LinkBookmarkStore.idFor(widget.url),
         controller: controller,
+        readOnly: _readOnly,
       );
     }
 

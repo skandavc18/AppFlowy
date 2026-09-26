@@ -9,6 +9,20 @@ import 'package:appflowy/shared/calendar/calendar_layout.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
+const _dateBadgeFontSize = 12.5;
+
+double _dateBadgeExtent(BuildContext context) => math.max(
+      22,
+      22 *
+          MediaQuery.textScalerOf(context).scale(_dateBadgeFontSize) /
+          _dateBadgeFontSize,
+    );
+
+double _dateBandHeight(BuildContext context) => math.max(
+      CalendarMetrics.monthDateBandHeight,
+      _dateBadgeExtent(context) + 8,
+    );
+
 /// What the calendar hands each view so it can draw and act.
 ///
 /// One object rather than a dozen callbacks per view, so adding an interaction
@@ -24,6 +38,7 @@ class CalendarViewDelegate {
     this.onShowMore,
     this.onDayMenu,
     this.canEdit = true,
+    this.canEditEvent,
   });
 
   /// The colour an event is drawn in: its own, else its calendar's.
@@ -49,6 +64,12 @@ class CalendarViewDelegate {
   final void Function(DateTime day, Offset globalPosition)? onDayMenu;
 
   final bool canEdit;
+
+  /// The host checks the owning provider as well as page/presentation access.
+  final bool Function(CalendarEvent event)? canEditEvent;
+
+  bool allowsEditing(CalendarEvent event) =>
+      canEdit && !event.readOnly && (canEditEvent?.call(event) ?? true);
 }
 
 /// The month grid.
@@ -126,8 +147,18 @@ class _CalendarMonthViewState extends State<CalendarMonthView> {
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
+              final minimumRowHeight = math.max(
+                CalendarMetrics.monthCellMinHeight,
+                _dateBandHeight(context) +
+                    CalendarMetrics.monthChipHeight +
+                    CalendarMetrics.space2,
+              );
               final rowHeight = (constraints.maxHeight / rows)
-                  .clamp(CalendarMetrics.monthCellMinHeight, 400.0);
+                  .clamp(
+                    minimumRowHeight,
+                    math.max(minimumRowHeight, 400.0),
+                  )
+                  .toDouble();
               // The grid is ALWAYS inside one scroll view. Adding and removing
               // a scroll view depending on whether the month happens to fit
               // re-parents the whole grid between frames, and it is also why a
@@ -254,9 +285,8 @@ class _WeekRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // How many chips fit under the date band, leaving room for "+N more".
-    final usable = rowHeight -
-        CalendarMetrics.monthDateBandHeight -
-        CalendarMetrics.space1;
+    final dateBandHeight = _dateBandHeight(context);
+    final usable = rowHeight - dateBandHeight - CalendarMetrics.space1;
     final slots = (usable /
             (CalendarMetrics.monthChipHeight + CalendarMetrics.monthChipGap))
         .floor()
@@ -323,7 +353,7 @@ class _WeekRow extends StatelessWidget {
                       Positioned(
                         left: bar.startColumn * columnWidth + 5,
                         width: bar.columnSpan * columnWidth - 10,
-                        top: CalendarMetrics.monthDateBandHeight +
+                        top: dateBandHeight +
                             bar.lane *
                                 (CalendarMetrics.monthChipHeight +
                                     CalendarMetrics.monthChipGap),
@@ -558,14 +588,14 @@ class _DayCellState extends State<_DayCell> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(
-                    height: CalendarMetrics.monthDateBandHeight,
+                    height: _dateBandHeight(context),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(6, 4, 4, 0),
+                      padding: const EdgeInsetsDirectional.fromSTEB(6, 4, 4, 0),
                       child: Row(
                         children: [
                           Expanded(
                             child: Align(
-                              alignment: Alignment.centerLeft,
+                              alignment: AlignmentDirectional.centerStart,
                               child: _DateBadge(
                                 day: day,
                                 today: today,
@@ -627,37 +657,65 @@ class _DateBadge extends StatelessWidget {
     // bare numbers reading as a spreadsheet.
     final named = day.day == 1;
     final label = named ? DateFormat.MMMd().format(day) : '${day.day}';
+    final extent = _dateBadgeExtent(context);
 
-    return AnimatedContainer(
-      duration: CalendarMetrics.change,
-      curve: CalendarMetrics.hoverCurve,
-      height: 22,
-      width: named ? null : 22,
-      padding: named ? const EdgeInsets.symmetric(horizontal: 8) : null,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: today ? palette.todayBadge : Colors.transparent,
-        shape: named ? BoxShape.rectangle : BoxShape.circle,
-        borderRadius:
-            named ? BorderRadius.circular(CalendarMetrics.pillRadius) : null,
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12.5,
-          height: 1,
-          letterSpacing: -0.1,
-          color: today
-              ? palette.todayBadgeText
-              : inMonth
-                  ? palette.textPrimary
-                  : palette.outsideMonthText,
-          fontVariations: [
-            FontVariation.weight(today || selected || named ? 660 : 550),
-          ],
-          fontFeatures: const [FontFeature.tabularFigures()],
+    // A grid slot survives month navigation: its number may become a named
+    // first-of-month pill and back. Only tween paint, never the tight circle's
+    // width against the pill's intrinsic (unbounded) width. Keep every child
+    // type stable so the badge and the day cell are updated, not remounted.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: SizedBox(
+        height: extent,
+        width: named ? null : extent,
+        child: TweenAnimationBuilder<Color?>(
+          duration: CalendarMetrics.change,
+          curve: CalendarMetrics.hoverCurve,
+          tween: ColorTween(
+            end: today
+                ? palette.todayBadge
+                : palette.todayBadge.withValues(alpha: 0),
+          ),
+          builder: (context, color, child) => DecoratedBox(
+            decoration: BoxDecoration(
+              color: color,
+              shape: named ? BoxShape.rectangle : BoxShape.circle,
+              borderRadius: named
+                  ? BorderRadius.circular(CalendarMetrics.pillRadius)
+                  : null,
+            ),
+            child: child,
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: named ? 8 : 0),
+            child: Center(
+              widthFactor: 1,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: _dateBadgeFontSize,
+                    height: 1,
+                    letterSpacing: -0.1,
+                    color: today
+                        ? palette.todayBadgeText
+                        : inMonth
+                            ? palette.textPrimary
+                            : palette.outsideMonthText,
+                    fontVariations: [
+                      FontVariation.weight(
+                        today || selected || named ? 660 : 550,
+                      ),
+                    ],
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

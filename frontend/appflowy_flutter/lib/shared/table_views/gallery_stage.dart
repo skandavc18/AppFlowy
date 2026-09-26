@@ -1,12 +1,16 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/table_views/row_page_preview.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
 import 'package:appflowy/shared/table_views/table_property_view.dart';
 import 'package:appflowy/shared/table_views/table_view_chrome.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/workspace/application/table_views/gallery_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_query.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
@@ -227,6 +231,9 @@ class GalleryStageState extends State<GalleryStage> {
     TableRowGroup group,
     GalleryLayout layout,
   ) {
+    final textScale = MediaQuery.textScalerOf(context).scale(15) / 15;
+    final captionGrowth = (textScale - 1).clamp(0.0, double.infinity) *
+        TableViewMetrics.cardCaptionAllowance;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -249,13 +256,13 @@ class GalleryStageState extends State<GalleryStage> {
             for (final card in group.rows)
               SizedBox(
                 width: layout.cardWidth,
-                height: layout.cardHeight,
-                child: _GalleryCard(
+                height: layout.cardHeight + captionGrowth,
+                child: TableGalleryCard(
                   key: ValueKey(card.rowId),
                   card: card,
                   palette: palette,
                   face: widget.spec.face,
-                  coverHeight: layout.coverHeight,
+                  coverHeight: layout.cardHeight * 0.60,
                   showPlaceholder: widget.spec.showCoverPlaceholder,
                   quiet: _query.isSearching && !_matches.contains(card.rowId),
                   onOpen: widget.onOpenRow == null
@@ -360,9 +367,10 @@ class GalleryStageState extends State<GalleryStage> {
   }
 }
 
-/// One row, hung as a card.
-class _GalleryCard extends StatefulWidget {
-  const _GalleryCard({
+/// Presentation of one row, shared by the gallery stage and lightweight hosts.
+/// The supplied model owns the facts; the card never changes its read policy.
+class TableGalleryCard extends StatefulWidget {
+  const TableGalleryCard({
     super.key,
     required this.card,
     required this.palette,
@@ -370,6 +378,7 @@ class _GalleryCard extends StatefulWidget {
     required this.coverHeight,
     required this.showPlaceholder,
     required this.quiet,
+    this.selected = false,
     this.onOpen,
     this.onContextMenu,
   });
@@ -380,58 +389,101 @@ class _GalleryCard extends StatefulWidget {
   final double coverHeight;
   final bool showPlaceholder;
   final bool quiet;
+  final bool selected;
   final VoidCallback? onOpen;
-  final void Function(Offset globalPosition)? onContextMenu;
+  final Future<void> Function(Offset globalPosition)? onContextMenu;
 
   @override
-  State<_GalleryCard> createState() => _GalleryCardState();
+  State<TableGalleryCard> createState() => _TableGalleryCardState();
 }
 
-class _GalleryCardState extends State<_GalleryCard> {
-  bool _hovered = false;
+class _TableGalleryCardState extends State<TableGalleryCard> {
+  final _focusNode = FocusNode(debugLabel: 'Table gallery card');
+  final _menuAnchor = GlobalKey();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final card = widget.card;
-    final lift = _hovered ? TableViewMetrics.hoverLift : 0.0;
 
     return Opacity(
       opacity: widget.quiet ? 0.4 : 1,
-      child: MouseRegion(
-        opaque: false,
-        cursor: widget.onOpen == null
-            ? MouseCursor.defer
-            : SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.onOpen,
-          onSecondaryTapUp: widget.onContextMenu == null
-              ? null
-              : (details) => widget.onContextMenu!(details.globalPosition),
-          child: AnimatedContainer(
-            duration: TableViewMetrics.hover,
-            curve: TableViewMetrics.enterCurve,
-            transform: Matrix4.translationValues(0, -lift, 0),
-            decoration: BoxDecoration(
-              color: palette.surface,
-              borderRadius: BorderRadius.circular(TableViewMetrics.cardRadius),
-              boxShadow: palette.cardShadow(lift: lift),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(TableViewMetrics.cardRadius),
-              child: switch (widget.face) {
-                GalleryCardFace.portrait => _buildPortrait(palette, card),
-                GalleryCardFace.page => _buildPage(palette, card),
-                _ => Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _buildCover(palette, card),
-                      Expanded(child: _buildBody(palette, card)),
-                    ],
-                  ),
-              },
+      child: Focus(
+        focusNode: _focusNode,
+        canRequestFocus: widget.onOpen != null,
+        onFocusChange: (_) => setState(() {}),
+        onKeyEvent: _handleKeyEvent,
+        child: PreviewToolbarRegion(
+          child: MouseRegion(
+            cursor: widget.onOpen == null
+                ? MouseCursor.defer
+                : SystemMouseCursors.click,
+            child: WorkspaceSurface(
+              child: Semantics(
+                button: widget.onOpen != null,
+                selected: widget.selected,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Builder(
+                      builder: (context) => GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onOpen,
+                        onSecondaryTapUp: widget.onContextMenu == null
+                            ? null
+                            : (details) => unawaited(
+                                  _showMenu(context, details.globalPosition),
+                                ),
+                        child: switch (widget.face) {
+                          GalleryCardFace.portrait =>
+                            _buildPortrait(palette, card),
+                          GalleryCardFace.page => _buildPage(palette, card),
+                          _ => _buildStandard(palette, card),
+                        },
+                      ),
+                    ),
+                    if (widget.onContextMenu != null)
+                      PositionedDirectional(
+                        top: WorkspaceTokens.space2,
+                        end: WorkspaceTokens.space2,
+                        child: PreviewToolbar(
+                          keepVisible: widget.selected || _focusNode.hasFocus,
+                          child: Builder(
+                            key: _menuAnchor,
+                            builder: _buildOverflow,
+                          ),
+                        ),
+                      ),
+                    // A nullable Container foreground changes subtree depth.
+                    // Paint the focus/selection ring in a permanent sibling
+                    // instead, leaving the page renderer and actions mounted.
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          key: const ValueKey('table-gallery-selection'),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(
+                              WorkspaceTokens.cardRadius,
+                            ),
+                            border: widget.selected || _focusNode.hasFocus
+                                ? Border.all(
+                                    color: WorkspacePalette.of(context).focus,
+                                    width: 1.5,
+                                  )
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
         ),
@@ -439,10 +491,241 @@ class _GalleryCardState extends State<_GalleryCard> {
     );
   }
 
+  Widget _buildStandard(TableViewPalette palette, TableRowCard card) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Font-size multiples miss rounded line metrics and fallback glyphs.
+        // Measure the actual caption before assigning the preview its share.
+        final captionMinimum =
+            _captionMinimumHeight(context, card, constraints.maxWidth);
+        final previewRoom = (constraints.maxHeight - captionMinimum)
+            .clamp(0.0, double.infinity);
+        final height = widget.coverHeight.clamp(0.0, previewRoom).toDouble();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildCover(palette, card, height),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, captionConstraints) => SingleChildScrollView(
+                  key: const ValueKey('table-gallery-caption-scroll'),
+                  primary: false,
+                  // Normally there is no scroll extent. A very short host or
+                  // extreme text scale must not clip the title or real date.
+                  child: SizedBox(
+                    height: math.max(
+                      captionMinimum,
+                      captionConstraints.maxHeight,
+                    ),
+                    child: _buildBody(palette, card),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  double _captionMinimumHeight(
+    BuildContext context,
+    TableRowCard card,
+    double width,
+  ) {
+    final bodyWidth = math.max(0.0, width - WorkspaceTokens.space4 * 2);
+    final icon = card.icon;
+    final hasIcon = icon != null && icon.isNotEmpty;
+    final iconSize = hasIcon
+        ? _measureCaptionText(
+            context,
+            icon,
+            const TextStyle(fontSize: 16, height: 1.2),
+          )
+        : Size.zero;
+    final titleSize = _measureCaptionText(
+      context,
+      card.title.trim().isEmpty ? '—' : card.title,
+      WorkspaceTypography.style(context, WorkspaceTextRole.cardTitle),
+      maxWidth: math.max(0.0, bodyWidth - (hasIcon ? iconSize.width + 8 : 0)),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+    );
+    final modified = card.lastModified;
+    final dateHeight = modified == null
+        ? 0.0
+        : _measureCaptionText(
+            context,
+            _agoOf(modified),
+            WorkspaceTypography.style(context, WorkspaceTextRole.metadata),
+            maxWidth: bodyWidth,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ).height;
+    return (WorkspaceTokens.space3 * 2 +
+            math.max(titleSize.height, hasIcon ? iconSize.height + 1 : 0.0) +
+            WorkspaceTokens.space2 +
+            dateHeight)
+        .ceilToDouble();
+  }
+
+  Size _measureCaptionText(
+    BuildContext context,
+    String text,
+    TextStyle style, {
+    double maxWidth = double.infinity,
+    int? maxLines,
+    TextOverflow? overflow,
+  }) {
+    // Match Text's inherited style, accessibility and paragraph settings,
+    // including non-linear scaling of the title, icon and metadata separately.
+    final defaults = DefaultTextStyle.of(context);
+    var effectiveStyle = defaults.style.merge(style);
+    if (MediaQuery.boldTextOf(context)) {
+      effectiveStyle =
+          effectiveStyle.merge(const TextStyle(fontWeight: FontWeight.bold));
+    }
+    final effectiveOverflow =
+        overflow ?? effectiveStyle.overflow ?? defaults.overflow;
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: effectiveStyle),
+      textAlign: defaults.textAlign ?? TextAlign.start,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      locale: Localizations.maybeLocaleOf(context),
+      maxLines: maxLines ?? defaults.maxLines,
+      ellipsis: effectiveOverflow == TextOverflow.ellipsis ? '…' : null,
+      textWidthBasis: defaults.textWidthBasis,
+      textHeightBehavior: defaults.textHeightBehavior ??
+          DefaultTextHeightBehavior.maybeOf(context),
+    );
+    try {
+      painter.layout(
+        maxWidth:
+            defaults.softWrap || effectiveOverflow == TextOverflow.ellipsis
+                ? maxWidth
+                : double.infinity,
+      );
+      return painter.size;
+    } finally {
+      painter.dispose();
+    }
+  }
+
+  Widget _buildOverflow(BuildContext context) {
+    final label = LocaleKeys.workspaceFolderExplorer_more.tr();
+    return Shortcuts(
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+      },
+      child: Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: IconButton(
+          key: const ValueKey('table-gallery-more'),
+          style: WorkspaceChrome.controlStyle(context).copyWith(
+            minimumSize: const WidgetStatePropertyAll(Size.square(40)),
+            tapTargetSize: MaterialTapTargetSize.padded,
+            visualDensity: VisualDensity.standard,
+            backgroundColor: WidgetStatePropertyAll(
+              WorkspacePalette.of(context).elevatedSurface,
+            ),
+          ),
+          onPressed: _openMenu,
+          icon: Semantics(
+            label: label,
+            child: const Icon(Icons.more_horiz_rounded, size: 18),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _openMenu() {
+    final context = _menuAnchor.currentContext;
+    final box = context?.findRenderObject() as RenderBox?;
+    if (context != null && box != null && box.hasSize) {
+      unawaited(
+        _showMenu(
+          context,
+          box.localToGlobal(Offset(box.size.width, box.size.height + 5)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showMenu(BuildContext context, Offset position) async {
+    final show = widget.onContextMenu;
+    if (show == null) return;
+    // The stage opens its menu from a context outside this card. Hold the
+    // originating region here until that existing menu completes or cancels.
+    final release = PreviewToolbarRegion.hold(context);
+    try {
+      await show(position);
+    } finally {
+      release();
+    }
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (!node.hasPrimaryFocus || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if ((key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) &&
+        widget.onOpen != null) {
+      widget.onOpen!();
+      return KeyEventResult.handled;
+    }
+    if (widget.onContextMenu != null &&
+        (key == LogicalKeyboardKey.contextMenu ||
+            (key == LogicalKeyboardKey.f10 &&
+                HardwareKeyboard.instance.isShiftPressed))) {
+      _openMenu();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _buildTitle(
+    TableRowCard card, {
+    Color? color,
+  }) {
+    final title = card.title.trim().isEmpty ? '—' : card.title;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (card.icon?.isNotEmpty ?? false)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(end: 8, top: 1),
+            child: Text(
+              card.icon!,
+              style: const TextStyle(fontSize: 16, height: 1.2),
+            ),
+          ),
+        Expanded(
+          child: Tooltip(
+            message: title,
+            excludeFromSemantics: true,
+            child: Text(
+              title,
+              key: const ValueKey('table-gallery-title'),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: WorkspaceTypography.style(
+                context,
+                WorkspaceTextRole.cardTitle,
+                color: color,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   /// The row's own page, with its name written underneath.
-  ///
-  /// A card that leads with the writing rather than with a picture: it is the
-  /// only thing on most rows that tells one from another at a glance.
   Widget _buildPage(TableViewPalette palette, TableRowCard card) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -455,111 +738,54 @@ class _GalleryCardState extends State<_GalleryCard> {
           ),
         ),
         Padding(
-          padding: const EdgeInsets.fromLTRB(
-            TableViewMetrics.space4,
-            TableViewMetrics.space3,
-            TableViewMetrics.space4,
-            TableViewMetrics.space4,
+          padding: const EdgeInsets.symmetric(
+            horizontal: WorkspaceTokens.space4,
+            vertical: WorkspaceTokens.space3,
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.only(right: 8, top: 1),
-                child: card.icon != null
-                    ? Text(
-                        card.icon!,
-                        style: const TextStyle(fontSize: 15, height: 1.2),
-                      )
-                    : Icon(
-                        Icons.description_outlined,
-                        size: 16,
-                        color: palette.textMuted,
-                      ),
-              ),
-              Expanded(
-                child: Text(
-                  card.title.trim().isEmpty ? '—' : card.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    height: 1.32,
-                    letterSpacing: -0.2,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: _buildTitle(card),
         ),
       ],
     );
   }
 
-  /// The cover fills the card, with the writing laid over its foot.
+  /// Only a real cover needs contrast behind its title. A missing cover is
+  /// still an ordinary warm surface, not a manufactured dark gradient.
   Widget _buildPortrait(TableViewPalette palette, TableRowCard card) {
     final cover = card.cover;
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (cover != null)
-          AnimatedScale(
-            duration: TableViewMetrics.change,
-            curve: TableViewMetrics.settleCurve,
-            scale: _hovered ? 1.04 : 1,
-            child: TableCoverView(cover: cover, palette: palette),
-          ),
-        const Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0x00000000), Color(0xB3000000)],
-                stops: [0.45, 1],
+        if (cover != null) TableCoverView(cover: cover, palette: palette),
+        PositionedDirectional(
+          start: 0,
+          end: 0,
+          bottom: 0,
+          child: ColoredBox(
+            color: cover == null ? palette.surface : const Color(0xCC000000),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: WorkspaceTokens.space4,
+                vertical: WorkspaceTokens.space3,
+              ),
+              child: _buildTitle(
+                card,
+                color: cover == null ? null : Colors.white,
               ),
             ),
-          ),
-        ),
-        Positioned(
-          left: TableViewMetrics.space4,
-          right: TableViewMetrics.space4,
-          bottom: TableViewMetrics.space4,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (card.icon != null)
-                Text(
-                  card.icon!,
-                  style: const TextStyle(fontSize: 22, height: 1.3),
-                ),
-              Text(
-                card.title.trim().isEmpty ? '—' : card.title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 16,
-                  height: 1.3,
-                  letterSpacing: -0.2,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
-            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildCover(TableViewPalette palette, TableRowCard card) {
+  Widget _buildCover(
+    TableViewPalette palette,
+    TableRowCard card,
+    double height,
+  ) {
     if (widget.face == GalleryCardFace.none) {
-      return const SizedBox(height: 4);
+      return const SizedBox.shrink();
     }
-    final height = widget.coverHeight;
     if (widget.face == GalleryCardFace.content) {
       return _PagePreview(
         documentId: card.documentId,
@@ -569,129 +795,87 @@ class _GalleryCardState extends State<_GalleryCard> {
     }
     final cover = card.cover;
     if (cover == null && !widget.showPlaceholder) {
-      return const SizedBox(height: 4);
+      return const SizedBox.shrink();
     }
-    if (cover == null) {
-      return SizedBox(height: height);
-    }
-
     return SizedBox(
       height: height,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          AnimatedScale(
-            duration: TableViewMetrics.change,
-            curve: TableViewMetrics.settleCurve,
-            scale: _hovered ? 1.04 : 1,
-            // The same cover the row's own page shows, so a card and its page
-            // are recognisably the same row.
-            child: TableCoverView(cover: cover, palette: palette),
-          ),
-          if (card.icon != null)
-            Center(
-              child: Text(
-                card.icon!,
-                style: TextStyle(fontSize: height * 0.23, height: 1),
-              ),
-            ),
-        ],
-      ),
+      // Retain the user's actual colour/gradient/asset/picture choice. Hover
+      // never zooms, replaces or recreates the cover or the page renderer.
+      child:
+          cover == null ? null : TableCoverView(cover: cover, palette: palette),
     );
   }
 
   Widget _buildBody(TableViewPalette palette, TableRowCard card) {
     final facts = card.filled
         .where((property) => property.kind != TablePropertyKind.image)
-        .take(3)
         .toList();
+    final details = [
+      for (final property in facts) '${property.name}: ${property.value}',
+      if (card.lastModified case final modified?)
+        DateFormat.yMMMd().add_jm().format(modified),
+    ].join('\n');
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        TableViewMetrics.space4,
-        TableViewMetrics.space4,
-        TableViewMetrics.space4,
-        TableViewMetrics.space3,
+      padding: const EdgeInsets.symmetric(
+        horizontal: WorkspaceTokens.space4,
+        vertical: WorkspaceTokens.space3,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (card.icon != null && widget.face != GalleryCardFace.cover)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: Text(
-                    card.icon!,
-                    style: const TextStyle(fontSize: 16, height: 1.2),
-                  ),
-                ),
-              Expanded(
-                child: Text(
-                  card.title.trim().isEmpty ? '—' : card.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 15,
-                    height: 1.32,
-                    letterSpacing: -0.2,
-                    fontWeight: FontWeight.w600,
-                    color: palette.textPrimary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: TableViewMetrics.space2),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                // Only whole rows are shown. A card that clipped one halfway
-                // reads as broken rather than as abbreviated.
-                final room = (constraints.maxHeight / _factHeight).floor();
-                if (room < 1) {
-                  return const SizedBox.shrink();
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final property in facts.take(room))
-                      SizedBox(
-                        height: _factHeight,
-                        // A property that asks for more than its berth is
-                        // trimmed rather than printed over the card.
-                        child: ClipRect(
-                          child: OverflowBox(
-                            alignment: Alignment.centerLeft,
-                            minHeight: 0,
-                            maxHeight: double.infinity,
-                            child: TablePropertyView(
-                              property: property,
-                              palette: palette,
-                              showLabel: false,
-                              compact: true,
+      child: Tooltip(
+        message: details,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildTitle(card),
+            const SizedBox(height: WorkspaceTokens.space2),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final factHeight =
+                      (MediaQuery.textScalerOf(context).scale(12) * 1.4 + 8)
+                          .clamp(29.0, double.infinity);
+                  final room =
+                      (constraints.maxHeight / factHeight).floor().clamp(0, 3);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final property in facts.take(room))
+                        SizedBox(
+                          height: factHeight,
+                          child: ClipRect(
+                            child: OverflowBox(
+                              alignment: AlignmentDirectional.centerStart,
+                              minHeight: 0,
+                              maxHeight: double.infinity,
+                              child: TablePropertyView(
+                                property: property,
+                                palette: palette,
+                                showLabel: false,
+                                compact: true,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                  ],
-                );
-              },
+                    ],
+                  );
+                },
+              ),
             ),
-          ),
-          if (card.lastModified != null)
-            Text(
-              _agoOf(card.lastModified!),
-              style: TextStyle(fontSize: 11, color: palette.textMuted),
-            ),
-        ],
+            if (card.lastModified != null)
+              Text(
+                _agoOf(card.lastModified!),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: WorkspaceTypography.style(
+                  context,
+                  WorkspaceTextRole.metadata,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
-
-  /// The room one property takes on a card, its own gap included.
-  static const double _factHeight = 29;
 
   static String _agoOf(DateTime when) {
     final gap = DateTime.now().difference(when);

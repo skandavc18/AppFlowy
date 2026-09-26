@@ -85,7 +85,18 @@ class ChartPluginWidgetBuilder extends PluginWidgetBuilder with NavigationItem {
     required bool shrinkWrap,
     Map<String, dynamic>? data,
   }) =>
-      ChartPage(key: ValueKey(view.id), view: view);
+      MultiBlocProvider(
+        providers: [
+          BlocProvider<ViewInfoBloc>.value(value: viewInfoBloc),
+          BlocProvider<PageAccessLevelBloc>.value(value: pageAccessLevelBloc),
+        ],
+        child: DatabasePageDecorationHost(
+          view: view,
+          enabled:
+              !shrinkWrap && data?[kDatabasePluginWidgetBuilderNode] == null,
+          builder: (view) => ChartPage(key: ValueKey(view.id), view: view),
+        ),
+      );
 
   @override
   String? get viewName =>

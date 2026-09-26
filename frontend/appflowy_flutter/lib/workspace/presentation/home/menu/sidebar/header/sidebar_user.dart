@@ -1,11 +1,12 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/menu/menu_user_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_typography.dart';
 import 'package:appflowy/workspace/presentation/notifications/widgets/notification_button.dart';
-import 'package:appflowy/workspace/presentation/widgets/user_avatar.dart';
+import 'package:appflowy/workspace/presentation/widgets/user_avatar_button.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart'
     show UserProfilePB;
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -19,9 +20,13 @@ class SidebarUser extends StatefulWidget {
   const SidebarUser({
     super.key,
     required this.userProfile,
+    this.showUtilities = true,
+    this.createUserBloc,
   });
 
   final UserProfilePB userProfile;
+  final bool showUtilities;
+  final MenuUserBloc Function(UserProfilePB, String)? createUserBloc;
 
   @override
   State<SidebarUser> createState() => _SidebarUserState();
@@ -36,18 +41,23 @@ class _SidebarUserState extends State<SidebarUser> {
         context.read<UserWorkspaceBloc>().state.currentWorkspace?.workspaceId ??
             '';
     return BlocProvider<MenuUserBloc>(
+      key: ValueKey((widget.userProfile.id, workspaceId)),
       // Without this the bloc never starts its listener, so a name changed in
       // settings never reaches the sidebar.
-      create: (_) => MenuUserBloc(widget.userProfile, workspaceId)
-        ..add(const MenuUserEvent.initial()),
+      create: (_) =>
+          (widget.createUserBloc?.call(widget.userProfile, workspaceId) ??
+              MenuUserBloc(widget.userProfile, workspaceId))
+            ..add(const MenuUserEvent.initial()),
       child: BlocBuilder<MenuUserBloc, MenuUserState>(
         builder: (context, state) {
           final palette = SidebarPalette.of(context);
+          final user = context.read<MenuUserBloc>();
+          final userId = state.userProfile.id;
           return MouseRegion(
             onEnter: (_) => setState(() => _isHovered = true),
             onExit: (_) => setState(() => _isHovered = false),
             child: AnimatedContainer(
-              duration: SidebarMetrics.hover,
+              duration: WorkspaceTokens.motion(context, SidebarMetrics.hover),
               curve: SidebarMetrics.curve,
               decoration: BoxDecoration(
                 color: _isHovered ? palette.hover : palette.hoverAtRest,
@@ -56,12 +66,14 @@ class _SidebarUserState extends State<SidebarUser> {
               child: Row(
                 children: [
                   const HSpace(SidebarMetrics.space1),
-                  UserAvatar(
-                    iconUrl: state.userProfile.iconUrl,
-                    name: state.userProfile.name,
+                  UserAvatarButton(
+                    userProfile: state.userProfile,
+                    saveIcon: user.saveUserIcon,
+                    isCurrent: () =>
+                        !user.isClosed && user.state.userProfile.id == userId,
                     size: AFAvatarSize.s,
                     decoration: ShapeDecoration(
-                      color: const Color(0xFFFBE8FB),
+                      color: palette.selected,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
                       ),
@@ -69,24 +81,28 @@ class _SidebarUserState extends State<SidebarUser> {
                   ),
                   const HSpace(SidebarMetrics.space2),
                   Expanded(child: _buildUserName(context, state)),
-                  AnimatedOpacity(
-                    duration: SidebarMetrics.reveal,
-                    curve: SidebarMetrics.curve,
-                    opacity: _isHovered ? 1 : 0,
-                    child: IgnorePointer(
-                      ignoring: !_isHovered,
-                      child: Row(
-                        children: [
-                          UserSettingButton(isHover: _isHovered),
-                          const HSpace(SidebarMetrics.space1),
-                          NotificationButton(
-                            isHover: _isHovered,
-                            key: ValueKey(widget.userProfile.id),
-                          ),
-                        ],
+                  if (widget.showUtilities)
+                    AnimatedOpacity(
+                      duration: WorkspaceTokens.motion(
+                        context,
+                        SidebarMetrics.reveal,
+                      ),
+                      curve: SidebarMetrics.curve,
+                      opacity: _isHovered ? 1 : 0,
+                      child: IgnorePointer(
+                        ignoring: !_isHovered,
+                        child: Row(
+                          children: [
+                            UserSettingButton(isHover: _isHovered),
+                            const HSpace(SidebarMetrics.space1),
+                            NotificationButton(
+                              isHover: _isHovered,
+                              key: ValueKey(widget.userProfile.id),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                   const HSpace(SidebarMetrics.space1),
                 ],
               ),

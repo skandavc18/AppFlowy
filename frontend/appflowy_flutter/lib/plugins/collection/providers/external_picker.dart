@@ -770,7 +770,9 @@ class _PickerRowState extends State<_PickerRow> {
           decoration: BoxDecoration(
             color: widget.selected
                 ? widget.accent.withValues(alpha: 0.14)
-                : palette.hover.withValues(alpha: hovered ? 1 : 0),
+                : hovered
+                    ? palette.hover
+                    : palette.hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(9),
           ),
           child: Row(

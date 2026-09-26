@@ -1,5 +1,6 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -7,11 +8,9 @@ import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -45,6 +44,7 @@ class PageInspectionPanel extends StatefulWidget {
 class _PageInspectionPanelState extends State<PageInspectionPanel> {
   late bool isFavorite;
   bool updatingFavorite = false;
+  int favoriteRequest = 0;
   String? inspectedFolderId;
 
   @override
@@ -61,38 +61,29 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
         oldWidget.view.isWorkspaceFolder != widget.view.isWorkspaceFolder) {
       isFavorite = widget.view.isFavorite;
       updatingFavorite = false;
+      favoriteRequest++;
       inspectedFolderId = widget.view.isWorkspaceFolder ? widget.view.id : null;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
     final inspectedView = _inspectedView;
-    return Container(
+    return ColoredBox(
       key: const ValueKey('command-palette-inspection-panel'),
-      margin: EdgeInsets.only(right: widget.onBack == null ? 24 : 0),
-      decoration: BoxDecoration(
-        border: widget.onBack == null
-            ? Border(
-                right: BorderSide(color: theme.borderColorScheme.primary),
-              )
-            : null,
-      ),
+      color: WorkspacePalette.of(context).elevatedSurface,
       child: widget.view.isWorkspaceFolder && inspectedView != null
           ? _buildFolderInspection(context, inspectedView)
           : Column(
               children: [
-                _buildMetadata(context, widget.view),
                 Expanded(
-                  child: Center(
-                    child: PagePreview(
-                      key: ValueKey(widget.view.id),
-                      view: widget.view,
-                      onViewOpened: () => widget.onOpen(widget.view),
-                    ),
+                  child: PagePreview(
+                    key: ValueKey(widget.view.id),
+                    view: widget.view,
+                    onViewOpened: () => widget.onOpen(widget.view),
                   ),
                 ),
+                _buildMetadata(context, widget.view),
                 _buildActions(context, widget.view),
               ],
             ),
@@ -108,7 +99,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
   }
 
   Widget _buildFolderInspection(BuildContext context, ViewPB folder) {
-    final palette = FolderExplorerPalette.of(context);
+    final palette = WorkspacePalette.of(context);
     final cover = folder.cover;
     final collectionArtwork = FolderGalleryCollectionArtwork(
       item: WorkspaceExplorerItem.fromView(folder),
@@ -140,93 +131,120 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
               ),
             ),
           ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(15),
-            child: SizedBox(
-              height: 142,
-              width: double.infinity,
-              child: cover == null || cover.isNone
-                  ? collectionArtwork
-                  : ViewCoverImage(
-                      key: const ValueKey('command-palette-folder-cover'),
-                      cover: cover,
-                      userProfile:
-                          context.read<UserWorkspaceBloc?>()?.state.userProfile,
-                      width: double.infinity,
-                      height: 142,
-                      fallback: collectionArtwork,
-                    ),
-            ),
-          ),
-        ),
-        _FolderInspectionBreadcrumbs(
-          root: widget.view,
-          current: folder,
-          cachedViews: widget.cachedViews,
-          onSelected: _inspectFolder,
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 2, 16, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  folder.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontSize: 18,
-                    height: 1.2,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.25,
-                  ),
-                ),
-              ),
-              Text(
-                LocaleKeys.workspaceFolderExplorer_itemCount.tr(
-                  args: [children.length.toString()],
-                ),
-                style: TextStyle(
-                  color: palette.textMuted,
-                  fontSize: 11.5,
-                ),
-              ),
-            ],
-          ),
-        ),
         Expanded(
-          child: children.isEmpty
-              ? Center(
-                  child: Text(
-                    LocaleKeys.workspaceFolderExplorer_emptyCollectionHint.tr(),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: palette.textMuted,
-                      fontSize: 12.5,
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
+                      child: ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(WorkspaceTokens.cardRadius),
+                        child: SizedBox(
+                          height: 128,
+                          width: double.infinity,
+                          child: cover == null || cover.isNone
+                              ? collectionArtwork
+                              : ViewCoverImage(
+                                  key: const ValueKey(
+                                    'command-palette-folder-cover',
+                                  ),
+                                  cover: cover,
+                                  userProfile: context
+                                      .read<UserWorkspaceBloc?>()
+                                      ?.state
+                                      .userProfile,
+                                  width: double.infinity,
+                                  height: 128,
+                                  fallback: collectionArtwork,
+                                ),
+                        ),
+                      ),
+                    ),
+                    _FolderInspectionBreadcrumbs(
+                      root: widget.view,
+                      current: folder,
+                      cachedViews: widget.cachedViews,
+                      onSelected: _inspectFolder,
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Semantics(
+                            header: true,
+                            child: Text(
+                              folder.nameOrDefault,
+                              style: WorkspaceTypography.style(
+                                context,
+                                WorkspaceTextRole.section,
+                              ),
+                            ),
+                          ),
+                          const VSpace(WorkspaceTokens.space2),
+                          Text(
+                            LocaleKeys.workspaceFolderExplorer_itemCount.tr(
+                              args: [children.length.toString()],
+                            ),
+                            style: WorkspaceTypography.style(
+                              context,
+                              WorkspaceTextRole.metadata,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (children.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(WorkspaceTokens.space6),
+                      child: Text(
+                        LocaleKeys.workspaceFolderExplorer_emptyCollectionHint
+                            .tr(),
+                        textAlign: TextAlign.center,
+                        style: WorkspaceTypography.style(
+                          context,
+                          WorkspaceTextRole.body,
+                          color: palette.secondaryText,
+                        ),
+                      ),
                     ),
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
-                  itemCount: children.length,
-                  itemBuilder: (context, index) {
-                    final child = children[index];
-                    return _FolderInspectionItem(
-                      view: child,
-                      typeLabel: _viewTypeLabel(child),
-                      onTap: () {
-                        if (child.isWorkspaceFolder) {
-                          _inspectFolder(child);
-                        } else {
-                          widget.onOpen(child);
-                        }
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final child = children[index];
+                        return _FolderInspectionItem(
+                          view: child,
+                          typeLabel: _viewTypeLabel(child),
+                          onTap: () {
+                            if (child.isWorkspaceFolder) {
+                              _inspectFolder(child);
+                            } else {
+                              widget.onOpen(child);
+                            }
+                          },
+                        );
                       },
-                    );
-                  },
+                      childCount: children.length,
+                    ),
+                  ),
                 ),
+            ],
+          ),
         ),
         _buildActions(context, folder),
       ],
@@ -238,11 +256,12 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
       inspectedFolderId = folder.id;
       isFavorite = folder.isFavorite;
       updatingFavorite = false;
+      favoriteRequest++;
     });
   }
 
   Widget _buildMetadata(BuildContext context, ViewPB view) {
-    final theme = AppFlowyTheme.of(context);
+    final palette = WorkspacePalette.of(context);
     final parent = widget.cachedViews[view.parentViewId];
     final creator = widget.currentUserId != null &&
             view.hasCreatedBy() &&
@@ -254,7 +273,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
     );
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 8, 4),
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -263,7 +282,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
               Icon(
                 _layoutIcon(view.layout),
                 size: 14,
-                color: theme.iconColorScheme.secondary,
+                color: palette.secondaryText,
               ),
               const HSpace(6),
               Expanded(
@@ -273,8 +292,9 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
                       : '${parent.name}  /  ${view.name}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textStyle.caption.enhanced(
-                    color: theme.textColorScheme.secondary,
+                  style: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.metadata,
                   ),
                 ),
               ),
@@ -285,11 +305,10 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
             '${LocaleKeys.commandPalette_createdBy.tr()} $creator'
             '  ·  ${LocaleKeys.commandPalette_edited.tr()} '
             '${DateFormat.yMMMd(context.locale.toLanguageTag()).format(editedAt)}',
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: theme.textStyle.caption.enhanced(
-              color: theme.textColorScheme.tertiary,
-            ),
+            style:
+                WorkspaceTypography.style(context, WorkspaceTextRole.metadata),
           ),
         ],
       ),
@@ -297,10 +316,22 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
   }
 
   Widget _buildActions(BuildContext context, ViewPB view) {
-    final theme = AppFlowyTheme.of(context);
+    final palette = WorkspacePalette.of(context);
+    final iconStyle = IconButton.styleFrom(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
+      ),
+    ).copyWith(
+      animationDuration:
+          WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 8, 12),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: WorkspaceTokens.space2,
+        runSpacing: WorkspaceTokens.space2,
         children: [
           _ActionButton(
             key: const ValueKey('command-palette-open-action'),
@@ -308,44 +339,39 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
             label: LocaleKeys.settings_files_open.tr(),
             onTap: () => widget.onOpen(view),
           ),
-          const Spacer(),
-          if (!view.isWorkspaceRootFolder) ...[
-            FlowyTooltip(
-              message: LocaleKeys.disclosureAction_openNewTab.tr(),
-              child: FlowyIconButton(
-                key: const ValueKey('command-palette-open-new-tab-action'),
-                width: 32,
-                height: 32,
-                icon: Icon(
-                  Icons.open_in_new_rounded,
-                  size: 17,
-                  color: theme.iconColorScheme.secondary,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!view.isWorkspaceRootFolder)
+                IconButton(
+                  key: const ValueKey('command-palette-open-new-tab-action'),
+                  tooltip: LocaleKeys.disclosureAction_openNewTab.tr(),
+                  style: iconStyle,
+                  color: palette.secondaryText,
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  onPressed: () {
+                    getIt<TabsBloc>().openTab(view);
+                    widget.onClose();
+                  },
                 ),
-                onPressed: () {
-                  getIt<TabsBloc>().openTab(view);
-                  widget.onClose();
-                },
+              Semantics(
+                toggled: isFavorite,
+                child: IconButton(
+                  key: const ValueKey('command-palette-favorite-action'),
+                  style: iconStyle,
+                  tooltip: isFavorite
+                      ? LocaleKeys.disclosureAction_unfavorite.tr()
+                      : LocaleKeys.disclosureAction_favorite.tr(),
+                  color: isFavorite ? palette.accent : palette.secondaryText,
+                  icon: Icon(
+                    isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                    size: 18,
+                  ),
+                  onPressed:
+                      updatingFavorite ? null : () => _toggleFavorite(view),
+                ),
               ),
-            ),
-            const HSpace(4),
-          ],
-          FlowyTooltip(
-            message: isFavorite
-                ? LocaleKeys.disclosureAction_unfavorite.tr()
-                : LocaleKeys.disclosureAction_favorite.tr(),
-            child: FlowyIconButton(
-              key: const ValueKey('command-palette-favorite-action'),
-              width: 32,
-              height: 32,
-              icon: Icon(
-                isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
-                size: 18,
-                color: isFavorite
-                    ? theme.iconColorScheme.warningThick
-                    : theme.iconColorScheme.secondary,
-              ),
-              onPressed: updatingFavorite ? null : () => _toggleFavorite(view),
-            ),
+            ],
           ),
         ],
       ),
@@ -353,9 +379,10 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
   }
 
   Future<void> _toggleFavorite(ViewPB view) async {
+    final request = ++favoriteRequest;
     setState(() => updatingFavorite = true);
     final result = await ViewBackendService.favorite(viewId: view.id);
-    if (!mounted) return;
+    if (!mounted || request != favoriteRequest) return;
 
     result.fold(
       (_) => setState(() {
@@ -412,7 +439,7 @@ class _FolderInspectionBreadcrumbs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
+    final palette = WorkspacePalette.of(context);
     final path = <ViewPB>[current];
     var cursor = current;
     final visited = <String>{current.id};
@@ -445,7 +472,7 @@ class _FolderInspectionBreadcrumbs extends StatelessWidget {
               if (index > 0)
                 Icon(
                   Icons.chevron_right_rounded,
-                  color: palette.textMuted,
+                  color: palette.mutedText,
                   size: 15,
                 ),
               TextButton(
@@ -456,18 +483,16 @@ class _FolderInspectionBreadcrumbs extends StatelessWidget {
                   minimumSize: Size.zero,
                   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   foregroundColor: index == ordered.length - 1
-                      ? palette.textPrimary
-                      : palette.textSecondary,
+                      ? palette.primaryText
+                      : palette.secondaryText,
                 ),
                 child: Text(
                   folder.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: index == ordered.length - 1
-                        ? FontWeight.w600
-                        : FontWeight.w500,
+                  style: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.metadata,
                   ),
                 ),
               ),
@@ -492,61 +517,62 @@ class _FolderInspectionItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return InkWell(
+    final palette = WorkspacePalette.of(context);
+    return TextButton(
       key: ValueKey('command-palette-folder-child-${view.id}'),
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      hoverColor: palette.hover,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
-        child: Row(
-          children: [
-            SizedBox.square(
-              dimension: 19,
-              child: Center(
-                child: view.defaultIcon(size: const Size.square(17)),
-              ),
-            ),
-            const HSpace(9),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    view.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.textPrimary,
-                      fontSize: 13,
-                      height: 1.2,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const VSpace(3),
-                  Text(
-                    typeLabel.toUpperCase(),
-                    style: TextStyle(
-                      color: palette.textMuted,
-                      fontSize: 9,
-                      height: 1,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.75,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(
-              view.isWorkspaceFolder
-                  ? Icons.chevron_right_rounded
-                  : Icons.open_in_new_rounded,
-              size: 16,
-              color: palette.textMuted,
-            ),
-          ],
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: palette.primaryText,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
         ),
+      ).copyWith(
+        animationDuration:
+            WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
+        overlayColor: WidgetStatePropertyAll(palette.hover),
+      ),
+      child: Row(
+        children: [
+          SizedBox.square(
+            dimension: 19,
+            child: Center(
+              child: view.defaultIcon(size: const Size.square(17)),
+            ),
+          ),
+          const HSpace(9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  view.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.cardTitle,
+                  ),
+                ),
+                const VSpace(3),
+                Text(
+                  typeLabel,
+                  style: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.metadata,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(
+            view.isWorkspaceFolder
+                ? Icons.chevron_right_rounded
+                : Icons.open_in_new_rounded,
+            size: 16,
+            color: palette.mutedText,
+          ),
+        ],
       ),
     );
   }
@@ -566,23 +592,22 @@ class _ActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-    return AFOutlinedButton.normal(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      borderRadius: 8,
-      onTap: onTap,
-      builder: (context, hovering, disabled) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 15, color: theme.iconColorScheme.primary),
-          const HSpace(5),
-          Text(
-            label,
-            style: theme.textStyle.caption.enhanced(
-              color: theme.textColorScheme.primary,
-            ),
-          ),
-        ],
+    final palette = WorkspacePalette.of(context);
+    return TextButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: WorkspaceTokens.iconSize),
+      label: Text(label),
+      style: TextButton.styleFrom(
+        foregroundColor: palette.accent,
+        backgroundColor: palette.selected,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        textStyle: WorkspaceTypography.style(context, WorkspaceTextRole.body),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
+        ),
+      ).copyWith(
+        animationDuration:
+            WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
       ),
     );
   }

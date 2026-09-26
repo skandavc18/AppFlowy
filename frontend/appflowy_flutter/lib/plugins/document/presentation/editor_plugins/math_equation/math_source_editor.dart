@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -350,13 +351,14 @@ class _CategoryPillState extends State<_CategoryPill> {
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
+    final hover = WorkspaceChrome.hoverColor(context);
     final Color fill;
     if (widget.selected) {
       fill = palette.accent.withValues(alpha: palette.isDark ? 0.18 : 0.10);
     } else if (_hovered) {
-      fill = palette.hover.withValues(alpha: 0.7);
+      fill = hover.withValues(alpha: hover.a * 0.7);
     } else {
-      fill = palette.hoverBase;
+      fill = hover.withValues(alpha: 0);
     }
     return Semantics(
       button: true,
@@ -425,6 +427,7 @@ class _SymbolChipState extends State<_SymbolChip> {
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
+    final hover = WorkspaceChrome.hoverColor(context);
     final ink = _hovered ? palette.text : palette.textSecondary;
     return Tooltip(
       message: widget.symbol.latex.replaceAll(r'$0', '').trim(),
@@ -443,9 +446,7 @@ class _SymbolChipState extends State<_SymbolChip> {
             constraints: const BoxConstraints(minWidth: 34),
             padding: const EdgeInsets.symmetric(horizontal: 7),
             decoration: BoxDecoration(
-              color: _hovered
-                  ? palette.hover.withValues(alpha: 0.85)
-                  : palette.hoverBase,
+              color: hover.withValues(alpha: hover.a * (_hovered ? 0.85 : 0)),
               borderRadius: BorderRadius.circular(8),
             ),
             // Centred with a shrink-wrapping Center, never with the

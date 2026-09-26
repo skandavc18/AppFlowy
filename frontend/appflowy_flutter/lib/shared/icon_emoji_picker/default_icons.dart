@@ -55,6 +55,10 @@ const _catalogue = <String, Map<String, String>>{
     'feed': 'article',
     'form': 'list-checks',
     'gallery': 'squares-four',
+    'ai-chat': 'ai-chat',
+    'dashboard': 'layout',
+    'canvas': 'canvas',
+    'mailbox': 'inbox',
   },
   'files': {
     'file': 'file',
@@ -68,6 +72,10 @@ const _catalogue = <String, Map<String, String>>{
     'image': 'image',
     'video': 'film-strip',
     'audio': 'music-note',
+    'markdown': 'file-markdown',
+    'html': 'file-html',
+    'json': 'file-json',
+    'notebook': 'file-notebook',
   },
   'navigation': {
     'search': 'magnifying-glass',
@@ -101,4 +109,9 @@ const _searchTerms = <String, List<String>>{
   'image': ['photo', 'picture'],
   'video': ['movie', 'film'],
   'audio': ['music', 'sound'],
+  'ai-chat': ['assistant', 'conversation', 'artificial intelligence'],
+  'notebook': ['jupyter', 'ipynb', 'code', 'cells'],
+  'markdown': ['md', 'readme', 'text'],
+  'html': ['web', 'markup'],
+  'json': ['data', 'configuration'],
 };

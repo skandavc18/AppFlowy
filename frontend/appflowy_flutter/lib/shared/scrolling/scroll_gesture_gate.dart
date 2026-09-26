@@ -20,6 +20,16 @@ class ScrollGestureGate extends SingleChildRenderObjectWidget {
 
   final bool blocked;
 
+  /// The content identity behind a scroll-only event filter. Read-only hit-test
+  /// consumers (such as contextual Find) may inspect it without bypassing the
+  /// filter or delivering an event to an inactive embed.
+  static HitTestTarget originalTarget(HitTestTarget target) {
+    while (target is _NonScrollTarget) {
+      target = target.original.target;
+    }
+    return target;
+  }
+
   @override
   RenderObject createRenderObject(BuildContext context) =>
       _RenderScrollGestureGate(blocked);

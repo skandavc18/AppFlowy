@@ -3,6 +3,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/field/type_option/rollup_cubit.dart';
 import 'package:appflowy/plugins/database/application/field/type_option/rollup_entities.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -99,6 +100,7 @@ class RollupEditor extends StatelessWidget {
                 _Action(
                   icon: FlowySvgs.delete_s,
                   label: LocaleKeys.grid_rollup_clear.tr(),
+                  destructive: true,
                   onTap: cubit.clear,
                 ),
               ],
@@ -157,7 +159,9 @@ class _Picker extends StatelessWidget {
           color: value == null ? Theme.of(context).hintColor : null,
           overflow: TextOverflow.ellipsis,
         ),
-        rightIcon: enabled ? const FlowySvg(FlowySvgs.more_s) : null,
+        rightIcon: enabled
+            ? const WorkspaceGlyph.svg(FlowySvgs.more_s, size: 16)
+            : null,
       ),
     );
 
@@ -181,11 +185,13 @@ class _Action extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.destructive = false,
   });
 
   final FlowySvgData icon;
   final String label;
   final VoidCallback onTap;
+  final bool destructive;
 
   @override
   Widget build(BuildContext context) {
@@ -193,7 +199,14 @@ class _Action extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8),
       height: GridSize.popoverItemHeight,
       child: FlowyButton(
-        leftIcon: FlowySvg(icon),
+        leftIcon: WorkspaceGlyph.svg(
+          icon,
+          size: 16,
+          color: Theme.of(context).iconTheme.color,
+          role: destructive
+              ? WorkspaceGlyphRole.preserveInk
+              : WorkspaceGlyphRole.standard,
+        ),
         text: FlowyText(lineHeight: 1.0, label),
         onTap: onTap,
       ),

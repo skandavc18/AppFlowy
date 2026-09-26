@@ -395,6 +395,8 @@ class ViewMoreActionTypeWrapper extends CustomActionCell {
       icon: inner.leftIcon,
       trailing: inner.rightIcon,
       tracksHover: true,
+      enabled: !(sourceView.isLocked &&
+          ViewMoreActionType.disableInLockedView.contains(inner)),
       destructive: inner == ViewMoreActionType.delete,
       onTap: onTap ?? () {},
     );

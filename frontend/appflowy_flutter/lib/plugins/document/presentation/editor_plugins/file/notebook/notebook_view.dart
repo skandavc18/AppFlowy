@@ -12,8 +12,10 @@ import 'dart:io';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_scope.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
@@ -656,7 +658,8 @@ class _NotebookToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final host = StandaloneFileScope.forName(context, name);
+    final toolbar = Container(
       constraints: const BoxConstraints(minHeight: 42),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       color: palette.header,
@@ -677,25 +680,27 @@ class _NotebookToolbar extends StatelessWidget {
                 width: identityWidth,
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.menu_book_rounded,
-                      size: 15,
-                      color: palette.textSecondary,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: codeUiTextStyle(
-                          color: palette.textSecondary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
+                    if (host == null) ...[
+                      Icon(
+                        Icons.menu_book_rounded,
+                        size: 15,
+                        color: palette.textSecondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: codeUiTextStyle(
+                            color: palette.textSecondary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
+                      const SizedBox(width: 10),
+                    ],
                     _KernelStatus(palette: palette, kernel: kernel),
                   ],
                 ),
@@ -719,6 +724,7 @@ class _NotebookToolbar extends StatelessWidget {
                             icon: Icons.stop_rounded,
                             label: 'Stop',
                             foregroundColor: palette.error,
+                            iconRole: WorkspaceGlyphRole.preserveInk,
                             onPressed: onStop,
                           )
                         else
@@ -729,6 +735,7 @@ class _NotebookToolbar extends StatelessWidget {
                             label: 'Run all',
                             foregroundColor:
                                 kernel.canRun ? palette.accent : null,
+                            iconRole: WorkspaceGlyphRole.standard,
                             onPressed: kernel.canRun ? onRunAll : null,
                           ),
                         if (editable)
@@ -761,6 +768,15 @@ class _NotebookToolbar extends StatelessWidget {
         },
       ),
     );
+    return host == null
+        ? toolbar
+        : StandaloneFileHeaderSlot(
+            controller: host.chrome,
+            controls: StandaloneFileHeader(
+              toolbar: toolbar,
+              keepActionsVisible: running || editing,
+            ),
+          );
   }
 
   void _showMenu(BuildContext context) {
@@ -1179,6 +1195,9 @@ class _NotebookCellViewState extends State<_NotebookCellView> {
                     : Icons.play_arrow_rounded,
                 foregroundColor:
                     widget.running ? palette.error : palette.accent,
+                iconRole: widget.running
+                    ? WorkspaceGlyphRole.preserveInk
+                    : WorkspaceGlyphRole.standard,
                 onPressed: widget.running
                     ? widget.onStop
                     : widget.cell.isCode && !widget.canRun

@@ -8,8 +8,13 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/views/album/album_chrome.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_media_player.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
@@ -47,6 +52,7 @@ Future<void> showAlbumLightbox({
   bool startWithInfo = false,
   MediaActionService mediaActions = const MediaActionService(),
   AlbumOriginalFileResolver? resolveOriginalFile,
+  OcrService? ocrService,
 }) {
   // A dialog is outside the caller's page providers. Carry the live bloc, not a
   // profile snapshot, so cloud actions see renewal/sign-out while it is open.
@@ -71,6 +77,7 @@ Future<void> showAlbumLightbox({
         startWithInfo: startWithInfo,
         mediaActions: mediaActions,
         resolveOriginalFile: resolveOriginalFile,
+        ocrService: ocrService,
       );
       return workspace == null
           ? lightbox
@@ -93,6 +100,7 @@ class AlbumLightbox extends StatefulWidget {
     this.startWithInfo = false,
     this.mediaActions = const MediaActionService(),
     this.resolveOriginalFile,
+    this.ocrService,
   });
 
   final AlbumController controller;
@@ -103,6 +111,7 @@ class AlbumLightbox extends StatefulWidget {
   final bool startWithInfo;
   final MediaActionService mediaActions;
   final AlbumOriginalFileResolver? resolveOriginalFile;
+  final OcrService? ocrService;
 
   @override
   State<AlbumLightbox> createState() => _AlbumLightboxState();
@@ -206,7 +215,7 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
     if (items.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Scaffold(
+    final lightbox = Scaffold(
       backgroundColor: Colors.transparent,
       body: CallbackShortcuts(
         bindings: {
@@ -238,6 +247,9 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
         ),
       ),
     );
+    return context.getInheritedWidgetOfExactType<ContextualFindScope>() == null
+        ? ContextualFindScope(child: lightbox)
+        : lightbox;
   }
 
   Widget _buildStage() {
@@ -248,12 +260,7 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
             controller: pageController,
             itemCount: items.length,
             onPageChanged: _onPageChanged,
-            itemBuilder: (context, page) => _AlbumStagePage(
-              item: items[page],
-              transition: widget.controller.settings.slideshow.transition,
-              playing: playing,
-              isCurrent: page == index,
-            ),
+            itemBuilder: _buildPage,
           ),
         ),
         _chrome(_buildTopBar(), alignment: Alignment.topCenter),
@@ -275,6 +282,50 @@ class _AlbumLightboxState extends State<AlbumLightbox> {
           alignment: Alignment.centerRight,
         ),
       ],
+    );
+  }
+
+  Widget _buildPage(BuildContext pageContext, int page) {
+    final item = items[page];
+    final stage = _AlbumStagePage(
+      item: item,
+      transition: widget.controller.settings.slideshow.transition,
+      playing: playing,
+      isCurrent: page == index,
+    );
+    if (item.kind != AlbumMediaKind.image ||
+        !item.isLocal ||
+        item.unavailable) {
+      return stage;
+    }
+    final controller = widget.controller;
+    final id = item.id;
+    final path = item.path;
+    final name = item.name;
+    return ImageOcrFindRegion(
+      key: ValueKey((controller, id, path, name)),
+      // OCR reads the picture on this stage, including a provider's cached
+      // rendition. Original-file resolution remains exclusive to Copy/Share.
+      source: ImageEditorSource(url: path, type: CustomImageType.local),
+      name: name,
+      service: widget.ocrService,
+      isAvailable: () =>
+          mounted &&
+          pageContext.mounted &&
+          identical(widget.controller, controller) &&
+          current?.id == id &&
+          current?.path == path &&
+          controller.items.any(
+            (live) =>
+                live.id == id &&
+                live.path == path &&
+                live.name == name &&
+                live.kind == AlbumMediaKind.image &&
+                !live.unavailable,
+          ) &&
+          TickerMode.of(pageContext) &&
+          ModalRoute.of(context)?.isActive != false,
+      child: stage,
     );
   }
 

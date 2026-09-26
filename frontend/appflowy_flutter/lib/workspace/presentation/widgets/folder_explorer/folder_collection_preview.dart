@@ -611,7 +611,7 @@ class _MoreItemsLabel extends StatelessWidget {
     final palette = FolderExplorerPalette.of(context);
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: palette.hover.withValues(alpha: 0.58),
+        color: palette.hover.withValues(alpha: palette.hover.a * 0.58),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Padding(

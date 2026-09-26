@@ -84,9 +84,12 @@ class WorkspaceFilePluginWidgetBuilder extends PluginWidgetBuilder
         context.onDeleted?.call(view, deletedViewIndex);
       }
     });
-    return WorkspaceFileView(
-      key: ValueKey(view.id),
-      view: view,
+    return BlocProvider<PageAccessLevelBloc>.value(
+      value: pageAccessLevelBloc,
+      child: WorkspaceFileView(
+        key: ValueKey(view.id),
+        view: view,
+      ),
     );
   }
 

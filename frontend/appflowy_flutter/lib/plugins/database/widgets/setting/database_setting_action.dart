@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/widgets/group/database_group.dart';
 import 'package:appflowy/plugins/database/widgets/setting/database_layout_selector.dart';
 import 'package:appflowy/plugins/database/widgets/setting/setting_property_list.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -84,11 +85,10 @@ extension DatabaseSettingActionExtension on DatabaseSettingAction {
             lineHeight: 1.0,
             color: AFThemeExtension.of(context).textColor,
           ),
-          leftIcon: FlowySvg(
-            iconData(),
-            color: Theme.of(context).iconTheme.color,
+          leftIcon: WorkspaceGlyph.svg(iconData()),
+          rightIcon: const WorkspaceGlyph.svg(
+            FlowySvgs.database_settings_arrow_right_s,
           ),
-          rightIcon: FlowySvg(FlowySvgs.database_settings_arrow_right_s),
         ),
       ),
       popupBuilder: (context) => popover,

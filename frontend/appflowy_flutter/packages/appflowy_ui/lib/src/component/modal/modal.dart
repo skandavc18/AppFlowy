@@ -18,6 +18,7 @@ class AFModal extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
+    const radius = BorderRadius.all(Radius.circular(24));
 
     return Center(
       child: Padding(
@@ -27,15 +28,13 @@ class AFModal extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               boxShadow: theme.shadow.medium,
-              borderRadius: BorderRadius.circular(theme.borderRadius.xl),
-              color: backgroundColor ?? theme.surfaceColorScheme.primary,
-              border: Border.all(
-                color: theme.borderColorScheme.primary,
-                width: 0.6,
-              ),
+              borderRadius: radius,
+              color: backgroundColor ?? Theme.of(context).dialogBackgroundColor,
             ),
             child: Material(
               color: Colors.transparent,
+              borderRadius: radius,
+              clipBehavior: Clip.antiAlias,
               child: child,
             ),
           ),
@@ -66,9 +65,11 @@ class AFModalHeader extends StatelessWidget {
         right: theme.spacing.xxl,
       ),
       child: DefaultTextStyle(
-        style: theme.textStyle.heading4.prominent(
-          color: theme.textColorScheme.primary,
-        ),
+        style: theme.textStyle.heading4
+            .prominent(
+              color: theme.textColorScheme.primary,
+            )
+            .copyWith(fontSize: 20, height: 1.3),
         child: Row(
           spacing: theme.spacing.s,
           children: [
@@ -101,12 +102,26 @@ class AFModalFooter extends StatelessWidget {
         left: theme.spacing.xxl,
         right: theme.spacing.xxl,
       ),
-      child: Row(
+      child: OverflowBar(
+        alignment: leading.isEmpty
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.spaceBetween,
+        overflowAlignment: OverflowBarAlignment.end,
         spacing: theme.spacing.l,
+        overflowSpacing: theme.spacing.m,
         children: [
-          ...leading,
-          Spacer(),
-          ...trailing,
+          if (leading.isNotEmpty)
+            Wrap(
+              spacing: theme.spacing.m,
+              runSpacing: theme.spacing.m,
+              children: leading,
+            ),
+          if (trailing.isNotEmpty)
+            Wrap(
+              spacing: theme.spacing.m,
+              runSpacing: theme.spacing.m,
+              children: trailing,
+            ),
         ],
       ),
     );

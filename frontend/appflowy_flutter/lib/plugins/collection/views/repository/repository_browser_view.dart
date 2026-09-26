@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_chrome.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_context_menu.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_host.dart';
@@ -8,6 +9,7 @@ import 'package:appflowy/plugins/collection/views/repository/repository_views.da
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_block_chrome.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/notebook/notebook_markup.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_controller.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
@@ -117,7 +119,11 @@ class _BrowserBody extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 980;
+          final wide = CollectionWorkspaceMetrics.fitsRail(
+            context,
+            constraints.maxWidth - RepoMetrics.gutter * 2,
+            railWidth: 244,
+          );
           // The listing and the readme share one column and one width, the
           // way a repository page reads: contents, then the document that
           // explains them. The insights sit beside both, never under them.
@@ -149,38 +155,34 @@ class _BrowserBody extends StatelessWidget {
                 RepoMetrics.gutter,
                 RepoMetrics.space8,
               ),
-              // A repository page reads best at a fixed measure. Past this the
-              // listing turns into a wall of whitespace with a file name lost
-              // at each end, so the content centres instead of stretching.
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: RepoMetrics.readingWidth,
-                  ),
-                  child: wide
-                      ? Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(child: column),
-                            const SizedBox(width: RepoMetrics.space6),
-                            SizedBox(
-                              width: 244,
-                              child: _BrowserAsideCard(
-                                theme: theme,
-                                child: aside,
-                              ),
-                            ),
-                          ],
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _BrowserAsideCard(theme: theme, child: aside),
-                            const SizedBox(height: RepoMetrics.space6),
-                            column,
-                          ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: column),
+                      SizedBox(width: wide ? RepoMetrics.space6 : 0),
+                      Offstage(
+                        offstage: !wide,
+                        child: SizedBox(
+                          width: CollectionWorkspaceMetrics.railWidthFor(
+                            context,
+                            244,
+                          ),
+                          child: _BrowserAsideCard(theme: theme, child: aside),
                         ),
-                ),
+                      ),
+                    ],
+                  ),
+                  Offstage(
+                    offstage: wide,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: RepoMetrics.space6),
+                      child: _BrowserAsideCard(theme: theme, child: aside),
+                    ),
+                  ),
+                ],
               ),
             ),
           );
@@ -200,12 +202,6 @@ class _BrowserAsideCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return RepoPanel(
       theme: theme,
-      padding: const EdgeInsets.fromLTRB(
-        RepoMetrics.space4 + 2,
-        RepoMetrics.space4 + 2,
-        RepoMetrics.space4 + 2,
-        RepoMetrics.space4 + 4,
-      ),
       child: child,
     );
   }
@@ -230,12 +226,6 @@ class _BrowserListing extends StatelessWidget {
     final parent = path.isEmpty ? null : repoParentPath(path);
     return RepoPanel(
       theme: theme,
-      padding: const EdgeInsets.fromLTRB(
-        RepoMetrics.space2,
-        RepoMetrics.space2,
-        RepoMetrics.space2,
-        RepoMetrics.space2,
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -260,8 +250,8 @@ class _BrowserListing extends StatelessWidget {
                 children: [
                   SizedBox(
                     width: RepoMetrics.iconSlot,
-                    child: Icon(
-                      Icons.subdirectory_arrow_left_rounded,
+                    child: WorkspaceGlyph(
+                      Icons.arrow_back_rounded,
                       size: RepoMetrics.iconSize,
                       color: theme.textFaint,
                     ),
@@ -356,7 +346,7 @@ class _ListingHeader extends StatelessWidget {
                       onTap: () => onOpen(''),
                     ),
                     for (var index = 0; index < segments.length; index++) ...[
-                      Icon(
+                      WorkspaceGlyph(
                         Icons.chevron_right_rounded,
                         size: 14,
                         color: theme.textFaint.withValues(alpha: 0.7),
@@ -381,7 +371,7 @@ class _ListingHeader extends StatelessWidget {
   }
 }
 
-class _Crumb extends StatefulWidget {
+class _Crumb extends StatelessWidget {
   const _Crumb({
     required this.theme,
     required this.label,
@@ -397,60 +387,29 @@ class _Crumb extends StatefulWidget {
   final IconData? icon;
 
   @override
-  State<_Crumb> createState() => _CrumbState();
-}
-
-class _CrumbState extends State<_Crumb> {
-  bool hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final color = widget.active
-        ? theme.textStrong
-        : hovered
-            ? theme.accent
-            : theme.textBody;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: RepoMetrics.hover,
-          curve: RepoMetrics.curve,
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-          decoration: BoxDecoration(
-            color: hovered && !widget.active
-                ? theme.rowHover
-                : theme.transparentAs(theme.rowHover),
-            borderRadius: BorderRadius.circular(6),
+    final color = active ? theme.textStrong : theme.textBody;
+    return CollectionWorkspaceNavRow(
+      onTap: onTap,
+      minHeight: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            WorkspaceGlyph(icon!, size: 13, color: theme.iconRest),
+            const SizedBox(width: 5),
+          ],
+          AnimatedDefaultTextStyle(
+            duration: RepoMetrics.hover,
+            curve: RepoMetrics.curve,
+            style: theme.face(
+              fontSize: 12,
+              color: color,
+            ),
+            child: Text(label),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.icon != null) ...[
-                Icon(widget.icon, size: 13, color: color),
-                const SizedBox(width: 5),
-              ],
-              AnimatedDefaultTextStyle(
-                duration: RepoMetrics.hover,
-                curve: RepoMetrics.curve,
-                style: theme.face(
-                  fontSize: 12,
-                  color: color,
-                  axis: widget.active
-                      ? RepoMetrics.strongWeightAxis
-                      : RepoMetrics.rowWeightAxis,
-                  weight: widget.active ? FontWeight.w600 : FontWeight.w500,
-                ),
-                child: Text(widget.label),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
   }
@@ -629,7 +588,6 @@ class _AsideStat extends StatelessWidget {
             style: theme.face(
               fontSize: RepoMetrics.metaSize,
               color: theme.textStrong,
-              axis: RepoMetrics.strongWeightAxis,
             ),
           ),
         ],
@@ -670,14 +628,18 @@ class _ReadmeCard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(
-              RepoMetrics.space4 + 2,
+              RepoMetrics.space2,
               RepoMetrics.space3,
               RepoMetrics.space2,
               0,
             ),
             child: Row(
               children: [
-                Icon(Icons.menu_book_rounded, size: 14, color: theme.textFaint),
+                WorkspaceGlyph(
+                  Icons.menu_book_rounded,
+                  size: 14,
+                  color: theme.textFaint,
+                ),
                 const SizedBox(width: RepoMetrics.space2),
                 Expanded(
                   child: Text(
@@ -751,9 +713,9 @@ class _ReadmeDocument extends StatelessWidget {
     }
 
     const padding = EdgeInsets.fromLTRB(
-      RepoMetrics.space4 + 2,
+      RepoMetrics.space2,
       RepoMetrics.space3,
-      RepoMetrics.space4 + 2,
+      RepoMetrics.space2,
       RepoMetrics.space4,
     );
     if (filePreviewKindFromName(entry.name) != FilePreviewKind.markdown) {
@@ -799,7 +761,11 @@ class _AddReadmeRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.menu_book_rounded, size: 15, color: theme.textFaint),
+          WorkspaceGlyph(
+            Icons.menu_book_rounded,
+            size: 15,
+            color: theme.textFaint,
+          ),
           const SizedBox(width: RepoMetrics.space3),
           Expanded(
             child: Text(

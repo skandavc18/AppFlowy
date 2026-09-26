@@ -6,6 +6,70 @@ const overlayContainerMinWidth = 320.0;
 const _defaultInsetPadding =
     EdgeInsets.symmetric(horizontal: 40.0, vertical: 24.0);
 
+/// The same native dialog route for legacy overlays and newer app dialogs.
+/// Theme capture, closed-loop focus traversal and barrier/Escape semantics
+/// remain Flutter's; only the scrim and optional motion differ.
+Future<T?> showFlowyDialog<T>({
+  required BuildContext context,
+  required WidgetBuilder builder,
+  bool barrierDismissible = true,
+  Color? barrierColor,
+  bool useRootNavigator = true,
+}) {
+  final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
+  final theme = Theme.of(context);
+  final media = MediaQuery.maybeOf(context);
+  return navigator.push<T>(
+    _FlowyDialogRoute<T>(
+      context: context,
+      builder: builder,
+      themes: InheritedTheme.capture(from: context, to: navigator.context),
+      barrierDismissible: barrierDismissible,
+      barrierColor: barrierColor ??
+          theme.colorScheme.surface.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.38 : 0.68,
+          ),
+      reduceMotion: (media?.disableAnimations ?? false) ||
+          (media?.accessibleNavigation ?? false),
+    ),
+  );
+}
+
+class _FlowyDialogRoute<T> extends DialogRoute<T> {
+  _FlowyDialogRoute({
+    required super.context,
+    required super.builder,
+    required super.themes,
+    required super.barrierDismissible,
+    required super.barrierColor,
+    required this.reduceMotion,
+    super.traversalEdgeBehavior = TraversalEdgeBehavior.closedLoop,
+  });
+
+  final bool reduceMotion;
+
+  @override
+  Duration get transitionDuration =>
+      reduceMotion ? Duration.zero : const Duration(milliseconds: 180);
+
+  @override
+  Duration get reverseTransitionDuration =>
+      reduceMotion ? Duration.zero : const Duration(milliseconds: 120);
+
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation,
+      Animation<double> secondaryAnimation, Widget child) {
+    final media = MediaQuery.maybeOf(context);
+    if (reduceMotion ||
+        (media?.disableAnimations ?? false) ||
+        (media?.accessibleNavigation ?? false)) {
+      return child;
+    }
+    return super
+        .buildTransitions(context, animation, secondaryAnimation, child);
+  }
+}
+
 class FlowyDialog extends StatelessWidget {
   const FlowyDialog({
     super.key,
@@ -46,10 +110,11 @@ class FlowyDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final windowSize = MediaQuery.of(context).size;
+    final media = MediaQuery.of(context);
+    final windowSize = media.size;
     final size = windowSize * 0.7;
     final effectiveShape = shape ??
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16));
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(24));
     final effectiveShadowColor = shadowColor ?? theme.shadowColor;
     final shadows = (elevation ?? 1) <= 0
         ? const <BoxShadow>[]
@@ -69,6 +134,10 @@ class FlowyDialog extends StatelessWidget {
           ];
 
     return Dialog(
+      insetAnimationDuration:
+          media.disableAnimations || media.accessibleNavigation
+              ? Duration.zero
+              : const Duration(milliseconds: 100),
       alignment: alignment,
       insetPadding: insetPadding ?? _defaultInsetPadding,
       backgroundColor: Colors.transparent,
@@ -79,7 +148,7 @@ class FlowyDialog extends StatelessWidget {
       clipBehavior: Clip.none,
       child: DecoratedBox(
         decoration: ShapeDecoration(
-          color: backgroundColor ?? theme.cardColor,
+          color: backgroundColor ?? theme.dialogBackgroundColor,
           shape: effectiveShape,
           shadows: shadows,
         ),
@@ -95,13 +164,15 @@ class FlowyDialog extends StatelessWidget {
                   padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
                   child: title,
                 ),
-              Container(
-                height: expandHeight ? size.height : null,
-                width: width ?? size.width,
-                constraints: constraints,
-                child: Padding(
-                  padding: padding,
-                  child: child,
+              Flexible(
+                child: Container(
+                  height: expandHeight ? size.height : null,
+                  width: width ?? size.width,
+                  constraints: constraints,
+                  child: Padding(
+                    padding: padding,
+                    child: child,
+                  ),
                 ),
               ),
             ],

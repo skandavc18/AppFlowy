@@ -96,6 +96,7 @@ class CalendarWorkspace extends ChangeNotifier {
   CalendarFilter _filter = const CalendarFilter();
   CalendarWindow? _window;
   bool _loading = false;
+  bool _disposed = false;
 
   List<CalendarProvider> get providers =>
       List<CalendarProvider>.unmodifiable(_providers);
@@ -103,6 +104,10 @@ class CalendarWorkspace extends ChangeNotifier {
   /// Take on a source discovered after the calendar opened — a connected
   /// account is read in the background so the local sources draw immediately.
   void addProvider(CalendarProvider provider) {
+    if (_disposed) {
+      provider.dispose();
+      return;
+    }
     if (_providers.contains(provider)) {
       return;
     }
@@ -196,6 +201,7 @@ class CalendarWorkspace extends ChangeNotifier {
       _providers.where((p) => !p.service.isLocal).toList(growable: false);
 
   Future<void> load(CalendarWindow window) async {
+    if (_disposed) return;
     if (_window != null && _window!.covers(window)) {
       return;
     }
@@ -204,6 +210,7 @@ class CalendarWorkspace extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
+    if (_disposed) return;
     _loading = true;
     notifyListeners();
     final window = _window ??
@@ -211,11 +218,18 @@ class CalendarWorkspace extends ChangeNotifier {
           DateTime(DateTime.now().year, DateTime.now().month - 1),
           DateTime(DateTime.now().year, DateTime.now().month + 2),
         );
-    await Future.wait([
-      for (final provider in _providers) provider.load(window),
-    ]);
-    _loading = false;
-    notifyListeners();
+    try {
+      await Future.wait([
+        for (final provider in _providers) provider.load(window),
+      ]);
+    } finally {
+      // A shell can rebind or unmount while providers are still reading.
+      // Their completion must not notify a workspace already disposed by its host.
+      if (!_disposed) {
+        _loading = false;
+        notifyListeners();
+      }
+    }
   }
 
   void setFilter(CalendarFilter filter) {
@@ -291,7 +305,9 @@ class CalendarWorkspace extends ChangeNotifier {
     return provider?.createEvent(draft);
   }
 
-  void _onProviderChanged() => notifyListeners();
+  void _onProviderChanged() {
+    if (!_disposed) notifyListeners();
+  }
 
   KeyValueStorage? get _kv =>
       _storage ??
@@ -309,6 +325,7 @@ class CalendarWorkspace extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     for (final provider in _providers) {
       provider.removeListener(_onProviderChanged);
       provider.dispose();

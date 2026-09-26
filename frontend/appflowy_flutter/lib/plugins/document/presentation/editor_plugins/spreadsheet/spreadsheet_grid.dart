@@ -1709,6 +1709,10 @@ class SpreadsheetGridState extends State<SpreadsheetGrid>
       const SingleActivator(LogicalKeyboardKey.escape):
           const SheetEscapeIntent(),
       const SingleActivator(LogicalKeyboardKey.f2): const SheetEditIntent(),
+      const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+          const SheetFindIntent(),
+      const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
+          const SheetFindIntent(),
     };
     if (controller.editingFromKeystroke) {
       // Typing straight into a cell keeps arrow keys as navigation, the way a

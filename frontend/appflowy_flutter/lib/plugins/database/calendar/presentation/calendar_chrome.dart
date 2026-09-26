@@ -1,9 +1,28 @@
+import 'dart:async';
+
+import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_style.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/shared/calendar/calendar_layout.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+String calendarViewModeLabel(CalendarViewMode mode) => switch (mode) {
+      CalendarViewMode.month => LocaleKeys.calendarView_views_month.tr(),
+      CalendarViewMode.week => LocaleKeys.calendarView_views_week.tr(),
+      CalendarViewMode.day => LocaleKeys.calendarView_views_day.tr(),
+      CalendarViewMode.agenda => LocaleKeys.calendarView_views_agenda.tr(),
+      CalendarViewMode.year => LocaleKeys.calendarView_views_year.tr(),
+      CalendarViewMode.monthAgenda =>
+        LocaleKeys.calendarView_views_monthAgenda.tr(),
+      CalendarViewMode.monthSplit =>
+        LocaleKeys.calendarView_views_monthSplit.tr(),
+    };
 
 /// A borderless 30px control, the only button shape the calendar uses.
 class CalendarControlButton extends StatelessWidget {
@@ -31,7 +50,13 @@ class CalendarControlButton extends StatelessWidget {
         tooltip: tooltip,
         isSelected: active,
         onPressed: onPressed,
-        icon: Icon(icon, size: 17),
+        icon: WorkspaceGlyph(
+          icon,
+          size: 17,
+          color: onPressed == null
+              ? palette.textMuted.withValues(alpha: 0.5)
+              : null,
+        ),
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,
           minimumSize: Size.square(size),
@@ -50,32 +75,82 @@ class CalendarControlButton extends StatelessWidget {
   }
 }
 
-/// The compact reading switcher: Month · Week · Day · Agenda.
-///
-/// A segmented control rather than a dropdown, because four choices that are
-/// switched between constantly should each be one click away.
+/// A segmented reading switcher, or the shared menu in a constrained toolbar.
+/// The menu exposes every mode without hiding the new choices offscreen.
 class CalendarViewSwitcher extends StatelessWidget {
   const CalendarViewSwitcher({
     super.key,
     required this.mode,
     required this.onChanged,
     required this.labels,
-    this.available = const [
-      CalendarViewMode.month,
-      CalendarViewMode.week,
-      CalendarViewMode.day,
-      CalendarViewMode.agenda,
-    ],
+    this.available = CalendarViewMode.values,
+    this.popup = false,
+    this.iconOnly = false,
   });
 
   final CalendarViewMode mode;
   final ValueChanged<CalendarViewMode> onChanged;
   final String Function(CalendarViewMode) labels;
   final List<CalendarViewMode> available;
+  final bool popup;
+  final bool iconOnly;
 
   @override
   Widget build(BuildContext context) {
     final palette = calendarPaletteOf(context);
+    if (popup) {
+      return Builder(
+        builder: (buttonContext) => Tooltip(
+          message: '${LocaleKeys.calendar_settings_name.tr()}: ${labels(mode)}',
+          child: TextButton(
+            key: const ValueKey('calendar-mode-menu'),
+            onPressed: () => unawaited(
+              showAppMenuForWidget<void>(
+                context: buttonContext,
+                entries: [
+                  for (final option in available)
+                    AppMenuItem(
+                      label: labels(option),
+                      selected: option == mode,
+                      onSelected: () => onChanged(option),
+                    ),
+                ],
+              ),
+            ),
+            style: TextButton.styleFrom(
+              foregroundColor: palette.textSecondary,
+              padding: EdgeInsets.symmetric(
+                horizontal:
+                    iconOnly ? WorkspaceTokens.space1 : WorkspaceTokens.space2,
+                vertical: WorkspaceTokens.space1,
+              ),
+              minimumSize: const Size.square(CalendarMetrics.controlSize),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: iconOnly
+                ? WorkspaceGlyph.named(
+                    'calendar-blank',
+                    size: 17,
+                    semanticLabel: labels(mode),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        labels(mode),
+                        style: WorkspaceTypography.style(
+                          context,
+                          WorkspaceTextRole.metadata,
+                        ),
+                      ),
+                      const SizedBox(width: WorkspaceTokens.space1),
+                      const WorkspaceGlyph(Icons.expand_more_rounded, size: 16),
+                    ],
+                  ),
+          ),
+        ),
+      );
+    }
     return Container(
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
@@ -134,7 +209,7 @@ class _SwitcherSegmentState extends State<_SwitcherSegment> {
           ),
         ),
         child: AnimatedContainer(
-          duration: CalendarMetrics.change,
+          duration: WorkspaceTokens.motion(context, CalendarMetrics.change),
           curve: CalendarMetrics.hoverCurve,
           height: CalendarMetrics.controlSize - 4,
           padding: const EdgeInsets.symmetric(horizontal: 11),
@@ -147,7 +222,7 @@ class _SwitcherSegmentState extends State<_SwitcherSegment> {
             boxShadow: widget.selected ? palette.chromeShadow : null,
           ),
           child: AnimatedDefaultTextStyle(
-            duration: CalendarMetrics.change,
+            duration: WorkspaceTokens.motion(context, CalendarMetrics.change),
             curve: CalendarMetrics.hoverCurve,
             style: TextStyle(
               fontSize: 12.5,

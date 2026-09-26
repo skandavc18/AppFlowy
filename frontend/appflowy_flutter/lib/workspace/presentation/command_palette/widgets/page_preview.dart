@@ -18,8 +18,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/video_thumbnail_cache.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
-import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
@@ -41,6 +40,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
+import 'search_layout.dart';
+
 class PagePreview extends StatelessWidget {
   const PagePreview({
     super.key,
@@ -53,12 +54,6 @@ class PagePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
-    final backgroundColor = EditorSurfaceStyle.previewBackgroundFor(
-      Theme.of(context).brightness,
-      theme.surfaceColorScheme.layer02,
-      isPaper: PaperTheme.isEnabled(context),
-    );
-
     return BlocProvider(
       create: (context) => DocumentImmersiveCoverBloc(view: view)
         ..add(const DocumentImmersiveCoverEvent.initial()),
@@ -66,49 +61,43 @@ class PagePreview extends StatelessWidget {
           BlocBuilder<DocumentImmersiveCoverBloc, DocumentImmersiveCoverState>(
         builder: (context, state) {
           final cover = buildCover(state, context);
-          return Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 8, 20),
-            child: Container(
-              key: const ValueKey('page-preview-card'),
-              height: double.infinity,
-              width: 304,
-              clipBehavior: Clip.antiAlias,
-              decoration: BoxDecoration(
-                color: backgroundColor,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: theme.borderColorScheme.primary),
-                boxShadow: theme.shadow.small,
-              ),
+          return CommandPalettePreviewSurface(
+            key: const ValueKey('page-preview-card'),
+            header: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (cover != null) cover,
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (view.icon.value.isNotEmpty || cover == null) ...[
-                          SizedBox.square(
-                            dimension: 24,
-                            child: Center(
-                              child: buildIcon(theme, view, cover != null),
-                            ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (view.icon.value.isNotEmpty || cover == null) ...[
+                        SizedBox.square(
+                          dimension: 28,
+                          child: Center(
+                            child: buildIcon(theme, view, cover != null),
                           ),
-                          const VSpace(10),
-                        ],
-                        buildTitle(context, view),
+                        ),
+                        const HSpace(WorkspaceTokens.space3),
                       ],
+                      Expanded(child: buildTitle(context, view)),
+                    ],
+                  ),
+                  if (cover != null)
+                    Padding(
+                      padding:
+                          const EdgeInsets.only(top: WorkspaceTokens.space4),
+                      child: ClipRRect(
+                        borderRadius:
+                            BorderRadius.circular(WorkspaceTokens.cardRadius),
+                        child: cover,
+                      ),
                     ),
-                  ),
-                  const AFDivider(),
-                  Expanded(
-                    child: _buildPageContent(),
-                  ),
                 ],
               ),
             ),
+            child: _buildPageContent(),
           );
         },
       ),
@@ -234,65 +223,50 @@ class PagePreview extends StatelessWidget {
   }
 
   Widget buildTitle(BuildContext context, ViewPB view) {
-    final theme = AppFlowyTheme.of(context);
-    final titleStyle = theme.textStyle.heading4
-            .enhanced(color: theme.textColorScheme.primary),
-        titleHoverStyle =
-            titleStyle.copyWith(decoration: TextDecoration.underline);
-    return LayoutBuilder(
-      builder: (context, constrains) {
-        final maxWidth = constrains.maxWidth;
-        String displayText = view.nameOrDefault;
-        final painter = TextPainter(
-          text: TextSpan(text: displayText, style: titleStyle),
-          maxLines: 3,
-          textDirection: TextDirection.ltr,
-          ellipsis: '...     ',
-        );
-        painter.layout(maxWidth: maxWidth);
-        if (painter.didExceedMaxLines) {
-          final lines = painter.computeLineMetrics();
-          final lastLine = lines.last;
-          final offset = Offset(
-            lastLine.left + lastLine.width,
-            lines.map((e) => e.height).reduce((a, b) => a + b),
-          );
-          final range = painter.getPositionForOffset(offset);
-          displayText = '${displayText.substring(0, range.offset)}...';
-        }
-        return AFBaseButton(
-          borderColor: (_, __, ___, ____) => Colors.transparent,
-          borderRadius: 0,
-          onTap: onViewOpened,
+    final palette = WorkspacePalette.of(context);
+    return Tooltip(
+      message: '${view.nameOrDefault} · ${LocaleKeys.settings_files_open.tr()}',
+      child: TextButton(
+        onPressed: onViewOpened,
+        style: TextButton.styleFrom(
+          foregroundColor: palette.primaryText,
+          alignment: AlignmentDirectional.centerStart,
           padding: EdgeInsets.zero,
-          builder: (context, isHovering, disabled) {
-            return RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: displayText,
-                    style: isHovering ? titleHoverStyle : titleStyle,
-                  ),
-                  WidgetSpan(
-                    alignment: PlaceholderAlignment.middle,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 4),
-                      child: FlowyTooltip(
-                        message: LocaleKeys.settings_files_open.tr(),
-                        child: FlowySvg(
-                          FlowySvgs.search_open_tab_m,
-                          color: theme.iconColorScheme.secondary,
-                          size: const Size.square(20),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
+          ),
+        ).copyWith(
+          animationDuration:
+              WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Text(
+                view.nameOrDefault,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: WorkspaceTypography.style(
+                  context,
+                  WorkspaceTextRole.section,
+                ),
               ),
-            );
-          },
-        );
-      },
+            ),
+            const HSpace(WorkspaceTokens.space2),
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Icon(
+                Icons.open_in_new_rounded,
+                size: 16,
+                color: palette.secondaryText,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -506,7 +480,7 @@ class _DatabasePagePreview extends StatelessWidget {
   }
 }
 
-/// A search preview never scrolls, so only the opening of a file is read.
+/// Read only the opening of a file; the excerpt can scroll in a short window.
 const _maxFilePreviewBytes = 8 * 1024;
 
 /// The preview of a standalone file: a picture, the first page of a PDF, the
@@ -655,7 +629,7 @@ class _FilePreviewArchiveState extends State<_FilePreviewArchive> {
         if (rows.isEmpty) {
           return widget.empty;
         }
-        return Padding(
+        return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -761,7 +735,6 @@ class _FilePreviewOfficeDocumentState
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
     return FutureBuilder<String?>(
       future: text,
       builder: (context, snapshot) {
@@ -778,18 +751,13 @@ class _FilePreviewOfficeDocumentState
         if (value.trim().isEmpty) {
           return widget.empty;
         }
-        return Padding(
+        return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
           child: Text(
             value,
             maxLines: 18,
             overflow: TextOverflow.fade,
-            style: TextStyle(
-              fontFamily: 'Inter',
-              fontSize: 11.5,
-              height: 17 / 11.5,
-              color: theme.textColorScheme.secondary,
-            ),
+            style: WorkspaceTypography.style(context, WorkspaceTextRole.body),
           ),
         );
       },
@@ -805,14 +773,18 @@ class _FilePreviewImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Image.file(
-      File(path),
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      // The card is roughly 300pt wide, so a full size decode is pure waste.
-      cacheWidth: (304 * MediaQuery.devicePixelRatioOf(context)).round(),
-      errorBuilder: (_, __, ___) => fallback,
+    return LayoutBuilder(
+      builder: (context, constraints) => Image.file(
+        File(path),
+        fit: BoxFit.contain,
+        width: double.infinity,
+        height: double.infinity,
+        cacheWidth:
+            (constraints.maxWidth * MediaQuery.devicePixelRatioOf(context))
+                .clamp(1.0, 1600.0)
+                .round(),
+        errorBuilder: (_, __, ___) => fallback,
+      ),
     );
   }
 }
@@ -847,6 +819,7 @@ class _FilePreviewVideoState extends State<_FilePreviewVideo> {
 
   @override
   Widget build(BuildContext context) {
+    final palette = WorkspacePalette.of(context);
     return FutureBuilder<File?>(
       future: poster,
       builder: (context, snapshot) {
@@ -867,23 +840,23 @@ class _FilePreviewVideoState extends State<_FilePreviewVideo> {
           children: [
             Image.file(
               file,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
               cacheWidth:
                   (304 * MediaQuery.devicePixelRatioOf(context)).round(),
               errorBuilder: (_, __, ___) => widget.fallback,
             ),
             Center(
               child: DecoratedBox(
-                decoration: const BoxDecoration(
-                  color: Color(0x73000000),
+                decoration: BoxDecoration(
+                  color: palette.elevatedSurface.withValues(alpha: 0.94),
                   shape: BoxShape.circle,
                 ),
-                child: const Padding(
-                  padding: EdgeInsets.all(10),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
                   child: Icon(
                     Icons.play_arrow_rounded,
                     size: 26,
-                    color: Colors.white,
+                    color: palette.primaryText,
                   ),
                 ),
               ),
@@ -925,9 +898,10 @@ class _FilePreviewPdfPage extends StatelessWidget {
             child: AspectRatio(
               aspectRatio: page.width / page.height,
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(6),
+                borderRadius:
+                    BorderRadius.circular(WorkspaceTokens.controlRadius),
                 child: ColoredBox(
-                  color: Colors.white,
+                  color: WorkspacePalette.of(context).surface,
                   child: PdfPageView(
                     document: document,
                     pageNumber: 1,
@@ -994,6 +968,8 @@ class _FilePreviewMarkdownState extends State<_FilePreviewMarkdown> {
         if (blocks.isEmpty) {
           return widget.fallback;
         }
+        // This renderer owns a non-shrink-wrapped list and needs the bounded
+        // preview height. Do not place it in another vertical scroll view.
         return Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
           child: FolderGalleryRichTextPreview(blocks: blocks),
@@ -1030,7 +1006,7 @@ class _FilePreviewTextState extends State<_FilePreviewText> {
     }
   }
 
-  /// Reads only the opening of the file — a search preview never scrolls.
+  /// Reads only the opening of the file, regardless of the preview's height.
   Future<String> _readHead() async {
     final handle = await File(widget.path).open();
     try {
@@ -1043,7 +1019,6 @@ class _FilePreviewTextState extends State<_FilePreviewText> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
     return FutureBuilder<String>(
       future: head,
       builder: (context, snapshot) {
@@ -1057,18 +1032,19 @@ class _FilePreviewTextState extends State<_FilePreviewText> {
         if (text.trim().isEmpty) {
           return widget.fallback;
         }
-        return Padding(
+        return SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
           child: Text(
             text,
             maxLines: 24,
             overflow: TextOverflow.fade,
-            style: TextStyle(
+            style:
+                WorkspaceTypography.style(context, WorkspaceTextRole.metadata)
+                    .copyWith(
               fontFamily: 'Geist Mono',
               fontFamilyFallback: const ['RobotoMono', 'monospace'],
-              fontSize: 10,
-              height: 15 / 10,
-              color: theme.textColorScheme.secondary,
+              height: 1.5,
+              color: WorkspacePalette.of(context).primaryText,
             ),
           ),
         );
@@ -1101,7 +1077,7 @@ class _WorkspaceFileCard extends StatelessWidget {
         : LocaleKeys.document_menuName.tr();
     final size = metadata?.size;
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1159,7 +1135,7 @@ class _PreviewError extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,

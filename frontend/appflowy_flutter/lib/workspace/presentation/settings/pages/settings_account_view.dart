@@ -37,8 +37,17 @@ class _SettingsAccountViewState extends State<SettingsAccountView> {
   late String userName = widget.userProfile.name;
 
   @override
+  void didUpdateWidget(covariant SettingsAccountView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userProfile.id != widget.userProfile.id) {
+      userName = widget.userProfile.name;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return BlocProvider<SettingsUserViewBloc>(
+      key: ValueKey(widget.userProfile.id),
       create: (context) =>
           getIt<SettingsUserViewBloc>(param1: widget.userProfile)
             ..add(const SettingsUserEvent.initial()),

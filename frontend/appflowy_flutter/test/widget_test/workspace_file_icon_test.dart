@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_icon_picker.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_view.dart';
@@ -13,6 +12,8 @@ import 'package:appflowy/shared/icon_emoji_picker/recent_icons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
@@ -155,7 +156,7 @@ void main() {
         expect(find.byKey(_share), findsOneWidget);
         final reveal = find.ancestor(
           of: find.byKey(_copy),
-          matching: find.byType(MediaActionReveal),
+          matching: find.byType(PreviewToolbar),
         );
         expect(
           tester
@@ -216,7 +217,11 @@ void main() {
         expect(
           find.descendant(
             of: find.byKey(_identity),
-            matching: find.byIcon(fileIconForName('notes.txt')),
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget is WorkspaceGlyph &&
+                  widget.name == WorkspaceGlyphs.nameForFile('notes.txt'),
+            ),
           ),
           findsOneWidget,
         );

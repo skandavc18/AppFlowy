@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flowy_infra_ui/widget/flowy_tooltip.dart';
@@ -60,7 +59,7 @@ class FlowyIconTextButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = hoverColor ?? Theme.of(context).colorScheme.secondary;
+    final color = hoverColor ?? Theme.of(context).hoverColor;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -71,7 +70,7 @@ class FlowyIconTextButton extends StatelessWidget {
         cursor:
             disable ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
         style: HoverStyle(
-          borderRadius: radius ?? Corners.s6Border,
+          borderRadius: radius ?? const BorderRadius.all(Radius.circular(8)),
           hoverColor: color,
           border: borderColor == null ? null : Border.all(color: borderColor!),
         ),
@@ -196,7 +195,7 @@ class FlowyButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = hoverColor ?? Theme.of(context).colorScheme.secondary;
+    final color = hoverColor ?? Theme.of(context).hoverColor;
     final alpha = (255 * disableOpacity).toInt();
     color.withAlpha(alpha);
 
@@ -205,7 +204,7 @@ class FlowyButton extends StatelessWidget {
         splashFactory: Platform.isIOS ? NoSplash.splashFactory : null,
         onTap: disable ? null : onTap,
         onSecondaryTap: disable ? null : onSecondaryTap,
-        borderRadius: radius ?? Corners.s6Border,
+        borderRadius: radius ?? const BorderRadius.all(Radius.circular(8)),
         child: _render(context),
       );
     }
@@ -219,7 +218,7 @@ class FlowyButton extends StatelessWidget {
         cursor:
             disable ? SystemMouseCursors.forbidden : SystemMouseCursors.click,
         style: HoverStyle(
-          borderRadius: radius ?? Corners.s6Border,
+          borderRadius: radius ?? const BorderRadius.all(Radius.circular(8)),
           hoverColor: color,
           border: borderColor == null ? null : Border.all(color: borderColor!),
           backgroundColor: backgroundColor ?? Colors.transparent,
@@ -342,9 +341,12 @@ class FlowyTextButton extends StatelessWidget {
         text,
         constraints: const BoxConstraints(minHeight: 32),
         fillColor: Theme.of(context).colorScheme.primary,
-        hoverColor: const Color(0xFF005483),
+        hoverColor: Color.alphaBlend(
+          Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.10),
+          Theme.of(context).colorScheme.primary,
+        ),
         fontColor: Theme.of(context).colorScheme.onPrimary,
-        fontHoverColor: Colors.white,
+        fontHoverColor: Theme.of(context).colorScheme.onPrimary,
         onPressed: onPressed,
       );
 
@@ -360,7 +362,7 @@ class FlowyTextButton extends StatelessWidget {
         hoverColor: Theme.of(context).colorScheme.primary,
         fontColor: Theme.of(context).colorScheme.primary,
         borderColor: Theme.of(context).colorScheme.primary,
-        fontHoverColor: Colors.white,
+        fontHoverColor: Theme.of(context).colorScheme.onPrimary,
         onPressed: onPressed,
       );
 
@@ -411,8 +413,11 @@ class FlowyTextButton extends StatelessWidget {
       constraints: constraints,
       child: TextButton(
         onPressed: onPressed,
-        focusNode: FocusNode(skipTraversal: onPressed == null),
         style: ButtonStyle(
+          animationDuration: MediaQuery.disableAnimationsOf(context) ||
+                  MediaQuery.accessibleNavigationOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 140),
           overlayColor: const WidgetStatePropertyAll(Colors.transparent),
           splashFactory: NoSplash.splashFactory,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -426,7 +431,8 @@ class FlowyTextButton extends StatelessWidget {
                         ? Theme.of(context).colorScheme.error
                         : Colors.transparent),
               ),
-              borderRadius: radius ?? Corners.s6Border,
+              borderRadius:
+                  radius ?? const BorderRadius.all(Radius.circular(8)),
             ),
           ),
           textStyle: WidgetStateProperty.all(
@@ -448,7 +454,7 @@ class FlowyTextButton extends StatelessWidget {
                 return hoverColor ??
                     (isDangerous
                         ? Theme.of(context).colorScheme.error
-                        : Theme.of(context).colorScheme.secondary);
+                        : Theme.of(context).hoverColor);
               }
 
               return fillColor ??
@@ -539,9 +545,11 @@ class FlowyRichTextButton extends StatelessWidget {
     child = RawMaterialButton(
       hoverElevation: 0,
       highlightElevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: radius ?? Corners.s6Border),
+      shape: RoundedRectangleBorder(
+        borderRadius: radius ?? const BorderRadius.all(Radius.circular(8)),
+      ),
       fillColor: fillColor ?? Theme.of(context).colorScheme.secondaryContainer,
-      hoverColor: hoverColor ?? Theme.of(context).colorScheme.secondary,
+      hoverColor: hoverColor ?? Theme.of(context).hoverColor,
       focusColor: Colors.transparent,
       splashColor: Colors.transparent,
       highlightColor: Colors.transparent,

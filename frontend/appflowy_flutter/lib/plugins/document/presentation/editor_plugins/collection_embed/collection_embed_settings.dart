@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
 import 'package:flutter/foundation.dart';
 
 /// How much room a collection widget takes on the page.
@@ -97,6 +98,11 @@ class CollectionEmbedSettings {
   /// means "whatever this type calls its default", so a type can change its
   /// default without rewriting stored pages.
   final String? style;
+
+  /// Folder/archive selectors share IDs; legacy gallery/compact/list embeds
+  /// retain their original meaning and serialized shape.
+  FileBrowserViewMode get folderViewMode =>
+      FileBrowserViewMode.fromValue(style);
 
   /// How many objects the preview offers. `null` defers to the style.
   final int? itemLimit;

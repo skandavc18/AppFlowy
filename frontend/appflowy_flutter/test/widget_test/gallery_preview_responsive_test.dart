@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -47,11 +48,24 @@ void main() {
             reason: 'The pending skeleton must fit the bounded card.',
           );
           expect(preview.isCompleted, isFalse);
-          expect(find.byKey(_previewStageKey), findsNothing);
+          final previewStage = find.byKey(_previewStageKey);
+          expect(previewStage, findsOneWidget);
+          final previewStageElement = tester.element(previewStage);
+          final skeleton = find.descendant(
+            of: previewStage,
+            matching: find.byWidgetPredicate(
+              (widget) =>
+                  widget.runtimeType.toString() == '_GalleryCardSkeleton',
+              description: 'gallery loading skeleton',
+            ),
+          );
+          expect(skeleton, findsOneWidget);
+          expect(find.text(_longTypeLabel), findsNothing);
           final card = find.byType(FolderGalleryCard);
           final cardState = tester.state(card);
           final cardBounds = tester.getRect(card);
           expect(cardBounds.size, _cardSize);
+          _expectInside(tester.getRect(previewStage), cardBounds);
           final context = tester.element(card);
           expect(PaperTheme.isEnabled(context), appearance == 'paper');
           expect(
@@ -81,17 +95,32 @@ void main() {
           );
           await tester.pumpAndSettle();
 
-          expect(find.byKey(_previewStageKey), findsOneWidget);
+          expect(previewStage, findsOneWidget);
+          expect(tester.element(previewStage), same(previewStageElement));
+          expect(skeleton, findsNothing);
           expect(
-            tester.getSize(find.byKey(_previewStageKey)).height,
-            greaterThan(0),
+            find.descendant(
+              of: previewStage,
+              matching: find.text(_longTypeLabel),
+            ),
+            findsNothing,
           );
+          final glyph = tester.widget<WorkspaceGlyph>(
+            find.descendant(
+              of: previewStage,
+              matching: find.byType(WorkspaceGlyph),
+            ),
+          );
+          expect(glyph.name, 'file');
+          expect(glyph.size, 64);
           expect(tester.state(card), same(cardState));
           expect(tester.getRect(card), cardBounds);
+          // Metadata now shares the card's height; the retained preview slot
+          // must remain nonempty and inside the same outer bounds.
+          _expectInside(tester.getRect(previewStage), cardBounds);
           _expectTitleFits(tester, cardBounds);
 
-          // The artwork also uses the type label; select its one-line footer
-          // counterpart rather than accidentally asserting on the artwork.
+          // Type belongs in the real metadata, not on a fabricated file sheet.
           final typeLabel = find.byWidgetPredicate(
             (widget) =>
                 widget is Text &&

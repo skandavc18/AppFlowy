@@ -561,7 +561,8 @@ class NotebookMarkupBuilder {
                   color: headerFlags[index]
                       ? palette.hover
                       : index.isOdd
-                          ? palette.hover.withValues(alpha: 0.35)
+                          ? palette.hover
+                              .withValues(alpha: palette.hover.a * 0.35)
                           : null,
                 ),
                 children: [

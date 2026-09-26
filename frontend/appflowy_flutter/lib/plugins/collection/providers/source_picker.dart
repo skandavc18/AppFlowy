@@ -552,7 +552,9 @@ class _RowState extends State<_Row> {
           decoration: BoxDecoration(
             color: widget.selected
                 ? palette.selected
-                : palette.hover.withValues(alpha: hovered ? 1 : 0),
+                : hovered
+                    ? palette.hover
+                    : palette.hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(

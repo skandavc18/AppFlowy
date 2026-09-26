@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
@@ -719,9 +720,9 @@ class _SpaceSearchFieldState extends State<SpaceSearchField> {
         padding: EdgeInsets.zero,
         focusNode: focusNode,
         placeholder: LocaleKeys.search_label.tr(),
-        prefixIcon: const FlowySvg(FlowySvgs.magnifier_s),
+        prefixIcon: const WorkspaceGlyph.named('magnifying-glass', size: 16),
         prefixInsets: const EdgeInsets.only(left: 12.0, right: 8.0),
-        suffixIcon: const Icon(Icons.close),
+        suffixIcon: const _SpaceSearchClearIcon(),
         suffixInsets: const EdgeInsets.only(right: 8.0),
         itemSize: 16.0,
         decoration: const BoxDecoration(
@@ -737,4 +738,20 @@ class _SpaceSearchFieldState extends State<SpaceSearchField> {
       ),
     );
   }
+}
+
+// CupertinoSearchTextField requires an Icon (not any Widget) for its suffix.
+// Change only that leaf; the native button still owns clear, focus and input.
+class _SpaceSearchClearIcon extends Icon {
+  const _SpaceSearchClearIcon() : super(Icons.close);
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+        label: CupertinoLocalizations.of(context).clearButtonLabel,
+        child: WorkspaceGlyph(
+          icon!,
+          size: IconTheme.of(context).size ?? 16,
+          color: IconTheme.of(context).color,
+        ),
+      );
 }

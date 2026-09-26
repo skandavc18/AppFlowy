@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/interactiv
 import 'package:appflowy/plugins/document/presentation/editor_plugins/interactive/interactive_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/interactive/interactive_text.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialog_v2.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -458,6 +459,7 @@ class _RadioRowState extends State<_RadioRow> {
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final tone = widget.option.accent.resolve(palette);
+    final hover = WorkspaceChrome.hoverColor(context);
 
     return MouseRegion(
       cursor:
@@ -473,7 +475,7 @@ class _RadioRowState extends State<_RadioRow> {
           margin: const EdgeInsets.symmetric(vertical: 1),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
           decoration: BoxDecoration(
-            color: _hovered ? palette.hover : palette.hoverBase,
+            color: _hovered ? hover : hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
@@ -692,6 +694,13 @@ class _TriggerState extends State<_Trigger> {
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
+    final hover = WorkspaceChrome.hoverColor(context);
+    // This is an opaque field surface; layer hover over it rather than
+    // replacing it with a translucent wash or boosting the surface alpha.
+    final surface = Color.alphaBlend(
+      palette.hover.withValues(alpha: 0.75),
+      palette.surface,
+    );
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
@@ -705,10 +714,7 @@ class _TriggerState extends State<_Trigger> {
           constraints: const BoxConstraints(minHeight: 40),
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
           decoration: BoxDecoration(
-            color: Color.alphaBlend(
-              palette.hover.withValues(alpha: _hovered ? 1 : 0.75),
-              palette.surface,
-            ),
+            color: _hovered ? Color.alphaBlend(hover, surface) : surface,
             borderRadius: BorderRadius.circular(InteractiveMetrics.fieldRadius),
             border: Border.all(
               color: palette.border.withValues(alpha: _hovered ? 0.44 : 0.30),

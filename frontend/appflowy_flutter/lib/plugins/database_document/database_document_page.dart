@@ -4,12 +4,14 @@ import 'package:appflowy/plugins/database/grid/application/row/row_detail_bloc.d
 import 'package:appflowy/plugins/database/grid/presentation/widgets/common/type_option_separator.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_builder.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_banner.dart';
+import 'package:appflowy/plugins/database/widgets/row/row_detail_scroll_surface.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_property.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/banner.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_handler.dart';
 import 'package:appflowy/plugins/document/presentation/editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/widgets/ai_writer_scroll_wrapper.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_host.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/shared_context/shared_context.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/transaction_handler/editor_transaction_service.dart';
@@ -56,6 +58,9 @@ class _DatabaseDocumentPageState extends State<DatabaseDocumentPage> {
   @override
   Widget build(BuildContext context) {
     return MultiBlocProvider(
+      key: ValueKey(
+        (widget.documentId, widget.databaseId, widget.rowId, widget.view.id),
+      ),
       providers: [
         BlocProvider.value(
           value: getIt<ActionNavigationBloc>(),
@@ -94,13 +99,19 @@ class _DatabaseDocumentPageState extends State<DatabaseDocumentPage> {
             return const SizedBox.shrink();
           }
 
-          return BlocListener<ActionNavigationBloc, ActionNavigationState>(
-            listener: _onNotificationAction,
-            listenWhen: (_, curr) => curr.action != null,
-            child: AiWriterScrollWrapper(
-              viewId: widget.view.id,
-              editorState: editorState,
-              child: _buildEditorPage(context, state),
+          return RowDocumentFindHost(
+            documentId: context.read<DocumentBloc>().documentId,
+            tableViewId: widget.view.id,
+            editorState: editorState,
+            builder: (context, findScope) =>
+                BlocListener<ActionNavigationBloc, ActionNavigationState>(
+              listener: _onNotificationAction,
+              listenWhen: (_, curr) => curr.action != null,
+              child: AiWriterScrollWrapper(
+                viewId: widget.view.id,
+                editorState: editorState,
+                child: _buildEditorPage(context, state, findScope),
+              ),
             ),
           );
         },
@@ -108,19 +119,29 @@ class _DatabaseDocumentPageState extends State<DatabaseDocumentPage> {
     );
   }
 
-  Widget _buildEditorPage(BuildContext context, DocumentState state) {
+  Widget _buildEditorPage(
+    BuildContext context,
+    DocumentState state,
+    DocumentFindMetadataScope findScope,
+  ) {
     final appflowyEditorPage = EditorDropHandler(
       viewId: widget.view.id,
       editorState: state.editorState!,
       isLocalMode: context.read<DocumentBloc>().isLocalMode,
       child: AppFlowyEditorPage(
+        key: ObjectKey(state.editorState),
+        findMetadataScope: findScope,
         editorState: state.editorState!,
         styleCustomizer: EditorStyleCustomizer(
           context: context,
           padding: EditorStyleCustomizer.documentPadding,
           editorState: state.editorState!,
         ),
-        header: _buildDatabaseDataContent(context, state.editorState!),
+        // Keep the real primary-cell controller (including a pending load or
+        // unsaved draft) available to Find when the header scrolls off screen.
+        header: RowDetailScrollHeader(
+          child: _buildDatabaseDataContent(context, state.editorState!),
+        ),
         initialSelection: widget.initialSelection,
         useViewInfoBloc: false,
         placeholderText: (node) =>

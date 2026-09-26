@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/doc
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_block/custom_page_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -127,7 +128,7 @@ void main() {
                   final gutter = tester.getRect(find.byType(BlockActionList));
                   expect(gutter.width, BlockActionList.gutterWidth);
                   expect(gutter.right, closeTo(body.left, 0.01));
-                  for (final rect in [title, body, cover]) {
+                  for (final rect in [title, body]) {
                     expect(
                       rect.left,
                       closeTo(geometry.outerInset + geometry.contentLeft, 0.01),
@@ -141,6 +142,7 @@ void main() {
                     );
                     expect(rect.width, closeTo(geometry.contentWidth, 0.01));
                   }
+                  _expectBroadCover(cover, width, title);
                   final key = (width, scale);
                   final rects = [title, body, cover, gutter];
                   if (baselines.containsKey(key)) {
@@ -302,7 +304,7 @@ void main() {
               final body = tester.getRect(find.byKey(_bodyField));
               final cover = tester.getRect(find.byType(DesktopCover));
               final gutter = tester.getRect(find.byType(BlockActionList));
-              for (final rect in [title, body, cover]) {
+              for (final rect in [title, body]) {
                 expect(
                   rect.left,
                   closeTo(geometry.outerInset + geometry.contentRight, 0.01),
@@ -313,6 +315,7 @@ void main() {
                 );
                 expect(rect.width, closeTo(geometry.contentWidth, 0.01));
               }
+              _expectBroadCover(cover, width, title);
               expect(gutter.width, BlockActionList.gutterWidth);
               expect(gutter.left, closeTo(body.right, 0.01));
               final key = (width, scale);
@@ -386,6 +389,91 @@ void main() {
     variant: TargetPlatformVariant.only(TargetPlatform.windows),
   );
 
+  for (final direction in [TextDirection.ltr, TextDirection.rtl]) {
+    testWidgets(
+      '$direction: title draft survives cover and icon toggles at every width',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(2560, 1200);
+        addTearDown(tester.view.reset);
+        final fixture = _DocumentFixture(
+          shrinkWrap: false,
+          textDirection: direction,
+        );
+        try {
+          await tester.pumpWidget(fixture.build('paper'));
+          await tester.pumpAndSettle();
+          final titleState = tester.state<_DraftFieldState>(find.byKey(_title));
+          final bodyState = tester.state<_DraftFieldState>(find.byKey(_body));
+          final editorState = tester.state(find.byType(AppFlowyEditor));
+          final documentBefore = fixture.editor.document.toJson();
+          final selectionService = fixture.editor.service.selectionService;
+          await tester.enterText(
+            find.byKey(_titleField),
+            'Still writing this title',
+          );
+          const selection = TextSelection(baseOffset: 2, extentOffset: 9);
+          titleState.controller.selection = selection;
+
+          for (final width in _widths) {
+            for (final hasCover in [true, false]) {
+              for (final hasIcon in [true, false]) {
+                fixture
+                  ..width = width
+                  ..showCover = hasCover
+                  ..showIcon = hasIcon;
+                fixture.rebuild();
+                await tester.pumpAndSettle();
+                expect(tester.state(find.byKey(_title)), same(titleState));
+                expect(tester.state(find.byKey(_body)), same(bodyState));
+                expect(
+                  tester.state(find.byType(AppFlowyEditor)),
+                  same(editorState),
+                );
+                expect(
+                  fixture.editor.service.selectionService,
+                  same(selectionService),
+                );
+                expect(titleState.focus.hasFocus, isTrue);
+                expect(titleState.controller.text, 'Still writing this title');
+                expect(titleState.controller.selection, selection);
+                final title = tester.getRect(find.byKey(_titleField));
+                final body = tester.getRect(find.byKey(_bodyField));
+                expect(title.left, closeTo(body.left, 0.01));
+                expect(title.right, closeTo(body.right, 0.01));
+                expect(
+                  find.byType(DocumentCover),
+                  hasCover ? findsOneWidget : findsNothing,
+                );
+                if (hasIcon) {
+                  final icon = tester.getRect(
+                    find.byKey(const ValueKey('responsive-page-icon')),
+                  );
+                  expect(icon.bottom, lessThan(title.top));
+                  expect(
+                    direction == TextDirection.ltr ? icon.left : icon.right,
+                    closeTo(
+                      direction == TextDirection.ltr ? title.left : title.right,
+                      0.01,
+                    ),
+                  );
+                }
+                expect(fixture.preferredMaxWidth, 1920);
+                expect(fixture.editor.document.toJson(), documentBefore);
+                expect(tester.takeException(), isNull);
+              }
+            }
+          }
+        } finally {
+          await tester.pumpWidget(const SizedBox.shrink());
+          fixture.scroll.dispose();
+          fixture.editor.dispose();
+        }
+      },
+      variant: TargetPlatformVariant.only(TargetPlatform.windows),
+    );
+  }
+
   testWidgets('title first-line measurement follows accessibility scaling',
       (tester) async {
     const titleLineKey = ValueKey('measured-title-line');
@@ -450,6 +538,17 @@ void main() {
   });
 }
 
+void _expectBroadCover(Rect cover, double width, Rect title) {
+  // Compact panes change the cover height, not its 8px page-edge inset.
+  expect(cover.left, closeTo(8, 0.01));
+  expect(cover.right, closeTo(width - 8, 0.01));
+  expect(cover.width, greaterThan(title.width));
+  expect(
+    cover.height,
+    width < 600 ? WorkspaceTokens.compactCoverHeight : kDesktopCoverHeight,
+  );
+}
+
 class _DocumentFixture {
   _DocumentFixture({
     required bool shrinkWrap,
@@ -484,6 +583,8 @@ class _DocumentFixture {
   double preferredMaxWidth = 1920;
   double textScale = 1;
   bool disableAnimations = false;
+  bool showCover = true;
+  bool showIcon = false;
 
   Widget build(String mode) => BlocProvider<AppearanceSettingsCubit>.value(
         value: appearance,
@@ -541,27 +642,34 @@ class _DocumentFixture {
                             // Keep real services: the page header and action
                             // buttons register selection gesture interceptors.
                             contextMenuItems: const [],
-                            header: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                DocumentCover(
-                                  view: ViewPB(id: 'responsive-test-cover'),
-                                  node: editor.document.root,
-                                  editorState: editor,
-                                  coverType: CoverType.color,
-                                  coverDetails: '0xffb9a6d6',
-                                  onChangeCover: (_, __) {},
-                                ),
-                                DocumentHeaderContent(
-                                  editorStyle: style,
-                                  child: const _DraftField(
-                                    key: _title,
-                                    fieldKey: _titleField,
-                                    initialText: 'Page title',
-                                    isTitle: true,
-                                  ),
-                                ),
-                              ],
+                            header: DocumentHeaderLayout(
+                              editorStyle: style,
+                              cover: showCover
+                                  ? DocumentCover(
+                                      view: ViewPB(id: 'responsive-test-cover'),
+                                      node: editor.document.root,
+                                      editorState: editor,
+                                      coverType: CoverType.color,
+                                      coverDetails: '0xffb9a6d6',
+                                      onChangeCover: (_, __) {},
+                                    )
+                                  : null,
+                              icon: showIcon
+                                  ? const SizedBox.square(
+                                      key: ValueKey('responsive-page-icon'),
+                                      dimension: kTitleIconSize,
+                                      child: Icon(
+                                        Icons.book_rounded,
+                                        size: kTitleIconSize,
+                                      ),
+                                    )
+                                  : null,
+                              title: const _DraftField(
+                                key: _title,
+                                fieldKey: _titleField,
+                                initialText: 'Page title',
+                                isTitle: true,
+                              ),
                             ),
                             blockComponentBuilders: {
                               ...standardBlockComponentBuilderMap,

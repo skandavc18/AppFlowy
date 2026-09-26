@@ -1,9 +1,12 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_chrome.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_context_menu.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_file_stage.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_host.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_tree_view.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_controller.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
@@ -154,32 +157,38 @@ class _DocsBody extends StatelessWidget {
     final symbols = controller.analysisFor(active).symbols;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final showContents =
-            controller.settings.showOutline && constraints.maxWidth >= 1100;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            RepoMetrics.gutter,
-            RepoMetrics.space2,
-            RepoMetrics.gutter,
-            RepoMetrics.space4,
+        final showContents = controller.settings.showOutline &&
+            CollectionWorkspaceMetrics.fitsRail(
+              context,
+              constraints.maxWidth - RepoMetrics.gutter * 2,
+              railWidth: RepoMetrics.paneWidth +
+                  RepoMetrics.railWidth +
+                  RepoMetrics.paneGap,
+            );
+        return CollectionWorkspaceSplit(
+          railWidth: RepoMetrics.paneWidth,
+          navigation: _DocsList(
+            collection: collection,
+            controller: controller,
+            theme: theme,
+            docs: docs,
+            activeId: active.id,
+          ),
+          compactNavigation: CollectionWorkspacePicker(
+            label: active.name,
+            tooltip: LocaleKeys.collections_repository_documents.tr(),
+            entries: [
+              for (final doc in docs)
+                AppMenuItem(
+                  label: doc.path,
+                  selected: doc.id == active.id,
+                  onSelected: () => controller.openDoc(doc.id),
+                ),
+            ],
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                width: RepoMetrics.paneWidth,
-                child: RepoPanel(
-                  theme: theme,
-                  child: _DocsList(
-                    collection: collection,
-                    controller: controller,
-                    theme: theme,
-                    docs: docs,
-                    activeId: active.id,
-                  ),
-                ),
-              ),
-              const RepoGap(),
               Expanded(
                 child: RepoPanel(
                   theme: theme,
@@ -206,65 +215,72 @@ class _DocsBody extends StatelessWidget {
                   ),
                 ),
               ),
-              if (showContents) ...[
-                const RepoGap(),
-                SizedBox(
-                  width: RepoMetrics.railWidth,
-                  child: RepoPanel(
-                    theme: theme,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        RepoPaneHeading(
-                          theme: theme,
-                          title:
-                              LocaleKeys.collections_repository_contents.tr(),
-                          trailing: symbols.isEmpty
-                              ? null
-                              : Padding(
-                                  padding: const EdgeInsets.only(
-                                    right: RepoMetrics.space2,
-                                  ),
-                                  child: Text(
-                                    '${symbols.length}',
-                                    style: theme.metaFaint,
-                                  ),
-                                ),
-                        ),
-                        Expanded(
-                          child: symbols.isEmpty
-                              ? RepoEmptyState(
-                                  theme: theme,
-                                  icon: Icons.segment_rounded,
-                                  title: LocaleKeys
-                                      .collections_repository_noOutline
-                                      .tr(),
-                                  description: LocaleKeys
-                                      .collections_repository_noOutlineDescription
-                                      .tr(),
-                                )
-                              : RepoScrollArea(
-                                  theme: theme,
-                                  builder: (context, scrollController) =>
-                                      ListView.builder(
-                                    controller: scrollController,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 6,
+              SizedBox(width: showContents ? RepoMetrics.paneGap : 0),
+              Offstage(
+                offstage: !showContents,
+                child: ExcludeFocus(
+                  excluding: !showContents,
+                  child: SizedBox(
+                    width: CollectionWorkspaceMetrics.railWidthFor(
+                      context,
+                      RepoMetrics.railWidth,
+                    ),
+                    child: RepoPanel(
+                      theme: theme,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          RepoPaneHeading(
+                            theme: theme,
+                            title:
+                                LocaleKeys.collections_repository_contents.tr(),
+                            trailing: symbols.isEmpty
+                                ? null
+                                : Padding(
+                                    padding: const EdgeInsets.only(
+                                      right: RepoMetrics.space2,
                                     ),
-                                    itemCount: symbols.length,
-                                    itemBuilder: (context, index) =>
-                                        RepoOutlineRow(
-                                      symbol: symbols[index],
-                                      theme: theme,
+                                    child: Text(
+                                      '${symbols.length}',
+                                      style: theme.metaFaint,
                                     ),
                                   ),
-                                ),
-                        ),
-                      ],
+                          ),
+                          Expanded(
+                            child: symbols.isEmpty
+                                ? RepoEmptyState(
+                                    theme: theme,
+                                    icon: Icons.segment_rounded,
+                                    title: LocaleKeys
+                                        .collections_repository_noOutline
+                                        .tr(),
+                                    description: LocaleKeys
+                                        .collections_repository_noOutlineDescription
+                                        .tr(),
+                                  )
+                                : RepoScrollArea(
+                                    theme: theme,
+                                    builder: (context, scrollController) =>
+                                        ListView.builder(
+                                      controller: scrollController,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 6,
+                                      ),
+                                      itemCount: symbols.length,
+                                      itemBuilder: (context, index) =>
+                                          RepoOutlineRow(
+                                        symbol: symbols[index],
+                                        theme: theme,
+                                      ),
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         );
@@ -398,8 +414,6 @@ class _DocRow extends StatelessWidget {
               style: theme.face(
                 fontSize: 12.25,
                 color: selected || hovered ? theme.textStrong : theme.textBody,
-                axis: selected ? RepoMetrics.strongWeightAxis : 545,
-                weight: selected ? FontWeight.w600 : FontWeight.w500,
               ),
               child: Text(entry.name, overflow: TextOverflow.ellipsis),
             ),
@@ -422,15 +436,13 @@ class _DocHeader extends StatelessWidget {
     return SizedBox(
       height: RepoMetrics.stageHeaderHeight,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: RepoMetrics.space4 + 2,
-        ),
+        padding: const EdgeInsets.only(bottom: RepoMetrics.space2),
         child: Row(
           children: [
-            Icon(
+            WorkspaceGlyph(
               Icons.article_rounded,
               size: 15,
-              color: const Color(0xFF7C8DA6),
+              color: theme.iconRest,
             ),
             const SizedBox(width: 9),
             Flexible(

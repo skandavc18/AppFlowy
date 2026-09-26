@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
@@ -15,7 +16,9 @@ import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/gestures.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:html/dom.dart' as html_dom;
@@ -104,35 +107,41 @@ class _FilePreviewState extends State<FilePreview> {
     if (oldWidget.file.path != widget.file.path ||
         oldWidget.kind != widget.kind ||
         oldWidget.name != widget.name ||
-        oldWidget.editable != widget.editable ||
+        (oldWidget.editable != widget.editable &&
+            widget.kind != FilePreviewKind.code &&
+            widget.kind != FilePreviewKind.archive) ||
         oldWidget.bare != widget.bare ||
-        oldWidget.metadata[filePreviewEditModeKey] !=
-            widget.metadata[filePreviewEditModeKey]) {
+        (widget.kind.supportsSourceEditing &&
+            oldWidget.metadata[filePreviewEditModeKey] !=
+                widget.metadata[filePreviewEditModeKey])) {
       preview = _buildPreview();
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final content = FutureBuilder<Widget>(
-      // A new file must not inherit the previous FutureBuilder's last data or
-      // editable renderer while its own IO is pending.
-      key: ObjectKey(preview),
-      future: preview,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return _PreviewError(
-            message: snapshot.error.toString(),
-            onRetry: () {
-              setState(() {
-                preview = _buildPreview();
-              });
-            },
-          );
-        }
-        return snapshot.data ??
-            const Center(child: CircularProgressIndicator());
-      },
+    final content = _FilePreviewConfiguration(
+      configuration: widget,
+      child: FutureBuilder<Widget>(
+        // A new file must not inherit the previous FutureBuilder's last data or
+        // editable renderer while its own IO is pending.
+        key: ObjectKey(preview),
+        future: preview,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _PreviewError(
+              message: snapshot.error.toString(),
+              onRetry: () {
+                setState(() {
+                  preview = _buildPreview();
+                });
+              },
+            );
+          }
+          return snapshot.data ??
+              const Center(child: CircularProgressIndicator());
+        },
+      ),
     );
 
     if (widget.bare) {
@@ -145,7 +154,8 @@ class _FilePreviewState extends State<FilePreview> {
     final appFlowyTheme = AppFlowyTheme.of(context);
     final isPremiumPreview = widget.kind == FilePreviewKind.pdf;
     final pdfPalette = isPremiumPreview ? PdfPreviewPalette.of(context) : null;
-    final backgroundColor = pdfPalette?.canvas ??
+    final backgroundColor = StandaloneFileScope.maybeOf(context)?.canvas ??
+        pdfPalette?.canvas ??
         EditorSurfaceStyle.previewBackgroundFor(
           materialTheme.brightness,
           appFlowyTheme.surfaceColorScheme.layer01,
@@ -167,6 +177,26 @@ class _FilePreviewState extends State<FilePreview> {
   }
 
   Future<Widget> _buildPreview() => _FilePreviewLoader(widget).build();
+}
+
+/// IO captures an immutable request, but controls must not capture its initial
+/// settings forever. A loaded code editor observes configuration without a new
+/// future/key, file read, editor controller, selection or execution session.
+class _FilePreviewConfiguration extends InheritedWidget {
+  const _FilePreviewConfiguration({
+    required this.configuration,
+    required super.child,
+  });
+
+  final FilePreview configuration;
+
+  static FilePreview? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_FilePreviewConfiguration>()
+      ?.configuration;
+
+  @override
+  bool updateShouldNotify(_FilePreviewConfiguration oldWidget) =>
+      configuration != oldWidget.configuration;
 }
 
 /// An immutable request, so an await cannot mix one file's bytes with the
@@ -226,13 +256,20 @@ class _FilePreviewLoader {
             baseDirectory: widget.file.parent.path,
           ),
         ),
-      FilePreviewKind.archive => ArchiveExplorer(
-          key: ValueKey('${widget.file.path}_archive'),
-          file: widget.file,
-          name: widget.name,
-          editable: widget.editable,
-          embedded: false,
-          toolbarTrailing: widget.toolbarTrailing,
+      FilePreviewKind.archive => Builder(
+          builder: (context) {
+            final live = _FilePreviewConfiguration.maybeOf(context) ?? widget;
+            return ArchiveExplorer(
+              key: ValueKey('${widget.file.path}_archive'),
+              file: widget.file,
+              name: widget.name,
+              editable: live.editable,
+              embedded: false,
+              metadata: live.metadata,
+              onMetadataChanged: live.onMetadataChanged,
+              toolbarTrailing: live.toolbarTrailing,
+            );
+          },
         ),
       FilePreviewKind.csv => _buildPreviewScaffold(
           CsvPreview(
@@ -843,6 +880,9 @@ class _CodeFilePreview extends StatefulWidget {
 }
 
 class _CodeFilePreviewState extends State<_CodeFilePreview> {
+  FilePreview? _configuration;
+  Map<String, dynamic>? _incomingMetadata;
+  late Map<String, dynamic> _metadata = Map.of(widget.metadata);
   late String code = widget.initialCode;
   late String language = normalizeCodeLanguage(
     widget.metadata['code_language'] as String? ??
@@ -854,7 +894,37 @@ class _CodeFilePreviewState extends State<_CodeFilePreview> {
       decodeCodeTestCases(widget.metadata['code_test_cases']);
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _configuration = _FilePreviewConfiguration.maybeOf(context);
+    final incoming =
+        StandaloneFileScope.forName(context, widget.name)?.metadata ??
+            _configuration?.metadata ??
+            widget.metadata;
+    if (!mapEquals(_incomingMetadata, incoming)) {
+      _incomingMetadata = Map.of(incoming);
+      _metadata = Map.of(incoming);
+      language = normalizeCodeLanguage(
+        incoming['code_language'] as String? ??
+            codeLanguageForName(widget.name),
+      );
+      showLineNumbers = incoming['show_code_line_numbers'] as bool? ?? true;
+      testCases = decodeCodeTestCases(incoming['code_test_cases']);
+    }
+  }
+
+  void _storeSetting(String key, dynamic value) {
+    // Each activation starts from the last choice, not the loader's snapshot.
+    // Hosts are allowed to persist asynchronously or omit an immediate echo.
+    _metadata = {..._metadata, key: value};
+    (_configuration?.onMetadataChanged ?? widget.onMetadataChanged)(
+      Map.of(_metadata),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final editable = _configuration?.editable ?? widget.editable;
     return SandboxedCodeRunner(
       code: code,
       fileName: fileNameForCodeLanguage(language),
@@ -864,34 +934,26 @@ class _CodeFilePreviewState extends State<_CodeFilePreview> {
       onLanguageChanged: (value) {
         final normalizedLanguage = normalizeCodeLanguage(value);
         setState(() => language = normalizedLanguage);
-        widget.onMetadataChanged({
-          ...widget.metadata,
-          'code_language': normalizedLanguage,
-        });
+        _storeSetting('code_language', normalizedLanguage);
       },
       onToggleLineNumbers: () {
         setState(() => showLineNumbers = !showLineNumbers);
-        widget.onMetadataChanged({
-          ...widget.metadata,
-          'show_code_line_numbers': showLineNumbers,
-        });
+        _storeSetting('show_code_line_numbers', showLineNumbers);
       },
-      editable: widget.editable,
+      editable: editable,
       testCases: testCases,
       onTestCasesChanged: (cases) {
         setState(() => testCases = cases);
-        widget.onMetadataChanged({
-          ...widget.metadata,
-          'code_test_cases': encodeCodeTestCases(cases),
-        });
+        _storeSetting('code_test_cases', encodeCodeTestCases(cases));
       },
-      toolbarTrailing: widget.toolbarTrailing,
+      toolbarTrailing:
+          _configuration?.toolbarTrailing ?? widget.toolbarTrailing,
       expandEditor: true,
       framed: false,
       child: _EditableCodeFile(
         file: widget.file,
         initialCode: widget.initialCode,
-        editable: widget.editable,
+        editable: editable,
         language: language,
         showLineNumbers: showLineNumbers,
         onChanged: (value) => setState(() => code = value),
@@ -938,6 +1000,7 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
   final codeFieldKey = GlobalKey();
   final codeFocusNode = FocusNode();
   bool findVisible = false;
+  bool _active = true;
   Timer? saveTimer;
 
   @override
@@ -954,6 +1017,18 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
     if (oldWidget.language != widget.language) {
       controller.updateLanguage(widget.language);
     }
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
   }
 
   @override
@@ -988,13 +1063,14 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
   /// Opens the find bar, seeded with whatever is selected, the way an editor
   /// does. Ctrl+H opens it with the replace row already showing.
   void _openFind({bool replace = false}) {
-    if (!mounted) {
+    if (!mounted || !_active) {
       return;
     }
     final selection = controller.selection;
     final selected = selection.isValid && !selection.isCollapsed
         ? selection.textInside(controller.text)
         : '';
+    setState(() => findVisible = true);
     if (selected.isNotEmpty && !selected.contains('\n')) {
       findSession.findController.text = selected;
     }
@@ -1005,9 +1081,8 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
         caret: selection.isValid ? selection.start : 0,
         keepPosition: false,
       );
-    setState(() => findVisible = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (!mounted || !_active || !findVisible) {
         return;
       }
       final node = replace && widget.editable
@@ -1021,25 +1096,25 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
     });
   }
 
-  void _closeFind() {
-    if (!findVisible) {
+  void _closeFind({bool restoreFocus = true}) {
+    if (!mounted || !_active || !findVisible) {
       return;
     }
     setState(() => findVisible = false);
     controller.updateFindHighlights(const [], null);
-    codeFocusNode.requestFocus();
+    if (restoreFocus) codeFocusNode.requestFocus();
   }
 
   void _onFindChanged() {
-    if (!mounted) {
+    if (!mounted || !_active) {
       return;
     }
     controller.updateFindHighlights(
-      findSession.ranges,
-      findSession.currentRange,
+      findVisible ? findSession.ranges : const [],
+      findVisible ? findSession.currentRange : null,
     );
     setState(() {});
-    _revealCurrentMatch();
+    if (findVisible) _revealCurrentMatch();
   }
 
   void _revealCurrentMatch() {
@@ -1093,6 +1168,7 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
   }
 
   void _replaceCurrent() {
+    if (!widget.editable) return;
     final replaced = findSession.replaceCurrent();
     if (replaced != null) {
       _applyText(replaced);
@@ -1100,6 +1176,7 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
   }
 
   void _replaceAll() {
+    if (!widget.editable) return;
     final replaced = findSession.replaceAll();
     if (replaced != null) {
       _applyText(replaced);
@@ -1142,7 +1219,7 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
     final gutterStyle = _codeFileTextStyle(
       appFlowyTheme.textColorScheme.tertiary,
     );
-    return CallbackShortcuts(
+    final content = CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyF, control: true):
             _openFind,
@@ -1218,32 +1295,49 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
             if (findVisible)
               Positioned(
                 top: 8,
+                left: 16,
                 right: 16,
-                child: FindReplaceBar(
-                  findController: findSession.findController,
-                  findFocusNode: findSession.findFocusNode,
-                  options: findSession.options,
-                  onOptionsChanged: (value) => findSession.options = value,
-                  matchCount: findSession.matches.length,
-                  currentMatch: findSession.displayIndex,
-                  queryInvalid: findSession.invalid,
-                  onPrevious:
-                      findSession.matches.isEmpty ? null : findSession.previous,
-                  onNext: findSession.matches.isEmpty ? null : findSession.next,
-                  onClose: _closeFind,
-                  replaceController:
-                      widget.editable ? findSession.replaceController : null,
-                  replaceFocusNode: findSession.replaceFocusNode,
-                  showReplace: findSession.replaceVisible,
-                  onToggleReplace: () =>
-                      findSession.replaceVisible = !findSession.replaceVisible,
-                  onReplace: _replaceCurrent,
-                  onReplaceAll: _replaceAll,
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: FindReplaceBar(
+                    findController: findSession.findController,
+                    findFocusNode: findSession.findFocusNode,
+                    options: findSession.options,
+                    onOptionsChanged: (value) => findSession.options = value,
+                    matchCount: findSession.matches.length,
+                    currentMatch: findSession.displayIndex,
+                    queryInvalid: findSession.invalid,
+                    onPrevious: findSession.matches.isEmpty
+                        ? null
+                        : findSession.previous,
+                    onNext:
+                        findSession.matches.isEmpty ? null : findSession.next,
+                    onClose: _closeFind,
+                    onTapOutside: () => _closeFind(restoreFocus: false),
+                    replaceController:
+                        widget.editable ? findSession.replaceController : null,
+                    replaceFocusNode: findSession.replaceFocusNode,
+                    showReplace: findSession.replaceVisible,
+                    onToggleReplace: () => findSession.replaceVisible =
+                        !findSession.replaceVisible,
+                    onReplace: _replaceCurrent,
+                    onReplaceAll: _replaceAll,
+                  ),
                 ),
               ),
           ],
         ),
       ),
+    );
+    return ContextualFindRegion(
+      debugLabel: 'File source',
+      findInEditable: true,
+      onFind: _openFind,
+      onReplace: widget.editable ? () => _openFind(replace: true) : null,
+      onDismiss: () => _closeFind(restoreFocus: false),
+      findOpen: findVisible,
+      findFocusNode: findSession.findFocusNode,
+      child: content,
     );
   }
 }
@@ -1341,7 +1435,10 @@ class _TextPreviewState extends State<_TextPreview> {
   final scrollController = ScrollController();
   final contentKey = GlobalKey();
   final focusNode = FocusNode();
+  final selectableFocusNode = FocusNode(skipTraversal: true);
+  TextSelection? _selectionBeforeFind;
   bool findVisible = false;
+  bool _active = true;
 
   @override
   void initState() {
@@ -1355,8 +1452,21 @@ class _TextPreviewState extends State<_TextPreview> {
   void didUpdateWidget(covariant _TextPreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text) {
+      _selectionBeforeFind = null;
       findSession.setText(widget.text);
     }
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
   }
 
   @override
@@ -1366,28 +1476,21 @@ class _TextPreviewState extends State<_TextPreview> {
       ..dispose();
     scrollController.dispose();
     focusNode.dispose();
+    selectableFocusNode.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final brightness = Theme.of(context).brightness;
-    var span = TextSpan(
+    // SelectableText replaces its native controller when textSpan changes,
+    // even when only a highlight colour changed. Keep its text independent of
+    // find and paint the matches against the actual native layout instead.
+    final span = TextSpan(
       text: widget.text,
       style: const TextStyle(fontFamily: 'monospace', height: 1.4),
     );
-    span = applyFindHighlights(
-      span,
-      ranges: findSession.ranges,
-      current: findSession.currentRange,
-      matchStyle: TextStyle(
-        backgroundColor: FindHighlightColors.match(brightness),
-      ),
-      currentStyle: TextStyle(
-        backgroundColor: FindHighlightColors.current(brightness),
-      ),
-    );
-    return CallbackShortcuts(
+    final content = CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.keyF, control: true):
             _openFind,
@@ -1408,26 +1511,44 @@ class _TextPreviewState extends State<_TextPreview> {
               SingleChildScrollView(
                 controller: scrollController,
                 padding: const EdgeInsets.all(_padding),
-                child: SelectableText.rich(span, key: contentKey),
+                child: CustomPaint(
+                  painter: _TextPreviewFindPainter(
+                    contentKey: contentKey,
+                    ranges: findVisible ? findSession.ranges : const [],
+                    current: findVisible ? findSession.currentRange : null,
+                    matchColor: FindHighlightColors.match(brightness),
+                    currentColor: FindHighlightColors.current(brightness),
+                  ),
+                  child: SelectableText.rich(
+                    span,
+                    key: contentKey,
+                    focusNode: selectableFocusNode,
+                  ),
+                ),
               ),
               if (findVisible)
                 Positioned(
                   top: 8,
+                  left: 16,
                   right: 16,
-                  child: FindReplaceBar(
-                    findController: findSession.findController,
-                    findFocusNode: findSession.findFocusNode,
-                    options: findSession.options,
-                    onOptionsChanged: (value) => findSession.options = value,
-                    matchCount: findSession.matches.length,
-                    currentMatch: findSession.displayIndex,
-                    queryInvalid: findSession.invalid,
-                    onPrevious: findSession.matches.isEmpty
-                        ? null
-                        : findSession.previous,
-                    onNext:
-                        findSession.matches.isEmpty ? null : findSession.next,
-                    onClose: _closeFind,
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: FindReplaceBar(
+                      findController: findSession.findController,
+                      findFocusNode: findSession.findFocusNode,
+                      options: findSession.options,
+                      onOptionsChanged: (value) => findSession.options = value,
+                      matchCount: findSession.matches.length,
+                      currentMatch: findSession.displayIndex,
+                      queryInvalid: findSession.invalid,
+                      onPrevious: findSession.matches.isEmpty
+                          ? null
+                          : findSession.previous,
+                      onNext:
+                          findSession.matches.isEmpty ? null : findSession.next,
+                      onClose: _closeFind,
+                      onTapOutside: () => _closeFind(restoreFocus: false),
+                    ),
                   ),
                 ),
             ],
@@ -1435,12 +1556,27 @@ class _TextPreviewState extends State<_TextPreview> {
         ),
       ),
     );
+    return ContextualFindRegion(
+      debugLabel: 'File text',
+      findInEditable: true,
+      onFind: _openFind,
+      onDismiss: () => _closeFind(restoreFocus: false),
+      findOpen: findVisible,
+      findFocusNode: findSession.findFocusNode,
+      child: content,
+    );
   }
 
   void _openFind() {
+    if (!mounted || !_active) return;
+    if (!findVisible) {
+      _selectionBeforeFind = _textPreviewEditable(
+        contentKey.currentContext?.findRenderObject(),
+      )?.textSelectionDelegate.textEditingValue.selection;
+    }
     setState(() => findVisible = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (!mounted || !_active || !findVisible) {
         return;
       }
       findSession.findFocusNode.requestFocus();
@@ -1451,48 +1587,119 @@ class _TextPreviewState extends State<_TextPreview> {
     });
   }
 
-  void _closeFind() {
-    if (!findVisible) {
+  void _closeFind({bool restoreFocus = true}) {
+    if (!mounted || !_active || !findVisible) {
       return;
     }
+    final selection = _selectionBeforeFind;
+    _selectionBeforeFind = null;
     setState(() => findVisible = false);
-    focusNode.requestFocus();
+    if (!restoreFocus) return;
+
+    // Native SelectableText clears its selection on blur. Restore it only on
+    // an explicit return from find, never over a user's outside click. Repeated
+    // Ctrl+F must not replace the saved range with the query's selection.
+    final editable = _textPreviewEditable(
+      contentKey.currentContext?.findRenderObject(),
+    );
+    if (editable != null &&
+        selection != null &&
+        selection.isValid &&
+        selection.end <= widget.text.length) {
+      selectableFocusNode.requestFocus();
+      final delegate = editable.textSelectionDelegate;
+      delegate.userUpdateTextEditingValue(
+        delegate.textEditingValue.copyWith(selection: selection),
+        SelectionChangedCause.keyboard,
+      );
+    } else {
+      focusNode.requestFocus();
+    }
   }
 
   void _onFindChanged() {
-    if (!mounted) {
+    if (!mounted || !_active) {
       return;
     }
     setState(() {});
     final match = findSession.currentMatch;
-    if (match != null) {
+    if (findVisible && match != null) {
       _scrollToOffset(match.start);
     }
   }
 
   void _scrollToOffset(int offset) {
     final renderObject = contentKey.currentContext?.findRenderObject();
-    if (renderObject is! RenderBox ||
-        !renderObject.hasSize ||
+    final editable = _textPreviewEditable(renderObject);
+    if (renderObject == null ||
+        editable == null ||
+        !editable.hasSize ||
         !scrollController.hasClients) {
       return;
     }
-    final painter = TextPainter(
-      text: TextSpan(
-        text: widget.text,
-        style: const TextStyle(fontFamily: 'monospace', height: 1.4),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: renderObject.size.width);
-    final dy =
-        painter.getOffsetForCaret(TextPosition(offset: offset), Rect.zero).dy;
-    painter.dispose();
+    final caret = editable.getLocalRectForCaret(TextPosition(offset: offset));
+    final dy = editable.localToGlobal(caret.topLeft, ancestor: renderObject).dy;
     final position = scrollController.position;
     final target = dy + _padding - position.viewportDimension / 3;
     scrollController.jumpTo(
       target.clamp(position.minScrollExtent, position.maxScrollExtent),
     );
   }
+}
+
+/// Uses the public native renderer, without depending on SelectableText's
+/// private State/controller or substituting a different text widget.
+RenderEditable? _textPreviewEditable(RenderObject? root) {
+  if (root is RenderEditable) return root;
+  RenderEditable? result;
+  root?.visitChildren((child) => result ??= _textPreviewEditable(child));
+  return result;
+}
+
+class _TextPreviewFindPainter extends CustomPainter {
+  const _TextPreviewFindPainter({
+    required this.contentKey,
+    required this.ranges,
+    required this.current,
+    required this.matchColor,
+    required this.currentColor,
+  });
+
+  final GlobalKey contentKey;
+  final List<TextRange> ranges;
+  final TextRange? current;
+  final Color matchColor;
+  final Color currentColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (ranges.isEmpty) return;
+    final content = contentKey.currentContext?.findRenderObject();
+    final editable = _textPreviewEditable(content);
+    if (content == null || editable == null || !editable.hasSize) return;
+    canvas
+      ..save()
+      ..clipRect(Offset.zero & size)
+      ..transform(editable.getTransformTo(content).storage);
+    final paint = Paint();
+    for (final range in ranges) {
+      paint.color = range == current ? currentColor : matchColor;
+      for (final box in editable.getBoxesForSelection(
+        TextSelection(baseOffset: range.start, extentOffset: range.end),
+      )) {
+        canvas.drawRect(box.toRect(), paint);
+      }
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool hitTest(Offset position) => false;
+
+  // Inherited typography/scale can change native geometry even when the
+  // ranges and highlight colours are unchanged.
+  @override
+  bool shouldRepaint(_TextPreviewFindPainter oldDelegate) => true;
 }
 
 class _HtmlPreview extends StatefulWidget {
@@ -1518,11 +1725,12 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   final findController = TextEditingController();
   final findFocusNode = FocusNode();
   final previewFocusNode = FocusNode();
+  final findSession = WebViewFindSession();
   FindOptions findOptions = const FindOptions();
   WebViewFindResult findResult = WebViewFindResult.empty;
   Timer? findDebounce;
   bool findVisible = false;
-  bool findEngineReady = false;
+  bool _active = true;
   late String preparedHtml;
   HtmlPreviewResourceHost? resourceHost;
   Future<Uri>? documentUrl;
@@ -1613,7 +1821,8 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     scrollReady = false;
     rendererScrollAvailable = false;
     rendererScrollInitialization = null;
-    findEngineReady = false;
+    findDebounce?.cancel();
+    findSession.attach(null);
     findResult = WebViewFindResult.empty;
     webViewController = null;
     documentRevision++;
@@ -1635,11 +1844,32 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
       );
 
   @override
+  void deactivate() {
+    _active = false;
+    findDebounce?.cancel();
+    findSession.invalidatePending();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final controller = webViewController;
+      if (mounted && _active && controller != null) {
+        unawaited(_installFindEngine(controller));
+      }
+    });
+  }
+
+  @override
   void dispose() {
     pendingScrollCommands.clear();
     unawaited(resourceHost?.dispose());
     webViewController = null;
     findDebounce?.cancel();
+    findSession.dispose();
     findController.removeListener(_scheduleFind);
     findController.dispose();
     findFocusNode.dispose();
@@ -1649,6 +1879,17 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
 
   @override
   Widget build(BuildContext context) {
+    return ContextualFindRegion(
+      debugLabel: 'HTML file',
+      onFind: _openFind,
+      onDismiss: () => _closeFind(restoreFocus: false),
+      findOpen: findVisible,
+      findFocusNode: findFocusNode,
+      child: _buildFindOverlay(_buildPreviewContent()),
+    );
+  }
+
+  Widget _buildPreviewContent() {
     if (Platform.isWindows) {
       return FutureBuilder<Uri>(
         key: ObjectKey(documentUrl),
@@ -1691,23 +1932,28 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         onWebViewCreated: (controller) {
           if (!mounted || revision != documentRevision) return;
           webViewController = controller;
-          controller.addJavaScriptHandler(
-            handlerName: webViewFindOpenHandlerName,
-            callback: (_) {
-              _openFind();
-              return null;
-            },
-          );
+          _attachFindController(controller);
+          unawaited(_installFindBridge(controller));
           _scheduleScroll();
         },
+        onLoadStart: (controller, _) {
+          if (!mounted ||
+              revision != documentRevision ||
+              !sameWebViewController(controller, webViewController)) {
+            return;
+          }
+          findDebounce?.cancel();
+          _attachFindController(controller);
+          if (_active) setState(() => findResult = WebViewFindResult.empty);
+        },
         onLoadStop: (controller, _) async {
-          if (controller != webViewController) {
+          if (!mounted ||
+              revision != documentRevision ||
+              !sameWebViewController(controller, webViewController)) {
             return;
           }
-          if (!await _ensureRendererScrollReady(controller)) {
-            return;
-          }
-          _scheduleScroll();
+          // A slow/failed scrolling world must not hold find hostage.
+          unawaited(_prepareScrollAfterLoad(controller));
           await _installFindEngine(controller);
         },
         initialSettings: InAppWebViewSettings(
@@ -1751,6 +1997,10 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         ),
       ),
     );
+    return guardedChild;
+  }
+
+  Widget _buildFindOverlay(Widget child) {
     return RepaintBoundary(
       child: CallbackShortcuts(
         bindings: {
@@ -1761,30 +2011,37 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         child: Focus(
           focusNode: previewFocusNode,
           child: Stack(
+            fit: StackFit.expand,
             children: [
-              guardedChild,
+              child,
               if (findVisible)
                 Positioned(
                   top: 8,
+                  left: 16,
                   right: 16,
-                  child: FindReplaceBar(
-                    findController: findController,
-                    findFocusNode: findFocusNode,
-                    options: findOptions,
-                    onOptionsChanged: (value) {
-                      setState(() => findOptions = value);
-                      _scheduleFind();
-                    },
-                    matchCount: findResult.count,
-                    currentMatch: findResult.index,
-                    queryInvalid: findResult.invalid,
-                    onPrevious: findResult.count == 0
-                        ? null
-                        : () => unawaited(_moveFind(forward: false)),
-                    onNext: findResult.count == 0
-                        ? null
-                        : () => unawaited(_moveFind(forward: true)),
-                    onClose: _closeFind,
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: FindReplaceBar(
+                      findController: findController,
+                      findFocusNode: findFocusNode,
+                      options: findOptions,
+                      onOptionsChanged: (value) {
+                        setState(() => findOptions = value);
+                        _scheduleFind();
+                      },
+                      matchCount: findResult.count,
+                      currentMatch: findResult.index,
+                      queryInvalid: findResult.invalid,
+                      busy: findSession.pending,
+                      onPrevious: findResult.count == 0
+                          ? null
+                          : () => unawaited(_moveFind(forward: false)),
+                      onNext: findResult.count == 0
+                          ? null
+                          : () => unawaited(_moveFind(forward: true)),
+                      onClose: _closeFind,
+                      onTapOutside: () => _closeFind(restoreFocus: false),
+                    ),
                   ),
                 ),
             ],
@@ -1794,42 +2051,74 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     );
   }
 
+  void _attachFindController(InAppWebViewController controller) {
+    findSession.attach(
+      (source) => controller.evaluateJavascript(
+        source: source,
+        contentWorld: htmlPreviewScrollContentWorld,
+      ),
+    );
+  }
+
+  Future<void> _installFindBridge(InAppWebViewController controller) async {
+    try {
+      await installWebViewFindOpenBridge(
+        controller,
+        contentWorld: htmlPreviewScrollContentWorld,
+        onFind: _openFind,
+        isCurrent: () =>
+            mounted && sameWebViewController(controller, webViewController),
+      );
+    } on PlatformException catch (error, stackTrace) {
+      Log.error(
+        'Failed to install the preview find shortcut',
+        error,
+        stackTrace,
+      );
+    }
+  }
+
+  Future<void> _prepareScrollAfterLoad(
+    InAppWebViewController controller,
+  ) async {
+    if (await _ensureRendererScrollReady(controller)) _scheduleScroll();
+  }
+
   /// A rendered document does its own searching: only the renderer knows
   /// where a word ended up once the page was laid out.
   Future<void> _installFindEngine(InAppWebViewController controller) async {
-    if (!Platform.isWindows || !mounted) {
+    if (!Platform.isWindows ||
+        !mounted ||
+        !_active ||
+        !sameWebViewController(controller, webViewController)) {
       return;
     }
     final palette = FindBarPalette.of(context);
     final brightness = Theme.of(context).brightness;
-    try {
-      final installed = await controller.evaluateJavascript(
-        source: '''
-${buildWebViewFindEngineScript(
+    findDebounce?.cancel();
+    await _acceptFindResponse(
+      findSession.install(
+        buildWebViewFindInstallScript(
           matchColor: _cssRgba(FindHighlightColors.match(brightness)),
           currentColor: _cssRgba(FindHighlightColors.current(brightness)),
           currentTextColor: _cssColor(palette.textPrimary),
-        )}
-${buildWebViewFindShortcutScript()}
-''',
-      );
-      if (!mounted || controller != webViewController) return;
-      findEngineReady = installed == true;
-      if (findEngineReady && findVisible) {
-        await _runFind();
-      }
-    } on PlatformException catch (error, stackTrace) {
-      Log.error('Failed to install the preview find engine', error, stackTrace);
-    }
+        ),
+      ),
+    );
   }
 
   void _openFind() {
-    if (!mounted) {
+    if (!mounted || !_active) {
       return;
     }
+    final wasVisible = findVisible;
+    findSession
+      ..setQuery(findController.text, findOptions)
+      ..open();
     setState(() => findVisible = true);
+    if (!wasVisible) unawaited(_runFind());
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (!mounted || !_active || !findVisible) {
         return;
       }
       findFocusNode.requestFocus();
@@ -1840,8 +2129,8 @@ ${buildWebViewFindShortcutScript()}
     });
   }
 
-  void _closeFind() {
-    if (!findVisible) {
+  void _closeFind({bool restoreFocus = true}) {
+    if (!mounted || !_active || !findVisible) {
       return;
     }
     findDebounce?.cancel();
@@ -1849,60 +2138,54 @@ ${buildWebViewFindShortcutScript()}
       findVisible = false;
       findResult = WebViewFindResult.empty;
     });
-    unawaited(
-      webViewController?.evaluateJavascript(
-        source: buildWebViewFindClearCommand(),
-      ),
-    );
-    previewFocusNode.requestFocus();
+    unawaited(_clearFind());
+    if (restoreFocus) previewFocusNode.requestFocus();
+  }
+
+  Future<void> _clearFind() async {
+    try {
+      await findSession.close();
+    } on PlatformException catch (error, stackTrace) {
+      Log.error('Failed to clear preview find highlights', error, stackTrace);
+    }
   }
 
   /// Marking a whole document costs a layout, so it waits for a pause in the
   /// typing rather than running on every keystroke.
   void _scheduleFind() {
+    if (!findSession.setQuery(findController.text, findOptions)) return;
     findDebounce?.cancel();
+    if (!mounted || !_active || !findVisible) return;
+    setState(() => findResult = WebViewFindResult.empty);
     findDebounce = Timer(
       const Duration(milliseconds: 180),
       () => unawaited(_runFind()),
     );
   }
 
-  Future<void> _runFind() async {
-    final controller = webViewController;
-    if (controller == null || !findEngineReady) {
-      return;
-    }
-    final result = await controller.evaluateJavascript(
-      source: buildWebViewFindCommand(findController.text, findOptions),
-    );
-    if (!mounted || controller != webViewController) {
-      return;
-    }
-    setState(
-      () => findResult = findController.text.isEmpty
-          ? WebViewFindResult.empty
-          : WebViewFindResult.fromJavaScript(result),
-    );
-  }
+  Future<void> _runFind() => _acceptFindResponse(findSession.find());
 
-  Future<void> _moveFind({required bool forward}) async {
-    final controller = webViewController;
-    if (controller == null || !findEngineReady) {
-      return;
+  Future<void> _moveFind({required bool forward}) =>
+      _acceptFindResponse(findSession.move(forward: forward));
+
+  Future<void> _acceptFindResponse(Future<WebViewFindResult?> request) async {
+    try {
+      final result = await request;
+      if (!mounted || !_active || result == null || !findVisible) return;
+      setState(() => findResult = result);
+    } on PlatformException catch (error, stackTrace) {
+      Log.error('Preview find failed', error, stackTrace);
+    } on FormatException catch (error, stackTrace) {
+      Log.error('Invalid preview find response', error, stackTrace);
     }
-    final result = await controller.evaluateJavascript(
-      source: buildWebViewFindMoveCommand(forward: forward),
-    );
-    if (!mounted || controller != webViewController) {
-      return;
-    }
-    setState(() => findResult = WebViewFindResult.fromJavaScript(result));
   }
 
   Future<bool> _ensureRendererScrollReady(
     InAppWebViewController controller,
   ) async {
-    if (!mounted || controller != webViewController) return false;
+    if (!mounted || !sameWebViewController(controller, webViewController)) {
+      return false;
+    }
     if (scrollReady) {
       return true;
     }
@@ -1918,7 +2201,7 @@ ${buildWebViewFindShortcutScript()}
         rendererScrollInitialization = null;
       }
     }
-    if (!mounted || controller != webViewController) {
+    if (!mounted || !sameWebViewController(controller, webViewController)) {
       return false;
     }
     scrollReady = true;
@@ -1941,7 +2224,9 @@ typeof globalThis.$premiumKineticJavaScriptObjectName === 'object';
 ''',
         contentWorld: htmlPreviewScrollContentWorld,
       );
-      if (!mounted || controller != webViewController) return;
+      if (!mounted || !sameWebViewController(controller, webViewController)) {
+        return;
+      }
       rendererScrollAvailable = installed == true;
       if (!rendererScrollAvailable) {
         Log.warn('HTML preview kinetic engine did not initialize');
@@ -2053,7 +2338,7 @@ typeof globalThis.$premiumKineticJavaScriptObjectName === 'object';
         return;
       }
       while (mounted &&
-          controller == webViewController &&
+          sameWebViewController(controller, webViewController) &&
           pendingScrollCommands.isNotEmpty) {
         final commands = List<_PendingWebViewScrollCommand>.of(
           pendingScrollCommands,

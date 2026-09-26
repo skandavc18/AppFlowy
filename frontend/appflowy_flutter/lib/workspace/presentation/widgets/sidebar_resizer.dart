@@ -1,4 +1,6 @@
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -65,14 +67,24 @@ class _SidebarResizerState extends State<SidebarResizer> {
             return ValueListenableBuilder(
               valueListenable: isDragging,
               builder: (context, isDragging, _) {
-                return Container(
-                  width: 2,
-                  // increase the width of the resizer to make it easier to drag
-                  margin: const EdgeInsets.only(right: 2.0),
+                final color = SidebarPalette.of(context).dropIndicator;
+                return SizedBox(
+                  width: WorkspaceTokens.space2,
                   height: MediaQuery.of(context).size.height,
-                  color: isHovered || isDragging
-                      ? const Color(0xFF00B5FF)
-                      : Colors.transparent,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: AnimatedContainer(
+                      key: const ValueKey('sidebar-resize-indicator'),
+                      width: 2,
+                      duration: WorkspaceTokens.motion(
+                        context,
+                        WorkspaceTokens.hoverDuration,
+                      ),
+                      color: isHovered || isDragging
+                          ? color
+                          : color.withValues(alpha: 0),
+                    ),
+                  ),
                 );
               },
             );

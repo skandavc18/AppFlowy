@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:ui';
 
@@ -14,13 +13,24 @@ import 'package:pdfrx/pdfrx.dart';
 /// One place a scanned word was found.
 @immutable
 class PdfOcrMatch {
-  const PdfOcrMatch({required this.pageNumber, required this.rects});
+  const PdfOcrMatch({
+    required this.pageNumber,
+    required this.rects,
+    this.text = '',
+    this.start = 0,
+  });
 
   final int pageNumber;
+  final String text;
+
+  /// Character offset, so two occurrences in the same word stay distinct.
+  final int start;
 
   /// Normalized to the page: 0..1 on both axes.
   final List<Rect> rects;
 }
+
+typedef PdfOcrPageScanner = Future<OcrResult> Function(PdfPage page);
 
 /// What one page's scan produced: its text, and where each word sits.
 @immutable
@@ -40,84 +50,151 @@ class _ScannedPage {
 /// and hands it to the same text recogniser the image blocks use, then
 /// searches what came back.
 class PdfOcrSearchIndex extends ChangeNotifier {
-  PdfOcrSearchIndex({OcrService? service}) : _service = service ?? OcrService();
+  PdfOcrSearchIndex({
+    OcrService? service,
+    @visibleForTesting PdfOcrPageScanner? scanPage,
+    @visibleForTesting Future<Directory> Function()? temporaryDirectory,
+  })  : _service = service ?? OcrService(),
+        _scanPageOverride = scanPage,
+        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory;
 
   final OcrService _service;
+  final PdfOcrPageScanner? _scanPageOverride;
+  final Future<Directory> Function() _temporaryDirectory;
   final Map<int, _ScannedPage> _pages = {};
+  PdfDocument? _document;
+  Set<int> _targets = {};
 
-  int _scanned = 0;
-  int _total = 0;
   bool _scanning = false;
-  bool _cancelled = false;
+  bool _disposed = false;
+  int _generation = 0;
   String? _failure;
 
-  int get scannedPages => _scanned;
-  int get totalPages => _total;
+  int get scannedPages => _targets.where(_pages.containsKey).length;
+  int get totalPages => _targets.length;
   bool get isScanning => _scanning;
   bool get hasPages => _pages.isNotEmpty;
+  bool get isComplete =>
+      _document != null && _targets.every(_pages.containsKey);
 
   /// Why the scan could not run, if it could not.
   String? get failure => _failure;
 
   /// Reads every page that has not been read yet, one at a time, reporting
   /// after each so results appear while the rest is still being scanned.
-  Future<void> scan(PdfDocument document) async {
-    if (_scanning) {
+  ///
+  /// Automatic find supplies only pages without a text layer. An explicit
+  /// scan may include all pages, including images on otherwise textual pages.
+  /// Empty successful pages are cached too; failed pages remain retryable.
+  Future<void> scan(
+    PdfDocument document, {
+    int startPage = 1,
+    Iterable<int>? pageNumbers,
+  }) async {
+    if (_disposed || (_scanning && identical(_document, document))) {
+      return;
+    }
+    if (!identical(_document, document)) {
+      _document = document;
+      _pages.clear();
+    }
+    final generation = ++_generation;
+    bool current() => !_disposed && generation == _generation;
+    _targets = (pageNumbers ?? document.pages.map((page) => page.pageNumber))
+        .where((number) => number >= 1 && number <= document.pages.length)
+        .toSet();
+    _failure = null;
+    if (isComplete) {
+      _scanning = false;
+      notifyListeners();
       return;
     }
     _scanning = true;
-    _cancelled = false;
-    _failure = null;
-    _total = document.pages.length;
-    _scanned = _pages.length;
     notifyListeners();
 
     Directory? workspace;
     try {
-      workspace = Directory(
-        p.join(
-          (await getTemporaryDirectory()).path,
-          'appflowy-pdf-ocr-${DateTime.now().microsecondsSinceEpoch}',
-        ),
-      );
-      await workspace.create(recursive: true);
-      for (final page in document.pages) {
-        if (_cancelled) {
-          break;
-        }
-        if (_pages.containsKey(page.pageNumber)) {
+      if (!current()) return;
+      if (_scanPageOverride == null) {
+        final parent = await _temporaryDirectory();
+        if (!current()) return;
+        workspace = await parent.createTemp('appflowy-pdf-ocr-');
+      }
+      final numbers = _targets.toList()..sort();
+      final ordered = [
+        ...numbers.where((number) => number >= startPage),
+        ...numbers.where((number) => number < startPage),
+      ];
+      for (final number in ordered) {
+        if (!current()) return;
+        if (_pages.containsKey(number)) {
           continue;
         }
-        final scanned = await _scanPage(page, workspace);
-        if (_cancelled) {
+        try {
+          final page = document.pages[number - 1];
+          final result = _scanPageOverride != null
+              ? await _scanPageOverride(page)
+              : await _scanPage(page, workspace!, current);
+          if (!current()) return;
+          if (result != null) {
+            _pages[number] = _buildScannedPage(result);
+          }
+        } on OcrUnavailableException catch (error) {
+          if (!current()) return;
+          _failure = error.toString();
+          // An unavailable engine will not recover on the next page. Keep
+          // completed pages and let the person explicitly retry later.
           break;
+        } on Object catch (error, stackTrace) {
+          if (!current()) return;
+          Log.error('Failed to scan PDF page $number', error, stackTrace);
+          _failure = 'Some pages could not be scanned. Retry the scan.';
         }
-        _pages[page.pageNumber] = scanned;
-        _scanned = _pages.length;
         notifyListeners();
       }
-    } on OcrUnavailableException catch (error) {
-      _failure = error.message;
     } on Object catch (error, stackTrace) {
+      if (!current()) return;
       Log.error('Failed to scan a PDF for text', error, stackTrace);
       _failure = 'This document could not be scanned.';
     } finally {
-      _scanning = false;
       final directory = workspace;
       if (directory != null) {
-        unawaited(
-          directory.delete(recursive: true).catchError((_) => directory),
-        );
+        try {
+          await directory.delete(recursive: true);
+        } on Object {
+          // Temporary-file cleanup must not replace the scan result.
+        }
       }
-      notifyListeners();
+      // A cancelled task may finish after a retry or even after disposal.
+      // It must neither publish results nor clear the newer task's busy flag.
+      if (current()) {
+        _scanning = false;
+        notifyListeners();
+      }
     }
   }
 
-  void cancel() => _cancelled = true;
+  void cancel() {
+    if (_disposed) return;
+    ++_generation;
+    _scanning = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    ++_generation;
+    _scanning = false;
+    _pages.clear();
+    _document = null;
+    _targets.clear();
+    super.dispose();
+  }
 
   /// Everything [query] matches in what has been scanned so far.
   List<PdfOcrMatch> search(String query, FindOptions options) {
-    if (query.isEmpty || _pages.isEmpty) {
+    if (_disposed || query.isEmpty || _pages.isEmpty) {
       return const [];
     }
     final results = <PdfOcrMatch>[];
@@ -133,22 +210,41 @@ class PdfOcrSearchIndex extends ChangeNotifier {
           rects.add(word.bounds);
         }
         if (rects.isNotEmpty) {
-          results.add(PdfOcrMatch(pageNumber: number, rects: rects));
+          results.add(
+            PdfOcrMatch(
+              pageNumber: number,
+              rects: List.unmodifiable(rects),
+              text: page.text.substring(match.start, match.end),
+              start: match.start,
+            ),
+          );
         }
       }
     }
     return results;
   }
 
-  Future<_ScannedPage> _scanPage(PdfPage page, Directory workspace) async {
+  Future<OcrResult?> _scanPage(
+    PdfPage page,
+    Directory workspace,
+    bool Function() current,
+  ) async {
+    final raster = await _renderPdfPageRaster(page);
+    if (!current()) return null;
     final file = File(p.join(workspace.path, 'page-${page.pageNumber}.png'));
-    await file.writeAsBytes(await renderPdfPagePng(page), flush: true);
-    final result = await _service.recognize(
-      file,
-      imageSize: Size(page.width, page.height),
-    );
-    unawaited(file.delete().catchError((_) => file));
-    return _buildScannedPage(result);
+    try {
+      await file.writeAsBytes(raster.bytes, flush: true);
+      if (!current()) return null;
+      // Tesseract's pixel boxes refer to this raster, NOT PDF points.
+      // Windows OCR normalizes against its own internally scaled dimensions.
+      return await _service.recognize(file, imageSize: raster.size);
+    } finally {
+      try {
+        await file.delete();
+      } on Object {
+        // The scan workspace is also removed by its owner.
+      }
+    }
   }
 
   /// Lays the recognised words out as one searchable string, remembering
@@ -168,7 +264,11 @@ class PdfOcrSearchIndex extends ChangeNotifier {
         final word = line.words[index];
         final start = buffer.length;
         buffer.write(word.text);
-        words.add((start: start, end: buffer.length, bounds: word.bounds));
+        if (!word.bounds.isFinite) continue;
+        final bounds = word.bounds.intersect(const Rect.fromLTWH(0, 0, 1, 1));
+        if (!bounds.isEmpty) {
+          words.add((start: start, end: buffer.length, bounds: bounds));
+        }
       }
     }
     return _ScannedPage(text: buffer.toString(), words: words);
@@ -179,9 +279,19 @@ class PdfOcrSearchIndex extends ChangeNotifier {
 ///
 /// Small print is read far better at roughly 200 DPI, but the bitmap still
 /// has to stay inside what the engines accept.
-Future<Uint8List> renderPdfPagePng(PdfPage page) async {
-  final scale =
-      _minOf(3200 / page.width, 3200 / page.height).clamp(1.0, 3.0).toDouble();
+Future<Uint8List> renderPdfPagePng(PdfPage page) async =>
+    (await _renderPdfPageRaster(page)).bytes;
+
+Future<({Uint8List bytes, Size size})> _renderPdfPageRaster(
+  PdfPage page,
+) async {
+  if (!page.width.isFinite ||
+      !page.height.isFinite ||
+      page.width <= 0 ||
+      page.height <= 0) {
+    throw StateError('the page has invalid dimensions');
+  }
+  final scale = _minOf(3, _minOf(3200 / page.width, 3200 / page.height));
   final rendered = await page.render(
     fullWidth: page.width * scale,
     fullHeight: page.height * scale,
@@ -203,7 +313,10 @@ Future<Uint8List> renderPdfPagePng(PdfPage page) async {
     if (data == null) {
       throw StateError('the page image could not be encoded');
     }
-    return data.buffer.asUint8List();
+    return (
+      bytes: data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      size: Size(image.width.toDouble(), image.height.toDouble()),
+    );
   } finally {
     image.dispose();
   }

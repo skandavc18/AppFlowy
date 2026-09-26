@@ -5,7 +5,10 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_field.d
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
+import 'package:appflowy/plugins/database/calendar/presentation/calendar_chrome.dart';
+import 'package:appflowy/plugins/database/calendar/presentation/calendar_shell.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
+import 'package:appflowy/shared/calendar/calendar_layout.dart';
 import 'package:appflowy/shared/charts/app_chart.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
@@ -79,6 +82,43 @@ Future<void> _pickDatabase(DashboardWidgetContext context) =>
 
 // ------------------------------------------------------------------- database
 
+/// The database card's presentation is independent of the source table page.
+/// Absence follows that page; the existing CalendarViewMode names are stored
+/// only after the person explicitly chooses a layout for this card.
+const dashboardDatabaseCalendarModeKey = 'calendar_mode';
+
+CalendarViewMode? _databaseCalendarMode(DashboardWidgetSpec spec) =>
+    CalendarViewMode.values
+        .where(
+          (mode) => mode.name == spec.setting(dashboardDatabaseCalendarModeKey),
+        )
+        .firstOrNull;
+
+/// Wraps the real database/tab host, not a replacement calendar or controller.
+/// Any CalendarShell in its selected tab reads this same live widget setting.
+class DashboardDatabaseCalendarScope extends StatelessWidget {
+  const DashboardDatabaseCalendarScope({
+    super.key,
+    required this.data,
+    required this.child,
+  });
+
+  final DashboardWidgetContext data;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => CalendarPresentationScope(
+        mode: _databaseCalendarMode(data.spec),
+        onModeChanged: data.isTypable
+            ? (mode) => data.setSettings({
+                  dashboardDatabaseCalendarModeKey: mode.name,
+                })
+            : null,
+        embedded: data.controller.modalWidgetId != data.spec.id,
+        child: child,
+      );
+}
+
 final _database = DashboardWidgetDefinition(
   type: 'database',
   label: () => LocaleKeys.dashboard_widget_database.tr(),
@@ -107,19 +147,22 @@ final _database = DashboardWidgetDefinition(
         onAction: () => unawaited(_pickDatabase(context)),
       );
     }
-    return DashboardViewBuilder(
-      viewId: viewId,
-      revision: context.refreshToken,
-      builder: (_, view) => Provider<DatabasePluginWidgetBuilderSize>.value(
-        value: const DatabasePluginWidgetBuilderSize(horizontalPadding: 0),
-        // Keyed on the view: switching table reuses the previous database's
-        // controllers otherwise, and the grid draws the wrong rows.
-        child: PreviewToolbarRegion(
-          child: DatabaseTabBarView(
-            key: ValueKey('dashboard-database-${view.id}'),
-            view: view,
-            shrinkWrap: false,
-            showActions: false,
+    return DashboardDatabaseCalendarScope(
+      data: context,
+      child: DashboardViewBuilder(
+        viewId: viewId,
+        revision: context.refreshToken,
+        builder: (_, view) => Provider<DatabasePluginWidgetBuilderSize>.value(
+          value: const DatabasePluginWidgetBuilderSize(horizontalPadding: 0),
+          // Keyed on the view: switching table reuses the previous database's
+          // controllers otherwise, and the grid draws the wrong rows.
+          child: PreviewToolbarRegion(
+            child: DatabaseTabBarView(
+              key: ValueKey('dashboard-database-${view.id}'),
+              view: view,
+              shrinkWrap: false,
+              showActions: false,
+            ),
           ),
         ),
       ),
@@ -131,6 +174,22 @@ final _database = DashboardWidgetDefinition(
       label: LocaleKeys.dashboard_config_database.tr(),
       kind: DashboardSourceKind.database,
       filter: _isDatabase,
+    ),
+    DashboardConfigCalendarView(
+      label: LocaleKeys.dashboard_config_calendarView.tr(),
+      value: _databaseCalendarMode(context.spec)?.name ?? '',
+      choices: [
+        DashboardChoice(
+          value: '',
+          label: '${LocaleKeys.dashboard_config_database.tr()} · '
+              '${LocaleKeys.colors_default.tr()}',
+        ),
+        for (final mode in CalendarViewMode.values)
+          DashboardChoice(value: mode.name, label: calendarViewModeLabel(mode)),
+      ],
+      onChanged: (value) => context.setSettings({
+        dashboardDatabaseCalendarModeKey: value.isEmpty ? null : value,
+      }),
     ),
   ],
 );

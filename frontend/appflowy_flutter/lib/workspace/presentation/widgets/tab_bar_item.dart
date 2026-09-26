@@ -1,7 +1,6 @@
-import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
-import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
+import 'package:appflowy/workspace/presentation/widgets/workspace_breadcrumb_children.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -50,13 +49,7 @@ class _ViewTabBarItemState extends State<ViewTabBarItem> {
       mainAxisAlignment:
           widget.shortForm ? MainAxisAlignment.center : MainAxisAlignment.start,
       children: [
-        if (view.icon.value.isNotEmpty)
-          RawEmojiIconWidget(
-            emoji: view.icon.toEmojiIconData(),
-            emojiSize: 16,
-          )
-        else
-          view.defaultIcon(size: const Size.square(16)),
+        WorkspaceBreadcrumbIcon(view: view, size: 16),
         if (!widget.shortForm) ...[
           const HSpace(8),
           Flexible(
@@ -64,7 +57,7 @@ class _ViewTabBarItemState extends State<ViewTabBarItem> {
               view.nameOrDefault,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              style: DefaultTextStyle.of(context).style.copyWith(
                     fontSize: 13,
                     height: 1.2,
                   ),

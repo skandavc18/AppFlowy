@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:flutter/material.dart';
 
@@ -20,12 +21,9 @@ class SelectableSvgWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final child = FlowySvg(
+    final child = WorkspaceGlyph.svg(
       data,
-      size: size ?? const Size.square(16.0),
-      color: isSelected
-          ? style.selectionMenuItemSelectedIconColor
-          : style.selectionMenuItemIconColor,
+      size: size?.shortestSide ?? 18,
     );
 
     if (padding != null) {
@@ -50,12 +48,8 @@ class SelectableIconWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Icon(
+    return WorkspaceGlyph(
       icon,
-      size: 18.0,
-      color: isSelected
-          ? style.selectionMenuItemSelectedIconColor
-          : style.selectionMenuItemIconColor,
     );
   }
 }

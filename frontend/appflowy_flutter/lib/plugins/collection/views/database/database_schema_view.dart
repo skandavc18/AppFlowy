@@ -1,7 +1,9 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/database/database_chrome.dart';
 import 'package:appflowy/plugins/collection/views/database/database_context_menu.dart';
 import 'package:appflowy/plugins/collection/views/database/database_host.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/database/database_collection_controller.dart';
 import 'package:appflowy/workspace/application/collections/database/database_table.dart';
@@ -69,28 +71,29 @@ class _Schema extends StatelessWidget {
           collection: collection,
           position: details.globalPosition,
         ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(
-            DatabaseMetrics.gutter,
-            DatabaseMetrics.space2,
-            DatabaseMetrics.gutter,
-            DatabaseMetrics.space6,
-          ),
-          child: Wrap(
-            spacing: DatabaseMetrics.space3,
-            runSpacing: DatabaseMetrics.space3,
-            children: [
-              for (final table in controller.tables)
-                SizedBox(
-                  width: DatabaseMetrics.schemaCardWidth,
-                  child: _TableCard(
-                    table: table,
-                    collection: collection,
-                    controller: controller,
-                    theme: theme,
-                  ),
-                ),
-            ],
+        child: Padding(
+          padding: CollectionWorkspaceMetrics.bodyInsets,
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              child: Wrap(
+                spacing: DatabaseMetrics.space3,
+                runSpacing: DatabaseMetrics.space3,
+                children: [
+                  for (final table in controller.tables)
+                    SizedBox(
+                      width: DatabaseMetrics.schemaCardWidth
+                          .clamp(0.0, constraints.maxWidth)
+                          .toDouble(),
+                      child: _TableCard(
+                        table: table,
+                        collection: collection,
+                        controller: controller,
+                        theme: theme,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       );
@@ -130,7 +133,7 @@ class _TableCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(
+                WorkspaceGlyph(
                   databaseLayoutIcon(table.layout),
                   size: 16,
                   color: theme.accent,
@@ -167,7 +170,7 @@ class _TableCard extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Row(
                     children: [
-                      Icon(
+                      WorkspaceGlyph(
                         databaseFieldIcon(field.type),
                         size: 14,
                         color: field.isRelation ? theme.accent : theme.iconRest,
@@ -181,9 +184,13 @@ class _TableCard extends StatelessWidget {
                           style: theme.body,
                         ),
                       ),
-                      Text(
-                        databaseFieldTypeLabel(field.type),
-                        style: theme.meta,
+                      Flexible(
+                        child: Text(
+                          databaseFieldTypeLabel(field.type),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.meta,
+                        ),
                       ),
                     ],
                   ),
@@ -207,7 +214,7 @@ class _TableCard extends StatelessWidget {
             if (outgoing.isNotEmpty) ...[
               const SizedBox(height: DatabaseMetrics.space3),
               Text(
-                LocaleKeys.collections_database_relations.tr().toUpperCase(),
+                LocaleKeys.collections_database_relations.tr(),
                 style: theme.sectionLabel,
               ),
               const SizedBox(height: DatabaseMetrics.space1),
@@ -216,7 +223,7 @@ class _TableCard extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 2),
                   child: Row(
                     children: [
-                      Icon(
+                      WorkspaceGlyph(
                         Icons.arrow_outward_rounded,
                         size: 13,
                         color: relation.isInternal

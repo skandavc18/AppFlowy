@@ -94,7 +94,18 @@ class SlidePluginWidgetBuilder extends PluginWidgetBuilder with NavigationItem {
     required bool shrinkWrap,
     Map<String, dynamic>? data,
   }) =>
-      SlidePage(key: ValueKey(view.id), view: view);
+      MultiBlocProvider(
+        providers: [
+          BlocProvider<ViewInfoBloc>.value(value: viewInfoBloc),
+          BlocProvider<PageAccessLevelBloc>.value(value: pageAccessLevelBloc),
+        ],
+        child: DatabasePageDecorationHost(
+          view: view,
+          enabled:
+              !shrinkWrap && data?[kDatabasePluginWidgetBuilderNode] == null,
+          builder: (view) => SlidePage(key: ValueKey(view.id), view: view),
+        ),
+      );
 
   @override
   String? get viewName =>

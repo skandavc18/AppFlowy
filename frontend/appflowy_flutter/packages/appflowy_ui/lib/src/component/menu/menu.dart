@@ -18,12 +18,12 @@ class AFMenu extends StatelessWidget {
   });
 
   /// Corner radius shared with every other menu in the application.
-  static const double cornerRadius = 13;
+  static const double cornerRadius = 16;
 
   /// Inset around the rows.
   static const EdgeInsets cardPadding = EdgeInsets.symmetric(
-    horizontal: 5,
-    vertical: 5,
+    horizontal: 8,
+    vertical: 8,
   );
 
   /// The list of widgets to display in the menu (sections or menu items).
@@ -37,12 +37,13 @@ class AFMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
+    final materialTheme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: backgroundColor ?? theme.surfaceColorScheme.primary,
+        color: backgroundColor ?? materialTheme.dialogBackgroundColor,
         borderRadius: BorderRadius.circular(cornerRadius),
         border: Border.all(
-          color: theme.borderColorScheme.primary,
+          color: theme.borderColorScheme.primary.withValues(alpha: 0.28),
           width: 0.6,
         ),
         boxShadow: theme.shadow.small,

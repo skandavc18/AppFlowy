@@ -1,6 +1,9 @@
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/text_rendering.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -10,46 +13,45 @@ import 'package:flutter/material.dart';
 /// spreadsheet and a row in the slash menu occupy exactly the same box.
 abstract final class AppMenuMetrics {
   /// Floating surface.
-  static const double cornerRadius = 14;
+  static const double cornerRadius = WorkspaceTokens.menuRadius;
   static const double minWidth = 200;
   static const double maxWidth = 380;
   static const double defaultMaxHeight = 520;
   static const EdgeInsets cardPadding = EdgeInsets.symmetric(
-    horizontal: 6,
-    vertical: 6,
+    horizontal: WorkspaceTokens.space2,
+    vertical: WorkspaceTokens.space2,
   );
 
   /// Rows.
   static const double rowHeight = 32;
   static const double rowHeightWithSubtitle = 46;
-  static const double rowRadius = 9;
-  static const double rowHorizontalPadding = 10;
+  static const double rowRadius = WorkspaceTokens.controlRadius;
+  static const double rowHorizontalPadding = WorkspaceTokens.space3;
 
   /// Icons sit in a fixed slot so every label starts on the same pixel,
   /// whether or not its neighbour has an icon.
-  static const double iconSize = 17;
+  static const double iconSize = WorkspaceTokens.iconSize;
   static const double iconSlot = 18;
-  static const double iconGap = 11;
+  static const double iconGap = WorkspaceTokens.space3;
   static const double submenuArrowSize = 16;
 
   /// Typography.
-  static const double labelSize = 13.5;
-  static const double subtitleSize = 11.5;
-  static const double shortcutSize = 11.5;
-  static const double headerSize = 10.5;
+  static const double labelSize = 14;
+  static const double subtitleSize = 12;
+  static const double shortcutSize = 12;
+  static const double headerSize = 12;
 
   /// Tracking is set as a fraction of the size, the way the rest of the
   /// application sets it, so a menu label sits on the same rhythm as body text.
   static const double labelTracking = -0.004;
   static const double headerTracking = 0.058;
 
-  /// The variable-weight axis each role is set on, a step above the
-  /// application's regular (550) so menu text reads firmer than body copy at
-  /// its smaller size without tipping into bold.
-  static const double labelWeightAxis = 590;
-  static const double subtitleWeightAxis = 520;
-  static const double shortcutWeightAxis = 570;
-  static const double headerWeightAxis = 660;
+  /// Quiet medium chrome; headings retain a separate, stronger hierarchy.
+  /// This does not change the editor's body or the application theme.
+  static const double labelWeightAxis = 500;
+  static const double subtitleWeightAxis = 500;
+  static const double shortcutWeightAxis = 500;
+  static const double headerWeightAxis = 600;
 
   /// Grouping.
   static const double separatorThickness = 1;
@@ -67,7 +69,7 @@ abstract final class AppMenuMetrics {
   static const Duration openDuration = Duration(milliseconds: 150);
   static const Duration closeDuration = Duration(milliseconds: 110);
   static const Duration submenuDuration = Duration(milliseconds: 120);
-  static const Duration hoverDuration = Duration(milliseconds: 150);
+  static const Duration hoverDuration = WorkspaceTokens.hoverDuration;
   static const Duration hoverOutDuration = Duration(milliseconds: 130);
   static const Duration pressDuration = Duration(milliseconds: 90);
   static const Curve enterCurve = Curves.easeOutCubic;
@@ -128,9 +130,8 @@ class AppMenuStyle {
     final surface = isPaper
         ? PaperTheme.popupBackground
         : premium?.floatingSurface ?? scheme.surfaceContainer;
-    final shadowColor = isPaper
-        ? PaperTheme.shadow
-        : premium?.shadow ?? Colors.black.withValues(alpha: 0.14);
+    final shadowColor =
+        isPaper ? PaperTheme.shadow : premium?.shadow ?? theme.shadowColor;
 
     // Depth comes from three stacked shadows rather than one heavy drop: a
     // wide ambient pool, a mid lift and a hairline contact edge. Kept low in
@@ -166,20 +167,15 @@ class AppMenuStyle {
         ? PaperTheme.textMuted
         : premium?.textMuted ?? scheme.onSurfaceVariant.withValues(alpha: 0.72);
 
-    // Light and paper menus want richer ink than body text; dark menus want
-    // less glare than pure foreground white.
-    final labelRest = isDark
-        ? Color.lerp(textPrimary, surface, 0.10)!
-        : Color.lerp(textPrimary, Colors.black, 0.14)!;
-    final labelStrong =
-        isDark ? textPrimary : Color.lerp(labelRest, Colors.black, 0.22)!;
+    // Typography supplies hierarchy; never manufacture black ink over a warm
+    // paper surface or recolour the label just because the pointer arrived.
+    final labelRest = textPrimary;
+    final labelStrong = textPrimary;
 
-    // Icons read one step back from the label, nowhere near as faint as
-    // secondary text — a washed-out glyph is what makes a menu look generic.
-    final icon = isDark
-        ? Color.lerp(textSecondary, textPrimary, 0.28)!
-        : Color.lerp(textSecondary, labelStrong, 0.52)!;
-    final iconStrong = isDark ? textPrimary : labelStrong;
+    // Match navigation/settings ink; state belongs to the row's background,
+    // never to a darker or filled cut of its symbol.
+    final icon = workspaceGlyphInk(context);
+    final iconStrong = icon;
 
     // Deliberately desaturated: a destructive row is recognisable without
     // shouting over the rest of the list.
@@ -201,14 +197,9 @@ class AppMenuStyle {
           ? PaperTheme.strongBorder.withValues(alpha: 0.18)
           : (premium?.border ?? scheme.outlineVariant)
               .withValues(alpha: isDark ? 0.26 : 0.22),
-      hover: isPaper
-          ? PaperTheme.controlHover
-          : premium?.hover ??
-              scheme.onSurface.withValues(alpha: isDark ? 0.09 : 0.055),
-      pressed: isPaper
-          ? PaperTheme.controlSelected
-          : premium?.pressed ??
-              scheme.onSurface.withValues(alpha: isDark ? 0.14 : 0.09),
+      hover: WorkspaceChrome.hoverColor(context),
+      pressed: premium?.subtlePressed ??
+          scheme.onSurface.withValues(alpha: isDark ? 0.10 : 0.07),
       selected: isPaper
           ? PaperTheme.selectedOverlay
           : premium?.selectedOverlay ??
@@ -318,7 +309,7 @@ class AppMenuStyle {
 
   TextStyle get subtitleStyle => _face(
         fontSize: AppMenuMetrics.subtitleSize,
-        weight: FontWeight.w400,
+        weight: FontWeight.w500,
         axis: AppMenuMetrics.subtitleWeightAxis,
         tracking: AppMenuMetrics.labelTracking,
         color: textMuted,
@@ -375,7 +366,7 @@ class AppMenuStyle {
     if (destructive) {
       return danger;
     }
-    return selected ? accent : icon;
+    return icon;
   }
 
   /// The colour a row's icon settles into under the pointer.
@@ -390,7 +381,7 @@ class AppMenuStyle {
     if (destructive) {
       return danger;
     }
-    return selected ? accent : iconStrong;
+    return iconStrong;
   }
 
   AppMenuStyle copyWith({bool? blurred}) => AppMenuStyle(

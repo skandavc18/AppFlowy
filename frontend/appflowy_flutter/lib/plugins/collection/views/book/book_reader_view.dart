@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/book/book_chapter_stage.dart';
 import 'package:appflowy/plugins/collection/views/book/book_contents_rail.dart';
 import 'package:appflowy/plugins/collection/views/book/book_format.dart';
@@ -9,6 +10,9 @@ import 'package:appflowy/plugins/collection/views/book/book_reader_controls.dart
 import 'package:appflowy/plugins/collection/views/book/book_reader_palette.dart';
 import 'package:appflowy/plugins/collection/views/book/book_reader_settings_panel.dart';
 import 'package:appflowy/plugins/collection/views/book/book_views.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/book/book_chapter.dart';
 import 'package:appflowy/workspace/application/collections/book/book_reading_controller.dart';
 import 'package:appflowy/workspace/application/collections/book/book_reading_state.dart';
@@ -25,6 +29,7 @@ class BookReaderView extends StatefulWidget {
     required this.collection,
     this.reading,
     this.fullscreen = false,
+    this.chapterBuilder,
   });
 
   final CollectionViewContext collection;
@@ -36,6 +41,15 @@ class BookReaderView extends StatefulWidget {
 
   final bool fullscreen;
 
+  /// Optional native-renderer boundary. The reader still owns its production
+  /// chrome, chapter selection and borrowed-controller lifetime.
+  final Widget Function(
+    BuildContext,
+    BookChapter,
+    BookReaderPalette,
+    BookReaderSettings,
+  )? chapterBuilder;
+
   @override
   State<BookReaderView> createState() => _BookReaderViewState();
 }
@@ -45,13 +59,16 @@ class _BookReaderViewState extends State<BookReaderView>
   late final BookReadingController reading;
   late final bool ownsReading;
   final FocusNode focusNode = FocusNode(debugLabel: 'book-reader');
+  final FocusNode chromeFocusNode =
+      FocusNode(debugLabel: 'book-reader-controls');
   final GlobalKey settingsAnchor = GlobalKey();
   late final PageController pageController;
   String? trackedChapterId;
   double liveProgress = 0;
   Timer? immersionTimer;
   bool chromeVisible = true;
-  bool menuOpen = false;
+  int _menuHolds = 0;
+  bool get menuOpen => _menuHolds > 0;
 
   @override
   void initState() {
@@ -99,6 +116,7 @@ class _BookReaderViewState extends State<BookReaderView>
       reading.setActive(false);
     }
     pageController.dispose();
+    chromeFocusNode.dispose();
     focusNode.dispose();
     super.dispose();
   }
@@ -148,7 +166,10 @@ class _BookReaderViewState extends State<BookReaderView>
   /// The chrome only fades away in fullscreen, and never while it is being
   /// used — an open rail or menu keeps it on screen.
   bool get _chromePinned =>
-      !widget.fullscreen || menuOpen || reading.settings.showContentsRail;
+      !widget.fullscreen ||
+      menuOpen ||
+      reading.settings.showContentsRail ||
+      chromeFocusNode.hasFocus;
 
   void _wakeChrome() {
     immersionTimer?.cancel();
@@ -199,6 +220,7 @@ class _BookReaderViewState extends State<BookReaderView>
       pageBuilder: (_, __, ___) => _BookFullscreenReader(
         collection: widget.collection,
         reading: reading,
+        chapterBuilder: widget.chapterBuilder,
       ),
     );
     if (mounted) {
@@ -211,49 +233,60 @@ class _BookReaderViewState extends State<BookReaderView>
     final palette = BookReaderPalette.of(context, reading.settings.theme);
     final chapter = reading.currentChapter;
 
-    return ColoredBox(
-      color: palette.canvas,
-      child: CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.arrowLeft):
-              reading.goToPreviousChapter,
-          const SingleActivator(LogicalKeyboardKey.arrowRight):
-              reading.goToNextChapter,
-          const SingleActivator(LogicalKeyboardKey.f11): _toggleFullscreen,
-          if (widget.fullscreen)
-            const SingleActivator(LogicalKeyboardKey.escape): _toggleFullscreen,
-        },
-        child: Focus(
-          focusNode: focusNode,
-          autofocus: widget.fullscreen,
-          child: MouseRegion(
-            opaque: false,
-            onHover: widget.fullscreen ? (_) => _wakeChrome() : null,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                AnimatedContainer(
-                  duration: BookReaderMetrics.railMotion,
-                  curve: BookReaderMetrics.curve,
-                  width: reading.settings.showContentsRail
-                      ? BookReaderMetrics.railWidth
-                      : BookReaderMetrics.railCollapsedWidth,
-                  child: reading.settings.showContentsRail
-                      ? BookContentsRail(
-                          reading: reading,
-                          palette: palette,
-                          onOpenChapter: reading.openChapter,
-                          onOpenInWorkspace: widget.collection.onOpen,
-                          onEditNote: _editNote,
-                        )
-                      : const SizedBox.shrink(),
+    return PreviewToolbarRegion(
+      child: ColoredBox(
+        color: palette.canvas,
+        child: CallbackShortcuts(
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.arrowLeft):
+                reading.goToPreviousChapter,
+            const SingleActivator(LogicalKeyboardKey.arrowRight):
+                reading.goToNextChapter,
+            const SingleActivator(LogicalKeyboardKey.f11): _toggleFullscreen,
+            if (widget.fullscreen)
+              const SingleActivator(LogicalKeyboardKey.escape):
+                  _toggleFullscreen,
+          },
+          child: Focus(
+            focusNode: focusNode,
+            autofocus: widget.fullscreen,
+            child: MouseRegion(
+              opaque: false,
+              onHover: widget.fullscreen ? (_) => _wakeChrome() : null,
+              child: CollectionWorkspaceSplit(
+                railWidth: BookReaderMetrics.railWidth,
+                navigationVisible: reading.settings.showContentsRail,
+                navigation: Theme(
+                  data: palette.themeFor(Theme.of(context)),
+                  child: BookContentsRail(
+                    reading: reading,
+                    palette: palette,
+                    onOpenChapter: reading.openChapter,
+                    onOpenInWorkspace: widget.collection.onOpen,
+                    onEditNote: _editNote,
+                  ),
                 ),
-                Expanded(
-                  child: chapter == null
-                      ? _buildEmpty(palette)
-                      : _buildReading(palette, chapter),
-                ),
-              ],
+                compactNavigation: const SizedBox.shrink(),
+                headerBuilder: (context, railVisible) => chapter == null
+                    ? const SizedBox.shrink()
+                    : Focus(
+                        focusNode: chromeFocusNode,
+                        canRequestFocus: false,
+                        skipTraversal: true,
+                        onFocusChange: (_) => _wakeChrome(),
+                        child: _immersive(
+                          _buildChrome(
+                            palette,
+                            chapter,
+                            railVisible: railVisible,
+                          ),
+                          fromTop: true,
+                        ),
+                      ),
+                child: chapter == null
+                    ? _buildEmpty(palette)
+                    : _buildReading(palette, chapter),
+              ),
             ),
           ),
         ),
@@ -268,7 +301,11 @@ class _BookReaderViewState extends State<BookReaderView>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.menu_book_rounded, size: 40, color: palette.inkFaint),
+            WorkspaceGlyph(
+              Icons.menu_book_rounded,
+              size: 40,
+              color: palette.inkFaint,
+            ),
             const SizedBox(height: 14),
             Text(
               LocaleKeys.collections_book_emptyTitle.tr(),
@@ -300,7 +337,6 @@ class _BookReaderViewState extends State<BookReaderView>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _immersive(_buildChrome(palette, chapter), fromTop: true),
         Expanded(
           child: ColoredBox(
             color: palette.canvas,
@@ -318,22 +354,23 @@ class _BookReaderViewState extends State<BookReaderView>
     );
   }
 
-  /// In fullscreen the chrome slides away once the reader settles, so nothing
-  /// but the page is left on screen.
+  /// Fullscreen chrome fades without unmounting Tab targets or resizing a
+  /// native renderer. Keyboard focus and open popups hold it in place.
   Widget _immersive(Widget child, {required bool fromTop}) {
     if (!widget.fullscreen) {
       return child;
     }
     final visible = chromeVisible || _chromePinned;
-    return AnimatedSize(
-      duration: BookReaderMetrics.motion,
-      curve: BookReaderMetrics.curve,
-      alignment: fromTop ? Alignment.bottomCenter : Alignment.topCenter,
-      child: AnimatedOpacity(
-        duration: BookReaderMetrics.motion,
-        curve: BookReaderMetrics.curve,
-        opacity: visible ? 1 : 0,
-        child: visible ? child : const SizedBox(width: double.infinity),
+    return IgnorePointer(
+      ignoring: !visible,
+      child: ExcludeSemantics(
+        excluding: !visible,
+        child: AnimatedOpacity(
+          duration: BookReaderMetrics.motion,
+          curve: BookReaderMetrics.curve,
+          opacity: visible ? 1 : 0,
+          child: child,
+        ),
       ),
     );
   }
@@ -381,6 +418,13 @@ class _BookReaderViewState extends State<BookReaderView>
   }
 
   Widget _buildStage(BookReaderPalette palette, BookChapter chapter) {
+    if (widget.chapterBuilder != null) {
+      return KeyedSubtree(
+        key: ValueKey('book-stage-${chapter.id}'),
+        child:
+            widget.chapterBuilder!(context, chapter, palette, reading.settings),
+      );
+    }
     return BookChapterStage(
       key: ValueKey('book-stage-${chapter.id}'),
       chapter: chapter,
@@ -472,60 +516,75 @@ class _BookReaderViewState extends State<BookReaderView>
     }
   }
 
-  Widget _buildChrome(BookReaderPalette palette, BookChapter chapter) {
+  Widget _buildChrome(
+    BookReaderPalette palette,
+    BookChapter chapter, {
+    required bool railVisible,
+  }) {
     final readable = reading.readableChapters;
     final position = readable.indexWhere((entry) => entry.id == chapter.id) + 1;
     final bookmarked = reading.state.bookmarksIn(chapter.id).isNotEmpty;
-    return Container(
-      height: BookReaderMetrics.chromeHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: palette.chrome,
-        border: Border(
-          bottom: BorderSide(
-            color: palette.rule.withValues(alpha: 0.35),
-            width: 0.6,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
+    return Theme(
+      data: palette.themeFor(Theme.of(context)),
+      child: CollectionWorkspaceToolbar(
+        padding: const EdgeInsets.only(bottom: 8),
+        keepVisible: menuOpen,
+        identity: railVisible
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    bookChapterTitle(chapter),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: collectionWorkspaceLabel(
+                      context,
+                      color: palette.ink,
+                      size: 14,
+                    ),
+                  ),
+                  Text(
+                    LocaleKeys.collections_book_chapterPosition
+                        .tr(args: ['$position', '${readable.length}']),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: collectionWorkspaceLabel(
+                      context,
+                      color: palette.inkFaint,
+                      size: 11,
+                    ),
+                  ),
+                ],
+              )
+            : CollectionWorkspacePicker(
+                label: bookChapterTitle(chapter),
+                tooltip: LocaleKeys.collections_book_chapters.tr(),
+                icon: Icons.menu_book_rounded,
+                entries: [
+                  for (final item in readable)
+                    AppMenuItem(
+                      label: bookChapterTitle(item),
+                      selected: item.id == chapter.id,
+                      onSelected: () => reading.openChapter(item.id),
+                    ),
+                  const AppMenuSeparator(),
+                  AppMenuItem(
+                    label: LocaleKeys.collections_book_toggleContents.tr(),
+                    icon: Icons.menu_open_rounded,
+                    onSelected: reading.toggleContentsRail,
+                  ),
+                ],
+              ),
+        actions: [
           BookControlButton(
-            icon: reading.settings.showContentsRail
-                ? Icons.menu_open_rounded
-                : Icons.menu_rounded,
+            icon: railVisible ? Icons.menu_open_rounded : Icons.menu_rounded,
             tooltip: LocaleKeys.collections_book_toggleContents.tr(),
             palette: palette,
-            selected: reading.settings.showContentsRail,
-            onPressed: reading.toggleContentsRail,
+            selected: railVisible,
+            onPressed: railVisible
+                ? reading.toggleContentsRail
+                : () => unawaited(_showContents(palette)),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  bookChapterTitle(chapter),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.ink,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                Text(
-                  LocaleKeys.collections_book_chapterPosition.tr(
-                    args: ['$position', '${readable.length}'],
-                  ),
-                  style: TextStyle(color: palette.inkFaint, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
           BookControlButton(
             icon: bookmarked
                 ? Icons.bookmark_rounded
@@ -589,42 +648,124 @@ class _BookReaderViewState extends State<BookReaderView>
     double progress,
   ) {
     final overall = reading.state.overallProgress(reading.chapters);
-    return Container(
-      height: BookReaderMetrics.footerHeight,
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      color: palette.chrome,
-      child: Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        alignment: WrapAlignment.spaceBetween,
         children: [
-          Icon(
-            bookChapterIcon(chapter.kind),
-            size: 14,
-            color: palette.inkFaint,
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              WorkspaceGlyph(
+                bookChapterIcon(chapter.kind),
+                size: 14,
+                color: palette.inkFaint,
+              ),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  LocaleKeys.collections_book_percentRead
+                      .tr(args: ['${(progress * 100).round()}']),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: collectionWorkspaceLabel(
+                    context,
+                    color: palette.inkMuted,
+                    size: 11.5,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 7),
-          Text(
-            LocaleKeys.collections_book_percentRead.tr(
-              args: ['${(progress * 100).round()}'],
-            ),
-            style: TextStyle(color: palette.inkMuted, fontSize: 11.5),
-          ),
-          const Spacer(),
-          Text(
-            LocaleKeys.collections_book_finishedCount.tr(
-              args: [
-                '${reading.state.finishedCount(reading.chapters)}',
-                '${reading.readableChapters.length}',
-              ],
-            ),
-            style: TextStyle(color: palette.inkFaint, fontSize: 11.5),
-          ),
-          const SizedBox(width: 12),
-          SizedBox(
-            width: 96,
-            child: BookProgressBar(value: overall, palette: palette, height: 3),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  LocaleKeys.collections_book_finishedCount.tr(
+                    args: [
+                      '${reading.state.finishedCount(reading.chapters)}',
+                      '${reading.readableChapters.length}',
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: collectionWorkspaceLabel(
+                    context,
+                    color: palette.inkFaint,
+                    size: 11.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 96,
+                child: BookProgressBar(
+                  value: overall,
+                  palette: palette,
+                  height: 3,
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _showContents(BookReaderPalette palette) async {
+    final release = _holdChrome();
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => Dialog(
+          backgroundColor: palette.canvas,
+          insetPadding: const EdgeInsets.all(24),
+          child: SizedBox(
+            width: 360,
+            height: 520,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: AnimatedBuilder(
+                animation: reading,
+                builder: (context, _) => Theme(
+                  data: palette.themeFor(Theme.of(context)),
+                  child: BookContentsRail(
+                    reading: reading,
+                    palette: palette,
+                    onOpenChapter: reading.openChapter,
+                    onOpenInWorkspace: widget.collection.onOpen,
+                    onEditNote: _editNote,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      release();
+    }
+  }
+
+  VoidCallback _holdChrome() {
+    final release =
+        PreviewToolbarRegion.hold(settingsAnchor.currentContext ?? context);
+    setState(() => _menuHolds++);
+    _wakeChrome();
+    var released = false;
+    return () {
+      if (released) return;
+      released = true;
+      release();
+      if (mounted) {
+        setState(() => _menuHolds--);
+        _wakeChrome();
+      }
+    };
   }
 
   void _onProgress(BookChapter chapter, double value) {
@@ -655,15 +796,13 @@ class _BookReaderViewState extends State<BookReaderView>
       return;
     }
     final palette = BookReaderPalette.of(context, reading.settings.theme);
-    menuOpen = true;
+    final release = _holdChrome();
     final draft = await showBookNoteEditor(
       context: context,
       palette: palette,
       note: note,
-    );
-    menuOpen = false;
-    _wakeChrome();
-    if (draft == null) {
+    ).whenComplete(release);
+    if (!mounted || draft == null) {
       return;
     }
     if (draft.deleted) {
@@ -705,7 +844,7 @@ class _BookReaderViewState extends State<BookReaderView>
     final rightEdge = overlay.size.width - width - 12;
     final left =
         rightEdge <= 12 ? 12.0 : (anchor.dx - width).clamp(12.0, rightEdge);
-    menuOpen = true;
+    final release = _holdChrome();
     await showDialog<void>(
       context: context,
       barrierColor: Colors.transparent,
@@ -729,9 +868,7 @@ class _BookReaderViewState extends State<BookReaderView>
           ),
         ],
       ),
-    );
-    menuOpen = false;
-    _wakeChrome();
+    ).whenComplete(release);
   }
 }
 
@@ -740,10 +877,17 @@ class _BookFullscreenReader extends StatelessWidget {
   const _BookFullscreenReader({
     required this.collection,
     required this.reading,
+    this.chapterBuilder,
   });
 
   final CollectionViewContext collection;
   final BookReadingController reading;
+  final Widget Function(
+    BuildContext,
+    BookChapter,
+    BookReaderPalette,
+    BookReaderSettings,
+  )? chapterBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -755,6 +899,7 @@ class _BookFullscreenReader extends StatelessWidget {
           key: ValueKey('book-fullscreen-${collection.collectionView.id}'),
           collection: collection,
           reading: reading,
+          chapterBuilder: chapterBuilder,
           fullscreen: true,
         ),
       ),

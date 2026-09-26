@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/account/password/password_suffix_icon.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -98,7 +99,10 @@ class _SettingsInputFieldState extends State<SettingsInputField> {
               const HSpace(4),
               FlowyTooltip(
                 message: widget.tooltip,
-                child: const FlowySvg(FlowySvgs.information_s),
+                child: const WorkspaceGlyph.svg(
+                  FlowySvgs.information_s,
+                  size: 16,
+                ),
               ),
             ],
           ],

@@ -1,4 +1,3 @@
-import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra_ui/style_widget/button.dart';
 import 'package:flutter/material.dart';
 
@@ -48,7 +47,7 @@ class RoundedTextButton extends StatelessWidget {
           onPressed: onPressed,
           fontSize: fontSize,
           mainAxisAlignment: MainAxisAlignment.center,
-          radius: borderRadius ?? Corners.s6Border,
+          radius: borderRadius ?? const BorderRadius.all(Radius.circular(8)),
           fontColor: textColor ?? Theme.of(context).colorScheme.onPrimary,
           fillColor: fillColor ?? Theme.of(context).colorScheme.primary,
           hoverColor:
@@ -72,7 +71,7 @@ class RoundedImageButton extends StatelessWidget {
     super.key,
     this.press,
     required this.size,
-    this.borderRadius = BorderRadius.zero,
+    this.borderRadius = const BorderRadius.all(Radius.circular(8)),
     this.borderColor = Colors.transparent,
     this.color = Colors.transparent,
     required this.child,

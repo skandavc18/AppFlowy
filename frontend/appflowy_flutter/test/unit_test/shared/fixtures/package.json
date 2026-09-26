@@ -1,0 +1,11 @@
+{
+  "name": "appflowy-webview-find-fixture",
+  "private": true,
+  "description": "Local DOM regression boundary for production WebView find scripts.",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}

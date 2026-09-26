@@ -13,6 +13,7 @@ import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart'
 import 'package:appflowy/plugins/document/presentation/editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/actions/block_action_list.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/widgets/ai_writer_scroll_wrapper.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_host.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/shared_context/shared_context.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/transaction_handler/editor_transaction_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
@@ -62,6 +63,7 @@ class RowDocument extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider<RowDocumentBloc>(
+      key: ValueKey((viewId, rowId)),
       create: (context) => RowDocumentBloc(viewId: viewId, rowId: rowId)
         ..add(const RowDocumentEvent.initial()),
       child: BlocConsumer<RowDocumentBloc, RowDocumentState>(
@@ -80,6 +82,7 @@ class RowDocument extends StatelessWidget {
               child: Center(child: AppFlowyErrorPage(error: error)),
             ),
             finish: () => _RowEditor(
+              key: ValueKey((viewId, rowId, state.viewPB!.id)),
               view: state.viewPB!,
               row: PageVersionRowContext(tableViewId: viewId, rowId: rowId),
               userProfile: userProfile,
@@ -100,6 +103,7 @@ class RowDocument extends StatelessWidget {
 
 class _RowEditor extends StatelessWidget {
   const _RowEditor({
+    super.key,
     required this.view,
     required this.row,
     this.onIsEmptyChanged,
@@ -162,87 +166,97 @@ class _RowEditor extends StatelessWidget {
             );
           }
 
-          return BlocProvider<ViewInfoBloc>(
-            create: (context) => ViewInfoBloc(view: view),
-            child: _RowVersionWatcher(
-              viewId: view.id,
-              row: row,
-              editorState: editorState,
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 300),
-                child: Provider(
-                  create: (_) {
-                    final context = SharedEditorContext();
-                    context.isInDatabaseRowPage = true;
-                    return context;
-                  },
-                  dispose: (_, editorContext) => editorContext.dispose(),
-                  child: AiWriterScrollWrapper(
-                    viewId: view.id,
-                    editorState: editorState,
-                    child: EditorDropHandler(
+          return RowDocumentFindHost(
+            documentId: context.read<DocumentBloc>().documentId,
+            tableViewId: row.tableViewId,
+            editorState: editorState,
+            initialDocumentView: view,
+            builder: (context, findScope) => BlocProvider<ViewInfoBloc>(
+              create: (context) => ViewInfoBloc(view: view),
+              child: _RowVersionWatcher(
+                viewId: view.id,
+                row: row,
+                editorState: editorState,
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 300),
+                  child: Provider(
+                    create: (_) {
+                      final context = SharedEditorContext();
+                      context.isInDatabaseRowPage = true;
+                      return context;
+                    },
+                    dispose: (_, editorContext) => editorContext.dispose(),
+                    child: AiWriterScrollWrapper(
                       viewId: view.id,
                       editorState: editorState,
-                      isLocalMode: context.read<DocumentBloc>().isLocalMode,
-                      // A host that keeps no drop state of its own lets the
-                      // handler make one rather than refusing to build.
-                      dropManagerState: context.read<EditorDropManagerState?>(),
-                      child: EditorTransactionService(
+                      child: EditorDropHandler(
                         viewId: view.id,
                         editorState: editorState,
-                        child: Provider(
-                          create: (context) => DatabasePluginWidgetBuilderSize(
-                            horizontalPadding: 0,
-                          ),
-                          child: AppFlowyEditorPage(
-                            shrinkWrap: shrinkWrap,
-                            autoFocus: false,
-                            editorState: editorState,
-                            // The cover, properties and thread share the lazy
-                            // document viewport: no nested wheel hand-off.
-                            header: header != null || showComments
-                                ? RowDetailScrollHeader(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.stretch,
-                                      children: [
-                                        if (header != null) header!,
-                                        if (showComments)
-                                          Padding(
-                                            padding: EdgeInsets.fromLTRB(
-                                              contentInset,
-                                              0,
-                                              contentInset,
-                                              36,
-                                            ),
-                                            child: RowCommentSection(
-                                              editorState: editorState,
-                                              userProfile: userProfile,
-                                              padding: EdgeInsets.zero,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  )
-                                : null,
-                            styleCustomizer: EditorStyleCustomizer(
-                              context: context,
-                              // The editor lays the + and :: handles out ahead of
-                              // each block, so the page starts a gutter early to
-                              // put them in the margin and the text on the
-                              // measure.
-                              padding: EdgeInsets.only(
-                                left: math.max(
-                                  0,
-                                  contentInset - BlockActionList.gutterWidth,
-                                ),
-                                right: contentInset,
-                              ),
+                        isLocalMode: context.read<DocumentBloc>().isLocalMode,
+                        // A host that keeps no drop state of its own lets the
+                        // handler make one rather than refusing to build.
+                        dropManagerState:
+                            context.read<EditorDropManagerState?>(),
+                        child: EditorTransactionService(
+                          viewId: view.id,
+                          editorState: editorState,
+                          child: Provider(
+                            create: (context) =>
+                                DatabasePluginWidgetBuilderSize(
+                              horizontalPadding: 0,
                             ),
-                            showParagraphPlaceholder: (editorState, _) =>
-                                editorState.document.isEmpty,
-                            placeholderText: (_) =>
-                                LocaleKeys.cardDetails_notesPlaceholder.tr(),
+                            child: AppFlowyEditorPage(
+                              key: ObjectKey(editorState),
+                              findMetadataScope: findScope,
+                              shrinkWrap: shrinkWrap,
+                              autoFocus: false,
+                              editorState: editorState,
+                              // The cover, properties and thread share the lazy
+                              // document viewport: no nested wheel hand-off.
+                              header: header != null || showComments
+                                  ? RowDetailScrollHeader(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          if (header != null) header!,
+                                          if (showComments)
+                                            Padding(
+                                              padding: EdgeInsets.fromLTRB(
+                                                contentInset,
+                                                0,
+                                                contentInset,
+                                                36,
+                                              ),
+                                              child: RowCommentSection(
+                                                editorState: editorState,
+                                                userProfile: userProfile,
+                                                padding: EdgeInsets.zero,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    )
+                                  : null,
+                              styleCustomizer: EditorStyleCustomizer(
+                                context: context,
+                                // The editor lays the + and :: handles out ahead of
+                                // each block, so the page starts a gutter early to
+                                // put them in the margin and the text on the
+                                // measure.
+                                padding: EdgeInsets.only(
+                                  left: math.max(
+                                    0,
+                                    contentInset - BlockActionList.gutterWidth,
+                                  ),
+                                  right: contentInset,
+                                ),
+                              ),
+                              showParagraphPlaceholder: (editorState, _) =>
+                                  editorState.document.isEmpty,
+                              placeholderText: (_) =>
+                                  LocaleKeys.cardDetails_notesPlaceholder.tr(),
+                            ),
                           ),
                         ),
                       ),

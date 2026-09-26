@@ -10,16 +10,20 @@ class DashboardTemplateGallery extends StatelessWidget {
     super.key,
     required this.palette,
     required this.onChosen,
+    this.embedded = false,
   });
 
   final DashboardPalette palette;
   final ValueChanged<DashboardTemplate> onChosen;
+  final bool embedded;
 
   @override
   Widget build(BuildContext context) => Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
           child: SingleChildScrollView(
+            primary: !embedded,
+            physics: embedded ? const NeverScrollableScrollPhysics() : null,
             padding: const EdgeInsets.symmetric(vertical: 32),
             child: Column(
               mainAxisSize: MainAxisSize.min,

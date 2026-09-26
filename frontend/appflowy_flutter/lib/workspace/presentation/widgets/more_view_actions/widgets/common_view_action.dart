@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/sidebar/folder/folder_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -130,10 +131,13 @@ class CustomViewAction extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 6),
           disable: disabled,
           onTap: onTap,
-          leftIcon: FlowySvg(
+          leftIcon: WorkspaceGlyph.svg(
             leftIcon,
-            size: const Size.square(16.0),
+            size: 16,
             color: disabled ? Theme.of(context).disabledColor : null,
+            role: disabled
+                ? WorkspaceGlyphRole.preserveInk
+                : WorkspaceGlyphRole.standard,
           ),
           iconPadding: 10.0,
           text: FlowyText(

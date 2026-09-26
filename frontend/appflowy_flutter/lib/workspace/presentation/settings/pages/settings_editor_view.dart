@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/spell_check/spell_check.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_body.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_category.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -126,7 +127,11 @@ class _SettingsEditorViewState extends State<SettingsEditorView> {
           controller: _search,
           decoration: InputDecoration(
             isDense: true,
-            prefixIcon: const Icon(Icons.search_rounded, size: 18),
+            prefixIcon: const Center(
+              widthFactor: 1,
+              heightFactor: 1,
+              child: WorkspaceGlyph(Icons.search_rounded),
+            ),
             border: const OutlineInputBorder(),
             hintText: LocaleKeys.document_spellCheck_dictionarySearchHint.tr(),
           ),
@@ -241,7 +246,11 @@ class _Note extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.lock_outline_rounded, size: 16, color: premium.textMuted),
+        WorkspaceGlyph(
+          Icons.lock_outline_rounded,
+          size: 16,
+          color: premium.textMuted,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -282,7 +291,12 @@ class _WordRow extends StatelessWidget {
             iconSize: 16,
             visualDensity: VisualDensity.compact,
             tooltip: LocaleKeys.button_remove.tr(),
-            icon: Icon(Icons.close_rounded, color: premium.textMuted),
+            icon: WorkspaceGlyph(
+              Icons.close_rounded,
+              size: 16,
+              color: premium.textMuted,
+              role: WorkspaceGlyphRole.preserveInk,
+            ),
           ),
         ],
       ),

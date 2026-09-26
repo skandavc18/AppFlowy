@@ -30,6 +30,7 @@ class DashboardController extends ChangeNotifier {
   DashboardDocument _document;
   DashboardMode _mode;
   DashboardStateValues _state;
+  bool _readOnly = false;
 
   final List<DashboardDocument> _undo = [];
   final List<DashboardDocument> _redo = [];
@@ -61,7 +62,22 @@ class DashboardController extends ChangeNotifier {
 
   String? get modalWidgetId => _modal;
 
-  bool get isEditable => _mode.isEditable;
+  bool get isEditable => !_readOnly && _mode.isEditable;
+
+  bool get isReadOnly => _readOnly;
+
+  /// Access is supplied by the owning page, never persisted as dashboard data.
+  /// Silent adoption is for the page's dependency update before its children
+  /// build; every mutation still checks the latest access at activation time.
+  void setReadOnly(bool value, {bool notify = true}) {
+    if (_readOnly == value) return;
+    _readOnly = value;
+    if (value) {
+      _selected = null;
+      _configuring = null;
+    }
+    if (notify) notifyListeners();
+  }
 
   bool get canUndo => _undo.isNotEmpty;
 
@@ -80,6 +96,7 @@ class DashboardController extends ChangeNotifier {
     DashboardDocument Function(DashboardDocument document) change, {
     bool transient = false,
   }) {
+    if (_readOnly) return;
     final next = change(_document);
     if (next == _document) {
       return;
@@ -100,6 +117,7 @@ class DashboardController extends ChangeNotifier {
   /// Replace the document outright — applying a template, or adopting a change
   /// that arrived from elsewhere.
   void replace(DashboardDocument document, {bool remember = true}) {
+    if (_readOnly) return;
     if (document == _document) {
       return;
     }
@@ -131,6 +149,7 @@ class DashboardController extends ChangeNotifier {
   }
 
   void undo() {
+    if (_readOnly) return;
     if (_undo.isEmpty) {
       return;
     }
@@ -142,6 +161,7 @@ class DashboardController extends ChangeNotifier {
   }
 
   void redo() {
+    if (_readOnly) return;
     if (_redo.isEmpty) {
       return;
     }
@@ -213,6 +233,7 @@ class DashboardController extends ChangeNotifier {
   /// affordance, and that affordance has to work wherever it is pressed —
   /// telling somebody to go and find a mode switch first is not an answer.
   void configure(String widgetId) {
+    if (_readOnly) return;
     setMode(DashboardMode.edit);
     if (_selected == widgetId && _configuring == widgetId) {
       return;

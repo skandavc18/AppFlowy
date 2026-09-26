@@ -1,5 +1,8 @@
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
@@ -251,9 +254,9 @@ class DashboardTone {
 
 /// The geometry and motion every dashboard surface answers to.
 abstract final class DashboardMetrics {
-  static const double cardRadius = 16;
-  static const double controlRadius = 10;
-  static const double chipRadius = 999;
+  static const double cardRadius = WorkspaceTokens.cardRadius;
+  static const double controlRadius = WorkspaceTokens.controlRadius;
+  static const double chipRadius = WorkspaceTokens.controlRadius;
 
   static const double controlSize = 28;
   static const double headerHeight = 30;
@@ -263,14 +266,14 @@ abstract final class DashboardMetrics {
   static const double cornerHandle = 20;
 
   static const double gutter = 14;
-  static const double sectionGap = 26;
+  static const double sectionGap = WorkspaceTokens.space8;
 
   /// The configuration panel that slides in from the right.
   static const double panelWidth = 336;
 
-  static const Duration hover = Duration(milliseconds: 150);
-  static const Duration settle = Duration(milliseconds: 220);
-  static const Duration reveal = Duration(milliseconds: 180);
+  static const Duration hover = WorkspaceTokens.hoverDuration;
+  static const Duration settle = WorkspaceTokens.transitionDuration;
+  static const Duration reveal = WorkspaceTokens.entranceDuration;
   static const Curve curve = Curves.easeOutCubic;
 
   /// The smallest a widget may be made, in grid units.
@@ -367,48 +370,45 @@ class DashboardIconButton extends StatefulWidget {
 }
 
 class _DashboardIconButtonState extends State<DashboardIconButton> {
-  bool _hovered = false;
-
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final enabled = widget.onPressed != null;
     final ink = widget.color ??
-        (widget.selected
-            ? palette.accent
-            : (_hovered ? palette.textPrimary : palette.textSecondary));
-
-    final button = MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: DashboardMetrics.hover,
-          curve: DashboardMetrics.curve,
-          width: widget.size,
-          height: widget.size,
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? palette.accent.withValues(alpha: 0.14)
-                : (_hovered && enabled ? palette.hover : palette.hoverBase),
-            borderRadius:
-                BorderRadius.circular(DashboardMetrics.controlRadius - 2),
-          ),
-          child: Icon(
-            widget.icon,
-            size: widget.iconSize,
-            color: enabled ? ink : palette.textMuted.withValues(alpha: 0.5),
-          ),
+        (widget.selected ? palette.accent : palette.textSecondary);
+    return IconButton(
+      onPressed: widget.onPressed,
+      tooltip: widget.tooltip,
+      isSelected: widget.selected,
+      style: WorkspaceChrome.controlStyle(context).copyWith(
+        minimumSize: WidgetStatePropertyAll(Size.square(widget.size)),
+        maximumSize: WidgetStatePropertyAll(Size.square(widget.size)),
+        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        foregroundColor: WidgetStatePropertyAll(
+          enabled ? ink : palette.textMuted.withValues(alpha: 0.5),
         ),
+        iconColor: WidgetStatePropertyAll(
+          enabled ? ink : palette.textMuted.withValues(alpha: 0.5),
+        ),
+        backgroundColor: WidgetStateProperty.resolveWith((states) {
+          if (widget.selected) return palette.accentSoft;
+          return enabled &&
+                  (states.contains(WidgetState.hovered) ||
+                      states.contains(WidgetState.focused))
+              ? palette.hover
+              : palette.hoverBase;
+        }),
+      ),
+      icon: WorkspaceGlyph(
+        widget.icon,
+        size: widget.iconSize,
+        color: enabled ? ink : palette.textMuted.withValues(alpha: 0.5),
+        role: enabled
+            ? WorkspaceGlyphRole.standard
+            : WorkspaceGlyphRole.preserveInk,
       ),
     );
-
-    final tooltip = widget.tooltip;
-    return tooltip == null || tooltip.isEmpty
-        ? button
-        : Tooltip(message: tooltip, child: button);
   }
 }
 
@@ -438,71 +438,55 @@ class DashboardButton extends StatefulWidget {
 }
 
 class _DashboardButtonState extends State<DashboardButton> {
-  bool _hovered = false;
-
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final enabled = widget.onPressed != null;
-
-    final Color background;
-    final Color ink;
-    if (widget.primary) {
-      background = enabled
-          ? (_hovered
-              ? Color.alphaBlend(
-                  Colors.black.withValues(alpha: palette.isDark ? 0 : 0.08),
-                  palette.accent,
-                )
-              : palette.accent)
-          : palette.accent.withValues(alpha: 0.4);
-      ink = palette.onAccent;
-    } else if (widget.selected) {
-      background = palette.accent.withValues(alpha: 0.13);
-      ink = palette.accent;
-    } else {
-      background = _hovered && enabled ? palette.hover : palette.hoverBase;
-      ink = enabled ? palette.textSecondary : palette.textMuted;
-    }
-
-    final button = MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: DashboardMetrics.hover,
-          curve: DashboardMetrics.curve,
-          height: 30,
-          padding: EdgeInsets.symmetric(
-            horizontal: widget.icon == null ? 13 : 11,
+    final ink = !enabled
+        ? palette.textMuted
+        : widget.primary
+            ? palette.onAccent
+            : widget.selected
+                ? palette.accent
+                : palette.textSecondary;
+    final button = TextButton(
+      onPressed: widget.onPressed,
+      style: WorkspaceChrome.controlStyle(context).copyWith(
+        minimumSize: const WidgetStatePropertyAll(Size(0, 30)),
+        foregroundColor: WidgetStatePropertyAll(ink),
+        iconColor: WidgetStatePropertyAll(ink),
+        backgroundColor: WidgetStateProperty.resolveWith((states) {
+          if (!enabled) return palette.hoverBase;
+          if (widget.primary) return palette.accent;
+          if (widget.selected) return palette.accentSoft;
+          return states.contains(WidgetState.hovered) ||
+                  states.contains(WidgetState.focused)
+              ? palette.hover
+              : palette.hoverBase;
+        }),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (widget.icon != null) ...[
+            WorkspaceGlyph(
+              widget.icon!,
+              size: 16,
+              color: ink,
+              role: widget.primary || !enabled
+                  ? WorkspaceGlyphRole.preserveInk
+                  : WorkspaceGlyphRole.standard,
+            ),
+            const SizedBox(width: 6),
+          ],
+          Flexible(
+            child: Text(
+              widget.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius:
-                BorderRadius.circular(DashboardMetrics.controlRadius - 1),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.icon != null) ...[
-                Icon(widget.icon, size: 15, color: ink),
-                const SizedBox(width: 6),
-              ],
-              // A button often carries a name it was handed — a page, a
-              // place — so the label gives way rather than overflowing.
-              Flexible(
-                child: Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: DashboardType.cardTitle(palette, color: ink),
-                ),
-              ),
-            ],
-          ),
-        ),
+        ],
       ),
     );
 
@@ -588,7 +572,7 @@ class DashboardPlaceholder extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 22, color: palette.textMuted),
+              WorkspaceGlyph(icon, size: 24, color: palette.textMuted),
               const SizedBox(height: 8),
               Text(
                 message,

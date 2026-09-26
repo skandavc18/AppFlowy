@@ -1,7 +1,4 @@
 import 'package:appflowy/user/application/user_listener.dart';
-import 'package:appflowy/workspace/application/view/view_ext.dart';
-import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
-import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart'
@@ -12,35 +9,38 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'home_bloc.freezed.dart';
 
 class HomeBloc extends Bloc<HomeEvent, HomeState> {
-  HomeBloc(WorkspaceLatestPB workspaceSetting)
-      : _workspaceListener = FolderListener(
-          workspaceId: workspaceSetting.workspaceId,
-        ),
+  HomeBloc(
+    WorkspaceLatestPB workspaceSetting, {
+    FolderListener? workspaceListener,
+  })  : _workspaceListener = workspaceListener ??
+            FolderListener(
+              workspaceId: workspaceSetting.workspaceId,
+            ),
         super(HomeState.initial(workspaceSetting)) {
-    _dispatch(workspaceSetting);
+    _dispatch();
   }
 
   final FolderListener _workspaceListener;
+  bool _started = false;
+  bool _closing = false;
 
   @override
   Future<void> close() async {
+    _closing = true;
     await _workspaceListener.stop();
     return super.close();
   }
 
-  void _dispatch(WorkspaceLatestPB workspaceSetting) {
+  void _dispatch() {
     on<HomeEvent>(
       (event, emit) async {
         await event.map(
           initial: (_Initial value) {
-            Future.delayed(const Duration(milliseconds: 300), () {
-              if (!isClosed) {
-                add(HomeEvent.didReceiveWorkspaceSetting(workspaceSetting));
-              }
-            });
-
+            if (_started || _closing) return;
+            _started = true;
             _workspaceListener.start(
               onLatestUpdated: (result) {
+                if (_closing || isClosed) return;
                 result.fold(
                   (latest) => add(HomeEvent.didReceiveWorkspaceSetting(latest)),
                   (r) => Log.error(r),
@@ -53,44 +53,16 @@ class HomeBloc extends Bloc<HomeEvent, HomeState> {
           },
           didReceiveWorkspaceSetting: (
             _DidReceiveWorkspaceSetting value,
-          ) async {
-            // the latest view is shared across all the members of the workspace.
-
-            final hasLatestView = value.setting.hasLatestView();
-            var latestView =
-                hasLatestView ? value.setting.latestView : state.latestView;
-            var workspaceRootName = 'Workspace';
-
-            if (hasLatestView &&
-                latestView?.isWorkspaceRootFor(value.setting.workspaceId) ==
-                    true) {
-              if (latestView!.name.isNotEmpty) {
-                workspaceRootName = latestView.name;
-              }
-              final result = await FolderEventSetLatestView(ViewIdPB()).send();
-              result.fold(
-                (_) {},
-                (error) => Log.error(
-                  'Failed to clear workspace root as latest view: $error',
-                ),
-              );
-              latestView = null;
+          ) {
+            if (_closing ||
+                value.setting.workspaceId !=
+                    state.workspaceSetting.workspaceId) {
+              return;
             }
-
-            if ((latestView == null || latestView.isSpace) &&
-                value.setting.workspaceId.isNotEmpty) {
-              latestView = workspaceRootFolderView(
-                workspaceId: value.setting.workspaceId,
-                name: workspaceRootName,
-              );
-            }
-
-            emit(
-              state.copyWith(
-                workspaceSetting: value.setting,
-                latestView: latestView,
-              ),
-            );
+            // Latest is shared workspace metadata, not a navigation request.
+            // Never restore it (or repair/erase it) during startup. A delayed
+            // notification must not open a crash tab or switch the user's space.
+            emit(state.copyWith(workspaceSetting: value.setting));
           },
         );
       },

@@ -56,8 +56,13 @@ void main() {
                                 spacing: 10,
                                 runSpacing: 14,
                                 children: [
-                                  for (final icon
-                                      in appFlowyVividIconGroups.single.icons)
+                                  for (final icon in appFlowyVividIconGroups
+                                      .firstWhere(
+                                        (group) =>
+                                            group.name == vividIconTestGroup,
+                                      )
+                                      .icons
+                                      .take(24))
                                     IconWidget(
                                       size: 42,
                                       iconsData: IconsData(

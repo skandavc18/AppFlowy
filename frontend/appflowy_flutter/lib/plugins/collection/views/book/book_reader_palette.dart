@@ -1,5 +1,6 @@
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/collections/book/book_reading_state.dart';
 import 'package:flutter/material.dart';
 
@@ -46,8 +47,8 @@ class BookReaderPalette {
         isDark: false,
         isPaper: true,
         canvas: PaperTheme.editorBackground,
-        page: PaperTheme.editorPreviewBackground,
-        chrome: PaperTheme.popupBackground,
+        page: PaperTheme.editorBackground,
+        chrome: PaperTheme.editorBackground,
         ink: PaperTheme.textPrimary,
         inkMuted: PaperTheme.textSecondary,
         inkFaint: PaperTheme.textMuted,
@@ -64,8 +65,8 @@ class BookReaderPalette {
       isDark: isDark,
       isPaper: false,
       canvas: premium?.canvas ?? scheme.surface,
-      page: premium?.surface ?? scheme.surface,
-      chrome: premium?.floatingSurface ?? scheme.surfaceContainer,
+      page: premium?.canvas ?? scheme.surface,
+      chrome: premium?.canvas ?? scheme.surface,
       ink: premium?.textPrimary ?? scheme.onSurface,
       inkMuted: premium?.textSecondary ?? scheme.onSurfaceVariant,
       inkFaint:
@@ -266,11 +267,11 @@ abstract final class BookReaderMetrics {
   static const chromeHeight = 52.0;
   static const footerHeight = 44.0;
 
-  /// A book page has corners, not a card's radius.
-  static const pageRadius = 3.0;
-  static const pageMargin = 24.0;
+  /// Explicit reading themes may contain one sheet; workspace mode is flush.
+  static const pageRadius = WorkspaceTokens.cardRadius;
+  static const pageMargin = WorkspaceTokens.space6;
   static const controlSize = 30.0;
-  static const controlRadius = 8.0;
+  static const controlRadius = WorkspaceTokens.controlRadius;
   static const motion = Duration(milliseconds: 220);
   static const railMotion = Duration(milliseconds: 240);
   static const turnMotion = Duration(milliseconds: 460);

@@ -1,6 +1,7 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/loading.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
@@ -13,7 +14,7 @@ import 'package:appflowy/workspace/presentation/notifications/widgets/notificati
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/code.pbenum.dart';
-import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -21,9 +22,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 class SidebarWorkspace extends StatefulWidget {
-  const SidebarWorkspace({super.key, required this.userProfile});
+  const SidebarWorkspace({
+    super.key,
+    required this.userProfile,
+    this.showUtilities = true,
+  });
 
   final UserProfilePB userProfile;
+  final bool showUtilities;
 
   @override
   State<SidebarWorkspace> createState() => _SidebarWorkspaceState();
@@ -70,7 +76,7 @@ class _SidebarWorkspaceState extends State<SidebarWorkspace> {
             builder: (_, onHover, child) {
               final palette = SidebarPalette.of(context);
               return AnimatedContainer(
-                duration: SidebarMetrics.hover,
+                duration: WorkspaceTokens.motion(context, SidebarMetrics.hover),
                 curve: SidebarMetrics.curve,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
@@ -85,24 +91,28 @@ class _SidebarWorkspaceState extends State<SidebarWorkspace> {
                         isHover: onHover,
                       ),
                     ),
-                    AnimatedOpacity(
-                      duration: SidebarMetrics.reveal,
-                      curve: SidebarMetrics.curve,
-                      opacity: onHover ? 1 : 0,
-                      child: IgnorePointer(
-                        ignoring: !onHover,
-                        child: Row(
-                          children: [
-                            UserSettingButton(isHover: onHover),
-                            const HSpace(SidebarMetrics.space1),
-                            NotificationButton(
-                              isHover: onHover,
-                              key: ValueKey(currentWorkspace.workspaceId),
-                            ),
-                          ],
+                    if (widget.showUtilities)
+                      AnimatedOpacity(
+                        duration: WorkspaceTokens.motion(
+                          context,
+                          SidebarMetrics.reveal,
+                        ),
+                        curve: SidebarMetrics.curve,
+                        opacity: onHover ? 1 : 0,
+                        child: IgnorePointer(
+                          ignoring: !onHover,
+                          child: Row(
+                            children: [
+                              UserSettingButton(isHover: onHover),
+                              const HSpace(SidebarMetrics.space1),
+                              NotificationButton(
+                                isHover: onHover,
+                                key: ValueKey(currentWorkspace.workspaceId),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
                     const HSpace(SidebarMetrics.space1),
                   ],
                 ),
@@ -314,13 +324,20 @@ class _SidebarSwitchWorkspaceButtonState
   final PopoverController _popoverController = PopoverController();
 
   @override
+  void dispose() {
+    _popoverController.close();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AppFlowyPopover(
       direction: PopoverDirection.bottomWithCenterAligned,
       offset: const Offset(0, 5),
       constraints: const BoxConstraints(maxWidth: 300, maxHeight: 600),
       margin: EdgeInsets.zero,
-      animationDuration: Durations.short3,
+      animationDuration:
+          WorkspaceTokens.motion(context, WorkspaceTokens.entranceDuration),
       beginScaleFactor: 1.0,
       beginOpacity: 0.8,
       controller: _popoverController,
@@ -350,6 +367,10 @@ class _SidebarSwitchWorkspaceButtonState
         );
       },
       child: _SideBarSwitchWorkspaceButtonChild(
+        key: ValueKey(
+          (widget.userProfile.id, widget.currentWorkspace.workspaceId),
+        ),
+        userProfile: widget.userProfile,
         currentWorkspace: widget.currentWorkspace,
         popoverController: _popoverController,
         isHover: widget.isHover,
@@ -360,74 +381,145 @@ class _SidebarSwitchWorkspaceButtonState
 
 class _SideBarSwitchWorkspaceButtonChild extends StatelessWidget {
   const _SideBarSwitchWorkspaceButtonChild({
+    super.key,
     required this.popoverController,
+    required this.userProfile,
     required this.currentWorkspace,
     required this.isHover,
   });
 
   final PopoverController popoverController;
+  final UserProfilePB userProfile;
   final UserWorkspacePB currentWorkspace;
   final bool isHover;
 
   @override
   Widget build(BuildContext context) {
     final palette = SidebarPalette.of(context);
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        onTap: () {
-          context.read<UserWorkspaceBloc>().add(
-                UserWorkspaceEvent.fetchWorkspaces(),
+    final workspace = context.read<UserWorkspaceBloc>();
+    final workspaceId = currentWorkspace.workspaceId;
+    final userId = userProfile.id;
+    bool canEdit() =>
+        context.mounted &&
+        !workspace.isClosed &&
+        workspace.state.userProfile.id == userId &&
+        workspace.state.currentWorkspace?.workspaceId == workspaceId &&
+        workspace.state.currentWorkspace?.role == AFRolePB.Owner;
+
+    return SizedBox(
+      height: HomeSizes.workspaceSectionHeight,
+      child: Row(
+        children: [
+          const HSpace(SidebarMetrics.space1),
+          // The icon is its own keyboard/click target, never a child of the
+          // switcher button. Members/guests can switch but cannot edit it.
+          WorkspaceIcon(
+            key: ValueKey((userId, workspaceId)),
+            workspaceIcon: currentWorkspace.icon,
+            workspaceName: currentWorkspace.name,
+            documentId: workspaceId,
+            iconSize: 20,
+            fontSize: 12,
+            emojiSize: 14,
+            isEditable: canEdit(),
+            isCurrent: canEdit,
+            showBorder: false,
+            borderRadius: 6.0,
+            figmaLineHeight: 14.0,
+            onSelected: (icon) async {
+              if (!canEdit()) return;
+              final stored = icon.toStorageString();
+              if (stored == workspace.state.currentWorkspace?.icon) return;
+              final result = await workspace.repository.updateWorkspaceIcon(
+                workspaceId: workspaceId,
+                icon: stored,
               );
-          popoverController.show();
-        },
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          height: HomeSizes.workspaceSectionHeight,
-          child: Row(
-            children: [
-              const HSpace(SidebarMetrics.space1),
-              WorkspaceIcon(
-                workspaceIcon: currentWorkspace.icon,
-                workspaceName: currentWorkspace.name,
-                documentId: currentWorkspace.workspaceId,
-                iconSize: 20,
-                fontSize: 12,
-                emojiSize: 14,
-                isEditable: false,
-                showBorder: false,
-                borderRadius: 6.0,
-                figmaLineHeight: 14.0,
-                onSelected: (result) => context.read<UserWorkspaceBloc>().add(
-                      UserWorkspaceEvent.updateWorkspaceIcon(
-                        workspaceId: currentWorkspace.workspaceId,
-                        icon: result.toStorageString(),
+              if (!canEdit()) return;
+              result.fold(
+                (_) {
+                  // Read the latest metadata after the ack so a concurrent
+                  // rename is not overwritten by the picker-opening snapshot.
+                  final updated = UserWorkspacePB.fromBuffer(
+                    workspace.state.currentWorkspace!.writeToBuffer(),
+                  )..icon = stored;
+                  final workspaces = [...workspace.state.workspaces];
+                  final index = workspaces.indexWhere(
+                    (item) => item.workspaceId == workspaceId,
+                  );
+                  if (index < 0) {
+                    workspaces.add(updated);
+                  } else {
+                    workspaces[index] = updated;
+                  }
+                  workspace
+                    ..add(
+                      UserWorkspaceEvent.emitWorkspaces(
+                        workspaces: workspaces,
+                      ),
+                    )
+                    ..add(
+                      UserWorkspaceEvent.emitCurrentWorkspace(
+                        workspace: updated,
+                      ),
+                    );
+                },
+                (error) => throw error,
+              );
+            },
+          ),
+          const HSpace(SidebarMetrics.space2),
+          Expanded(
+            child: TextButton(
+              key: const ValueKey('sidebar-workspace-switcher'),
+              onPressed: () {
+                workspace.add(UserWorkspaceEvent.fetchWorkspaces());
+                popoverController.show();
+              },
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                foregroundColor: palette.textPrimary,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
+                ),
+              ).copyWith(
+                overlayColor: WidgetStatePropertyAll(palette.selected),
+                animationDuration:
+                    WorkspaceTokens.motion(context, SidebarMetrics.hover),
+              ),
+              child: SizedBox(
+                height: HomeSizes.workspaceSectionHeight,
+                child: Row(
+                  children: [
+                    Flexible(
+                      child: SidebarText.heading(
+                        currentWorkspace.name,
+                        color: palette.textPrimary,
+                        overflow: TextOverflow.ellipsis,
+                        withTooltip: true,
                       ),
                     ),
-              ),
-              const HSpace(SidebarMetrics.space2),
-              Flexible(
-                child: SidebarText.heading(
-                  currentWorkspace.name,
-                  color: palette.textPrimary,
-                  overflow: TextOverflow.ellipsis,
-                  withTooltip: true,
+                    const HSpace(SidebarMetrics.space1),
+                    AnimatedOpacity(
+                      duration: WorkspaceTokens.motion(
+                        context,
+                        SidebarMetrics.reveal,
+                      ),
+                      curve: SidebarMetrics.curve,
+                      opacity: isHover ? 1 : 0,
+                      child: SidebarGlyph(
+                        SidebarIcon.switcher,
+                        size: 13,
+                        color: palette.textTertiary,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const HSpace(SidebarMetrics.space1),
-              AnimatedOpacity(
-                duration: SidebarMetrics.reveal,
-                curve: SidebarMetrics.curve,
-                opacity: isHover ? 1 : 0,
-                child: SidebarGlyph(
-                  SidebarIcon.switcher,
-                  size: 13,
-                  color: palette.textTertiary,
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }

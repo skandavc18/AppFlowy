@@ -782,8 +782,7 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
         ? RawEmojiIconWidget(
             emoji: iconData,
             emojiSize: HomeSpaceViewSizes.viewIconSize,
-            lineHeight: HomeSpaceViewSizes.viewIconLineHeight /
-                HomeSpaceViewSizes.viewIconSize,
+            opticalRole: IconOpticalRole.sidebar,
           )
         : sidebarViewGlyph(context, widget.view);
 
@@ -800,7 +799,9 @@ class _SingleInnerViewItemState extends State<SingleInnerViewItem> {
         dimension: SidebarMetrics.iconSlot,
         child: Center(
           child: SizedBox.square(
-            dimension: HomeSpaceViewSizes.viewIconSize,
+            dimension: iconData.isNotEmpty
+                ? SidebarMetrics.iconSlot
+                : HomeSpaceViewSizes.viewIconSize,
             child: WorkspaceItemIcon.showsThumbnail(widget.view)
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(4),

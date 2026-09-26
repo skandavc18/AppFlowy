@@ -1,13 +1,23 @@
+import 'dart:async';
+
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/features/workspace/application/workspace_cover_codec.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/features/workspace/presentation/widgets/workspace_cover_actions.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
-import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_action_row.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
-import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
@@ -15,19 +25,20 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_explorer
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_permissions.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
-import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart'
+    hide AFRolePB;
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/style_widget/snap_bar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:universal_platform/universal_platform.dart';
 
 class FolderGalleryHeader extends StatefulWidget {
   const FolderGalleryHeader({
@@ -44,6 +55,17 @@ class FolderGalleryHeader extends StatefulWidget {
     this.onMountService,
     this.userProfile,
     this.workspace,
+    this.viewMode = FileBrowserViewMode.gallery,
+    this.onViewModeChanged,
+    this.searchFocusNode,
+    this.showHeader = true,
+    this.showControls = true,
+    this.contentInset,
+    this.contentPolicy,
+    this.onNewFolder,
+    this.onPaste,
+    this.onRefresh,
+    this.onConnectSource,
   });
 
   final WorkspaceExplorerController controller;
@@ -58,24 +80,136 @@ class FolderGalleryHeader extends StatefulWidget {
   final ValueChanged<ProviderServiceInfo>? onMountService;
   final UserProfilePB? userProfile;
   final UserWorkspacePB? workspace;
+  final FileBrowserViewMode viewMode;
+  final ValueChanged<FileBrowserViewMode>? onViewModeChanged;
+
+  /// Borrowed by the field, never disposed here. A folder's Find region can
+  /// reveal/focus search without replacing this header or its text controller.
+  final FocusNode? searchFocusNode;
+  final bool showHeader;
+  final bool showControls;
+  final double? contentInset;
+  final CollectionContentPolicy? contentPolicy;
+  final VoidCallback? onNewFolder;
+  final VoidCallback? onPaste;
+  final VoidCallback? onRefresh;
+  final VoidCallback? onConnectSource;
 
   @override
   State<FolderGalleryHeader> createState() => _FolderGalleryHeaderState();
 }
 
 class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
-  final FocusNode searchFocusNode = FocusNode(
-    debugLabel: 'knowledge-gallery-search',
-  );
+  FocusNode? _ownedSearchFocusNode;
+  FocusNode get searchFocusNode =>
+      widget.searchFocusNode ??
+      (_ownedSearchFocusNode ??= FocusNode(debugLabel: 'folder-header-search'));
   bool searchExpanded = false;
-  bool decorationRegionHovered = false;
   bool hasWorkspaceCoverOverride = false;
   String? workspaceCoverOverrideId;
   PageStyleCover? workspaceCoverOverride;
+  VoidCallback? _releaseMoreMenu;
+  bool _moreMenuSettling = false;
+  bool _moreMenuCheckScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    searchFocusNode.addListener(_onSearchFocusChanged);
+    widget.searchController.addListener(_onSearchTextChanged);
+  }
+
+  void _onSearchTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onSearchFocusChanged() {
+    if (!mounted) return;
+    setState(() {
+      searchExpanded =
+          searchFocusNode.hasFocus || widget.searchController.text.isNotEmpty;
+    });
+    if (!searchFocusNode.hasFocus) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !searchFocusNode.hasFocus) return;
+      final fieldContext = searchFocusNode.context;
+      if (fieldContext != null && fieldContext.mounted) {
+        unawaited(Scrollable.ensureVisible(fieldContext));
+      }
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _scheduleMoreMenuReleaseCheck();
+  }
+
+  void _scheduleMoreMenuReleaseCheck() {
+    if (_releaseMoreMenu == null || _moreMenuCheckScheduled) return;
+    _moreMenuCheckScheduled = true;
+    // Focus can still refer to a deactivated popup while the tree is being
+    // updated. Inspect ancestry only after that frame has finished detaching it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _moreMenuCheckScheduled = false;
+      _releaseMoreMenuIfCurrent();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _releaseMoreMenuIfCurrent() {
+    if (!mounted || _releaseMoreMenu == null) return;
+    final routeIsCurrent = ModalRoute.of(context)?.isCurrent != false;
+    if (_moreMenuSettling || !routeIsCurrent) return;
+    // A root-navigator menu can cover a still-current nested page route. Its
+    // native focus scope is the close signal in that case, not a timer.
+    final focusedContext = FocusManager.instance.primaryFocus?.context;
+    if (focusedContext?.findAncestorWidgetOfExactType<AppMenuScope>() != null) {
+      return;
+    }
+    final release = _releaseMoreMenu;
+    _releaseMoreMenu = null;
+    if (release == null) return;
+    FocusManager.instance.removeListener(_onMoreMenuFocusChanged);
+    release();
+  }
+
+  void _onMoreMenuFocusChanged() => _scheduleMoreMenuReleaseCheck();
+
+  bool _canEditCurrentFolder({bool identity = false}) {
+    if (!mounted) return false;
+    final controller = widget.controller;
+    final id = controller.currentFolder.id;
+    if (!(identity ? controller.canRename(id) : controller.canWriteTo(id))) {
+      return false;
+    }
+    final view = controller.viewForId(id);
+    final currentWorkspace =
+        context.read<UserWorkspaceBloc?>()?.state.currentWorkspace;
+    return view != null &&
+        canEditFolderExplorerView(
+          view,
+          pageAccess: context.read<PageAccessLevelBloc?>()?.state,
+          workspace:
+              currentWorkspace?.workspaceId == widget.workspace?.workspaceId
+                  ? currentWorkspace ?? widget.workspace
+                  : widget.workspace,
+          identity: identity,
+        );
+  }
 
   @override
   void didUpdateWidget(covariant FolderGalleryHeader oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.searchFocusNode != widget.searchFocusNode) {
+      (oldWidget.searchFocusNode ?? _ownedSearchFocusNode)
+          ?.removeListener(_onSearchFocusChanged);
+      searchFocusNode.addListener(_onSearchFocusChanged);
+    }
+    if (oldWidget.searchController != widget.searchController) {
+      oldWidget.searchController.removeListener(_onSearchTextChanged);
+      widget.searchController.addListener(_onSearchTextChanged);
+    }
     if (oldWidget.workspace?.workspaceId != widget.workspace?.workspaceId) {
       hasWorkspaceCoverOverride = false;
       workspaceCoverOverrideId = null;
@@ -93,7 +227,15 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
 
   @override
   void dispose() {
-    searchFocusNode.dispose();
+    FocusManager.instance.removeListener(_onMoreMenuFocusChanged);
+    final release = _releaseMoreMenu;
+    _releaseMoreMenu = null;
+    if (release != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => release());
+    }
+    searchFocusNode.removeListener(_onSearchFocusChanged);
+    widget.searchController.removeListener(_onSearchTextChanged);
+    _ownedSearchFocusNode?.dispose();
     super.dispose();
   }
 
@@ -103,159 +245,202 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
     final palette = FolderExplorerPalette.of(context);
     final folder = controller.currentFolder;
     final folderView = controller.viewForId(folder.id);
+    context.watch<PageAccessLevelBloc?>();
+    context.watch<UserWorkspaceBloc?>();
     final isWorkspaceRoot = widget.workspace?.workspaceId == folder.id;
     final rootWorkspace = isWorkspaceRoot ? widget.workspace : null;
     final storedWorkspaceCover = !isWorkspaceRoot
         ? null
         : WorkspaceCoverCodec.decode(widget.workspace!.cover);
-    final generatedWorkspaceCover =
-        isWorkspaceRoot && widget.workspace!.cover.trim().isEmpty
-            ? AutomaticViewCover.forWorkspace(name: widget.workspace!.name)
-            : null;
     final workspaceCover = hasWorkspaceCoverOverride &&
             workspaceCoverOverrideId == rootWorkspace?.workspaceId
         ? workspaceCoverOverride
-        : storedWorkspaceCover ?? generatedWorkspaceCover;
+        : storedWorkspaceCover;
     final stats = [
-      LocaleKeys.workspaceFolderExplorer_noteCount.tr(
+      LocaleKeys.workspaceFolderExplorer_fileCount.tr(
         args: [controller.visibleFileCount.toString()],
       ),
-      LocaleKeys.workspaceFolderExplorer_collectionCount.tr(
+      LocaleKeys.workspaceFolderExplorer_folderCount.tr(
         args: [controller.visibleFolderCount.toString()],
       ),
     ];
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontal =
-            KnowledgeGalleryLayout.horizontalPadding(constraints.maxWidth);
-        final compact = constraints.maxWidth < 760;
+        final horizontal = widget.contentInset ??
+            FolderExplorerLayout.horizontalPadding(constraints.maxWidth);
         final cover = isWorkspaceRoot ? workspaceCover : folderView?.cover;
-        return MouseRegion(
-          onEnter: (_) => _setDecorationRegionHovered(true),
-          onExit: (_) => _setDecorationRegionHovered(false),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (cover != null && !cover.isNone)
-                Padding(
-                  padding: EdgeInsets.fromLTRB(horizontal, 24, horizontal, 0),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: KnowledgeGalleryLayout.maxContentWidth,
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(20),
-                        child: SizedBox(
-                          height: compact ? 168 : 218,
-                          width: double.infinity,
-                          child: ViewCoverImage(
-                            cover: cover,
-                            userProfile: widget.userProfile,
-                            width: double.infinity,
-                            height: compact ? 168 : 218,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+        final canEditIdentity = _canEditCurrentFolder(identity: true);
+        final canAddContent = _canEditCurrentFolder();
+        final keepVisible = searchExpanded || controller.query.isNotEmpty;
+        final availableWidth = (constraints.maxWidth - horizontal * 2)
+            .clamp(0.0, double.infinity)
+            .toDouble();
+        final actionStrip = widget.showControls
+            ? WorkspaceActionRow(
+                key: const ValueKey('folder-explorer-actions'),
+                keepVisible: keepVisible ||
+                    widget.searchController.text.isNotEmpty ||
+                    searchFocusNode.hasFocus,
+                // Mode navigation stays available; the standalone options
+                // fallback remains a contextual action, as before.
+                leading: widget.onViewModeChanged != null
+                    ? _buildViewSwitcher(
+                        context,
+                        availableWidth: availableWidth,
+                      )
+                    : null,
+                children: _buildActions(
+                  context,
+                  palette,
+                  availableWidth: availableWidth,
+                  canAddContent: canAddContent,
                 ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  horizontal,
-                  cover == null || cover.isNone ? 34 : 22,
-                  horizontal,
-                  30,
-                ),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: KnowledgeGalleryLayout.maxContentWidth,
+              )
+            : null;
+        if (!widget.showHeader) {
+          return Padding(
+            padding: EdgeInsets.fromLTRB(horizontal, 8, horizontal, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.showControls && controller.breadcrumbs.length > 1)
+                  _GalleryBreadcrumbs(
+                    items: controller.breadcrumbs,
+                    onSelected: widget.onNavigate,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (controller.breadcrumbs.length > 1) ...[
+                if (actionStrip != null) actionStrip,
+              ],
+            ),
+          );
+        }
+        // Native iconActions include Add Cover when the identity is coverless.
+        // Keep decoration children empty: the shell owns the single stable
+        // page action strip instead of mounting a second native pageActions row.
+        Widget buildHeader(
+          Widget? iconActions,
+          Widget? coverActions,
+          Widget? _,
+        ) =>
+            WorkspacePageHeader(
+              // The shell inset already contains its centered outer margin.
+              // Applying a second max-width here would count that margin twice.
+              maxWidth: double.infinity,
+              contentInset: horizontal,
+              overlapIcon: rootWorkspace != null || folderView != null,
+              leading: widget.showControls && controller.breadcrumbs.length > 1
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Keep the explorer's existing context outside the
+                        // picture/icon overlap; navigation ownership is unchanged.
                         _GalleryBreadcrumbs(
                           items: controller.breadcrumbs,
                           onSelected: widget.onNavigate,
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: WorkspaceTokens.space4),
                       ],
-                      if (rootWorkspace case final workspace?) ...[
-                        WorkspaceCoverActions(
-                          workspace: workspace,
-                          userProfile: widget.userProfile,
-                          generateDefaultWhenMissing: true,
-                          onCoverChanged: (cover) =>
-                              _setWorkspaceCoverOverride(workspace, cover),
-                        ),
-                      ] else if (folderView != null) ...[
-                        ViewDecorationActions(
-                          view: folderView,
-                          userProfile: widget.userProfile,
-                          onViewChanged: controller.updateView,
-                          visible: !UniversalPlatform.isDesktopOrWeb ||
-                              decorationRegionHovered,
-                        ),
-                      ],
-                      const SizedBox(height: 18),
-                      if (compact) ...[
-                        _GalleryHeading(
-                          folder: folder,
-                          view: folderView,
-                          workspace: rootWorkspace,
-                          stats: stats,
-                          editing: controller.editingId == folder.id,
-                          onRename: () => controller.beginRename(folder.id),
-                          onSubmitted: rootWorkspace == null
-                              ? controller.commitRename
-                              : _renameWorkspace,
-                          onCancelled: controller.cancelEditing,
-                          onViewChanged: controller.updateView,
-                        ),
-                        const SizedBox(height: 22),
-                        _buildActions(context, palette),
-                      ] else
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: _GalleryHeading(
-                                folder: folder,
-                                view: folderView,
-                                workspace: rootWorkspace,
-                                stats: stats,
-                                editing: controller.editingId == folder.id,
-                                onRename: () =>
-                                    controller.beginRename(folder.id),
-                                onSubmitted: rootWorkspace == null
-                                    ? controller.commitRename
-                                    : _renameWorkspace,
-                                onCancelled: controller.cancelEditing,
-                                onViewChanged: controller.updateView,
-                              ),
-                            ),
-                            const SizedBox(width: 36),
-                            _buildActions(context, palette),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
+                    )
+                  : null,
+              cover: cover != null && !cover.isNone
+                  ? ViewCoverImage(
+                      cover: cover,
+                      userProfile: widget.userProfile,
+                      width: double.infinity,
+                    )
+                  : null,
+              coverActions: coverActions,
+              identity: _GalleryHeading(
+                key: const ValueKey('folder-gallery-heading'),
+                folder: folder,
+                view: folderView,
+                workspace: rootWorkspace,
+                stats: stats,
+                compact: constraints.maxWidth < 600,
+                canEdit: canEditIdentity,
+                editing: controller.editingId == folder.id,
+                onRename: () {
+                  if (_canEditCurrentFolder(identity: true)) {
+                    controller.beginRename(folder.id);
+                  }
+                },
+                onSubmitted: (name) {
+                  if (!_canEditCurrentFolder(identity: true)) {
+                    return Future.value(false);
+                  }
+                  return rootWorkspace == null
+                      ? controller.commitRename(name)
+                      : _renameWorkspace(name);
+                },
+                onCancelled: controller.cancelEditing,
+                onViewChanged: controller.updateView,
+                iconActions: iconActions,
+                actions: actionStrip,
               ),
-            ],
-          ),
+            );
+        return PreviewToolbarRegion(
+          child: rootWorkspace != null
+              ? WorkspaceCoverActions(
+                  workspace: rootWorkspace,
+                  userProfile: widget.userProfile,
+                  visible: keepVisible,
+                  editable: canEditIdentity,
+                  showIconAction: true,
+                  layoutBuilder: buildHeader,
+                  onCoverChanged: (cover) => _setWorkspaceCoverOverride(
+                    rootWorkspace,
+                    cover,
+                  ),
+                )
+              : folderView != null
+                  ? ViewDecorationActions(
+                      view: folderView,
+                      userProfile: widget.userProfile,
+                      onViewChanged: controller.updateView,
+                      visible: keepVisible,
+                      showIconAction: canEditIdentity,
+                      showCoverAction: canEditIdentity,
+                      showDownloadAction: true,
+                      layoutBuilder: buildHeader,
+                    )
+                  : buildHeader(
+                      null,
+                      null,
+                      null,
+                    ),
         );
       },
     );
   }
 
-  void _setDecorationRegionHovered(bool value) {
-    if (decorationRegionHovered == value) {
-      return;
+  void _showViewOptions(BuildContext buttonContext) {
+    final box = buttonContext.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    // Standalone callers can keep delegating to their existing options menu.
+    _showMoreMenu(buttonContext, box.localToGlobal(Offset(0, box.size.height)));
+  }
+
+  void _showMoreMenu(BuildContext buttonContext, Offset position) {
+    if (_releaseMoreMenu != null) return;
+    // The owning explorer opens its menu from a context above this region and
+    // exposes a void callback. Follow the existing route's lifetime without
+    // changing that callback, the menu, or any of its mutation guards.
+    _releaseMoreMenu = PreviewToolbarRegion.hold(buttonContext);
+    _moreMenuSettling = true;
+    FocusManager.instance.addListener(_onMoreMenuFocusChanged);
+    try {
+      widget.onMore(position);
+    } finally {
+      // Also release for callbacks that intentionally do not open a route.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Let the newly built popup apply autofocus before checking its owner.
+        scheduleMicrotask(() {
+          if (!mounted) return;
+          _moreMenuSettling = false;
+          _scheduleMoreMenuReleaseCheck();
+        });
+      });
     }
-    setState(() => decorationRegionHovered = value);
   }
 
   void _setWorkspaceCoverOverride(
@@ -275,7 +460,10 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
   Future<bool> _renameWorkspace(String rawName) async {
     final workspace = widget.workspace;
     final name = rawName.trim();
-    if (workspace == null || name.isEmpty) {
+    if (workspace == null ||
+        name.isEmpty ||
+        !_canEditCurrentFolder(identity: true) ||
+        widget.controller.currentFolder.id != workspace.workspaceId) {
       return false;
     }
     if (workspace.name == name) {
@@ -296,7 +484,10 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
       ),
     );
     final result = (await completion).actionResult?.result;
-    if (!mounted) {
+    if (!mounted ||
+        widget.workspace?.workspaceId != workspace.workspaceId ||
+        widget.controller.currentFolder.id != workspace.workspaceId ||
+        !_canEditCurrentFolder(identity: true)) {
       return false;
     }
     return result?.fold(
@@ -312,123 +503,252 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
         false;
   }
 
-  Widget _buildActions(
-    BuildContext context,
-    FolderExplorerPalette palette,
-  ) {
-    final showSearch = searchExpanded || widget.controller.query.isNotEmpty;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 190),
-          curve: Curves.easeOutCubic,
-          width: showSearch ? 238 : 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: isDark
-                ? Color.alphaBlend(
-                    palette.accent.withValues(alpha: 0.10),
-                    palette.surface,
-                  )
-                : palette.hover.withValues(alpha: 0.52),
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(13),
-            child: Row(
-              children: [
-                _GalleryControl(
-                  icon: Icons.search_rounded,
-                  semanticLabel:
-                      LocaleKeys.workspaceFolderExplorer_searchCollection.tr(),
-                  foregroundColor: isDark ? palette.accent : null,
-                  onPressed: _showSearch,
-                ),
-                if (showSearch)
-                  Expanded(
-                    child: TextField(
-                      controller: widget.searchController,
-                      focusNode: searchFocusNode,
-                      onChanged: widget.onSearchChanged,
-                      onTapOutside: (_) => _collapseSearch(),
-                      cursorColor: palette.accent,
-                      textInputAction: TextInputAction.search,
-                      style: TextStyle(
-                        color: palette.textPrimary,
-                        fontFamily: 'Inter',
-                        fontSize: 13,
-                        height: 1.2,
-                      ),
-                      decoration: InputDecoration(
-                        isCollapsed: true,
-                        hintText: LocaleKeys
-                            .workspaceFolderExplorer_searchCollection
-                            .tr(),
-                        hintStyle: TextStyle(
-                          color: palette.textMuted,
-                          fontFamily: 'Inter',
-                          fontSize: 13,
+  Widget _buildViewSwitcher(
+    BuildContext context, {
+    required double availableWidth,
+  }) {
+    final scale = MediaQuery.textScalerOf(context).scale(13) / 13;
+    final compactControls = availableWidth < 400 * scale;
+    return SizedBox(
+      key: const ValueKey('folder-gallery-view-switcher'),
+      // Different mode labels must not move search or wrap the action strip.
+      width: (compactControls ? 40.0 : 164 * scale).clamp(0.0, availableWidth),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: widget.onViewModeChanged != null
+            ? FileBrowserViewButton(
+                mode: widget.viewMode,
+                onChanged: widget.onViewModeChanged!,
+                compact: compactControls,
+              )
+            : Builder(
+                builder: (buttonContext) => TextButton(
+                  onPressed: () => _showViewOptions(buttonContext),
+                  style: WorkspaceChrome.controlStyle(context),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      WorkspaceGlyph(widget.viewMode.icon, size: 16),
+                      if (!compactControls) ...[
+                        const SizedBox(width: WorkspaceTokens.space2),
+                        Flexible(
+                          child: Text(
+                            widget.viewMode.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: WorkspaceTypography.style(
+                              context,
+                              WorkspaceTextRole.metadata,
+                            ),
+                          ),
                         ),
-                        border: InputBorder.none,
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+      ),
+    );
+  }
+
+  List<Widget> _buildActions(
+    BuildContext context,
+    FolderExplorerPalette palette, {
+    required double availableWidth,
+    required bool canAddContent,
+  }) {
+    final showSearch = !widget.showHeader ||
+        searchExpanded ||
+        widget.searchController.text.isNotEmpty;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final policy = widget.contentPolicy;
+    return [
+      if (widget.onViewModeChanged == null)
+        _buildViewSwitcher(context, availableWidth: availableWidth),
+      AnimatedContainer(
+        key: const ValueKey('folder-gallery-search'),
+        duration: WorkspaceTokens.motion(
+          context,
+          WorkspaceTokens.transitionDuration,
+        ),
+        curve: WorkspaceTokens.curve,
+        width: showSearch ? availableWidth.clamp(0.0, 238.0).toDouble() : 40,
+        height: (MediaQuery.textScalerOf(context).scale(14) * 1.5 + 12)
+            .clamp(40.0, double.infinity)
+            .toDouble(),
+        decoration: BoxDecoration(
+          color: !showSearch
+              ? palette.hover.withValues(alpha: 0)
+              : isDark
+                  ? Color.alphaBlend(
+                      palette.accent.withValues(alpha: 0.10),
+                      palette.surface,
+                    )
+                  : palette.hover.withValues(alpha: palette.hover.a * 0.52),
+          borderRadius: BorderRadius.circular(13),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(13),
+          child: Row(
+            children: [
+              _GalleryControl(
+                icon: Icons.search_rounded,
+                semanticLabel:
+                    LocaleKeys.workspaceFolderExplorer_searchCollection.tr(),
+                foregroundColor: isDark ? palette.accent : null,
+                onPressed: _showSearch,
+              ),
+              Expanded(
+                // Retain the actual field when collapsed. Explicit Find can
+                // focus it; Tab skips it until it is painted.
+                child: FocusTraversalGroup(
+                  descendantsAreTraversable: showSearch,
+                  child: Offstage(
+                    offstage: !showSearch,
+                    child: CallbackShortcuts(
+                      bindings: {
+                        const SingleActivator(LogicalKeyboardKey.escape):
+                            _dismissSearch,
+                      },
+                      child: TextEntryShortcuts(
+                        child: TextField(
+                          key: const ValueKey('folder-explorer-search-field'),
+                          controller: widget.searchController,
+                          focusNode: searchFocusNode,
+                          onChanged: widget.onSearchChanged,
+                          onTapOutside: (_) => _collapseSearch(),
+                          cursorColor: palette.accent,
+                          textInputAction: TextInputAction.search,
+                          style: WorkspaceTypography.style(
+                            context,
+                            WorkspaceTextRole.body,
+                          ),
+                          decoration: InputDecoration(
+                            isCollapsed: true,
+                            hintText: LocaleKeys
+                                .workspaceFolderExplorer_searchCollection
+                                .tr(),
+                            hintStyle: TextStyle(
+                              color: palette.textMuted,
+                              fontSize: 13,
+                            ),
+                            border: InputBorder.none,
+                            filled: false,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                if (showSearch && widget.searchController.text.isNotEmpty)
-                  _GalleryControl(
-                    icon: Icons.close_rounded,
-                    semanticLabel:
-                        LocaleKeys.workspaceFolderExplorer_cancel.tr(),
-                    onPressed: _clearSearch,
-                    compact: true,
-                  ),
-              ],
-            ),
+                ),
+              ),
+              if (showSearch && widget.searchController.text.isNotEmpty)
+                _GalleryControl(
+                  icon: Icons.close_rounded,
+                  semanticLabel: LocaleKeys.workspaceFolderExplorer_cancel.tr(),
+                  onPressed: _clearSearch,
+                  compact: true,
+                ),
+            ],
           ),
         ),
+      ),
+      if (canAddContent && (policy == null || policy.fileKinds.isNotEmpty))
         Builder(
+          key: const ValueKey('folder-gallery-add'),
           builder: (buttonContext) => _GalleryControl(
             icon: Icons.add_rounded,
             label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
             semanticLabel: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
             primary: true,
-            onPressed: () async {
-              final box = buttonContext.findRenderObject() as RenderBox?;
-              if (box == null) {
-                return;
-              }
-              final action = await showWorkspaceFileKindMenu(
-                context: buttonContext,
-                globalPosition:
-                    box.localToGlobal(Offset(0, box.size.height + 4)),
-                onCreateCollection: widget.onCreateCollection,
-                onCreateDatabase: widget.onCreateDatabase,
-                onImportFromService: widget.onImportFromService,
-                onMountService: widget.onMountService,
-              );
-              if (action != null) {
-                widget.onAddFile(action);
-              }
-            },
+            onPressed: !canAddContent
+                ? null
+                : () async {
+                    final folderId = widget.controller.currentFolder.id;
+                    bool canCreate() =>
+                        mounted &&
+                        widget.controller.currentFolder.id == folderId &&
+                        _canEditCurrentFolder();
+                    if (!canCreate()) return;
+                    final box = buttonContext.findRenderObject() as RenderBox?;
+                    if (box == null) {
+                      return;
+                    }
+                    final action = await showWorkspaceFileKindMenu(
+                      context: buttonContext,
+                      globalPosition:
+                          box.localToGlobal(Offset(0, box.size.height + 4)),
+                      kinds: policy?.fileKinds,
+                      onCreateCollection: policy != null &&
+                              !policy.allowsCollections
+                          ? null
+                          : (kind) {
+                              if (canCreate()) widget.onCreateCollection(kind);
+                            },
+                      onCreateDatabase: policy != null && !policy.allowsTables
+                          ? null
+                          : (kind) {
+                              if (canCreate()) widget.onCreateDatabase(kind);
+                            },
+                      onImportFromService: widget.onImportFromService == null
+                          ? null
+                          : (info) {
+                              if (canCreate()) {
+                                widget.onImportFromService!(info);
+                              }
+                            },
+                      onMountService: widget.onMountService == null
+                          ? null
+                          : (info) {
+                              if (canCreate()) widget.onMountService!(info);
+                            },
+                    );
+                    if (action != null && canCreate()) {
+                      widget.onAddFile(action);
+                    }
+                  },
           ),
         ),
-        Builder(
-          builder: (buttonContext) => _GalleryControl(
-            icon: Icons.more_horiz_rounded,
-            semanticLabel: LocaleKeys.workspaceFolderExplorer_more.tr(),
-            onPressed: () {
-              final box = buttonContext.findRenderObject() as RenderBox;
-              widget.onMore(
-                box.localToGlobal(Offset(box.size.width, box.size.height)),
-              );
-            },
-          ),
+      if (canAddContent &&
+          widget.onNewFolder != null &&
+          (policy?.allowsFolders ?? true))
+        _GalleryControl(
+          icon: workspaceAddFolderIcon,
+          semanticLabel: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
+          onPressed: widget.onNewFolder,
         ),
-      ],
-    );
+      if (canAddContent && widget.onPaste != null)
+        _GalleryControl(
+          icon: Icons.content_paste_rounded,
+          semanticLabel: LocaleKeys.workspaceFolderExplorer_paste.tr(),
+          onPressed: widget.onPaste,
+        ),
+      if (widget.onRefresh != null)
+        _GalleryControl(
+          icon: Icons.refresh_rounded,
+          semanticLabel: LocaleKeys.workspaceFolderExplorer_refresh.tr(),
+          onPressed: widget.onRefresh,
+        ),
+      if (widget.onConnectSource != null)
+        _GalleryControl(
+          icon: Icons.cloud_sync_rounded,
+          semanticLabel: LocaleKeys.providers_connectThisFolder.tr(),
+          onPressed: widget.onConnectSource,
+        ),
+      Builder(
+        key: const ValueKey('folder-gallery-options'),
+        builder: (buttonContext) => _GalleryControl(
+          icon: Icons.more_horiz_rounded,
+          semanticLabel: LocaleKeys.workspaceFolderExplorer_more.tr(),
+          onPressed: () {
+            final box = buttonContext.findRenderObject() as RenderBox;
+            _showMoreMenu(
+              buttonContext,
+              box.localToGlobal(Offset(box.size.width, box.size.height)),
+            );
+          },
+        ),
+      ),
+    ];
   }
 
   void _showSearch() {
@@ -446,8 +766,16 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
 
   void _collapseSearch() {
     if (widget.searchController.text.isEmpty && searchExpanded) {
+      searchFocusNode.unfocus();
       setState(() => searchExpanded = false);
     }
+  }
+
+  void _dismissSearch() {
+    widget.searchController.clear();
+    widget.onSearchChanged('');
+    searchFocusNode.unfocus();
+    setState(() => searchExpanded = false);
   }
 
   void _clearSearch() {
@@ -460,6 +788,7 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
 
 class _GalleryHeading extends StatelessWidget {
   const _GalleryHeading({
+    super.key,
     required this.folder,
     required this.view,
     required this.workspace,
@@ -469,6 +798,10 @@ class _GalleryHeading extends StatelessWidget {
     required this.onSubmitted,
     required this.onCancelled,
     required this.onViewChanged,
+    required this.iconActions,
+    required this.actions,
+    required this.canEdit,
+    required this.compact,
   });
 
   final WorkspaceExplorerItem folder;
@@ -480,43 +813,53 @@ class _GalleryHeading extends StatelessWidget {
   final Future<bool> Function(String name) onSubmitted;
   final VoidCallback onCancelled;
   final ValueChanged<ViewPB> onViewChanged;
+  final Widget? iconActions;
+  final Widget? actions;
+  final bool canEdit;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    final titleStyle = TextStyle(
-      color: palette.textPrimary,
-      fontFamily: 'Inter',
-      fontSize: 32,
-      height: 1.08,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -1.05,
-    );
     final rawTitle = workspace?.name ?? folder.name;
     final title = rawTitle.isEmpty
         ? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr()
         : rawTitle;
     final icon = view?.icon.toEmojiIconData();
+    final opticalRole = icon != null && isColorfulViewIcon(icon)
+        ? IconOpticalRole.header
+        : null;
     final Widget? titleIcon;
     if (workspace case final currentWorkspace?) {
-      titleIcon = WorkspaceIcon(
-        key: const ValueKey('workspace-gallery-icon'),
-        workspaceIcon: currentWorkspace.icon,
-        workspaceName: currentWorkspace.name,
-        documentId: currentWorkspace.workspaceId,
-        iconSize: 48,
-        isEditable: true,
-        fontSize: 25,
-        emojiSize: 39,
-        borderRadius: 14,
-        figmaLineHeight: 40,
-        showBorder: false,
-        onSelected: (result) => context.read<UserWorkspaceBloc>().add(
-              UserWorkspaceEvent.updateWorkspaceIcon(
-                workspaceId: currentWorkspace.workspaceId,
-                icon: result.toStorageString(),
+      final workspaceIcon =
+          EmojiIconData.fromStorageString(currentWorkspace.icon);
+      final opticalSize = isColorfulViewIcon(workspaceIcon)
+          ? IconOpticalSize.resolve(
+              role: IconOpticalRole.header,
+              baseSize: WorkspaceTokens.pageIconSize,
+            )
+          : null;
+      titleIcon = MediaQuery.withNoTextScaling(
+        child: WorkspaceIcon(
+          key: const ValueKey('workspace-gallery-icon'),
+          workspaceIcon: currentWorkspace.icon,
+          workspaceName: currentWorkspace.name,
+          documentId: currentWorkspace.workspaceId,
+          iconSize: opticalSize?.slotSize ?? WorkspaceTokens.pageIconSize,
+          isEditable: canEdit,
+          fontSize: 25,
+          emojiSize: opticalSize?.artworkSize ?? WorkspaceTokens.pageIconSize,
+          borderRadius: 14,
+          figmaLineHeight:
+              opticalSize?.artworkSize ?? WorkspaceTokens.pageIconSize,
+          showBorder: false,
+          onSelected: (result) => context.read<UserWorkspaceBloc>().add(
+                UserWorkspaceEvent.updateWorkspaceIcon(
+                  workspaceId: currentWorkspace.workspaceId,
+                  icon: result.toStorageString(),
+                ),
               ),
-            ),
+        ),
       );
     } else if (view case final currentView?) {
       titleIcon = ViewIconPicker(
@@ -524,82 +867,84 @@ class _GalleryHeading extends StatelessWidget {
         onViewChanged: onViewChanged,
         child: SizedBox.square(
           key: const ValueKey('folder-gallery-title-icon'),
-          dimension: 48,
+          dimension: opticalRole != null
+              ? IconOpticalSize.resolve(
+                  role: opticalRole,
+                  baseSize: WorkspaceTokens.pageIconSize,
+                ).slotSize
+              : WorkspaceTokens.pageIconSize,
           child: Center(
-            child: icon != null && icon.isNotEmpty
-                ? RawEmojiIconWidget(
-                    emoji: icon,
-                    emojiSize: 42,
-                    lineHeight: 1,
-                  )
-                : WorkspaceItemIcon.fromView(
-                    view: currentView,
-                    size: 40,
-                    color: palette.accent,
-                  ),
+            child: MediaQuery.withNoTextScaling(
+              child: icon != null && icon.isNotEmpty
+                  ? RawEmojiIconWidget(
+                      emoji: icon,
+                      emojiSize: WorkspaceTokens.pageIconSize,
+                      opticalRole: opticalRole,
+                      lineHeight: 1,
+                    )
+                  : const WorkspaceGlyph(
+                      Icons.folder_rounded,
+                      size: WorkspaceTokens.pageIconSize,
+                    ),
+            ),
           ),
         ),
       );
     } else {
       titleIcon = null;
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 560),
-          child: Row(
-            children: [
-              if (titleIcon != null) ...[
-                titleIcon,
-                const SizedBox(width: 14),
-              ],
-              Expanded(
-                child: WorkspaceInlineEditableText(
-                  key: const ValueKey('folder-gallery-title'),
-                  text: title,
-                  editingValue: rawTitle,
-                  editing: editing,
-                  onSubmitted: onSubmitted,
-                  onCancelled: onCancelled,
-                  onTap: onRename,
-                  maxLines: 2,
-                  style: titleStyle,
-                ),
-              ),
-            ],
+    return WorkspacePageIdentity(
+      icon: ExcludeFocus(
+        excluding: !canEdit,
+        child: IgnorePointer(
+          ignoring: !canEdit,
+          child: titleIcon ?? const SizedBox.shrink(),
+        ),
+      ),
+      iconActions: iconActions,
+      title: ExcludeFocus(
+        excluding: !canEdit,
+        child: IgnorePointer(
+          ignoring: !canEdit,
+          child: WorkspaceInlineEditableText(
+            key: const ValueKey('folder-gallery-title'),
+            text: title,
+            editingValue: rawTitle,
+            editing: editing,
+            onSubmitted: onSubmitted,
+            onCancelled: onCancelled,
+            onTap: canEdit ? onRename : null,
+            maxLines: 2,
+            style: WorkspaceTypography.style(
+              context,
+              WorkspaceTextRole.pageTitle,
+              compact: compact,
+            ),
           ),
         ),
-        const SizedBox(height: 11),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var index = 0; index < stats.length; index++) ...[
-              if (index > 0)
-                Container(
-                  width: 3,
-                  height: 3,
-                  margin: const EdgeInsets.symmetric(horizontal: 9),
-                  decoration: BoxDecoration(
-                    color: palette.textMuted.withValues(alpha: 0.55),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              Text(
-                stats[index],
-                style: TextStyle(
-                  color: palette.textMuted,
-                  fontFamily: 'Inter',
-                  fontSize: 12,
-                  height: 1.2,
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.08,
+      ),
+      metadata: Wrap(
+        spacing: WorkspaceTokens.space3,
+        runSpacing: WorkspaceTokens.space1,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          for (var index = 0; index < stats.length; index++) ...[
+            if (index > 0)
+              Container(
+                width: 3,
+                height: 3,
+                decoration: BoxDecoration(
+                  color: palette.textMuted.withValues(alpha: 0.55),
+                  shape: BoxShape.circle,
                 ),
               ),
-            ],
+            Text(
+              stats[index],
+            ),
           ],
-        ),
-      ],
+        ],
+      ),
+      actions: actions,
     );
   }
 }
@@ -647,7 +992,7 @@ class _GalleryBreadcrumbs extends StatelessWidget {
   }
 }
 
-class _GalleryBreadcrumb extends StatefulWidget {
+class _GalleryBreadcrumb extends StatelessWidget {
   const _GalleryBreadcrumb({
     required this.item,
     required this.current,
@@ -659,52 +1004,21 @@ class _GalleryBreadcrumb extends StatefulWidget {
   final VoidCallback onPressed;
 
   @override
-  State<_GalleryBreadcrumb> createState() => _GalleryBreadcrumbState();
-}
-
-class _GalleryBreadcrumbState extends State<_GalleryBreadcrumb> {
-  bool hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return MouseRegion(
-      cursor:
-          widget.current ? SystemMouseCursors.basic : SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        onTap: widget.current ? null : widget.onPressed,
-        behavior: HitTestBehavior.opaque,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          child: AnimatedDefaultTextStyle(
-            duration: const Duration(milliseconds: 150),
-            curve: Curves.easeOutCubic,
-            style: TextStyle(
-              color: widget.current
-                  ? palette.textSecondary
-                  : hovered
-                      ? palette.textPrimary
-                      : palette.textMuted,
-              fontFamily: 'Inter',
-              fontSize: 11.5,
-              height: 1.2,
-              fontWeight: widget.current ? FontWeight.w500 : FontWeight.w400,
-            ),
-            child: Text(
-              widget.item.name.isEmpty
-                  ? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr()
-                  : widget.item.name,
-            ),
-          ),
-        ),
+    return TextButton(
+      onPressed: current ? null : onPressed,
+      style: WorkspaceChrome.controlStyle(context),
+      child: Text(
+        item.name.isEmpty
+            ? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr()
+            : item.name,
+        style: WorkspaceTypography.style(context, WorkspaceTextRole.metadata),
       ),
     );
   }
 }
 
-class _GalleryControl extends StatefulWidget {
+class _GalleryControl extends StatelessWidget {
   const _GalleryControl({
     required this.icon,
     required this.semanticLabel,
@@ -718,105 +1032,47 @@ class _GalleryControl extends StatefulWidget {
   final IconData icon;
   final String? label;
   final String semanticLabel;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final bool primary;
   final bool compact;
   final Color? foregroundColor;
 
   @override
-  State<_GalleryControl> createState() => _GalleryControlState();
-}
-
-class _GalleryControlState extends State<_GalleryControl> {
-  bool hovered = false;
-  bool pressed = false;
-
-  @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    final foreground = widget.primary
-        ? PaperTheme.isEnabled(context)
-            ? PaperTheme.onAccent
-            : Theme.of(context).colorScheme.onPrimary
-        : widget.foregroundColor ?? palette.textSecondary;
-    final background = widget.primary
-        ? hovered
-            ? Color.alphaBlend(
-                Colors.black.withValues(alpha: 0.08),
-                palette.accent,
-              )
-            : palette.accent
-        : hovered
-            ? palette.hover.withValues(alpha: 0.78)
-            : Colors.transparent;
-    final horizontal = widget.label == null ? 0.0 : 15.0;
-
-    return Semantics(
-      button: true,
-      label: widget.semanticLabel,
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => hovered = true),
-        onExit: (_) => setState(() {
-          hovered = false;
-          pressed = false;
-        }),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          onTapDown: (_) => setState(() => pressed = true),
-          onTapCancel: () => setState(() => pressed = false),
-          onTapUp: (_) => setState(() => pressed = false),
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedScale(
-            scale: pressed ? 0.97 : 1,
-            duration: const Duration(milliseconds: 90),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              curve: Curves.easeOutCubic,
-              height: widget.compact ? 32 : 40,
-              width: widget.label == null
-                  ? widget.compact
-                      ? 32
-                      : 40
-                  : null,
-              padding: EdgeInsets.symmetric(horizontal: horizontal),
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius: BorderRadius.circular(widget.primary ? 13 : 12),
-                boxShadow: widget.primary && !pressed
-                    ? [
-                        BoxShadow(
-                          color: palette.accent.withValues(alpha: 0.16),
-                          blurRadius: 18,
-                          offset: const Offset(0, 7),
-                          spreadRadius: -6,
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(widget.icon, size: 17, color: foreground),
-                  if (widget.label != null) ...[
-                    const SizedBox(width: 7),
-                    Text(
-                      widget.label!,
-                      style: TextStyle(
-                        color: foreground,
-                        fontFamily: 'Inter',
-                        fontSize: 12.5,
-                        height: 1,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.08,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+    final foreground = onPressed == null
+        ? palette.textMuted.withValues(alpha: 0.45)
+        : primary
+            ? palette.accent
+            : foregroundColor ?? palette.textSecondary;
+    final style = WorkspaceChrome.controlStyle(
+      context,
+      accent: foreground,
+    );
+    if (label == null) {
+      return SizedBox.square(
+        dimension: compact ? 32 : 40,
+        child: IconButton(
+          tooltip: semanticLabel,
+          onPressed: onPressed,
+          style: style,
+          icon: WorkspaceGlyph(icon, size: 17, color: foreground),
+        ),
+      );
+    }
+    return Tooltip(
+      message: semanticLabel,
+      excludeFromSemantics: true,
+      child: TextButton(
+        onPressed: onPressed,
+        style: style,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            WorkspaceGlyph(icon, size: 17, color: foreground),
+            const SizedBox(width: 7),
+            Flexible(child: Text(label!)),
+          ],
         ),
       ),
     );

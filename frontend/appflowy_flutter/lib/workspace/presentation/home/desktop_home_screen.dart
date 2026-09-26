@@ -2,7 +2,6 @@ import 'package:appflowy/features/workspace/data/repositories/rust_workspace_rep
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
-import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/startup/startup_profile.dart';
 import 'package:appflowy/startup/tasks/memory_leak_detector.dart';
@@ -14,10 +13,8 @@ import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
-import 'package:appflowy/workspace/application/user/user_workspace_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
-import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/command_palette.dart';
 import 'package:appflowy/workspace/presentation/encryption/workspace_lock_screen.dart';
 import 'package:appflowy/workspace/presentation/home/af_focus_manager.dart';
@@ -31,7 +28,6 @@ import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart'
     show UserProfilePB;
-import 'package:collection/collection.dart';
 import 'package:flowy_infra_ui/style_widget/container.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -44,6 +40,7 @@ import '../widgets/sidebar_resizer.dart';
 import 'home_layout.dart';
 import 'home_stack.dart';
 import 'menu/sidebar/slider_menu_hover_trigger.dart';
+import 'startup_home.dart';
 
 class DesktopHomeScreen extends StatelessWidget {
   const DesktopHomeScreen({super.key});
@@ -96,6 +93,7 @@ class DesktopHomeScreen extends StatelessWidget {
                 ),
                 BlocProvider<TabsBloc>.value(value: getIt<TabsBloc>()),
                 BlocProvider<HomeBloc>(
+                  lazy: false,
                   create: (_) =>
                       HomeBloc(workspaceLatest)..add(const HomeEvent.initial()),
                 ),
@@ -118,67 +116,46 @@ class DesktopHomeScreen extends StatelessWidget {
                         child: Icon(Icons.memory),
                       )
                     : null,
-                body: BlocListener<HomeBloc, HomeState>(
-                  listenWhen: (p, c) => p.latestView != c.latestView,
-                  listener: (context, state) {
-                    final view = state.latestView;
-                    if (view != null) {
-                      final isWorkspaceRoot = view.isWorkspaceRootFor(
-                        state.workspaceSetting.workspaceId,
-                      );
-                      // Only open the last opened view if the [TabsState.currentPageManager] current opened plugin is blank and the last opened view is not null.
-                      // All opened widgets that display on the home screen are in the form of plugins. There is a list of built-in plugins defined in the [PluginType] enum, including board, grid and trash.
-                      final currentPageManager =
-                          context.read<TabsBloc>().state.currentPageManager;
-
-                      if (currentPageManager.plugin.pluginType ==
-                          PluginType.blank) {
-                        context.read<TabsBloc>().openPlugin(
-                              view,
-                              setLatest: !isWorkspaceRoot,
-                            );
-                      }
-
-                      if (!isWorkspaceRoot) {
-                        // switch to the space that contains the last opened view
-                        _switchToSpace(view);
-                      }
-                    }
-                  },
-                  child: BlocBuilder<HomeSettingBloc, HomeSettingState>(
-                    buildWhen: (previous, current) => previous != current,
-                    builder: (context, state) => BlocProvider(
-                      create: (_) => UserWorkspaceBloc(
-                        userProfile: userProfile,
-                        repository: RustWorkspaceRepositoryImpl(
-                          userId: userProfile.id,
-                        ),
-                      )..add(UserWorkspaceEvent.initialize()),
-                      child:
-                          BlocListener<UserWorkspaceBloc, UserWorkspaceState>(
-                        listenWhen: (previous, current) =>
-                            previous.currentWorkspace !=
-                            current.currentWorkspace,
-                        listener: (context, state) {
-                          if (!context.mounted) return;
-                          final workspaceBloc =
-                              context.read<UserWorkspaceBloc?>();
-                          final spaceBloc = context.read<SpaceBloc?>();
-                          CommandPalette.maybeOf(context)?.updateBlocs(
-                            workspaceBloc: workspaceBloc,
-                            spaceBloc: spaceBloc,
-                          );
-                        },
-                        child: HomeHotKeys(
-                          userProfile: userProfile,
-                          child: FlowyContainer(
-                            Theme.of(context).colorScheme.surface,
-                            child: LayoutBuilder(
-                              builder: (context, constraints) => _buildBody(
-                                context,
-                                userProfile,
-                                workspaceLatest,
-                                constraints,
+                body: BlocBuilder<HomeSettingBloc, HomeSettingState>(
+                  buildWhen: (previous, current) => previous != current,
+                  builder: (context, state) => BlocProvider(
+                    create: (_) => UserWorkspaceBloc(
+                      userProfile: userProfile,
+                      repository: RustWorkspaceRepositoryImpl(
+                        userId: userProfile.id,
+                      ),
+                    )..add(UserWorkspaceEvent.initialize()),
+                    child: BlocListener<UserWorkspaceBloc, UserWorkspaceState>(
+                      listenWhen: (previous, current) =>
+                          previous.currentWorkspace != current.currentWorkspace,
+                      listener: (context, state) {
+                        if (!context.mounted) return;
+                        final workspaceBloc =
+                            context.read<UserWorkspaceBloc?>();
+                        final spaceBloc = context.read<SpaceBloc?>();
+                        CommandPalette.maybeOf(context)?.updateBlocs(
+                          workspaceBloc: workspaceBloc,
+                          spaceBloc: spaceBloc,
+                        );
+                      },
+                      child: BlocSelector<UserWorkspaceBloc, UserWorkspaceState,
+                          String>(
+                        selector: (state) =>
+                            state.currentWorkspace?.workspaceId ??
+                            workspaceLatest.workspaceId,
+                        builder: (context, workspaceId) => StartupHome(
+                          workspaceId: workspaceId,
+                          child: HomeHotKeys(
+                            userProfile: userProfile,
+                            child: FlowyContainer(
+                              Theme.of(context).colorScheme.surface,
+                              child: LayoutBuilder(
+                                builder: (context, constraints) => _buildBody(
+                                  context,
+                                  userProfile,
+                                  workspaceLatest,
+                                  constraints,
+                                ),
                               ),
                             ),
                           ),
@@ -364,18 +341,6 @@ class DesktopHomeScreen extends StatelessWidget {
             ),
       ],
     );
-  }
-
-  Future<void> _switchToSpace(ViewPB view) async {
-    final ancestors = await ViewBackendService.getViewAncestors(view.id);
-    final space = ancestors.fold(
-      (ancestors) =>
-          ancestors.items.firstWhereOrNull((ancestor) => ancestor.isSpace),
-      (error) => null,
-    );
-    if (space?.id != switchToSpaceNotifier.value?.id) {
-      switchToSpaceNotifier.value = space;
-    }
   }
 }
 

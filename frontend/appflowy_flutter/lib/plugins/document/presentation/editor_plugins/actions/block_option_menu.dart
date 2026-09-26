@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/encryption
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/toolbar_item/text_suggestions_toolbar_item.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide QuoteBlockKeys;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
@@ -174,7 +175,8 @@ List<AppMenuEntry> _turnIntoEntries(EditorState editorState) {
   }
 
   final unsupported = editorState.getNodesInSelection(selection).any(
-      (n) => !EditorOptionActionType.turnInto.supportTypes.contains(n.type));
+        (n) => !EditorOptionActionType.turnInto.supportTypes.contains(n.type),
+      );
   if (unsupported) {
     return [_turnIntoItem(editorState, pateItem, null)];
   }
@@ -287,9 +289,8 @@ class _BlockGlyph extends StatelessWidget {
   final FlowySvgData data;
 
   @override
-  Widget build(BuildContext context) => FlowySvg(
+  Widget build(BuildContext context) => WorkspaceGlyph.svg(
         data,
-        size: const Size.square(AppMenuMetrics.iconSize),
         color: AppMenuStyle.of(context).icon,
       );
 }

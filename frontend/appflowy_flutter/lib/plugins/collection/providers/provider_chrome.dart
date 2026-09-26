@@ -438,7 +438,7 @@ class _ActionButtonState extends State<_ActionButton> {
     final background = widget.primary
         ? palette.accent.withValues(alpha: hovered ? 0.20 : 0.13)
         : Color.alphaBlend(
-            palette.hover.withValues(alpha: hovered ? 1 : 0),
+            hovered ? palette.hover : palette.hover.withValues(alpha: 0),
             palette.surface,
           );
     return MouseRegion(
@@ -503,7 +503,9 @@ class _TappableState extends State<_Tappable> {
             decoration: BoxDecoration(
               // Fading from the real colour at zero alpha, never from
               // transparent black, so the hover does not flash grey.
-              color: widget.palette.hover.withValues(alpha: hovered ? 1 : 0),
+              color: hovered
+                  ? widget.palette.hover
+                  : widget.palette.hover.withValues(alpha: 0),
               borderRadius: BorderRadius.circular(7),
             ),
             child: widget.child,

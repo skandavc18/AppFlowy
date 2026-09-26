@@ -16,9 +16,12 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_p
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_view.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
@@ -225,11 +228,16 @@ void main() {
                 : find.text('AppFlowy has no viewer for this file type yet.');
             final originalRenderer = tester.widget(renderer);
             final beforeBounds = tester.getRect(renderer);
+            expect(_revealFor(tester, _copy).opacity, 0);
             expect(find.byKey(_copy).hitTestable(), findsNothing);
-            await tester.tapAt(tester.getCenter(find.byKey(_copy)));
+            await tester.tapAt(
+              tester.getCenter(find.byKey(_copy)),
+              kind: ui.PointerDeviceKind.mouse,
+            );
             expect(actions.calls, isEmpty);
             await mouse.moveTo(const Offset(40, 180));
             await _motion(tester);
+            expect(_revealFor(tester, _copy).opacity, 1);
             expect(find.byKey(_copy).hitTestable(), findsOneWidget);
             expect(tester.widget(renderer), same(originalRenderer));
             expect(tester.getRect(renderer), beforeBounds);
@@ -239,7 +247,7 @@ void main() {
             expect(_target(tester).isImage, image);
             expect(_target(tester).httpHeaders, isEmpty);
             expect(_target(tester).requireAuthentication, isFalse);
-            _expectSurface(tester, mode);
+            _expectSurface(tester, mode, decorated: false);
             final before = await _pixels(tester);
             await tester.tap(find.byKey(_copy));
             await tester.pump();
@@ -275,6 +283,161 @@ void main() {
           }
         });
       }
+
+      testWidgets(
+          'workspace $mode: ${image ? 'image' : 'unknown'} '
+          'separates decoration hover from media menu holds', (tester) async {
+        final actions = _Actions();
+        final file = image ? photo : unknown;
+        final name = image ? 'toolbar.png' : 'toolbar.unknown';
+        final loader = _Files({name: file});
+        final mouse =
+            await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+        const away = Offset(-20, -20);
+        const coverKey = ValueKey('view-decoration-cover');
+        try {
+          await mouse.addPointer(location: away);
+          if (image) await _warmPhoto(tester, photo);
+          await _mount(
+            tester,
+            mode: mode,
+            child: WorkspaceFileView(
+              view: _view('menu-holds', name, _cloud),
+              mediaActions: actions,
+              resolveStorageUrl: _storedUrl,
+              materializeFile: loader.load,
+            ),
+          );
+          await _pumpUntil(tester, () => _target(tester).source.isNotEmpty);
+          if (image) {
+            await _pumpUntil(
+              tester,
+              () =>
+                  tester
+                      .widget<DocumentViewportHeader>(
+                        find.byType(DocumentViewportHeader),
+                      )
+                      .identity
+                      .subtitle !=
+                  null,
+            );
+          }
+          final renderer = image
+              ? find.byType(InteractiveViewer)
+              : find.text('AppFlowy has no viewer for this file type yet.');
+          final rendererElement = tester.element(renderer);
+          final rendererWidget = tester.widget(renderer);
+          final rendererBounds = tester.getRect(renderer);
+          final mediaContext = tester.element(find.byType(MediaActionButtons));
+          final mediaState = tester.state(find.byType(MediaActionButtons));
+          final copyFocus = _button(tester, _copy).focusNode;
+          final source = _target(tester);
+          final decoration = tester.state(
+            find.byKey(const ValueKey('workspace-file-decoration')),
+          );
+          final header = tester.getRect(
+            find.byKey(const ValueKey('workspace-file-header-region')),
+          );
+          final headerPoint = tester.getTopLeft(
+                find.byKey(const ValueKey('workspace-file-identity-row')),
+              ) +
+              const Offset(2, 2);
+          expect(header.contains(rendererBounds.center), isFalse);
+          expect(_revealFor(tester, _copy).opacity, 0);
+          expect(_revealFor(tester, coverKey).opacity, 0);
+
+          await mouse.moveTo(rendererBounds.center);
+          await _motion(tester);
+          expect(_revealFor(tester, _copy).opacity, 1);
+          expect(_revealFor(tester, _share).opacity, 1);
+          expect(_revealFor(tester, coverKey).opacity, 0);
+          expect(find.byKey(coverKey).hitTestable(), findsNothing);
+
+          await mouse.moveTo(headerPoint);
+          await _motion(tester);
+          expect(_revealFor(tester, _copy).opacity, 1);
+          expect(_revealFor(tester, coverKey).opacity, 1);
+          expect(find.byKey(coverKey).hitTestable(), findsOneWidget);
+          await mouse.moveTo(away);
+          await _motion(tester);
+          expect(_revealFor(tester, _copy).opacity, 0);
+          expect(_revealFor(tester, coverKey).opacity, 0);
+
+          // Quiet header space still reveals on first touch without invoking
+          // a hidden action. Mouse entry/exit restores the desktop policy.
+          await tester.tapAt(headerPoint);
+          await _motion(tester);
+          expect(_revealFor(tester, _copy).opacity, 1);
+          expect(_revealFor(tester, coverKey).opacity, 1);
+          await mouse.moveTo(headerPoint);
+          await mouse.moveTo(away);
+          await _motion(tester);
+          expect(_revealFor(tester, _copy).opacity, 0);
+          expect(_revealFor(tester, coverKey).opacity, 0);
+
+          // Renderer callbacks retain their original context even when their
+          // controls are hosted in the header. Media-origin holds must work
+          // too, and a decoration's local hold must still reach the viewer.
+          for (final (origin, revealsDecoration) in [
+            (rendererElement, false),
+            (mediaContext, false),
+            (tester.element(find.byKey(coverKey)), true),
+          ]) {
+            final menu = showAppMenu<void>(
+              context: origin,
+              globalPosition: const Offset(400, 300),
+              entries: [
+                AppMenuItem(label: 'File view options', onSelected: () {}),
+              ],
+            );
+            await _motion(tester);
+            await tester.pump(const Duration(seconds: 2));
+            expect(find.byType(AppMenuRow), findsOneWidget);
+            expect(
+              FocusManager.instance.primaryFocus?.debugLabel,
+              'app_context_menu',
+            );
+            expect(copyFocus!.hasFocus, isFalse);
+            expect(_revealFor(tester, _copy).opacity, 1);
+            expect(_revealFor(tester, _share).opacity, 1);
+            expect(
+              _revealFor(tester, coverKey).opacity,
+              revealsDecoration ? 1 : 0,
+            );
+            await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+            await _motion(tester);
+            await menu;
+            expect(find.byType(AppMenuRow), findsNothing);
+            expect(_revealFor(tester, _copy).opacity, 0);
+            expect(_revealFor(tester, coverKey).opacity, 0);
+          }
+
+          expect(tester.element(renderer), same(rendererElement));
+          expect(tester.widget(renderer), same(rendererWidget));
+          expect(tester.getRect(renderer), rendererBounds);
+          expect(
+            tester.element(find.byType(MediaActionButtons)),
+            same(mediaContext),
+          );
+          expect(
+            tester.state(find.byType(MediaActionButtons)),
+            same(mediaState),
+          );
+          expect(_button(tester, _copy).focusNode, same(copyFocus));
+          expect(_target(tester), source);
+          expect(
+            tester
+                .state(find.byKey(const ValueKey('workspace-file-decoration'))),
+            same(decoration),
+          );
+          expect(loader.requests, [(source: _cloud, name: name)]);
+          expect(actions.calls, isEmpty);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await mouse.removePointer();
+          await _unmount(tester, actions);
+        }
+      });
     }
 
     for (final kind in ['text', 'json', 'archive']) {
@@ -2231,15 +2394,39 @@ MediaActionSource _target(WidgetTester tester) =>
 IconButton _button(WidgetTester tester, Key key) =>
     tester.widget<IconButton>(find.byKey(key));
 
-AnimatedOpacity _revealFor(WidgetTester tester, Key key) =>
-    tester.widget<AnimatedOpacity>(
-      find
-          .ancestor(
-            of: find.byKey(key),
-            matching: find.byKey(const ValueKey('media-action-reveal')),
-          )
-          .first,
-    );
+({double opacity, Duration duration}) _revealFor(WidgetTester tester, Key key) {
+  final control = find.byKey(key);
+  final reveals = find.ancestor(
+    of: control,
+    matching: find.byWidgetPredicate(
+      (widget) => widget is PreviewToolbar || widget is MediaActionReveal,
+    ),
+  );
+  expect(reveals, findsWidgets);
+  final durations = <Duration>{};
+  for (final element in reveals.evaluate()) {
+    final fade = find
+        .descendant(
+          of: find
+              .byElementPredicate((candidate) => identical(candidate, element)),
+          matching: find.byType(AnimatedOpacity),
+        )
+        .first;
+    durations.add(tester.widget<AnimatedOpacity>(fade).duration);
+  }
+  expect(durations, hasLength(1));
+
+  // Read the paint chain, including every enclosing reveal/route fade. A
+  // visible target on an inner toolbar cannot mask a hidden outer toolbar.
+  var opacity = 1.0;
+  for (RenderObject? object = tester.renderObject(control);
+      object != null;
+      object = object.parent) {
+    if (object is RenderAnimatedOpacity) opacity *= object.opacity.value;
+    if (object is RenderOpacity) opacity *= object.opacity;
+  }
+  return (opacity: opacity, duration: durations.single);
+}
 
 Rect _expectBadge(WidgetTester tester) {
   final badge = tester.getRect(find.byKey(_copied));
@@ -2251,18 +2438,34 @@ Rect _expectBadge(WidgetTester tester) {
   return badge.shift(-bounds.topLeft);
 }
 
-void _expectSurface(WidgetTester tester, String mode) {
+void _expectSurface(
+  WidgetTester tester,
+  String mode, {
+  bool decorated = true,
+}) {
   final finder = find.byKey(const ValueKey('media-action-surface'));
   final context = tester.element(finder);
   final decoration =
       tester.widget<DecoratedBox>(finder).decoration as BoxDecoration;
   expect(
+    tester
+        .widget<MediaActionButtons>(find.byType(MediaActionButtons))
+        .decorated,
+    decorated,
+  );
+  expect(
     decoration.color,
-    mode == 'paper'
-        ? PaperTheme.popupBackground
-        : PremiumThemeExtension.of(context).floatingSurface,
+    decorated
+        ? mode == 'paper'
+            ? PaperTheme.popupBackground
+            : PremiumThemeExtension.of(context).floatingSurface
+        : null,
   );
   expect(decoration.border, isNull);
+  expect(
+    decoration.boxShadow,
+    decorated ? EditorSurfaceStyle.embedShadow(context) : null,
+  );
 }
 
 Future<void> _warmPhoto(WidgetTester tester, File file) async {

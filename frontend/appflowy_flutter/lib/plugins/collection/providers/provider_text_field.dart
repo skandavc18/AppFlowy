@@ -395,7 +395,9 @@ class _IconButtonState extends State<_IconButton> {
             height: 30,
             margin: const EdgeInsets.all(2),
             decoration: BoxDecoration(
-              color: widget.palette.hover.withValues(alpha: hovered ? 1 : 0),
+              color: hovered
+                  ? widget.palette.hover
+                  : widget.palette.hover.withValues(alpha: 0),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Icon(

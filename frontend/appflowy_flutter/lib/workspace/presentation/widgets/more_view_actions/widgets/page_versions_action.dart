@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/page_versions/page_versions.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -33,7 +34,8 @@ class PageVersionsAction extends StatelessWidget {
           PageVersionPanel.instance.open(view.id);
           onOpened?.call();
         },
-        leftIconBuilder: (_) => const Icon(Icons.history_rounded, size: 16),
+        leftIconBuilder: (_) =>
+            const WorkspaceGlyph(Icons.history_rounded, size: 16),
         iconPadding: 10.0,
         textBuilder: (_) => FlowyText(
           LocaleKeys.pageVersions_showVersions.tr(),

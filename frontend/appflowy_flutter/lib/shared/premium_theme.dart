@@ -1,4 +1,5 @@
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra/colorscheme/colorscheme.dart';
 import 'package:flowy_infra/theme.dart';
@@ -62,6 +63,16 @@ class PremiumThemeExtension extends ThemeExtension<PremiumThemeExtension> {
   final Color shadow;
   final Color scrim;
   final Color paperGrain;
+
+  /// Interaction washes, not opaque replacement surfaces. Scale the existing
+  /// alpha (including a custom theme's alpha) and retain its RGB at rest.
+  Color get subtleHover => hoverOverlay.withValues(
+        alpha: (hoverOverlay.a * 0.65).clamp(0.0, 0.07),
+      );
+
+  Color get subtlePressed => hoverOverlay.withValues(
+        alpha: (hoverOverlay.a * 1.2).clamp(0.0, 0.12),
+      );
 
   static PremiumThemeExtension of(BuildContext context) {
     final extension = Theme.of(context).extension<PremiumThemeExtension>();
@@ -170,10 +181,10 @@ class PremiumThemeExtension extends ThemeExtension<PremiumThemeExtension> {
 }
 
 abstract final class PremiumTheme {
-  static const controlRadius = 9.0;
-  static const surfaceRadius = 13.0;
-  static const dialogRadius = 17.0;
-  static const largeSurfaceRadius = 19.0;
+  static const controlRadius = WorkspaceTokens.inputRadius;
+  static const surfaceRadius = WorkspaceTokens.cardRadius;
+  static const dialogRadius = WorkspaceTokens.dialogRadius;
+  static const largeSurfaceRadius = WorkspaceTokens.heroRadius;
   static const transitionDuration = AppFlowyMotion.standard;
   static const themeTransitionDuration = AppFlowyMotion.deliberate;
 
@@ -183,7 +194,10 @@ abstract final class PremiumTheme {
     required Brightness brightness,
   }) {
     if (brightness == Brightness.dark) {
-      return _dark(legacy);
+      return appTheme.themeName == BuiltInTheme.defaultTheme ||
+              PaperTheme.isPaper(appTheme)
+          ? _workspaceDark
+          : _dark(legacy);
     }
     if (PaperTheme.isPaper(appTheme)) {
       return _paper();
@@ -220,9 +234,9 @@ abstract final class PremiumTheme {
     final accent = _mutedAccent(legacy.primary);
     final accentHover = _shiftLightness(accent, -0.06);
     final accentPressed = _shiftLightness(accent, -0.11);
-    const canvas = Color(0xFFF8F8F5);
-    const surface = Color(0xFFFCFCF9);
-    const neutralSidebar = Color(0xFFF1F1ED);
+    const canvas = Color(0xFFFFFCF6);
+    const surface = Color(0xFFF8F5EE);
+    const neutralSidebar = Color(0xFFF2EFE6);
     const textPrimary = Color(0xFF252522);
     const lightOnAccent = Color(0xFFFAFAF6);
     final onAccent = _contrastRatio(lightOnAccent, accent) >= 4.5
@@ -239,11 +253,11 @@ abstract final class PremiumTheme {
       isPaper: false,
       canvas: canvas,
       surface: surface,
-      floatingSurface: const Color(0xFFFFFEFA),
-      mutedSurface: const Color(0xFFF3F3EF),
+      floatingSurface: const Color(0xFFFFFDF8),
+      mutedSurface: const Color(0xFFF4F0E7),
       sidebar: sidebar,
-      hover: const Color(0xFFEDEDE8),
-      pressed: const Color(0xFFE5E5DF),
+      hover: const Color(0xFFF0EDE6),
+      pressed: const Color(0xFFE4DFD3),
       selected: Color.alphaBlend(
         accent.withValues(alpha: 0.11),
         surface,
@@ -293,6 +307,35 @@ abstract final class PremiumTheme {
         paperGrain: PaperTheme.grain,
       );
 
+  /// Dark is its own calm tonal hierarchy, not the old blue application chrome
+  /// beneath a light-only redesign. Explicit custom themes keep their palette.
+  static const _workspaceDark = PremiumThemeExtension(
+    isPaper: false,
+    canvas: Color(0xFF191A19),
+    surface: Color(0xFF232422),
+    floatingSurface: Color(0xFF2B2C29),
+    mutedSurface: Color(0xFF272825),
+    sidebar: Color(0xFF20211F),
+    hover: Color(0xFF2B2C29),
+    pressed: Color(0xFF383A35),
+    selected: Color(0xFF333D37),
+    hoverOverlay: Color(0x0FFFFFF4),
+    selectedOverlay: Color(0x2498B7AA),
+    border: Color(0x16F0EFE8),
+    borderStrong: Color(0x38F0EFE8),
+    textPrimary: Color(0xFFEDECE7),
+    textSecondary: Color(0xFFB6B5B0),
+    textMuted: Color(0xFF918F89),
+    accent: Color(0xFF98B7AA),
+    accentHover: Color(0xFFB0CCBF),
+    accentPressed: Color(0xFF86A697),
+    onAccent: Color(0xFF18221C),
+    focusRing: Color(0x6698B7AA),
+    shadow: Color(0x44000000),
+    scrim: Color(0x99000000),
+    paperGrain: Colors.transparent,
+  );
+
   static PremiumThemeExtension _dark(FlowyColorScheme theme) =>
       PremiumThemeExtension(
         isPaper: false,
@@ -329,39 +372,39 @@ abstract final class PremiumTheme {
     if (brightness == Brightness.dark) {
       return ColorScheme(
         brightness: brightness,
-        primary: legacy.primary,
-        onPrimary: legacy.onPrimary,
-        primaryContainer: legacy.main2,
-        onPrimaryContainer: legacy.strongText,
-        secondary: legacy.hoverBG1,
-        onSecondary: legacy.shader1,
-        secondaryContainer: legacy.selector,
-        onSecondaryContainer: legacy.topbarBg,
-        tertiary: legacy.shader7,
-        onTertiary: legacy.toolbarColor,
-        tertiaryContainer: legacy.questionBubbleBG,
-        onTertiaryContainer: legacy.text,
+        primary: palette.accent,
+        onPrimary: palette.onAccent,
+        primaryContainer: palette.selected,
+        onPrimaryContainer: palette.textPrimary,
+        secondary: palette.hover,
+        onSecondary: palette.textPrimary,
+        secondaryContainer: palette.pressed,
+        onSecondaryContainer: palette.textPrimary,
+        tertiary: palette.textSecondary,
+        onTertiary: palette.floatingSurface,
+        tertiaryContainer: palette.mutedSurface,
+        onTertiaryContainer: palette.textPrimary,
         error: legacy.red,
         onError: legacy.onPrimary,
         errorContainer: legacy.red.withValues(alpha: 0.16),
         onErrorContainer: legacy.red,
-        surface: legacy.surface,
-        onSurface: legacy.hoverFG,
-        surfaceDim: legacy.surface,
-        surfaceBright: legacy.input,
-        surfaceContainerLowest: legacy.surface,
-        surfaceContainerLow: legacy.input,
-        surfaceContainer: legacy.hoverBG3,
-        surfaceContainerHigh: legacy.input,
-        surfaceContainerHighest: legacy.sidebarBg,
-        onSurfaceVariant: legacy.secondaryText,
-        outline: legacy.shader4,
-        outlineVariant: legacy.borderColor,
-        shadow: legacy.shadow,
+        surface: palette.canvas,
+        onSurface: palette.textPrimary,
+        surfaceDim: palette.canvas,
+        surfaceBright: palette.floatingSurface,
+        surfaceContainerLowest: palette.canvas,
+        surfaceContainerLow: palette.surface,
+        surfaceContainer: palette.mutedSurface,
+        surfaceContainerHigh: palette.hover,
+        surfaceContainerHighest: palette.sidebar,
+        onSurfaceVariant: palette.textSecondary,
+        outline: palette.borderStrong,
+        outlineVariant: palette.border,
+        shadow: palette.shadow,
         scrim: palette.scrim,
-        inverseSurface: legacy.hoverBG3,
-        onInverseSurface: legacy.text,
-        inversePrimary: legacy.main2,
+        inverseSurface: palette.textPrimary,
+        onInverseSurface: palette.canvas,
+        inversePrimary: palette.accentPressed,
         surfaceTint: Colors.transparent,
       );
     }
@@ -468,7 +511,7 @@ abstract final class PremiumTheme {
       dividerColor: palette.border,
       disabledColor: palette.textMuted.withValues(alpha: 0.48),
       focusColor: palette.focusRing,
-      hoverColor: palette.hoverOverlay,
+      hoverColor: palette.subtleHover,
       highlightColor: palette.selectedOverlay,
       hintColor: palette.textMuted,
       shadowColor: palette.shadow,
@@ -587,10 +630,10 @@ abstract final class PremiumTheme {
             disabled: palette.textMuted,
           ),
           backgroundColor: _stateColor(
-            normal: Colors.transparent,
-            hovered: palette.hover,
-            pressed: palette.pressed,
-            disabled: Colors.transparent,
+            normal: palette.subtleHover.withValues(alpha: 0),
+            hovered: palette.subtleHover,
+            pressed: palette.subtlePressed,
+            disabled: palette.subtleHover.withValues(alpha: 0),
           ),
           overlayColor: const WidgetStatePropertyAll(Colors.transparent),
           side: WidgetStateProperty.resolveWith(
@@ -614,17 +657,16 @@ abstract final class PremiumTheme {
           textStyle: WidgetStatePropertyAll(textTheme.labelLarge),
           foregroundColor: _stateColor(
             normal: palette.textPrimary,
-            hovered: palette.accentHover,
-            pressed: palette.accentPressed,
             disabled: palette.textMuted,
           ),
           backgroundColor: _stateColor(
-            normal: Colors.transparent,
-            hovered: palette.hover,
-            pressed: palette.pressed,
-            disabled: Colors.transparent,
+            normal: palette.subtleHover.withValues(alpha: 0),
+            hovered: palette.subtleHover,
+            pressed: palette.subtlePressed,
+            disabled: palette.subtleHover.withValues(alpha: 0),
           ),
           overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+          side: _focusSide(palette),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
@@ -637,17 +679,16 @@ abstract final class PremiumTheme {
           shape: WidgetStatePropertyAll(shape),
           foregroundColor: _stateColor(
             normal: palette.textSecondary,
-            hovered: palette.textPrimary,
-            pressed: palette.textPrimary,
             disabled: palette.textMuted,
           ),
           backgroundColor: _stateColor(
-            normal: Colors.transparent,
-            hovered: palette.hover,
-            pressed: palette.pressed,
-            disabled: Colors.transparent,
+            normal: palette.subtleHover.withValues(alpha: 0),
+            hovered: palette.subtleHover,
+            pressed: palette.subtlePressed,
+            disabled: palette.subtleHover.withValues(alpha: 0),
           ),
           overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+          side: _focusSide(palette),
         ),
       ),
       checkboxTheme: CheckboxThemeData(
@@ -765,19 +806,17 @@ abstract final class PremiumTheme {
     required PremiumThemeExtension palette,
     required Brightness brightness,
   }) {
-    if (brightness == Brightness.dark) {
-      return base;
-    }
-
     final text = base.textColorScheme;
     final icon = base.iconColorScheme;
     final border = base.borderColorScheme;
     final fill = base.fillColorScheme;
     final semanticSaturation = palette.isPaper ? 0.34 : 0.58;
-    Color semantic(Color source) => _softenSemantic(
-          source,
-          maximumSaturation: semanticSaturation,
-        );
+    Color semantic(Color source) => brightness == Brightness.dark
+        ? source
+        : _softenSemantic(
+            source,
+            maximumSaturation: semanticSaturation,
+          );
     Color semanticSurface(Color source) => Color.alphaBlend(
           semantic(source).withValues(alpha: palette.isPaper ? 0.11 : 0.09),
           palette.surface,
@@ -857,7 +896,8 @@ abstract final class PremiumTheme {
       ),
       fillColorScheme: AppFlowyFillColorScheme(
         primary: palette.mutedSurface,
-        primaryHover: palette.hover,
+        primaryHover:
+            Color.alphaBlend(palette.subtleHover, palette.mutedSurface),
         secondary: palette.pressed,
         secondaryHover: palette.selected,
         tertiary: palette.textMuted,
@@ -865,7 +905,7 @@ abstract final class PremiumTheme {
         quaternary: palette.textPrimary,
         quaternaryHover: palette.accentPressed,
         content: palette.floatingSurface.withValues(alpha: 0),
-        contentHover: palette.hoverOverlay,
+        contentHover: palette.subtleHover,
         contentVisible: palette.selectedOverlay,
         contentVisibleHover: palette.focusRing,
         themeThick: palette.accent,
@@ -892,11 +932,17 @@ abstract final class PremiumTheme {
       ),
       surfaceColorScheme: AppFlowySurfaceColorScheme(
         primary: palette.floatingSurface,
-        primaryHover: palette.hover,
+        primaryHover: Color.alphaBlend(
+          palette.subtleHover,
+          palette.floatingSurface,
+        ),
         layer01: palette.surface,
-        layer01Hover: palette.hover,
+        layer01Hover: Color.alphaBlend(palette.subtleHover, palette.surface),
         layer02: palette.floatingSurface,
-        layer02Hover: palette.hover,
+        layer02Hover: Color.alphaBlend(
+          palette.subtleHover,
+          palette.floatingSurface,
+        ),
         layer03: palette.floatingSurface,
         layer03Hover: palette.pressed,
         layer04: palette.floatingSurface,
@@ -992,6 +1038,18 @@ abstract final class PremiumTheme {
         }
         return normal;
       });
+
+  static WidgetStateProperty<BorderSide> _focusSide(
+    PremiumThemeExtension palette,
+  ) =>
+      WidgetStateProperty.resolveWith(
+        (states) => BorderSide(
+          color: !states.contains(WidgetState.disabled) &&
+                  states.contains(WidgetState.focused)
+              ? palette.accent
+              : palette.accent.withValues(alpha: 0),
+        ),
+      );
 
   static Color _mutedAccent(Color source) {
     final hsl = HSLColor.fromColor(source);

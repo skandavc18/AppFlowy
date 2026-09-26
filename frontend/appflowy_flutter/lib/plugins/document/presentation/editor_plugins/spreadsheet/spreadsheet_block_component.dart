@@ -4,10 +4,12 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -96,10 +98,13 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
   late EditorState editorState =
       Provider.of<EditorState>(context, listen: false);
   final GlobalKey _blockKey = GlobalKey(debugLabel: SpreadsheetBlockKeys.type);
+  final _gridKey = GlobalKey<SpreadsheetGridState>();
+  final _findFocus = FocusNode(debugLabel: 'spreadsheet-find');
 
   late SpreadsheetController _controller;
   String _lastWritten = '';
   bool _findVisible = false;
+  bool _active = true;
 
   RenderBox? get _renderBox => context.findRenderObject() as RenderBox?;
 
@@ -123,7 +128,20 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
   }
 
   @override
+  void deactivate() {
+    _active = false;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+  }
+
+  @override
   void dispose() {
+    _findFocus.dispose();
     _controller
       ..flushPersist()
       ..dispose();
@@ -248,7 +266,7 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
     // The editor owns Backspace, Enter and the arrow keys for the whole
     // document. Clearing the selection while the sheet holds focus is what
     // lets those keys reach the grid instead of deleting the block.
-    return FocusScope(
+    final content = FocusScope(
       skipTraversal: true,
       onFocusChange: (hasFocus) {
         if (hasFocus && keepEditorFocusNotifier.value == 0) {
@@ -274,18 +292,21 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
                   builder: (context, _) => SpreadsheetFindBar(
                     controller: _controller,
                     editable: _editable,
-                    onClose: () => setState(() => _findVisible = false),
+                    findFocusNode: _findFocus,
+                    onClose: _closeFind,
+                    onTapOutside: () => _closeFind(restoreFocus: false),
                   ),
                 ),
               Expanded(
                 child: SpreadsheetGrid(
+                  key: _gridKey,
                   controller: _controller,
                   editable: _editable,
                   baseTextStyle:
                       editorState.editorStyle.textStyleConfiguration.text,
                   placeholder: LocaleKeys.spreadsheet_startTyping.tr(),
                   addRowLabel: LocaleKeys.spreadsheet_menu_newRow.tr(),
-                  onRequestFind: () => setState(() => _findVisible = true),
+                  onRequestFind: _openFind,
                 ),
               ),
               ListenableBuilder(
@@ -298,6 +319,23 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
           ],
         ),
       ),
+    );
+    return ContextualFindRegion(
+      debugLabel: 'Spreadsheet',
+      findInEditable: true,
+      enabled: !_collapsed,
+      onFind: _openFind,
+      onReplace: _editable ? _openFind : null,
+      onDismiss: () => _closeFind(restoreFocus: false),
+      findOpen: _findVisible,
+      findFocusNode: _findFocus,
+      isSelected: () {
+        final selection = editorState.selection;
+        return selection != null &&
+            listEquals(selection.start.path, node.path) &&
+            listEquals(selection.end.path, node.path);
+      },
+      child: content,
     );
   }
 
@@ -384,10 +422,28 @@ class SpreadsheetBlockComponentState extends State<SpreadsheetBlockComponent>
   }
 
   void _toggleFind() {
-    setState(() => _findVisible = !_findVisible);
-    if (!_findVisible) {
-      _controller.setSearch('');
+    if (_findVisible) {
+      _closeFind();
+    } else {
+      _openFind();
     }
+  }
+
+  void _openFind() {
+    if (!mounted || !_active || _collapsed) return;
+    setState(() => _findVisible = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _active && _findVisible && !_collapsed) {
+        _findFocus.requestFocus();
+      }
+    });
+  }
+
+  void _closeFind({bool restoreFocus = true}) {
+    if (!mounted || !_active || !_findVisible) return;
+    if (_controller.searchQuery.isNotEmpty) _controller.setSearch('');
+    setState(() => _findVisible = false);
+    if (restoreFocus) _gridKey.currentState?.focusGrid();
   }
 
   // -------------------------------------------------------------------

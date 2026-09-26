@@ -84,7 +84,14 @@ class DashboardPluginWidgetBuilder extends PluginWidgetBuilder
         context.onDeleted?.call(view, deletedView.index);
       }
     });
-    return DashboardPage(key: ValueKey(view.id), view: view);
+    return BlocProvider<PageAccessLevelBloc>.value(
+      value: pageAccessLevelBloc,
+      child: DashboardPage(
+        key: ValueKey(view.id),
+        view: view,
+        userProfile: context.userProfile,
+      ),
+    );
   }
 
   @override

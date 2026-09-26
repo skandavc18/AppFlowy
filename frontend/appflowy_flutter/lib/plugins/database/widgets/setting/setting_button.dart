@@ -3,6 +3,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/widgets/setting/database_settings_list.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -55,7 +56,7 @@ class _SettingButtonState extends State<SettingButton> {
           height: 24,
           iconPadding: const EdgeInsets.all(3),
           hoverColor: AFThemeExtension.of(context).lightGreyHover,
-          icon: const FlowySvg(FlowySvgs.settings_s),
+          icon: const WorkspaceGlyph.svg(FlowySvgs.settings_s),
           onPressed: _showPopover,
         ),
       ),

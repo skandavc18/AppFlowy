@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/collection/providers/external_folder_stage.dart';
 import 'package:appflowy/plugins/collection/providers/source_picker.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
@@ -7,8 +9,10 @@ import 'package:appflowy/workspace/application/providers/collection_source.dart'
 import 'package:appflowy/workspace/application/providers/provider_cache.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_permissions.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// A workspace folder, wherever its contents actually live.
 ///
@@ -38,6 +42,15 @@ class _WorkspaceFolderStageState extends State<WorkspaceFolderStage> {
 
   CollectionSource get source => view.source;
 
+  bool get _canEditSource =>
+      mounted &&
+      canEditFolderExplorerView(
+        view,
+        pageAccess: context.read<PageAccessLevelBloc?>()?.state,
+        workspace: context.read<UserWorkspaceBloc?>()?.state.currentWorkspace,
+        identity: true,
+      );
+
   @override
   Widget build(BuildContext context) {
     if (source.isLocal) {
@@ -59,13 +72,19 @@ class _WorkspaceFolderStageState extends State<WorkspaceFolderStage> {
   }
 
   Future<void> _changeSource() async {
+    if (!_canEditSource) return;
+    final viewId = view.id;
     final previous = source;
     final chosen = await showCollectionSourcePicker(
       context,
       kind: CollectionKind.folder,
       current: previous,
     );
-    if (chosen == null || !mounted || chosen.cacheKey == previous.cacheKey) {
+    if (chosen == null ||
+        !_canEditSource ||
+        view.id != viewId ||
+        source.cacheKey != previous.cacheKey ||
+        chosen.cacheKey == previous.cacheKey) {
       return;
     }
     if (previous.isRemote) {
@@ -75,6 +94,7 @@ class _WorkspaceFolderStageState extends State<WorkspaceFolderStage> {
   }
 
   Future<void> _disconnect() async {
+    if (!_canEditSource) return;
     final previous = source;
     if (previous.isRemote) {
       unawaited(ProviderCache.instance.evict(previous.cacheKey));
@@ -83,9 +103,14 @@ class _WorkspaceFolderStageState extends State<WorkspaceFolderStage> {
   }
 
   Future<void> _persist(CollectionSource next) async {
+    if (!_canEditSource) return;
+    final viewId = view.id;
     final extra = next.mergeIntoExtra(view.extra);
-    await ViewBackendService.updateView(viewId: view.id, extra: extra);
-    if (!mounted) {
+    final result = await ViewBackendService.updateView(
+      viewId: viewId,
+      extra: extra,
+    );
+    if (!_canEditSource || view.id != viewId || result.isFailure) {
       return;
     }
     setState(() {

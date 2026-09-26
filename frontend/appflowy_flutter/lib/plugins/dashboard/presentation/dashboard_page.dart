@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_add_menu.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_board.dart';
@@ -10,19 +11,30 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_template_gallery.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_variables_bar.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
+import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_service.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
+import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
+import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// A dashboard, open.
 ///
@@ -36,9 +48,11 @@ class DashboardPage extends StatefulWidget {
     required this.view,
     this.immersive = false,
     this.controller,
+    this.userProfile,
   });
 
   final ViewPB view;
+  final UserProfilePB? userProfile;
 
   /// Fullscreen or presentation: no page chrome, larger measure.
   final bool immersive;
@@ -56,6 +70,7 @@ class _DashboardPageState extends State<DashboardPage> {
   bool _ownsController = false;
   ViewListener? _listener;
   String _name = '';
+  late ViewPB _view;
   bool _renaming = false;
   bool _editingSubtitle = false;
 
@@ -65,6 +80,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
+    _view = widget.view;
     _name = widget.view.name;
     final borrowed = widget.controller;
     if (borrowed != null) {
@@ -79,13 +95,25 @@ class _DashboardPageState extends State<DashboardPage> {
         ..start(
           onViewUpdated: (view) {
             if (mounted) {
-              setState(() => _name = view.name);
+              setState(() {
+                _view = view;
+                _name = view.name;
+              });
               _controller.adoptFromView(view);
             }
           },
         );
     }
     _controller.addListener(_onChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final access = context.watch<PageAccessLevelBloc?>();
+    final editable =
+        !_view.isLocked && (access == null || access.state.isEditable);
+    _controller.setReadOnly(!editable, notify: false);
   }
 
   @override
@@ -110,51 +138,39 @@ class _DashboardPageState extends State<DashboardPage> {
     final document = _controller.document;
     final immersive = widget.immersive || _controller.mode.isImmersive;
 
-    final body = document.isEmpty && _controller.isEditable
-        ? DashboardTemplateGallery(
-            palette: palette,
-            onChosen: (template) => _controller.replace(template.build()),
-          )
-        : _buildBoard(palette, document);
+    // Identity and content belong to one page scroll. A fixed editor toolbar
+    // above a separately scrolling board made Home feel like an application
+    // module rather than a workspace, and stole room from every widget.
+    Widget page = _buildBoard(palette, document, immersive);
 
-    Widget page = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (document.settings.showHeader || _controller.isEditable)
-          _buildHeader(palette, immersive),
-        Expanded(child: body),
-      ],
-    );
-
+    Widget? configuration;
     if (_controller.configuringWidgetId != null && _controller.isEditable) {
       final spec = document.widgetById(_controller.configuringWidgetId!);
       if (spec != null) {
         // The panel floats over the board rather than taking width from it:
         // reflowing the canvas would change the column count and move the
         // card out from under the pointer.
-        page = Stack(
-          children: [
-            Positioned.fill(child: page),
-            Positioned(
-              top: 0,
-              right: 0,
-              bottom: 0,
-              child: DashboardConfigPanel(
-                controller: _controller,
-                palette: palette,
-                spec: spec,
-              ),
-            ),
-          ],
+        configuration = Positioned(
+          top: 0,
+          right: 0,
+          bottom: 0,
+          child: DashboardConfigPanel(
+            controller: _controller,
+            palette: palette,
+            spec: spec,
+          ),
         );
       }
     }
 
     final modalId = _controller.modalWidgetId;
-    if (modalId != null) {
-      page = Stack(
-        children: [
-          page,
+    // Keep the board at one tree depth when a settings/modal layer appears.
+    // Reparenting it here would discard widget drafts and native preview state.
+    page = Stack(
+      children: [
+        Positioned.fill(child: page),
+        if (configuration != null) configuration,
+        if (modalId != null)
           Positioned.fill(
             child: _ModalWidget(
               controller: _controller,
@@ -162,9 +178,11 @@ class _DashboardPageState extends State<DashboardPage> {
               widgetId: modalId,
             ),
           ),
-        ],
-      );
-    }
+      ],
+    );
+    // The modal and configuration fields need the same live access check as
+    // cards, including while an outgoing borrowed page is being disposed.
+    page = DashboardEditingScope(controller: _controller, child: page);
 
     return CallbackShortcuts(
       bindings: {
@@ -200,58 +218,230 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildBoard(DashboardPalette palette, DashboardDocument document) {
+  Widget _buildBoard(
+    DashboardPalette palette,
+    DashboardDocument document,
+    bool immersive,
+  ) {
     final maxWidth = document.settings.maxWidth;
     final presenting = _controller.mode == DashboardMode.presentation;
 
-    final content = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (document.settings.showControlBar)
-          DashboardVariablesBar(controller: _controller, palette: palette),
-        for (final section in document.sections)
-          DashboardSectionView(
-            key: ValueKey(section.id),
-            controller: _controller,
-            section: section,
+    final content = document.isEmpty && _controller.isEditable
+        ? DashboardTemplateGallery(
             palette: palette,
-          ),
-        if (_controller.isEditable) _buildAddSection(palette),
-        SizedBox(height: presenting ? 40 : 80),
-      ],
-    );
+            embedded: true,
+            onChosen: (template) => _controller.replace(template.build()),
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (document.settings.showControlBar)
+                DashboardVariablesBar(
+                  controller: _controller,
+                  palette: palette,
+                ),
+              for (final section in document.sections)
+                DashboardSectionView(
+                  key: ValueKey(section.id),
+                  controller: _controller,
+                  section: section,
+                  palette: palette,
+                ),
+              if (_controller.isEditable) _buildAddSection(palette),
+              SizedBox(height: presenting ? 40 : 80),
+            ],
+          );
 
     return _paintBackdrop(
       palette,
       document.settings,
-      SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          presenting ? 48 : 28,
-          8,
-          presenting ? 48 : 28,
-          0,
-        ),
-        child: MediaQuery(
-          // A dashboard on a wall is read from further away.
-          data: MediaQuery.of(context).copyWith(
-            textScaler: presenting
-                ? const TextScaler.linear(1.18)
-                : MediaQuery.textScalerOf(context),
-          ),
-          child: DashboardBoard(
-            registry: _sections,
-            child: maxWidth > 0
-                ? Center(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: maxWidth),
-                      child: content,
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final inset = WorkspaceTokens.pageInset(constraints.maxWidth);
+          return SingleChildScrollView(
+            key: const PageStorageKey('dashboard-workspace-scroll'),
+            child: MediaQuery(
+              // A dashboard on a wall is read from further away.
+              data: MediaQuery.of(context).copyWith(
+                textScaler: presenting
+                    ? const TextScaler.linear(1.18)
+                    : MediaQuery.textScalerOf(context),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (document.settings.showHeader || _controller.isEditable)
+                    _buildHeader(palette, immersive, inset),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: inset),
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: maxWidth > 0 ? maxWidth : double.infinity,
+                        ),
+                        child: DashboardBoard(
+                          registry: _sections,
+                          child: content,
+                        ),
+                      ),
                     ),
-                  )
-                : content,
-          ),
-        ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
+  }
+
+  Widget _buildHeader(
+    DashboardPalette palette,
+    bool immersive,
+    double inset,
+  ) {
+    final document = _controller.document;
+    final presenting = _controller.mode == DashboardMode.presentation;
+    final editable = !presenting && _controller.isEditable;
+    final cover = _view.cover;
+    final icon = _view.icon.toEmojiIconData();
+    final glyph = icon.isNotEmpty
+        ? RawEmojiIconWidget(
+            emoji: icon,
+            emojiSize: WorkspaceTokens.pageIconSize,
+            opticalRole: IconOpticalRole.header,
+          )
+        : WorkspaceGlyph.named(
+            DashboardHome.instance.viewId == _view.id ? 'house' : 'layout',
+            size: WorkspaceTokens.pageIconSize,
+            color: palette.accent,
+          );
+    return PreviewToolbarRegion(
+      child: ViewDecorationActions(
+        view: _view,
+        userProfile: widget.userProfile,
+        visible: _renaming || _editingSubtitle || immersive,
+        showIconAction: editable,
+        showCoverAction: editable,
+        showDownloadAction: !immersive,
+        onViewChanged: _adoptDecoration,
+        layoutBuilder: (iconActions, coverActions, pageActions) =>
+            WorkspacePageHeader(
+          maxWidth: document.settings.maxWidth > 0
+              ? document.settings.maxWidth + inset * 2
+              : double.infinity,
+          contentInset: inset,
+          cover: !immersive && cover != null && !cover.isNone
+              ? ViewCoverImage(
+                  cover: cover,
+                  userProfile: widget.userProfile,
+                  width: double.infinity,
+                )
+              : null,
+          coverActions: coverActions,
+          identity: WorkspacePageIdentity(
+            icon: editable
+                ? ViewIconPicker(
+                    view: _view,
+                    onViewChanged: _adoptDecoration,
+                    child: glyph,
+                  )
+                : glyph,
+            iconActions: iconActions,
+            title: ExcludeFocus(
+              excluding: !editable,
+              child: IgnorePointer(
+                ignoring: !editable,
+                child: WorkspaceInlineEditableText(
+                  key: const ValueKey('dashboard-page-title'),
+                  text: _name.isEmpty
+                      ? LocaleKeys.dashboard_untitled.tr()
+                      : _name,
+                  editingValue: _name,
+                  editing: _renaming,
+                  style: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.pageTitle,
+                  ),
+                  onTap: editable ? _beginRename : null,
+                  onSubmitted: _rename,
+                  onCancelled: () => setState(() => _renaming = false),
+                ),
+              ),
+            ),
+            description: document.subtitle.isNotEmpty || _editingSubtitle
+                ? ExcludeFocus(
+                    excluding: !editable,
+                    child: IgnorePointer(
+                      ignoring: !editable,
+                      child: WorkspaceInlineEditableText(
+                        text: document.subtitle.isEmpty
+                            ? LocaleKeys.dashboard_addDescription.tr()
+                            : document.subtitle,
+                        editingValue: document.subtitle,
+                        editing: _editingSubtitle,
+                        style: WorkspaceTypography.style(
+                          context,
+                          WorkspaceTextRole.body,
+                          color: palette.textSecondary,
+                        ),
+                        onTap: editable
+                            ? () => setState(() => _editingSubtitle = true)
+                            : null,
+                        onSubmitted: (value) async {
+                          if (!_controller.isEditable) return false;
+                          setState(() => _editingSubtitle = false);
+                          _controller.edit(
+                            (document) =>
+                                document.copyWith(subtitle: value.trim()),
+                          );
+                          return true;
+                        },
+                        onCancelled: () =>
+                            setState(() => _editingSubtitle = false),
+                      ),
+                    ),
+                  )
+                : null,
+            actions: pageActions,
+          ),
+        ),
+        children: [
+          if (editable) ...[
+            DashboardButton(
+              key: const ValueKey('dashboard-add-widget'),
+              label: LocaleKeys.dashboard_add_widget.tr(),
+              icon: Icons.add_rounded,
+              palette: palette,
+              onPressed: _addWidget,
+            ),
+            Builder(
+              key: const ValueKey('dashboard-options'),
+              builder: (anchor) => DashboardIconButton(
+                icon: Icons.more_horiz_rounded,
+                palette: palette,
+                tooltip: LocaleKeys.dashboard_options.tr(),
+                onPressed: () => _showOptions(anchor, palette),
+              ),
+            ),
+          ],
+          if (immersive)
+            DashboardIconButton(
+              key: const ValueKey('dashboard-exit-immersive'),
+              icon: Icons.close_fullscreen_rounded,
+              palette: palette,
+              tooltip: LocaleKeys.button_close.tr(),
+              onPressed: _toggleFullscreen,
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _adoptDecoration(ViewPB view) {
+    if (mounted && view.id == _view.id) {
+      setState(() => _view = view);
+    }
   }
 
   /// The board's own surface. It sits behind the scroll view so a tint covers
@@ -294,136 +484,52 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
       );
 
-  Widget _buildHeader(DashboardPalette palette, bool immersive) {
-    final document = _controller.document;
-    final presenting = _controller.mode == DashboardMode.presentation;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(presenting ? 48 : 28, 18, 20, 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                WorkspaceInlineEditableText(
-                  text: _name.isEmpty
-                      ? LocaleKeys.dashboard_untitled.tr()
-                      : _name,
-                  editingValue: _name,
-                  editing: _renaming,
-                  style: DashboardType.title(
-                    palette,
-                    size: presenting ? 28 : 22,
-                  ),
-                  onTap: presenting ? null : _beginRename,
-                  onSubmitted: _rename,
-                  onCancelled: () => setState(() => _renaming = false),
-                ),
-                if (document.subtitle.isNotEmpty || _controller.isEditable)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 3),
-                    child: WorkspaceInlineEditableText(
-                      text: document.subtitle.isEmpty
-                          ? LocaleKeys.dashboard_addDescription.tr()
-                          : document.subtitle,
-                      editingValue: document.subtitle,
-                      editing: _editingSubtitle,
-                      style: DashboardType.caption(palette).copyWith(
-                        color: document.subtitle.isEmpty
-                            ? palette.textMuted.withValues(alpha: 0.7)
-                            : palette.textMuted,
-                      ),
-                      onTap: presenting
-                          ? null
-                          : () => setState(() => _editingSubtitle = true),
-                      onSubmitted: (value) async {
-                        setState(() => _editingSubtitle = false);
-                        _controller.edit(
-                          (document) =>
-                              document.copyWith(subtitle: value.trim()),
-                        );
-                        return true;
-                      },
-                      onCancelled: () =>
-                          setState(() => _editingSubtitle = false),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (!presenting) ...[
-            DashboardIconButton(
-              icon: Icons.undo_rounded,
-              palette: palette,
-              tooltip: LocaleKeys.toolbar_undo.tr(),
-              onPressed: _controller.canUndo ? _controller.undo : null,
-            ),
-            DashboardIconButton(
-              icon: Icons.redo_rounded,
-              palette: palette,
-              tooltip: LocaleKeys.toolbar_redo.tr(),
-              onPressed: _controller.canRedo ? _controller.redo : null,
-            ),
-            DashboardIconButton(
-              icon: Icons.refresh_rounded,
-              palette: palette,
-              tooltip: LocaleKeys.dashboard_action_refresh.tr(),
-              onPressed: _controller.refresh,
-            ),
-            const SizedBox(width: 4),
-            DashboardButton(
-              label: LocaleKeys.dashboard_add_widget.tr(),
-              icon: Icons.add_rounded,
-              palette: palette,
-              primary: true,
-              onPressed: _addWidget,
-            ),
-            const SizedBox(width: 6),
-            DashboardIconButton(
-              icon: Icons.open_in_full_rounded,
-              palette: palette,
-              tooltip: LocaleKeys.dashboard_mode_focus.tr(),
-              onPressed: _toggleFullscreen,
-            ),
-            // The menu is anchored to the button, so it needs the button's own
-            // context rather than the page's.
-            Builder(
-              builder: (anchor) => DashboardIconButton(
-                icon: Icons.more_horiz_rounded,
-                palette: palette,
-                tooltip: LocaleKeys.dashboard_options.tr(),
-                onPressed: () => _showOptions(anchor, palette),
-              ),
-            ),
-          ] else
-            DashboardIconButton(
-              icon: Icons.close_fullscreen_rounded,
-              palette: palette,
-              tooltip: LocaleKeys.button_close.tr(),
-              onPressed: () => _controller.setMode(DashboardMode.edit),
-            ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _addWidget() async {
+    if (!_controller.isEditable) return;
     final definition = await showDashboardWidgetPicker(
       context: context,
       palette: DashboardPalette.of(context),
     );
-    if (definition == null) {
+    if (!mounted || definition == null || !_controller.isEditable) {
       return;
     }
     _controller.edit((document) => document.addWidget(definition.create()));
   }
 
   void _showOptions(BuildContext anchor, DashboardPalette palette) {
+    if (!_controller.isEditable) return;
     final document = _controller.document;
     showAppMenuForWidget<void>(
       context: anchor,
       entries: [
+        AppMenuItem(
+          label: LocaleKeys.toolbar_undo.tr(),
+          icon: Icons.undo_rounded,
+          enabled: _controller.canUndo,
+          onSelected: _controller.undo,
+        ),
+        AppMenuItem(
+          label: LocaleKeys.toolbar_redo.tr(),
+          icon: Icons.redo_rounded,
+          enabled: _controller.canRedo,
+          onSelected: _controller.redo,
+        ),
+        AppMenuItem(
+          label: LocaleKeys.dashboard_action_refresh.tr(),
+          icon: Icons.refresh_rounded,
+          onSelected: _controller.refresh,
+        ),
+        AppMenuItem(
+          label: LocaleKeys.dashboard_addDescription.tr(),
+          icon: Icons.notes_rounded,
+          onSelected: () => setState(() => _editingSubtitle = true),
+        ),
+        AppMenuItem(
+          label: LocaleKeys.dashboard_mode_focus.tr(),
+          icon: Icons.open_in_full_rounded,
+          onSelected: _toggleFullscreen,
+        ),
+        const AppMenuSeparator(),
         AppMenuItem(
           label: LocaleKeys.dashboard_mode_presentation.tr(),
           icon: Icons.slideshow_rounded,
@@ -579,22 +685,24 @@ class _DashboardPageState extends State<DashboardPage> {
   /// Give the page back its ordinary reading. The body was never touched, so
   /// whatever was written on it before is still there.
   Future<void> _turnBackIntoPage() async {
+    if (!_controller.isEditable) return;
     await _controller.flush();
     final current = await ViewBackendService.getView(widget.view.id);
     final view = current.fold<ViewPB?>((view) => view, (_) => null);
-    if (view != null) {
+    if (view != null && mounted && _controller.isEditable) {
       await DashboardService.revert(view);
     }
   }
 
   void _beginRename() {
-    if (_controller.mode == DashboardMode.presentation) {
+    if (!_controller.isEditable) {
       return;
     }
     setState(() => _renaming = true);
   }
 
   Future<bool> _rename(String name) async {
+    if (!_controller.isEditable) return false;
     setState(() {
       _renaming = false;
       _name = name.trim();
@@ -616,16 +724,31 @@ class _DashboardPageState extends State<DashboardPage> {
 
   Future<void> _openImmersive(DashboardMode mode) async {
     final previous = _controller.mode;
+    final access = context.read<PageAccessLevelBloc?>();
     _controller.setMode(mode);
     await Navigator.of(context, rootNavigator: true).push(
       PageRouteBuilder<void>(
-        transitionDuration: DashboardMetrics.settle,
+        transitionDuration:
+            WorkspaceTokens.motion(context, WorkspaceTokens.transitionDuration),
+        reverseTransitionDuration:
+            WorkspaceTokens.motion(context, WorkspaceTokens.exitDuration),
         pageBuilder: (_, __, ___) => Scaffold(
           backgroundColor: DashboardPalette.of(context).canvas,
-          body: DashboardPage(
-            view: widget.view,
-            immersive: true,
-            controller: _controller,
+          body: Builder(
+            builder: (_) {
+              final page = DashboardPage(
+                view: _view,
+                immersive: true,
+                controller: _controller,
+                userProfile: widget.userProfile,
+              );
+              return access == null
+                  ? page
+                  : BlocProvider<PageAccessLevelBloc>.value(
+                      value: access,
+                      child: page,
+                    );
+            },
           ),
         ),
         transitionsBuilder: (_, animation, __, child) =>

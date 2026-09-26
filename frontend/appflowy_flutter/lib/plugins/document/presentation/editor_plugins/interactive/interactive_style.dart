@@ -1,5 +1,6 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
 
@@ -517,8 +518,9 @@ class _InteractiveButtonState extends State<InteractiveButton> {
           null,
         );
       case InteractiveEmphasis.subtle:
+        final hover = WorkspaceChrome.hoverColor(context);
         return (
-          palette.hover.withValues(alpha: _hovered || _pressed ? 0.9 : 0),
+          hover.withValues(alpha: hover.a * (_hovered || _pressed ? 0.9 : 0)),
           _hovered ? palette.text : palette.textSecondary,
           null,
         );
@@ -568,11 +570,12 @@ class _InteractiveIconButtonState extends State<InteractiveIconButton> {
     final palette = widget.palette ?? interactivePaletteOf(context);
     final accent = widget.accent ?? palette.accent;
     final enabled = widget.onPressed != null;
+    final hover = WorkspaceChrome.hoverColor(context);
     final background = widget.selected
         ? accent.withValues(alpha: palette.isDark ? 0.22 : 0.12)
         : (_hovered && enabled)
-            ? palette.hover
-            : palette.hoverBase;
+            ? hover
+            : hover.withValues(alpha: 0);
     final foreground = !enabled
         ? palette.textMuted.withValues(alpha: 0.45)
         : widget.selected
@@ -760,6 +763,7 @@ class InteractiveFieldSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final colours = palette ?? interactivePaletteOf(context);
     final ring = accent ?? colours.accent;
+    final hover = WorkspaceChrome.hoverColor(context);
     final base = fill ??
         Color.alphaBlend(
           colours.hover.withValues(alpha: colours.isDark ? 0.7 : 0.95),
@@ -772,7 +776,7 @@ class InteractiveFieldSurface extends StatelessWidget {
       padding: padding,
       decoration: BoxDecoration(
         color: hovered && !focused
-            ? Color.alphaBlend(colours.hover.withValues(alpha: 0.5), base)
+            ? Color.alphaBlend(hover.withValues(alpha: hover.a * 0.5), base)
             : base,
         borderRadius:
             BorderRadius.circular(radius ?? InteractiveMetrics.fieldRadius),

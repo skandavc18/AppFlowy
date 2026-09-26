@@ -8,3 +8,4 @@ library;
 export 'document_scroll.dart';
 export 'document_viewport.dart';
 export 'document_viewport_style.dart';
+export 'standalone_file_scope.dart';

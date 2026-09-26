@@ -799,6 +799,117 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  for (final mode in ['light', 'dark', 'paper']) {
+    for (final width in [240.0, 320.0]) {
+      testWidgets('$mode PDF find controls are all visible at $width px and 2x',
+          (tester) async {
+        await tester.binding.setSurfaceSize(const Size(800, 650));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final controller = TextEditingController(text: 'report');
+        final focusNode = FocusNode();
+        var outside = 0;
+        var closed = 0;
+        var toggled = 0;
+        var retried = 0;
+        var copied = 0;
+        var previous = 0;
+        var next = 0;
+        try {
+          await tester.pumpWidget(
+            _themedApp(
+              paper: mode == 'paper',
+              brightness: mode == 'dark' ? Brightness.dark : Brightness.light,
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SizedBox(
+                  width: width,
+                  child: MediaQuery(
+                    data:
+                        const MediaQueryData(textScaler: TextScaler.linear(2)),
+                    child: PdfSearchToolbar(
+                      controller: controller,
+                      focusNode: focusNode,
+                      currentMatch: 1,
+                      matchCount: 5,
+                      searchProgress: 0.5,
+                      isSearching: true,
+                      onChanged: (_) {},
+                      onOptionsChanged: (_) => toggled++,
+                      onToggleOcr: () => toggled++,
+                      onRetryOcr: () => retried++,
+                      onCopyMatch: () => copied++,
+                      onPrevious: () => previous++,
+                      onNext: () => next++,
+                      onClose: () => closed++,
+                      onTapOutside: (_) => outside++,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pump();
+          final toolbar = find.byType(PdfSearchToolbar);
+          final bounds = tester.getRect(toolbar);
+          expect(
+            find.descendant(
+              of: toolbar,
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is SingleChildScrollView &&
+                    widget.scrollDirection == Axis.horizontal,
+              ),
+            ),
+            findsNothing,
+          );
+          final controls = [
+            find.text('Aa'),
+            find.text('ab'),
+            find.text('.*'),
+            find.byKey(const ValueKey('pdf-search-ocr')),
+            find.byKey(const ValueKey('pdf-search-ocr-retry')),
+            find.byKey(const ValueKey('pdf-search-copy-match')),
+            find.byTooltip('Previous match (Shift Enter)'),
+            find.byTooltip('Next match (Enter)'),
+            find.byTooltip('Close search (Esc)'),
+          ];
+          for (final control in controls) {
+            final rect = tester.getRect(control);
+            expect(rect.left, greaterThanOrEqualTo(bounds.left));
+            expect(rect.right, lessThanOrEqualTo(bounds.right));
+            expect(rect.top, greaterThanOrEqualTo(bounds.top));
+            expect(rect.bottom, lessThanOrEqualTo(bounds.bottom));
+            expect(control.hitTestable(), findsOneWidget);
+            await tester.tap(control, kind: PointerDeviceKind.mouse);
+            await tester.pump();
+            expect(
+              outside,
+              0,
+              reason: 'All search controls share its tap region',
+            );
+          }
+          expect(toggled, 4);
+          expect(retried, 1);
+          expect(copied, 1);
+          expect(previous, 1);
+          expect(next, 1);
+          expect(closed, 1);
+          await tester.tapAt(
+            const Offset(700, 600),
+            kind: PointerDeviceKind.mouse,
+          );
+          await tester.pump();
+          expect(outside, 1);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await tester.pumpWidget(const SizedBox.shrink());
+          controller.dispose();
+          focusNode.dispose();
+        }
+      });
+    }
+  }
+
   testWidgets('toolbar buttons use the code block neutral hover surface', (
     tester,
   ) async {

@@ -3,6 +3,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandb
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra/theme.dart';
@@ -225,16 +226,24 @@ void main() {
       final expandedHeight =
           tester.getSize(find.byType(SandboxedCodeRunner)).height;
 
-      await tester.tap(find.byIcon(Icons.content_copy_rounded));
+      expect(_codeGlyph(tester, 'code-copy').name, 'copy');
+      expect(_codeGlyph(tester, 'code-line-numbers').name, 'line-numbers');
+      await tester.ensureVisible(_codeButton('code-copy'));
+      await tester.pumpAndSettle();
+      expect(_codeButton('code-copy').hitTestable(), findsOneWidget);
+      await tester.tap(_codeButton('code-copy'));
       await tester.pump(codeBlockAnimationDuration);
       expect(find.textContaining('Copied'), findsOneWidget);
+      expect(_codeGlyph(tester, 'code-copy').name, 'check');
 
       // Copy feedback no longer replaces the language identity. Extra tools
       // remain reachable in the retained horizontal action row.
       expect(find.text('Python'), findsOneWidget);
-      await tester.ensureVisible(find.byKey(const ValueKey('code-collapse')));
+      await tester.ensureVisible(_codeButton('code-collapse'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.unfold_less_rounded));
+      expect(_codeGlyph(tester, 'code-collapse').name, 'collapse');
+      expect(_codeButton('code-collapse').hitTestable(), findsOneWidget);
+      await tester.tap(_codeButton('code-collapse'));
       await tester.pump();
       await tester.pump(codeBlockAnimationDuration);
       final collapsedHeight =
@@ -242,6 +251,7 @@ void main() {
 
       expect(collapsedHeight, lessThan(expandedHeight));
       expect(find.byKey(const ValueKey('code-editor-child')), findsOneWidget);
+      expect(_codeGlyph(tester, 'code-collapse').name, 'caret-up-down');
       expect(tester.takeException(), isNull);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -429,7 +439,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.checklist_rounded), findsNothing);
+    expect(find.byKey(const ValueKey('code-tests')), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(SandboxedCodeRunner),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is WorkspaceGlyph && widget.name == 'list-checks',
+        ),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('opening the tests tray writes and edits the first case', (
@@ -457,7 +476,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byIcon(Icons.checklist_rounded));
+    expect(_codeGlyph(tester, 'code-tests').name, 'list-checks');
+    await tester.ensureVisible(_codeButton('code-tests'));
+    await tester.pumpAndSettle();
+    expect(_codeButton('code-tests').hitTestable(), findsOneWidget);
+    await tester.tap(_codeButton('code-tests'));
     await tester.pumpAndSettle();
 
     // An empty tray is a dead end, so opening it starts the first case.
@@ -476,7 +499,88 @@ void main() {
     expect(cases.single.expectedOutput, '5');
     expect(tester.takeException(), isNull);
   });
+
+  for (final mode in ['light', 'dark', 'paper']) {
+    testWidgets('$mode: line-number glyphs follow the retained toggle',
+        (tester) async {
+      var showLineNumbers = true;
+      var toggles = 0;
+      await tester.pumpWidget(
+        _codeApp(
+          brightness: mode == 'dark' ? Brightness.dark : Brightness.light,
+          paper: mode == 'paper',
+          child: StatefulBuilder(
+            builder: (context, setState) => SandboxedCodeRunner(
+              code: 'print(1)',
+              fileName: 'main.py',
+              language: 'python',
+              showLineNumbers: showLineNumbers,
+              onLanguageChanged: (_) {},
+              onToggleLineNumbers: () => setState(() {
+                showLineNumbers = !showLineNumbers;
+                toggles++;
+              }),
+              child: const SizedBox(
+                key: ValueKey('line-number-editor'),
+                height: 60,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final runner = tester.state(find.byType(SandboxedCodeRunner));
+      final editor =
+          tester.element(find.byKey(const ValueKey('line-number-editor')));
+      final button = tester.element(_codeButton('code-line-numbers'));
+      final bounds = tester.getRect(find.byType(SandboxedCodeRunner));
+      for (final shown in [true, false, true]) {
+        if (showLineNumbers != shown) {
+          await tester.tap(_codeButton('code-line-numbers'));
+          await tester.pumpAndSettle();
+        }
+        expect(showLineNumbers, shown);
+        expect(
+          _codeGlyph(tester, 'code-line-numbers').name,
+          shown ? 'line-numbers' : 'line-numbers-off',
+        );
+        final control = tester.widget<CodeToolbarButton>(
+          find.byKey(const ValueKey('code-line-numbers')),
+        );
+        expect(
+          control.tooltip,
+          shown ? 'Hide line numbers' : 'Show line numbers',
+        );
+        expect(control.selected, shown);
+        expect(_codeButton('code-line-numbers').hitTestable(), findsOneWidget);
+        expect(tester.element(_codeButton('code-line-numbers')), same(button));
+        expect(tester.state(find.byType(SandboxedCodeRunner)), same(runner));
+        expect(
+          tester.element(find.byKey(const ValueKey('line-number-editor'))),
+          same(editor),
+        );
+        expect(tester.getRect(find.byType(SandboxedCodeRunner)), bounds);
+      }
+      expect(toggles, 2);
+      expect(find.byType(InAppWebView), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 }
+
+Finder _codeButton(String key) => find.descendant(
+      of: find.byKey(ValueKey(key)),
+      matching: find.byType(TextButton),
+    );
+
+WorkspaceGlyph _codeGlyph(WidgetTester tester, String key) =>
+    tester.widget<WorkspaceGlyph>(
+      find.descendant(
+        of: _codeButton(key),
+        matching: find.byType(WorkspaceGlyph),
+      ),
+    );
 
 /// A minimal host that supplies the theme surfaces the code chrome reads.
 Widget _codeApp({

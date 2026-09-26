@@ -235,6 +235,69 @@ void main() {
       });
 
       testWidgets(
+          'search selects its first hit without washing its row or old range',
+          (tester) async {
+        await withPainter(tester, (fixture) async {
+          const first = CellRef(2, 1);
+          const other = CellRef(4, 2);
+          const opaque = Color(0xFFF3DFB9);
+          const translucent = Color(0x996D8792);
+          fixture.controller.data
+            ..setRaw(first, 'find')
+            ..setStyle(
+              first,
+              const CellStyle(backgroundColor: 0xFFF3DFB9),
+            )
+            ..setRaw(other, 'find')
+            ..setStyle(
+              other,
+              const CellStyle(backgroundColor: 0x996D8792),
+            );
+          final stored = fixture.controller.toJson();
+          fixture.controller
+            ..selectRange(first, const CellRef(3, 1))
+            ..setSearch('find');
+          expect(fixture.controller.searchMatches, [first, other]);
+          expect(fixture.controller.searchMatchIndex, 0);
+          expect(fixture.controller.currentSearchMatch, first);
+          expect(fixture.controller.active, first);
+          expect(fixture.controller.anchor, first);
+          expect(fixture.controller.selection, CellRange.single(first));
+
+          final pixels = await _paint(tester, fixture.painter());
+          // The active cell has a ring, not a selection wash. Search adds
+          // 30% accent to this fill and 14% to the other, unselected match.
+          _expectColor(
+            pixels.at(150, SheetRow.defaultHeight * 3 - 6),
+            Color.alphaBlend(
+              fixture.palette.accent.withValues(alpha: 0.30),
+              opaque,
+            ),
+          );
+          _expectColor(
+            pixels.cell(other.row, other.column),
+            Color.alphaBlend(
+              fixture.palette.accent.withValues(alpha: 0.14),
+              Color.alphaBlend(translucent, fixture.palette.surface),
+            ),
+          );
+          for (final (row, column) in [
+            (2, 0),
+            (2, 2),
+            (2, 3),
+            (3, 1),
+            (4, 1),
+            (4, 3),
+          ]) {
+            _expectColor(pixels.cell(row, column), fixture.palette.surface);
+          }
+          expect(fixture.controller.toJson(), stored);
+          expect(fixture.controller.revision, 0);
+          expect(fixture.controller.canUndo, isFalse);
+        });
+      });
+
+      testWidgets(
           'selection and search remain visible without changing saved fills',
           (tester) async {
         await withPainter(tester, (fixture) async {
@@ -244,10 +307,18 @@ void main() {
               const CellRef(2, 1),
               const CellStyle(backgroundColor: 0xFFF3DFB9),
             );
-          fixture.controller
-            ..selectRange(const CellRef(2, 1), const CellRef(3, 1))
-            ..setSearch('find');
           final stored = fixture.controller.toJson();
+          // Search intentionally selects its first match. Establish the range
+          // afterward so the matching cell is selected but is NOT active.
+          fixture.controller
+            ..setSearch('find')
+            ..selectRange(const CellRef(2, 1), const CellRef(3, 1));
+          final range = CellRange(const CellRef(2, 1), const CellRef(3, 1));
+          expect(fixture.controller.selection, range);
+          expect(fixture.controller.anchor, const CellRef(2, 1));
+          expect(fixture.controller.active, const CellRef(3, 1));
+          expect(fixture.controller.searchMatches, [const CellRef(2, 1)]);
+          expect(fixture.controller.currentSearchMatch, const CellRef(2, 1));
           final pixels = await _paint(tester, fixture.painter());
           final selected = Color.alphaBlend(
             fixture.palette.selection,
@@ -259,6 +330,23 @@ void main() {
           );
           // Sample below the text, not on a glyph or the range outline.
           _expectColor(pixels.at(150, SheetRow.defaultHeight * 3 - 6), found);
+          _expectColor(pixels.cell(3, 1), fixture.palette.surface);
+          _expectColor(pixels.cell(2, 0), fixture.palette.surface);
+          _expectColor(pixels.cell(2, 2), fixture.palette.surface);
+          expect(fixture.controller.toJson(), stored);
+
+          // Removing only search leaves the selection-over-fill layer intact.
+          fixture.controller.setSearch('');
+          expect(fixture.controller.searchMatches, isEmpty);
+          expect(fixture.controller.currentSearchMatch, isNull);
+          expect(fixture.controller.selection, range);
+          expect(fixture.controller.active, const CellRef(3, 1));
+          final selectionOnly = await _paint(tester, fixture.painter());
+          _expectColor(
+            selectionOnly.at(150, SheetRow.defaultHeight * 3 - 6),
+            selected,
+          );
+          _expectColor(selectionOnly.cell(3, 1), fixture.palette.surface);
           expect(fixture.controller.toJson(), stored);
         });
       });

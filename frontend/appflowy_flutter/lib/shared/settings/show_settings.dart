@@ -7,6 +7,7 @@ import 'package:appflowy/workspace/presentation/settings/settings_dialog.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart'
     show UserProfilePB;
+import 'package:flowy_infra_ui/flowy_infra_ui.dart' show showFlowyDialog;
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -20,7 +21,7 @@ void showSettingsDialog(
   SettingsPage? initPage,
 ]) {
   AFFocusManager.of(context).notifyLoseFocus();
-  showDialog(
+  showFlowyDialog(
     context: context,
     builder: (dialogContext) => MultiBlocProvider(
       key: _settingsDialogKey,
@@ -60,7 +61,7 @@ void showSettingsDialog(
 //  - self-host
 //  - support
 void showSimpleSettingsDialog(BuildContext context) {
-  showDialog(
+  showFlowyDialog(
     context: context,
     builder: (dialogContext) => const SimpleSettingsDialog(),
   );

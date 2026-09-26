@@ -63,7 +63,7 @@ class _FlowyHoverState extends State<FlowyHover> {
       onExit: (_) => _setOnHover(false),
       child: FlowyHoverContainer(
         style: widget.style ??
-            HoverStyle(hoverColor: Theme.of(context).colorScheme.secondary),
+            HoverStyle(hoverColor: Theme.of(context).hoverColor),
         applyStyle: _onHover || (widget.isSelected?.call() ?? false),
         child: widget.child ?? widget.builder!(context, _onHover),
       ),
@@ -123,6 +123,10 @@ class FlowyHoverContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final media = MediaQuery.maybeOf(context);
+    final reduced = (media?.disableAnimations ?? false) ||
+        (media?.accessibleNavigation ?? false);
+    final hoverColor = style.hoverColor ?? theme.hoverColor;
     final textTheme = theme.textTheme;
     final iconTheme = theme.iconTheme;
     // override text's theme with foregroundColorOnHover when it is hovered
@@ -138,14 +142,16 @@ class FlowyHoverContainer extends StatelessWidget {
     );
 
     return AnimatedContainer(
-      duration: FlowyDurations.fastest,
+      duration: reduced ? Duration.zero : FlowyDurations.fastest,
       curve: Curves.easeOutCubic,
       margin: style.contentMargin,
       decoration: BoxDecoration(
         border: style.border,
         color: applyStyle
-            ? style.hoverColor ?? Theme.of(context).colorScheme.secondary
-            : style.backgroundColor,
+            ? hoverColor
+            : style.backgroundColor.a == 0
+                ? hoverColor.withValues(alpha: 0)
+                : style.backgroundColor,
         borderRadius: style.borderRadius,
       ),
       child: Theme(

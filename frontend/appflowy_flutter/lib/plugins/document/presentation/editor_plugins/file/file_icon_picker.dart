@@ -5,6 +5,7 @@ import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -12,7 +13,6 @@ import 'package:flowy_infra_ui/style_widget/snap_bar.dart';
 import 'package:flutter/material.dart';
 
 import 'file_icon_binding.dart';
-import 'file_preview_kind.dart';
 
 /// The file-type symbol remains the fallback for legacy and cleared icons.
 class FileIdentityGlyph extends StatelessWidget {
@@ -31,7 +31,7 @@ class FileIdentityGlyph extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => icon.isEmpty
-      ? Icon(fileIconForName(name), size: size, color: color)
+      ? WorkspaceGlyph.file(name, size: size, color: color)
       : RawEmojiIconWidget(emoji: icon, emojiSize: size);
 }
 
@@ -44,6 +44,7 @@ class FileBlockIconButton extends StatefulWidget {
     this.documentId,
     this.color,
     this.buttonSize = 34,
+    this.showLabel = false,
   });
 
   final FileBlockIconBinding binding;
@@ -51,6 +52,9 @@ class FileBlockIconButton extends StatefulWidget {
   final String? documentId;
   final Color? color;
   final double buttonSize;
+
+  /// A full menu row with the same live picker owner and a nonzero anchor.
+  final bool showLabel;
 
   @override
   State<FileBlockIconButton> createState() => FileBlockIconButtonState();
@@ -62,6 +66,11 @@ class FileBlockIconButtonState extends State<FileBlockIconButton> {
   bool _open = false;
   bool _saving = false;
   int _session = 0;
+
+  // A menu can still be mounted during its closing animation. Its detached
+  // picker callbacks must stop before that animation disposes the anchor.
+  bool get _ownerActive =>
+      !widget.showLabel || ModalRoute.of(context)?.isCurrent != false;
 
   @override
   void initState() {
@@ -92,7 +101,7 @@ class FileBlockIconButtonState extends State<FileBlockIconButton> {
   /// Always hold the stable host region. Some renderers (PDF) supply their
   /// detached menu context, which cannot locate that region after dismissal.
   void open({BuildContext? toolbarContext}) {
-    if (!mounted || _open || !widget.binding.canEdit) return;
+    if (!mounted || _open || !_ownerActive || !widget.binding.canEdit) return;
     _open = true;
     _session++;
     final releaseHost = PreviewToolbarRegion.hold(context);
@@ -128,6 +137,7 @@ class FileBlockIconButtonState extends State<FileBlockIconButton> {
       _open &&
       _session == session &&
       identical(widget.binding, binding) &&
+      _ownerActive &&
       binding.canEdit;
 
   Future<void> _select(
@@ -155,6 +165,16 @@ class FileBlockIconButtonState extends State<FileBlockIconButton> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final label = LocaleKeys.document_plugins_cover_changeIcon.tr();
+    final hoverColor = EditorSurfaceStyle.calloutBackgroundFor(
+      theme.brightness,
+      theme.colorScheme.surfaceContainerHighest,
+      isPaper: PaperTheme.isEnabled(context),
+    );
+    final icon = FileIdentityGlyph(
+      icon: widget.binding.icon,
+      name: widget.name,
+      color: widget.color,
+    );
     return AppFlowyPopover(
       controller: _controller,
       triggerActions: PopoverTriggerFlags.none,
@@ -178,26 +198,35 @@ class FileBlockIconButtonState extends State<FileBlockIconButton> {
       child: GestureDetector(
         excludeFromSemantics: true,
         onTap: () {},
-        child: IconButton(
-          key: const ValueKey('file-icon-picker-button'),
-          tooltip: label,
-          onPressed: widget.binding.canEdit ? open : null,
-          padding: EdgeInsets.zero,
-          constraints: BoxConstraints.tightFor(
-            width: widget.buttonSize,
-            height: widget.buttonSize,
-          ),
-          hoverColor: EditorSurfaceStyle.calloutBackgroundFor(
-            theme.brightness,
-            theme.colorScheme.surfaceContainerHighest,
-            isPaper: PaperTheme.isEnabled(context),
-          ),
-          icon: FileIdentityGlyph(
-            icon: widget.binding.icon,
-            name: widget.name,
-            color: widget.color,
-          ),
-        ),
+        child: widget.showLabel
+            ? TextButton.icon(
+                key: const ValueKey('file-icon-picker-button'),
+                onPressed: widget.binding.canEdit ? open : null,
+                style: TextButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                  foregroundColor: theme.colorScheme.onSurface,
+                  minimumSize: Size(0, widget.buttonSize),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  textStyle: const TextStyle(fontSize: 14),
+                ).copyWith(
+                  overlayColor: WidgetStatePropertyAll(hoverColor),
+                ),
+                icon: icon,
+                label: Text(label),
+              )
+            : IconButton(
+                key: const ValueKey('file-icon-picker-button'),
+                tooltip: label,
+                onPressed: widget.binding.canEdit ? open : null,
+                padding: EdgeInsets.zero,
+                constraints: BoxConstraints.tightFor(
+                  width: widget.buttonSize,
+                  height: widget.buttonSize,
+                ),
+                hoverColor: hoverColor,
+                icon: icon,
+              ),
       ),
     );
   }

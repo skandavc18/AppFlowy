@@ -562,8 +562,8 @@ void main() {
           }
 
           final rest = await _render(tester, palette, type, dpr: dpr);
-          // The second equal slice points down; its unchanged 6px hover lift
-          // moves the silhouette and shadow together, not the hit rectangles.
+          // The second equal slice points down. Its 6px hover lift now moves
+          // the exact sector hit geometry with the silhouette and shadow.
           final hover = await _render(
             tester,
             palette,
@@ -583,7 +583,30 @@ void main() {
           final shiftedHalo = _halo(type, rest).shift(const Offset(0, 6));
           expect(flatHover.alphaSum(shiftedHalo), 0);
           expect(hover.alphaSum(shiftedHalo), greaterThan(0));
-          _expectSameHits(hover, rest);
+          expect(
+            hover.hits,
+            rest.hits,
+            reason: 'Slice identities are unchanged.',
+          );
+          for (var index = 0; index < rest.hits.length; index++) {
+            final shift = index == 1 ? const Offset(0, 6) : Offset.zero;
+            expect(
+              (hover.hits[index].anchor - rest.hits[index].anchor - shift)
+                  .distance,
+              lessThan(0.000001),
+            );
+            expect(
+              (hover.hits[index].rect.topLeft -
+                      rest.hits[index].rect.topLeft -
+                      shift)
+                  .distance,
+              lessThan(0.000001),
+            );
+            expect(
+              hover.hits[index].contains(hover.hits[index].anchor),
+              isTrue,
+            );
+          }
           _expectSameHits(hover, flatHover);
           _expectSamePixels(hover, flatHover, bounds: _interior(type, rest));
           _expectClearCorners(hover);
@@ -1078,7 +1101,20 @@ class _Raster {
 // Pin the public hit geometry independently of the renderer's private layout.
 Rect _plot(ChartPalette palette, ChartType type, Size size) {
   var widest = 16.0;
-  if (!type.isHorizontal) {
+  var valueWidth = 16.0;
+  for (final tick
+      in (type.isHorizontal ? _categories : ['0', '2', '4', '6', '8', '10'])) {
+    final text = TextPainter(
+      text: TextSpan(
+        text: tick,
+        style: palette.text(size: ChartMetrics.axisLabelSize),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    widest = math.max(widest, text.width);
+    text.dispose();
+  }
+  if (type.isHorizontal) {
     for (final tick in ['0', '2', '4', '6', '8', '10']) {
       final text = TextPainter(
         text: TextSpan(
@@ -1087,14 +1123,19 @@ Rect _plot(ChartPalette palette, ChartType type, Size size) {
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      widest = math.max(widest, text.width);
+      valueWidth = math.max(valueWidth, text.width);
       text.dispose();
     }
   }
   return Rect.fromLTRB(
-    widest + ChartMetrics.axisGap,
+    type.isHorizontal
+        ? math.min(size.width * 0.32, widest + ChartMetrics.axisGap)
+        : widest + ChartMetrics.axisGap,
     math.min(ChartMetrics.plotHeadroom, size.height * 0.12),
-    size.width - ChartMetrics.plotSideroom,
+    size.width -
+        (type.isHorizontal
+            ? math.max(ChartMetrics.plotSideroom, valueWidth / 2 + 4)
+            : ChartMetrics.plotSideroom),
     size.height - ChartMetrics.axisLabelSize - ChartMetrics.axisGap - 4,
   );
 }
@@ -1115,10 +1156,9 @@ void _expectFixtureGeometry(_Raster image, ChartType type) {
       final middle = -math.pi / 2 + (index + 0.5) * math.pi * 2 / 3;
       final direction = Offset(math.cos(middle), math.sin(middle));
       anchor = centre + direction * (outer * 0.72);
-      rect = Rect.fromCircle(
-        center: centre + direction * (outer * 0.7),
-        radius: math.max(outer * 0.22, 10),
-      );
+      rect = Rect.fromCircle(center: centre, radius: outer);
+      expect(hit.contains(anchor), isTrue);
+      if (type == ChartType.donut) expect(hit.contains(centre), isFalse);
     } else if (type.drawsPoints) {
       final x = plot.left + [2, 5, 8][index] / 12.5 * plot.width;
       final radius = type.sizesPoints
@@ -1133,14 +1173,27 @@ void _expectFixtureGeometry(_Raster image, ChartType type) {
       final span = plot.height / 3;
       final at = plot.top + span * (index + 0.5);
       anchor = Offset(plot.left + plot.width * 0.4, at);
-      rect = Rect.fromLTRB(plot.left, at - span / 2, plot.right, at + span / 2);
+      final thickness = math.min(
+        span * ChartMetrics.barGroupFill,
+        ChartMetrics.maximumBarWidth,
+      );
+      rect = Rect.fromLTRB(
+        plot.left,
+        at - thickness / 2,
+        anchor.dx,
+        at + thickness / 2,
+      );
     } else {
       final span = plot.width / 3;
       final x = plot.left + span * (index + 0.5);
       anchor =
           Offset(x, y - (type.drawsLine ? ChartMetrics.pointHoverRadius : 0));
+      final thickness = math.min(
+        span * ChartMetrics.barGroupFill,
+        ChartMetrics.maximumBarWidth,
+      );
       rect = type.drawsBars
-          ? Rect.fromLTRB(x - span / 2, plot.top, x + span / 2, plot.bottom)
+          ? Rect.fromLTRB(x - thickness / 2, y, x + thickness / 2, plot.bottom)
           : Rect.fromCircle(center: Offset(x, y), radius: 12);
     }
     expect((hit.anchor - anchor).distance, lessThan(0.000001));
@@ -1347,6 +1400,16 @@ void _expectSameHits(_Raster actual, _Raster expected) {
     expected.hits
         .map((hit) => (hit.seriesIndex, hit.pointIndex, hit.rect, hit.anchor)),
   );
+  for (var index = 0; index < actual.hits.length; index++) {
+    final hit = actual.hits[index];
+    for (final point in [hit.anchor, hit.rect.center, hit.rect.topLeft]) {
+      expect(
+        hit.contains(point),
+        expected.hits[index].contains(point),
+        reason: 'Shadows must not alter exact hit paths.',
+      );
+    }
+  }
 }
 
 int _differentPixels(

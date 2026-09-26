@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 
 import 'package:appflowy/shared/workspace_layout.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -22,7 +23,8 @@ class HomeLayout {
       homeSetting.state,
       availableWidth: available,
       isMacOS: Platform.isMacOS,
-      disableAnimations: MediaQuery.disableAnimationsOf(context),
+      disableAnimations: MediaQuery.disableAnimationsOf(context) ||
+          MediaQuery.accessibleNavigationOf(context),
     );
   }
 
@@ -51,9 +53,12 @@ class HomeLayout {
     final sidebarWasConstrained =
         menuWidth < HomeSizes.minimumSidebarWidth + homeSetting.resizeOffset;
     // Do not tween a previous docked offset through a now-smaller viewport.
-    animDuration = disableAnimations || menuIsDrawer || sidebarWasConstrained
+    animDuration = disableAnimations ||
+            menuIsDrawer ||
+            sidebarWasConstrained ||
+            homeSetting.resizeType == MenuResizeType.drag
         ? Duration.zero
-        : homeSetting.resizeType.duration();
+        : WorkspaceTokens.transitionDuration;
     editPanelWidth = geometry.editPanelWidth;
     notificationPanelWidth = geometry.contentWidth;
   }

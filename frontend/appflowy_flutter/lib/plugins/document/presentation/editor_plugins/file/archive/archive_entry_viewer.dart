@@ -7,8 +7,15 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_document_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:flutter/material.dart';
 
@@ -31,6 +38,7 @@ class ArchiveEntryViewer extends StatelessWidget {
     required this.metadata,
     required this.onMetadataChanged,
     required this.onClose,
+    this.ocrService,
   });
 
   /// The extracted working copy on disk.
@@ -52,6 +60,8 @@ class ArchiveEntryViewer extends StatelessWidget {
 
   final VoidCallback onClose;
 
+  final OcrService? ocrService;
+
   bool get _isImage => imgExtensionRegex.hasMatch(name.toLowerCase());
 
   @override
@@ -67,67 +77,53 @@ class ArchiveEntryViewer extends StatelessWidget {
   }
 
   Widget _buildBar(BuildContext context, FolderExplorerPalette palette) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.surface.withValues(alpha: 0.72),
-        border: Border(bottom: BorderSide(color: palette.border)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
-        child: Row(
-          children: [
-            Tooltip(
-              message: 'Back to $archiveName',
-              waitDuration: const Duration(milliseconds: 450),
-              child: IconButton(
-                onPressed: onClose,
-                icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                color: palette.textSecondary,
-                hoverColor: palette.hover,
-                splashRadius: 16,
-                constraints:
-                    const BoxConstraints.tightFor(width: 32, height: 30),
-                padding: EdgeInsets.zero,
-              ),
-            ),
-            const SizedBox(width: 6),
-            Icon(fileIconForName(name), size: 16, color: palette.textSecondary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: palette.textPrimary,
-                    ),
+    return DocumentViewportBar(
+      background: palette.background,
+      padding: const EdgeInsets.fromLTRB(8, 6, 10, 6),
+      child: Row(
+        children: [
+          WorkspaceControlButton(
+            tooltip: 'Back to $archiveName',
+            icon: Icons.arrow_back_rounded,
+            onPressed: onClose,
+          ),
+          const SizedBox(width: 6),
+          WorkspaceGlyph.file(name, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: palette.textPrimary,
                   ),
-                  Text(
-                    '$archiveName  ·  $path',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10.5, color: palette.textMuted),
-                  ),
-                ],
-              ),
+                ),
+                Text(
+                  '$archiveName  ·  $path',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10.5, color: palette.textMuted),
+                ),
+              ],
             ),
-            if (_supportsSourceEditing)
-              _SourceModeToggle(
-                editing: metadata[filePreviewEditModeKey] == true,
-                onPressed: () => onMetadataChanged({
-                  ...metadata,
-                  filePreviewEditModeKey:
-                      metadata[filePreviewEditModeKey] != true,
-                }),
-              ),
-          ],
-        ),
+          ),
+          if (_supportsSourceEditing)
+            _SourceModeToggle(
+              editing: metadata[filePreviewEditModeKey] == true,
+              onPressed: () => onMetadataChanged({
+                ...metadata,
+                filePreviewEditModeKey:
+                    metadata[filePreviewEditModeKey] != true,
+              }),
+            ),
+        ],
       ),
     );
   }
@@ -176,7 +172,12 @@ class ArchiveEntryViewer extends StatelessWidget {
     }
 
     if (_isImage) {
-      return _ArchiveImageStage(file: file);
+      return _ArchiveImageStage(
+        key: ValueKey((path, file.path, name)),
+        file: file,
+        name: name,
+        ocrService: ocrService,
+      );
     }
 
     if (isOfficeFile(name)) {
@@ -237,63 +238,68 @@ class _SourceModeToggle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return Tooltip(
-      message: editing ? 'Show preview' : 'Edit source',
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                editing ? Icons.visibility_rounded : Icons.edit_rounded,
-                size: 15,
-                color: palette.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                editing ? 'Preview' : 'Edit',
-                style: TextStyle(fontSize: 12, color: palette.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      ),
+    return WorkspaceControlButton(
+      tooltip: editing ? 'Show preview' : 'Edit source',
+      icon: editing ? Icons.visibility_rounded : Icons.edit_rounded,
+      label: editing ? 'Preview' : 'Edit',
+      onPressed: onPressed,
     );
   }
 }
 
-class _ArchiveImageStage extends StatelessWidget {
-  const _ArchiveImageStage({required this.file});
+class _ArchiveImageStage extends StatefulWidget {
+  const _ArchiveImageStage({
+    super.key,
+    required this.file,
+    required this.name,
+    this.ocrService,
+  });
 
   final File file;
+  final String name;
+  final OcrService? ocrService;
 
+  @override
+  State<_ArchiveImageStage> createState() => _ArchiveImageStageState();
+}
+
+class _ArchiveImageStageState extends State<_ArchiveImageStage> {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return ClipRect(
-      child: InteractiveViewer(
-        minScale: 0.4,
-        maxScale: 8,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Center(
-            // The card hugs the picture rather than filling the pane, so
-            // nothing sits behind a photograph but the page.
-            child: ViewerCard(
-              reactsToPointer: false,
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Image.file(
-                  file,
-                  errorBuilder: (context, error, stackTrace) => Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'This picture could not be decoded.',
-                      style: TextStyle(color: palette.textSecondary),
+    final path = widget.file.path;
+    final name = widget.name;
+    return ImageOcrFindRegion(
+      source: ImageEditorSource(url: path, type: CustomImageType.local),
+      name: name,
+      service: widget.ocrService,
+      isAvailable: () =>
+          mounted &&
+          widget.file.path == path &&
+          widget.name == name &&
+          TickerMode.of(context) &&
+          ModalRoute.of(context)?.isActive != false,
+      child: ClipRect(
+        child: InteractiveViewer(
+          minScale: 0.4,
+          maxScale: 8,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Center(
+              // The card hugs the picture rather than filling the pane, so
+              // nothing sits behind a photograph but the page.
+              child: ViewerCard(
+                reactsToPointer: false,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Image.file(
+                    widget.file,
+                    errorBuilder: (context, error, stackTrace) => Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        'This picture could not be decoded.',
+                        style: TextStyle(color: palette.textSecondary),
+                      ),
                     ),
                   ),
                 ),
@@ -321,7 +327,7 @@ class _ArchiveUnsupportedEntry extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(fileIconForName(name), size: 34, color: palette.textMuted),
+            WorkspaceGlyph.file(name, size: 34),
             const SizedBox(height: 12),
             Text(
               name,

@@ -1,6 +1,7 @@
 import 'package:appflowy/plugins/document/presentation/editor_plugins/database/database_view_block_component.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_block/editor_embed_scroll_region.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_block/editor_page_scrollbar.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/scrolling/deferred_page_embed.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 // ignore: implementation_imports
@@ -47,8 +48,9 @@ class CustomPageBlockComponent extends BlockComponentStatelessWidget {
     final items = node.children;
     final scrollBehavior = ScrollConfiguration.of(context);
 
+    final Widget page;
     if (scrollController == null || scrollController.shrinkWrap) {
-      return PageEmbedLoadScope(
+      page = PageEmbedLoadScope(
         child: ScrollConfiguration(
           behavior: EditorPageScrollBehavior(scrollBehavior),
           child: SingleChildScrollView(
@@ -94,7 +96,7 @@ class CustomPageBlockComponent extends BlockComponentStatelessWidget {
       if (header != null) extentCount++;
       if (footer != null) extentCount++;
 
-      return PageEmbedLoadScope(
+      page = PageEmbedLoadScope(
         child: ScrollConfiguration(
           behavior: EditorPageScrollBehavior(scrollBehavior),
           child: ScrollablePositionedList.builder(
@@ -148,5 +150,13 @@ class CustomPageBlockComponent extends BlockComponentStatelessWidget {
         ),
       );
     }
+
+    // The same viewport is used by normal documents, row pages and nested
+    // editor previews. Paint its canvas without changing height, controllers,
+    // virtualization or the identity of any rendered block.
+    return ColoredBox(
+      color: EditorSurfaceStyle.canvasBackground(context),
+      child: page,
+    );
   }
 }

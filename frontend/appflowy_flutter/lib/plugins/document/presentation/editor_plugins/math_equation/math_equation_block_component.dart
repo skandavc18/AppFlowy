@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resi
 import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -329,10 +330,13 @@ class MathEquationBlockComponentWidgetState
     if (_editing) {
       return palette.hover.withValues(alpha: palette.isDark ? 0.30 : 0.42);
     }
-    if (_chromeVisible) {
+    if (_focused || _menuOpen) {
       return palette.hover.withValues(alpha: palette.isDark ? 0.22 : 0.34);
     }
-    return Colors.transparent;
+    final hover = WorkspaceChrome.hoverColor(context);
+    return hover.withValues(
+      alpha: hover.a * (_hovered ? (palette.isDark ? 0.22 : 0.34) : 0),
+    );
   }
 
   Color _outline(VisualBlockPalette palette) {
@@ -808,8 +812,8 @@ class _TextActionState extends State<_TextAction> {
     if (widget.primary) {
       fill = palette.accent.withValues(alpha: _hovered ? 0.20 : 0.12);
     } else {
-      fill =
-          _hovered ? palette.hover.withValues(alpha: 0.8) : palette.hoverBase;
+      final hover = WorkspaceChrome.hoverColor(context);
+      fill = hover.withValues(alpha: hover.a * (_hovered ? 0.8 : 0));
     }
     return MouseRegion(
       cursor: SystemMouseCursors.click,

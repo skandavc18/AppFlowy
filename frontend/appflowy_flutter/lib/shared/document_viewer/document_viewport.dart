@@ -1,11 +1,13 @@
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'document_viewport_style.dart';
+import 'standalone_file_scope.dart';
 
 /// What the fixed header says about the open document.
 @immutable
@@ -101,7 +103,9 @@ class _DocumentViewportState extends State<DocumentViewport>
     final style = DocumentViewportStyle.of(context);
     final reducedMotion = MediaQuery.disableAnimationsOf(context) ||
         MediaQuery.accessibleNavigationOf(context);
-    final surfaceColor = widget.background ?? style.canvas;
+    final surfaceColor = StandaloneFileScope.maybeOf(context)?.canvas ??
+        widget.background ??
+        style.canvas;
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -179,6 +183,7 @@ class DocumentViewportHeader extends StatelessWidget {
     required this.identity,
     this.actions = const [],
     this.showActions = true,
+    this.keepActionsVisible = false,
     this.leading,
     this.toolbar,
     this.background,
@@ -190,6 +195,7 @@ class DocumentViewportHeader extends StatelessWidget {
   /// Explicit visibility for hosts that need it. Preview hosts additionally
   /// reveal the controls on hover/focus without changing header geometry.
   final bool showActions;
+  final bool keepActionsVisible;
 
   final Widget? leading;
 
@@ -199,6 +205,27 @@ class DocumentViewportHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final host = StandaloneFileScope.forName(context, identity.title);
+    if (host != null) {
+      return StandaloneFileHeaderSlot(
+        controller: host.chrome,
+        controls: StandaloneFileHeader(
+          leading: leading,
+          actions: [
+            for (final action in actions)
+              Visibility(
+                visible: showActions,
+                maintainState: true,
+                maintainAnimation: true,
+                maintainSize: true,
+                child: action,
+              ),
+          ],
+          toolbar: toolbar,
+          keepActionsVisible: keepActionsVisible,
+        ),
+      );
+    }
     final style = DocumentViewportStyle.of(context);
     final subtitle = identity.subtitle;
     final face = Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
@@ -229,7 +256,7 @@ class DocumentViewportHeader extends StatelessWidget {
                       leading!,
                       const SizedBox(width: 4),
                     ],
-                    Icon(identity.icon, size: 18, color: style.icon),
+                    WorkspaceGlyph(identity.icon, color: style.icon),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Column(
@@ -280,6 +307,7 @@ class DocumentViewportHeader extends StatelessWidget {
                         maintainAnimation: true,
                         maintainSize: true,
                         child: PreviewToolbar(
+                          keepVisible: keepActionsVisible,
                           child: ConstrainedBox(
                             constraints:
                                 BoxConstraints(maxWidth: identityWidth * 0.55),
@@ -300,7 +328,10 @@ class DocumentViewportHeader extends StatelessWidget {
               if (toolbar != null)
                 SizedBox(
                   width: toolbarWidth,
-                  child: PreviewToolbar(child: toolbar!),
+                  child: PreviewToolbar(
+                    keepVisible: keepActionsVisible,
+                    child: toolbar!,
+                  ),
                 ),
             ],
           );
@@ -533,6 +564,7 @@ class _DocumentViewportButtonState extends State<DocumentViewportButton> {
 
     return Tooltip(
       message: widget.tooltip,
+      excludeFromSemantics: true,
       waitDuration: const Duration(milliseconds: 420),
       child: Semantics(
         button: true,
@@ -567,7 +599,8 @@ class _DocumentViewportButtonState extends State<DocumentViewportButton> {
                 enabled ? () => setState(() => pressing = false) : null,
             onTap: widget.onPressed,
             child: AnimatedContainer(
-              duration: MediaQuery.disableAnimationsOf(context)
+              duration: MediaQuery.disableAnimationsOf(context) ||
+                      MediaQuery.accessibleNavigationOf(context)
                   ? Duration.zero
                   : AppFlowyMotion.fast,
               curve: AppFlowyMotion.standardCurve,
@@ -583,10 +616,13 @@ class _DocumentViewportButtonState extends State<DocumentViewportButton> {
                 ),
               ),
               alignment: Alignment.center,
-              child: Icon(
+              child: WorkspaceGlyph(
                 widget.icon,
                 size: widget.iconSize,
                 color: foreground,
+                role: enabled
+                    ? WorkspaceGlyphRole.standard
+                    : WorkspaceGlyphRole.preserveInk,
               ),
             ),
           ),

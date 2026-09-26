@@ -1,4 +1,4 @@
-import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,8 +7,12 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/database/widgets/media_file_type_ext.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_toolbar.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/media_entities.pb.dart';
@@ -24,11 +28,17 @@ class InteractiveImageViewer extends StatefulWidget {
     this.userProfile,
     required this.imageProvider,
     this.actions = const MediaActionService(),
+    this.ocrService,
+    this.ocrSourceBuilder,
+    this.canReadImage,
   });
 
   final UserProfilePB? userProfile;
   final AFImageProvider imageProvider;
   final MediaActionService actions;
+  final OcrService? ocrService;
+  final ImageOcrSourceBuilder? ocrSourceBuilder;
+  final bool Function()? canReadImage;
 
   @override
   State<InteractiveImageViewer> createState() => _InteractiveImageViewerState();
@@ -46,6 +56,34 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
 
   ImageBlockData get currentImage =>
       widget.imageProvider.getImage(currentIndex);
+
+  bool get _canReadImage =>
+      mounted &&
+      (widget.canReadImage?.call() ?? true) &&
+      currentIndex >= 0 &&
+      currentIndex < widget.imageProvider.imageCount;
+
+  ImageEditorSource _ocrSource(UserProfilePB? profile) {
+    final image = currentImage;
+    final uri = Uri.tryParse(image.url);
+    return widget.ocrSourceBuilder?.call(image) ??
+        ImageEditorSource(
+          url: image.type == CustomImageType.local &&
+                  uri?.isScheme('file') == true
+              ? File.fromUri(uri!).path
+              : image.url,
+          type: image.type,
+          userProfile: image.type == CustomImageType.internal ? profile : null,
+        );
+  }
+
+  void _closeViewer() {
+    if (!mounted) return;
+    final route = ModalRoute.of(context);
+    if (route?.isCurrent == true && route!.navigator!.canPop()) {
+      route.navigator!.pop();
+    }
+  }
 
   @override
   void initState() {
@@ -67,9 +105,10 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
   }
 
   void _onControllerChanged() {
+    if (!mounted) return;
     final scale = controller.value.getMaxScaleOnAxis();
     final percentage = (scale * 100).toInt();
-    setState(() => currentScale = percentage);
+    if (percentage != currentScale) setState(() => currentScale = percentage);
   }
 
   @override
@@ -96,77 +135,93 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
 
     // The hover region is deliberately non-opaque. Keep its transparent parts
     // from admitting the dialog barrier into the image's gesture arena.
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      child: Focus(
-        focusNode: focusNode,
-        autofocus: true,
-        onKeyEvent: (_, event) => _handleKey(event, size),
-        // Keep the autofocus node ABOVE the hover region: otherwise its focus
-        // would permanently reveal the actions even with the pointer outside.
-        child: MediaHoverRegion(
-          builder: (context, hovered) => Stack(
-            fit: StackFit.expand,
-            children: [
-              if (widget.imageProvider.imageCount > 0) ...[
-                SizedBox.expand(
-                  child: InteractiveViewer(
-                    boundaryMargin: const EdgeInsets.all(double.infinity),
-                    transformationController: controller,
-                    constrained: false,
-                    minScale: _minScaleFactor,
-                    maxScale: _maxScaleFactor,
-                    scaleFactor: 500,
-                    child: SizedBox(
-                      height: size.height,
-                      width: size.width,
-                      child: GestureDetector(
-                        // Keep the existing double-click-to-close behavior.
-                        onDoubleTap: () => Navigator.of(context).pop(),
-                        child: widget.imageProvider.renderImage(
-                          context,
-                          currentIndex,
-                          userProfile,
+    return ContextualFindScope(
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        child: Focus(
+          focusNode: focusNode,
+          autofocus: true,
+          onKeyEvent: (_, event) => _handleKey(event, size),
+          // Keep the autofocus node ABOVE the hover region: otherwise its focus
+          // would permanently reveal the actions even with the pointer outside.
+          child: MediaHoverRegion(
+            builder: (context, hovered) => Stack(
+              fit: StackFit.expand,
+              children: [
+                if (widget.imageProvider.imageCount > 0) ...[
+                  SizedBox.expand(
+                    child: InteractiveViewer(
+                      boundaryMargin: const EdgeInsets.all(double.infinity),
+                      transformationController: controller,
+                      constrained: false,
+                      minScale: _minScaleFactor,
+                      maxScale: _maxScaleFactor,
+                      scaleFactor: 500,
+                      child: SizedBox(
+                        height: size.height,
+                        width: size.width,
+                        child: GestureDetector(
+                          // Keep the existing double-click-to-close behavior.
+                          onDoubleTap: _closeViewer,
+                          child: ImageOcrFindRegion(
+                            source: _ocrSource(userProfile),
+                            name:
+                                widget.imageProvider.getImageName(currentIndex),
+                            service: widget.ocrService,
+                            isAvailable: () => _canReadImage,
+                            isSelected: () => _canReadImage,
+                            debugLabel: 'Photo viewer image',
+                            child: widget.imageProvider.renderImage(
+                              context,
+                              currentIndex,
+                              userProfile,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                InteractiveImageToolbar(
-                  currentImage: currentImage,
-                  imageName: widget.imageProvider.getImageName(currentIndex),
-                  imageCount: widget.imageProvider.imageCount,
-                  isFirstIndex: isFirstIndex,
-                  isLastIndex: isLastIndex,
-                  currentScale: currentScale,
-                  userProfile: userProfile,
-                  actions: widget.actions,
-                  hovered: hovered,
-                  onPrevious: () => _move(-1),
-                  onNext: () => _move(1),
-                  onZoomIn: () => _zoom(1.1, size),
-                  onZoomOut: () => _zoom(.9, size),
-                  onScaleChanged: (scale) {
-                    final currentScale = controller.value.getMaxScaleOnAxis();
-                    final scaleStep = scale / currentScale;
-                    _zoom(scaleStep, size);
-                  },
-                  onDelete: widget.imageProvider.onDeleteImage == null
-                      ? null
-                      : () => widget.imageProvider.onDeleteImage
-                          ?.call(currentIndex),
-                ),
-              ] else
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: CloseButton(
-                      onPressed: () => Navigator.of(context).pop(),
+                  InteractiveImageToolbar(
+                    currentImage: currentImage,
+                    imageName: widget.imageProvider.getImageName(currentIndex),
+                    imageCount: widget.imageProvider.imageCount,
+                    isFirstIndex: isFirstIndex,
+                    isLastIndex: isLastIndex,
+                    currentScale: currentScale,
+                    userProfile: userProfile,
+                    actions: widget.actions,
+                    hovered: hovered,
+                    onPrevious: () => _move(-1),
+                    onNext: () => _move(1),
+                    onZoomIn: () => _zoom(1.1, size),
+                    onZoomOut: () => _zoom(.9, size),
+                    onScaleChanged: (scale) {
+                      final currentScale = controller.value.getMaxScaleOnAxis();
+                      final scaleStep = scale / currentScale;
+                      _zoom(scaleStep, size);
+                    },
+                    onDelete: widget.imageProvider.onDeleteImage == null
+                        ? null
+                        : () {
+                            if (_canReadImage &&
+                                ModalRoute.of(context)?.isCurrent != false) {
+                              widget.imageProvider.onDeleteImage
+                                  ?.call(currentIndex);
+                            }
+                          },
+                  ),
+                ] else
+                  Align(
+                    alignment: Alignment.topRight,
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: CloseButton(
+                        onPressed: _closeViewer,
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -174,6 +229,9 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
   }
 
   KeyEventResult _handleKey(KeyEvent event, Size size) {
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) {
+      return KeyEventResult.ignored;
+    }
     final key = event.logicalKey;
     // The explicit toolbar delete is the only destructive action. Do not let
     // these keys reach a selected database row or the document underneath.
@@ -186,7 +244,7 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
     }
     if (key == LogicalKeyboardKey.escape) {
       if (event is KeyDownEvent) {
-        unawaited(Navigator.of(context).maybePop());
+        _closeViewer();
       }
     } else if (key == LogicalKeyboardKey.arrowLeft) {
       _move(-1);
@@ -210,7 +268,7 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
   }
 
   void _move(int steps) {
-    if (widget.imageProvider.imageCount == 0) return;
+    if (!_canReadImage || ModalRoute.of(context)?.isCurrent == false) return;
     setState(() {
       final index = currentIndex + steps;
       currentIndex = index.clamp(0, widget.imageProvider.imageCount - 1);
@@ -218,6 +276,12 @@ class _InteractiveImageViewerState extends State<InteractiveImageViewer> {
   }
 
   void _zoom(double scaleStep, Size size) {
+    if (!_canReadImage ||
+        !scaleStep.isFinite ||
+        scaleStep <= 0 ||
+        ModalRoute.of(context)?.isCurrent == false) {
+      return;
+    }
     final center = Offset(size.width / 2, size.height / 2);
     final scenePointBefore = controller.toScene(center);
     final currentScale = controller.value.getMaxScaleOnAxis();

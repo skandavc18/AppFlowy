@@ -1,7 +1,8 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flowy_infra_ui/flowy_infra_ui.dart' show showFlowyDialog;
 import 'package:flutter/material.dart';
 
 typedef SimpleAFDialogAction = (String, void Function(BuildContext)?);
@@ -21,13 +22,10 @@ Future<void> showSimpleAFDialog({
   SimpleAFDialogAction? secondaryAction,
   bool barrierDismissible = true,
 }) {
-  final theme = AppFlowyTheme.of(context);
-
-  return showDialog(
+  return showFlowyDialog(
     context: context,
-    barrierColor: theme.surfaceColorScheme.overlay,
     barrierDismissible: barrierDismissible,
-    builder: (_) {
+    builder: (dialogContext) {
       return AFModal(
         constraints: BoxConstraints(
           maxWidth: AFModalDimension.S,
@@ -38,29 +36,25 @@ Future<void> showSimpleAFDialog({
             AFModalHeader(
               leading: Text(
                 title,
+                style: WorkspaceTypography.style(
+                  dialogContext,
+                  WorkspaceTextRole.section,
+                ),
               ),
               trailing: [
-                AFGhostButton.normal(
-                  onTap: () => Navigator.of(context).pop(),
-                  padding: EdgeInsets.all(theme.spacing.xs),
-                  builder: (context, isHovering, disabled) {
-                    return FlowySvg(
-                      FlowySvgs.toast_close_s,
-                      size: Size.square(20),
-                    );
-                  },
+                _DialogCloseButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
                 ),
               ],
             ),
             Flexible(
-              child: ConstrainedBox(
-                // AFModalDimension.dialogHeight - header - footer
-                constraints: BoxConstraints(minHeight: 108.0),
+              child: SingleChildScrollView(
                 child: AFModalBody(
                   child: Text(
                     content,
-                    style: theme.textStyle.body.standard(
-                      color: theme.textColorScheme.primary,
+                    style: WorkspaceTypography.style(
+                      dialogContext,
+                      WorkspaceTextRole.body,
                     ),
                   ),
                 ),
@@ -73,7 +67,7 @@ Future<void> showSimpleAFDialog({
                     text: secondaryAction.$1,
                     onTap: () {
                       secondaryAction.$2?.call(context);
-                      Navigator.of(context).pop();
+                      Navigator.of(dialogContext).pop();
                     },
                   ),
                 isDestructive
@@ -81,14 +75,14 @@ Future<void> showSimpleAFDialog({
                         text: primaryAction.$1,
                         onTap: () {
                           primaryAction.$2?.call(context);
-                          Navigator.of(context).pop();
+                          Navigator.of(dialogContext).pop();
                         },
                       )
                     : AFFilledTextButton.primary(
                         text: primaryAction.$1,
                         onTap: () {
                           primaryAction.$2?.call(context);
-                          Navigator.of(context).pop();
+                          Navigator.of(dialogContext).pop();
                         },
                       ),
               ],
@@ -114,9 +108,8 @@ Future<String?> showAFTextFieldDialog({
   int? maxLength,
   String? hintText,
 }) {
-  return showDialog<String?>(
+  return showFlowyDialog<String>(
     context: context,
-    barrierColor: AppFlowyTheme.of(context).surfaceColorScheme.overlay,
     barrierDismissible: barrierDismissible,
     builder: (context) {
       return AFTextFieldDialog(
@@ -180,8 +173,6 @@ class _AFTextFieldDialogState extends State<AFTextFieldDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-
     return AFModal(
       constraints: BoxConstraints(
         maxWidth: AFModalDimension.S,
@@ -192,17 +183,12 @@ class _AFTextFieldDialogState extends State<AFTextFieldDialog> {
           AFModalHeader(
             leading: Text(
               widget.title,
+              style:
+                  WorkspaceTypography.style(context, WorkspaceTextRole.section),
             ),
             trailing: [
-              AFGhostButton.normal(
-                onTap: () => Navigator.of(context).pop(),
-                padding: EdgeInsets.all(theme.spacing.xs),
-                builder: (context, isHovering, disabled) {
-                  return FlowySvg(
-                    FlowySvgs.toast_close_s,
-                    size: Size.square(20),
-                  );
-                },
+              _DialogCloseButton(
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ],
           ),
@@ -253,4 +239,25 @@ class _AFTextFieldDialogState extends State<AFTextFieldDialog> {
     widget.onConfirm?.call(text);
     Navigator.of(context).pop(text);
   }
+}
+
+class _DialogCloseButton extends StatelessWidget {
+  const _DialogCloseButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+        tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
+        onPressed: onPressed,
+        style: IconButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
+          ),
+        ).copyWith(
+          animationDuration:
+              WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
+        ),
+        icon: const Icon(Icons.close_rounded, size: WorkspaceTokens.iconSize),
+      );
 }

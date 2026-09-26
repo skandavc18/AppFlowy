@@ -90,7 +90,9 @@ class _ExplorerTreeState extends State<ExplorerTree> {
               )
             : ListView.builder(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                itemExtent: 38,
+                itemExtent:
+                    (MediaQuery.textScalerOf(context).scale(14) * 1.3 + 8)
+                        .clamp(38.0, double.infinity),
                 itemCount: itemCount,
                 itemBuilder: (context, index) {
                   if (draft != null && index == insertIndex) {
@@ -119,7 +121,8 @@ class _ExplorerTreeState extends State<ExplorerTree> {
                     selected: controller.selection.contains(row.item.id),
                     editing: controller.editingId == row.item.id,
                     view: view,
-                    dragEnabled: controller.query.isEmpty,
+                    dragEnabled: controller.query.isEmpty &&
+                        controller.canWriteTo(row.item.id),
                     onTap: () {
                       focusNode.requestFocus();
                       controller.selectRow(
@@ -130,7 +133,9 @@ class _ExplorerTreeState extends State<ExplorerTree> {
                       );
                     },
                     onDoubleTap: () => _open(row.item),
-                    onRename: () => controller.beginRename(row.item.id),
+                    onRename: controller.canRename(row.item.id)
+                        ? () => controller.beginRename(row.item.id)
+                        : null,
                     onToggle: () => controller.toggleFolder(row.item.id),
                     onContextMenu: (position) {
                       if (controller.query.isNotEmpty &&
@@ -211,7 +216,7 @@ class _ExplorerTreeState extends State<ExplorerTree> {
   }
 
   KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
-    if (event is! KeyDownEvent) {
+    if (!node.hasPrimaryFocus || event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
     final controller = widget.controller;
@@ -323,7 +328,7 @@ class _ExplorerTreeRow extends StatefulWidget {
   final bool dragEnabled;
   final VoidCallback onTap;
   final VoidCallback onDoubleTap;
-  final VoidCallback onRename;
+  final VoidCallback? onRename;
   final VoidCallback onToggle;
   final ValueChanged<Offset> onContextMenu;
   final Future<bool> Function(String) onRenameSubmitted;
@@ -349,6 +354,8 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
+    final reducedMotion = MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.accessibleNavigationOf(context);
     final row = widget.row;
     final nameStyle = TextStyle(
       color: palette.textPrimary,
@@ -360,7 +367,8 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
       onEnter: (_) => setState(() => hovered = true),
       onExit: (_) => setState(() => hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
+        duration:
+            reducedMotion ? Duration.zero : const Duration(milliseconds: 140),
         curve: Curves.easeOutCubic,
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
         decoration: BoxDecoration(
@@ -418,7 +426,9 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
                           )
                         : AnimatedRotation(
                             turns: row.isExpanded ? 0.25 : 0,
-                            duration: const Duration(milliseconds: 165),
+                            duration: reducedMotion
+                                ? Duration.zero
+                                : const Duration(milliseconds: 165),
                             curve: Curves.easeOutCubic,
                             child: Icon(
                               Icons.chevron_right_rounded,
@@ -433,6 +443,7 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
               const SizedBox(width: 3),
               WorkspaceItemIcon(
                 item: row.item,
+                view: widget.view,
                 expanded: row.isExpanded,
                 color: row.item.isFolder
                     ? palette.accent.withValues(alpha: 0.86)
@@ -473,7 +484,8 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
 
     content = TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
-      duration: const Duration(milliseconds: 160),
+      duration:
+          reducedMotion ? Duration.zero : const Duration(milliseconds: 160),
       curve: Curves.easeOutCubic,
       builder: (context, value, child) => Opacity(
         opacity: value,
@@ -558,7 +570,7 @@ class _ExplorerTreeRowState extends State<_ExplorerTreeRow> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                WorkspaceItemIcon(item: row.item, size: 17),
+                WorkspaceItemIcon(item: row.item, view: widget.view, size: 17),
                 const SizedBox(width: 8),
                 Flexible(
                   child: Text(

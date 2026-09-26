@@ -9,6 +9,7 @@ import 'package:appflowy/plugins/database/grid/presentation/widgets/header/colum
 import 'package:appflowy/plugins/database/widgets/field/field_editor.dart';
 import 'package:appflowy/plugins/database/widgets/field/property_type_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/util/field_type_extension.dart';
 import 'package:appflowy/util/theme_extension.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/field_entities.pb.dart';
@@ -323,16 +324,9 @@ class FieldIcon extends StatelessWidget {
           if (entry == null || styles[fieldInfo.id] == null) {
             return _buildDefault(context);
           }
-          return SizedBox.square(
-            dimension: dimension,
-            child: Icon(
-              entry.icon,
-              size: dimension,
-              color: (Theme.of(context).isLightMode
-                      ? const Color(0xFF171717)
-                      : Colors.white)
-                  .withValues(alpha: 0.6),
-            ),
+          return WorkspaceGlyph(
+            entry.icon,
+            size: dimension,
           );
         },
       );
@@ -344,23 +338,25 @@ class FieldIcon extends StatelessWidget {
     final svgContent = kIconGroups?.findSvgContent(
       fieldInfo.icon,
     );
+    if (svgContent == null) {
+      return WorkspaceGlyph.svg(
+        fieldInfo.fieldType.svgData,
+        size: dimension,
+      );
+    }
+    // A saved field icon is not a device default. Keep its existing artwork,
+    // dimensions and tint independent of the default-icon style preference.
     final color =
         Theme.of(context).isLightMode ? const Color(0xFF171717) : Colors.white;
-    return svgContent == null
-        ? FlowySvg(
-            fieldInfo.fieldType.svgData,
-            color: color.withValues(alpha: 0.6),
-            size: Size.square(dimension),
-          )
-        : SizedBox.square(
-            dimension: dimension,
-            child: Center(
-              child: FlowySvg.string(
-                svgContent,
-                color: color.withValues(alpha: 0.45),
-                size: Size.square(dimension - 2),
-              ),
-            ),
-          );
+    return SizedBox.square(
+      dimension: dimension,
+      child: Center(
+        child: FlowySvg.string(
+          svgContent,
+          color: color.withValues(alpha: 0.45),
+          size: Size.square(dimension - 2),
+        ),
+      ),
+    );
   }
 }

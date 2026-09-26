@@ -47,6 +47,8 @@ class CollectionEmbed extends StatefulWidget {
     this.fullscreen = false,
     this.controller,
     this.onInteractionFocus,
+    this.canEdit,
+    this.onSessionSettingsChanged,
   });
 
   final ViewPB collection;
@@ -79,6 +81,11 @@ class CollectionEmbed extends StatefulWidget {
   /// the widget deletes the whole block.
   final VoidCallback? onInteractionFocus;
 
+  /// Live owner guard for an expanded route; it cannot retain permission from
+  /// an earlier editable snapshot after the embedding page is locked/removed.
+  final bool Function()? canEdit;
+  final ValueChanged<CollectionEmbedSettings>? onSessionSettingsChanged;
+
   @override
   State<CollectionEmbed> createState() => _CollectionEmbedState();
 }
@@ -88,6 +95,14 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
   bool ownsController = false;
   bool hovered = false;
   bool menuOpen = false;
+  CollectionEmbedSettings? _sessionSettings;
+
+  CollectionEmbedSettings get _settings => _sessionSettings ?? widget.settings;
+  bool get _canEdit =>
+      mounted &&
+      widget.editable &&
+      !controller.collection.isLocked &&
+      (widget.canEdit?.call() ?? true);
 
   @override
   void initState() {
@@ -98,8 +113,10 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
   @override
   void didUpdateWidget(covariant CollectionEmbed oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.settings != widget.settings) _sessionSettings = null;
     if (oldWidget.controller != widget.controller ||
         oldWidget.collection.id != widget.collection.id) {
+      _sessionSettings = null;
       if (ownsController) {
         controller.dispose();
       }
@@ -154,10 +171,10 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
     return ResizableMedia(
       width: widget.width,
       minWidth: CollectionEmbedMetrics.minWidth,
-      height: widget.height ?? definition.heightFor(widget.settings.size),
+      height: widget.height ?? definition.heightFor(_settings.size),
       minHeight: 96,
       alignment: widget.alignment,
-      editable: widget.editable,
+      editable: _canEdit,
       onResize: widget.onResizeWidth ?? (_) {},
       onResizeHeight: widget.onResizeHeight,
       child: body,
@@ -170,7 +187,7 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
     CollectionEmbedDefinition definition,
   ) {
     final embed = _embedContext(context, theme, definition);
-    final background = widget.settings.background;
+    final background = _settings.background;
     final flush = background == CollectionEmbedBackground.flush ||
         (definition.flush && background == CollectionEmbedBackground.surface);
 
@@ -241,14 +258,14 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
       CollectionEmbedContext(
         collection: controller.collection,
         controller: controller,
-        settings: widget.settings,
+        settings: _settings,
         theme: theme,
         definition: definition,
         userProfile: widget.userProfile,
         hovered: hovered || menuOpen,
         fullscreen: widget.fullscreen,
-        editable: widget.editable,
-        onSettingsChanged: widget.onSettingsChanged,
+        editable: _canEdit,
+        onSettingsChanged: _changeSettings,
         onOpenObject: _openObject,
         onOpenCollection: _openCollection,
         onFullscreen: _toggleFullscreen,
@@ -270,9 +287,9 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
       title: controller.collection.name.isEmpty
           ? LocaleKeys.collections_untitled.tr()
           : controller.collection.name,
-      dense: widget.settings.size.isCompact,
+      dense: _settings.size.isCompact,
       onTap: _openCollection,
-      subtitle: widget.settings.showMetadata
+      subtitle: _settings.showMetadata
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -340,9 +357,9 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
         embed: embed,
         onChangeCollection: widget.onChangeCollection,
         onRemove: widget.onRemove,
-        onRename: widget.editable ? () => unawaited(_rename()) : null,
+        onRename: _canEdit ? () => unawaited(_rename()) : null,
         onFavorite: () => unawaited(_favorite()),
-        onDuplicate: widget.editable ? () => unawaited(_duplicate()) : null,
+        onDuplicate: _canEdit ? () => unawaited(_duplicate()) : null,
       );
 
   Future<void> _showMenu(
@@ -366,31 +383,59 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
   void _openCollection() =>
       context.read<TabsBloc>().openPlugin(controller.collection);
 
+  void _changeSettings(CollectionEmbedSettings next) {
+    if (!mounted) return;
+    setState(() => _sessionSettings = next);
+    widget.onSessionSettingsChanged?.call(next);
+    // Read-only browsing changes only this retained session, never the node or
+    // collection. Recheck the live widget, not the menu's earlier snapshot.
+    if (_canEdit) widget.onSettingsChanged(next);
+  }
+
   void _toggleFullscreen() {
     if (widget.fullscreen) {
       Navigator.of(context).maybePop();
       return;
     }
+    final owner = controller;
+    final originalSize = _settings.size;
     unawaited(
       showCollectionEmbedFullscreen(
         context: context,
         collection: controller.collection,
-        settings: widget.settings,
-        onSettingsChanged: widget.onSettingsChanged,
+        settings: _settings,
+        onSettingsChanged: (next) {
+          if (mounted && identical(controller, owner)) {
+            _changeSettings(next.copyWith(size: originalSize));
+          }
+        },
+        controller: controller,
         userProfile: widget.userProfile,
-        editable: widget.editable,
+        editable: _canEdit,
+        canEdit: () => mounted && identical(controller, owner) && _canEdit,
+        onSessionSettingsChanged: (next) {
+          if (mounted && identical(controller, owner)) {
+            setState(
+              () => _sessionSettings = next.copyWith(size: originalSize),
+            );
+          }
+        },
       ),
     );
   }
 
   Future<void> _rename() async {
+    if (!_canEdit) return;
     final view = controller.collection;
     final name = await showAFTextFieldDialog(
       context: context,
       title: LocaleKeys.collections_embed_rename.tr(),
       initialValue: view.name,
     );
-    if (name == null || name.trim().isEmpty) {
+    if (!_canEdit ||
+        controller.collection.id != view.id ||
+        name == null ||
+        name.trim().isEmpty) {
       return;
     }
     await const WorkspaceItemService()
@@ -402,6 +447,7 @@ class _CollectionEmbedState extends State<CollectionEmbed> {
   }
 
   Future<void> _duplicate() async {
+    if (!_canEdit) return;
     final view = controller.collection;
     final result = await const WorkspaceItemService().duplicate(
       view: view,
@@ -428,6 +474,9 @@ Future<void> showCollectionEmbedFullscreen({
   required ValueChanged<CollectionEmbedSettings> onSettingsChanged,
   UserProfilePB? userProfile,
   bool editable = true,
+  CollectionEmbedController? controller,
+  bool Function()? canEdit,
+  ValueChanged<CollectionEmbedSettings>? onSessionSettingsChanged,
 }) async {
   final tabs = context.read<TabsBloc>();
   await showGeneralDialog<void>(
@@ -435,7 +484,10 @@ Future<void> showCollectionEmbedFullscreen({
     barrierDismissible: true,
     barrierLabel: LocaleKeys.collections_embed_fullscreen.tr(),
     barrierColor: Colors.black.withValues(alpha: 0.42),
-    transitionDuration: CollectionEmbedMetrics.reveal,
+    transitionDuration: MediaQuery.disableAnimationsOf(context) ||
+            MediaQuery.accessibleNavigationOf(context)
+        ? Duration.zero
+        : CollectionEmbedMetrics.reveal,
     pageBuilder: (dialogContext, animation, _) {
       final media = MediaQuery.sizeOf(dialogContext);
       return BlocProvider<TabsBloc>.value(
@@ -454,6 +506,9 @@ Future<void> showCollectionEmbedFullscreen({
                   onSettingsChanged: onSettingsChanged,
                   userProfile: userProfile,
                   editable: editable,
+                  controller: controller,
+                  canEdit: canEdit,
+                  onSessionSettingsChanged: onSessionSettingsChanged,
                 ),
               ),
             ),
@@ -485,6 +540,9 @@ class _FullscreenEmbed extends StatefulWidget {
     required this.onSettingsChanged,
     required this.userProfile,
     required this.editable,
+    this.controller,
+    this.canEdit,
+    this.onSessionSettingsChanged,
   });
 
   final ViewPB collection;
@@ -492,6 +550,9 @@ class _FullscreenEmbed extends StatefulWidget {
   final ValueChanged<CollectionEmbedSettings> onSettingsChanged;
   final UserProfilePB? userProfile;
   final bool editable;
+  final CollectionEmbedController? controller;
+  final bool Function()? canEdit;
+  final ValueChanged<CollectionEmbedSettings>? onSessionSettingsChanged;
 
   @override
   State<_FullscreenEmbed> createState() => _FullscreenEmbedState();
@@ -508,6 +569,12 @@ class _FullscreenEmbedState extends State<_FullscreenEmbed> {
         },
         child: CollectionEmbed(
           collection: widget.collection,
+          controller: widget.controller,
+          canEdit: widget.canEdit,
+          onSessionSettingsChanged: (next) {
+            setState(() => settings = next);
+            widget.onSessionSettingsChanged?.call(next);
+          },
           settings: settings,
           fullscreen: true,
           editable: widget.editable,

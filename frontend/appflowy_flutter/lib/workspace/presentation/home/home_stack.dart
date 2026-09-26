@@ -1,27 +1,31 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math';
 
-import 'package:appflowy/core/frameless_window.dart';
+import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_versions/page_version_host.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
-import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/window_title_bar.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/startup/startup_profile.dart';
+import 'package:appflowy/user/application/reminder/reminder_bloc.dart';
 import 'package:appflowy/util/theme_extension.dart';
+import 'package:appflowy/workspace/application/favorite/favorite_bloc.dart';
+import 'package:appflowy/workspace/application/home/home_bloc.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/presentation/encryption/protected_view_gate.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
-import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/navigation.dart';
 import 'package:appflowy/workspace/presentation/home/tabs/tabs_manager.dart';
+import 'package:appflowy/workspace/presentation/home/workspace_navigation_controls.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -30,10 +34,10 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderIndexedStack;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:provider/provider.dart';
-import 'package:time/time.dart';
 import 'package:universal_platform/universal_platform.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -73,17 +77,19 @@ class _HomeStackState extends State<HomeStack> with WindowListener {
         builder: (context, state) => Column(
           children: [
             HistorySwipeExclusion(
-              child: UniversalPlatform.isWindows
-                  ? WindowTitleBar(
-                      backgroundColor: SidebarStyle.background(context),
-                      leftChildren: [_buildToggleMenuButton(context)],
-                      title: _buildTabs(context),
-                    )
-                  : _buildTabs(context),
+              // The shell (and its tab scroll controller) survives selection.
+              // Only the path below is keyed to the borrowed page notifier.
+              child: ChangeNotifierProvider<PageNotifier>.value(
+                value: state.currentPageManager.notifier,
+                child: HomeTopBar(
+                  layout: widget.layout,
+                  tabs: _buildTabs(context),
+                ),
+              ),
             ),
             Expanded(
               child: HistorySwipePageSurface(
-                child: IndexedStack(
+                child: _PageHostIndexedStack(
                   index: state.currentIndex,
                   children: state.pageManagers
                       .map(
@@ -97,11 +103,11 @@ class _HomeStackState extends State<HomeStack> with WindowListener {
                                 Expanded(
                                   child: Column(
                                     children: [
-                                      HistorySwipeExclusion(
-                                        child: pm.stackTopBar(
-                                          layout: widget.layout,
-                                        ),
-                                      ),
+                                      // Chrome belongs to the shell, not the
+                                      // selected page. Keep this column/slot
+                                      // stable so tab/sidebar changes never
+                                      // reparent the editor below it.
+                                      const SizedBox.shrink(),
                                       Expanded(
                                         child: PageStack(
                                           pageManager: pm,
@@ -134,70 +140,78 @@ class _HomeStackState extends State<HomeStack> with WindowListener {
     );
   }
 
-  Widget _buildTabs(BuildContext context) => Padding(
-        padding: EdgeInsets.only(left: widget.layout.menuSpacing),
-        child: TabsManager(
-          onIndexChanged: (index) {
-            final tabs = context.read<TabsBloc>();
-            if (tabs.state.currentIndex != index) {
-              FocusScope.of(context).unfocus();
-              tabs.add(TabsEvent.selectTab(index));
-            }
-          },
-        ),
-      );
-
-  Widget _buildToggleMenuButton(BuildContext context) {
-    if (context.read<HomeSettingBloc>().isMenuExpanded) {
-      return const SizedBox.shrink();
-    }
-
-    final textSpan = TextSpan(
-      children: [
-        TextSpan(
-          text: '${LocaleKeys.sideBar_openSidebar.tr()}\n',
-          style: context.tooltipTextStyle(),
-        ),
-        TextSpan(
-          text: Platform.isMacOS ? '⌘+.' : 'Ctrl+\\',
-          style: context
-              .tooltipTextStyle()
-              ?.copyWith(color: Theme.of(context).hintColor),
-        ),
-      ],
-    );
-
-    return FlowyTooltip(
-      richMessage: textSpan,
-      child: Listener(
-        behavior: HitTestBehavior.translucent,
-        onPointerDown: (_) {
-          final isMenuExpanded = context.read<HomeSettingBloc>().isMenuExpanded;
-          final status =
-              isMenuExpanded ? MenuStatus.hidden : MenuStatus.expanded;
-          context
-              .read<HomeSettingBloc>()
-              .add(HomeSettingEvent.changeMenuStatus(status));
+  Widget _buildTabs(BuildContext context) => TabsManager(
+        onIndexChanged: (index) {
+          final tabs = context.read<TabsBloc>();
+          if (tabs.state.currentIndex != index) {
+            FocusScope.of(context).unfocus();
+            tabs.add(TabsEvent.selectTab(index));
+          }
         },
-        child: FlowyHover(
-          child: Container(
-            width: 24,
-            padding: const EdgeInsets.all(4),
-            child: const RotatedBox(
-              quarterTurns: 2,
-              child: FlowySvg(FlowySvgs.hide_menu_s),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+      );
 
   @override
   void onWindowFocus() {
     // https://pub.dev/packages/window_manager#windows
     // must call setState once when the window is focused
     setState(() {});
+  }
+}
+
+/// IndexedStack inserts unkeyed Visibility wrappers above its children. A key
+/// on the page below those wrappers cannot retain it when tabs move. Key the
+/// wrappers at the sibling reconciliation boundary instead, without GlobalKey
+/// reparenting or changing indexed layout, painting, semantics or visibility.
+class _PageHostIndexedStack extends Stack {
+  _PageHostIndexedStack({
+    required this.index,
+    required List<Widget> children,
+  }) : super(
+          children: [
+            for (var i = 0; i < children.length; i++)
+              Visibility.maintain(
+                key: children[i].key,
+                visible: i == index,
+                child: children[i],
+              ),
+          ],
+        );
+
+  final int index;
+
+  @override
+  RenderIndexedStack createRenderObject(BuildContext context) =>
+      RenderIndexedStack(
+        index: index,
+        alignment: alignment,
+        textDirection: Directionality.of(context),
+        fit: fit,
+        clipBehavior: clipBehavior,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant RenderIndexedStack renderObject,
+  ) {
+    super.updateRenderObject(context, renderObject);
+    renderObject.index = index;
+  }
+
+  @override
+  MultiChildRenderObjectElement createElement() =>
+      _PageHostIndexedStackElement(this);
+}
+
+class _PageHostIndexedStackElement extends MultiChildRenderObjectElement {
+  _PageHostIndexedStackElement(_PageHostIndexedStack super.widget);
+
+  @override
+  _PageHostIndexedStack get widget => super.widget as _PageHostIndexedStack;
+
+  @override
+  void debugVisitOnstageChildren(ElementVisitor visitor) {
+    if (children.isNotEmpty) visitor(children.elementAt(widget.index));
   }
 }
 
@@ -225,17 +239,15 @@ class _PageStackState extends State<PageStack>
 
     return Container(
       key: const ValueKey('workspace-page-canvas'),
-      color: EditorSurfaceStyle.canvasBackgroundFor(
-        Theme.of(context).brightness,
-        Theme.of(context).colorScheme.surface,
-        isPaper: PaperTheme.isEnabled(context),
-      ),
+      color: WorkspacePalette.of(context).background,
       child: FocusTraversalGroup(
-        child: widget.pageManager.stackWidget(
-          userProfile: widget.userProfile,
-          onDeleted: (view, index) {
-            widget.delegate.didDeleteStackWidget(view, index);
-          },
+        child: ContextualFindScope(
+          child: widget.pageManager.stackWidget(
+            userProfile: widget.userProfile,
+            onDeleted: (view, index) {
+              widget.delegate.didDeleteStackWidget(view, index);
+            },
+          ),
         ),
       ),
     );
@@ -285,7 +297,8 @@ class _SecondaryViewState extends State<SecondaryView>
       ..addListener(updateWidthAnimation);
 
     animationController = AnimationController(
-      duration: const Duration(milliseconds: 300),
+      duration: WorkspaceTokens.transitionDuration,
+      value: widget.pageManager.showSecondaryPluginNotifier.value ? 1 : 0,
       vsync: this,
     );
     // Reuse one curve: allocating a CurvedAnimation on every resize leaves
@@ -308,6 +321,20 @@ class _SecondaryViewState extends State<SecondaryView>
     onSecondaryViewChanged();
 
     overlayController.show();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    animationController.duration = WorkspaceTokens.motion(
+      context,
+      WorkspaceTokens.transitionDuration,
+    );
+    if (animationController.duration == Duration.zero &&
+        animationController.isAnimating) {
+      animationController.value =
+          widget.pageManager.showSecondaryPluginNotifier.value ? 1 : 0;
+    }
   }
 
   @override
@@ -338,7 +365,10 @@ class _SecondaryViewState extends State<SecondaryView>
               child: Align(
                 alignment: AlignmentDirectional.topEnd,
                 child: AnimatedSwitcher(
-                  duration: 150.milliseconds,
+                  duration: WorkspaceTokens.motion(
+                    context,
+                    WorkspaceTokens.hoverDuration,
+                  ),
                   transitionBuilder: (child, animation) {
                     return NonClippingSizeTransition(
                       sizeFactor: animation,
@@ -357,11 +387,7 @@ class _SecondaryViewState extends State<SecondaryView>
                             width: 36,
                             decoration: BoxDecoration(
                               borderRadius: getBorderRadius(),
-                              color: EditorSurfaceStyle.canvasBackgroundFor(
-                                Theme.of(context).brightness,
-                                Theme.of(context).colorScheme.surface,
-                                isPaper: PaperTheme.isEnabled(context),
-                              ),
+                              color: WorkspacePalette.of(context).background,
                               boxShadow: [
                                 BoxShadow(
                                   offset: const Offset(0, 4),
@@ -397,11 +423,7 @@ class _SecondaryViewState extends State<SecondaryView>
       child: CompositedTransformTarget(
         link: layerLink,
         child: Container(
-          color: EditorSurfaceStyle.canvasBackgroundFor(
-            Theme.of(context).brightness,
-            Theme.of(context).colorScheme.surface,
-            isPaper: PaperTheme.isEnabled(context),
-          ),
+          color: WorkspacePalette.of(context).background,
           child: FocusTraversalGroup(
             child: ValueListenableBuilder(
               valueListenable: widthNotifier,
@@ -546,6 +568,9 @@ class _SecondaryViewResizerState extends State<SecondaryViewResizer> {
     return OverlayPortal(
       controller: overlayController,
       overlayChildBuilder: (context) {
+        // A closed pane must not leave an invisible resize target over the
+        // live page, nor reserve a one-pixel rule in a zero-width row.
+        if (widget.notifier.value <= 0) return const SizedBox.shrink();
         return CompositedTransformFollower(
           showWhenUnlinked: false,
           link: layerLink,
@@ -575,13 +600,20 @@ class _SecondaryViewResizerState extends State<SecondaryViewResizer> {
                   }
                 },
                 onHorizontalDragEnd: (_) => setState(() => isDragging = false),
+                onHorizontalDragCancel: () =>
+                    setState(() => isDragging = false),
                 child: TweenAnimationBuilder(
                   tween: ColorTween(
                     end: isHover || isDragging
-                        ? Theme.of(context).colorScheme.primary
-                        : Colors.transparent,
+                        ? WorkspacePalette.of(context).focus
+                        : WorkspacePalette.of(context)
+                            .focus
+                            .withValues(alpha: 0),
                   ),
-                  duration: const Duration(milliseconds: 100),
+                  duration: WorkspaceTokens.motion(
+                    context,
+                    WorkspaceTokens.hoverDuration,
+                  ),
                   builder: (context, color, child) {
                     return SizedBox(
                       width: 11,
@@ -605,8 +637,8 @@ class _SecondaryViewResizerState extends State<SecondaryViewResizer> {
           CompositedTransformTarget(
             link: layerLink,
             child: Container(
-              width: 1,
-              color: Theme.of(context).dividerColor,
+              width: widget.notifier.value > 0 ? 1 : 0,
+              color: WorkspacePalette.of(context).border,
             ),
           ),
           Flexible(child: widget.child),
@@ -656,7 +688,9 @@ class FadingIndexedStackState extends State<FadingIndexedStack> {
   @override
   Widget build(BuildContext context) {
     return TweenAnimationBuilder<double>(
-      duration: _targetOpacity > 0 ? widget.duration : 0.milliseconds,
+      duration: _targetOpacity > 0
+          ? WorkspaceTokens.motion(context, widget.duration)
+          : Duration.zero,
       tween: Tween(begin: 0, end: _targetOpacity),
       builder: (_, value, child) => Opacity(opacity: value, child: child),
       child: IndexedStack(index: widget.index, children: widget.children),
@@ -726,6 +760,9 @@ class PageManager {
       : _notifier = PageNotifier(plugin: plugin),
         _secondaryNotifier = PageNotifier(plugin: BlankPagePlugin());
 
+  static int _nextTabId = 0;
+  final String tabId = 'workspace-tab-${_nextTabId++}';
+
   final PageNotifier _notifier;
   final PageNotifier _secondaryNotifier;
   bool _disposed = false;
@@ -772,13 +809,9 @@ class PageManager {
 
   Widget stackTopBar({required HomeLayout layout}) {
     return ChangeNotifierProvider.value(
+      key: ObjectKey(_notifier),
       value: _notifier,
-      child: Selector<PageNotifier, Widget>(
-        selector: (context, notifier) => notifier.titleWidget,
-        builder: (_, __, child) => MoveWindowDetector(
-          child: HomeTopBar(layout: layout),
-        ),
-      ),
+      child: HomeTopBar(layout: layout),
     );
   }
 
@@ -876,9 +909,7 @@ class PageManager {
         child: Selector<PageNotifier, PluginWidgetBuilder>(
           selector: (context, notifier) => notifier.plugin.widgetBuilder,
           builder: (_, widgetBuilder, __) {
-            return const MoveWindowDetector(
-              child: HomeSecondaryTopBar(),
-            );
+            return const HomeSecondaryTopBar();
           },
         ),
       ),
@@ -903,9 +934,10 @@ class PageManager {
 }
 
 class HomeTopBar extends StatefulWidget {
-  const HomeTopBar({super.key, required this.layout});
+  const HomeTopBar({super.key, required this.layout, this.tabs});
 
   final HomeLayout layout;
+  final Widget? tabs;
 
   @override
   State<HomeTopBar> createState() => _HomeTopBarState();
@@ -917,41 +949,301 @@ class _HomeTopBarState extends State<HomeTopBar>
   Widget build(BuildContext context) {
     super.build(context);
 
-    return Container(
-      decoration: BoxDecoration(
-        color: EditorSurfaceStyle.canvasBackgroundFor(
-          Theme.of(context).brightness,
-          Theme.of(context).colorScheme.surface,
-          isPaper: PaperTheme.isEnabled(context),
+    final palette = WorkspacePalette.of(context);
+    return Column(
+      key: const ValueKey('workspace-shell-header'),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        WindowTitleBar(
+          key: const ValueKey('workspace-title-bar'),
+          height: HomeSizes.tabBarHeight,
+          backgroundColor: SidebarPalette.of(context).background,
+          showCaptionButtons:
+              UniversalPlatform.isWindows || UniversalPlatform.isLinux,
+          leftChildren: [
+            SizedBox(width: widget.layout.menuSpacing),
+            const WorkspaceNavigationControls(),
+            const SizedBox(width: WorkspaceTokens.space1),
+          ],
+          title: widget.tabs ?? const WindowDragTarget(),
         ),
-      ),
-      height: HomeSizes.topBarHeight + HomeInsets.topBarTitleVerticalPadding,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: HomeInsets.topBarTitleHorizontalPadding,
-          vertical: HomeInsets.topBarTitleVerticalPadding,
-        ),
-        child: Row(
-          children: [
-            HSpace(widget.layout.menuSpacing),
-            const FlowyNavigation(),
-            const HSpace(16),
-            ChangeNotifierProvider.value(
-              value: Provider.of<PageNotifier>(context, listen: false),
-              child: Consumer(
-                builder: (_, PageNotifier notifier, __) =>
-                    notifier.plugin.widgetBuilder.rightBarItem ??
-                    const SizedBox.shrink(),
+        PreviewToolbarRegion(
+          child: ColoredBox(
+            color: palette.background,
+            child: SizedBox(
+              key: const ValueKey('workspace-context-header'),
+              height: HomeSizes.contextBarHeight,
+              child: DefaultTextStyle(
+                style: WorkspaceTypography.style(
+                  context,
+                  WorkspaceTextRole.metadata,
+                ),
+                child: Consumer<PageNotifier>(
+                  builder: (context, notifier, _) {
+                    final plugin = notifier.plugin;
+                    final actions = plugin.widgetBuilder.rightBarItem;
+                    return LayoutBuilder(
+                      builder: (context, constraints) {
+                        final textScale =
+                            MediaQuery.textScalerOf(context).scale(14) / 14;
+                        final compact = constraints.maxWidth < 800 * textScale;
+                        final actionWidth = actions == null
+                            ? 0.0
+                            : compact
+                                ? WorkspaceTokens.controlHeight
+                                : min(320.0, constraints.maxWidth * 0.25);
+                        return Row(
+                          children: [
+                            const SizedBox(width: WorkspaceTokens.space3),
+                            Expanded(
+                              key: const ValueKey('workspace-context-path'),
+                              child: Row(
+                                key: ObjectKey(notifier),
+                                children: const [FlowyNavigation()],
+                              ),
+                            ),
+                            if (actions != null) ...[
+                              const SizedBox(width: WorkspaceTokens.space1),
+                              HomeContextActions(
+                                source: notifier,
+                                actionIdentity: plugin,
+                                compact: compact,
+                                maxWidth: actionWidth,
+                                child: actions,
+                              ),
+                            ],
+                            const SizedBox(width: WorkspaceTokens.space3),
+                          ],
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
             ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
   @override
   bool get wantKeepAlive => true;
+}
+
+/// Plugin actions keep their own providers and callbacks. A narrow caption
+/// presents them in a local popover rather than squeezing the breadcrumb or
+/// introducing another toolbar band. Only chrome moves, never the page body.
+class HomeContextActions extends StatefulWidget {
+  const HomeContextActions({
+    super.key,
+    required this.source,
+    required this.actionIdentity,
+    required this.child,
+    required this.compact,
+    this.maxWidth = 400,
+  });
+
+  final PageNotifier source;
+
+  /// The plugin owns the actions' providers. rightBarItem itself is rebuilt
+  /// on ordinary shell updates and is not a page-lifetime identity.
+  final Plugin actionIdentity;
+  final Widget child;
+  final bool compact;
+  final double maxWidth;
+
+  @override
+  State<HomeContextActions> createState() => _HomeContextActionsState();
+}
+
+class _HomeContextActionsState extends State<HomeContextActions> {
+  final _popover = PopoverController();
+  VoidCallback? _releaseToolbar;
+  Plugin? _openIdentity;
+  int _popoverGeneration = 0;
+  bool _active = true;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.source.addListener(_onSourceChanged);
+  }
+
+  @override
+  void didUpdateWidget(HomeContextActions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final sourceChanged = !identical(oldWidget.source, widget.source);
+    if (sourceChanged) {
+      oldWidget.source.removeListener(_onSourceChanged);
+      widget.source.addListener(_onSourceChanged);
+    }
+    if (sourceChanged ||
+        !identical(oldWidget.actionIdentity, widget.actionIdentity) ||
+        (oldWidget.compact && !widget.compact)) {
+      _dismissPopover();
+    }
+  }
+
+  @override
+  void deactivate() {
+    _active = false;
+    _dismissPopover();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _active = true;
+  }
+
+  @override
+  void dispose() {
+    widget.source.removeListener(_onSourceChanged);
+    _dismissPopover();
+    super.dispose();
+  }
+
+  bool get _sourceIsCurrent =>
+      mounted &&
+      _active &&
+      widget.compact &&
+      !widget.source._disposed &&
+      identical(widget.source.plugin, widget.actionIdentity);
+
+  void _onSourceChanged() {
+    // Ctrl+N replaces the plugin without replacing its PageNotifier. Close
+    // before the next overlay build can borrow the disposed plugin's blocs.
+    if (!_sourceIsCurrent) _dismissPopover();
+  }
+
+  void _afterBuild(VoidCallback callback) {
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => callback());
+    } else {
+      callback();
+    }
+  }
+
+  void _releaseToolbarHold() {
+    final release = _releaseToolbar;
+    _releaseToolbar = null;
+    if (release != null) _afterBuild(release);
+  }
+
+  void _dismissPopover() {
+    final generation = ++_popoverGeneration;
+    _openIdentity = null;
+    _releaseToolbarHold();
+    // LayoutBuilder can update this widget during layout. Neither the root
+    // overlay nor an ancestor reveal scope may be invalidated at that point.
+    _afterBuild(() {
+      if (generation == _popoverGeneration) _popover.close();
+    });
+  }
+
+  void _showPopover(PageNotifier source, Plugin identity) {
+    if (!_sourceIsCurrent ||
+        !identical(source, widget.source) ||
+        !identical(identity, widget.actionIdentity)) {
+      return;
+    }
+    _dismissPopover();
+    final generation = _popoverGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_sourceIsCurrent || generation != _popoverGeneration) return;
+      _openIdentity = identity;
+      // Programmatic PopoverController.show does not call onOpen.
+      _releaseToolbar = PreviewToolbarRegion.hold(context);
+      _popover.show();
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  Widget _actions() => ScrollConfiguration(
+        behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          reverse: true,
+          child: widget.child,
+        ),
+      );
+
+  Widget _popupActions() {
+    // An inserted overlay first builds on a later frame. Its source may have
+    // been disposed even though the caption has not unmounted yet.
+    if (!_sourceIsCurrent || !identical(_openIdentity, widget.actionIdentity)) {
+      _dismissPopover();
+      return const SizedBox.shrink();
+    }
+    // Overlays are outside the page's provider branch. Borrow the shell's
+    // instances (never create/dispose them here), just as the plugin already
+    // carries its own access/view blocs in rightBarItem.
+    final page = context.read<PageNotifier?>();
+    final tabs = context.read<TabsBloc?>();
+    final home = context.read<HomeBloc?>();
+    final settings = context.read<HomeSettingBloc?>();
+    final workspace = context.read<UserWorkspaceBloc?>();
+    final favorites = context.read<FavoriteBloc?>();
+    final reminders = context.read<ReminderBloc?>();
+    final providers = [
+      if (page != null) ChangeNotifierProvider<PageNotifier>.value(value: page),
+      if (tabs != null) BlocProvider<TabsBloc>.value(value: tabs),
+      if (home != null) BlocProvider<HomeBloc>.value(value: home),
+      if (settings != null)
+        BlocProvider<HomeSettingBloc>.value(value: settings),
+      if (workspace != null)
+        BlocProvider<UserWorkspaceBloc>.value(value: workspace),
+      if (favorites != null) BlocProvider<FavoriteBloc>.value(value: favorites),
+      if (reminders != null) BlocProvider<ReminderBloc>.value(value: reminders),
+    ];
+    final child = SizedBox(
+      width: min(360.0, max(0.0, MediaQuery.sizeOf(context).width - 48)),
+      height: WorkspaceTokens.headerHeight,
+      child: Center(child: _actions()),
+    );
+    return providers.isEmpty
+        ? child
+        : MultiProvider(providers: providers, child: child);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.compact) {
+      return PreviewToolbar(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: widget.maxWidth),
+          child: _actions(),
+        ),
+      );
+    }
+    final source = widget.source;
+    final identity = widget.actionIdentity;
+    return AppFlowyPopover(
+      controller: _popover,
+      triggerActions: PopoverTriggerFlags.none,
+      direction: PopoverDirection.bottomWithRightAligned,
+      animationDuration: WorkspaceTokens.motion(
+        context,
+        WorkspaceTokens.entranceDuration,
+      ),
+      onClose: () {
+        _popoverGeneration++;
+        _openIdentity = null;
+        _releaseToolbarHold();
+      },
+      popupBuilder: (_) => _popupActions(),
+      child: SidebarIconButton(
+        key: const ValueKey('workspace-context-actions'),
+        icon: SidebarIcon.more,
+        dimension: WorkspaceTokens.controlHeight,
+        tooltip: LocaleKeys.button_more.tr(),
+        onPressed: () => _showPopover(source, identity),
+      ),
+    );
+  }
 }
 
 class HomeSecondaryTopBar extends StatelessWidget {
@@ -961,13 +1253,9 @@ class HomeSecondaryTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: EditorSurfaceStyle.canvasBackgroundFor(
-          Theme.of(context).brightness,
-          Theme.of(context).colorScheme.surface,
-          isPaper: PaperTheme.isEnabled(context),
-        ),
+        color: WorkspacePalette.of(context).background,
       ),
-      height: HomeSizes.topBarHeight + HomeInsets.topBarTitleVerticalPadding,
+      height: WorkspaceTokens.headerHeight,
       child: Padding(
         padding: const EdgeInsets.symmetric(
           horizontal: HomeInsets.topBarTitleHorizontalPadding,
@@ -1001,15 +1289,25 @@ class HomeSecondaryTopBar extends StatelessWidget {
               },
             ),
             Expanded(
-              child: Align(
-                alignment: AlignmentDirectional.centerEnd,
-                child: ChangeNotifierProvider.value(
-                  value: Provider.of<PageNotifier>(context, listen: false),
-                  child: Consumer(
-                    builder: (_, PageNotifier notifier, __) =>
-                        notifier.plugin.widgetBuilder.rightBarItem ??
-                        const SizedBox.shrink(),
-                  ),
+              child: Consumer<PageNotifier>(
+                builder: (context, notifier, _) => LayoutBuilder(
+                  builder: (context, constraints) {
+                    final plugin = notifier.plugin;
+                    final actions = plugin.widgetBuilder.rightBarItem;
+                    return Row(
+                      children: [
+                        const Expanded(child: WindowDragTarget()),
+                        if (actions != null)
+                          HomeContextActions(
+                            source: notifier,
+                            actionIdentity: plugin,
+                            compact: constraints.maxWidth < 420,
+                            maxWidth: constraints.maxWidth * 0.8,
+                            child: actions,
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),

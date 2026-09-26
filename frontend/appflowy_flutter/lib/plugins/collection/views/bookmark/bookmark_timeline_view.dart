@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_grid_view.da
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_host.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_reader.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_toolbar.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
@@ -88,6 +89,7 @@ class _TimelineState extends State<_Timeline> {
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
+    final scroll = CollectionPageScrollScope.maybeOf(context) ?? _scroll;
     if (controller.entries.isEmpty) {
       return bookmarkEmptyView(
         context: context,
@@ -107,9 +109,9 @@ class _TimelineState extends State<_Timeline> {
         position: details.globalPosition,
       ),
       child: BookmarkScrollArea(
-        controller: _scroll,
+        controller: scroll,
         child: ListView.builder(
-          controller: _scroll,
+          controller: scroll,
           padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
           itemCount: lines.length,
           itemBuilder: (context, index) => Center(
@@ -249,6 +251,10 @@ class _RowState extends State<_Row> {
                       entry: entry,
                       controller: widget.controller,
                       collection: widget.collection,
+                      readOnly: bookmarkCollectionReadOnly(
+                        context,
+                        widget.collection,
+                      ),
                     ),
                     onSecondaryTapDown: (details) => showBookmarkMenu(
                       context: context,

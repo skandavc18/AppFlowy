@@ -1,5 +1,6 @@
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_metrics.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -137,13 +138,28 @@ void main() {
   });
 
   group('GalleryCardDensity', () {
-    test('captions a full size card exactly as it was designed', () {
+    testWidgets('captions a full size card with workspace roles',
+        (tester) async {
+      final context = await _pumpTypographyContext(tester);
+      final title = WorkspaceTypography.style(
+        context,
+        WorkspaceTextRole.cardTitle,
+      );
+      final metadata = WorkspaceTypography.style(
+        context,
+        WorkspaceTextRole.metadata,
+      );
       final density = GalleryCardDensity.forWidth(
         GalleryCardDensity.referenceWidth,
       );
 
-      expect(density.titleSize, 17);
-      expect(density.footerPadding, const EdgeInsets.fromLTRB(21, 19, 21, 20));
+      expect(density.titleSize, title.fontSize);
+      expect(density.titleSpacing, title.letterSpacing);
+      expect(density.metadataSize, metadata.fontSize);
+      expect(
+        density.footerPadding,
+        const EdgeInsets.all(WorkspaceTokens.space4),
+      );
     });
 
     test('shrinks the file name to suit a narrow card', () {
@@ -154,17 +170,40 @@ void main() {
       expect(embed.footerPadding.left, lessThan(full.footerPadding.left));
     });
 
-    test('never sets the file name below a legible floor', () {
+    testWidgets('never sets the file name below a legible floor',
+        (tester) async {
+      final context = await _pumpTypographyContext(tester);
+      final body = WorkspaceTypography.style(context, WorkspaceTextRole.body);
       for (final width in [0.0, 60.0, 120.0, 150.0]) {
-        expect(GalleryCardDensity.forWidth(width).titleSize, 13);
+        final density = GalleryCardDensity.forWidth(width);
+        expect(density.titleSize, body.fontSize);
+        expect(
+          density.footerPadding,
+          const EdgeInsets.all(WorkspaceTokens.space3),
+        );
       }
     });
 
-    test('never grows the type past its design size', () {
+    testWidgets('never grows the type past its design size', (tester) async {
+      final context = await _pumpTypographyContext(tester);
+      final title = WorkspaceTypography.style(
+        context,
+        WorkspaceTextRole.cardTitle,
+      );
+      final metadata = WorkspaceTypography.style(
+        context,
+        WorkspaceTextRole.metadata,
+      );
       for (final width in [300.0, 480.0, 900.0, double.infinity]) {
         final density = GalleryCardDensity.forWidth(width);
-        expect(density.titleSize, 17);
-        expect(density.metadataSize, 10);
+        expect(density.titleSize, title.fontSize);
+        expect(density.metadataSize, metadata.fontSize);
+        expect(density.typeLabelSize, metadata.fontSize);
+        expect(density.tagSize, metadata.fontSize);
+        expect(
+          density.footerPadding,
+          const EdgeInsets.all(WorkspaceTokens.space4),
+        );
       }
     });
 
@@ -175,4 +214,19 @@ void main() {
       }
     });
   });
+}
+
+Future<BuildContext> _pumpTypographyContext(WidgetTester tester) async {
+  late BuildContext context;
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Builder(
+        builder: (value) {
+          context = value;
+          return const SizedBox.shrink();
+        },
+      ),
+    ),
+  );
+  return context;
 }

@@ -9,7 +9,6 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_icon_binding.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_icon_picker.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/materialized_file_builder.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
@@ -19,6 +18,7 @@ import 'package:appflowy/shared/icon_emoji_picker/recent_icons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -115,13 +115,7 @@ void main() {
         await tester.pump();
         final before = Map<String, dynamic>.from(fixture.file.attributes);
         expect(_glyph(tester).icon.isEmpty, isTrue);
-        expect(
-          find.descendant(
-            of: find.byKey(_iconButton),
-            matching: find.byIcon(fileIconForName('report.pdf')),
-          ),
-          findsOneWidget,
-        );
+        _expectAutomaticPdfGlyph(tester);
 
         await _openPicker(tester);
         _expectFullPicker(tester);
@@ -149,6 +143,7 @@ void main() {
         fixture.editor.undoManager.undo();
         await tester.pumpAndSettle();
         expect(_glyph(tester).icon.isEmpty, isTrue);
+        _expectAutomaticPdfGlyph(tester);
         expect(paragraph.delta!.toPlainText(), draft);
         expect(fixture.editor.selection, selection);
         fixture.editor.undoManager.redo();
@@ -165,6 +160,7 @@ void main() {
         await tester.tap(find.text('Remove'));
         await tester.pumpAndSettle();
         expect(_glyph(tester).icon.isEmpty, isTrue);
+        _expectAutomaticPdfGlyph(tester);
         expect(fixture.file.attributes[FileBlockKeys.icon], isNull);
         expect(fixture.editor.selection, selection);
         _expectOnlyIconChanged(before, fixture.file.attributes);
@@ -236,12 +232,18 @@ void main() {
           textScroll = Scrollable.of(tester.element(text)).position;
           textScroll.jumpTo(90);
         } else {
+          expect(find.byKey(_previewIcon, skipOffstage: false), findsNothing);
+          expect(find.byType(FileBlockIconButton), findsNothing);
           pdfState = tester.state(find.byType(PdfViewer));
           pdfController =
               tester.widget<PdfViewer>(find.byType(PdfViewer)).controller!;
+          unawaited(pdfController.setZoom(pdfController.centerPosition, 2));
+          await tester.pumpAndSettle();
+          expect(pdfController.currentZoom, closeTo(2, 0.001));
           pdfTransform = pdfController.value.clone();
         }
         final before = Map<String, dynamic>.from(fixture.file.attributes);
+        final writesBefore = fixture.writes;
         await mouse.moveTo(tester.getCenter(find.byKey(_frame)));
         await tester.pumpAndSettle();
         final more = kind == 'text'
@@ -250,14 +252,46 @@ void main() {
         await tester.tap(more, kind: ui.PointerDeviceKind.mouse);
         await tester.pumpAndSettle();
         expect(find.byType(FileBlockMenu), findsOneWidget);
-        expect(
-          tester.widget<FileBlockMenu>(find.byType(FileBlockMenu)).onChangeIcon,
-          isNotNull,
-        );
+        FileBlockIconButtonState? pdfIconState;
+        if (kind == 'text') {
+          expect(
+            tester
+                .widget<FileBlockMenu>(find.byType(FileBlockMenu))
+                .onChangeIcon,
+            isNotNull,
+          );
+        } else {
+          expect(
+            tester
+                .widget<FileBlockMenu>(find.byType(FileBlockMenu))
+                .onChangeIcon,
+            isNull,
+          );
+          expect(find.byType(FileBlockIconButton), findsOneWidget);
+          pdfIconState = tester.state<FileBlockIconButtonState>(
+            find.byType(FileBlockIconButton),
+          );
+          expect(pdfIconState.widget.showLabel, isTrue);
+          expect(
+            find.text(LocaleKeys.document_plugins_cover_changeIcon.tr()),
+            findsOneWidget,
+          );
+          await tester.ensureVisible(find.byKey(_iconButton));
+          await tester.pumpAndSettle();
+          expect(find.byKey(_iconButton).hitTestable(), findsOneWidget);
+          expect(
+            tester.widget<TextButton>(find.byKey(_iconButton)).onPressed,
+            isNotNull,
+          );
+        }
         await tester
             .tap(find.text(LocaleKeys.document_plugins_cover_changeIcon.tr()));
         await tester.pumpAndSettle();
         _expectFullPicker(tester);
+        if (kind == 'PDF') {
+          expect(find.byType(FlowyIconEmojiPicker), findsOneWidget);
+          expect(find.byType(FileBlockMenu), findsOneWidget);
+        }
         await mouse.moveTo(Offset.zero);
         await tester.pump(const Duration(milliseconds: 150));
         final actions =
@@ -277,17 +311,33 @@ void main() {
           reason: 'The originating preview stays held while its picker is open',
         );
         await _chooseVivid(tester, 'coffee');
-        _expectVivid(
-          tester
-              .widget<FileIdentityGlyph>(
-                find.descendant(
-                  of: find.byKey(_previewIcon),
-                  matching: find.byType(FileIdentityGlyph),
-                ),
-              )
-              .icon,
-          'coffee',
-        );
+        if (kind == 'text') {
+          _expectVivid(
+            tester
+                .widget<FileIdentityGlyph>(
+                  find.descendant(
+                    of: find.byKey(_previewIcon),
+                    matching: find.byType(FileIdentityGlyph),
+                  ),
+                )
+                .icon,
+            'coffee',
+          );
+        } else {
+          expect(find.byType(FlowyIconEmojiPicker), findsNothing);
+          expect(
+            find.byType(FileBlockMenu),
+            findsOneWidget,
+            reason: 'Choosing an icon closes its picker, not PDF More',
+          );
+          expect(find.byType(FileBlockIconButton), findsOneWidget);
+          expect(
+            tester.state(find.byType(FileBlockIconButton)),
+            same(pdfIconState),
+          );
+          expect(find.byKey(_previewIcon, skipOffstage: false), findsNothing);
+          _expectVivid(_glyph(tester).icon, 'coffee');
+        }
         expect(tester.state(find.byType(FilePreview)), same(previewState));
         expect(
           tester.state(find.byType(MaterializedFileBuilder)),
@@ -316,6 +366,48 @@ void main() {
           expect(tester.state(find.byType(PdfViewer)), same(pdfState));
           expect(pdfController!.value, pdfTransform);
           expect(pdf.opened, [pdfFile.path]);
+          expect(
+            tester.widget<PdfViewer>(find.byType(PdfViewer)).controller,
+            same(pdfController),
+          );
+          final savedIcon =
+              fixture.file.attributes[FileBlockKeys.icon] as String;
+          _expectVivid(EmojiIconData.fromStorageString(savedIcon), 'coffee');
+          expect(_glyph(tester).icon.toStorageString(), savedIcon);
+          expect(fixture.writes, writesBefore + 1);
+
+          final document = fixture.json;
+          final binding = pdfIconState!.widget.binding;
+          fixture.editor.editable = false;
+          await tester.pumpAndSettle();
+          expect(
+            tester.widget<TextButton>(find.byKey(_iconButton)).onPressed,
+            isNull,
+          );
+          expect(find.byKey(_iconButton).hitTestable(), findsOneWidget);
+          await tester.tap(
+            find.byKey(_iconButton),
+            kind: ui.PointerDeviceKind.mouse,
+          );
+          await tester.pumpAndSettle();
+          expect(find.byType(FlowyIconEmojiPicker), findsNothing);
+          expect(find.byType(FileBlockMenu), findsOneWidget);
+          expect(await binding.save(_vivid('rocket')), isFalse);
+          _expectVivid(_glyph(tester).icon, 'coffee');
+
+          tester.widget<FileBlockMenu>(find.byType(FileBlockMenu)).onClose!();
+          await tester.pumpAndSettle();
+          expect(find.byType(FileBlockMenu), findsNothing);
+          expect(
+            find.byType(FileBlockIconButton, skipOffstage: false),
+            findsNothing,
+          );
+          expect(find.byKey(_previewIcon, skipOffstage: false), findsNothing);
+          expect(fixture.file.attributes[FileBlockKeys.icon], savedIcon);
+          _expectVivid(binding.icon, 'coffee');
+          expect(fixture.json, document);
+          expect(fixture.writes, writesBefore + 1);
+          expect(launcher.opened, isEmpty);
         }
         _expectOnlyIconChanged(before, fixture.file.attributes);
         expect(await tester.runAsync(file.readAsBytes), original);
@@ -617,6 +709,26 @@ FileIdentityGlyph _glyph(WidgetTester tester) =>
         matching: find.byType(FileIdentityGlyph),
       ),
     );
+
+void _expectAutomaticPdfGlyph(WidgetTester tester) {
+  final fallback = find.descendant(
+    of: find.byKey(_iconButton),
+    matching: find.byType(WorkspaceGlyph),
+  );
+  expect(fallback, findsOneWidget);
+  expect(tester.widget<WorkspaceGlyph>(fallback).name, 'file-pdf');
+  expect(
+    tester.widget<WorkspaceGlyph>(fallback).name,
+    WorkspaceGlyphs.nameForFile('report.pdf'),
+  );
+  expect(
+    find.descendant(
+      of: find.byKey(_iconButton),
+      matching: find.byType(RawEmojiIconWidget),
+    ),
+    findsNothing,
+  );
+}
 
 void _expectOnlyIconChanged(
   Map<String, dynamic> before,

@@ -177,7 +177,7 @@ class _WorkspaceViewPickerMenuState extends State<WorkspaceViewPickerMenu> {
               height: 34,
               padding: const EdgeInsets.symmetric(horizontal: 9),
               decoration: BoxDecoration(
-                color: palette.hover.withValues(alpha: 0.55),
+                color: palette.hover.withValues(alpha: palette.hover.a * 0.55),
                 borderRadius: BorderRadius.circular(7),
               ),
               child: Row(
@@ -353,7 +353,7 @@ class _ViewPickerRowState extends State<_ViewPickerRow> {
                 ? palette.selected
                 : hovered
                     ? palette.hover
-                    : Colors.transparent,
+                    : palette.hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(7),
           ),
           child: Row(

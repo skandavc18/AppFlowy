@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/field/property_style.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/presentation/widgets/dialog_v2.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -112,6 +113,7 @@ class PropertyStyleEditor extends StatelessWidget {
               icon: style.showButtons
                   ? Icons.check_box_rounded
                   : Icons.check_box_outline_blank_rounded,
+              isToggle: true,
               label: LocaleKeys.interactive_progress_showButtons.tr(),
               onTap: () =>
                   unawaited(_write('show_buttons', !style.showButtons)),
@@ -137,6 +139,7 @@ class PropertyStyleEditor extends StatelessWidget {
               icon: style.showPercent
                   ? Icons.check_box_rounded
                   : Icons.check_box_outline_blank_rounded,
+              isToggle: true,
               label: LocaleKeys.interactive_progress_showPercent.tr(),
               onTap: () =>
                   unawaited(_write('show_percent', !style.showPercent)),
@@ -242,6 +245,7 @@ class PropertyStyleEditor extends StatelessWidget {
             icon: style.showThumbnail
                 ? Icons.check_box_rounded
                 : Icons.check_box_outline_blank_rounded,
+            isToggle: true,
             label: LocaleKeys.interactive_property_showThumbnail.tr(),
             onTap: () => unawaited(_write('thumbnail', !style.showThumbnail)),
           ),
@@ -286,12 +290,14 @@ class _Row extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.value,
+    this.isToggle = false,
   });
 
   final IconData icon;
   final String label;
   final String? value;
   final VoidCallback onTap;
+  final bool isToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -301,7 +307,8 @@ class _Row extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8),
         child: FlowyButton(
           text: FlowyText(label, lineHeight: 1.0),
-          leftIcon: Icon(icon, size: 16),
+          leftIcon:
+              isToggle ? Icon(icon, size: 16) : WorkspaceGlyph(icon, size: 16),
           rightIcon: value == null
               ? null
               : FlowyText.regular(

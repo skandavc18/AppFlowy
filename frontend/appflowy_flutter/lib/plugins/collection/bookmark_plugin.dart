@@ -79,7 +79,10 @@ class BookmarkPluginWidgetBuilder extends PluginWidgetBuilder
     required bool shrinkWrap,
     Map<String, dynamic>? data,
   }) =>
-      BookmarkPage(key: ValueKey(view.id), view: view);
+      BlocProvider<PageAccessLevelBloc>.value(
+        value: pageAccessLevelBloc,
+        child: BookmarkPage(key: ValueKey(view.id), view: view),
+      );
 
   @override
   String? get viewName =>
@@ -157,9 +160,16 @@ class _BookmarkPageState extends State<BookmarkPage> {
   }
 
   @override
-  Widget build(BuildContext context) => BookmarkReader(
-        entryId: widget.view.id,
-        controller: controller,
-        standalone: true,
-      );
+  Widget build(BuildContext context) {
+    final access = context.watch<PageAccessLevelBloc?>();
+    final state = access?.view.id == widget.view.id ? access!.state : null;
+    return BookmarkReader(
+      entryId: widget.view.id,
+      controller: controller,
+      standalone: true,
+      readOnly: state == null
+          ? widget.view.isLocked
+          : state.view.isLocked || !state.isEditable,
+    );
+  }
 }

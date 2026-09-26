@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_dialogs.dart
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_host.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_reader.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_toolbar.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -69,6 +70,7 @@ class _WallState extends State<_Wall> {
   @override
   Widget build(BuildContext context) {
     final controller = widget.controller;
+    final scroll = CollectionPageScrollScope.maybeOf(context) ?? _scroll;
     final theme = widget.theme;
     final entries = controller.entries;
 
@@ -90,7 +92,7 @@ class _WallState extends State<_Wall> {
         position: details.globalPosition,
       ),
       child: BookmarkScrollArea(
-        controller: _scroll,
+        controller: scroll,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final target = controller.settings.density.cardWidth;
@@ -103,7 +105,7 @@ class _WallState extends State<_Wall> {
                 (available - BookmarkMetrics.space4 * (columns - 1)) / columns;
 
             return SingleChildScrollView(
-              controller: _scroll,
+              controller: scroll,
               padding: const EdgeInsets.fromLTRB(
                 BookmarkMetrics.gutter,
                 BookmarkMetrics.space1,
@@ -127,6 +129,10 @@ class _WallState extends State<_Wall> {
                         entry: entry,
                         controller: controller,
                         collection: widget.collection,
+                        readOnly: bookmarkCollectionReadOnly(
+                          context,
+                          widget.collection,
+                        ),
                       ),
                       onToggleStar: () => controller.setStarred(
                         entry,

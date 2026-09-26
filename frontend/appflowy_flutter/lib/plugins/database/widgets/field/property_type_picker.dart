@@ -4,6 +4,7 @@ import 'package:appflowy/plugins/database/application/field/property_style.dart'
 import 'package:appflowy/plugins/database/domain/field_service.dart';
 import 'package:appflowy/plugins/database/domain/location_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/interactive/interactive_style.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/util/field_type_extension.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/field_entities.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -89,7 +90,7 @@ List<PropertyTypeEntry> propertyTypeEntries() => [
         group: PropertyTypeGroup.basic,
         label: FieldType.RichText.i18n,
         description: LocaleKeys.interactive_property_textDesc.tr(),
-        icon: Icons.notes_rounded,
+        icon: Icons.text_format_rounded,
         fieldType: FieldType.RichText,
       ),
       PropertyTypeEntry(
@@ -485,10 +486,9 @@ class _PropertyTypePickerState extends State<PropertyTypePicker> {
                 padding: const EdgeInsets.symmetric(horizontal: 9),
                 child: Row(
                   children: [
-                    Icon(
+                    const WorkspaceGlyph(
                       Icons.search_rounded,
                       size: 15,
-                      color: palette.textMuted,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -591,10 +591,9 @@ class _PropertyRowState extends State<_PropertyRow> {
                   color: palette.accent.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: Icon(
+                child: WorkspaceGlyph(
                   widget.entry.icon,
                   size: 15,
-                  color: palette.accent,
                 ),
               ),
               const SizedBox(width: 10),
@@ -621,7 +620,12 @@ class _PropertyRowState extends State<_PropertyRow> {
                 ),
               ),
               if (widget.selected)
-                Icon(Icons.check_rounded, size: 16, color: palette.accent),
+                WorkspaceGlyph(
+                  Icons.check_rounded,
+                  size: 16,
+                  color: palette.accent,
+                  role: WorkspaceGlyphRole.preserveInk,
+                ),
             ],
           ),
         ),

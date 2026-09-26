@@ -1,8 +1,11 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_chrome.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_context_menu.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_file_stage.dart';
 import 'package:appflowy/plugins/collection/views/repository/repository_host.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_controller.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
@@ -101,7 +104,7 @@ class _RepositoryTreeViewState extends State<RepositoryTreeView> {
               primary: true,
             ),
           ],
-          child: _TreeBody(
+          child: RepositoryTreeBody(
             collection: widget.collection,
             controller: controller,
             theme: theme,
@@ -121,8 +124,11 @@ class _RepositoryTreeViewState extends State<RepositoryTreeView> {
   }
 }
 
-class _TreeBody extends StatelessWidget {
-  const _TreeBody({
+/// Production navigation and file-stage layout, with an optional native file
+/// boundary for offline hosts/tests. No controller or source-cache ownership.
+class RepositoryTreeBody extends StatelessWidget {
+  const RepositoryTreeBody({
+    super.key,
     required this.collection,
     required this.controller,
     required this.theme,
@@ -131,6 +137,7 @@ class _TreeBody extends StatelessWidget {
     required this.editing,
     required this.onFilterChanged,
     required this.onToggleEditing,
+    this.fileBuilder,
   });
 
   final CollectionViewContext collection;
@@ -141,39 +148,48 @@ class _TreeBody extends StatelessWidget {
   final Set<String> editing;
   final ValueChanged<String> onFilterChanged;
   final ValueChanged<String> onToggleEditing;
+  final Widget Function(BuildContext context, RepoEntry entry)? fileBuilder;
 
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final showOutline =
-            controller.settings.showOutline && constraints.maxWidth >= 1100;
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            RepoMetrics.gutter,
-            RepoMetrics.space2,
-            RepoMetrics.gutter,
-            RepoMetrics.space4,
+        final showOutline = controller.settings.showOutline &&
+            CollectionWorkspaceMetrics.fitsRail(
+              context,
+              constraints.maxWidth - RepoMetrics.gutter * 2,
+              railWidth: RepoMetrics.paneWidth +
+                  RepoMetrics.railWidth +
+                  RepoMetrics.paneGap,
+            );
+        return CollectionWorkspaceSplit(
+          railWidth: RepoMetrics.paneWidth,
+          navigation: RepoTreePane(
+            collection: collection,
+            controller: controller,
+            theme: theme,
+            activeId: active?.id,
+            filterController: filter,
+            onFilterChanged: onFilterChanged,
+            onOpen: controller.openFile,
+          ),
+          compactNavigation: CollectionWorkspacePicker(
+            label:
+                active?.name ?? LocaleKeys.collections_repository_goToFile.tr(),
+            tooltip: LocaleKeys.collections_repository_goToFile.tr(),
+            entries: [
+              for (final entry
+                  in controller.entries.where((entry) => !entry.isFolder))
+                AppMenuItem(
+                  label: entry.path,
+                  selected: entry.id == active?.id,
+                  onSelected: () => controller.openFile(entry.id),
+                ),
+            ],
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
-                width: RepoMetrics.paneWidth,
-                child: RepoPanel(
-                  theme: theme,
-                  child: RepoTreePane(
-                    collection: collection,
-                    controller: controller,
-                    theme: theme,
-                    activeId: active?.id,
-                    filterController: filter,
-                    onFilterChanged: onFilterChanged,
-                    onOpen: controller.openFile,
-                  ),
-                ),
-              ),
-              const RepoGap(),
               Expanded(
                 child: RepoPanel(
                   theme: theme,
@@ -184,23 +200,31 @@ class _TreeBody extends StatelessWidget {
                     entry: active,
                     editing: active != null && editing.contains(active!.id),
                     onToggleEditing: onToggleEditing,
+                    fileBuilder: fileBuilder,
                   ),
                 ),
               ),
-              if (showOutline) ...[
-                const RepoGap(),
-                SizedBox(
-                  width: RepoMetrics.railWidth,
-                  child: RepoPanel(
-                    theme: theme,
-                    child: _OutlinePane(
-                      controller: controller,
+              SizedBox(width: showOutline ? RepoMetrics.paneGap : 0),
+              Offstage(
+                offstage: !showOutline,
+                child: ExcludeFocus(
+                  excluding: !showOutline,
+                  child: SizedBox(
+                    width: CollectionWorkspaceMetrics.railWidthFor(
+                      context,
+                      RepoMetrics.railWidth,
+                    ),
+                    child: RepoPanel(
                       theme: theme,
-                      entry: active,
+                      child: _OutlinePane(
+                        controller: controller,
+                        theme: theme,
+                        entry: active,
+                      ),
                     ),
                   ),
                 ),
-              ],
+              ),
             ],
           ),
         );
@@ -239,7 +263,7 @@ class RepoTreePane extends StatelessWidget {
       children: [
         if (filterController != null)
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 12, 10, 8),
+            padding: const EdgeInsets.only(bottom: RepoMetrics.space2),
             child: RepoSearchField(
               theme: theme,
               controller: filterController!,
@@ -392,7 +416,7 @@ class _TreeRow extends StatelessWidget {
                       duration: RepoMetrics.expand,
                       curve: RepoMetrics.curve,
                       turns: expanded ? 0.25 : 0,
-                      child: Icon(
+                      child: WorkspaceGlyph(
                         Icons.chevron_right_rounded,
                         size: RepoMetrics.chevronSize,
                         color: hovered || selected
@@ -418,8 +442,6 @@ class _TreeRow extends StatelessWidget {
                       : hovered
                           ? theme.textStrong
                           : theme.textBody,
-                  axis: selected ? RepoMetrics.strongWeightAxis : 545,
-                  weight: selected ? FontWeight.w600 : FontWeight.w500,
                 ),
                 child: Text(entry.name, overflow: TextOverflow.ellipsis),
               ),
@@ -439,6 +461,7 @@ class _TreeStage extends StatelessWidget {
     required this.entry,
     required this.editing,
     required this.onToggleEditing,
+    this.fileBuilder,
   });
 
   final CollectionViewContext collection;
@@ -447,6 +470,7 @@ class _TreeStage extends StatelessWidget {
   final RepoEntry? entry;
   final bool editing;
   final ValueChanged<String> onToggleEditing;
+  final Widget Function(BuildContext context, RepoEntry entry)? fileBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -486,14 +510,15 @@ class _TreeStage extends StatelessWidget {
             duration: RepoMetrics.reveal,
             switchInCurve: RepoMetrics.curve,
             switchOutCurve: RepoMetrics.curve,
-            child: RepoFileStage(
-              key: ValueKey('repo-stage-${file.id}-$editing'),
-              entry: file,
-              theme: theme,
-              editable: writable,
-              editingSource: editing,
-              fetcher: controller.fetcher,
-            ),
+            child: fileBuilder?.call(context, file) ??
+                RepoFileStage(
+                  key: ValueKey('repo-stage-${file.id}-$editing'),
+                  entry: file,
+                  theme: theme,
+                  editable: writable,
+                  editingSource: editing,
+                  fetcher: controller.fetcher,
+                ),
           ),
         ),
       ],
@@ -535,95 +560,86 @@ class _StageHeader extends StatelessWidget {
     ];
     final segments = entry.path.split('/');
     final glyph = repoGlyphFor(entry, theme);
-    return SizedBox(
-      height: RepoMetrics.stageHeaderHeight,
-      child: Padding(
-        padding: const EdgeInsets.only(left: RepoMetrics.space4 + 2, right: 8),
-        child: Row(
-          children: [
-            // The identity takes every pixel the actions do not, so the
-            // actions sit flush against the right edge whatever the path is.
-            Expanded(
-              child: Row(
+    return CollectionWorkspaceToolbar(
+      padding: const EdgeInsets.only(bottom: RepoMetrics.space2),
+      keepVisible: editing,
+      identity: Row(
+        children: [
+          RepoGlyphIcon(glyph: glyph),
+          const SizedBox(width: 9),
+          Flexible(
+            child: RichText(
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              text: TextSpan(
                 children: [
-                  Icon(glyph.icon, size: 15, color: glyph.color),
-                  const SizedBox(width: 9),
-                  Flexible(
-                    child: RichText(
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                      text: TextSpan(
-                        children: [
-                          if (segments.length > 1)
-                            TextSpan(
-                              text:
-                                  '${segments.sublist(0, segments.length - 1).join(' / ')} / ',
-                              style: theme.metaFaint.copyWith(fontSize: 12),
-                            ),
-                          TextSpan(
-                            text: segments.last,
-                            style: theme.rowLabelStrong,
-                          ),
-                        ],
-                      ),
+                  if (segments.length > 1)
+                    TextSpan(
+                      text:
+                          '${segments.sublist(0, segments.length - 1).join(' / ')} / ',
+                      style: theme.metaFaint.copyWith(fontSize: 12),
                     ),
+                  TextSpan(
+                    text: segments.last,
+                    style: theme.rowLabelStrong,
                   ),
-                  if (meta.isNotEmpty) ...[
-                    const SizedBox(width: RepoMetrics.space3),
-                    Flexible(
-                      child: Text(
-                        meta.join('  ·  '),
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.metaFaint,
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
+          ),
+          if (meta.isNotEmpty) ...[
             const SizedBox(width: RepoMetrics.space3),
-            if (togglable)
-              RepoActionGroup(
-                theme: theme,
-                children: [
-                  RepoAction(
-                    theme: theme,
-                    icon: Icons.visibility_rounded,
-                    tooltip: LocaleKeys.collections_repository_preview.tr(),
-                    selected: !editing,
-                    onPressed: editing ? onToggleEditing : null,
-                  ),
-                  RepoAction(
-                    theme: theme,
-                    icon: Icons.edit_rounded,
-                    tooltip: LocaleKeys.collections_repository_edit.tr(),
-                    selected: editing,
-                    onPressed: editing ? null : onToggleEditing,
-                  ),
-                ],
-              )
-            else if (writable)
-              RepoMeta(
-                theme: theme,
-                icon: Icons.edit_rounded,
-                label: LocaleKeys.collections_repository_editing.tr(),
-              )
-            else
-              RepoMeta(
-                theme: theme,
-                icon: Icons.lock_rounded,
-                label: LocaleKeys.collections_repository_readOnly.tr(),
+            Flexible(
+              child: Text(
+                meta.join('  ·  '),
+                overflow: TextOverflow.ellipsis,
+                style: theme.metaFaint,
               ),
-            const SizedBox(width: RepoMetrics.space2),
-            RepoAction(
-              theme: theme,
-              icon: Icons.open_in_new_rounded,
-              tooltip: LocaleKeys.collections_repository_openInWorkspace.tr(),
-              onPressed: onOpenInWorkspace,
             ),
           ],
-        ),
+        ],
       ),
+      actions: [
+        if (togglable)
+          RepoActionGroup(
+            theme: theme,
+            children: [
+              RepoAction(
+                theme: theme,
+                icon: Icons.visibility_rounded,
+                tooltip: LocaleKeys.collections_repository_preview.tr(),
+                selected: !editing,
+                onPressed: editing ? onToggleEditing : null,
+              ),
+              RepoAction(
+                theme: theme,
+                icon: Icons.edit_rounded,
+                tooltip: LocaleKeys.collections_repository_edit.tr(),
+                selected: editing,
+                onPressed: editing ? null : onToggleEditing,
+              ),
+            ],
+          )
+        else if (writable)
+          RepoMeta(
+            theme: theme,
+            icon: Icons.edit_rounded,
+            label: LocaleKeys.collections_repository_editing.tr(),
+          )
+        else
+          RepoMeta(
+            theme: theme,
+            icon: Icons.lock_rounded,
+            label: LocaleKeys.collections_repository_readOnly.tr(),
+          ),
+        const SizedBox(width: RepoMetrics.space2),
+        RepoAction(
+          theme: theme,
+          icon: Icons.open_in_new_rounded,
+          tooltip: LocaleKeys.collections_repository_openInWorkspace.tr(),
+          onPressed: onOpenInWorkspace,
+        ),
+      ],
     );
   }
 }
@@ -644,9 +660,9 @@ class _StageNotice extends StatelessWidget {
       color: theme.accent.withValues(alpha: 0.07),
       child: Row(
         children: [
-          Icon(Icons.info_rounded, size: 13, color: theme.accent),
+          WorkspaceGlyph(Icons.info_rounded, size: 13, color: theme.textSoft),
           const SizedBox(width: RepoMetrics.space2),
-          Text(message, style: theme.meta),
+          Expanded(child: Text(message, style: theme.meta)),
         ],
       ),
     );
@@ -740,15 +756,10 @@ class RepoOutlineRow extends StatelessWidget {
         padding: EdgeInsets.only(left: symbol.depth * 12.0),
         child: Row(
           children: [
-            TweenAnimationBuilder<double>(
-              duration: RepoMetrics.hover,
-              curve: RepoMetrics.curve,
-              tween: Tween(end: hovered || selected ? 1.0 : 0.78),
-              builder: (context, value, _) => Icon(
-                symbolKindIcon(symbol.kind),
-                size: 13,
-                color: Color.lerp(color.withValues(alpha: 0.7), color, value),
-              ),
+            WorkspaceGlyph(
+              symbolKindIcon(symbol.kind),
+              size: 13,
+              color: color,
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -759,7 +770,6 @@ class RepoOutlineRow extends StatelessWidget {
                   fontSize: 12,
                   color:
                       selected || hovered ? theme.textStrong : theme.textBody,
-                  axis: selected ? RepoMetrics.strongWeightAxis : 545,
                 ),
               ),
             ),

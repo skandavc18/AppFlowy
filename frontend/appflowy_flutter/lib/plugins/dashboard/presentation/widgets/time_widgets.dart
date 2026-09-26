@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registr
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
 import 'package:appflowy/plugins/database/calendar/application/calendar_workspace.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_chrome.dart';
+import 'package:appflowy/plugins/database/calendar/presentation/calendar_event_details.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_shell.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/views/month_view.dart';
 import 'package:appflowy/shared/calendar/calendar_event.dart';
@@ -176,7 +177,7 @@ final _calendar = DashboardWidgetDefinition(
   defaultColumnSpan: 8,
   defaultRowSpan: 12,
   minimumColumnSpan: 4,
-  minimumRowSpan: 7,
+  minimumRowSpan: 5,
   showsTitleByDefault: false,
   padding: EdgeInsets.zero,
   slashName: 'calendar',
@@ -192,12 +193,12 @@ final _calendar = DashboardWidgetDefinition(
     'reminders',
     'google calendar',
   ],
-  builder: (context) => _DashboardCalendar(
+  builder: (context) => DashboardCalendar(
     key: ValueKey('dashboard-calendar-${context.spec.id}'),
     context: context,
   ),
   configure: (context) => [
-    DashboardConfigChoice(
+    DashboardConfigCalendarView(
       label: LocaleKeys.dashboard_config_calendarView.tr(),
       value: context.spec.setting(_keyMode, fallback: 'month'),
       choices: [
@@ -246,6 +247,9 @@ String dashboardCalendarModeLabel(CalendarViewMode mode) => switch (mode) {
       CalendarViewMode.day => LocaleKeys.dashboard_calendar_day.tr(),
       CalendarViewMode.agenda => LocaleKeys.dashboard_calendar_agenda.tr(),
       CalendarViewMode.year => LocaleKeys.dashboard_calendar_year.tr(),
+      CalendarViewMode.monthAgenda ||
+      CalendarViewMode.monthSplit =>
+        calendarViewModeLabel(mode),
     };
 
 /// The whole calendar, on a dashboard.
@@ -253,87 +257,203 @@ String dashboardCalendarModeLabel(CalendarViewMode mode) => switch (mode) {
 /// It reads the same sources the calendar page does — this workspace's
 /// reminders and any connected Google account — so an event added here is the
 /// same event everywhere else, and one added elsewhere shows up here.
-class _DashboardCalendar extends StatefulWidget {
-  const _DashboardCalendar({super.key, required this.context});
+class DashboardCalendar extends StatefulWidget {
+  const DashboardCalendar({
+    super.key,
+    required this.context,
+    this.workspace,
+    this.delegate,
+    this.initialDate,
+    this.now = DateTime.now,
+  }) : assert(workspace == null || delegate != null);
 
   final DashboardWidgetContext context;
 
+  /// A host may lend its already-connected workspace and actions. The calendar
+  /// never starts reminder/network services or disposes a borrowed workspace.
+  final CalendarWorkspace? workspace;
+  final CalendarViewDelegate? delegate;
+  final DateTime? initialDate;
+  final DateTime Function() now;
+
   @override
-  State<_DashboardCalendar> createState() => _DashboardCalendarState();
+  State<DashboardCalendar> createState() => _DashboardCalendarState();
 }
 
-class _DashboardCalendarState extends State<_DashboardCalendar> {
+class _DashboardCalendarState extends State<DashboardCalendar> {
   final GlobalKey<CalendarShellState> _shell = GlobalKey<CalendarShellState>();
-  late final ReminderCalendarProvider _reminders;
-  late final CalendarWorkspace _workspace;
+  ReminderCalendarProvider? _reminders;
+  late CalendarWorkspace _workspace;
+  bool _ownsWorkspace = false;
 
   DashboardWidgetContext get data => widget.context;
+  BuildContext get _calendarContext => _shell.currentContext ?? context;
 
   @override
   void initState() {
     super.initState();
+    _bind();
+  }
+
+  void _bind() {
+    final borrowed = widget.workspace;
+    _ownsWorkspace = borrowed == null;
+    if (borrowed != null) {
+      _workspace = borrowed;
+      _reminders = null;
+      return;
+    }
     _reminders = ReminderCalendarProvider(
       calendarName: LocaleKeys.reminders_title.tr(),
     );
-    _workspace = CalendarWorkspace(providers: [_reminders]);
+    _workspace = CalendarWorkspace(providers: [_reminders!]);
     ReminderStore.instance.start();
     unawaited(_attachGoogleCalendars());
   }
 
+  @override
+  void didUpdateWidget(DashboardCalendar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.workspace != widget.workspace) {
+      final previous = _workspace;
+      final owned = _ownsWorkspace;
+      _bind();
+      if (owned) previous.dispose();
+    }
+  }
+
   /// Local sources first, so the calendar draws with or without a network.
   Future<void> _attachGoogleCalendars() async {
-    final selections = await _workspace.readGoogleSelection();
+    final workspace = _workspace;
+    final selections = await workspace.readGoogleSelection();
+    if (!mounted || workspace != _workspace) return;
     final providers =
         await buildGoogleCalendarProviders(selections: selections);
-    if (!mounted) {
+    if (!mounted || workspace != _workspace) {
+      for (final provider in providers) {
+        provider.dispose();
+      }
       return;
     }
     for (final provider in providers) {
-      _workspace.addProvider(provider);
+      workspace.addProvider(provider);
     }
   }
 
   @override
   void dispose() {
-    _workspace.dispose();
+    if (_ownsWorkspace) _workspace.dispose();
     super.dispose();
   }
 
-  CalendarViewMode get _mode {
-    final stored = data.spec.setting(_keyMode, fallback: 'month');
-    for (final mode in CalendarViewMode.values) {
-      if (mode.name == stored) {
-        return mode;
-      }
-    }
-    return CalendarViewMode.month;
+  CalendarViewMode get _mode => CalendarViewMode.fromValue(
+        data.spec.setting(_keyMode, fallback: 'month'),
+      );
+
+  bool get _canEdit => data.isTypable && (widget.delegate?.canEdit ?? true);
+
+  bool get _canCreate => _canEdit && _workspace.defaultProvider != null;
+
+  bool _canEditEvent(CalendarEvent event) =>
+      _canEdit &&
+      !event.readOnly &&
+      (widget.delegate?.allowsEditing(event) ?? true) &&
+      (_workspace.providerFor(event)?.capabilities.canEdit ?? false);
+
+  CalendarViewDelegate get _delegate {
+    final boundWorkspace = _workspace;
+    final boundWidgetId = data.spec.id;
+    bool stillBound() =>
+        mounted &&
+        identical(boundWorkspace, _workspace) &&
+        data.spec.id == boundWidgetId;
+    final actions = widget.delegate ??
+        CalendarViewDelegate(
+          colorOf: _workspace.colorFor,
+          onOpenEvent: _open,
+          onCreateAt: _create,
+          onReschedule: _reschedule,
+          onToggleComplete: _toggleComplete,
+          onShowMore: _showDay,
+          onDayMenu: _dayMenu,
+          onEventMenu: _eventMenu,
+        );
+    return CalendarViewDelegate(
+      colorOf: actions.colorOf,
+      canEdit: _canEdit,
+      canEditEvent: _canEditEvent,
+      onOpenEvent: actions.onOpenEvent == null
+          ? null
+          : (event) {
+              if (stillBound()) actions.onOpenEvent!(event);
+            },
+      onEventMenu: actions.onEventMenu == null
+          ? null
+          : (event, position) {
+              if (stillBound()) actions.onEventMenu!(event, position);
+            },
+      onDayMenu: actions.onDayMenu == null
+          ? null
+          : (day, position) {
+              if (stillBound()) actions.onDayMenu!(day, position);
+            },
+      onShowMore: actions.onShowMore == null
+          ? null
+          : (day, position) {
+              if (stillBound()) actions.onShowMore!(day, position);
+            },
+      onCreateAt: !_canCreate || actions.onCreateAt == null
+          ? null
+          : (at, {bool hasTime = false}) {
+              if (stillBound() && _canCreate) {
+                actions.onCreateAt!(at, hasTime: hasTime);
+              }
+            },
+      onReschedule: !_canEdit || actions.onReschedule == null
+          ? null
+          : (event, start, end) {
+              if (stillBound() &&
+                  _canEditEvent(event) &&
+                  (_workspace.providerFor(event)?.capabilities.canMove ??
+                      false)) {
+                actions.onReschedule!(event, start, end);
+              }
+            },
+      onToggleComplete: !_canEdit || actions.onToggleComplete == null
+          ? null
+          : (event) {
+              if (stillBound() && _canEditEvent(event)) {
+                actions.onToggleComplete!(event);
+              }
+            },
+    );
   }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
         // One tidy row of chrome when there is room for it; the stacked
         // arrangement only when the card really is narrow.
-        builder: (context, constraints) => CalendarShell(
-          key: _shell,
-          workspace: _workspace,
-          initialMode: _mode,
-          onModeChanged: (mode) => data.setSettings({_keyMode: mode.name}),
-          firstDayOfWeek:
-              data.spec.integer(_keyFirstDay, fallback: DateTime.monday),
-          showWeekends: data.spec.flag(_keyWeekends, fallback: true),
-          showWeekNumbers: data.spec.flag(_keyWeekNumbers),
-          compact: constraints.maxWidth < 460,
-          quiet: true,
-          delegate: CalendarViewDelegate(
-            colorOf: _workspace.colorFor,
-            canEdit: data.isTypable,
-            onOpenEvent: _open,
-            onCreateAt: _create,
-            onReschedule: _reschedule,
-            onToggleComplete: _toggleComplete,
-            onShowMore: _showDay,
-            onDayMenu: _dayMenu,
-            onEventMenu: _eventMenu,
+        builder: (context, constraints) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            disableAnimations: MediaQuery.of(context).disableAnimations ||
+                data.document.settings.reduceMotion,
+          ),
+          child: CalendarShell(
+            key: _shell,
+            workspace: _workspace,
+            initialMode: _mode,
+            mode: data.isTypable ? _mode : null,
+            initialDate: widget.initialDate,
+            now: widget.now,
+            onModeChanged: (mode) => data.setSettings({_keyMode: mode.name}),
+            firstDayOfWeek:
+                data.spec.integer(_keyFirstDay, fallback: DateTime.monday),
+            showWeekends: data.spec.flag(_keyWeekends, fallback: true),
+            showWeekNumbers: data.spec.flag(_keyWeekNumbers),
+            compact: constraints.maxWidth < 460,
+            quiet: true,
+            embedded: data.controller.modalWidgetId != data.spec.id,
+            delegate: _delegate,
           ),
         ),
       );
@@ -341,7 +461,9 @@ class _DashboardCalendarState extends State<_DashboardCalendar> {
   void _open(CalendarEvent event) {
     if (event.url.isNotEmpty) {
       unawaited(launchUrl(Uri.parse(event.url)));
+      return;
     }
+    unawaited(showCalendarEventDetails(_calendarContext, event: event));
   }
 
   /// Everything on one day, where it was asked for.
@@ -373,7 +495,7 @@ class _DashboardCalendarState extends State<_DashboardCalendar> {
             enabled: false,
           ),
         const AppMenuSeparator(),
-        if (data.isTypable)
+        if (_canCreate)
           AppMenuItem(
             label: LocaleKeys.calendarView_newEvent.tr(),
             icon: Icons.add_rounded,
@@ -391,19 +513,27 @@ class _DashboardCalendarState extends State<_DashboardCalendar> {
   /// What an event offers when it is asked.
   Future<void> _eventMenu(CalendarEvent event, Offset position) async {
     final provider = _workspace.providerFor(event);
-    final canWrite =
-        provider != null && provider.capabilities.canWrite && !event.readOnly;
+    final canWrite = _canEditEvent(event);
+    final canDelete = _canEdit &&
+        !event.readOnly &&
+        (provider?.capabilities.canDelete ?? false);
     await showAppMenu<void>(
       context: context,
       anchor: position & Size.zero,
       entries: [
+        if (event.url.isEmpty)
+          AppMenuItem(
+            label: LocaleKeys.reminders_open.tr(),
+            icon: Icons.open_in_new_rounded,
+            onSelected: () => _open(event),
+          ),
         if (event.url.isNotEmpty)
           AppMenuItem(
             label: LocaleKeys.calendarView_openInGoogle.tr(),
             icon: Icons.launch_rounded,
             onSelected: () => _open(event),
           ),
-        if (event.kind == CalendarEventKind.reminder)
+        if (canWrite && event.kind == CalendarEventKind.reminder)
           AppMenuItem(
             label: event.isCompleted
                 ? LocaleKeys.reminders_markNotDone.tr()
@@ -416,13 +546,20 @@ class _DashboardCalendarState extends State<_DashboardCalendar> {
           icon: Icons.event_rounded,
           onSelected: () => _shell.currentState?.showDay(event.start.local),
         ),
-        if (canWrite) ...[
+        if (canDelete) ...[
           const AppMenuSeparator(),
           AppMenuItem(
             label: LocaleKeys.calendarView_deleteEvent.tr(),
             icon: Icons.delete_outline_rounded,
             destructive: true,
-            onSelected: () => unawaited(_workspace.delete(event)),
+            onSelected: () {
+              if (_canEdit &&
+                  !event.readOnly &&
+                  (_workspace.providerFor(event)?.capabilities.canDelete ??
+                      false)) {
+                unawaited(_workspace.delete(event));
+              }
+            },
           ),
         ],
       ],
@@ -435,13 +572,13 @@ class _DashboardCalendarState extends State<_DashboardCalendar> {
       context: context,
       anchor: position & Size.zero,
       entries: [
-        if (data.isTypable)
+        if (_canCreate)
           AppMenuItem(
             label: LocaleKeys.calendarView_newEvent.tr(),
             icon: Icons.add_rounded,
             onSelected: () => unawaited(_create(day)),
           ),
-        if (data.isTypable)
+        if (_canCreate)
           AppMenuItem(
             label: LocaleKeys.calendarView_addReminder.tr(),
             icon: Icons.notifications_rounded,
@@ -469,7 +606,8 @@ class _DashboardCalendarState extends State<_DashboardCalendar> {
   /// A day was clicked. Ask what the reminder is rather than dropping an
   /// untitled event on the calendar and hoping it gets named.
   Future<void> _create(DateTime at, {bool hasTime = false}) async {
-    if (!data.isTypable) {
+    final reminders = _reminders;
+    if (!_canCreate || reminders == null) {
       return;
     }
     await showReminderComposer(
@@ -477,19 +615,23 @@ class _DashboardCalendarState extends State<_DashboardCalendar> {
       initialWhen: at,
       initialHasTime: hasTime,
     );
-    await _reminders.refresh();
+    if (mounted && identical(reminders, _reminders)) await reminders.refresh();
   }
 
   Future<void> _reschedule(
     CalendarEvent event,
     DateTime start,
     DateTime? end,
-  ) =>
-      _workspace.reschedule(event, start: start, end: end);
+  ) async {
+    if (_canEditEvent(event) &&
+        (_workspace.providerFor(event)?.capabilities.canMove ?? false)) {
+      await _workspace.reschedule(event, start: start, end: end);
+    }
+  }
 
   Future<void> _toggleComplete(CalendarEvent event) async {
-    if (event.kind == CalendarEventKind.reminder) {
-      await _reminders.toggleComplete(event);
+    if (_canEditEvent(event) && event.kind == CalendarEventKind.reminder) {
+      await _reminders?.toggleComplete(event);
     }
   }
 }
@@ -613,21 +755,21 @@ class _CountdownBodyState extends State<_CountdownBody> {
           ),
           // What the countdown is FOR. A bare number on a wall says nothing
           // once the reason for setting it has been forgotten.
-          if (widget.context.isTypable ||
-              spec.setting(_keyNote).isNotEmpty) ...[
-            const SizedBox(height: 8),
-            DashboardEditableText(
-              value: spec.setting(_keyNote),
-              hint: LocaleKeys.dashboard_countdown_noteHint.tr(),
-              palette: palette,
-              enabled: widget.context.isTypable,
-              textAlign: TextAlign.center,
-              multiline: true,
-              style: DashboardType.caption(palette),
-              onChanged: (value) =>
-                  widget.context.setSettings({_keyNote: value}),
-            ),
-          ],
+          // Keep the note's slot even when the stored value is empty: its
+          // first unsaved draft lives in the field, not in the spec yet.
+          const SizedBox(height: 8),
+          DashboardEditableText(
+            value: spec.setting(_keyNote),
+            hint: widget.context.isTypable
+                ? LocaleKeys.dashboard_countdown_noteHint.tr()
+                : '',
+            palette: palette,
+            enabled: widget.context.isTypable,
+            textAlign: TextAlign.center,
+            multiline: true,
+            style: DashboardType.caption(palette),
+            onChanged: (value) => widget.context.setSettings({_keyNote: value}),
+          ),
         ],
       ),
     );

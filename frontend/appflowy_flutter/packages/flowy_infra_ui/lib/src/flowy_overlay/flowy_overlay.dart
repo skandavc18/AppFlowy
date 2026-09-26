@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flowy_infra_ui/src/flowy_overlay/layout.dart';
+import 'package:flowy_infra_ui/src/flowy_overlay/flowy_dialog.dart';
 
 /// Specifies how overlay are anchored to the SourceWidget
 enum AnchorDirection {
@@ -117,7 +118,7 @@ class FlowyOverlay extends StatefulWidget {
     required WidgetBuilder builder,
     Color? barrierColor,
   }) async {
-    await showDialog(
+    await showFlowyDialog(
       context: context,
       builder: builder,
       barrierColor: barrierColor,

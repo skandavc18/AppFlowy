@@ -71,6 +71,11 @@ class _AFBaseButtonState extends State<AFBaseButton> {
     final Color borderColor = _buildBorderColor(context);
     final Color backgroundColor = _buildBackgroundColor(context);
     final Color ringColor = _buildRingColor(context);
+    final media = MediaQuery.maybeOf(context);
+    final duration = (media?.disableAnimations ?? false) ||
+            (media?.accessibleNavigation ?? false)
+        ? Duration.zero
+        : AppFlowyMotion.fast;
 
     return Semantics(
       button: true,
@@ -113,7 +118,7 @@ class _AFBaseButtonState extends State<AFBaseButton> {
               onTapCancel:
                   isDisabled ? null : () => setState(() => isPressed = false),
               child: AnimatedContainer(
-                duration: AppFlowyMotion.fast,
+                duration: duration,
                 curve: AppFlowyMotion.standardCurve,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(widget.borderRadius),
@@ -126,7 +131,7 @@ class _AFBaseButtonState extends State<AFBaseButton> {
                   ),
                 ),
                 child: AnimatedContainer(
-                  duration: AppFlowyMotion.fast,
+                  duration: duration,
                   curve: AppFlowyMotion.standardCurve,
                   decoration: BoxDecoration(
                     color: backgroundColor,

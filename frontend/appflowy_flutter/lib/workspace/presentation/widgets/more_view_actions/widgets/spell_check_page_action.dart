@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/spell_check_page_settings.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/style_widget/button.dart';
@@ -54,7 +55,8 @@ class _SpellCheckPageActionState extends State<SpellCheckPageAction> {
       child: FlowyIconTextButton(
         margin: const EdgeInsets.symmetric(horizontal: 6),
         onTap: _toggle,
-        leftIconBuilder: (_) => const Icon(Icons.spellcheck_rounded, size: 16),
+        leftIconBuilder: (_) =>
+            const WorkspaceGlyph(Icons.spellcheck_rounded, size: 16),
         iconPadding: 10.0,
         textBuilder: (_) => FlowyText(
           LocaleKeys.document_spellCheck_pageOption.tr(),

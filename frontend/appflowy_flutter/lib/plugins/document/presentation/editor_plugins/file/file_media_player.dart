@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/video_player_controls.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_scope.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -192,10 +193,11 @@ class _AudioPlayer extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  FlowyText(
-                    name,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  if (StandaloneFileScope.forName(context, name) == null)
+                    FlowyText(
+                      name,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   StreamBuilder<Duration>(
                     stream: player.stream.duration,
                     initialData: player.state.duration,

@@ -7,6 +7,11 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_document_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/workspace/application/providers/provider_controller.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
@@ -27,6 +32,7 @@ Future<void> showExternalFile(
   required ProviderController controller,
   required ProviderNode node,
   List<ProviderNode> siblings = const <ProviderNode>[],
+  OcrService? ocrService,
 }) =>
     showGeneralDialog(
       context: context,
@@ -34,11 +40,18 @@ Future<void> showExternalFile(
       barrierLabel: node.name,
       barrierColor: Colors.black.withValues(alpha: 0.55),
       transitionDuration: const Duration(milliseconds: 180),
-      pageBuilder: (context, animation, secondary) => _ExternalFileViewer(
-        controller: controller,
-        node: node,
-        siblings: siblings.where((sibling) => !sibling.isFolder).toList(),
-      ),
+      pageBuilder: (context, animation, secondary) {
+        final viewer = _ExternalFileViewer(
+          controller: controller,
+          node: node,
+          siblings: siblings.where((sibling) => !sibling.isFolder).toList(),
+          ocrService: ocrService,
+        );
+        return context.getInheritedWidgetOfExactType<ContextualFindScope>() ==
+                null
+            ? ContextualFindScope(child: viewer)
+            : viewer;
+      },
       transitionBuilder: (context, animation, secondary, child) =>
           FadeTransition(
         opacity: CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
@@ -51,11 +64,13 @@ class _ExternalFileViewer extends StatefulWidget {
     required this.controller,
     required this.node,
     required this.siblings,
+    this.ocrService,
   });
 
   final ProviderController controller;
   final ProviderNode node;
   final List<ProviderNode> siblings;
+  final OcrService? ocrService;
 
   @override
   State<_ExternalFileViewer> createState() => _ExternalFileViewerState();
@@ -234,7 +249,22 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
       );
     }
 
-    return externalFileRenderer(node: node, path: path!, palette: palette);
+    final openedNode = node;
+    final openedPath = path!;
+    final controller = widget.controller;
+    return externalFileRenderer(
+      node: openedNode,
+      path: openedPath,
+      palette: palette,
+      ocrService: widget.ocrService,
+      isAvailable: () =>
+          mounted &&
+          !loading &&
+          !failed &&
+          identical(widget.controller, controller) &&
+          identical(node, openedNode) &&
+          path == openedPath,
+    );
   }
 }
 
@@ -247,6 +277,8 @@ Widget externalFileRenderer({
   required String path,
   required FolderExplorerPalette palette,
   bool bare = true,
+  OcrService? ocrService,
+  bool Function()? isAvailable,
 }) {
   final file = File(path);
   // A service names a file whatever a person typed, and every viewer picks
@@ -254,22 +286,13 @@ Widget externalFileRenderer({
   final name = providerFileNameFor(node);
 
   if (imgExtensionRegex.hasMatch(name) || node.kind == ProviderNodeKind.image) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: InteractiveViewer(
-          maxScale: 6,
-          child: Image.file(
-            file,
-            fit: BoxFit.scaleDown,
-            errorBuilder: (_, __, ___) => Icon(
-              Icons.broken_image_rounded,
-              size: 28,
-              color: palette.textMuted,
-            ),
-          ),
-        ),
-      ),
+    return _ExternalImageStage(
+      key: ValueKey((node.id, path, node.name)),
+      node: node,
+      file: file,
+      palette: palette,
+      ocrService: ocrService,
+      isAvailable: isAvailable,
     );
   }
 
@@ -322,6 +345,65 @@ Widget externalFileRenderer({
     metadata: const {},
     onMetadataChanged: (_) {},
   );
+}
+
+/// Uses the provider's already materialised display file, never its download
+/// URL or thumbnail URL (and never workspace credentials).
+class _ExternalImageStage extends StatefulWidget {
+  const _ExternalImageStage({
+    super.key,
+    required this.node,
+    required this.file,
+    required this.palette,
+    this.ocrService,
+    this.isAvailable,
+  });
+
+  final ProviderNode node;
+  final File file;
+  final FolderExplorerPalette palette;
+  final OcrService? ocrService;
+  final bool Function()? isAvailable;
+
+  @override
+  State<_ExternalImageStage> createState() => _ExternalImageStageState();
+}
+
+class _ExternalImageStageState extends State<_ExternalImageStage> {
+  @override
+  Widget build(BuildContext context) {
+    final id = widget.node.id;
+    final path = widget.file.path;
+    return ImageOcrFindRegion(
+      source: ImageEditorSource(url: path, type: CustomImageType.local),
+      name: widget.node.name,
+      service: widget.ocrService,
+      isAvailable: () =>
+          mounted &&
+          widget.node.id == id &&
+          widget.file.path == path &&
+          (widget.isAvailable?.call() ?? true) &&
+          TickerMode.of(context) &&
+          ModalRoute.of(context)?.isActive != false,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: InteractiveViewer(
+            maxScale: 6,
+            child: Image.file(
+              widget.file,
+              fit: BoxFit.scaleDown,
+              errorBuilder: (_, __, ___) => Icon(
+                Icons.broken_image_rounded,
+                size: 28,
+                color: widget.palette.textMuted,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _Unsupported extends StatelessWidget {

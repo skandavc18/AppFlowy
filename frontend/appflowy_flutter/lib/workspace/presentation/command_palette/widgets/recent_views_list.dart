@@ -57,8 +57,6 @@ class RecentViewsList extends StatelessWidget {
                   hidePreview ? maxWidth : commandPaletteListWidth(maxWidth);
               return Row(
                 children: [
-                  if (!hidePreview && selectedView != null)
-                    Expanded(child: buildPreview(context, selectedView)),
                   buildLeftPanel(
                     visibleViews,
                     selectedView,
@@ -66,6 +64,8 @@ class RecentViewsList extends StatelessWidget {
                     hidePreview,
                     listWidth,
                   ),
+                  if (!hidePreview && selectedView != null)
+                    Expanded(child: buildPreview(context, selectedView)),
                 ],
               );
             },

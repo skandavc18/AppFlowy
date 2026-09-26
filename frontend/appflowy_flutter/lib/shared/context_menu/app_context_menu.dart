@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -84,6 +86,7 @@ class AppMenuIconButton extends StatefulWidget {
     this.iconSize = 17,
     this.radius = 8,
     this.iconColor,
+    this.iconRole = WorkspaceGlyphRole.standard,
     this.enabled = true,
     this.placement = AppMenuPlacement.belowEnd,
     this.width,
@@ -97,6 +100,9 @@ class AppMenuIconButton extends StatefulWidget {
   final double iconSize;
   final double radius;
   final Color? iconColor;
+
+  /// Ordinary theme ink still follows Vivid; explicit status/swatch ink does not.
+  final WorkspaceGlyphRole iconRole;
   final bool enabled;
   final AppMenuPlacement placement;
   final double? width;
@@ -137,9 +143,8 @@ class _AppMenuIconButtonState extends State<AppMenuIconButton> {
   Widget build(BuildContext context) {
     final style = AppMenuStyle.of(context);
     final active = _hovered || _open || _focused;
-    final duration = MediaQuery.disableAnimationsOf(context)
-        ? Duration.zero
-        : AppMenuMetrics.hoverDuration;
+    final duration =
+        WorkspaceTokens.motion(context, AppMenuMetrics.hoverDuration);
     final button = MouseRegion(
       cursor:
           widget.enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
@@ -172,10 +177,13 @@ class _AppMenuIconButtonState extends State<AppMenuIconButton> {
                   ? widget.iconColor ?? style.icon
                   : style.iconMuted.withValues(alpha: 0.5),
             ),
-            builder: (context, color, _) => Icon(
+            builder: (context, color, _) => WorkspaceGlyph(
               widget.icon,
               size: widget.iconSize,
               color: color,
+              role: !widget.enabled
+                  ? WorkspaceGlyphRole.preserveInk
+                  : widget.iconRole,
             ),
           ),
         ),

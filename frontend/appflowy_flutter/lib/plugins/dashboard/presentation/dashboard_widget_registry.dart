@@ -42,7 +42,7 @@ class DashboardWidgetContext {
   ///
   /// Content is not configuration: a note is written where it is read, so only
   /// presentation makes it read-only.
-  bool get isTypable => !isPresenting;
+  bool get isTypable => !isPresenting && !controller.isReadOnly;
 
   DashboardStateValues get state => controller.state;
 
@@ -60,11 +60,19 @@ class DashboardWidgetContext {
   void update(
     DashboardWidgetSpec Function(DashboardWidgetSpec spec) change, {
     bool transient = false,
-  }) =>
-      controller.edit(
-        (document) => document.withWidget(change(spec)),
-        transient: transient,
-      );
+  }) {
+    if (!isTypable) return;
+    controller.edit(
+      (document) {
+        // A delayed field callback may predate a title/settings change or a
+        // deletion. Merge into the current widget, never its captured copy.
+        final current = document.widgetById(spec.id);
+        if (current == null || current.type != spec.type) return document;
+        return document.withWidget(change(current));
+      },
+      transient: transient,
+    );
+  }
 
   void setSettings(Map<String, Object?> values) =>
       update((spec) => spec.withSettings(values));
@@ -80,12 +88,13 @@ class DashboardWidgetContext {
     required DashboardSourceKind kind,
     bool Function(ViewPB view)? filter,
   }) async {
+    if (!isTypable) return;
     final chosen = await showInteractiveViewPicker(
       context,
       selectedViewId: spec.source.viewId.isEmpty ? null : spec.source.viewId,
       filter: filter,
     );
-    if (chosen == null) {
+    if (chosen == null || !isTypable) {
       return;
     }
     setSource(

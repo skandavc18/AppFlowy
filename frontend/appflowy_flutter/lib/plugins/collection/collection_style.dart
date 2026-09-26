@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
@@ -51,8 +52,11 @@ class CollectionPalette {
 }
 
 abstract final class CollectionMetrics {
-  static const headerHorizontalPadding = 28.0;
-  static const headerTopPadding = 22.0;
+  /// Shared page edge used by the collection renderers and their identity.
+  static const gutter = WorkspaceTokens.space6;
+  static const headerHorizontalPadding = gutter;
+  static const headerTopPadding = WorkspaceTokens.space12;
+  static const pageIconSize = WorkspaceTokens.pageIconSize;
   static const identityIconSize = 24.0;
   static const identityTileSize = 44.0;
   static const identityTileRadius = 13.0;

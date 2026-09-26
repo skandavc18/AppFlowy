@@ -8,6 +8,7 @@ import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/tab_bar_bloc.dart';
+import 'package:appflowy/plugins/database/find/database_find_host.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/document/presentation/compact_mode_event.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/database/database_view_block_component.dart';
@@ -16,12 +17,14 @@ import 'package:appflowy/plugins/shared/share/share_button.dart';
 import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
-import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/home_stack.dart';
@@ -195,14 +198,18 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
     DatabaseTabBarState state, {
     required double paddingLeft,
   }) {
-    final layout = state.tabBars[state.selectedIndex].layout;
+    final tab = state.tabBars[state.selectedIndex];
+    final layout = tab.layout;
+    final controller = state.tabBarControllerByViewId[tab.viewId]!.controller;
+    final tabBarBloc = innerContext.read<DatabaseTabBarBloc>();
     final databseBuilderSize = context.read<DatabasePluginWidgetBuilderSize>();
     final horizontalPadding = databseBuilderSize.horizontalPadding;
     final showActionWrapper = widget.showActions &&
         widget.actionBuilder != null &&
         widget.node != null;
-    final coordinateVerticalScroll = widget.showPageDecoration &&
-        !widget.shrinkWrap &&
+    final showPageDecoration =
+        widget.showPageDecoration && widget.node == null && !widget.shrinkWrap;
+    final coordinateVerticalScroll = showPageDecoration &&
         (layout == ViewLayoutPB.Grid ||
             layout == ViewLayoutPB.Calendar ||
             layout == ViewLayoutPB.Board);
@@ -210,7 +217,7 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (widget.showPageDecoration && !coordinateVerticalScroll)
+        if (showPageDecoration && !coordinateVerticalScroll)
           BlocBuilder<ViewBloc, ViewState>(
             builder: (context, viewState) => DatabasePageDecoration(
               view: viewState.view,
@@ -233,8 +240,8 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
                 : const MobileTabBarHeader();
 
             if (innerContext.watch<ViewBloc>().state.view.isLocked) {
-              child = IgnorePointer(
-                child: child,
+              child = ExcludeFocus(
+                child: IgnorePointer(child: child),
               );
             }
 
@@ -289,8 +296,9 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
       ],
     );
 
+    Widget content = child;
     if (coordinateVerticalScroll) {
-      return NestedScrollView(
+      content = NestedScrollView(
         key: const ValueKey('database-page-scroll-view'),
         headerSliverBuilder: (context, innerBoxIsScrolled) => [
           SliverToBoxAdapter(
@@ -308,7 +316,22 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
       );
     }
 
-    return child;
+    return DatabaseFindHost(
+      view: tab.view,
+      isActive: () {
+        if (!mounted || tabBarBloc.isClosed) return false;
+        final current = tabBarBloc.state;
+        return current.parentView.id == widget.view.id &&
+            current.selectedIndex >= 0 &&
+            current.selectedIndex < current.tabBars.length &&
+            current.tabBars[current.selectedIndex].viewId == tab.viewId &&
+            identical(
+              current.tabBarControllerByViewId[tab.viewId]?.controller,
+              controller,
+            );
+      },
+      child: content,
+    );
   }
 
   Future<bool> fetchLocalCompactMode(String compactModeId) async {
@@ -401,27 +424,163 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
   }
 }
 
-@visibleForTesting
+/// One full-page decoration owner for alternative table renderers. Embeds
+/// leave decoration to their parent. The header/body occupy permanent slots:
+/// cover edits, permissions, text scale and renderer mode never reparent them.
+class DatabasePageDecorationHost extends StatefulWidget {
+  const DatabasePageDecorationHost({
+    super.key,
+    required this.view,
+    required this.builder,
+    this.enabled = true,
+    this.listenerFactory = _databaseDecorationListener,
+  });
+
+  final ViewPB view;
+  final Widget Function(ViewPB view) builder;
+  final bool enabled;
+
+  /// Only the notification boundary is replaceable in offline host tests.
+  final ViewListener Function(String viewId) listenerFactory;
+
+  @override
+  State<DatabasePageDecorationHost> createState() =>
+      _DatabasePageDecorationHostState();
+}
+
+ViewListener _databaseDecorationListener(String viewId) =>
+    ViewListener(viewId: viewId);
+
+class _DatabasePageDecorationHostState
+    extends State<DatabasePageDecorationHost> {
+  late ViewPB _view;
+  ViewListener? _listener;
+  int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _bind();
+  }
+
+  @override
+  void didUpdateWidget(covariant DatabasePageDecorationHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.view.id != widget.view.id ||
+        oldWidget.enabled != widget.enabled ||
+        oldWidget.listenerFactory != widget.listenerFactory) {
+      _bind();
+    } else if (oldWidget.view != widget.view) {
+      _view = widget.view;
+    }
+  }
+
+  void _bind() {
+    final generation = ++_generation;
+    unawaited(_listener?.stop());
+    _listener = null;
+    _view = widget.view;
+    if (!widget.enabled || _view.id.isEmpty) return;
+    final viewId = _view.id;
+    _listener = widget.listenerFactory(viewId)
+      ..start(
+        onViewUpdated: (view) {
+          if (!mounted ||
+              generation != _generation ||
+              view.id != viewId ||
+              widget.view.id != viewId) {
+            return;
+          }
+          setState(() => _view = view);
+        },
+      );
+  }
+
+  void _onDecorationChanged(ViewPB view) {
+    if (!mounted || view.id != _view.id) return;
+    setState(() => _view = view);
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    unawaited(_listener?.stop());
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => DatabaseFindHost(
+        view: _view,
+        isActive: () => mounted && _view.id == widget.view.id,
+        delegateToNativeChild: true,
+        child: _buildDecoratedContent(context),
+      );
+
+  Widget _buildDecoratedContent(BuildContext context) {
+    final child = widget.builder(_view);
+    if (!widget.enabled) return child;
+    return LayoutBuilder(
+      builder: (context, constraints) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ConstrainedBox(
+            // Keep an operable content pane on short/scaled windows. Only the
+            // identity scrolls here; no new scroll controller owns the viewer.
+            constraints: BoxConstraints(
+              maxHeight: constraints.hasBoundedHeight
+                  ? constraints.maxHeight / 2
+                  : double.infinity,
+            ),
+            child: SingleChildScrollView(
+              key: const ValueKey('database-decoration-scroll'),
+              primary: false,
+              child: DatabasePageDecoration(
+                // A true target change owns a new title draft and action
+                // generation; decoration updates on the same page do not.
+                key: ValueKey(('database-page-decoration', _view.id)),
+                view: _view,
+                onViewChanged: _onDecorationChanged,
+                userProfile:
+                    context.read<UserWorkspaceBloc?>()?.state.userProfile,
+                horizontalPadding: 40,
+              ),
+            ),
+          ),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
 class DatabasePageDecoration extends StatefulWidget {
   const DatabasePageDecoration({
     super.key,
     required this.view,
     required this.userProfile,
     required this.horizontalPadding,
+    this.onViewChanged,
   });
 
   final ViewPB view;
   final UserProfilePB? userProfile;
   final double horizontalPadding;
+  final ValueChanged<ViewPB>? onViewChanged;
 
   @override
   State<DatabasePageDecoration> createState() => _DatabasePageDecorationState();
 }
 
 class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
-  bool decorationRegionHovered = false;
   bool editingTitle = false;
   ViewPB? locallyUpdatedView;
+
+  bool get _canEdit {
+    final view = locallyUpdatedView ?? widget.view;
+    final access = context.read<PageAccessLevelBloc?>();
+    return !view.isLocked &&
+        (access?.view.id != view.id || access!.state.isEditable);
+  }
 
   @override
   void didUpdateWidget(covariant DatabasePageDecoration oldWidget) {
@@ -437,123 +596,106 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
     final showsCover = AutomaticViewCover.showsCover(view);
     final cover = view.cover;
     final icon = view.icon.toEmojiIconData();
-    final padding = max(20.0, widget.horizontalPadding);
-    final titleStyle = WorkspaceChrome.title(context);
-    return MouseRegion(
-      onEnter: (_) => _setDecorationRegionHovered(true),
-      onExit: (_) => _setDecorationRegionHovered(false),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (showsCover && cover != null && !cover.isNone)
-            Padding(
-              padding: EdgeInsets.fromLTRB(padding, 0, padding, 18),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: SizedBox(
-                  height: 218,
-                  child: ViewCoverImage(
+    final opticalRole =
+        isColorfulViewIcon(icon) ? IconOpticalRole.header : null;
+    context.watch<PageAccessLevelBloc?>();
+    final canEdit = _canEdit;
+    final titleIcon = SizedBox.square(
+      key: const ValueKey('database-page-title-icon'),
+      dimension: opticalRole != null
+          ? IconOpticalSize.resolve(
+              role: opticalRole,
+              baseSize: WorkspaceTokens.pageIconSize,
+            ).slotSize
+          : WorkspaceTokens.pageIconSize,
+      child: Center(
+        child: MediaQuery.withNoTextScaling(
+          child: icon.isNotEmpty
+              ? RawEmojiIconWidget(
+                  emoji: icon,
+                  emojiSize: WorkspaceTokens.pageIconSize,
+                  opticalRole: opticalRole,
+                  lineHeight: 1,
+                )
+              : WorkspaceGlyph.adapt(
+                  view.defaultIcon(
+                    size: const Size.square(WorkspaceTokens.pageIconSize),
+                  ),
+                  size: WorkspaceTokens.pageIconSize,
+                ),
+        ),
+      ),
+    );
+    return PreviewToolbarRegion(
+      child: ViewDecorationActions(
+        view: view,
+        userProfile: widget.userProfile,
+        onViewChanged: _updateView,
+        visible: false,
+        showIconAction: canEdit,
+        showCoverAction: canEdit,
+        showDownloadAction: showsCover,
+        hasCover: showsCover,
+        markCoverChosen: true,
+        layoutBuilder: (iconActions, coverActions, pageActions) =>
+            LayoutBuilder(
+          builder: (context, constraints) => WorkspacePageHeader(
+            maxWidth: double.infinity,
+            contentInset: min(
+              max(20.0, widget.horizontalPadding),
+              constraints.maxWidth / 4,
+            ),
+            cover: showsCover && cover != null && !cover.isNone
+                ? ViewCoverImage(
                     cover: cover,
                     userProfile: widget.userProfile,
                     width: double.infinity,
-                    height: 218,
+                  )
+                : null,
+            coverActions: coverActions,
+            identity: WorkspacePageIdentity(
+              key: const ValueKey('database-page-identity'),
+              icon: canEdit
+                  ? ViewIconPicker(
+                      view: view,
+                      onViewChanged: _updateView,
+                      child: titleIcon,
+                    )
+                  : titleIcon,
+              iconActions: iconActions,
+              title: ExcludeFocus(
+                excluding: !canEdit,
+                child: IgnorePointer(
+                  ignoring: !canEdit,
+                  child: WorkspaceInlineEditableText(
+                    key: const ValueKey('database-page-title'),
+                    text: view.nameOrDefault,
+                    editingValue: view.name,
+                    editing: editingTitle,
+                    onSubmitted: _rename,
+                    onCancelled: _cancelRename,
+                    onTap: canEdit ? _beginRename : null,
+                    maxLines: 2,
+                    style: WorkspaceTypography.style(
+                      context,
+                      WorkspaceTextRole.pageTitle,
+                      compact: constraints.maxWidth < 600,
+                    ),
                   ),
                 ),
               ),
-            ),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: padding),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                ViewDecorationActions(
-                  view: view,
-                  userProfile: widget.userProfile,
-                  onViewChanged: _onDecorationChanged,
-                  visible: !UniversalPlatform.isDesktopOrWeb ||
-                      decorationRegionHovered,
-                ),
-                const VSpace(16),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 900),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      ViewIconPicker(
-                        view: view,
-                        onViewChanged: _updateView,
-                        child: SizedBox.square(
-                          key: const ValueKey('database-page-title-icon'),
-                          dimension: 52,
-                          child: Center(
-                            child: icon.isNotEmpty
-                                ? RawEmojiIconWidget(
-                                    emoji: icon,
-                                    emojiSize: 46,
-                                    lineHeight: 1,
-                                  )
-                                : view.defaultIcon(
-                                    size: const Size.square(43),
-                                  ),
-                          ),
-                        ),
-                      ),
-                      const HSpace(14),
-                      Expanded(
-                        child: WorkspaceInlineEditableText(
-                          key: const ValueKey('database-page-title'),
-                          text: view.nameOrDefault,
-                          editingValue: view.name,
-                          editing: editingTitle,
-                          onSubmitted: _rename,
-                          onCancelled: _cancelRename,
-                          onTap: view.isLocked ? null : _beginRename,
-                          maxLines: 2,
-                          style: titleStyle,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+              actions: pageActions,
             ),
           ),
-          const VSpace(24),
-        ],
+        ),
       ),
     );
   }
 
-  void _setDecorationRegionHovered(bool value) {
-    if (decorationRegionHovered == value) {
-      return;
-    }
-    setState(() => decorationRegionHovered = value);
-  }
-
   void _updateView(ViewPB view) {
-    if (mounted) {
+    if (mounted && view.id == widget.view.id) {
       setState(() => locallyUpdatedView = view);
-    }
-  }
-
-  /// The cover or icon was changed through the decoration actions.
-  ///
-  /// A table shows a cover only once somebody has set one, and that choice is
-  /// recorded here — never on a rename, whose own write it would race.
-  void _onDecorationChanged(ViewPB view) {
-    final previous = (locallyUpdatedView ?? widget.view).cover;
-    _updateView(view);
-
-    final cover = view.cover;
-    if (cover == null || cover.isNone || cover == previous) {
-      return;
-    }
-    final marked = AutomaticViewCover.markCoverChosenByHand(view.extra);
-    if (marked != view.extra) {
-      unawaited(
-        ViewBackendService.updateView(viewId: view.id, extra: marked),
-      );
+      widget.onViewChanged?.call(view);
     }
   }
 
@@ -570,6 +712,9 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
   }
 
   Future<bool> _rename(String name) async {
+    // An access change may blur a retained draft. Refuse that auto-submit
+    // without discarding the editor, and never write merely on unlocking it.
+    if (!_canEdit) return false;
     if (name == widget.view.name) {
       _cancelRename();
       return true;
@@ -734,20 +879,23 @@ class DatabasePluginWidgetBuilder extends PluginWidgetBuilder {
     final double? embedHeight =
         data?[kDatabasePluginWidgetBuilderEmbedHeight] as double?;
 
-    return Provider(
-      create: (context) => DatabasePluginWidgetBuilderSize(
-        horizontalPadding: horizontalPadding,
-      ),
-      child: DatabaseTabBarView(
-        key: ValueKey(notifier.view.id),
-        view: notifier.view,
-        shrinkWrap: shrinkWrap,
-        initialRowId: initialRowId,
-        actionBuilder: actionBuilder,
-        showActions: showActions,
-        node: node,
-        showPageDecoration: node == null,
-        embedHeight: embedHeight,
+    return BlocProvider<PageAccessLevelBloc>.value(
+      value: pageAccessLevelBloc,
+      child: Provider(
+        create: (context) => DatabasePluginWidgetBuilderSize(
+          horizontalPadding: horizontalPadding,
+        ),
+        child: DatabaseTabBarView(
+          key: ValueKey(notifier.view.id),
+          view: notifier.view,
+          shrinkWrap: shrinkWrap,
+          initialRowId: initialRowId,
+          actionBuilder: actionBuilder,
+          showActions: showActions,
+          node: node,
+          showPageDecoration: node == null,
+          embedHeight: embedHeight,
+        ),
       ),
     );
   }
@@ -780,5 +928,5 @@ class DatabasePluginWidgetBuilder extends PluginWidgetBuilder {
   }
 
   @override
-  EdgeInsets get contentPadding => const EdgeInsets.only(top: 28);
+  EdgeInsets get contentPadding => EdgeInsets.zero;
 }

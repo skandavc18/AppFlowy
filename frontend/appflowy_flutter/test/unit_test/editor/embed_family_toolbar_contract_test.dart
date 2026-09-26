@@ -1,11 +1,24 @@
 import 'dart:io';
 
+import 'package:appflowy/shared/charts/app_chart.dart';
+import 'package:appflowy/shared/charts/chart_stage.dart';
+import 'package:appflowy/shared/charts/chart_toolbar.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/workspace/application/charts/chart_source.dart';
+import 'package:appflowy/workspace/application/charts/chart_spec.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../widget_test/chart_appearance_test_support.dart';
+
 // Supplementary wiring checks for hosts that need backend/native services.
-// Interaction, semantics, focus and retained state are tested with real widgets
-// in test/widget_test/embed_family_toolbar_test.dart, not inferred here.
+// Chart ownership is checked below with its injectable source. Broader
+// interaction, semantics, focus and retained-state coverage lives in
+// test/widget_test/embed_family_toolbar_test.dart.
 void main() {
+  setUpChartAppearanceFixtures();
+
   const editor = 'lib/plugins/document/presentation/editor_plugins';
 
   for (final path in [
@@ -13,7 +26,6 @@ void main() {
     '$editor/folder_explorer/folder_explorer_block_component.dart',
     '$editor/canvas/canvas_block_component.dart',
     '$editor/math_equation/math_equation_block_component.dart',
-    'lib/shared/charts/chart_stage.dart',
     'lib/shared/charts/chart_toolbar.dart',
     'lib/shared/charts/app_chart.dart',
     'lib/shared/maps/map_stage.dart',
@@ -37,6 +49,129 @@ void main() {
       expect(source, contains('PreviewToolbar('));
     });
   }
+
+  testWidgets(
+      'chart header delegates one shared reveal and wrap to ChartToolbar',
+      (tester) async {
+    final source = ChartSource(
+      viewId: 'chart-toolbar-ownership',
+      loadTable: (_) async => chartAppearanceTable,
+    );
+    const hostAction = ValueKey('chart-contract-host-action');
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    try {
+      await mouse.addPointer(location: const Offset(2, 2));
+      await tester.pumpWidget(
+        chartAppearanceApp('paper', const SizedBox()),
+      );
+      await tester.pumpAndSettle();
+      await tester.pumpWidget(
+        chartAppearanceApp(
+          'paper',
+          Center(
+            child: SizedBox(
+              width: 640,
+              height: 420,
+              child: PreviewToolbarRegion(
+                child: ChartStage(
+                  viewId: source.viewId,
+                  source: source,
+                  title: 'Toolbar ownership chart',
+                  spec: chartAppearanceSpec(
+                    ChartType.bar,
+                    showControls: true,
+                  ),
+                  onSpecChanged: (_) {},
+                  trailing: [
+                    TextButton(
+                      key: hostAction,
+                      onPressed: () {},
+                      child: const Text('Host action'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final toolbar = find.byType(ChartToolbar);
+      expect(toolbar, findsOneWidget);
+      expect(
+        tester.widget<ChartToolbar>(toolbar).key,
+        const ValueKey('chart-header-toolbar'),
+      );
+      final reveal = find.descendant(
+        of: toolbar,
+        matching: find.byType(PreviewToolbar),
+      );
+      expect(reveal, findsOneWidget);
+      expect(tester.widget<PreviewToolbar>(reveal).keepVisible, isFalse);
+      // The stage must not add a second reveal around the extracted toolbar.
+      expect(
+        find.ancestor(of: toolbar, matching: find.byType(PreviewToolbar)),
+        findsNothing,
+      );
+      final wrap = find.descendant(of: reveal, matching: find.byType(Wrap));
+      expect(wrap, findsOneWidget);
+      final revealElement = tester.element(reveal);
+      final wrapElement = tester.element(wrap);
+      final wrapBounds = tester.getRect(wrap);
+      final controls = [
+        find.byKey(const ValueKey('chart-type')),
+        find.byKey(const ValueKey('chart-more-controls')),
+        find.byKey(const ValueKey('chart-refresh')),
+        find.byKey(hostAction),
+      ];
+      for (final control in controls) {
+        expect(control, findsOneWidget);
+        final owner = find.ancestor(
+          of: control,
+          matching: find.byType(PreviewToolbar),
+        );
+        expect(owner, findsOneWidget);
+        expect(tester.element(owner), same(revealElement));
+        final controlWrap =
+            find.ancestor(of: control, matching: find.byType(Wrap));
+        expect(controlWrap, findsOneWidget);
+        expect(tester.element(controlWrap), same(wrapElement));
+        expect(control.hitTestable(), findsNothing);
+      }
+      for (final content in [
+        find.text('Toolbar ownership chart'),
+        find.byType(AppChart),
+      ]) {
+        expect(content, findsOneWidget);
+        expect(
+          find.ancestor(of: content, matching: find.byType(PreviewToolbar)),
+          findsNothing,
+        );
+      }
+
+      final chartState = tester.state(find.byType(AppChart));
+      await mouse.moveTo(tester.getCenter(find.byType(AppChart)));
+      await tester.pumpAndSettle();
+      for (final control in controls) {
+        expect(control.hitTestable(), findsOneWidget);
+      }
+      await mouse.moveTo(const Offset(2, 2));
+      await tester.pumpAndSettle();
+      for (final control in controls) {
+        expect(control.hitTestable(), findsNothing);
+      }
+      expect(tester.element(reveal), same(revealElement));
+      expect(tester.element(wrap), same(wrapElement));
+      expect(tester.getRect(wrap), wrapBounds);
+      expect(tester.state(find.byType(AppChart)), same(chartState));
+      expect(tester.takeException(), isNull);
+    } finally {
+      await mouse.removePointer();
+      await tester.pumpWidget(const SizedBox());
+      source.dispose();
+    }
+  });
 
   test('size-managed collection and direct page cards own a preview region',
       () {
@@ -99,8 +234,12 @@ void main() {
   test('database action reveal excludes tab identity and the renderer', () {
     final header =
         _read('lib/plugins/database/tab_bar/desktop/tab_bar_header.dart');
-    expect(header, contains('const Flexible(child: DatabaseTabBar())'));
-    expect(header, contains('child: AddDatabaseViewButton('));
+    // View identity and + are always visible; only per-view tools auto-hide.
+    expect(header, contains('tabs: DatabaseTabBar('));
+    expect(header, contains('trailing: AddDatabaseViewButton('));
+    expect(header, contains("key: const ValueKey('database-view-tabs-wrap')"));
+    expect(header, isNot(contains('Axis.horizontal')));
+    expect(header, isNot(contains('ListView.separated(')));
     expect(header, contains('PreviewToolbar('));
     final view = _read('lib/plugins/database/tab_bar/tab_bar_view.dart');
     expect(

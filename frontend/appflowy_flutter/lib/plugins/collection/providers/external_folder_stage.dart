@@ -360,7 +360,9 @@ class _LayoutButtonState extends State<_LayoutButton> {
             decoration: BoxDecoration(
               color: widget.selected
                   ? palette.accentSoft
-                  : palette.hover.withValues(alpha: hovered ? 1 : 0),
+                  : hovered
+                      ? palette.hover
+                      : palette.hover.withValues(alpha: 0),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Icon(

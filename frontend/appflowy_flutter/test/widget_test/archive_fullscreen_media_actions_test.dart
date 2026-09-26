@@ -5,11 +5,15 @@ import 'dart:ui' as ui;
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_explorer.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_gallery.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_view_factory.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_view.dart';
+import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
@@ -20,6 +24,7 @@ import 'package:archive/archive.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -98,6 +103,7 @@ void main() {
         testWidgets(
             'archive route $mode/$scale editable=$editable: real file, retained hover, badge clearance',
             (tester) async {
+          final semantics = tester.ensureSemantics();
           final actions = _Actions();
           final mouse =
               await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
@@ -146,8 +152,31 @@ void main() {
               FolderExplorerPalette.of(routeContext).background,
             );
             expect(PaperTheme.isEnabled(routeContext), mode == 'paper');
+            final galleryFocus = Focus.of(
+              tester.element(_inRoute(find.byType(ArchiveGallery))),
+            );
+            expect(
+              galleryFocus.hasPrimaryFocus,
+              isTrue,
+              reason: 'Keep the gallery autofocus needed by Ctrl+F',
+            );
+            expect(
+              find.ancestor(
+                of: _inRoute(find.byType(ArchiveGallery)),
+                matching: find.byType(PreviewToolbar),
+              ),
+              findsNothing,
+              reason: 'Gallery focus is outside the action reveal',
+            );
+            expect(_reveal(tester).opacity, 0);
             expect(_inRoute(find.byKey(_copy)).hitTestable(), findsNothing);
-            await tester.tapAt(tester.getCenter(_inRoute(find.byKey(_copy))));
+            expect(_inRoute(find.byKey(_share)).hitTestable(), findsNothing);
+            expect(find.semantics.byLabel('Copy'), findsNothing);
+            expect(find.semantics.byLabel('Share'), findsNothing);
+            await tester.tapAt(
+              tester.getCenter(_inRoute(find.byKey(_copy))),
+              kind: ui.PointerDeviceKind.mouse,
+            );
             expect(actions.calls, isEmpty);
             await mouse.moveTo(const Offset(30, 200));
             await _motion(tester);
@@ -169,10 +198,13 @@ void main() {
             final bounds = tester.getRect(find.byKey(_routeKey));
             expect(badge.top, greaterThanOrEqualTo(bounds.top));
             expect(badge.left, greaterThanOrEqualTo(bounds.left));
+            expect(badge.right, lessThanOrEqualTo(bounds.right));
             expect(
-              badge.right,
-              lessThan(tester.getRect(_inRoute(find.byKey(_close))).left),
+              badge.overlaps(tester.getRect(_inRoute(find.byKey(_close)))),
+              isFalse,
+              reason: 'Close is now leading; its hit target must remain clear',
             );
+            _expectUnclipped(tester, _inRoute(find.byKey(_copied)));
             expect(
               badge.bottom,
               lessThan(tester.getRect(_inRoute(find.byKey(_copy))).top),
@@ -197,6 +229,7 @@ void main() {
             expect(tester.takeException(), isNull);
           } finally {
             await mouse.removePointer();
+            semantics.dispose();
             await _unmount(tester, actions);
           }
         });
@@ -204,14 +237,228 @@ void main() {
     }
   }
 
-  for (final reduced in [false, true]) {
+  for (final mode in ['light', 'dark', 'paper']) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets(
+          'archive route $mode/$scale: 500px search and menu holds retain grouped controls',
+          (tester) async {
+        final semantics = tester.ensureSemantics();
+        final actions = _Actions();
+        var archiveWrites = 0;
+        final mouse =
+            await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+        try {
+          await mouse.addPointer(location: const Offset(900, 900));
+          await _open(
+            tester,
+            file: file,
+            actions: actions,
+            mode: mode,
+            scale: scale,
+            size: const Size(500, 540),
+            editable: true,
+            onChanged: () => archiveWrites++,
+          );
+          final explorer = tester.state(_inRoute(find.byType(ArchiveExplorer)));
+          final buttons =
+              tester.state(_inRoute(find.byType(MediaActionButtons)));
+          expect(_reveal(tester).opacity, 0);
+          expect(_inRoute(find.byKey(_copy)).hitTestable(), findsNothing);
+          expect(_viewButton().hitTestable(), findsNothing);
+          _expectGroupedBounds(tester);
+          // Do not blur autofocus to manufacture an idle state. The same
+          // focused gallery must open search even while its tools are hidden.
+          await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+          await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+          await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+          await _motion(tester);
+          final field = _inRoute(find.byType(EditableText));
+          expect(field, findsOneWidget);
+          final controller = tester.widget<EditableText>(field).controller;
+          expect(tester.widget<EditableText>(field).focusNode.hasFocus, isTrue);
+          await tester.enterText(field, '500px retained search');
+          await tester.pump(const Duration(milliseconds: 250));
+          await _motion(tester);
+          _expectGroupedBounds(tester, hitTestable: true);
+          await mouse.moveTo(const Offset(900, 900));
+          await _motion(tester);
+          expect(controller.text, '500px retained search');
+          expect(_reveal(tester).opacity, 1);
+          expect(_inRoute(find.byKey(_copy)).hitTestable(), findsOneWidget);
+          expect(
+            tester.widget<EditableText>(field).controller,
+            same(controller),
+          );
+          final searchState = tester.state(field);
+          final searchFocus = tester.widget<EditableText>(field).focusNode;
+          final listing = _inRoute(
+            find.byType(FutureBuilder<List<ArchiveEntryView>>),
+          );
+          final listingFuture = tester
+              .widget<FutureBuilder<List<ArchiveEntryView>>>(listing)
+              .future;
+          expect(listingFuture, isNotNull);
+          for (final (activation, requested, navigation) in [
+            (
+              LogicalKeyboardKey.enter,
+              FileBrowserViewMode.tree,
+              LogicalKeyboardKey.end,
+            ),
+            (
+              LogicalKeyboardKey.space,
+              FileBrowserViewMode.gallery,
+              LogicalKeyboardKey.home,
+            ),
+          ]) {
+            final selector = _viewButton();
+            final native = tester.widget<TextButton>(selector);
+            final focus = Focus.of(
+              tester.element(find.byWidget(native.child!)),
+            );
+            await _tabTo(tester, focus);
+            expect(focus.hasPrimaryFocus, isTrue);
+            expect(selector.hitTestable(), findsOneWidget);
+            final current = tester
+                .widget<FileBrowserViewButton>(
+                  _inRoute(find.byType(FileBrowserViewButton)),
+                )
+                .mode;
+            final data = tester.getSemantics(selector).getSemanticsData();
+            expect(data.label, 'View: ${current.label}');
+            expect(data.hasFlag(ui.SemanticsFlag.isButton), isTrue);
+            expect(data.hasFlag(ui.SemanticsFlag.isEnabled), isTrue);
+            expect(data.hasAction(ui.SemanticsAction.tap), isTrue);
+            await tester.sendKeyEvent(activation);
+            await tester.pumpAndSettle();
+            expect(
+              find.byType(AppMenuRow),
+              findsNWidgets(FileBrowserViewMode.values.length),
+            );
+            for (final choice in FileBrowserViewMode.values) {
+              final row = tester.widget<AppMenuRow>(
+                find.widgetWithText(AppMenuRow, choice.label),
+              );
+              expect(row.enabled, isTrue);
+              expect(row.selected, choice == current);
+            }
+            await mouse.moveTo(const Offset(900, 900));
+            await _motion(tester);
+            expect(_reveal(tester).opacity, 1);
+            await tester.sendKeyEvent(navigation);
+            await tester.pumpAndSettle();
+            final choice = find.widgetWithText(AppMenuRow, requested.label);
+            expect(tester.widget<AppMenuRow>(choice).highlighted, isTrue);
+            expect(choice.hitTestable(), findsOneWidget);
+            await tester.sendKeyEvent(activation);
+            await tester.pumpAndSettle();
+            expect(find.byType(AppMenuRow), findsNothing);
+            expect(
+              tester
+                  .widget<FileBrowserViewButton>(
+                    _inRoute(find.byType(FileBrowserViewButton)),
+                  )
+                  .mode,
+              requested,
+            );
+            expect(
+              tester.state(_inRoute(find.byType(ArchiveExplorer))),
+              same(explorer),
+            );
+            expect(
+              tester
+                  .widget<FutureBuilder<List<ArchiveEntryView>>>(listing)
+                  .future,
+              same(listingFuture),
+              reason: 'A presentation choice must not reload the archive',
+            );
+            expect(tester.state(field), same(searchState));
+            expect(
+              tester.widget<EditableText>(field).controller,
+              same(controller),
+            );
+            expect(
+              tester.widget<EditableText>(field).focusNode,
+              same(searchFocus),
+            );
+            expect(controller.text, '500px retained search');
+            expect(archiveWrites, 0);
+            _expectGroupedBounds(tester, hitTestable: true);
+          }
+          // Return to the retained native field before its Escape shortcut.
+          searchFocus.requestFocus();
+          await _motion(tester);
+          expect(searchFocus.hasPrimaryFocus, isTrue);
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await _motion(tester);
+          expect(find.byKey(_routeKey), findsOneWidget);
+          expect(field, findsNothing);
+          expect(controller.text, isEmpty);
+
+          await mouse.moveTo(
+            tester.getCenter(
+              _inRoute(find.byKey(const ValueKey('archive-controls'))),
+            ),
+          );
+          await _motion(tester);
+          final menu = _inRoute(find.byTooltip('Card size'));
+          expect(menu.hitTestable(), findsOneWidget);
+          await tester.tap(menu, kind: ui.PointerDeviceKind.mouse);
+          await tester.pumpAndSettle();
+          expect(find.byType(AppMenuRow), findsWidgets);
+          await mouse.moveTo(const Offset(900, 900));
+          await _motion(tester);
+          expect(
+            _reveal(tester).opacity,
+            1,
+            reason: 'The real menu holds both enclosing toolbar reveals',
+          );
+          await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+          await tester.pumpAndSettle();
+          FocusManager.instance.primaryFocus?.unfocus();
+          await _motion(tester);
+          expect(find.byType(AppMenuRow), findsNothing);
+          expect(_reveal(tester).opacity, 0);
+          expect(_inRoute(find.byKey(_copy)).hitTestable(), findsNothing);
+          expect(
+            tester.state(_inRoute(find.byType(ArchiveExplorer))),
+            same(explorer),
+          );
+          expect(
+            tester.state(_inRoute(find.byType(MediaActionButtons))),
+            same(buttons),
+          );
+          expect(actions.calls, isEmpty);
+          expect(archiveWrites, 0);
+          expect(await tester.runAsync(file.readAsBytes), archiveBytes);
+          expect(tester.takeException(), isNull);
+        } finally {
+          await mouse.removePointer();
+          semantics.dispose();
+          await _unmount(tester, actions);
+        }
+      });
+    }
+  }
+
+  for (final (reduced, editable) in [
+    (false, false),
+    (true, false),
+    (false, true),
+    (true, true),
+  ]) {
     testWidgets(
-        'archive route: Tab/Enter/Space retain focus and pending state (reduced=$reduced)',
+        'archive route: Tab/Enter/Space retain focus and pending state (reduced=$reduced editable=$editable)',
         (tester) async {
       final semantics = tester.ensureSemantics();
       final actions = _Actions();
       try {
-        await _open(tester, file: file, actions: actions, reduced: reduced);
+        await _open(
+          tester,
+          file: file,
+          actions: actions,
+          reduced: reduced,
+          editable: editable,
+        );
         expect(find.semantics.byLabel('Copy'), findsNothing);
         expect(find.semantics.byLabel('Share'), findsNothing);
         await _tabTo(tester, _button(tester, _copy).focusNode!);
@@ -503,9 +750,110 @@ Finder _inRoute(Finder matching) => find.descendant(
 IconButton _button(WidgetTester tester, Key key) =>
     tester.widget<IconButton>(_inRoute(find.byKey(key)));
 
-AnimatedOpacity _reveal(WidgetTester tester) => tester.widget<AnimatedOpacity>(
-      _inRoute(find.byKey(const ValueKey('media-action-reveal'))),
+Finder _viewButton() => find.descendant(
+      of: _inRoute(find.byKey(const ValueKey('file-browser-view-button'))),
+      matching: find.byType(TextButton),
     );
+
+({double opacity, Duration duration}) _reveal(WidgetTester tester) {
+  final control = _inRoute(find.byKey(_copy));
+  final reveals = find.ancestor(
+    of: control,
+    matching: find.byType(PreviewToolbar),
+  );
+  expect(reveals, findsWidgets);
+  final durations = <Duration>{};
+  for (final element in reveals.evaluate()) {
+    final fade = find
+        .descendant(
+          of: find
+              .byElementPredicate((candidate) => identical(candidate, element)),
+          matching: find.byType(AnimatedOpacity),
+        )
+        .first;
+    durations.add(tester.widget<AnimatedOpacity>(fade).duration);
+  }
+  expect(durations, hasLength(1));
+  var opacity = 1.0;
+  for (RenderObject? object = tester.renderObject(control);
+      object != null;
+      object = object.parent) {
+    if (object is RenderAnimatedOpacity) opacity *= object.opacity.value;
+    if (object is RenderOpacity) opacity *= object.opacity;
+  }
+  return (opacity: opacity, duration: durations.single);
+}
+
+void _expectGroupedBounds(WidgetTester tester, {bool hitTestable = false}) {
+  final controls = _inRoute(find.byKey(const ValueKey('archive-controls')));
+  expect(controls, findsOneWidget);
+  final bounds = tester.getRect(controls);
+  final route = tester.getRect(find.byKey(_routeKey));
+  expect(bounds.width, greaterThan(0));
+  expect(bounds.left, greaterThanOrEqualTo(route.left));
+  expect(bounds.right, lessThanOrEqualTo(route.right));
+  final buttons = find.descendant(
+    of: controls,
+    matching: find.byWidgetPredicate(
+      (widget) => widget is TextButton || widget is IconButton,
+    ),
+  );
+  // Card size applies to Gallery only. All other modes keep the same shared
+  // group with View, Search, Add, New folder, Reload, Copy and Share.
+  final mode = tester
+      .widget<FileBrowserViewButton>(
+        _inRoute(find.byType(FileBrowserViewButton)),
+      )
+      .mode;
+  expect(buttons, findsNWidgets(mode == FileBrowserViewMode.gallery ? 8 : 7));
+  expect(
+    _inRoute(find.byTooltip('Card size')),
+    mode == FileBrowserViewMode.gallery ? findsOneWidget : findsNothing,
+  );
+  expect(_viewButton(), findsOneWidget);
+  final rectangles = <Rect>[];
+  for (final element in buttons.evaluate()) {
+    final button =
+        find.byElementPredicate((candidate) => identical(candidate, element));
+    final rect = tester.getRect(button);
+    expect(rect.width, greaterThan(0));
+    expect(rect.height, greaterThan(0));
+    expect(rect.left, greaterThanOrEqualTo(bounds.left - 0.01));
+    expect(rect.right, lessThanOrEqualTo(bounds.right + 0.01));
+    expect(rect.top, greaterThanOrEqualTo(bounds.top - 0.01));
+    expect(rect.bottom, lessThanOrEqualTo(bounds.bottom + 0.01));
+    for (final previous in rectangles) {
+      expect(rect.overlaps(previous), isFalse);
+    }
+    rectangles.add(rect);
+    if (hitTestable) expect(button.hitTestable(), findsOneWidget);
+  }
+  expect(tester.takeException(), isNull);
+}
+
+void _expectUnclipped(WidgetTester tester, Finder badge) {
+  final bounds = tester.getRect(badge).deflate(0.01);
+  for (RenderObject child = tester.renderObject(badge);
+      child.parent != null;
+      child = child.parent!) {
+    final parent = child.parent!;
+    final clip = parent.describeApproximatePaintClip(child);
+    if (clip == null) continue;
+    final globalClip =
+        MatrixUtils.transformRect(parent.getTransformTo(null), clip)
+            .inflate(0.1);
+    expect(
+      globalClip.contains(bounds.topLeft),
+      isTrue,
+      reason: '${parent.runtimeType} clips the Copied badge',
+    );
+    expect(
+      globalClip.contains(bounds.bottomRight),
+      isTrue,
+      reason: '${parent.runtimeType} clips the Copied badge',
+    );
+  }
+}
 
 ThemeData _theme(String mode) => DesktopAppearance()
     .getThemeData(
@@ -575,6 +923,7 @@ Future<void> _open(
   WidgetTester tester, {
   required File file,
   required MediaActionService actions,
+  VoidCallback? onChanged,
   String mode = 'light',
   double scale = 1,
   Size size = const Size(760, 540),
@@ -600,6 +949,7 @@ Future<void> _open(
             name: _name,
             editable: editable,
             mediaActions: actions,
+            onChanged: onChanged,
           ),
         ),
         child: const Text('Open archive'),

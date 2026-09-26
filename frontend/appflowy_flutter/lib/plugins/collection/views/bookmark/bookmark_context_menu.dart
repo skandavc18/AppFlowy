@@ -1,3 +1,4 @@
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_dialogs.dart';
@@ -10,7 +11,22 @@ import 'package:appflowy/workspace/application/collections/collection_registry.d
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+/// Uses CollectionPage's live lock/matching-page access rule, not provider
+/// source permissions (which say nothing about saved bookmark metadata).
+/// Resolve when opening, so a menu/card never captures an earlier permission.
+bool bookmarkCollectionReadOnly(
+  BuildContext context,
+  CollectionViewContext collection,
+) {
+  final view = collection.explorer.viewForId(collection.collectionView.id) ??
+      collection.collectionView;
+  final access = context.read<PageAccessLevelBloc?>();
+  return view.isLocked ||
+      (access?.view.id == view.id && !access!.state.isEditable);
+}
 
 /// Opens a saved link in the system browser.
 Future<void> openBookmarkInBrowser(BookmarkEntry entry) async {
@@ -45,6 +61,7 @@ Future<void> showBookmarkMenu({
           entry: entry,
           controller: controller,
           collection: collection,
+          readOnly: bookmarkCollectionReadOnly(context, collection),
         ),
       ),
       AppMenuItem(

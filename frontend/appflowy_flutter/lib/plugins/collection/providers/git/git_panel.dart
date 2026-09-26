@@ -768,7 +768,9 @@ class _ChangeRowState extends State<_ChangeRow> {
           decoration: BoxDecoration(
             color: selected
                 ? palette.selected
-                : palette.hover.withValues(alpha: hovered ? 1 : 0),
+                : hovered
+                    ? palette.hover
+                    : palette.hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(7),
           ),
           child: Row(
@@ -1043,7 +1045,9 @@ class _ActionState extends State<_Action> {
             color: widget.primary
                 ? palette.accent
                     .withValues(alpha: enabled ? (hovered ? 0.2 : 0.13) : 0.06)
-                : palette.hover.withValues(alpha: hovered && enabled ? 1 : 0),
+                : hovered && enabled
+                    ? palette.hover
+                    : palette.hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(

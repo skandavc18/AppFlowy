@@ -2,9 +2,32 @@ import 'dart:async';
 
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
 import 'package:flutter/material.dart';
+
+/// Live access for delayed field commits, including fields in borrowed pages
+/// and enlarged widgets. Cache the controller, not a BuildContext lookup, so
+/// disposal can check the latest access without walking a deactivated tree.
+class DashboardEditingScope extends InheritedWidget {
+  DashboardEditingScope({
+    super.key,
+    required this.controller,
+    required super.child,
+  }) : editable = controller.isEditable;
+
+  final DashboardController controller;
+  final bool editable;
+
+  static DashboardController? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<DashboardEditingScope>()
+      ?.controller;
+
+  @override
+  bool updateShouldNotify(DashboardEditingScope oldWidget) =>
+      controller != oldWidget.controller || editable != oldWidget.editable;
+}
 
 /// One reading of every view a dashboard points at.
 ///
@@ -159,6 +182,10 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
   final FocusNode _focus = FocusNode();
   Timer? _commit;
   bool _dirty = false;
+  String? _submitted;
+  DashboardController? _dashboard;
+
+  bool get _canWrite => widget.enabled && (_dashboard?.isEditable ?? true);
 
   @override
   void initState() {
@@ -171,13 +198,35 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _dashboard = DashboardEditingScope.maybeOf(context);
+    _suspendIfBlocked();
+  }
+
+  @override
   void didUpdateWidget(DashboardEditableText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Never adopt an incoming value while an edit of our own is unsaved, or a
-    // rebuild lands mid-write and throws away what is being typed.
+    _suspendIfBlocked();
+    // onChanged is a synchronous command with no acceptance result. Only the
+    // supplied value acknowledges it; a rejected command must stay dirty.
+    if (_dirty && widget.value == _controller.text) {
+      _dirty = false;
+      _submitted = null;
+    } else if (widget.value != oldWidget.value) {
+      _submitted = null;
+    }
+    // A remote value or an access change must not replace a suspended draft.
     if (!_dirty && widget.value != _controller.text) {
       _controller.text = widget.value;
     }
+  }
+
+  void _suspendIfBlocked() {
+    if (_canWrite) return;
+    _commit?.cancel();
+    _commit = null;
+    _submitted = null;
   }
 
   @override
@@ -192,15 +241,23 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
   void _flush() {
     _commit?.cancel();
     _commit = null;
-    if (!_dirty) {
+    if (!_dirty || !_canWrite || _submitted == _controller.text) {
       return;
     }
-    _dirty = false;
-    widget.onChanged(_controller.text);
+    // Coalesce submit/blur/disposal before the owner's next build. A new edit
+    // or explicit submission can retry a command that was not acknowledged.
+    _submitted = _controller.text;
+    try {
+      widget.onChanged(_controller.text);
+    } catch (_) {
+      _submitted = null;
+      rethrow;
+    }
   }
 
   void _schedule() {
     _dirty = true;
+    _submitted = null;
     _commit?.cancel();
     _commit = Timer(widget.commitDelay, _flush);
   }
@@ -209,20 +266,13 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final style = widget.style ?? DashboardType.body(palette);
-    if (!widget.enabled) {
-      final text = _controller.text.isEmpty ? widget.hint : _controller.text;
-      return Text(
-        text,
-        textAlign: widget.textAlign,
-        style: _controller.text.isEmpty
-            ? style.copyWith(color: palette.textMuted)
-            : style,
-      );
-    }
+    final writable = _canWrite;
     return TextEntryShortcuts(
       child: TextField(
         controller: _controller,
         focusNode: _focus,
+        readOnly: !writable,
+        showCursor: writable ? null : false,
         style: style,
         textAlign: widget.textAlign,
         maxLines: widget.multiline ? null : 1,
@@ -238,14 +288,21 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
           hintText: widget.hint,
           hintStyle: style.copyWith(color: palette.textMuted),
         ),
-        onChanged: (value) {
-          _schedule();
-          widget.onEdited?.call(value);
-        },
-        onSubmitted: (value) {
-          _flush();
-          widget.onSubmitted?.call(value);
-        },
+        onChanged: writable
+            ? (value) {
+                if (!_canWrite) return;
+                _schedule();
+                widget.onEdited?.call(value);
+              }
+            : null,
+        onSubmitted: writable
+            ? (value) {
+                if (!_canWrite) return;
+                _submitted = null;
+                _flush();
+                widget.onSubmitted?.call(value);
+              }
+            : null,
       ),
     );
   }
@@ -286,6 +343,12 @@ class _DashboardEditableNumberState extends State<DashboardEditableNumber> {
   final FocusNode _focus = FocusNode();
   Timer? _commit;
   bool _dirty = false;
+  String? _submitted;
+  DashboardController? _dashboard;
+
+  bool get _canWrite => widget.enabled && (_dashboard?.isEditable ?? true);
+
+  double? get _parsed => double.tryParse(_controller.text.replaceAll(',', ''));
 
   @override
   void initState() {
@@ -298,11 +361,36 @@ class _DashboardEditableNumberState extends State<DashboardEditableNumber> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _dashboard = DashboardEditingScope.maybeOf(context);
+    _suspendIfBlocked();
+  }
+
+  @override
   void didUpdateWidget(DashboardEditableNumber oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!_dirty && widget.value != oldWidget.value) {
+    _suspendIfBlocked();
+    if (_dirty) {
+      if (_parsed == widget.value) {
+        _dirty = false;
+        _submitted = null;
+      } else if (widget.value != oldWidget.value) {
+        _submitted = null;
+      }
+      // Keep the person's formatting and selection even when acknowledged.
+      return;
+    }
+    if (widget.value != oldWidget.value) {
       _controller.text = formatDashboardNumber(widget.value);
     }
+  }
+
+  void _suspendIfBlocked() {
+    if (_canWrite) return;
+    _commit?.cancel();
+    _commit = null;
+    _submitted = null;
   }
 
   @override
@@ -317,33 +405,35 @@ class _DashboardEditableNumberState extends State<DashboardEditableNumber> {
   void _flush() {
     _commit?.cancel();
     _commit = null;
-    if (!_dirty) {
+    if (!_dirty || !_canWrite || _submitted == _controller.text) {
       return;
     }
-    _dirty = false;
-    final parsed = double.tryParse(_controller.text.replaceAll(',', ''));
-    if (parsed == null) {
-      _controller.text = formatDashboardNumber(widget.value);
+    final parsed = _parsed;
+    // An incomplete number is still a draft, not permission to restore the
+    // stored value. Non-finite values cannot be persisted as dashboard JSON.
+    if (parsed == null || !parsed.isFinite) {
       return;
     }
-    widget.onChanged(parsed);
+    _submitted = _controller.text;
+    try {
+      widget.onChanged(parsed);
+    } catch (_) {
+      _submitted = null;
+      rethrow;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final style = widget.style ?? DashboardType.figure(widget.palette);
-    if (!widget.enabled) {
-      return Text(
-        formatDashboardNumber(widget.value),
-        textAlign: widget.textAlign,
-        style: style,
-      );
-    }
+    final writable = _canWrite;
     return IntrinsicWidth(
       child: TextEntryShortcuts(
         child: TextField(
           controller: _controller,
           focusNode: _focus,
+          readOnly: !writable,
+          showCursor: writable ? null : false,
           style: style,
           textAlign: widget.textAlign,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -357,12 +447,22 @@ class _DashboardEditableNumberState extends State<DashboardEditableNumber> {
             focusedBorder: InputBorder.none,
             hoverColor: Colors.transparent,
           ),
-          onChanged: (_) {
-            _dirty = true;
-            _commit?.cancel();
-            _commit = Timer(widget.commitDelay, _flush);
-          },
-          onSubmitted: (_) => _flush(),
+          onChanged: writable
+              ? (_) {
+                  if (!_canWrite) return;
+                  _dirty = true;
+                  _submitted = null;
+                  _commit?.cancel();
+                  _commit = Timer(widget.commitDelay, _flush);
+                }
+              : null,
+          onSubmitted: writable
+              ? (_) {
+                  if (!_canWrite) return;
+                  _submitted = null;
+                  _flush();
+                }
+              : null,
         ),
       ),
     );

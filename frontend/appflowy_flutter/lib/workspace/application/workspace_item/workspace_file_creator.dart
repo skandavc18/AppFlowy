@@ -9,21 +9,24 @@ import 'package:flowy_infra/file_picker/file_picker_service.dart';
 
 /// Runs one entry of the "New file" menu under [parentViewId].
 ///
-/// Returns `null` when the person cancels the file picker.
+/// Returns `null` when the picker is cancelled or the optional host gate closes.
 Future<FlowyResult<ViewPB, FlowyError>?> createWorkspaceFile({
   required String parentViewId,
   required WorkspaceFileMenuAction action,
   ViewSectionPB? section,
   String? name,
+  bool Function()? canWrite,
 }) async {
+  if (canWrite != null && !canWrite()) return null;
   const service = WorkspaceItemService();
   if (action.source == WorkspaceFileSource.create) {
-    return service.createBlankFile(
+    final created = await service.createBlankFile(
       parentViewId: parentViewId,
       kind: action.kind,
       name: name,
       section: section,
     );
+    return canWrite?.call() == false ? null : created;
   }
 
   final extensions = action.kind.pickerExtensions;
@@ -33,13 +36,14 @@ Future<FlowyResult<ViewPB, FlowyError>?> createWorkspaceFile({
     allowedExtensions: extensions.isEmpty ? null : extensions,
   );
   final picked = result?.files.firstOrNull;
-  if (picked == null) {
+  if (picked == null || (canWrite != null && !canWrite())) {
     return null;
   }
 
-  return service.importBinaryFile(
+  final imported = await service.importBinaryFile(
     parentViewId: parentViewId,
     file: picked.xFile,
     section: section,
   );
+  return canWrite?.call() == false ? null : imported;
 }

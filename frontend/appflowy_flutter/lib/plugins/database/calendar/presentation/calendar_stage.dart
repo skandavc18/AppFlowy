@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
+import 'package:appflowy/plugins/database/calendar/application/calendar_view_setting.dart';
 import 'package:appflowy/plugins/database/calendar/application/calendar_workspace.dart';
 import 'package:appflowy/plugins/database/calendar/application/table_calendar_provider.dart';
+import 'package:appflowy/plugins/database/calendar/presentation/calendar_event_details.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_shell.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/views/month_view.dart';
 import 'package:appflowy/plugins/database/domain/date_cell_service.dart';
@@ -16,6 +19,7 @@ import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// The calendar as a reading of one table.
@@ -79,6 +83,7 @@ class _CalendarStageState extends State<CalendarStage> {
       calendarName: LocaleKeys.reminders_title.tr(),
     );
     _workspace = CalendarWorkspace(providers: [_table, _reminders]);
+    _adoptStoredModeAfterFrame();
     ReminderStore.instance.start();
     unawaited(_attachGoogleCalendars());
   }
@@ -89,9 +94,13 @@ class _CalendarStageState extends State<CalendarStage> {
   /// usable the instant it opens, with or without a network.
   Future<void> _attachGoogleCalendars() async {
     final selections = await _workspace.readGoogleSelection();
+    if (!mounted) return;
     final providers =
         await buildGoogleCalendarProviders(selections: selections);
     if (!mounted) {
+      for (final provider in providers) {
+        provider.dispose();
+      }
       return;
     }
     for (final provider in providers) {
@@ -102,9 +111,18 @@ class _CalendarStageState extends State<CalendarStage> {
   @override
   void didUpdateWidget(CalendarStage old) {
     super.didUpdateWidget(old);
+    if (old.view.extra != widget.view.extra) {
+      _adoptStoredModeAfterFrame();
+    }
     if (old.view.name != widget.view.name) {
       _table.rename(widget.view.name);
     }
+  }
+
+  void _adoptStoredModeAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) CalendarViewSettings.instance.adopt(widget.view);
+    });
   }
 
   @override
@@ -119,8 +137,28 @@ class _CalendarStageState extends State<CalendarStage> {
   int get _firstWeekday =>
       widget.firstDayOfWeek == 0 ? DateTime.sunday : widget.firstDayOfWeek;
 
+  bool get _canEdit {
+    if (!mounted) return false;
+    final access = context.read<PageAccessLevelBloc?>()?.state;
+    return access == null
+        ? !widget.view.isLocked
+        : !access.isLoadingLockStatus && access.isEditable;
+  }
+
+  bool get _canCreate => _canEdit && _workspace.defaultProvider != null;
+
+  bool _canEditEvent(CalendarEvent event) =>
+      _canEdit &&
+      !event.readOnly &&
+      (_workspace.providerFor(event)?.capabilities.canEdit ?? false);
+
   @override
-  Widget build(BuildContext context) => CalendarShell(
+  Widget build(BuildContext context) {
+    // Rebuild action affordances when access or the page lock changes.
+    context.watch<PageAccessLevelBloc?>();
+    return ValueListenableBuilder<CalendarViewMode?>(
+      valueListenable: CalendarViewSettings.instance.listenable(widget.view),
+      builder: (context, savedMode, _) => CalendarShell(
         key: _shell,
         workspace: _workspace,
         hasDateField: _hasDateField,
@@ -130,18 +168,33 @@ class _CalendarStageState extends State<CalendarStage> {
         onConnectCalendar: widget.onConnectCalendar,
         toolbarTrailing: widget.toolbarTrailing,
         compact: widget.compact,
-        initialMode:
-            widget.compact ? CalendarViewMode.agenda : CalendarViewMode.month,
+        initialMode: savedMode ??
+            (widget.compact ? CalendarViewMode.agenda : CalendarViewMode.month),
+        mode: _canEdit
+            ? savedMode ??
+                (widget.compact
+                    ? CalendarViewMode.agenda
+                    : CalendarViewMode.month)
+            : null,
+        onModeChanged: (mode) {
+          if (_canEdit) {
+            unawaited(CalendarViewSettings.instance.set(widget.view, mode));
+          }
+        },
         delegate: CalendarViewDelegate(
           colorOf: _workspace.colorFor,
+          canEdit: _canEdit,
+          canEditEvent: _canEditEvent,
           onOpenEvent: _open,
           onEventMenu: _menu,
-          onCreateAt: _create,
-          onReschedule: _reschedule,
-          onToggleComplete: _toggleComplete,
+          onCreateAt: _canCreate ? _create : null,
+          onReschedule: _canEdit ? _reschedule : null,
+          onToggleComplete: _canEdit ? _toggleComplete : null,
           onShowMore: _showDay,
         ),
-      );
+      ),
+    );
+  }
 
   void _open(CalendarEvent event) {
     if (event.rowId.isNotEmpty) {
@@ -150,14 +203,17 @@ class _CalendarStageState extends State<CalendarStage> {
     }
     if (event.url.isNotEmpty) {
       unawaited(launchUrl(Uri.parse(event.url)));
+      return;
     }
+    unawaited(showCalendarEventDetails(context, event: event));
   }
 
   void _showDay(DateTime day, Offset position) =>
       _shell.currentState?.showDay(day);
 
   Future<void> _create(DateTime at, {bool hasTime = false}) async {
-    await _workspace.create(
+    if (!_canCreate) return;
+    final created = await _workspace.create(
       CalendarEventDraft(
         title: '',
         start: hasTime ? ZonedDateTime.local(at) : ZonedDateTime.allDay(at),
@@ -166,6 +222,9 @@ class _CalendarStageState extends State<CalendarStage> {
             : null,
       ),
     );
+    if (mounted && _canEdit && created != null && created.rowId.isNotEmpty) {
+      widget.onOpenRow(created.rowId);
+    }
   }
 
   Future<void> _reschedule(
@@ -173,19 +232,25 @@ class _CalendarStageState extends State<CalendarStage> {
     DateTime start,
     DateTime? end,
   ) async {
+    if (!_canEditEvent(event) ||
+        !(_workspace.providerFor(event)?.capabilities.canMove ?? false)) {
+      return;
+    }
     await _workspace.reschedule(event, start: start, end: end);
   }
 
   Future<void> _toggleComplete(CalendarEvent event) async {
-    if (event.kind == CalendarEventKind.reminder) {
+    if (_canEditEvent(event) && event.kind == CalendarEventKind.reminder) {
       await _reminders.toggleComplete(event);
     }
   }
 
   Future<void> _menu(CalendarEvent event, Offset position) async {
     final provider = _workspace.providerFor(event);
-    final canWrite =
-        provider != null && provider.capabilities.canWrite && !event.readOnly;
+    final canWrite = _canEditEvent(event);
+    final canDelete = _canEdit &&
+        !event.readOnly &&
+        (provider?.capabilities.canDelete ?? false);
 
     await showAppMenu<void>(
       context: context,
@@ -194,7 +259,7 @@ class _CalendarStageState extends State<CalendarStage> {
         AppMenuItem(
           label: event.rowId.isNotEmpty
               ? LocaleKeys.calendarView_openRow.tr()
-              : LocaleKeys.calendarView_editEvent.tr(),
+              : LocaleKeys.reminders_open.tr(),
           icon: Icons.open_in_new_rounded,
           onSelected: () => _open(event),
         ),
@@ -204,7 +269,7 @@ class _CalendarStageState extends State<CalendarStage> {
             icon: Icons.launch_rounded,
             onSelected: () => unawaited(launchUrl(Uri.parse(event.url))),
           ),
-        if (event.kind == CalendarEventKind.reminder)
+        if (canWrite && event.kind == CalendarEventKind.reminder)
           AppMenuItem(
             label: event.isCompleted
                 ? LocaleKeys.reminders_markNotDone.tr()
@@ -212,25 +277,33 @@ class _CalendarStageState extends State<CalendarStage> {
             icon: Icons.check_circle_rounded,
             onSelected: () => unawaited(_toggleComplete(event)),
           ),
-        if (event.rowId.isNotEmpty && widget.onDuplicateRow != null)
+        if (canWrite && event.rowId.isNotEmpty && widget.onDuplicateRow != null)
           AppMenuItem(
             label: LocaleKeys.calendarView_duplicateEvent.tr(),
             icon: Icons.copy_rounded,
-            onSelected: () => widget.onDuplicateRow!(event.rowId),
+            onSelected: () {
+              if (_canEditEvent(event)) widget.onDuplicateRow!(event.rowId);
+            },
           ),
-        if (event.rowId.isNotEmpty && !event.hasReminder)
+        if (canWrite && event.rowId.isNotEmpty && !event.hasReminder)
           AppMenuItem(
             label: LocaleKeys.calendarView_addReminder.tr(),
             icon: Icons.notifications_rounded,
             onSelected: () => unawaited(_addReminderFor(event)),
           ),
-        if (canWrite) ...[
+        if (canDelete) ...[
           const AppMenuSeparator(),
           AppMenuItem(
             label: LocaleKeys.calendarView_deleteEvent.tr(),
             icon: Icons.delete_outline_rounded,
             destructive: true,
             onSelected: () {
+              if (!_canEdit ||
+                  event.readOnly ||
+                  !(_workspace.providerFor(event)?.capabilities.canDelete ??
+                      false)) {
+                return;
+              }
               if (event.rowId.isNotEmpty && widget.onDeleteRow != null) {
                 widget.onDeleteRow!(event.rowId);
               } else {
@@ -247,7 +320,7 @@ class _CalendarStageState extends State<CalendarStage> {
   /// application already looks for one.
   Future<void> _addReminderFor(CalendarEvent event) async {
     final field = _table.dateField;
-    if (field == null || event.rowId.isEmpty) {
+    if (!_canEditEvent(event) || field == null || event.rowId.isEmpty) {
       return;
     }
     final reminder = await ReminderStore.instance.create(
@@ -259,7 +332,7 @@ class _CalendarStageState extends State<CalendarStage> {
         objectId: widget.view.id,
       ),
     );
-    if (reminder == null) {
+    if (!mounted || !_canEditEvent(event) || reminder == null) {
       return;
     }
     await DateCellBackendService(

@@ -1,17 +1,23 @@
 import 'package:appflowy/extensions/dart/extension_registries.dart';
-import 'package:appflowy/generated/flowy_svgs.g.dart';
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/database/widgets/database_layout_ext.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/setting_entities.pbenum.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra/size.dart';
-import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flowy_infra_ui/style_widget/extension.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+/// Hosts without page access keep their existing behavior. A provided access
+/// state must finish loading before allowing mutations, even when sharing is
+/// disabled and [PageAccessLevelState.isEditable] only checks the page lock.
+bool databaseViewMutationsAllowed(PageAccessLevelState? access) =>
+    access == null || (!access.isLoadingLockStatus && access.isEditable);
 
 /// The views this database can be shown as.
 ///
@@ -143,9 +149,14 @@ class DatabaseTabKind {
 }
 
 class AddDatabaseViewButton extends StatefulWidget {
-  const AddDatabaseViewButton({super.key, required this.onTap});
+  const AddDatabaseViewButton({
+    super.key,
+    required this.onTap,
+    this.enabled = true,
+  });
 
   final Function(DatabaseTabKind) onTap;
+  final bool enabled;
 
   @override
   State<AddDatabaseViewButton> createState() => _AddDatabaseViewButtonState();
@@ -155,8 +166,15 @@ class _AddDatabaseViewButtonState extends State<AddDatabaseViewButton> {
   final popoverController = PopoverController();
   VoidCallback? _releasePreview;
 
+  bool get _canAdd =>
+      mounted &&
+      widget.enabled &&
+      databaseViewMutationsAllowed(
+        context.read<PageAccessLevelBloc?>()?.state,
+      );
+
   void _showPopover() {
-    if (_releasePreview != null) return;
+    if (_releasePreview != null || !_canAdd) return;
     _releasePreview = PreviewToolbarRegion.hold(context);
     popoverController.show();
   }
@@ -166,14 +184,44 @@ class _AddDatabaseViewButtonState extends State<AddDatabaseViewButton> {
     _releasePreview = null;
   }
 
+  void _closeIfDisabled() {
+    if (_releasePreview == null || _canAdd) return;
+    // Access notifications and host changes can arrive during layout. The
+    // activation callbacks read live access immediately; close after layout.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _canAdd) return;
+      popoverController.close();
+      _release();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _closeIfDisabled();
+  }
+
+  @override
+  void didUpdateWidget(AddDatabaseViewButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _closeIfDisabled();
+  }
+
   @override
   void dispose() {
-    _release();
+    final release = _releasePreview;
+    _releasePreview = null;
+    if (release != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => release());
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final access = context.watch<PageAccessLevelBloc?>();
+    final canAdd =
+        widget.enabled && databaseViewMutationsAllowed(access?.state);
     return AppFlowyPopover(
       controller: popoverController,
       constraints: BoxConstraints.loose(const Size(200, 400)),
@@ -182,30 +230,24 @@ class _AddDatabaseViewButtonState extends State<AddDatabaseViewButton> {
       margin: EdgeInsets.zero,
       triggerActions: PopoverTriggerFlags.none,
       onClose: _release,
-      child: Padding(
-        padding: const EdgeInsetsDirectional.only(
-          top: 2.0,
-          bottom: 7.0,
-          start: 6.0,
-        ),
-        child: FlowyIconButton(
-          width: 26,
-          hoverColor: AFThemeExtension.of(context).greyHover,
-          tooltipText: LocaleKeys.grid_createView.tr(),
-          onPressed: _showPopover,
-          radius: Corners.s4Border,
-          icon: FlowySvg(
-            FlowySvgs.add_s,
-            color: Theme.of(context).hintColor,
+      child: SizedBox(
+        width: 36,
+        height: 38,
+        child: IconButton(
+          tooltip: LocaleKeys.grid_createView.tr(),
+          onPressed: canAdd ? _showPopover : null,
+          style: WorkspaceChrome.controlStyle(context).copyWith(
+            padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
-          iconColorOnHover: Theme.of(context).colorScheme.onSurface,
+          icon: const DSWorkspaceGlyph.named('plus'),
         ),
       ),
       popupBuilder: (BuildContext context) {
         return TabBarAddButtonAction(
           onTap: (action) {
             popoverController.close();
-            widget.onTap(action);
+            if (_canAdd) widget.onTap(action);
           },
         );
       },
@@ -250,26 +292,33 @@ class TabBarAddButtonActionCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: GridSize.popoverItemHeight,
-      child: FlowyButton(
-        hoverColor: AFThemeExtension.of(context).lightGreyHover,
-        text: FlowyText(
-          '${LocaleKeys.grid_createView.tr()} ${action.label}',
-          color: AFThemeExtension.of(context).textColor,
-        ),
-        leftIcon: action.glyph != null
-            ? Icon(
-                action.glyph,
-                size: 16,
-                color: Theme.of(context).iconTheme.color,
-              )
-            : FlowySvg(
-                action.layout.icon,
-                color: Theme.of(context).iconTheme.color,
+    final label = '${LocaleKeys.grid_createView.tr()} ${action.label}';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: TextButton(
+          style: WorkspaceChrome.controlStyle(context).copyWith(
+            alignment: AlignmentDirectional.centerStart,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: () => onTap(action),
+          child: Row(
+            children: [
+              if (action.glyph != null)
+                DSWorkspaceGlyph(action.glyph!, size: 16)
+              else
+                DSWorkspaceGlyph.svg(action.layout.icon, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child:
+                    Text(label, maxLines: 2, overflow: TextOverflow.ellipsis),
               ),
-        onTap: () => onTap(action),
-      ).padding(horizontal: 6.0),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

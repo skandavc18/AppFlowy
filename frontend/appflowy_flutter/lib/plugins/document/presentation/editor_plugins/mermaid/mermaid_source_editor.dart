@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/visual_block/visual_block.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -141,7 +142,7 @@ class _MermaidSourceEditorState extends State<MermaidSourceEditor> {
         decoration: BoxDecoration(
           color: palette.isDark
               ? palette.canvas.withValues(alpha: 0.55)
-              : palette.hover.withValues(alpha: 0.55),
+              : palette.hover.withValues(alpha: palette.hover.a * 0.55),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -284,7 +285,12 @@ class _SampleChipState extends State<_SampleChip> {
           curve: VisualBlockMetrics.curve,
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
-            color: _hovered ? palette.accentSoft : palette.raised,
+            color: _hovered
+                ? Color.alphaBlend(
+                    WorkspaceChrome.hoverColor(context),
+                    palette.raised,
+                  )
+                : palette.raised,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(

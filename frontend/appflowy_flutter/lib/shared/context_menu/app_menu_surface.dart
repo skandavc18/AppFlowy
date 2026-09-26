@@ -1,5 +1,8 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/material.dart';
 
 import 'app_menu_style.dart';
@@ -144,6 +147,19 @@ class _AppMenuRowState extends State<AppMenuRow> {
   Widget build(BuildContext context) {
     final style = widget.style ?? AppMenuStyle.of(context);
     final enabled = widget.enabled;
+    final duration =
+        WorkspaceTokens.motion(context, AppMenuMetrics.hoverDuration);
+    final scaler = MediaQuery.textScalerOf(context);
+    final rowHeight = math.max(
+      widget.subtitle == null
+          ? AppMenuMetrics.rowHeight
+          : AppMenuMetrics.rowHeightWithSubtitle,
+      scaler.scale(AppMenuMetrics.labelSize) +
+          (widget.subtitle == null
+              ? 0
+              : 3 + scaler.scale(AppMenuMetrics.subtitleSize) * 1.25) +
+          WorkspaceTokens.space3,
+    );
     final active =
         enabled && (widget.highlighted || (widget.tracksHover && _hovered));
 
@@ -160,6 +176,9 @@ class _AppMenuRowState extends State<AppMenuRow> {
       destructive: widget.destructive,
       selected: widget.selected,
     );
+    final iconRole = !enabled || widget.destructive
+        ? WorkspaceGlyphRole.preserveInk
+        : WorkspaceGlyphRole.standard;
 
     // Every resting colour keeps the hover colour's own channels, because a
     // tween that starts at [Colors.transparent] passes through transparent
@@ -179,10 +198,25 @@ class _AppMenuRowState extends State<AppMenuRow> {
       background = style.hoverBase;
     }
 
-    final leading = widget.iconWidget ??
-        (widget.icon == null
+    final source = widget.iconWidget;
+    final preservedColor = source is WorkspaceGlyph &&
+            source.role == WorkspaceGlyphRole.preserveInk &&
+            enabled &&
+            !widget.destructive
+        ? source.color
+        : null;
+    final leading = source != null
+        ? WorkspaceGlyph.adapt(
+            source,
+            color: preservedColor ?? iconColor,
+            role: iconRole == WorkspaceGlyphRole.preserveInk ? iconRole : null,
+          )
+        : widget.icon == null
             ? null
-            : Icon(widget.icon, size: AppMenuMetrics.iconSize));
+            : WorkspaceGlyph(
+                widget.icon!,
+                role: iconRole,
+              );
 
     final label = Text(
       widget.label,
@@ -190,14 +224,35 @@ class _AppMenuRowState extends State<AppMenuRow> {
       overflow: TextOverflow.ellipsis,
     );
 
-    final Widget? trailing = widget.trailing ??
+    final suppliedTrailing = widget.trailing;
+    final Widget? trailing = (suppliedTrailing == null
+            ? null
+            : suppliedTrailing is WorkspaceGlyph
+                ? WorkspaceGlyph.adapt(
+                    suppliedTrailing,
+                    size: AppMenuMetrics.submenuArrowSize,
+                    color: enabled && !widget.destructive
+                        ? suppliedTrailing.color ?? iconColor
+                        : iconColor,
+                    role: WorkspaceGlyphRole.preserveInk,
+                  )
+                // Supplied check/radio widgets are native state indicators,
+                // not action identities. Preserve their shape and explicit ink.
+                : IconTheme.merge(
+                    data: IconThemeData(
+                      size: AppMenuMetrics.submenuArrowSize,
+                      color: iconColor,
+                    ),
+                    child: suppliedTrailing,
+                  )) ??
         (widget.hasSubmenu
-            ? Icon(
+            ? WorkspaceGlyph(
                 Icons.chevron_right_rounded,
                 size: AppMenuMetrics.submenuArrowSize,
                 color: enabled
                     ? style.iconMuted
                     : style.iconMuted.withValues(alpha: 0.5),
+                role: iconRole,
               )
             : widget.shortcut != null
                 ? Text(
@@ -211,106 +266,114 @@ class _AppMenuRowState extends State<AppMenuRow> {
                 // A checked row says so on the right, leaving the leading slot
                 // for the row's own glyph.
                 : widget.selected
-                    ? Icon(
+                    ? WorkspaceGlyph(
                         Icons.check_rounded,
                         size: AppMenuMetrics.submenuArrowSize,
-                        color: style.accent,
+                        color: iconColor,
+                        role: WorkspaceGlyphRole.preserveInk,
                       )
                     : null);
 
-    return MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (event) {
-        if (widget.tracksHover) {
-          setState(() => _hovered = true);
-        }
-        widget.onHover?.call(event);
-      },
-      onHover: widget.onHover,
-      onExit: (_) {
-        if (_pressed || _hovered) {
-          setState(() {
-            _pressed = false;
-            _hovered = false;
-          });
-        }
-        widget.onExit?.call();
-      },
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
-        onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
-        onTap: enabled
-            ? () {
-                setState(() => _pressed = false);
-                widget.onTap?.call();
-              }
-            : null,
-        child: AnimatedContainer(
-          duration: AppMenuMetrics.hoverDuration,
-          curve: AppMenuMetrics.hoverCurve,
-          height: widget.subtitle == null
-              ? AppMenuMetrics.rowHeight
-              : AppMenuMetrics.rowHeightWithSubtitle,
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppMenuMetrics.rowHorizontalPadding,
-          ),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: style.rowBorderRadius,
-          ),
-          child: Row(
-            children: [
-              if (leading != null) ...[
-                SizedBox(
-                  width: AppMenuMetrics.iconSlot,
-                  height: AppMenuMetrics.iconSlot,
-                  child: Center(
-                    child: TweenAnimationBuilder<Color?>(
-                      duration: AppMenuMetrics.hoverDuration,
-                      curve: AppMenuMetrics.hoverCurve,
-                      tween: ColorTween(end: iconColor),
-                      builder: (context, color, child) => IconTheme.merge(
-                        data: IconThemeData(
-                          color: color,
-                          size: AppMenuMetrics.iconSize,
+    return Semantics(
+      button: true,
+      enabled: enabled,
+      selected: widget.selected,
+      child: MouseRegion(
+        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+        onEnter: (event) {
+          if (widget.tracksHover) {
+            setState(() => _hovered = true);
+          }
+          widget.onHover?.call(event);
+        },
+        onHover: widget.onHover,
+        onExit: (_) {
+          if (_pressed || _hovered) {
+            setState(() {
+              _pressed = false;
+              _hovered = false;
+            });
+          }
+          widget.onExit?.call();
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: enabled ? (_) => setState(() => _pressed = true) : null,
+          onTapCancel: enabled ? () => setState(() => _pressed = false) : null,
+          onTap: enabled
+              ? () {
+                  setState(() => _pressed = false);
+                  widget.onTap?.call();
+                }
+              : null,
+          child: AnimatedContainer(
+            duration: duration,
+            curve: AppMenuMetrics.hoverCurve,
+            height: rowHeight,
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppMenuMetrics.rowHorizontalPadding,
+            ),
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: style.rowBorderRadius,
+            ),
+            child: Row(
+              children: [
+                if (leading != null) ...[
+                  SizedBox(
+                    width: AppMenuMetrics.iconSlot,
+                    height: AppMenuMetrics.iconSlot,
+                    child: Center(
+                      child: TweenAnimationBuilder<Color?>(
+                        duration: duration,
+                        curve: AppMenuMetrics.hoverCurve,
+                        tween: ColorTween(end: iconColor),
+                        builder: (context, color, child) => WorkspaceGlyphScope(
+                          color: color ?? iconColor,
+                          role: iconRole,
+                          child: IconTheme.merge(
+                            data: IconThemeData(
+                              color: color,
+                              size: AppMenuMetrics.iconSize,
+                            ),
+                            child: child!,
+                          ),
                         ),
-                        child: child!,
+                        child: leading,
                       ),
-                      child: leading,
                     ),
                   ),
+                  const SizedBox(width: AppMenuMetrics.iconGap),
+                ],
+                Expanded(
+                  child: AnimatedDefaultTextStyle(
+                    duration: duration,
+                    curve: AppMenuMetrics.hoverCurve,
+                    style: style.labelStyle.copyWith(color: labelColor),
+                    child: widget.subtitle == null
+                        ? label
+                        : Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              label,
+                              const SizedBox(height: 3),
+                              Text(
+                                widget.subtitle!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: style.subtitleStyle,
+                              ),
+                            ],
+                          ),
+                  ),
                 ),
-                const SizedBox(width: AppMenuMetrics.iconGap),
+                if (trailing != null) ...[
+                  const SizedBox(width: 16),
+                  trailing,
+                ],
               ],
-              Expanded(
-                child: AnimatedDefaultTextStyle(
-                  duration: AppMenuMetrics.hoverDuration,
-                  curve: AppMenuMetrics.hoverCurve,
-                  style: style.labelStyle.copyWith(color: labelColor),
-                  child: widget.subtitle == null
-                      ? label
-                      : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            label,
-                            const SizedBox(height: 3),
-                            Text(
-                              widget.subtitle!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: style.subtitleStyle,
-                            ),
-                          ],
-                        ),
-                ),
-              ),
-              if (trailing != null) ...[
-                const SizedBox(width: 16),
-                trailing,
-              ],
-            ],
+            ),
           ),
         ),
       ),

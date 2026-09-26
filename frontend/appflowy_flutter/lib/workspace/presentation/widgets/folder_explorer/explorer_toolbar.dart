@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
@@ -22,6 +23,7 @@ class ExplorerToolbar extends StatelessWidget {
     required this.onSearchChanged,
     required this.canPaste,
     required this.isSearching,
+    this.canWrite = true,
     this.onImportFromService,
     this.onMountService,
     this.trailing,
@@ -38,6 +40,7 @@ class ExplorerToolbar extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final bool canPaste;
   final bool isSearching;
+  final bool canWrite;
   final ValueChanged<ProviderServiceInfo>? onImportFromService;
   final ValueChanged<ProviderServiceInfo>? onMountService;
   final Widget? trailing;
@@ -45,37 +48,39 @@ class ExplorerToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return Row(
-      children: [
-        _NewFileButton(
-          onSelected: onNewFile,
-          onCreateCollection: onCreateCollection,
-          onCreateDatabase: onCreateDatabase,
-          onImportFromService: onImportFromService,
-          onMountService: onMountService,
-        ),
-        _ToolbarButton(
-          icon: workspaceAddFolderIcon,
-          tooltip: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
-          onPressed: onNewFolder,
-        ),
-        if (canPaste && onPaste != null)
-          _ToolbarButton(
-            icon: Icons.content_paste_rounded,
-            tooltip: LocaleKeys.workspaceFolderExplorer_paste.tr(),
-            onPressed: onPaste,
+    return LayoutBuilder(
+      builder: (context, constraints) => Wrap(
+        spacing: 4,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _NewFileButton(
+            enabled: canWrite,
+            onSelected: onNewFile,
+            onCreateCollection: onCreateCollection,
+            onCreateDatabase: onCreateDatabase,
+            onImportFromService: onImportFromService,
+            onMountService: onMountService,
           ),
-        _ToolbarButton(
-          icon: Icons.refresh_rounded,
-          tooltip: LocaleKeys.workspaceFolderExplorer_refresh.tr(),
-          onPressed: onRefresh,
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 260),
-            child: SizedBox(
-              height: 30,
+          _ToolbarButton(
+            icon: workspaceAddFolderIcon,
+            tooltip: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
+            onPressed: canWrite ? onNewFolder : null,
+          ),
+          if (canPaste && onPaste != null)
+            _ToolbarButton(
+              icon: Icons.content_paste_rounded,
+              tooltip: LocaleKeys.workspaceFolderExplorer_paste.tr(),
+              onPressed: canWrite ? onPaste : null,
+            ),
+          _ToolbarButton(
+            icon: Icons.refresh_rounded,
+            tooltip: LocaleKeys.workspaceFolderExplorer_refresh.tr(),
+            onPressed: onRefresh,
+          ),
+          SizedBox(
+            width: constraints.maxWidth < 560 ? constraints.maxWidth : 260,
+            child: TextEntryShortcuts(
               child: TextField(
                 controller: searchController,
                 onChanged: onSearchChanged,
@@ -90,7 +95,9 @@ class ExplorerToolbar extends StatelessWidget {
                           padding: EdgeInsets.all(8),
                           child: SizedBox.square(
                             dimension: 12,
-                            child: CircularProgressIndicator(strokeWidth: 1.5),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                            ),
                           ),
                         )
                       : Icon(
@@ -115,7 +122,7 @@ class ExplorerToolbar extends StatelessWidget {
                           palette.accent.withValues(alpha: 0.08),
                           palette.surface,
                         )
-                      : palette.hover.withValues(alpha: 0.55),
+                      : palette.hover.withValues(alpha: palette.hover.a * 0.55),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                     borderSide: BorderSide.none,
@@ -132,24 +139,25 @@ class ExplorerToolbar extends StatelessWidget {
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 4),
-        if (trailing != null) ...[
-          trailing!,
           const SizedBox(width: 4),
+          if (trailing != null) ...[
+            trailing!,
+            const SizedBox(width: 4),
+          ],
+          _ToolbarButton(
+            icon: Icons.more_horiz_rounded,
+            tooltip: LocaleKeys.workspaceFolderExplorer_more.tr(),
+            onPressed: onMore,
+          ),
         ],
-        _ToolbarButton(
-          icon: Icons.more_horiz_rounded,
-          tooltip: LocaleKeys.workspaceFolderExplorer_more.tr(),
-          onPressed: onMore,
-        ),
-      ],
+      ),
     );
   }
 }
 
 class _NewFileButton extends StatelessWidget {
   const _NewFileButton({
+    required this.enabled,
     required this.onSelected,
     required this.onCreateCollection,
     required this.onCreateDatabase,
@@ -157,6 +165,7 @@ class _NewFileButton extends StatelessWidget {
     this.onMountService,
   });
 
+  final bool enabled;
   final ValueChanged<WorkspaceFileMenuAction> onSelected;
   final ValueChanged<CollectionKind> onCreateCollection;
   final ValueChanged<WorkspaceTableKind> onCreateDatabase;
@@ -169,23 +178,25 @@ class _NewFileButton extends StatelessWidget {
       builder: (buttonContext) => _ToolbarButton(
         icon: workspaceAddFileIcon,
         tooltip: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
-        onPressed: () async {
-          final box = buttonContext.findRenderObject() as RenderBox?;
-          if (box == null) {
-            return;
-          }
-          final action = await showWorkspaceFileKindMenu(
-            context: buttonContext,
-            globalPosition: box.localToGlobal(Offset(0, box.size.height)),
-            onCreateCollection: onCreateCollection,
-            onCreateDatabase: onCreateDatabase,
-            onImportFromService: onImportFromService,
-            onMountService: onMountService,
-          );
-          if (action != null) {
-            onSelected(action);
-          }
-        },
+        onPressed: !enabled
+            ? null
+            : () async {
+                final box = buttonContext.findRenderObject() as RenderBox?;
+                if (box == null) {
+                  return;
+                }
+                final action = await showWorkspaceFileKindMenu(
+                  context: buttonContext,
+                  globalPosition: box.localToGlobal(Offset(0, box.size.height)),
+                  onCreateCollection: onCreateCollection,
+                  onCreateDatabase: onCreateDatabase,
+                  onImportFromService: onImportFromService,
+                  onMountService: onMountService,
+                );
+                if (action != null) {
+                  onSelected(action);
+                }
+              },
       ),
     );
   }
@@ -215,6 +226,18 @@ class _ToolbarButton extends StatelessWidget {
         disabledColor: palette.textMuted.withValues(alpha: 0.45),
         hoverColor: palette.hover,
         highlightColor: palette.selected,
+        style: ButtonStyle(
+          // The explicit hover overlay already paints the wash. Do not also
+          // inherit the global IconButton background wash underneath it.
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.hovered) &&
+                    !states.contains(WidgetState.focused) &&
+                    !states.contains(WidgetState.pressed) &&
+                    !states.contains(WidgetState.disabled)
+                ? palette.hover.withValues(alpha: 0)
+                : null,
+          ),
+        ),
         splashRadius: 16,
         constraints: const BoxConstraints.tightFor(width: 32, height: 30),
         padding: EdgeInsets.zero,

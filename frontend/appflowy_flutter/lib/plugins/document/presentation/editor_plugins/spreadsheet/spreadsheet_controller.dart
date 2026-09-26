@@ -722,6 +722,14 @@ class SpreadsheetController extends ChangeNotifier {
   void setSearch(String query) {
     _search = query;
     _recomputeMatches();
+    final first = currentSearchMatch;
+    if (first != null) {
+      // Search is selection, not an edit. Do not use selectCell here: it may
+      // commit an unrelated in-place draft and create an undo/persistence step.
+      _active = first;
+      _anchor = first;
+      _selectedColumnHeader = null;
+    }
     notifyListeners();
   }
 
@@ -739,9 +747,10 @@ class SpreadsheetController extends ChangeNotifier {
           continue;
         }
         final ref = CellRef(row, column);
-        final raw = _data.rawAt(ref);
-        if (raw.toLowerCase().contains(needle) ||
-            displayTextAt(ref).toLowerCase().contains(needle)) {
+        // Search what the painter displays, not hidden formula source. This
+        // still visits every cell in the current filtered sheet, not just the
+        // virtualized viewport, and retains the native case-insensitive mode.
+        if (displayTextAt(ref).toLowerCase().contains(needle)) {
           matches.add(ref);
         }
       }
@@ -772,7 +781,7 @@ class SpreadsheetController extends ChangeNotifier {
 
   void replaceCurrent(String replacement) {
     final ref = currentSearchMatch;
-    if (ref == null || _search.isEmpty) {
+    if (!editable || ref == null || _search.isEmpty) {
       return;
     }
     final raw = _data.rawAt(ref);
@@ -780,12 +789,13 @@ class SpreadsheetController extends ChangeNotifier {
       RegExp(RegExp.escape(_search), caseSensitive: false),
       replacement,
     );
+    if (next == raw) return;
     mutate((data) => data.setRaw(ref, next));
     stepSearch(1);
   }
 
   int replaceAll(String replacement) {
-    if (_search.isEmpty) {
+    if (!editable || _search.isEmpty) {
       return 0;
     }
     final pattern = RegExp(RegExp.escape(_search), caseSensitive: false);

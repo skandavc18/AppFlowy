@@ -6,6 +6,10 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/prelude.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/common.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -39,6 +43,10 @@ class ResizableImage extends StatefulWidget {
     this.onStateChange,
     this.overlay,
     this.caption,
+    this.ocrService,
+    this.ocrSourceBuilder,
+    this.isSelectedForFind,
+    this.canFind,
   });
 
   final String src;
@@ -49,6 +57,10 @@ class ResizableImage extends StatefulWidget {
   final bool editable;
   final VoidCallback? onDoubleTap;
   final ValueChanged<ResizableImageState>? onStateChange;
+  final OcrService? ocrService;
+  final ImageOcrSourceBuilder? ocrSourceBuilder;
+  final bool Function()? isSelectedForFind;
+  final bool Function()? canFind;
 
   /// Chrome pinned to the picture's top-right corner, inside the resized frame.
   final Widget? overlay;
@@ -80,7 +92,7 @@ class _ResizableImageState extends State<ResizableImage> {
     super.initState();
 
     _userProfilePB = context.read<UserWorkspaceBloc?>()?.state.userProfile ??
-        context.read<DocumentBloc>().state.userProfilePB;
+        context.read<DocumentBloc?>()?.state.userProfilePB;
 
     _reportLocalFileState();
   }
@@ -91,6 +103,7 @@ class _ResizableImageState extends State<ResizableImage> {
 
     // The cached child bakes in the source and how it fills its box.
     if (oldWidget.src != widget.src ||
+        oldWidget.type != widget.type ||
         (oldWidget.height == null) != (widget.height == null)) {
       _cacheImage = null;
     }
@@ -106,19 +119,49 @@ class _ResizableImageState extends State<ResizableImage> {
     if (isURL(widget.src)) {
       return;
     }
-    final exists = widget.src.isNotEmpty && File(widget.src).existsSync();
+    final src = widget.src;
+    final type = widget.type;
+    final exists = src.isNotEmpty && File(src).existsSync();
+    _reportState(
+      src,
+      type,
+      exists ? ResizableImageState.loaded : ResizableImageState.failed,
+    );
+  }
+
+  void _reportState(
+    String src,
+    CustomImageType type,
+    ResizableImageState state,
+  ) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
+      if (!mounted || widget.src != src || widget.type != type) {
         return;
       }
-      widget.onStateChange?.call(
-        exists ? ResizableImageState.loaded : ResizableImageState.failed,
-      );
+      widget.onStateChange?.call(state);
     });
   }
 
   @override
   Widget build(BuildContext context) {
+    final workspaceProfile = context.select<UserWorkspaceBloc?, UserProfilePB?>(
+      (bloc) => bloc?.state.userProfile,
+    );
+    final documentProfile = context.select<DocumentBloc?, UserProfilePB?>(
+      (bloc) => bloc?.state.userProfilePB,
+    );
+    final profile = workspaceProfile ?? documentProfile;
+    if (profile != _userProfilePB) {
+      _userProfilePB = profile;
+      _cacheImage = null;
+    }
+    final image = ImageBlockData(url: widget.src, type: widget.type);
+    final source = widget.ocrSourceBuilder?.call(image) ??
+        ImageEditorSource(
+          url: widget.src,
+          type: widget.type,
+          userProfile: widget.type == CustomImageType.internal ? profile : null,
+        );
     final overlay = widget.overlay;
     return ResizableMedia(
       width: max(_kImageBlockComponentMinWidth, widget.width),
@@ -140,9 +183,18 @@ class _ResizableImageState extends State<ResizableImage> {
                   Positioned(top: 8, right: 8, child: overlay),
                 ],
               ),
-      child: GestureDetector(
-        onDoubleTap: widget.onDoubleTap,
-        child: ViewerCard(child: _buildResizableImage(context)),
+      child: ImageOcrFindRegion(
+        source: source,
+        name: MediaActionSource.image(image).name,
+        service: widget.ocrService,
+        isSelected: widget.isSelectedForFind,
+        isAvailable: widget.canFind,
+        enabled: widget.src.isNotEmpty,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onDoubleTap: widget.onDoubleTap,
+          child: ViewerCard(child: _buildResizableImage(context)),
+        ),
       ),
     );
   }
@@ -154,35 +206,37 @@ class _ResizableImageState extends State<ResizableImage> {
     final fit = hasFixedHeight ? BoxFit.fill : BoxFit.contain;
     Widget child;
     final src = widget.src;
+    final type = widget.type;
     if (isURL(src)) {
       // No explicit size: the resizable frame owns the box, and the picture
       // scales to whatever the drag handles leave it.
       _cacheImage ??= FlowyNetworkImage(
         url: widget.src,
         fit: fit,
-        userProfilePB: _userProfilePB,
+        userProfilePB: type == CustomImageType.internal ? _userProfilePB : null,
         onImageLoaded: (isImageInCache) {
           if (isImageInCache) {
-            widget.onStateChange?.call(ResizableImageState.loaded);
+            _reportState(src, type, ResizableImageState.loaded);
           }
         },
         progressIndicatorBuilder: (context, _, progress) {
           if (progress.totalSize != null) {
             if (progress.progress == 1) {
-              widget.onStateChange?.call(ResizableImageState.loaded);
+              _reportState(src, type, ResizableImageState.loaded);
             } else {
-              widget.onStateChange?.call(ResizableImageState.loading);
+              _reportState(src, type, ResizableImageState.loading);
             }
           }
 
           return _buildLoading(context);
         },
         errorWidgetBuilder: (_, __, error) {
-          widget.onStateChange?.call(ResizableImageState.failed);
+          _reportState(src, type, ResizableImageState.failed);
           return _ImageLoadFailedWidget(
             width: widget.width,
             error: error,
             onRetry: () {
+              if (!mounted || widget.src != src || widget.type != type) return;
               setState(() {
                 _cacheImage = null;
                 final retryCounter = FlowyNetworkRetryCounter();
@@ -200,11 +254,15 @@ class _ResizableImageState extends State<ResizableImage> {
         File(src),
         fit: fit,
         errorBuilder: (_, error, __) {
-          widget.onStateChange?.call(ResizableImageState.failed);
+          _reportState(src, type, ResizableImageState.failed);
           return _ImageLoadFailedWidget(
             width: widget.width,
             error: error,
-            onRetry: () => setState(() => _cacheImage = null),
+            onRetry: () {
+              if (mounted && widget.src == src && widget.type == type) {
+                setState(() => _cacheImage = null);
+              }
+            },
           );
         },
       );

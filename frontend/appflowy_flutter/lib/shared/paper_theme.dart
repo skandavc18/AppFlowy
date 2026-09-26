@@ -21,17 +21,17 @@ class PaperThemeExtension extends ThemeExtension<PaperThemeExtension> {
 abstract final class PaperTheme {
   // Warm, low-contrast stationery layers. None of the opaque surfaces are
   // pure white, so floating elements remain integrated with the paper canvas.
-  static const editorBackground = Color(0xFFF7F1E7);
-  static const editorPreviewBackground = Color(0xFFFAF5EB);
-  static const codeBlockBackground = Color(0xFFF2EADF);
-  static const codeBlockHeaderBackground = Color(0xFFECE2D4);
+  static const editorBackground = Color(0xFFFBF5E9);
+  static const editorPreviewBackground = Color(0xFFFEF8EE);
+  static const codeBlockBackground = Color(0xFFF5EDDD);
+  static const codeBlockHeaderBackground = Color(0xFFF0E6D4);
   static const codeBlockBorder = Color(0x24675443);
   static const strongBorder = Color(0x3D675443);
-  static const calloutBackground = Color(0xFFF3EBDE);
-  static const sidebarBackground = Color(0xFFF0E8DA);
-  static const popupBackground = Color(0xFFFCF7ED);
-  static const controlBackground = Color(0xFFF2EADD);
-  static const controlHover = Color(0xFFEAE0D1);
+  static const calloutBackground = Color(0xFFF5ECDC);
+  static const sidebarBackground = Color(0xFFF0E6D4);
+  static const popupBackground = Color(0xFFFFFAF0);
+  static const controlBackground = Color(0xFFF4EAD9);
+  static const controlHover = Color(0xFFF0E7D9);
   static const controlSelected = Color(0xFFE1D4C2);
   static const controlSelectedHover = Color(0xFFD8C8B2);
 

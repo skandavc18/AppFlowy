@@ -5,6 +5,7 @@ import 'package:appflowy/shared/af_image.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
@@ -15,6 +16,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+
+import 'vivid_icon_test_support.dart' show settleVividIconPictures;
 
 const _modes = ['light', 'dark', 'paper'];
 const _widths = [40.0, 80.0, 250.0];
@@ -102,7 +105,7 @@ void main() {
                   home: _referenceSheet(mode, files, () => taps++),
                 ),
               );
-              await tester.pumpAndSettle();
+              await settleVividIconPictures(tester);
               final context = tester.element(find.byKey(_sheet));
               expect(PaperTheme.isEnabled(context), mode == 'paper');
               expect(tester.getSize(find.byKey(_sheet)), const Size(1000, 800));
@@ -120,7 +123,7 @@ void main() {
                   final surface = _part(host, 'media-attachment-file-$i');
                   final glyph = _part(host, 'media-file-icon-file-$i');
                   final label = tester.widget<Text>(name);
-                  final icon = tester.widget<Icon>(glyph);
+                  final icon = tester.widget<WorkspaceGlyph>(glyph);
                   final bounds = tester.getRect(host);
                   expect(bounds.width, width);
                   for (final child in [surface, name, glyph]) {
@@ -134,9 +137,8 @@ void main() {
                   expect(label.style!.fontFamily, isNot('Ahem'));
                   expect(loadedFamilies, contains(label.style!.fontFamily));
                   expect(label.style!.color, palette.textPrimary);
-                  expect(icon.icon, sample.$3);
-                  expect(icon.icon!.fontFamily, 'MaterialIcons');
-                  expect(icon.color, theme.colorScheme.onSurfaceVariant);
+                  expect(icon.name, WorkspaceGlyphs.nameForFile(sample.$2));
+                  expect(icon.color, isNull);
                   expect(tester.getSize(glyph).width, greaterThanOrEqualTo(12));
                   expect(
                     tester.widget<Material>(surface).color,
@@ -283,7 +285,7 @@ Widget _referenceSheet(
                       ),
                     const Spacer(),
                     Text(
-                      'DM Sans + Material Icons / no network, backend or native actions.',
+                      'DM Sans + shared file artwork / no network, backend or native actions.',
                       style: caption,
                     ),
                   ],

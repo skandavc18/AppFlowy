@@ -130,6 +130,13 @@ class _SearchResultListState extends State<SearchResultList> {
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    SizedBox(
+                      key: const ValueKey(
+                        'command-palette-search-results-panel',
+                      ),
+                      width: listWidth,
+                      child: _buildResultsSection(context, hidePreview),
+                    ),
                     if (!hidePreview && selectedView != null)
                       Expanded(
                         child: PageInspectionPanel(
@@ -148,13 +155,6 @@ class _SearchResultListState extends State<SearchResultList> {
                           onClose: () => FlowyOverlay.pop(context),
                         ),
                       ),
-                    SizedBox(
-                      key: const ValueKey(
-                        'command-palette-search-results-panel',
-                      ),
-                      width: listWidth,
-                      child: _buildResultsSection(context, hidePreview),
-                    ),
                   ],
                 );
               },

@@ -10,6 +10,19 @@
   // ${cwd}: the current working directory of the spawned process
   "tasks": [
     {
+      "label": "AF: Inspect Consistency Startup",
+      "type": "shell",
+      "command": "& '${workspaceFolder}/frontend/appflowy_flutter/build/performance/workspace-consistency/inspect_live_window.ps1'",
+      "options": {
+        "shell": {
+          "executable": "pwsh",
+          "args": ["-NoProfile", "-Command"]
+        }
+      },
+      "presentation": { "reveal": "never", "panel": "new", "focus": false },
+      "problemMatcher": []
+    },
+    {
       "label": "AF: Build and Verify Windows Bundles",
       "type": "shell",
       "command": "& '${workspaceFolder}/frontend/appflowy_flutter/tool/build_windows_bundles.ps1'",

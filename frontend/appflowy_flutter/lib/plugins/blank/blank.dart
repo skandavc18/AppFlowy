@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/blank/workspace_home_page.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/presentation/home/home_stack.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pbenum.dart';
@@ -45,10 +46,13 @@ class BlankPagePlugin extends Plugin {
 class BlankPagePluginWidgetBuilder extends PluginWidgetBuilder
     with NavigationItem {
   @override
-  String? get viewName => LocaleKeys.blankPageTitle.tr();
+  EdgeInsets get contentPadding => EdgeInsets.zero;
 
   @override
-  Widget get leftBarItem => FlowyText.medium(LocaleKeys.blankPageTitle.tr());
+  String? get viewName => LocaleKeys.dashboard_home.tr();
+
+  @override
+  Widget get leftBarItem => FlowyText.medium(LocaleKeys.dashboard_home.tr());
 
   @override
   Widget tabBarItem(String pluginId, [bool shortForm = false]) => leftBarItem;
@@ -74,15 +78,5 @@ class BlankPage extends StatefulWidget {
 
 class _BlankPageState extends State<BlankPage> {
   @override
-  Widget build(BuildContext context) {
-    return SizedBox.expand(
-      child: Container(
-        color: Theme.of(context).colorScheme.surface,
-        child: const Padding(
-          padding: EdgeInsets.all(10),
-          child: SizedBox.shrink(),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const WorkspaceHomePage();
 }

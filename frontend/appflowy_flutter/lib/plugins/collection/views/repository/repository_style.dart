@@ -1,7 +1,9 @@
 import 'package:appflowy/plugins/collection/collection_style.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/repository/repo_entry.dart';
 import 'package:flutter/material.dart';
@@ -23,7 +25,7 @@ abstract final class RepoMetrics {
   static const double toolbarHeight = 44;
   static const double paneHeadingHeight = 36;
   static const double stageHeaderHeight = 40;
-  static const double gutter = 24;
+  static const double gutter = CollectionWorkspaceMetrics.gutter;
   static const double paneWidth = 272;
   static const double railWidth = 248;
 
@@ -50,30 +52,29 @@ abstract final class RepoMetrics {
   static const double chevronSlot = 14;
   static const double chevronSize = 14;
 
-  /// Surfaces. Panes are cards on the page, the way every other collection
-  /// draws its contents — the radius and the shadow are the application's own.
-  static const double panelRadius = EditorSurfaceStyle.embedCornerRadius;
-  static const double controlRadius = 8;
+  /// Only a content object opts into rounded containment; rails stay unboxed.
+  static const double panelRadius = WorkspaceTokens.cardRadius;
+  static const double controlRadius = WorkspaceTokens.controlRadius;
 
   /// The whitespace that separates one pane from the next. Nothing is
   /// separated by a drawn line.
-  static const double paneGap = 12;
+  static const double paneGap = CollectionWorkspaceMetrics.paneGap;
 
   /// Typography.
   static const double titleSize = 15;
   static const double rowSize = 12.5;
   static const double metaSize = 11.5;
-  static const double sectionSize = 10.5;
+  static const double sectionSize = 12;
   static const double codeSize = 12.5;
   static const double codeLineHeight = 1.6;
   static const double rowTracking = -0.004;
-  static const double sectionTracking = 0.07;
+  static const double sectionTracking = 0;
 
   /// Variable-weight axes, a step above body copy so small text reads firm
   /// without tipping into bold.
-  static const double rowWeightAxis = 545;
-  static const double strongWeightAxis = 620;
-  static const double sectionWeightAxis = 640;
+  static const double rowWeightAxis = 500;
+  static const double strongWeightAxis = 500;
+  static const double sectionWeightAxis = 500;
 
   /// Motion. Restrained on purpose — no bounce, no spring.
   static const Duration hover = Duration(milliseconds: 140);
@@ -124,7 +125,8 @@ class RepoTheme {
       panel: palette.surface,
       raised: palette.floatingSurface,
       sunken: Color.alphaBlend(
-        palette.hover.withValues(alpha: isDark ? 0.42 : 0.6),
+        palette.hover
+            .withValues(alpha: palette.hover.a * (isDark ? 0.42 : 0.6)),
         palette.background,
       ),
       separator: separator,
@@ -132,7 +134,8 @@ class RepoTheme {
       // ⚠️ withValues REPLACES the alpha rather than scaling it, so a row rule
       // has to be derived from the base border, never from hairlineColor.
       rowRule: palette.border.withValues(alpha: isDark ? 0.14 : 0.17),
-      rowHover: palette.hover.withValues(alpha: isDark ? 0.62 : 0.8),
+      rowHover: palette.hover
+          .withValues(alpha: palette.hover.a * (isDark ? 0.62 : 0.8)),
       rowSelected: palette.accent.withValues(alpha: isDark ? 0.15 : 0.09),
       rowActiveBar: palette.accent,
       textStrong: palette.textPrimary,
@@ -228,8 +231,6 @@ class RepoTheme {
   TextStyle get title => face(
         fontSize: RepoMetrics.titleSize,
         color: textStrong,
-        axis: RepoMetrics.strongWeightAxis,
-        weight: FontWeight.w600,
         height: 1.2,
       );
 
@@ -241,14 +242,11 @@ class RepoTheme {
   TextStyle get rowLabelStrong => face(
         fontSize: RepoMetrics.rowSize,
         color: textStrong,
-        axis: RepoMetrics.strongWeightAxis,
-        weight: FontWeight.w600,
       );
 
   TextStyle get meta => face(
         fontSize: RepoMetrics.metaSize,
         color: textSoft,
-        axis: 500,
         weight: FontWeight.w400,
       );
 
@@ -256,9 +254,7 @@ class RepoTheme {
 
   TextStyle get sectionLabel => face(
         fontSize: RepoMetrics.sectionSize,
-        color: textFaint,
-        axis: RepoMetrics.sectionWeightAxis,
-        weight: FontWeight.w600,
+        color: textSoft,
         tracking: RepoMetrics.sectionTracking,
       );
 }
@@ -385,11 +381,7 @@ IconData _assetIconFor(String name) {
   return Icons.image_rounded;
 }
 
-/// A pane, drawn as the same card every other collection uses.
-///
-/// No outline: depth is [EditorSurfaceStyle.embedShadow] and nothing else, so
-/// a repository pane, a gallery card and a document preview all read as the
-/// same kind of object.
+/// A flush piece of the continuous workspace, not a floating card per pane.
 class RepoPanel extends StatelessWidget {
   const RepoPanel({
     super.key,
@@ -398,7 +390,7 @@ class RepoPanel extends StatelessWidget {
     this.padding = EdgeInsets.zero,
     this.color,
     this.radius,
-    this.elevation = ViewerCardElevation.resting,
+    this.elevation = ViewerCardElevation.flush,
   });
 
   final RepoTheme theme;
@@ -410,14 +402,12 @@ class RepoPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ViewerCard(
-      color: color ?? theme.panel,
-      elevation: elevation,
-      reactsToPointer: false,
-      borderRadius: radius == null ? null : BorderRadius.circular(radius!),
-      child: padding == EdgeInsets.zero
-          ? child
-          : Padding(padding: padding, child: child),
+    return CollectionWorkspaceSurface(
+      color: color,
+      tonal: elevation != ViewerCardElevation.flush,
+      rounded: elevation != ViewerCardElevation.flush,
+      padding: padding,
+      child: child,
     );
   }
 }
@@ -441,9 +431,8 @@ class RepoPaneHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      padding: const EdgeInsets.only(left: RepoMetrics.space4, right: 8),
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: height),
       child: Row(
         children: [
           if (leading != null) ...[
@@ -452,7 +441,7 @@ class RepoPaneHeading extends StatelessWidget {
           ],
           Expanded(
             child: Text(
-              title.toUpperCase(),
+              title,
               overflow: TextOverflow.ellipsis,
               style: theme.sectionLabel,
             ),
@@ -481,7 +470,7 @@ class RepoGap extends StatelessWidget {
 /// One place owns the hover tint, the selection wash, the timing and the
 /// rounded pill, so a tree row, a listing row and a symbol row can never
 /// drift apart.
-class RepoRow extends StatefulWidget {
+class RepoRow extends StatelessWidget {
   const RepoRow({
     super.key,
     required this.theme,
@@ -521,79 +510,19 @@ class RepoRow extends StatefulWidget {
   final Widget Function(BuildContext context, bool hovered)? builder;
 
   @override
-  State<RepoRow> createState() => _RepoRowState();
-}
-
-class _RepoRowState extends State<RepoRow> {
-  bool hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final background = widget.selected
-        ? theme.rowSelected
-        : hovered
-            ? theme.rowHover
-            : theme.transparentAs(theme.rowHover);
-    return MouseRegion(
-      cursor:
-          widget.onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        onDoubleTap: widget.onDoubleTap,
-        onSecondaryTapDown: widget.onSecondaryTap == null
-            ? null
-            : (details) => widget.onSecondaryTap!(details.globalPosition),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: widget.inset),
-          child: AnimatedContainer(
-            duration: RepoMetrics.hover,
-            curve: RepoMetrics.curve,
-            height: widget.height,
-            decoration: BoxDecoration(
-              color: background,
-              borderRadius: BorderRadius.circular(RepoMetrics.rowRadius),
-            ),
-            child: Stack(
-              // Without an expanding fit the row's contents are laid out at
-              // their own height and sit against the top of the pill instead
-              // of down its middle.
-              fit: StackFit.expand,
-              children: [
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: widget.padding),
-                  child: widget.builder?.call(context, hovered) ??
-                      widget.child ??
-                      const SizedBox.shrink(),
-                ),
-                if (widget.showActiveBar)
-                  Positioned(
-                    left: 0,
-                    top: 5,
-                    bottom: 5,
-                    child: AnimatedOpacity(
-                      duration: RepoMetrics.hover,
-                      curve: RepoMetrics.curve,
-                      opacity: widget.selected ? 1 : 0,
-                      child: Container(
-                        width: 2.5,
-                        decoration: BoxDecoration(
-                          color: theme.rowActiveBar,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+  Widget build(BuildContext context) => Padding(
+        padding: EdgeInsets.symmetric(horizontal: inset),
+        child: CollectionWorkspaceNavRow(
+          selected: selected,
+          onTap: onTap,
+          onDoubleTap: onDoubleTap,
+          onContextMenu: onSecondaryTap,
+          minHeight: height,
+          padding: EdgeInsets.symmetric(horizontal: padding, vertical: 6),
+          builder: builder,
+          child: child,
         ),
-      ),
-    );
-  }
+      );
 }
 
 /// The icon slot every row starts with, so names line up down the pane.
@@ -617,26 +546,23 @@ class RepoGlyphIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: RepoMetrics.iconSlot,
-      child: TweenAnimationBuilder<double>(
-        duration: RepoMetrics.hover,
-        curve: RepoMetrics.curve,
-        tween: Tween(end: emphasised ? 1.0 : 0.82),
-        builder: (context, value, _) => Icon(
-          glyph.icon,
-          size: size,
-          color: Color.lerp(
-            muted ?? glyph.color.withValues(alpha: 0.72),
-            glyph.color,
-            value,
-          ),
-        ),
+      child: WorkspaceGlyph(
+        glyph.icon == Icons.balance_rounded
+            ? Icons.description_rounded
+            : glyph.icon == Icons.commit_rounded
+                ? Icons.source_rounded
+                : glyph.icon == Icons.data_array_rounded
+                    ? Icons.data_object_rounded
+                    : glyph.icon,
+        size: size,
+        color: muted ?? workspaceGlyphInk(context),
       ),
     );
   }
 }
 
 /// A compact action, the only button shape the repository uses.
-class RepoAction extends StatefulWidget {
+class RepoAction extends StatelessWidget {
   const RepoAction({
     super.key,
     required this.theme,
@@ -661,108 +587,15 @@ class RepoAction extends StatefulWidget {
   final IconData? trailingIcon;
 
   @override
-  State<RepoAction> createState() => _RepoActionState();
-}
-
-class _RepoActionState extends State<RepoAction> {
-  bool hovered = false;
-  bool pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final enabled = widget.onPressed != null;
-    final Color background;
-    final Color foreground;
-    if (widget.primary) {
-      // Even the one filled control stays quiet: a tinted wash rather than a
-      // saturated block, so it sits in the page instead of shouting over it.
-      background = theme.accent.withValues(
-        alpha: hovered
-            ? (theme.isDark ? 0.3 : 0.16)
-            : (theme.isDark ? 0.22 : 0.11),
+  Widget build(BuildContext context) => CollectionWorkspaceAction(
+        icon: icon == Icons.segment_rounded ? Icons.notes_rounded : icon,
+        tooltip: tooltip,
+        label: label,
+        onPressed: onPressed,
+        selected: selected,
+        trailingIcon: trailingIcon,
+        color: theme.textSoft,
       );
-      foreground = theme.accent;
-    } else if (widget.selected) {
-      background = theme.accentSoft;
-      foreground = theme.accent;
-    } else {
-      background = hovered && enabled
-          ? theme.rowHover
-          : theme.transparentAs(theme.rowHover);
-      foreground = !enabled
-          ? theme.textFaint
-          : hovered
-              ? theme.textStrong
-              : theme.textSoft;
-    }
-
-    return Tooltip(
-      message: widget.label == null ? widget.tooltip : '',
-      waitDuration: const Duration(milliseconds: 480),
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-        onEnter: (_) => setState(() => hovered = true),
-        onExit: (_) => setState(() {
-          hovered = false;
-          pressed = false;
-        }),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTapDown: enabled ? (_) => setState(() => pressed = true) : null,
-          onTapCancel: enabled ? () => setState(() => pressed = false) : null,
-          onTap: enabled
-              ? () {
-                  setState(() => pressed = false);
-                  widget.onPressed!();
-                }
-              : null,
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 90),
-            curve: RepoMetrics.curve,
-            opacity: pressed ? 0.7 : 1,
-            child: AnimatedContainer(
-              duration: RepoMetrics.hover,
-              curve: RepoMetrics.curve,
-              height: 26,
-              padding: EdgeInsets.symmetric(
-                horizontal: widget.label == null ? 5 : 9,
-              ),
-              decoration: BoxDecoration(
-                color: background,
-                borderRadius: BorderRadius.circular(RepoMetrics.controlRadius),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(widget.icon, size: 14.5, color: foreground),
-                  if (widget.label != null) ...[
-                    const SizedBox(width: 6),
-                    Text(
-                      widget.label!,
-                      style: theme.face(
-                        fontSize: 11.5,
-                        color: foreground,
-                        axis: 580,
-                      ),
-                    ),
-                  ],
-                  if (widget.trailingIcon != null) ...[
-                    const SizedBox(width: 2),
-                    Icon(
-                      widget.trailingIcon,
-                      size: 13,
-                      color: foreground.withValues(alpha: 0.7),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 /// Related actions, held together by proximity rather than by a box.
@@ -781,14 +614,11 @@ class RepoActionGroup extends StatelessWidget {
     if (children.isEmpty) {
       return const SizedBox.shrink();
     }
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (var index = 0; index < children.length; index++) ...[
-          if (index > 0) const SizedBox(width: 2),
-          children[index],
-        ],
-      ],
+    return Wrap(
+      spacing: 2,
+      runSpacing: 4,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: children,
     );
   }
 }
@@ -823,18 +653,21 @@ class RepoMeta extends StatelessWidget {
           ),
           const SizedBox(width: 7),
         ] else if (icon != null) ...[
-          Icon(icon, size: 13, color: theme.textFaint),
+          WorkspaceGlyph(icon!, size: 13, color: theme.textFaint),
           const SizedBox(width: 6),
         ],
-        Text(
-          label,
-          style: strong
-              ? theme.face(
-                  fontSize: RepoMetrics.metaSize,
-                  color: theme.textBody,
-                  axis: 580,
-                )
-              : theme.meta,
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: strong
+                ? theme.face(
+                    fontSize: RepoMetrics.metaSize,
+                    color: theme.textBody,
+                  )
+                : theme.meta,
+          ),
         ),
       ],
     );
@@ -884,7 +717,7 @@ class RepoSearchField extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: width,
-      height: 34,
+      height: MediaQuery.textScalerOf(context).scale(13) + 22,
       child: TextField(
         controller: controller,
         onChanged: onChanged,
@@ -898,7 +731,7 @@ class RepoSearchField extends StatelessWidget {
           fillColor: theme.sunken,
           hoverColor: theme.sunken,
           contentPadding: const EdgeInsets.symmetric(vertical: 9),
-          prefixIcon: Icon(
+          prefixIcon: WorkspaceGlyph(
             Icons.search_rounded,
             size: 16,
             color: theme.textFaint,
@@ -911,7 +744,7 @@ class RepoSearchField extends StatelessWidget {
                     controller.clear();
                     onChanged('');
                   },
-                  child: Icon(
+                  child: WorkspaceGlyph(
                     Icons.close_rounded,
                     size: 15,
                     color: theme.textFaint,
@@ -919,8 +752,7 @@ class RepoSearchField extends StatelessWidget {
                 ),
           suffixIconConstraints: const BoxConstraints(minWidth: 30),
           hintText: hint,
-          hintStyle:
-              theme.face(fontSize: 12.5, color: theme.textFaint, axis: 500),
+          hintStyle: theme.face(fontSize: 12.5, color: theme.textFaint),
           // A shade that deepens when it takes focus — nothing is outlined.
           border: _border,
           enabledBorder: _border,
@@ -931,7 +763,7 @@ class RepoSearchField extends StatelessWidget {
   }
 
   OutlineInputBorder get _border => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
         borderSide: BorderSide.none,
       );
 }
@@ -963,8 +795,8 @@ class RepoEmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                icon,
+              WorkspaceGlyph(
+                icon == Icons.segment_rounded ? Icons.notes_rounded : icon,
                 size: 26,
                 color: theme.textFaint.withValues(alpha: 0.7),
               ),
@@ -975,7 +807,6 @@ class RepoEmptyState extends StatelessWidget {
                 style: theme.face(
                   fontSize: 13,
                   color: theme.textStrong,
-                  axis: RepoMetrics.strongWeightAxis,
                   weight: FontWeight.w600,
                   height: 1.35,
                 ),

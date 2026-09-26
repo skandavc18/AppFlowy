@@ -1,7 +1,10 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_dialogs.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_state.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -30,20 +33,40 @@ class BookmarkScaffold extends StatelessWidget {
   final bool showDensity;
 
   @override
-  Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          BookmarkToolbar(
-            collection: collection,
-            controller: controller,
-            theme: theme,
-            trailing: trailing,
-            showGrouping: showGrouping,
-            showDensity: showDensity,
-          ),
-          Expanded(child: child),
-        ],
-      );
+  Widget build(BuildContext context) {
+    final pageController = CollectionPageScrollScope.maybeOf(context);
+    final primary = pageController ?? PrimaryScrollController.maybeOf(context);
+    final body = PreviewToolbarRegion(
+      child: CollectionWorkspaceSurface(
+        padding: const EdgeInsets.only(top: CollectionWorkspaceMetrics.topGap),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            BookmarkToolbar(
+              collection: collection,
+              controller: controller,
+              theme: theme,
+              trailing: trailing,
+              showGrouping: showGrouping,
+              showDensity: showDensity,
+            ),
+            Expanded(child: child),
+          ],
+        ),
+      ),
+    );
+    // The main body explicitly borrows via CollectionPageScrollScope. Keep
+    // primary keyboard actions available without letting secondary scrollers
+    // automatically attach to the same controller. Both branches retain the
+    // same widget structure when the hosting scope changes.
+    return primary == null
+        ? PrimaryScrollController.none(child: body)
+        : PrimaryScrollController(
+            controller: primary,
+            automaticallyInheritForPlatforms: const <TargetPlatform>{},
+            child: body,
+          );
+  }
 }
 
 /// The one row of controls a library is driven from.
@@ -71,122 +94,107 @@ class BookmarkToolbar extends StatelessWidget {
     final settings = controller.settings;
     final filtered = controller.entries.length != stats.total;
 
-    return SizedBox(
-      height: BookmarkMetrics.toolbarHeight,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: BookmarkMetrics.gutter,
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: Row(
-                children: [
-                  _meta(
-                    filtered
-                        ? '${controller.entries.length} / ${stats.total}'
-                        : _countLabel(stats.total),
-                  ),
-                  if (stats.unread > 0) ...[
-                    _dot(),
-                    _meta(
-                      LocaleKeys.collections_bookmark_unreadCount
-                          .tr(args: ['${stats.unread}']),
-                    ),
-                  ],
-                  if (stats.offline > 0) ...[
-                    _dot(),
-                    _meta('${stats.offline} offline'),
-                  ],
-                  if (controller.isWorking) ...[
-                    _dot(),
-                    SizedBox(
-                      width: 11,
-                      height: 11,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        color: theme.accent,
-                      ),
-                    ),
-                    const SizedBox(width: BookmarkMetrics.space1 + 2),
-                    _meta(
-                      LocaleKeys.collections_bookmark_reading
-                          .tr(args: ['${controller.workingCount}']),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            ...trailing,
-            if (trailing.isNotEmpty)
-              const SizedBox(width: BookmarkMetrics.space1),
-            BookmarkAction(
-              icon: Icons.filter_list_rounded,
-              tooltip: LocaleKeys.collections_bookmark_filter.tr(),
-              theme: theme,
-              active: settings.filter != BookmarkFilter.all ||
-                  controller.state.activeTags.isNotEmpty ||
-                  controller.state.activeSite != null,
-              onPressed: () => _showFilters(context),
-            ),
-            BookmarkAction(
-              icon: Icons.swap_vert_rounded,
-              tooltip: LocaleKeys.collections_bookmark_sort.tr(),
-              theme: theme,
-              onPressed: () => _showSorts(context),
-            ),
-            if (showGrouping)
-              BookmarkAction(
-                icon: Icons.dashboard_customize_rounded,
-                tooltip: LocaleKeys.collections_bookmark_group.tr(),
-                theme: theme,
-                onPressed: () => _showGroups(context),
-              ),
-            if (showDensity)
-              BookmarkAction(
-                icon: Icons.tune_rounded,
-                tooltip: LocaleKeys.collections_bookmark_density.tr(),
-                theme: theme,
-                onPressed: () => _showDensity(context),
-              ),
-            BookmarkAction(
-              icon: Icons.refresh_rounded,
-              tooltip: LocaleKeys.collections_bookmark_refreshAll.tr(),
-              theme: theme,
-              onPressed:
-                  controller.entries.isEmpty ? null : controller.refreshAll,
-            ),
-            const SizedBox(width: BookmarkMetrics.space1),
-            BookmarkAction(
-              icon: Icons.add_link_rounded,
-              tooltip: LocaleKeys.collections_bookmark_addLink.tr(),
-              theme: theme,
-              label: LocaleKeys.collections_bookmark_addLink.tr(),
-              active: true,
-              onPressed: () => showAddBookmarkDialog(
-                context: context,
-                collection: collection,
-                controller: controller,
-              ),
+    return CollectionWorkspaceToolbar(
+      identity: Wrap(
+        spacing: BookmarkMetrics.space2,
+        runSpacing: BookmarkMetrics.space1,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          _meta(
+            filtered
+                ? '${controller.entries.length} / ${stats.total}'
+                : _countLabel(stats.total),
+          ),
+          if (stats.unread > 0) ...[
+            _meta(
+              LocaleKeys.collections_bookmark_unreadCount
+                  .tr(args: ['${stats.unread}']),
             ),
           ],
-        ),
+          if (stats.offline > 0) ...[
+            _meta('${stats.offline} offline'),
+          ],
+          if (controller.isWorking) ...[
+            SizedBox(
+              width: 11,
+              height: 11,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.5,
+                color: theme.accent,
+              ),
+            ),
+            const SizedBox(width: BookmarkMetrics.space1 + 2),
+            _meta(
+              LocaleKeys.collections_bookmark_reading
+                  .tr(args: ['${controller.workingCount}']),
+            ),
+          ],
+        ],
       ),
+      keepVisible: controller.isWorking ||
+          settings.filter != BookmarkFilter.all ||
+          controller.state.activeTags.isNotEmpty ||
+          controller.state.activeSite != null,
+      actions: [
+        ...trailing,
+        if (trailing.isNotEmpty) const SizedBox(width: BookmarkMetrics.space1),
+        BookmarkAction(
+          icon: Icons.filter_list_rounded,
+          tooltip: LocaleKeys.collections_bookmark_filter.tr(),
+          theme: theme,
+          active: settings.filter != BookmarkFilter.all ||
+              controller.state.activeTags.isNotEmpty ||
+              controller.state.activeSite != null,
+          onPressed: () => _showFilters(context),
+        ),
+        BookmarkAction(
+          icon: Icons.swap_vert_rounded,
+          tooltip: LocaleKeys.collections_bookmark_sort.tr(),
+          theme: theme,
+          onPressed: () => _showSorts(context),
+        ),
+        if (showGrouping)
+          BookmarkAction(
+            icon: Icons.dashboard_customize_rounded,
+            tooltip: LocaleKeys.collections_bookmark_group.tr(),
+            theme: theme,
+            onPressed: () => _showGroups(context),
+          ),
+        if (showDensity)
+          BookmarkAction(
+            icon: Icons.tune_rounded,
+            tooltip: LocaleKeys.collections_bookmark_density.tr(),
+            theme: theme,
+            onPressed: () => _showDensity(context),
+          ),
+        BookmarkAction(
+          icon: Icons.refresh_rounded,
+          tooltip: LocaleKeys.collections_bookmark_refreshAll.tr(),
+          theme: theme,
+          onPressed: controller.entries.isEmpty ? null : controller.refreshAll,
+        ),
+        const SizedBox(width: BookmarkMetrics.space1),
+        BookmarkAction(
+          icon: Icons.add_link_rounded,
+          tooltip: LocaleKeys.collections_bookmark_addLink.tr(),
+          theme: theme,
+          label: LocaleKeys.collections_bookmark_addLink.tr(),
+          active: true,
+          onPressed: () => showAddBookmarkDialog(
+            context: context,
+            collection: collection,
+            controller: controller,
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _meta(String text) => Text(text, style: theme.meta);
-
-  Widget _dot() => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 7),
-        child: Container(
-          width: 3,
-          height: 3,
-          decoration: BoxDecoration(
-            color: theme.textFaint.withValues(alpha: 0.55),
-            shape: BoxShape.circle,
-          ),
-        ),
+  Widget _meta(String text) => Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: theme.meta,
       );
 
   static String _countLabel(int count) => count == 1

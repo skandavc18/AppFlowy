@@ -1,8 +1,11 @@
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
+
+import 'standalone_file_scope.dart';
 
 /// Every colour and measurement used by the chrome around a document.
 ///
@@ -37,11 +40,12 @@ class DocumentViewportStyle {
     final isPaper = PaperTheme.isEnabled(context);
     final isLightPaper = !isDark && isPaper;
 
-    final canvas = EditorSurfaceStyle.previewBackgroundFor(
-      theme.brightness,
-      premium?.surface ?? appFlowy.fillColorScheme.content,
-      isPaper: isPaper,
-    );
+    final canvas = StandaloneFileScope.maybeOf(context)?.canvas ??
+        EditorSurfaceStyle.previewBackgroundFor(
+          theme.brightness,
+          premium?.surface ?? appFlowy.fillColorScheme.content,
+          isPaper: isPaper,
+        );
 
     return DocumentViewportStyle(
       canvas: canvas,
@@ -49,13 +53,8 @@ class DocumentViewportStyle {
       // leave a hard seam even without a drawn divider.
       chrome: canvas,
       hairline: EditorSurfaceStyle.embedBorder(context),
-      control: (premium?.hover ?? appFlowy.fillColorScheme.contentHover)
-          .withValues(alpha: 0),
-      controlHover: isLightPaper
-          ? PaperTheme.hoverOverlay
-          : isDark
-              ? const Color(0x14FFFFFF)
-              : premium?.hover ?? appFlowy.fillColorScheme.contentHover,
+      control: WorkspaceChrome.hoverColor(context).withValues(alpha: 0),
+      controlHover: WorkspaceChrome.hoverColor(context),
       controlActive: isLightPaper
           ? PaperTheme.selectedOverlay
           : isDark

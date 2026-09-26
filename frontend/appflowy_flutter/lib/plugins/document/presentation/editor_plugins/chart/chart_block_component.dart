@@ -1,8 +1,13 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/charts/chart_stage.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
 import 'package:appflowy/workspace/application/collections/database/database_table.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
@@ -98,10 +103,45 @@ class _ChartBlockComponentState extends State<ChartBlockComponent>
   static const double _defaultWidth = 720;
 
   final PopoverController _picker = PopoverController();
+  VoidCallback? _releasePicker;
+
+  void _openPicker(BuildContext triggerContext) {
+    if (_releasePicker != null) return;
+    // Programmatic PopoverController.show does not call onOpen. Acquire the
+    // hold at the real header trigger, below ResizableMedia's preview scope.
+    _releasePicker = PreviewToolbarRegion.hold(triggerContext);
+    try {
+      _picker.show();
+    } catch (_) {
+      _closePickerHold();
+      rethrow;
+    }
+  }
+
+  void _closePickerHold() {
+    final release = _releasePicker;
+    _releasePicker = null;
+    release?.call();
+  }
+
+  void _retirePicker() {
+    final release = _releasePicker;
+    _releasePicker = null;
+    _picker.close();
+    if (release != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => release());
+    }
+  }
+
+  @override
+  void deactivate() {
+    _retirePicker();
+    super.deactivate();
+  }
 
   @override
   void dispose() {
-    _picker.close();
+    _retirePicker();
     super.dispose();
   }
 
@@ -148,7 +188,12 @@ class _ChartBlockComponentState extends State<ChartBlockComponent>
       onResize: (value) => _update({ChartBlockKeys.width: value}),
       onResizeHeight: (value) => _update({ChartBlockKeys.height: value}),
       child: _viewId.isEmpty
-          ? _EmptyFrame(palette: palette, onPick: _picker.show)
+          ? Builder(
+              builder: (context) => _EmptyFrame(
+                palette: palette,
+                onPick: () => _openPicker(context),
+              ),
+            )
           : _chart(),
     );
 
@@ -164,32 +209,42 @@ class _ChartBlockComponentState extends State<ChartBlockComponent>
 
     return AppFlowyPopover(
       controller: _picker,
+      onClose: _closePickerHold,
       triggerActions: PopoverTriggerFlags.none,
       direction: PopoverDirection.bottomWithLeftAligned,
       offset: const Offset(0, 8),
       margin: EdgeInsets.zero,
-      constraints: const BoxConstraints(
-        minWidth: 400,
-        maxWidth: 400,
+      constraints: BoxConstraints(
+        minWidth:
+            math.max(0, math.min(400, MediaQuery.sizeOf(context).width - 16)),
+        maxWidth:
+            math.max(0, math.min(400, MediaQuery.sizeOf(context).width - 16)),
         maxHeight: 330,
       ),
-      animationDuration: const Duration(milliseconds: 140),
+      decorationColor: palette.surface,
+      animationDuration:
+          WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
       beginScaleFactor: 0.98,
       asBarrier: true,
-      popupBuilder: (_) => WorkspaceViewPickerMenu(
-        contentKey: const ValueKey('chart-table-picker-menu'),
-        title: LocaleKeys.charts_pickTable.tr(),
-        searchHint: LocaleKeys.search_label.tr(),
-        emptyMessage: LocaleKeys.charts_noTables.tr(),
-        errorMessage: LocaleKeys.document_mobilePageSelector_failedToLoad.tr(),
-        selectedViewId: _viewId.isEmpty ? null : _viewId,
-        viewFilter: isDatabaseTable,
-        leadingBuilder: (context, view, palette) => WorkspaceItemIcon.fromView(
-          view: view,
-          size: 17,
-          color: palette.textSecondary,
+      popupBuilder: (_) => SingleChildScrollView(
+        primary: false,
+        child: WorkspaceViewPickerMenu(
+          contentKey: const ValueKey('chart-table-picker-menu'),
+          title: LocaleKeys.charts_pickTable.tr(),
+          searchHint: LocaleKeys.search_label.tr(),
+          emptyMessage: LocaleKeys.charts_noTables.tr(),
+          errorMessage:
+              LocaleKeys.document_mobilePageSelector_failedToLoad.tr(),
+          selectedViewId: _viewId.isEmpty ? null : _viewId,
+          viewFilter: isDatabaseTable,
+          leadingBuilder: (context, view, palette) =>
+              WorkspaceItemIcon.fromView(
+            view: view,
+            size: 17,
+            color: palette.textSecondary,
+          ),
+          onSelected: _selectTable,
         ),
-        onSelected: _selectTable,
       ),
       child: child,
     );
@@ -205,14 +260,19 @@ class _ChartBlockComponentState extends State<ChartBlockComponent>
         trailing: [_pickButton()],
       );
 
-  Widget _pickButton() => _PlainButton(
-        icon: Icons.table_chart_rounded,
-        label: LocaleKeys.charts_pickTable.tr(),
-        onTap: _picker.show,
+  Widget _pickButton() => Builder(
+        key: const ValueKey('chart-pick-table-slot'),
+        builder: (context) => _PlainButton(
+          key: const ValueKey('chart-pick-table'),
+          icon: Icons.table_chart_rounded,
+          label: LocaleKeys.charts_pickTable.tr(),
+          onTap: () => _openPicker(context),
+        ),
       );
 
   Future<void> _selectTable(ViewPB picked) async {
     _picker.close();
+    _closePickerHold();
     await _update({
       ChartBlockKeys.viewId: picked.id,
       // A new table means the old columns are gone, so the reading starts over.
@@ -230,42 +290,46 @@ class _EmptyFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.insert_chart_outlined_rounded,
-              size: 26,
-              color: palette.label,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              LocaleKeys.charts_chooseTable.tr(),
-              style: palette.text(
-                size: 13.5,
-                color: palette.strongLabel,
-                weight: FontWeight.w600,
+        child: SingleChildScrollView(
+          primary: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              WorkspaceGlyph(
+                Icons.insert_chart_outlined_rounded,
+                size: 26,
+                color: palette.label,
               ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              LocaleKeys.charts_chooseTableHint.tr(),
-              style: palette.text(size: 12, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            _PlainButton(
-              icon: Icons.table_chart_rounded,
-              label: LocaleKeys.charts_pickTable.tr(),
-              onTap: onPick,
-              filled: true,
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                LocaleKeys.charts_chooseTable.tr(),
+                style: palette.text(
+                  size: 13.5,
+                  color: palette.strongLabel,
+                  weight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text(
+                LocaleKeys.charts_chooseTableHint.tr(),
+                style: palette.text(size: 12, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+              _PlainButton(
+                icon: Icons.table_chart_rounded,
+                label: LocaleKeys.charts_pickTable.tr(),
+                onTap: onPick,
+                filled: true,
+              ),
+            ],
+          ),
         ),
       );
 }
 
-class _PlainButton extends StatefulWidget {
+class _PlainButton extends StatelessWidget {
   const _PlainButton({
+    super.key,
     required this.icon,
     required this.label,
     required this.onTap,
@@ -278,55 +342,39 @@ class _PlainButton extends StatefulWidget {
   final bool filled;
 
   @override
-  State<_PlainButton> createState() => _PlainButtonState();
-}
-
-class _PlainButtonState extends State<_PlainButton> {
-  bool _hovered = false;
-
-  @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final onSurface = theme.colorScheme.onSurface;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            color: onSurface.withValues(
-              alpha: widget.filled
-                  ? (_hovered ? 0.13 : 0.09)
-                  : (_hovered ? 0.09 : 0.05),
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                widget.icon,
-                size: 14,
-                color: onSurface.withValues(alpha: 0.62),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                widget.label,
-                style:
-                    (theme.textTheme.bodyMedium ?? const TextStyle()).copyWith(
-                  fontSize: 11.5,
-                  color: onSurface.withValues(alpha: 0.86),
-                  height: 1.2,
-                ),
-              ),
-            ],
-          ),
+    final palette = chartPaletteOf(context);
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        minimumSize: const Size(0, ChartMetrics.chipHeight),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        foregroundColor: palette.strongLabel,
+        backgroundColor:
+            filled ? palette.chip : palette.chip.withValues(alpha: 0),
+        overlayColor: palette.chipHover,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
         ),
+      ).copyWith(
+        animationDuration:
+            WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          WorkspaceGlyph(icon, size: 16, color: palette.label),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: palette.text(size: 11.5, color: palette.strongLabel),
+            ),
+          ),
+        ],
       ),
     );
   }

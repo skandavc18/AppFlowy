@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -26,42 +27,57 @@ class SettingsCategory extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            Text(
-              title,
-              style: theme.textStyle.heading4.enhanced(
-                color: theme.textColorScheme.primary,
+            Expanded(
+              child: Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  style: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.section,
+                  ),
+                ),
               ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
             ),
             if (tooltip != null) ...[
-              const HSpace(4),
+              const HSpace(WorkspaceTokens.space2),
               FlowyTooltip(
                 message: tooltip,
-                child: const FlowySvg(FlowySvgs.information_s),
+                child: const WorkspaceGlyph.svg(
+                  FlowySvgs.information_s,
+                  size: 16,
+                ),
               ),
             ],
-            const Spacer(),
-            if (actions != null) ...actions!,
           ],
         ),
-        const VSpace(16),
         if (description?.isNotEmpty ?? false) ...[
-          FlowyText.regular(
+          const VSpace(WorkspaceTokens.space2),
+          Text(
             description!,
-            maxLines: 4,
-            fontSize: 12,
-            overflow: TextOverflow.ellipsis,
-            color: descriptionColor,
+            style: WorkspaceTypography.style(
+              context,
+              WorkspaceTextRole.body,
+              color: descriptionColor ??
+                  WorkspacePalette.of(context).secondaryText,
+            ),
           ),
-          const VSpace(8),
         ],
+        if (actions?.isNotEmpty ?? false) ...[
+          const VSpace(WorkspaceTokens.space3),
+          Wrap(
+            spacing: WorkspaceTokens.space2,
+            runSpacing: WorkspaceTokens.space2,
+            children: actions!,
+          ),
+        ],
+        const VSpace(WorkspaceTokens.space4),
         SeparatedColumn(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,

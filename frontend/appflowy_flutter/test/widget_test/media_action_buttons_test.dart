@@ -7,6 +7,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/medi
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -138,8 +140,8 @@ void main() {
         expect(_button(tester, _shareKey).tooltip, 'Share');
         expect(find.byTooltip(LocaleKeys.editor_copy.tr()), findsOneWidget);
         expect(find.byTooltip(LocaleKeys.button_share.tr()), findsOneWidget);
-        expect(_buttonIcon(_copyKey, Icons.copy_rounded), findsOneWidget);
-        expect(_buttonIcon(_shareKey, Icons.ios_share_rounded), findsOneWidget);
+        expect(_buttonGlyph(_copyKey, 'copy'), findsOneWidget);
+        expect(_buttonGlyph(_shareKey, 'share'), findsOneWidget);
         expect(tester.getSize(find.byKey(_barKey)), const Size(68, 36));
         expect(decoration.color, palette.floatingSurface);
         expect(decoration.border, isNull);
@@ -168,28 +170,31 @@ void main() {
           expect(button.style!.side!.resolve({})!.color.a, 0);
           expect(
             button.style!.side!.resolve({WidgetState.focused})!.color,
-            palette.focusRing,
+            palette.accent,
           );
           expect(
             button.style!.backgroundColor!.resolve({WidgetState.hovered}),
-            palette.accent.withValues(alpha: 0.07),
+            WorkspaceChrome.hoverColor(context),
           );
           expect(
             button.style!.backgroundColor!.resolve({WidgetState.pressed}),
-            palette.accent.withValues(alpha: 0.12),
+            palette.subtlePressed,
           );
           expect(
             button.style!.overlayColor!.resolve({WidgetState.hovered}),
-            Colors.transparent,
+            WorkspaceChrome.hoverColor(context).withValues(alpha: 0),
           );
           expect(
             button.style!.shape!.resolve({}),
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(WorkspaceChrome.controlRadius),
+            ),
           );
         }
         expect(find.byType(Card), findsNothing);
         expect(find.byKey(_copiedKey), findsNothing);
-        expect(find.byIcon(Icons.check_rounded), findsNothing);
+        expect(_glyph('check'), findsNothing);
         expect(actions.calls, isEmpty);
         expect(tester.takeException(), isNull);
       } finally {
@@ -291,7 +296,7 @@ void main() {
         _expectBusy(tester);
         expect(find.byType(CircularProgressIndicator), findsOneWidget);
         expect(find.byKey(_copiedKey), findsNothing);
-        expect(find.byIcon(Icons.check_rounded), findsNothing);
+        expect(_glyph('check'), findsNothing);
         expect(_bounds(tester, filename: true), bounds);
         _expectButtonSemantics(
           tester,
@@ -330,7 +335,11 @@ void main() {
         _expectFadedOut(tester, find.byType(CircularProgressIndicator));
         await tester.pump(_cleanupTick);
         expect(actions.calls.single.finished, isTrue);
-        expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+        expect(_buttonGlyph(_copyKey, 'check'), findsOneWidget);
+        expect(
+          tester.widget<WorkspaceGlyph>(_buttonGlyph(_copyKey, 'check')).role,
+          WorkspaceGlyphRole.preserveInk,
+        );
         expect(find.byType(CircularProgressIndicator), findsNothing);
         expect(_button(tester, _copyKey).tooltip, 'Copied');
         expect(_button(tester, _shareKey).tooltip, 'Share');
@@ -364,10 +373,10 @@ void main() {
         _expectButtonSemantics(tester, _copyKey, label: 'Copy');
         await tester.pump(_fade);
         _expectFadedOut(tester, find.byKey(_copiedKey));
-        _expectFadedOut(tester, find.byIcon(Icons.check_rounded));
+        _expectFadedOut(tester, _glyph('check'));
         await tester.pump(_cleanupTick);
         expect(find.byKey(_copiedKey), findsNothing);
-        expect(find.byIcon(Icons.check_rounded), findsNothing);
+        expect(_glyph('check'), findsNothing);
         expect(_bounds(tester, filename: true), bounds);
         expect(tester.takeException(), isNull);
       } finally {
@@ -415,10 +424,10 @@ void main() {
           liveRegion: true,
         );
         expect(
-          _buttonIcon(_copyKey, Icons.error_outline_rounded),
+          _buttonGlyph(_copyKey, 'warning'),
           findsOneWidget,
         );
-        expect(find.byIcon(Icons.check_rounded), findsNothing);
+        expect(_glyph('check'), findsNothing);
         expect(find.byKey(_copiedKey), findsNothing);
         expect(_button(tester, _copyKey).onPressed, isNotNull);
         expect(_button(tester, _shareKey).onPressed, isNotNull);
@@ -443,10 +452,10 @@ void main() {
         );
         _expectButtonSemantics(tester, _copyKey, label: 'Copy');
         expect(
-          _buttonIcon(_shareKey, Icons.error_outline_rounded),
+          _buttonGlyph(_shareKey, 'warning'),
           findsOneWidget,
         );
-        expect(find.byIcon(Icons.check_rounded), findsNothing);
+        expect(_glyph('check'), findsNothing);
         expect(find.byKey(_copiedKey), findsNothing);
         expect(find.textContaining(_sensitivePayload), findsNothing);
         expect(
@@ -471,8 +480,8 @@ void main() {
         await tester.pump();
         await tester.pump(_fade);
         expect(find.byKey(_copiedKey), findsOneWidget);
-        expect(find.byIcon(Icons.check_rounded), findsOneWidget);
-        expect(find.byIcon(Icons.error_outline_rounded), findsNothing);
+        expect(_buttonGlyph(_copyKey, 'check'), findsOneWidget);
+        expect(_glyph('warning'), findsNothing);
         expect(tester.takeException(), isNull);
       } finally {
         semantics.dispose();
@@ -530,7 +539,7 @@ void main() {
       _expectButtonSemantics(tester, _copyKey, label: 'Copy');
       _expectButtonSemantics(tester, _shareKey, label: 'Share');
       expect(find.byKey(_copiedKey), findsNothing);
-      expect(find.byIcon(Icons.check_rounded), findsNothing);
+      expect(_glyph('check'), findsNothing);
       expect(_bounds(tester), bounds);
       expect(tester.takeException(), isNull);
     } finally {
@@ -732,7 +741,7 @@ void main() {
         await tester.pump();
         await tester.pump(_fade);
         expect(find.byKey(_copiedKey), findsNothing);
-        expect(find.byIcon(Icons.check_rounded), findsNothing);
+        expect(_glyph('check'), findsNothing);
         expect(_button(tester, _shareKey).tooltip, 'Share');
         expect(tester.takeException(), isNull);
       } finally {
@@ -875,7 +884,7 @@ void main() {
         await tester.pump();
         await tester.pump(_fade);
         expect(find.byKey(_copiedKey), findsNothing);
-        expect(find.byIcon(Icons.check_rounded), findsNothing);
+        expect(_glyph('check'), findsNothing);
         expect(tester.takeException(), isNull);
       } finally {
         await _dispose(tester);
@@ -953,8 +962,8 @@ void main() {
         await tester.pump();
         await tester.pump(_fade);
         expect(find.byKey(_copiedKey), findsNothing);
-        expect(find.byIcon(Icons.check_rounded), findsNothing);
-        expect(find.byIcon(Icons.error_outline_rounded), findsNothing);
+        expect(_glyph('check'), findsNothing);
+        expect(_glyph('warning'), findsNothing);
         expect(_button(tester, _copyKey).tooltip, 'Copy');
         expect(_button(tester, _copyKey).onPressed, isNotNull);
         staleCopy();
@@ -1019,7 +1028,7 @@ void main() {
       await tester.pump();
       // Not even an outgoing AnimatedSwitcher child may carry the old check.
       expect(find.byKey(_copiedKey), findsNothing);
-      expect(find.byIcon(Icons.check_rounded), findsNothing);
+      expect(_glyph('check'), findsNothing);
       expect(_button(tester, _copyKey).tooltip, 'Copy');
       staleShare();
       expect(actions.calls, hasLength(1));
@@ -1125,7 +1134,7 @@ void main() {
       await tester.tap(find.byKey(_copyKey));
       await tester.pump();
       expect(find.byKey(_copiedKey), findsNothing);
-      expect(find.byIcon(Icons.check_rounded), findsNothing);
+      expect(_glyph('check'), findsNothing);
       actions.calls.last.succeed();
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 1000));
@@ -1198,7 +1207,7 @@ void main() {
       await tester.pump();
       await tester.pump(_fade);
       expect(call.finished, isTrue);
-      expect(find.byIcon(Icons.check_rounded), findsNothing);
+      expect(_glyph('check'), findsNothing);
       expect(find.byKey(_copiedKey), findsNothing);
       expect(_button(tester, _shareKey).tooltip, 'Share');
       expect(find.textContaining('Shared'), findsNothing);
@@ -1463,8 +1472,13 @@ void _expectButtonSemantics(
   expect(node.getSemanticsData().hasAction(ui.SemanticsAction.tap), enabled);
 }
 
-Finder _buttonIcon(Key key, IconData icon) =>
-    find.descendant(of: find.byKey(key), matching: find.byIcon(icon));
+Finder _glyph(String name) => find.byWidgetPredicate(
+      (widget) => widget is WorkspaceGlyph && widget.name == name,
+      description: 'workspace glyph "$name"',
+    );
+
+Finder _buttonGlyph(Key key, String name) =>
+    find.descendant(of: find.byKey(key), matching: _glyph(name));
 
 List<Rect> _bounds(WidgetTester tester, {bool filename = false}) => [
       for (final key in [

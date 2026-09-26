@@ -1,5 +1,6 @@
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/material.dart';
 
 /// Every fixed size, duration and curve the table views are built from.
@@ -15,7 +16,9 @@ abstract final class TableViewMetrics {
   static const double space5 = 22;
   static const double space6 = 28;
 
-  static const double cardRadius = 18;
+  static const double cardRadius = WorkspaceTokens.cardRadius;
+  static const double cardCaptionAllowance =
+      WorkspaceTokens.space16 + WorkspaceTokens.space3;
   static const double panelRadius = 14;
   static const double controlRadius = 10;
   static const double pillRadius = 8;
@@ -33,9 +36,9 @@ abstract final class TableViewMetrics {
   static const double mapPreviewHeight = 132;
 
   /// How far a card rises under the pointer.
-  static const double hoverLift = 4;
+  static const double hoverLift = 0;
 
-  static const Duration hover = Duration(milliseconds: 180);
+  static const Duration hover = WorkspaceTokens.hoverDuration;
   static const Duration change = Duration(milliseconds: 300);
   static const Duration settle = Duration(milliseconds: 380);
   static const Duration enter = Duration(milliseconds: 420);

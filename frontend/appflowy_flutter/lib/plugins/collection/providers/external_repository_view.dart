@@ -653,7 +653,9 @@ class _TreeRowState extends State<_TreeRow> {
           decoration: BoxDecoration(
             color: widget.selected
                 ? palette.selected
-                : palette.hover.withValues(alpha: hovered ? 1 : 0),
+                : hovered
+                    ? palette.hover
+                    : palette.hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
@@ -1287,7 +1289,9 @@ class _FlatButtonState extends State<_FlatButton> {
             duration: const Duration(milliseconds: 140),
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
             decoration: BoxDecoration(
-              color: widget.palette.hover.withValues(alpha: hovered ? 1 : 0),
+              color: hovered
+                  ? widget.palette.hover
+                  : widget.palette.hover.withValues(alpha: 0),
               borderRadius: BorderRadius.circular(7),
             ),
             child: Row(

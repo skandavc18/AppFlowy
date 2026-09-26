@@ -10,6 +10,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/medi
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
@@ -216,7 +218,7 @@ void main() {
             isTrue,
           );
           expect(find.byKey(_copied), findsNothing);
-          expect(find.byIcon(Icons.check_rounded), findsNothing);
+          expect(_mediaGlyph('check'), findsNothing);
           for (final host in [...busyHosts, ...successHosts]) {
             expect(_button(tester, host, _copy).onPressed, isNull);
             expect(_button(tester, host, _share).onPressed, isNull);
@@ -235,7 +237,7 @@ void main() {
           await tester.pump();
           await tester.pump(_settledFade);
           expect(find.byKey(_copied), findsNWidgets(4));
-          expect(find.byIcon(Icons.check_rounded), findsNWidgets(4));
+          expect(_mediaGlyph('check'), findsNWidgets(4));
           expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
           for (final host in successHosts) {
             final badge = _part(host, _copied);
@@ -294,7 +296,7 @@ void main() {
           await tester.pump();
           await tester.pump(_settledFade);
           expect(find.byKey(_copied), findsNothing);
-          expect(find.byIcon(Icons.check_rounded), findsNothing);
+          expect(_mediaGlyph('check'), findsNothing);
           expect(fixture.actions.calls, hasLength(7));
           expect(fixture.ioCalls, 0);
           expect(fixture.documents, originalDocuments);
@@ -743,6 +745,14 @@ class _HoverPointers {
 Finder _part(Key host, Key key) =>
     find.descendant(of: find.byKey(host), matching: find.byKey(key));
 
+Finder _mediaGlyph(String name) => find.descendant(
+      of: find.byType(MediaActionButtons),
+      matching: find.byWidgetPredicate(
+        (widget) => widget is WorkspaceGlyph && widget.name == name,
+        description: 'workspace glyph "$name"',
+      ),
+    );
+
 Finder _bar(Key host) => find.descendant(
       of: find.byKey(host),
       matching: find.byType(MediaActionButtons),
@@ -831,7 +841,7 @@ void _expectPalette(
         button.style!.backgroundColor!.resolve({WidgetState.hovered}),
         imageViewer
             ? Colors.white.withValues(alpha: 0.1)
-            : palette.accent.withValues(alpha: 0.07),
+            : WorkspaceChrome.hoverColor(context),
       );
     }
     expect(
@@ -860,8 +870,8 @@ void _expectPalette(
         .hovered,
     isTrue,
   );
-  expect(Icons.copy_rounded.fontFamily, 'MaterialIcons');
-  expect(Icons.ios_share_rounded.fontFamily, 'MaterialIcons');
+  expect(_mediaGlyph('copy'), findsNWidgets(4));
+  expect(_mediaGlyph('share'), findsNWidgets(_hosts.length));
 }
 
 void _expectBadgeUnclipped(WidgetTester tester, Finder badge) {

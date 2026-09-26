@@ -147,9 +147,7 @@ List<AppMenuEntry> columnHeadingMenuEntries({
       ),
       AppMenuItem(
         label: LocaleKeys.grid_field_wrapCellContent.tr(),
-        icon: (fieldInfo.wrapCellContent ?? false)
-            ? Icons.check_box_rounded
-            : Icons.check_box_outline_blank_rounded,
+        iconWidget: _PropertyToggleIcon(fieldInfo.wrapCellContent ?? false),
         onSelected: () => unawaited(
           settings.updateFieldSettings(
             fieldId: fieldId,
@@ -401,9 +399,7 @@ List<AppMenuEntry> _styleEntries({
         ),
         AppMenuItem(
           label: LocaleKeys.interactive_progress_showButtons.tr(),
-          icon: style.showButtons
-              ? Icons.check_box_rounded
-              : Icons.check_box_outline_blank_rounded,
+          iconWidget: _PropertyToggleIcon(style.showButtons),
           onSelected: () => unawaited(
             write('show_buttons', !style.showButtons),
           ),
@@ -422,9 +418,7 @@ List<AppMenuEntry> _styleEntries({
         ),
         AppMenuItem(
           label: LocaleKeys.interactive_progress_showPercent.tr(),
-          icon: style.showPercent
-              ? Icons.check_box_rounded
-              : Icons.check_box_outline_blank_rounded,
+          iconWidget: _PropertyToggleIcon(style.showPercent),
           onSelected: () => unawaited(
             write('show_percent', !style.showPercent),
           ),
@@ -510,9 +504,7 @@ List<AppMenuEntry> _styleEntries({
     PropertyStyleKind.link => [
         AppMenuItem(
           label: LocaleKeys.interactive_property_showThumbnail.tr(),
-          icon: style.showThumbnail
-              ? Icons.check_box_rounded
-              : Icons.check_box_outline_blank_rounded,
+          iconWidget: _PropertyToggleIcon(style.showThumbnail),
           onSelected: () => unawaited(
             write('thumbnail', !style.showThumbnail),
           ),
@@ -520,6 +512,21 @@ List<AppMenuEntry> _styleEntries({
       ],
     _ => const [],
   };
+}
+
+/// This is an option's checked state, not the Checkbox property-type identity.
+/// Keep the native pair and the menu's IconTheme rather than adapting it.
+class _PropertyToggleIcon extends StatelessWidget {
+  const _PropertyToggleIcon(this.checked);
+
+  final bool checked;
+
+  @override
+  Widget build(BuildContext context) => Icon(
+        checked
+            ? Icons.check_box_rounded
+            : Icons.check_box_outline_blank_rounded,
+      );
 }
 
 Future<void> _chooseAction(

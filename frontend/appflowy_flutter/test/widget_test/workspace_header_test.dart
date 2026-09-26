@@ -3,9 +3,9 @@ import 'package:appflowy/plugins/collection/collection_page.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/cover_title.dart';
-import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_layout.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -72,6 +72,7 @@ void main() {
 
     testWidgets('$appearance page and collection titles share the chosen face',
         (tester) async {
+      late BuildContext titleContext;
       late TextStyle document;
       late TextStyle collection;
       late PremiumThemeExtension palette;
@@ -80,6 +81,7 @@ void main() {
           appearance,
           Builder(
             builder: (context) {
+              titleContext = context;
               document = coverTitleTextStyle(context);
               collection = WorkspaceChrome.title(context, compact: true);
               palette = PremiumThemeExtension.of(context);
@@ -88,12 +90,26 @@ void main() {
           ),
         ),
       );
+      expect(
+        document,
+        WorkspaceTypography.style(titleContext, WorkspaceTextRole.pageTitle),
+      );
+      expect(
+        collection,
+        WorkspaceTypography.style(
+          titleContext,
+          WorkspaceTextRole.pageTitle,
+          compact: true,
+        ),
+      );
       expect(document.fontFamily, collection.fontFamily);
       expect(document.color, palette.textPrimary);
       expect(collection.color, palette.textPrimary);
       expect(document.fontSize, greaterThan(collection.fontSize!));
+      expect(document.fontWeight, FontWeight.w700);
+      expect(collection.fontWeight, document.fontWeight);
       expect(document.fontVariations, [const FontVariation.weight(700)]);
-      expect(collection.fontVariations, [const FontVariation.weight(650)]);
+      expect(collection.fontVariations, document.fontVariations);
     });
 
     for (final width in [320.0, 720.0]) {
@@ -129,12 +145,17 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
-        final menu = find.byKey(const ValueKey('collection-view-menu'));
-        expect(menu.hitTestable(), findsOneWidget);
-        await tester.tap(menu);
-        await tester.pumpAndSettle();
-        expect(find.byType(AppMenuRow), findsNWidgets(7));
-        await tester.tap(find.widgetWithText(AppMenuRow, 'View 6'));
+        expect(
+          find.byKey(const ValueKey('collection-view-menu')),
+          findsNothing,
+        );
+        for (final view in views) {
+          expect(
+            find.widgetWithText(TextButton, view.label).hitTestable(),
+            findsOneWidget,
+          );
+        }
+        await tester.tap(find.widgetWithText(TextButton, 'View 6'));
         await tester.pumpAndSettle();
         expect(selected, 'view-6');
         expect(tester.takeException(), isNull);

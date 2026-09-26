@@ -37,7 +37,62 @@ const _names = [
   'cloud',
   'mountain',
   'compass',
+  'page',
+  'file',
+  'pdf',
+  'document',
+  'spreadsheet',
+  'presentation',
+  'archive',
+  'code-file',
+  'markdown',
+  'html-file',
+  'json-file',
+  'notebook',
+  'csv',
+  'image',
+  'video',
+  'album',
+  'repository',
+  'database',
+  'bookmark',
+  'mail',
+  'table',
+  'board',
+  'chat',
+  'ai-chat',
+  'map',
+  'slides',
+  'timeline',
+  'feed',
+  'form',
+  'gallery',
+  'dashboard',
+  'canvas',
 ];
+
+const _essentialsGroup = 'appflowy_vivid_essentials';
+
+// Literal saved identities: these must resolve without first reading a
+// catalogue or borrowing an icon from a differently named category.
+const _categorySearchCases = <String, (String, String)>{
+  'appflowy_vivid_navigation': ('search', 'magnifying glass'),
+  'appflowy_vivid_editing': ('selection', 'marquee'),
+  'appflowy_vivid_data': ('relation', 'link records'),
+  'appflowy_vivid_work': ('briefcase', 'career'),
+  'appflowy_vivid_security': ('key', 'credential'),
+  'appflowy_vivid_learning': ('graduation-cap', 'university'),
+  'appflowy_vivid_nature': ('sun', 'sunshine'),
+  'appflowy_vivid_travel': ('sailboat', 'harbor'),
+  'appflowy_vivid_food': ('teapot', 'brew'),
+  'appflowy_vivid_health': ('stethoscope', 'diagnosis'),
+  'appflowy_vivid_technology': ('terminal', 'command line'),
+};
+
+Iterable<(String, icons.Icon)> get _vividChoices =>
+    appFlowyVividIconGroups.expand(
+      (group) => group.icons.map((icon) => (group.name, icon)),
+    );
 
 void main() {
   final binding = TestWidgetsFlutterBinding.ensureInitialized();
@@ -47,7 +102,7 @@ void main() {
     kIconGroups = null;
   });
 
-  test('Vivid adds 24 stable original choices beside the existing styles', () {
+  test('Vivid retains its original choices and adds workspace identities', () {
     expect(kIconPacks.take(3).map((pack) => pack.id), [
       'default',
       appFlowyVividIconPackId,
@@ -60,13 +115,16 @@ void main() {
     expect(kDefaultIconPack.isColorful, isFalse);
     expect(kAppFlowyDefaultIconPack.isColorful, isFalse);
 
-    final group = appFlowyVividIconGroups.single;
-    expect(group.name, 'appflowy_vivid_essentials');
+    final group = appFlowyVividIconGroups.firstWhere(
+      (group) => group.name == _essentialsGroup,
+    );
+    expect(group.name, _essentialsGroup);
     expect(group.displayName, 'essentials');
     expect(group.packId, appFlowyVividIconPackId);
     expect(group.isColorful, isTrue);
+    expect(group.icons, hasLength(56));
     expect(group.icons.map((icon) => icon.name), _names);
-    expect(group.icons.map((icon) => icon.content).toSet(), hasLength(24));
+    expect(group.icons.map((icon) => icon.content).toSet(), hasLength(56));
     for (final icon in group.icons) {
       expect(icon.isColorful, isTrue);
       expect(icon.iconPath, '${group.name}/${icon.name}');
@@ -79,13 +137,63 @@ void main() {
         0,
         (size, icon) => size + utf8.encode(icon.content).length,
       ),
-      lessThan(64 * 1024),
+      lessThan(96 * 1024),
       reason: 'A small compiled collection, not a copy of the 2.8MB Color pack',
     );
     expect(
       appFlowyDefaultIconGroups.expand((group) => group.icons),
-      hasLength(46),
+      hasLength(54),
     );
+  });
+
+  test('all Vivid categories expose unique illustrated picker identities', () {
+    final groups = appFlowyVividIconGroups;
+    final choices = _vividChoices.toList();
+    expect(groups, hasLength(12));
+    expect(
+      groups.map((group) => group.name),
+      containsAll([_essentialsGroup, ..._categorySearchCases.keys]),
+    );
+    expect(groups.map((group) => group.name).toSet(), hasLength(groups.length));
+    expect(choices, hasLength(150));
+    expect(
+      choices.map((choice) => '${choice.$1}/${choice.$2.name}').toSet(),
+      hasLength(choices.length),
+    );
+    expect(
+      choices.map((choice) => choice.$2.name).toSet(),
+      hasLength(choices.length),
+      reason: 'A new name belongs to one category, not several aliases',
+    );
+    for (final group in groups) {
+      expect(group.name, startsWith(appFlowyVividIconGroupPrefix));
+      expect(group.icons, isNotEmpty, reason: group.name);
+      expect(group.packId, appFlowyVividIconPackId, reason: group.name);
+      expect(group.groupPrefix, appFlowyVividIconGroupPrefix);
+      expect(group.isColorful, isTrue, reason: group.name);
+      expect(iconPackForGroup(group.name), same(kVividIconPack));
+    }
+    for (final (groupName, icon) in choices) {
+      final identity = '$groupName/${icon.name}';
+      expect(icon.name, isNot(startsWith('utility-')), reason: identity);
+      expect(icon.iconGroup?.name, groupName, reason: identity);
+      expect(icon.iconPath, identity);
+      expect(icon.isColorful, isTrue, reason: identity);
+      expect(icon.keywords, isNotEmpty, reason: identity);
+      expect(icon.content, vividIconSvg(icon.name), reason: identity);
+      expect(
+        findLoadedIcon(groupName, icon.name),
+        same(icon),
+        reason: identity,
+      );
+      for (final other in groups.where((group) => group.name != groupName)) {
+        expect(
+          findLoadedIcon(other.name, icon.name),
+          isNull,
+          reason: '$identity must not resolve under ${other.name}',
+        );
+      }
+    }
   });
 
   test('cold Vivid resolution performs no asset IO or version notification',
@@ -108,16 +216,45 @@ void main() {
           .setMockMessageHandler('flutter/assets', null);
     });
 
-    final version = iconPacksVersion.value;
-    // Start from a literal persisted identity, not a preloaded catalogue.
-    final saved = IconsData('appflowy_vivid_essentials', 'home', null);
-    expect(saved.svgString, startsWith('<svg'));
-    expect(isIconPackLoaded(kVividIconPack), isTrue);
-    final groups = await loadIconPack(kVividIconPack);
-    expect(groups, same(appFlowyVividIconGroups));
-    await ensureIconPackLoadedForGroup(saved.groupName);
+    final notifications = <int>[];
+    void onVersionChanged() => notifications.add(iconPacksVersion.value);
+    iconPacksVersion.addListener(onVersionChanged);
+    addTearDown(() => iconPacksVersion.removeListener(onVersionChanged));
+
+    Future<void> expectColdResolution(String groupName, String iconName) async {
+      resetIconPacksForTesting();
+      final version = iconPacksVersion.value;
+      final saved = IconsData(groupName, iconName, null);
+      expect(saved.svgString, startsWith('<svg'), reason: saved.iconString);
+      expect(saved.svgString, vividIconSvg(saved.iconName));
+      expect(
+        findLoadedIcon(saved.groupName, saved.iconName)?.iconPath,
+        '$groupName/$iconName',
+        reason: saved.iconString,
+      );
+      expect(isIconPackLoaded(kVividIconPack), isTrue);
+      final groups = await loadIconPack(kVividIconPack);
+      expect(groups, same(appFlowyVividIconGroups));
+      await ensureIconPackLoadedForGroup(saved.groupName);
+      expect(iconPacksVersion.value, version, reason: saved.iconString);
+      expect(kIconGroups, isNull);
+    }
+
+    // Resolve literal persisted identities before reading the catalogue.
+    final identities = {
+      _essentialsGroup: ('home', 'house'),
+      ..._categorySearchCases,
+    };
+    for (final entry in identities.entries) {
+      await expectColdResolution(entry.key, entry.value.$1);
+    }
+    final choices = _vividChoices.toList();
+    expect(choices, hasLength(150));
+    for (final (groupName, icon) in choices) {
+      await expectColdResolution(groupName, icon.name);
+    }
     expect(requestedAssets, isEmpty);
-    expect(iconPacksVersion.value, version);
+    expect(notifications, isEmpty);
     for (final pack in kIconPacks.where((pack) => pack.asset.isNotEmpty)) {
       expect(isIconPackLoaded(pack), isFalse, reason: pack.id);
     }
@@ -140,9 +277,12 @@ void main() {
 
   test('every Vivid identity survives protobuf, JSON, recents and a cold cache',
       () {
-    for (final name in _names) {
+    final choices = _vividChoices.toList();
+    expect(choices, hasLength(150));
+    for (final (groupName, icon) in choices) {
+      final name = icon.name;
       for (final color in [null, '4283665274']) {
-        final original = IconsData('appflowy_vivid_essentials', name, color);
+        final original = IconsData(groupName, name, color);
         final stored = ViewIconPB.fromBuffer(
           original.toEmojiIconData().toViewIcon().writeToBuffer(),
         );
@@ -156,6 +296,13 @@ void main() {
         expect(restored.color, color);
         expect(restored.svgString, vividIconSvg(name));
         expect(restored.noColor().svgString, vividIconSvg(name));
+        expect(
+          utf8.encode(restored.svgString!),
+          utf8.encode(icon.content),
+          reason: '$groupName/$name keeps its exact artwork bytes',
+        );
+        expect(restored.noColor().groupName, groupName);
+        expect(restored.noColor().color, isNull);
         expect(isIconPackLoaded(kDefaultIconPack), isFalse);
         expect(iconPacksVersion.value, 0);
 
@@ -168,6 +315,7 @@ void main() {
         );
         expect(roundTrip.groupName, original.groupName);
         expect(roundTrip.name, name);
+        expect(roundTrip.keywords, icon.keywords);
         expect(roundTrip.content, restored.svgString);
         expect(iconPackForGroup(roundTrip.groupName).isColorful, isTrue);
       }
@@ -175,7 +323,9 @@ void main() {
   });
 
   test('familiar names and synonyms search the curated collection', () {
-    final group = appFlowyVividIconGroups.single;
+    final group = appFlowyVividIconGroups.firstWhere(
+      (group) => group.name == _essentialsGroup,
+    );
     const queries = {
       'HOUSE': 'home',
       'closed book': 'book',
@@ -188,6 +338,10 @@ void main() {
       'magic': 'sparkles',
       'saturn': 'planet',
       'library': 'books',
+      'compressed': 'archive',
+      'jupyter': 'notebook',
+      'assistant': 'ai-chat',
+      'kanban': 'board',
     };
     for (final query in queries.entries) {
       final filtered = group.filter(query.key);
@@ -197,7 +351,60 @@ void main() {
       expect(filtered.name, group.name);
     }
     expect(group.filter('no-such-vivid-icon').icons, isEmpty);
-    expect(group.icons, hasLength(24));
+    expect(group.icons, hasLength(56));
+  });
+
+  test('all names, keywords and added categories are searchable', () {
+    final groups = appFlowyVividIconGroups;
+    expect(groups, hasLength(12));
+    expect(groups.expand((group) => group.icons), hasLength(150));
+    for (final group in groups) {
+      if (group.name != _essentialsGroup) {
+        final category =
+            group.name.substring(appFlowyVividIconGroupPrefix.length);
+        final filtered = group.filter(category.toUpperCase());
+        expect(
+          filtered.icons.map((icon) => icon.name),
+          group.icons.map((icon) => icon.name),
+          reason: 'The entire $category category must be searchable',
+        );
+        for (final icon in group.icons) {
+          expect(icon.keywords, contains(category), reason: icon.iconPath);
+        }
+      }
+      for (final icon in group.icons) {
+        for (final query in [icon.name, ...icon.keywords]) {
+          final filtered = group.filter(query.toUpperCase());
+          expect(
+            filtered.icons,
+            contains(icon),
+            reason: '${group.name}/$query',
+          );
+          expect(filtered.name, group.name);
+          expect(filtered.packId, appFlowyVividIconPackId);
+          expect(filtered.groupPrefix, appFlowyVividIconGroupPrefix);
+          expect(filtered.isColorful, isTrue);
+          expect(filtered.icons.every((icon) => icon.isColorful), isTrue);
+        }
+      }
+    }
+    for (final entry in _categorySearchCases.entries) {
+      final matches = groups
+          .map((group) => group.filter(entry.value.$2.toUpperCase()))
+          .expand(
+            (group) => group.icons.map((icon) => '${group.name}/${icon.name}'),
+          );
+      expect(matches, contains('${entry.key}/${entry.value.$1}'));
+    }
+    for (final query in ['no-such-vivid-icon', 'utility-']) {
+      expect(
+        groups
+            .map((group) => group.filter(query))
+            .expand((group) => group.icons),
+        isEmpty,
+        reason: query,
+      );
+    }
   });
 
   test('legacy icon kinds, stored colors, defaults and tabs remain unchanged',
@@ -242,47 +449,197 @@ void main() {
     expect(vividIconSvg('missing'), isNull);
   });
 
-  for (final name in _names) {
-    test('$name is a self-contained colorful 32px SVG with real gradients', () {
-      final content = vividIconSvg(name)!;
-      final root = XmlDocument.parse(content).rootElement;
-      expect(root.name.local, 'svg');
-      expect(root.getAttribute('viewBox'), '0 0 32 32');
-      final elements = root.descendants.whereType<XmlElement>().toList();
-      expect(
-        elements.map((element) => element.name.local),
-        isNot(anyElement(isIn(['filter', 'image', 'script', 'foreignObject']))),
+  test('every picker SVG is self-contained with meaningful unique geometry',
+      () {
+    final bodies = <String, String>{};
+    final choices = _vividChoices.toList();
+    expect(choices, hasLength(150));
+    for (final (groupName, icon) in choices) {
+      final identity = '$groupName/${icon.name}';
+      final root = _expectSelfContainedSvg(icon.content, reason: identity);
+      final shapes = _artworkElements(root).where(
+        (element) => const {
+          'path',
+          'rect',
+          'circle',
+          'ellipse',
+          'line',
+          'polyline',
+          'polygon',
+        }.contains(element.name.local),
       );
-      expect(content, isNot(contains('currentColor')));
-      expect(content, isNot(contains('href=')));
-      final gradients = elements
-          .where((element) => element.name.local == 'linearGradient')
-          .toList();
-      expect(gradients, hasLength(2));
-      for (final gradient in gradients) {
-        expect(gradient.getAttribute('gradientUnits'), 'userSpaceOnUse');
-        final stops = gradient.findElements('stop').toList();
-        expect(stops, hasLength(2));
+      expect(shapes.length, greaterThanOrEqualTo(2), reason: identity);
+      for (final path
+          in shapes.where((element) => element.name.local == 'path')) {
+        expect(path.getAttribute('d'), isNotEmpty, reason: identity);
+      }
+      final body = jsonEncode(_artworkGeometry(root));
+      expect(
+        bodies.containsKey(body),
+        isFalse,
+        reason: '$identity must not merely recolor ${bodies[body]}',
+      );
+      bodies[body] = identity;
+
+      // Keep the original Essentials palette contract without imposing its
+      // saturated colors or an exact gradient count on new illustrations.
+      // Some new illustrations use only their four gradient-stop colors.
+      if (groupName == _essentialsGroup) {
         expect(
-          stops.first.getAttribute('stop-color'),
-          isNot(stops.last.getAttribute('stop-color')),
+          root.descendants.whereType<XmlElement>().where(
+                (element) => element.name.local == 'linearGradient',
+              ),
+          hasLength(2),
+          reason: identity,
+        );
+        expect(
+          RegExp('#[0-9A-F]{6}')
+              .allMatches(icon.content)
+              .map((match) => match[0])
+              .toSet()
+              .length,
+          greaterThanOrEqualTo(5),
+          reason: identity,
         );
       }
-      final ids =
-          gradients.map((gradient) => gradient.getAttribute('id')).toSet();
-      final references = RegExp(r'url\(#([^)]+)\)')
-          .allMatches(content)
-          .map((match) => match.group(1))
-          .toSet();
-      expect(references, ids);
-      expect(
-        RegExp('#[0-9A-F]{6}')
-            .allMatches(content)
-            .map((m) => m[0])
-            .toSet()
-            .length,
-        greaterThanOrEqualTo(5),
-      );
-    });
+    }
+  });
+
+  test('compiled utility fallback is valid artwork but never a picker choice',
+      () {
+    for (final name in [
+      'utility-check',
+      'utility-arrow-left',
+      'utility-trash',
+    ]) {
+      final content = vividIconSvg(name);
+      expect(content, isNotNull, reason: name);
+      _expectSelfContainedSvg(content!, reason: name);
+      for (final group in appFlowyVividIconGroups) {
+        expect(findLoadedIcon(group.name, name), isNull, reason: group.name);
+      }
+    }
+    expect(vividIconSvg('utility-unknown'), isNull);
+    expect(vividIconSvg('utility-no-such-icon'), isNull);
+  });
+}
+
+XmlElement _expectSelfContainedSvg(String content, {required String reason}) {
+  final root = XmlDocument.parse(content).rootElement;
+  expect(root.name.local, 'svg', reason: reason);
+  expect(root.getAttribute('viewBox'), '0 0 32 32', reason: reason);
+  expect(
+    content.toLowerCase(),
+    isNot(contains('currentcolor')),
+    reason: reason,
+  );
+  expect(content.toUpperCase(), isNot(contains('<!DOCTYPE')), reason: reason);
+  final elements = [root, ...root.descendants.whereType<XmlElement>()];
+  expect(
+    elements.map((element) => element.name.local.toLowerCase()),
+    isNot(
+      anyElement(
+        isIn(['filter', 'image', 'script', 'foreignobject', 'use', 'style']),
+      ),
+    ),
+    reason: reason,
+  );
+  for (final attribute in elements.expand((element) => element.attributes)) {
+    // Local names include both href and xlink:href, independent of quoting.
+    final name = attribute.name.local.toLowerCase();
+    expect(name, isNot('href'), reason: reason);
+    expect(name, isNot(startsWith('on')), reason: '$reason event handler');
+  }
+  final ids = elements
+      .map((element) => element.getAttribute('id'))
+      .whereType<String>()
+      .toList();
+  expect(
+    ids.toSet(),
+    hasLength(ids.length),
+    reason: '$reason duplicate SVG ids',
+  );
+  final gradients = elements.where(
+    (element) =>
+        const ['linearGradient', 'radialGradient'].contains(element.name.local),
+  );
+  expect(gradients, isNotEmpty, reason: reason);
+  final gradientIds = <String>{};
+  for (final gradient in gradients) {
+    final id = gradient.getAttribute('id');
+    expect(id, isNotEmpty, reason: reason);
+    gradientIds.add(id!);
+    expect(
+      gradient.getAttribute('gradientUnits'),
+      'userSpaceOnUse',
+      reason: reason,
+    );
+    final stops = gradient.findElements('stop').toList();
+    expect(stops.length, greaterThanOrEqualTo(2), reason: reason);
+    final colors =
+        stops.map((stop) => stop.getAttribute('stop-color')).toList();
+    expect(colors, everyElement(isNotEmpty), reason: reason);
+    expect(colors.first, isNot(colors.last), reason: '$reason real gradient');
+  }
+  final references = <String>{};
+  for (final match
+      in RegExp(r'url\(([^)]*)\)', caseSensitive: false).allMatches(content)) {
+    final reference = RegExp(r'''^(['"]?)#([A-Za-z_][\w.:-]*)\1$''')
+        .firstMatch(match.group(1)!.trim());
+    expect(reference, isNotNull, reason: '$reason only local SVG references');
+    final id = reference!.group(2)!;
+    expect(ids, contains(id), reason: '$reason dangling reference #$id');
+    references.add(id);
+  }
+  expect(
+    references,
+    containsAll(gradientIds),
+    reason: '$reason uses its gradients',
+  );
+  return root;
+}
+
+Iterable<XmlElement> _artworkElements(XmlElement root) sync* {
+  for (final child in root.childElements) {
+    if (const ['defs', 'title', 'desc'].contains(child.name.local)) continue;
+    yield child;
+    yield* _artworkElements(child);
   }
 }
+
+// Ignore palette, ids and descriptive metadata so recolored duplicates cannot
+// inflate the catalogue. Retain nested transforms and actual drawing geometry.
+List<Object> _artworkGeometry(XmlElement element) => [
+      element.name.local,
+      for (final name in const [
+        'd',
+        'points',
+        'x',
+        'y',
+        'x1',
+        'x2',
+        'y1',
+        'y2',
+        'cx',
+        'cy',
+        'r',
+        'rx',
+        'ry',
+        'width',
+        'height',
+        'transform',
+        'fill-rule',
+        'clip-rule',
+        'stroke-width',
+        'stroke-linecap',
+        'stroke-linejoin',
+      ])
+        if (element.getAttribute(name) != null)
+          [
+            name,
+            element.getAttribute(name)!.replaceAll(RegExp(r'\s+'), ' ').trim(),
+          ],
+      for (final child in element.childElements)
+        if (!const ['defs', 'title', 'desc'].contains(child.name.local))
+          _artworkGeometry(child),
+    ];

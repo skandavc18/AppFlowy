@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'paper_theme.dart';
 import 'premium_theme.dart';
+import 'workspace_tokens.dart';
 
 abstract final class EditorSurfaceStyle {
   static const lightCanvasBackground = PaperTheme.editorBackground;
@@ -11,6 +12,23 @@ abstract final class EditorSurfaceStyle {
       PaperTheme.codeBlockHeaderBackground;
   static const lightCodeBlockBorder = PaperTheme.codeBlockBorder;
   static const lightCalloutBackground = PaperTheme.calloutBackground;
+
+  /// The actual writing canvas, including documents hosted in another pane.
+  /// Prefer the active semantic palette over a legacy caller's white surface;
+  /// never infer the default Light palette from brightness alone.
+  static Color canvasBackground(BuildContext context, {Color? fallback}) {
+    final scoped =
+        context.dependOnInheritedWidgetOfExactType<EditorCanvasScope>()?.color;
+    if (scoped != null) return scoped;
+    final theme = Theme.of(context);
+    return canvasBackgroundFor(
+      theme.brightness,
+      PremiumThemeExtension.maybeOf(context)?.canvas ??
+          fallback ??
+          theme.colorScheme.surface,
+      isPaper: PaperTheme.isEnabled(context),
+    );
+  }
 
   static Color canvasBackgroundFor(
     Brightness brightness,
@@ -83,7 +101,7 @@ abstract final class EditorSurfaceStyle {
   ///
   /// Matches the page and folder preview cards so every embed inside a
   /// document reads as the same kind of object.
-  static const double embedCornerRadius = 20;
+  static const double embedCornerRadius = WorkspaceTokens.cardRadius;
 
   static BorderRadius get embedBorderRadius =>
       BorderRadius.circular(embedCornerRadius);
@@ -146,4 +164,21 @@ abstract final class EditorSurfaceStyle {
         ),
     ];
   }
+}
+
+/// A preview belongs to the surface that hosts it, not a second opaque page.
+/// This overrides paint only; editor controllers and block ownership stay intact.
+class EditorCanvasScope extends InheritedWidget {
+  const EditorCanvasScope({
+    super.key,
+    required this.color,
+    required super.child,
+  });
+
+  /// Null restores the active semantic canvas without replacing the scope.
+  final Color? color;
+
+  @override
+  bool updateShouldNotify(EditorCanvasScope oldWidget) =>
+      color != oldWidget.color;
 }

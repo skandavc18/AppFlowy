@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/album/album_thumbnail.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/album/album_state.dart';
@@ -10,9 +16,9 @@ import 'package:flutter/material.dart';
 
 abstract final class AlbumMetrics {
   static const toolbarHeight = 44.0;
-  static const gutter = 24.0;
+  static const gutter = CollectionWorkspaceMetrics.gutter;
   static const spacing = 10.0;
-  static const tileRadius = 10.0;
+  static const tileRadius = WorkspaceTokens.cardRadius;
   static const motion = Duration(milliseconds: 180);
   static const curve = Curves.easeOutCubic;
 }
@@ -129,52 +135,38 @@ class AlbumScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: palette.background,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: AlbumMetrics.toolbarHeight,
-            padding: const EdgeInsets.symmetric(
-              horizontal: AlbumMetrics.gutter,
+    return PreviewToolbarRegion(
+      child: CollectionWorkspaceSurface(
+        padding: const EdgeInsets.only(top: CollectionWorkspaceMetrics.topGap),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            CollectionWorkspaceToolbar(
+              identity: Text(
+                albumContentsSummary(controller),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: collectionWorkspaceLabel(context, size: 12),
+              ),
+              keepVisible: controller.isReadingMetadata,
+              actions: [...leading, ...trailing],
             ),
-            child: Row(
-              children: [
-                Text(
-                  albumContentsSummary(controller),
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                ...leading,
-                const Spacer(),
-                ...trailing,
-              ],
+            Expanded(
+              child: Padding(
+                padding: padded
+                    ? CollectionWorkspaceMetrics.bodyInsets
+                    : EdgeInsets.zero,
+                child: child,
+              ),
             ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: padded
-                  ? const EdgeInsets.fromLTRB(
-                      AlbumMetrics.gutter,
-                      16,
-                      AlbumMetrics.gutter,
-                      28,
-                    )
-                  : EdgeInsets.zero,
-              child: child,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class AlbumToolbarButton extends StatefulWidget {
+class AlbumToolbarButton extends StatelessWidget {
   const AlbumToolbarButton({
     super.key,
     required this.palette,
@@ -193,71 +185,14 @@ class AlbumToolbarButton extends StatefulWidget {
   final bool selected;
 
   @override
-  State<AlbumToolbarButton> createState() => _AlbumToolbarButtonState();
-}
-
-class _AlbumToolbarButtonState extends State<AlbumToolbarButton> {
-  bool hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = widget.palette;
-    final enabled = widget.onPressed != null;
-    final foreground = !enabled
-        ? palette.textMuted
-        : widget.selected
-            ? palette.accent
-            : hovered
-                ? palette.textPrimary
-                : palette.textSecondary;
-    return Tooltip(
-      message: widget.tooltip,
-      waitDuration: const Duration(milliseconds: 500),
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-        onEnter: (_) => setState(() => hovered = true),
-        onExit: (_) => setState(() => hovered = false),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: widget.onPressed,
-          child: AnimatedContainer(
-            duration: AlbumMetrics.motion,
-            curve: AlbumMetrics.curve,
-            height: 28,
-            margin: const EdgeInsets.only(left: 4),
-            padding: EdgeInsets.symmetric(
-              horizontal: widget.label == null ? 6 : 9,
-            ),
-            decoration: BoxDecoration(
-              color: widget.selected
-                  ? palette.accentSoft
-                  : hovered && enabled
-                      ? palette.hover
-                      : palette.hover.withValues(alpha: 0),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(widget.icon, size: 16, color: foreground),
-                if (widget.label != null) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    widget.label!,
-                    style: TextStyle(
-                      color: foreground,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => CollectionWorkspaceAction(
+        icon: icon,
+        tooltip: tooltip,
+        label: label,
+        onPressed: onPressed,
+        selected: selected,
+        color: palette.textSecondary,
+      );
 }
 
 /// The sort, grouping and tile size controls, shared by the wall views.
@@ -357,22 +292,35 @@ List<Widget> albumArrangementControls({
 }
 
 /// Opens a menu underneath whatever button asked for it.
-class _AnchoredControl extends StatelessWidget {
+class _AnchoredControl extends StatefulWidget {
   const _AnchoredControl({required this.builder});
 
-  final Widget Function(GlobalKey anchor, void Function(ValueChanged<Offset>))
-      builder;
+  final Widget Function(
+    GlobalKey anchor,
+    void Function(FutureOr<void> Function(Offset)),
+  ) builder;
+
+  @override
+  State<_AnchoredControl> createState() => _AnchoredControlState();
+}
+
+class _AnchoredControlState extends State<_AnchoredControl> {
+  final anchor = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
-    final anchor = GlobalKey();
     return Builder(
-      builder: (context) => builder(anchor, (open) {
+      builder: (context) => widget.builder(anchor, (open) async {
         final box = anchor.currentContext?.findRenderObject() as RenderBox?;
         if (box == null) {
           return;
         }
-        open(box.localToGlobal(Offset(0, box.size.height + 4)));
+        final release = PreviewToolbarRegion.hold(context);
+        try {
+          await open(box.localToGlobal(Offset(0, box.size.height + 4)));
+        } finally {
+          release();
+        }
       }),
     );
   }
@@ -400,7 +348,7 @@ class AlbumEmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 38, color: palette.textMuted),
+            WorkspaceGlyph(icon, size: 38, color: palette.textMuted),
             const SizedBox(height: 14),
             Text(
               title,
@@ -408,7 +356,7 @@ class AlbumEmptyState extends StatelessWidget {
               style: TextStyle(
                 color: palette.textPrimary,
                 fontSize: 15,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
             const SizedBox(height: 6),
@@ -462,56 +410,56 @@ class _AlbumTileState extends State<AlbumTile> {
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final favourite = widget.controller.state.isFavourite(widget.item.id);
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) {
-        setState(() => hovered = true);
-        unawaitedMetadata();
-      },
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onOpen,
-        onSecondaryTapDown: widget.onContextMenu == null
-            ? null
-            : (details) =>
-                widget.onContextMenu!(widget.item, details.globalPosition),
-        child: AnimatedScale(
-          duration: AlbumMetrics.motion,
-          curve: AlbumMetrics.curve,
-          scale: hovered ? 1.012 : 1,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(AlbumMetrics.tileRadius),
-                  border: widget.selected
-                      ? Border.all(color: palette.accent, width: 2)
-                      : null,
+    return PreviewToolbarRegion(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) {
+          setState(() => hovered = true);
+          unawaitedMetadata();
+        },
+        onExit: (_) => setState(() => hovered = false),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onOpen,
+          onSecondaryTapDown: widget.onContextMenu == null
+              ? null
+              : (details) =>
+                  widget.onContextMenu!(widget.item, details.globalPosition),
+          child: AnimatedScale(
+            duration: AlbumMetrics.motion,
+            curve: AlbumMetrics.curve,
+            scale: hovered ? 1.012 : 1,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    borderRadius:
+                        BorderRadius.circular(AlbumMetrics.tileRadius),
+                    border: widget.selected
+                        ? Border.all(color: palette.accent, width: 2)
+                        : null,
+                  ),
+                  padding: widget.selected ? const EdgeInsets.all(2) : null,
+                  child: AlbumThumbnail(
+                    item: widget.item,
+                    palette: palette,
+                    decodeWidth: widget.decodeWidth,
+                    radius: AlbumMetrics.tileRadius,
+                  ),
                 ),
-                padding: widget.selected ? const EdgeInsets.all(2) : null,
-                child: AlbumThumbnail(
-                  item: widget.item,
-                  palette: palette,
-                  decodeWidth: widget.decodeWidth,
-                ),
-              ),
-              if (widget.showName)
+                if (widget.showName)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: _TileCaption(name: widget.item.name),
+                  ),
                 Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  child: _TileCaption(name: widget.item.name),
-                ),
-              Positioned(
-                right: 6,
-                top: 6,
-                child: AnimatedOpacity(
-                  duration: AlbumMetrics.motion,
-                  opacity: hovered || favourite ? 1 : 0,
-                  child: IgnorePointer(
-                    ignoring: !(hovered || favourite),
+                  right: 6,
+                  top: 6,
+                  child: PreviewToolbar(
+                    keepVisible: favourite,
                     child: _StarButton(
                       favourite: favourite,
                       onTap: () =>
@@ -519,8 +467,8 @@ class _AlbumTileState extends State<AlbumTile> {
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -576,28 +524,23 @@ class _StarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: favourite
+    return IconButton(
+      tooltip: favourite
           ? LocaleKeys.collections_album_unfavourite.tr()
           : LocaleKeys.collections_album_favourite.tr(),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        child: GestureDetector(
-          onTap: onTap,
-          child: Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.42),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              favourite ? Icons.star_rounded : Icons.star_border_rounded,
-              size: 15,
-              color: favourite ? const Color(0xFFF4C542) : Colors.white,
-            ),
-          ),
+      onPressed: onTap,
+      style: IconButton.styleFrom(
+        minimumSize: const Size.square(28),
+        padding: const EdgeInsets.all(6),
+        backgroundColor: Colors.black.withValues(alpha: 0.42),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(WorkspaceTokens.controlRadius),
         ),
+      ),
+      icon: WorkspaceGlyph(
+        Icons.star_rounded,
+        size: 15,
+        color: favourite ? const Color(0xFFF4C542) : Colors.white,
       ),
     );
   }

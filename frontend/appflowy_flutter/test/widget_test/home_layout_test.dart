@@ -1,4 +1,5 @@
 import 'package:appflowy/shared/workspace_layout.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/edit_panel/edit_context.dart';
 import 'package:appflowy/workspace/application/home/home_setting_bloc.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
@@ -53,10 +54,17 @@ void main() {
 
   test('temporary clamps restore the original sidebar preference', () {
     final state = _state(panel: true, resizeOffset: 200);
-    expect(HomeLayout.fromState(state, availableWidth: 1920).menuWidth, 460);
+    final preferredWidth = WorkspaceTokens.navigationWidth + state.resizeOffset;
+    expect(
+      HomeLayout.fromState(state, availableWidth: 1920).menuWidth,
+      preferredWidth,
+    );
     expect(HomeLayout.fromState(state, availableWidth: 1024).menuWidth, 304);
     expect(HomeLayout.fromState(state, availableWidth: 320).menuWidth, 288);
-    expect(HomeLayout.fromState(state, availableWidth: 1920).menuWidth, 460);
+    expect(
+      HomeLayout.fromState(state, availableWidth: 1920).menuWidth,
+      preferredWidth,
+    );
     expect(state.resizeOffset, 200);
   });
 
@@ -69,7 +77,7 @@ void main() {
       disableAnimations: true,
     );
     expect(reduced.animDuration, Duration.zero);
-    expect(ordinary.animDuration, isNot(Duration.zero));
+    expect(ordinary.animDuration, WorkspaceTokens.transitionDuration);
     expect(reduced.menuWidth, ordinary.menuWidth);
     expect(reduced.homePageLOffset, ordinary.homePageLOffset);
     expect(reduced.homePageROffset, ordinary.homePageROffset);
@@ -88,7 +96,7 @@ void main() {
     );
     expect(
       HomeLayout.fromState(state, availableWidth: 1920).animDuration,
-      state.resizeType.duration(),
+      WorkspaceTokens.transitionDuration,
     );
   });
 

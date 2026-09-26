@@ -1,17 +1,19 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show ImageFilter;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/af_user_profile_extension.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
-import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
@@ -19,11 +21,14 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_explorer
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_surface.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart';
@@ -42,7 +47,10 @@ class FolderGalleryPreviewThumbnail extends StatelessWidget {
     this.height = _galleryPreviewHeight,
     this.borderRadius = const BorderRadius.all(Radius.circular(16)),
     this.compact = false,
+    this.lightweight = false,
+    this.surfaceColor,
     this.previewMode,
+    this.onRetry,
   });
 
   final WorkspaceExplorerItem item;
@@ -52,178 +60,115 @@ class FolderGalleryPreviewThumbnail extends StatelessWidget {
   final double height;
   final BorderRadius borderRadius;
   final bool compact;
+
+  /// Dense contact sheets share cached text/image previews but never start a
+  /// PDF document or video player per square. Those files retain their real
+  /// saved identity/cover until opened in their native viewer.
+  final bool lightweight;
+  final Color? surfaceColor;
   final ViewPreviewMode? previewMode;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final cover = view.cover;
     final mode = previewMode ?? view.previewMode;
-    return ClipRRect(
-      borderRadius: borderRadius,
-      child: SizedBox(
-        height: height,
-        child: mode == ViewPreviewMode.cover && cover != null
-            ? ViewCoverImage(
-                cover: cover,
-                userProfile: userProfile,
-                width: double.infinity,
-                height: height,
-              )
-            : FutureBuilder<FolderGalleryPreview>(
-                future: preview,
-                builder: (context, snapshot) {
-                  final data = snapshot.data;
-                  if (data == null) {
-                    return const _GalleryMediaLoading();
-                  }
-                  final hasMediaPreview = data.hasHero ||
-                      {
-                        FolderGalleryPreviewKind.image,
-                        FolderGalleryPreviewKind.pdf,
-                        FolderGalleryPreviewKind.video,
-                      }.contains(data.kind);
-                  return hasMediaPreview
-                      ? _GalleryMediaPreview(
-                          preview: data,
-                          userProfile: userProfile,
-                        )
-                      : _GalleryPreviewStage(
-                          item: item,
-                          preview: data,
-                          userProfile: userProfile,
-                          compact: compact,
-                        );
-                },
-              ),
+    return _GalleryPreviewSurface(
+      color: surfaceColor ?? GalleryCardPalette.previewSurface(context),
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: SizedBox(
+          height: height,
+          child: mode == ViewPreviewMode.cover && cover != null && !cover.isNone
+              ? IgnorePointer(
+                  child: ViewCoverImage(
+                    cover: cover,
+                    userProfile: userProfile,
+                    width: double.infinity,
+                    height: height,
+                  ),
+                )
+              : FutureBuilder<FolderGalleryPreview>(
+                  future: preview,
+                  builder: (context, snapshot) {
+                    if (view.layout == ViewLayoutPB.Chat) {
+                      return IgnorePointer(
+                        child: _GalleryChatPreview(item: item, view: view),
+                      );
+                    }
+                    if (snapshot.connectionState != ConnectionState.done) {
+                      return const _GalleryMediaLoading();
+                    }
+                    final data = snapshot.data;
+                    if (snapshot.hasError || data == null || data.unavailable) {
+                      return _GalleryUnavailablePreview(onRetry: onRetry);
+                    }
+                    if (lightweight &&
+                        (data.kind == FolderGalleryPreviewKind.pdf ||
+                            data.kind == FolderGalleryPreviewKind.video)) {
+                      return IgnorePointer(
+                        child: _GalleryIdentityPreview(
+                          key:
+                              const ValueKey('folder-thumbnail-media-identity'),
+                          glyph: _GalleryIdentityGlyph(item: item, view: view),
+                        ),
+                      );
+                    }
+                    final hasMediaPreview = data.hasHero ||
+                        {
+                          FolderGalleryPreviewKind.image,
+                          FolderGalleryPreviewKind.pdf,
+                          FolderGalleryPreviewKind.video,
+                        }.contains(data.kind);
+                    // This is an activation thumbnail, not the opened viewer.
+                    // Keep the failure/retry branch above outside this boundary.
+                    return IgnorePointer(
+                      child: hasMediaPreview
+                          ? _GalleryMediaPreview(
+                              preview: data,
+                              userProfile: userProfile,
+                            )
+                          : _GalleryPreviewStage(
+                              item: item,
+                              view: view,
+                              preview: data,
+                              userProfile: userProfile,
+                              compact: compact,
+                            ),
+                    );
+                  },
+                ),
+        ),
       ),
     );
   }
 }
 
-class FolderContentPreviewThumbnail extends StatefulWidget {
+/// A folder's identity, not a speculative contact sheet. Counts come from an
+/// already-loaded listing; painting this face never reads children/documents.
+class FolderContentPreviewThumbnail extends StatelessWidget {
   const FolderContentPreviewThumbnail({
     super.key,
     required this.folder,
     required this.userProfile,
     this.repository = const WorkspaceItemService(),
+    this.childCount,
   });
 
   final ViewPB folder;
   final UserProfilePB? userProfile;
+
+  // Retained for source compatibility. Identity artwork has no repository IO.
   final WorkspaceItemRepository repository;
-
-  @override
-  State<FolderContentPreviewThumbnail> createState() =>
-      _FolderContentPreviewThumbnailState();
-}
-
-class _FolderContentPreviewThumbnailState
-    extends State<FolderContentPreviewThumbnail> {
-  final previewCache = FolderGalleryPreviewCache();
-  late Future<List<ViewPB>> children = _loadChildren();
-  ViewListener? listener;
-
-  @override
-  void initState() {
-    super.initState();
-    _listen();
-  }
-
-  @override
-  void didUpdateWidget(covariant FolderContentPreviewThumbnail oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.folder.id != widget.folder.id) {
-      listener?.stop();
-      previewCache.clear();
-      children = _loadChildren();
-      _listen();
-    }
-  }
-
-  @override
-  void dispose() {
-    listener?.stop();
-    previewCache.clear();
-    super.dispose();
-  }
+  final int? childCount;
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<ViewPB>>(
-      future: children,
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return const _GalleryUnavailablePreview();
-        }
-        final views = snapshot.data;
-        if (views == null) {
-          return const _GalleryMediaLoading();
-        }
-        if (views.isEmpty) {
-          return FolderGalleryCollectionArtwork(
-            item: WorkspaceExplorerItem.fromView(widget.folder),
-          );
-        }
-        final visible = views.take(4).toList(growable: false);
-        return Padding(
-          padding: const EdgeInsets.all(9),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = visible.length == 1 ? 1 : 2;
-              final rows = visible.length <= 2 ? 1 : 2;
-              const gap = 5.0;
-              final width =
-                  (constraints.maxWidth - gap * (columns - 1)) / columns;
-              final height = (constraints.maxHeight - gap * (rows - 1)) / rows;
-              return Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: [
-                  for (final view in visible)
-                    SizedBox(
-                      width: width,
-                      height: height,
-                      child: FolderGalleryPreviewThumbnail(
-                        item: WorkspaceExplorerItem.fromView(view),
-                        view: view,
-                        preview: previewCache.previewFor(
-                          view: view,
-                          item: WorkspaceExplorerItem.fromView(view),
-                        ),
-                        userProfile: widget.userProfile,
-                        height: height,
-                        compact: true,
-                        borderRadius: BorderRadius.circular(9),
-                        previewMode: ViewPreviewMode.content,
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
-        );
-      },
+    return FolderGalleryCollectionArtwork(
+      item: WorkspaceExplorerItem.fromView(folder),
+      view: folder,
+      childCount: childCount,
     );
-  }
-
-  Future<List<ViewPB>> _loadChildren() async {
-    final result = await widget.repository.getChildren(widget.folder.id);
-    return result.fold(
-      (views) => views,
-      (error) => throw StateError(error.msg),
-    );
-  }
-
-  void _listen() {
-    listener = ViewListener(viewId: widget.folder.id)
-      ..start(
-        onViewChildViewsUpdated: (_) {
-          if (mounted) {
-            previewCache.clear();
-            setState(() => children = _loadChildren());
-          }
-        },
-      );
   }
 }
 
@@ -241,6 +186,8 @@ class FolderGallery extends StatefulWidget {
     this.onBackgroundContextMenu,
     this.header,
     this.errorBanner,
+    this.thumbnails = false,
+    this.horizontalPadding,
   });
 
   final WorkspaceExplorerController controller;
@@ -258,6 +205,11 @@ class FolderGallery extends StatefulWidget {
   final ValueChanged<Offset>? onBackgroundContextMenu;
   final Widget? header;
   final Widget? errorBanner;
+  final bool thumbnails;
+
+  /// A folder shell already provides the shared reading inset. Standalone
+  /// gallery callers can continue to use the existing gallery geometry.
+  final double? horizontalPadding;
 
   @override
   State<FolderGallery> createState() => _FolderGalleryState();
@@ -294,6 +246,15 @@ class _FolderGalleryState extends State<FolderGallery> {
     final showDraft =
         draft != null && draft.parentId == controller.currentFolder.id;
     final itemCount = entries.length + (showDraft ? 1 : 0);
+    // A loaded renderer (or rename draft) follows its item through a reorder;
+    // it must not be rebuilt as a new card at the old sliver index.
+    final childIndices = <Key, int>{
+      if (showDraft)
+        ValueKey('gallery-draft-${draft.kind}-${draft.parentId}'): 0,
+      for (var index = 0; index < entries.length; index++)
+        ValueKey('gallery-drag-${entries[index].item.id}'):
+            index + (showDraft ? 1 : 0),
+    };
 
     return Focus(
       focusNode: focusNode,
@@ -321,16 +282,27 @@ class _FolderGalleryState extends State<FolderGallery> {
               SliverToBoxAdapter(child: widget.errorBanner),
             SliverLayoutBuilder(
               builder: (context, constraints) {
-                final horizontal = KnowledgeGalleryLayout.horizontalPadding(
-                  constraints.crossAxisExtent,
-                );
+                final horizontal = widget.horizontalPadding ??
+                    KnowledgeGalleryLayout.horizontalPadding(
+                      constraints.crossAxisExtent,
+                    );
                 final contentWidth =
                     constraints.crossAxisExtent - horizontal * 2;
-                final metrics = GalleryCardMetrics.resolve(
-                  available: contentWidth,
-                  size: cardSize,
-                  spacing: KnowledgeGalleryLayout.cardSpacing,
-                );
+                final metrics = widget.thumbnails
+                    ? GalleryCardMetrics.thumbnails(
+                        available: contentWidth,
+                        textScale:
+                            MediaQuery.textScalerOf(context).scale(13) / 13,
+                      )
+                    : GalleryCardMetrics.resolve(
+                        available: contentWidth,
+                        size: cardSize,
+                        spacing: KnowledgeGalleryLayout.cardSpacing,
+                        maximumColumns: null,
+                        fillRow: false,
+                        textScale:
+                            MediaQuery.textScalerOf(context).scale(15) / 15,
+                      );
                 crossAxisCount = metrics.columns;
                 if (itemCount == 0) {
                   return SliverFillRemaining(
@@ -344,10 +316,12 @@ class _FolderGalleryState extends State<FolderGallery> {
                   );
                 }
                 return SliverPadding(
-                  padding: EdgeInsets.fromLTRB(
+                  padding: EdgeInsetsDirectional.fromSTEB(
                     horizontal,
                     8,
-                    horizontal,
+                    horizontal +
+                        (contentWidth - metrics.gridWidth)
+                            .clamp(0.0, double.infinity),
                     84,
                   ),
                   sliver: SliverGrid(
@@ -365,6 +339,7 @@ class _FolderGalleryState extends State<FolderGallery> {
                               'gallery-draft-${draft.kind}-${draft.parentId}',
                             ),
                             draft: draft,
+                            thumbnail: widget.thumbnails,
                             onCancel: controller.cancelEditing,
                             onSubmitted: controller.commitDraft,
                           );
@@ -377,6 +352,7 @@ class _FolderGalleryState extends State<FolderGallery> {
                         }
                         final card = FolderGalleryCard(
                           key: ValueKey('gallery-card-${view.id}'),
+                          thumbnail: widget.thumbnails,
                           item: row.item,
                           view: view,
                           preview: widget.previewCache.previewFor(
@@ -386,10 +362,20 @@ class _FolderGalleryState extends State<FolderGallery> {
                           userProfile: widget.userProfile,
                           selected: controller.selection.contains(view.id),
                           editing: controller.editingId == view.id,
+                          childCount: row.item.isFolder &&
+                                  !row.item.readsFromService &&
+                                  controller.hasLoaded(view.id)
+                              ? controller.childrenOf(view.id).length
+                              : null,
+                          onRetry: () {
+                            widget.previewCache.invalidate(view.id);
+                            setState(() {});
+                          },
                           searchPath: controller.query.isEmpty
                               ? null
                               : controller.relativePathFor(view.id),
                           onTap: () => _activate(row.item, entries),
+                          canRename: controller.canRename(view.id),
                           onRename: () => widget.onRename(view.id),
                           onRenameSubmitted: controller.commitRename,
                           onRenameCancelled: controller.cancelEditing,
@@ -404,7 +390,10 @@ class _FolderGalleryState extends State<FolderGallery> {
                         );
                         return _GalleryDragTarget(
                           key: ValueKey('gallery-drag-${view.id}'),
-                          enabled: controller.query.isEmpty,
+                          enabled: controller.query.isEmpty &&
+                              controller.canWriteTo(
+                                row.item.isFolder ? view.id : view.parentViewId,
+                              ),
                           target: view,
                           item: row.item,
                           onAccept: (dragged) {
@@ -428,8 +417,9 @@ class _FolderGalleryState extends State<FolderGallery> {
                               );
                             }
                           },
-                          child: controller.query.isEmpty
-                              ? Draggable<ViewPB>(
+                          child: controller.query.isEmpty &&
+                                  controller.canWriteTo(view.id)
+                              ? _GalleryDraggable(
                                   data: view,
                                   feedback:
                                       _GalleryDragFeedback(item: row.item),
@@ -437,12 +427,15 @@ class _FolderGalleryState extends State<FolderGallery> {
                                     opacity: 0.32,
                                     child: card,
                                   ),
-                                  child: card,
+                                  // Same wrapper at rest and during a drag:
+                                  // dim paint without remounting the media.
+                                  child: Opacity(opacity: 1, child: card),
                                 )
                               : card,
                         );
                       },
                       childCount: itemCount,
+                      findChildIndexCallback: (key) => childIndices[key],
                     ),
                   ),
                 );
@@ -513,6 +506,17 @@ class _FolderGalleryState extends State<FolderGallery> {
   ) {
     if (event is! KeyDownEvent || entries.isEmpty) {
       return KeyEventResult.ignored;
+    }
+    // Keep list navigation for a focused card, but let native header/overflow
+    // buttons and text fields reach their own Shortcuts/Actions. In particular,
+    // swallowing Enter here prevents the Gallery button from opening its menu.
+    if (!focusNode.hasPrimaryFocus) {
+      final primary = FocusManager.instance.primaryFocus;
+      final card =
+          primary?.context?.findAncestorStateOfType<_FolderGalleryCardState>();
+      if (card == null || primary != card._focusNode) {
+        return KeyEventResult.ignored;
+      }
     }
     final controller = widget.controller;
     final key = event.logicalKey;
@@ -605,6 +609,10 @@ class FolderGalleryCard extends StatefulWidget {
     required this.onMore,
     required this.onContextMenu,
     this.searchPath,
+    this.canRename = true,
+    this.childCount,
+    this.onRetry,
+    this.thumbnail = false,
   });
 
   final WorkspaceExplorerItem item;
@@ -613,7 +621,11 @@ class FolderGalleryCard extends StatefulWidget {
   final UserProfilePB? userProfile;
   final bool selected;
   final bool editing;
+  final bool canRename;
+  final bool thumbnail;
   final String? searchPath;
+  final int? childCount;
+  final VoidCallback? onRetry;
   final VoidCallback onTap;
   final VoidCallback onRename;
   final Future<bool> Function(String) onRenameSubmitted;
@@ -626,154 +638,239 @@ class FolderGalleryCard extends StatefulWidget {
 }
 
 class _FolderGalleryCardState extends State<FolderGalleryCard> {
-  bool hovered = false;
-  bool appeared = false;
+  final _focusNode = FocusNode(debugLabel: 'Folder gallery card');
+  bool _focused = false;
+  bool _hovered = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        setState(() => appeared = true);
-      }
-    });
+    FocusManager.instance.addListener(_syncFocus);
+  }
+
+  void _syncFocus() {
+    final focused = _focusNode.hasFocus;
+    if (mounted && _focused != focused) {
+      setState(() => _focused = focused);
+    }
+  }
+
+  void _setHovered(bool hovered) {
+    if (_hovered != hovered) {
+      setState(() => _hovered = hovered);
+    }
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeListener(_syncFocus);
+    _focusNode.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
     final isPaper = PaperTheme.isEnabled(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final background = widget.selected
-        ? Color.alphaBlend(
-            palette.accent.withValues(alpha: isPaper ? 0.06 : 0.045),
-            palette.surface,
-          )
-        : hovered
-            ? Color.alphaBlend(
-                palette.accent.withValues(alpha: isDark ? 0.026 : 0.016),
-                palette.surface,
-              )
-            : palette.surface;
-
-    return AnimatedOpacity(
-      opacity: appeared ? 1 : 0,
-      duration: const Duration(milliseconds: 240),
-      curve: Curves.easeOutCubic,
-      child: AnimatedScale(
-        scale: appeared ? 1 : 0.992,
-        duration: const Duration(milliseconds: 240),
-        curve: Curves.easeOutCubic,
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onEnter: (_) => setState(() => hovered = true),
-          onExit: (_) => setState(() => hovered = false),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 210),
-            curve: Curves.easeOutCubic,
-            transform: Matrix4.translationValues(0, hovered ? -2.5 : 0, 0),
-            decoration: BoxDecoration(
-              color: background,
-              borderRadius: BorderRadius.circular(22),
-              boxShadow: [
-                BoxShadow(
-                  color: palette.shadow.withValues(
-                    alpha: hovered
-                        ? isDark
-                            ? 0.28
-                            : 0.13
-                        : isDark
-                            ? 0.20
-                            : 0.075,
-                  ),
-                  blurRadius: hovered ? 48 : 38,
-                  offset: Offset(0, hovered ? 19 : 15),
-                  spreadRadius: hovered ? -16 : -15,
-                ),
-                BoxShadow(
-                  color: palette.shadow.withValues(
-                    alpha: hovered
-                        ? isDark
-                            ? 0.15
-                            : 0.075
-                        : isDark
-                            ? 0.11
-                            : 0.045,
-                  ),
-                  blurRadius: hovered ? 14 : 10,
-                  offset: const Offset(0, 5),
-                  spreadRadius: -5,
-                ),
-                if (widget.selected)
-                  BoxShadow(
-                    color: palette.accent.withValues(alpha: 0.20),
-                    blurRadius: 28,
-                    spreadRadius: -5,
-                  ),
-              ],
+    final content = Semantics(
+      button: true,
+      selected: widget.selected,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (isPaper && !widget.thumbnail)
+            const Positioned.fill(
+              child: IgnorePointer(child: _PaperTexture()),
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(22),
-              child: Stack(
-                // The grid hands every card the same height; the content
-                // stretches to fill it so no card is left short.
-                fit: StackFit.expand,
-                children: [
-                  if (isPaper)
-                    const Positioned.fill(
-                      child: IgnorePointer(child: _PaperTexture()),
-                    ),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: widget.onTap,
-                    onSecondaryTapDown: (details) =>
-                        widget.onContextMenu(details.globalPosition),
-                    child: FutureBuilder<FolderGalleryPreview>(
-                      future: widget.preview,
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData) {
-                          return _GalleryCardSkeleton(
-                            item: widget.item,
-                            editing: widget.editing,
-                            onRename: widget.onRename,
-                            onRenameSubmitted: widget.onRenameSubmitted,
-                            onRenameCancelled: widget.onRenameCancelled,
-                          );
-                        }
-                        return _GalleryCardContent(
-                          item: widget.item,
-                          view: widget.view,
-                          preview: snapshot.data!,
-                          userProfile: widget.userProfile,
-                          editing: widget.editing,
-                          searchPath: widget.searchPath,
-                          onRename: widget.onRename,
-                          onRenameSubmitted: widget.onRenameSubmitted,
-                          onRenameCancelled: widget.onRenameCancelled,
-                        );
-                      },
-                    ),
+          GestureDetector(
+            key: const ValueKey('folder-gallery-card-content'),
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onTap,
+            onSecondaryTapDown: (details) =>
+                widget.onContextMenu(details.globalPosition),
+            child: widget.thumbnail
+                ? _buildThumbnail(context)
+                : FutureBuilder<FolderGalleryPreview>(
+                    future: widget.preview,
+                    builder: (context, snapshot) {
+                      // Loading changes the preview, never an active editor.
+                      return _GalleryCardContent(
+                        item: widget.item,
+                        view: widget.view,
+                        preview:
+                            snapshot.connectionState == ConnectionState.done
+                                ? snapshot.data
+                                : null,
+                        previewFailed:
+                            snapshot.connectionState == ConnectionState.done &&
+                                (snapshot.hasError || snapshot.data == null),
+                        childCount: widget.childCount,
+                        onRetry: widget.onRetry,
+                        userProfile: widget.userProfile,
+                        editing: widget.editing,
+                        searchPath: widget.searchPath,
+                        onTap: widget.onTap,
+                        onRename: widget.canRename ? widget.onRename : null,
+                        onRenameSubmitted: widget.onRenameSubmitted,
+                        onRenameCancelled: widget.onRenameCancelled,
+                      );
+                    },
                   ),
-                  Positioned(
-                    top: 14,
-                    right: 14,
-                    child: IgnorePointer(
-                      ignoring: !hovered,
-                      child: AnimatedOpacity(
-                        opacity: hovered ? 1 : 0,
-                        duration: const Duration(milliseconds: 180),
-                        curve: Curves.easeOutCubic,
-                        child: _GalleryOverflowAction(
-                          onMore: widget.onMore,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          ),
+          PositionedDirectional(
+            top: WorkspaceTokens.space2,
+            end: WorkspaceTokens.space2,
+            child: PreviewToolbar(
+              keepVisible: widget.selected || widget.editing || _focused,
+              child: _GalleryOverflowAction(onMore: widget.onMore),
             ),
           ),
+        ],
+      ),
+    );
+    return Focus(
+      focusNode: _focusNode,
+      canRequestFocus: !widget.editing,
+      // A removed editor can detach before onFocusChange(false). Reconcile
+      // against the settled focus tree as well as ordinary focus callbacks.
+      onFocusChange: (_) => _syncFocus(),
+      onKeyEvent: _handleKeyEvent,
+      child: PreviewToolbarRegion(
+        child: MouseRegion(
+          cursor: SystemMouseCursors.click,
+          onEnter: (_) => _setHovered(true),
+          onHover: (_) => _setHovered(true),
+          onExit: (_) => _setHovered(false),
+          child: widget.thumbnail
+              ? content
+              : GalleryCardSurface(
+                  selected: widget.selected,
+                  focused: _focused,
+                  hovered: _hovered,
+                  child: content,
+                ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildThumbnail(BuildContext context) {
+    final title = widget.item.name.isEmpty
+        ? LocaleKeys.workspaceFolderExplorer_untitled.tr()
+        : widget.item.name;
+    return FolderThumbnailTile(
+      selected: widget.selected,
+      focused: _focused,
+      hovered: _hovered,
+      preview: FolderGalleryPreviewThumbnail(
+        item: widget.item,
+        view: widget.view,
+        preview: widget.preview,
+        userProfile: widget.userProfile,
+        height: double.infinity,
+        compact: true,
+        lightweight: true,
+        borderRadius: BorderRadius.zero,
+        onRetry: widget.onRetry,
+      ),
+      name: Tooltip(
+        message: [title, if (widget.searchPath != null) widget.searchPath!]
+            .join('\n'),
+        excludeFromSemantics: true,
+        child: WorkspaceInlineEditableText(
+          key: const ValueKey('folder-thumbnail-name'),
+          text: title,
+          editingValue: widget.item.name,
+          editing: widget.editing,
+          onSubmitted: widget.onRenameSubmitted,
+          onCancelled: widget.onRenameCancelled,
+          onTap: widget.onTap,
+          onDoubleTap: widget.canRename ? widget.onRename : null,
+          maxLines: 2,
+          selectFileStem: widget.item.isFile,
+          style: WorkspaceTypography.style(context, WorkspaceTextRole.body)
+              .copyWith(fontSize: 13, height: 1.4),
+        ),
+      ),
+    );
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    // The title editor and native overflow button keep their own key bindings.
+    if (!node.hasPrimaryFocus || widget.editing || event is! KeyDownEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (isWorkspaceRenameShortcut(Theme.of(context).platform, key)) {
+      if (widget.canRename) widget.onRename();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.space) {
+      widget.onTap();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.contextMenu ||
+        (key == LogicalKeyboardKey.f10 &&
+            HardwareKeyboard.instance.isShiftPressed)) {
+      final box = context.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) {
+        widget.onContextMenu(box.localToGlobal(box.size.center(Offset.zero)));
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+}
+
+/// A square contact-sheet preview and a plain name below it. No Gallery footer,
+/// fabricated metadata, elevation, or additional gesture/focus owner.
+class FolderThumbnailTile extends StatelessWidget {
+  const FolderThumbnailTile({
+    super.key,
+    required this.preview,
+    required this.name,
+    this.selected = false,
+    this.focused = false,
+    this.hovered = false,
+  });
+
+  final Widget preview;
+  final Widget name;
+  final bool selected;
+  final bool focused;
+  final bool hovered;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = FolderExplorerPalette.of(context);
+    final corners = BorderRadius.circular(10);
+    return Container(
+      key: const ValueKey('folder-thumbnail-surface'),
+      decoration: BoxDecoration(
+        color: selected
+            ? palette.selected
+            : palette.hover.withValues(alpha: hovered ? palette.hover.a : 0),
+        borderRadius: corners,
+      ),
+      foregroundDecoration: BoxDecoration(
+        borderRadius: corners,
+        border: focused ? Border.all(color: palette.accent, width: 1.5) : null,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          AspectRatio(
+            key: const ValueKey('folder-thumbnail-square'),
+            aspectRatio: 1,
+            child: ClipRRect(borderRadius: corners, child: preview),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+              child: name,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -786,19 +883,27 @@ class _GalleryCardContent extends StatelessWidget {
     required this.preview,
     required this.userProfile,
     required this.editing,
+    required this.onTap,
     required this.onRename,
     required this.onRenameSubmitted,
     required this.onRenameCancelled,
+    required this.previewFailed,
+    this.childCount,
+    this.onRetry,
     this.searchPath,
   });
 
   final WorkspaceExplorerItem item;
   final ViewPB view;
-  final FolderGalleryPreview preview;
+  final FolderGalleryPreview? preview;
+  final bool previewFailed;
+  final int? childCount;
+  final VoidCallback? onRetry;
   final UserProfilePB? userProfile;
   final bool editing;
   final String? searchPath;
-  final VoidCallback onRename;
+  final VoidCallback onTap;
+  final VoidCallback? onRename;
   final Future<bool> Function(String) onRenameSubmitted;
   final VoidCallback onRenameCancelled;
 
@@ -806,12 +911,20 @@ class _GalleryCardContent extends StatelessWidget {
   Widget build(BuildContext context) {
     final cover = view.cover;
     final previewMode = view.previewMode;
-    final hasMediaPreview = preview.hasHero ||
-        {
-          FolderGalleryPreviewKind.image,
-          FolderGalleryPreviewKind.pdf,
-          FolderGalleryPreviewKind.video,
-        }.contains(preview.kind);
+    final isChat = view.layout == ViewLayoutPB.Chat;
+    final data = isChat ? FolderGalleryPreviewParser.chat(view) : preview;
+    final showsCover =
+        previewMode == ViewPreviewMode.cover && cover != null && !cover.isNone;
+    final showsFailure = !showsCover &&
+        !isChat &&
+        (previewFailed || (data?.unavailable ?? false));
+    final hasMediaPreview = data != null &&
+        (data.hasHero ||
+            {
+              FolderGalleryPreviewKind.image,
+              FolderGalleryPreviewKind.pdf,
+              FolderGalleryPreviewKind.video,
+            }.contains(data.kind));
     return LayoutBuilder(
       builder: (context, constraints) {
         final density = GalleryCardDensity.forWidth(constraints.maxWidth);
@@ -821,30 +934,44 @@ class _GalleryCardContent extends StatelessWidget {
             Expanded(
               child: KeyedSubtree(
                 key: const ValueKey('folder-gallery-preview-stage'),
-                child: previewMode == ViewPreviewMode.cover && cover != null
-                    ? ViewCoverImage(
-                        cover: cover,
-                        userProfile: userProfile,
-                        width: double.infinity,
-                      )
-                    : previewMode == ViewPreviewMode.content && item.isFolder
-                        ? FolderContentPreviewThumbnail(
-                            folder: view,
-                            userProfile: userProfile,
-                          )
-                        : hasMediaPreview
-                            ? _GalleryMediaPreview(
-                                preview: preview,
-                                userProfile: userProfile,
-                              )
-                            : _GalleryPreviewStage(
-                                item: item,
-                                preview: preview,
-                                userProfile: userProfile,
-                              ),
+                // Only the thumbnail is inert. The title, overflow menu and
+                // recovery button must still own their respective gestures.
+                child: IgnorePointer(
+                  ignoring: !showsFailure,
+                  child: showsCover
+                      ? ViewCoverImage(
+                          cover: cover,
+                          userProfile: userProfile,
+                          width: double.infinity,
+                        )
+                      : showsFailure
+                          ? _GalleryUnavailablePreview(onRetry: onRetry)
+                          : data == null
+                              ? const _GalleryCardSkeleton()
+                              : previewMode == ViewPreviewMode.content &&
+                                      item.isFolder
+                                  ? FolderContentPreviewThumbnail(
+                                      folder: view,
+                                      userProfile: userProfile,
+                                      childCount: childCount,
+                                    )
+                                  : hasMediaPreview
+                                      ? _GalleryMediaPreview(
+                                          preview: data,
+                                          userProfile: userProfile,
+                                        )
+                                      : _GalleryPreviewStage(
+                                          item: item,
+                                          view: view,
+                                          childCount: childCount,
+                                          preview: data,
+                                          userProfile: userProfile,
+                                        ),
+                ),
               ),
             ),
-            Padding(
+            GalleryCardFooter(
+              key: const ValueKey('folder-gallery-footer'),
               padding: density.footerPadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -855,17 +982,20 @@ class _GalleryCardContent extends StatelessWidget {
                     editing: editing,
                     searchPath: searchPath,
                     density: density,
+                    onTap: onTap,
                     onRename: onRename,
                     onSubmitted: onRenameSubmitted,
                     onCancelled: onRenameCancelled,
                   ),
-                  SizedBox(height: density.titleGap),
-                  _GalleryMetadata(
-                    item: item,
-                    view: view,
-                    preview: preview,
-                    density: density,
-                  ),
+                  if (data != null) ...[
+                    SizedBox(height: density.titleGap),
+                    _GalleryMetadata(
+                      item: item,
+                      view: view,
+                      preview: data,
+                      density: density,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -882,29 +1012,55 @@ class _GalleryPreviewStage extends StatelessWidget {
     required this.preview,
     required this.userProfile,
     this.compact = false,
+    this.view,
+    this.childCount,
   });
 
   final WorkspaceExplorerItem item;
+  final ViewPB? view;
+  final int? childCount;
   final FolderGalleryPreview preview;
   final UserProfilePB? userProfile;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    final theme = Theme.of(context);
-    final isPaper = PaperTheme.isEnabled(context);
-    final base = EditorSurfaceStyle.previewBackgroundFor(
-      theme.brightness,
-      palette.floatingSurface,
-      isPaper: isPaper,
-    );
-    final start = Color.alphaBlend(
-      palette.accent.withValues(
-        alpha: theme.brightness == Brightness.dark ? 0.035 : 0.018,
-      ),
-      base,
-    );
+    if (preview.kind == FolderGalleryPreviewKind.chat ||
+        view?.layout == ViewLayoutPB.Chat) {
+      return _GalleryChatPreview(item: item, view: view);
+    }
+    if (preview.kind == FolderGalleryPreviewKind.folder) {
+      return FolderGalleryCollectionArtwork(
+        item: item,
+        view: view,
+        childCount: childCount,
+      );
+    }
+    if (!preview.unavailable &&
+        !preview.hasHero &&
+        {
+          FolderGalleryPreviewKind.document,
+          FolderGalleryPreviewKind.code,
+          FolderGalleryPreviewKind.file,
+        }.contains(preview.kind) &&
+        preview.blocks.every((block) => block.plainText.trim().isEmpty)) {
+      return _GalleryIdentityPreview(
+        key: const ValueKey('folder-gallery-file-identity'),
+        glyph: _GalleryIdentityGlyph(item: item, view: view),
+      );
+    }
+    final database = preview.database;
+    if (!preview.unavailable &&
+        preview.kind == FolderGalleryPreviewKind.database &&
+        database != null &&
+        database.totalRowCount == 0 &&
+        database.rows.isEmpty) {
+      return _GalleryIdentityPreview(
+        key: const ValueKey('folder-gallery-empty-table-artwork'),
+        glyph: _GalleryIdentityGlyph(item: item, view: view),
+      );
+    }
+    final base = _galleryIdentitySurface(context);
     final padding = compact
         ? switch (preview.kind) {
             FolderGalleryPreviewKind.folder => EdgeInsets.zero,
@@ -920,14 +1076,8 @@ class _GalleryPreviewStage extends StatelessWidget {
               const EdgeInsets.fromLTRB(24, 24, 24, 22),
             _ => const EdgeInsets.fromLTRB(27, 30, 27, 24),
           };
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [start, base],
-        ),
-      ),
+    return ColoredBox(
+      color: base,
       child: Padding(
         padding: padding,
         child: _GalleryPreviewBody(
@@ -944,6 +1094,7 @@ class _GalleryCardTitle extends StatelessWidget {
   const _GalleryCardTitle({
     required this.item,
     required this.editing,
+    required this.onTap,
     required this.onRename,
     required this.onSubmitted,
     required this.onCancelled,
@@ -957,19 +1108,18 @@ class _GalleryCardTitle extends StatelessWidget {
   final bool editing;
   final String? searchPath;
   final GalleryCardDensity density;
-  final VoidCallback onRename;
+  final VoidCallback onTap;
+  final VoidCallback? onRename;
   final Future<bool> Function(String) onSubmitted;
   final VoidCallback onCancelled;
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    final titleStyle = TextStyle(
-      color: palette.textPrimary,
-      fontFamily: 'Inter',
+    final titleStyle = WorkspaceTypography.style(
+      context,
+      WorkspaceTextRole.cardTitle,
+    ).copyWith(
       fontSize: density.titleSize,
-      height: 1.24,
-      fontWeight: FontWeight.w600,
       letterSpacing: density.titleSpacing,
     );
     final title = item.name.isEmpty
@@ -993,31 +1143,49 @@ class _GalleryCardTitle extends StatelessWidget {
               const SizedBox(width: 8),
             ],
             Expanded(
-              child: WorkspaceInlineEditableText(
-                text: title,
-                editingValue: item.name,
-                editing: editing,
-                onSubmitted: onSubmitted,
-                onCancelled: onCancelled,
-                onDoubleTap: onRename,
-                maxLines: 2,
-                selectFileStem: item.isFile,
-                style: titleStyle,
+              child: Tooltip(
+                message: title,
+                excludeFromSemantics: true,
+                child: WorkspaceInlineEditableText(
+                  text: title,
+                  editingValue: item.name,
+                  editing: editing,
+                  onSubmitted: onSubmitted,
+                  onCancelled: onCancelled,
+                  onTap: onTap,
+                  onDoubleTap: onRename,
+                  // The display opens a page; only the actual name editor
+                  // should advertise the text cursor.
+                  display: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: titleStyle,
+                    ),
+                  ),
+                  maxLines: 2,
+                  selectFileStem: item.isFile,
+                  style: titleStyle,
+                ),
               ),
             ),
           ],
         ),
         if (searchPath != null && searchPath!.isNotEmpty) ...[
-          const SizedBox(height: 7),
-          Text(
-            searchPath!,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: palette.textMuted,
-              fontFamily: 'Inter',
-              fontSize: 11,
-              height: 1.2,
+          const SizedBox(height: WorkspaceTokens.space1),
+          Tooltip(
+            message: searchPath!,
+            excludeFromSemantics: true,
+            child: Text(
+              searchPath!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: WorkspaceTypography.style(
+                context,
+                WorkspaceTextRole.metadata,
+              ).copyWith(fontSize: density.metadataSize),
             ),
           ),
         ],
@@ -1043,6 +1211,7 @@ class _GalleryPreviewBody extends StatelessWidget {
       return const _GalleryUnavailablePreview();
     }
     return switch (preview.kind) {
+      FolderGalleryPreviewKind.chat => _GalleryChatPreview(item: item),
       FolderGalleryPreviewKind.folder =>
         FolderGalleryCollectionArtwork(item: item),
       FolderGalleryPreviewKind.database => _GalleryDatabasePreview(
@@ -1050,13 +1219,9 @@ class _GalleryPreviewBody extends StatelessWidget {
           unavailable: preview.unavailable,
         ),
       FolderGalleryPreviewKind.code => _GalleryCodePreview(preview: preview),
-      FolderGalleryPreviewKind.file => _GalleryGenericFilePreview(
-          item: item,
-          preview: preview,
-        ),
-      FolderGalleryPreviewKind.document => preview.blocks.isEmpty
-          ? _GalleryBlankDocumentPreview(item: item)
-          : FolderGalleryRichTextPreview(blocks: preview.blocks),
+      FolderGalleryPreviewKind.file ||
+      FolderGalleryPreviewKind.document =>
+        FolderGalleryRichTextPreview(blocks: preview.blocks),
       FolderGalleryPreviewKind.image ||
       FolderGalleryPreviewKind.pdf ||
       FolderGalleryPreviewKind.video =>
@@ -1135,7 +1300,7 @@ class _GalleryDocumentBlock extends StatelessWidget {
         decoration: BoxDecoration(
           color: EditorSurfaceStyle.calloutBackgroundFor(
             Theme.of(context).brightness,
-            palette.hover.withValues(alpha: 0.52),
+            palette.hover.withValues(alpha: palette.hover.a * 0.52),
             isPaper: PaperTheme.isEnabled(context),
           ),
           borderRadius: BorderRadius.circular(8),
@@ -1311,7 +1476,7 @@ class _MiniCodeBlock extends StatelessWidget {
             decoration: BoxDecoration(
               color: EditorSurfaceStyle.codeBlockHeaderBackgroundFor(
                 theme.brightness,
-                palette.hover.withValues(alpha: 0.44),
+                palette.hover.withValues(alpha: palette.hover.a * 0.44),
                 isPaper: isPaper,
               ),
               borderRadius: const BorderRadius.vertical(
@@ -1370,7 +1535,7 @@ class _GalleryMediaPreview extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
     return ColoredBox(
-      color: palette.hover.withValues(alpha: 0.26),
+      color: palette.hover.withValues(alpha: palette.hover.a * 0.26),
       child: switch (preview.kind) {
         FolderGalleryPreviewKind.image => _GalleryImageThumbnail(
             url: preview.heroUrl,
@@ -1416,15 +1581,13 @@ class _GalleryImageThumbnail extends StatelessWidget {
         height: double.infinity,
         userProfilePB: userProfile,
         progressIndicatorBuilder: (_, __, ___) => const _GalleryMediaLoading(),
-        errorWidgetBuilder: (_, __, ___) =>
-            const _GalleryMediaFallback(icon: Icons.broken_image_rounded),
+        errorWidgetBuilder: (_, __, ___) => const _GalleryUnavailablePreview(),
       );
     }
     return Image.file(
       File(source),
       fit: BoxFit.cover,
-      errorBuilder: (_, __, ___) =>
-          const _GalleryMediaFallback(icon: Icons.broken_image_rounded),
+      errorBuilder: (_, __, ___) => const _GalleryUnavailablePreview(),
     );
   }
 }
@@ -1445,8 +1608,11 @@ class _GalleryPdfThumbnail extends StatelessWidget {
       return const _GalleryMediaFallback(icon: Icons.picture_as_pdf_rounded);
     }
     Widget builder(BuildContext context, PdfDocument? document) {
-      if (document == null || document.pages.isEmpty) {
+      if (document == null) {
         return const _GalleryMediaLoading();
+      }
+      if (document.pages.isEmpty) {
+        return const _GalleryUnavailablePreview();
       }
       return Padding(
         padding: const EdgeInsets.fromLTRB(18, 13, 18, 0),
@@ -1496,7 +1662,7 @@ class _GalleryPdfThumbnail extends StatelessWidget {
       );
     }
     if (!File(source).existsSync()) {
-      return const _GalleryMediaFallback(icon: Icons.picture_as_pdf_rounded);
+      return const _GalleryUnavailablePreview();
     }
     return PdfDocumentViewBuilder.file(source, builder: builder);
   }
@@ -1659,228 +1825,160 @@ class _MediaBadge extends StatelessWidget {
 }
 
 class FolderGalleryCollectionArtwork extends StatelessWidget {
-  const FolderGalleryCollectionArtwork({super.key, required this.item});
+  const FolderGalleryCollectionArtwork({
+    super.key,
+    required this.item,
+    this.view,
+    this.childCount,
+  });
 
   final WorkspaceExplorerItem item;
+  final ViewPB? view;
+
+  /// Null means unknown, not zero. Never enumerate children just for artwork.
+  final int? childCount;
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    final theme = Theme.of(context);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        CustomPaint(
-          painter: _CollectionArtworkPainter(
-            seed: _stableHash(item.id),
-            accent: palette.accent,
-            surface: palette.floatingSurface,
-            background: palette.surface,
-            line: palette.textMuted,
-            shadow: palette.shadow,
-            isDark: theme.brightness == Brightness.dark,
-            isPaper: PaperTheme.isEnabled(context),
-          ),
-        ),
-        Positioned(
-          left: 22,
-          bottom: 18,
-          child: Row(
-            children: [
-              Container(
-                width: 5,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: palette.accent.withValues(alpha: 0.74),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                LocaleKeys.workspaceFolderExplorer_collection
-                    .tr()
-                    .toUpperCase(),
-                style: TextStyle(
-                  color: palette.textSecondary.withValues(alpha: 0.76),
-                  fontFamily: 'Inter',
-                  fontSize: 9.5,
-                  height: 1,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1.15,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+    // A protobuf listing can omit children until that folder is opened. Only
+    // a supplied loaded count may say zero; service-backed listings are not
+    // represented by childViews at all.
+    final listed = view?.childViews;
+    final count = childCount ??
+        (!item.readsFromService && listed != null && listed.isNotEmpty
+            ? listed.length
+            : null);
+    return _GalleryIdentityPreview(
+      key: const ValueKey('folder-gallery-folder-identity'),
+      glyph: _GalleryIdentityGlyph(item: item, view: view),
+      caption: count == null
+          ? null
+          : LocaleKeys.workspaceFolderExplorer_itemCount.tr(args: ['$count']),
     );
   }
 }
 
-class _CollectionArtworkPainter extends CustomPainter {
-  const _CollectionArtworkPainter({
-    required this.seed,
-    required this.accent,
-    required this.surface,
-    required this.background,
-    required this.line,
-    required this.shadow,
-    required this.isDark,
-    required this.isPaper,
+class _GalleryIdentityGlyph extends StatelessWidget {
+  const _GalleryIdentityGlyph({
+    required this.item,
+    this.view,
+    this.defaultName,
   });
 
-  final int seed;
-  final Color accent;
-  final Color surface;
-  final Color background;
-  final Color line;
-  final Color shadow;
-  final bool isDark;
-  final bool isPaper;
+  final WorkspaceExplorerItem item;
+  final ViewPB? view;
+  final String? defaultName;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final backgroundPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Color.alphaBlend(
-            accent.withValues(alpha: isDark ? 0.18 : 0.10),
-            background,
-          ),
-          Color.alphaBlend(
-            accent.withValues(alpha: isPaper ? 0.035 : 0.018),
-            surface,
-          ),
-        ],
-      ).createShader(rect);
-    canvas.drawRect(rect, backgroundPaint);
-
-    final glowPaint = Paint()
-      ..color = accent.withValues(alpha: isDark ? 0.12 : 0.07)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 34);
-    final shift = (seed % 17) / 17;
-    canvas
-      ..drawCircle(
-        Offset(size.width * (0.18 + shift * 0.08), size.height * 0.22),
-        size.shortestSide * 0.31,
-        glowPaint,
-      )
-      ..drawCircle(
-        Offset(size.width * 0.83, size.height * (0.47 + shift * 0.08)),
-        size.shortestSide * 0.25,
-        glowPaint..color = accent.withValues(alpha: isDark ? 0.08 : 0.045),
-      );
-
-    final direction = seed.isEven ? 1.0 : -1.0;
-    _drawPage(
-      canvas,
-      Rect.fromLTWH(
-        size.width * 0.12,
-        size.height * 0.20,
-        size.width * 0.40,
-        size.height * 0.57,
-      ),
-      -0.09 * direction,
-      0.78,
-      0,
-    );
-    _drawPage(
-      canvas,
-      Rect.fromLTWH(
-        size.width * 0.49,
-        size.height * 0.13,
-        size.width * 0.39,
-        size.height * 0.60,
-      ),
-      0.075 * direction,
-      0.86,
-      1,
-    );
-    _drawPage(
-      canvas,
-      Rect.fromLTWH(
-        size.width * 0.29,
-        size.height * 0.22,
-        size.width * 0.45,
-        size.height * 0.61,
-      ),
-      -0.012 * direction,
-      1,
-      2,
-    );
-  }
-
-  void _drawPage(
-    Canvas canvas,
-    Rect rect,
-    double angle,
-    double opacity,
-    int variant,
-  ) {
-    canvas
-      ..save()
-      ..translate(rect.center.dx, rect.center.dy)
-      ..rotate(angle)
-      ..translate(-rect.center.dx, -rect.center.dy);
-    final page = RRect.fromRectAndRadius(rect, const Radius.circular(13));
-    canvas.drawShadow(
-      Path()..addRRect(page),
-      shadow.withValues(alpha: isDark ? 0.30 : 0.16),
-      16,
-      false,
-    );
-    canvas.drawRRect(
-      page,
-      Paint()..color = surface.withValues(alpha: opacity),
-    );
-
-    final left = rect.left + rect.width * 0.13;
-    final right = rect.right - rect.width * 0.13;
-    final top = rect.top + rect.height * 0.14;
-    final titlePaint = Paint()
-      ..color = accent.withValues(alpha: 0.28 * opacity)
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 4.2;
-    canvas.drawLine(
-      Offset(left, top),
-      Offset(left + rect.width * (variant == 1 ? 0.44 : 0.56), top),
-      titlePaint,
-    );
-
-    final linePaint = Paint()
-      ..color = line.withValues(alpha: 0.16 * opacity)
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = 2.2;
-    for (var index = 0; index < 6; index++) {
-      final y = top + 22 + index * 15;
-      final widthFactor = switch ((index + variant) % 4) {
-        0 => 1.0,
-        1 => 0.82,
-        2 => 0.91,
-        _ => 0.64,
-      };
-      canvas.drawLine(
-        Offset(left, y),
-        Offset(left + (right - left) * widthFactor, y),
-        linePaint,
+  Widget build(BuildContext context) {
+    final saved = view?.icon.toEmojiIconData();
+    if (saved != null && saved.isNotEmpty) {
+      return MediaQuery.withNoTextScaling(
+        child: RawEmojiIconWidget(emoji: saved, emojiSize: 64, lineHeight: 1),
       );
     }
-    canvas.restore();
+    final name = defaultName;
+    if (name != null) return WorkspaceGlyph.named(name, size: 64);
+    final collectionKind = item.collection?.kind;
+    if (collectionKind != null) {
+      return WorkspaceGlyph.collection(collectionKind, size: 64);
+    }
+    return WorkspaceItemIcon(
+      item: item,
+      view: view,
+      size: 64,
+      showThumbnail: false,
+    );
   }
+}
+
+class _GalleryChatPreview extends StatelessWidget {
+  const _GalleryChatPreview({required this.item, this.view});
+
+  final WorkspaceExplorerItem item;
+  final ViewPB? view;
 
   @override
-  bool shouldRepaint(_CollectionArtworkPainter oldDelegate) =>
-      seed != oldDelegate.seed ||
-      accent != oldDelegate.accent ||
-      surface != oldDelegate.surface ||
-      background != oldDelegate.background ||
-      line != oldDelegate.line ||
-      shadow != oldDelegate.shadow ||
-      isDark != oldDelegate.isDark ||
-      isPaper != oldDelegate.isPaper;
+  Widget build(BuildContext context) => Semantics(
+        key: const ValueKey('folder-gallery-chat-identity'),
+        image: true,
+        label: LocaleKeys.chat_newChat.tr(),
+        child: ExcludeSemantics(
+          child: _GalleryIdentityPreview(
+            glyph: _GalleryIdentityGlyph(
+              item: item,
+              view: view,
+              defaultName: 'ai-chat',
+            ),
+            caption: LocaleKeys.chat_newChat.tr(),
+            captionKey: const ValueKey('folder-gallery-chat-label'),
+          ),
+        ),
+      );
+}
+
+/// One bounded identity slot for empty/unpreviewable content, never a mock
+/// document. Fitting the whole group also keeps real counts safe at 2x text.
+class _GalleryIdentityPreview extends StatelessWidget {
+  const _GalleryIdentityPreview({
+    super.key,
+    required this.glyph,
+    this.caption,
+    this.captionKey = const ValueKey('folder-gallery-child-count'),
+  });
+
+  final Widget glyph;
+  final String? caption;
+  final Key captionKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: _galleryIdentitySurface(context),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox.square(dimension: 64, child: glyph),
+                if (caption != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    caption!,
+                    key: captionKey,
+                    style: WorkspaceTypography.style(
+                      context,
+                      WorkspaceTextRole.metadata,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Color _galleryIdentitySurface(BuildContext context) {
+  return context
+          .dependOnInheritedWidgetOfExactType<_GalleryPreviewSurface>()
+          ?.color ??
+      GalleryCardPalette.previewSurface(context);
+}
+
+class _GalleryPreviewSurface extends InheritedWidget {
+  const _GalleryPreviewSurface({required this.color, required super.child});
+
+  final Color color;
+
+  @override
+  bool updateShouldNotify(_GalleryPreviewSurface oldWidget) =>
+      color != oldWidget.color;
 }
 
 class _GalleryDatabasePreview extends StatelessWidget {
@@ -1899,14 +1997,15 @@ class _GalleryDatabasePreview extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final isPaper = PaperTheme.isEnabled(context);
     final database = snapshot;
-    if (database == null || database.columns.isEmpty || database.rows.isEmpty) {
+    if (database == null ||
+        (database.totalRowCount > 0 &&
+            (database.columns.isEmpty || database.rows.isEmpty))) {
+      return const _GalleryUnavailablePreview();
+    }
+    if (database.rows.isEmpty) {
       return _GalleryEmptyDatabasePreview(unavailable: unavailable);
     }
-    final baseSurface = EditorSurfaceStyle.previewBackgroundFor(
-      theme.brightness,
-      palette.floatingSurface,
-      isPaper: isPaper,
-    );
+    final baseSurface = _galleryIdentitySurface(context);
     final tableSurface = Color.alphaBlend(
       palette.textPrimary.withValues(alpha: isDark ? 0.035 : 0.012),
       baseSurface,
@@ -1942,7 +2041,7 @@ class _GalleryDatabasePreview extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               alignment: Alignment.center,
-              child: Icon(
+              child: WorkspaceGlyph(
                 Icons.table_rows_rounded,
                 size: 14,
                 color: palette.accent.withValues(alpha: isDark ? 0.92 : 0.78),
@@ -2073,405 +2172,12 @@ class _GalleryEmptyDatabasePreview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    final theme = Theme.of(context);
-    final isPaper = PaperTheme.isEnabled(context);
-    final surface = EditorSurfaceStyle.previewBackgroundFor(
-      theme.brightness,
-      palette.floatingSurface,
-      isPaper: isPaper,
-    );
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: CustomPaint(
-            key: const ValueKey('folder-gallery-empty-table-artwork'),
-            painter: _EmptyTableArtworkPainter(
-              accent: palette.accent,
-              surface: surface,
-              line: palette.textPrimary,
-              shadow: palette.shadow,
-              isDark: theme.brightness == Brightness.dark,
-              isPaper: isPaper,
-            ),
-          ),
-        ),
-        if (unavailable)
-          Positioned(
-            top: 0,
-            left: 0,
-            child: Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: Color.alphaBlend(
-                  palette.textMuted.withValues(alpha: 0.08),
-                  surface,
-                ),
-                borderRadius: BorderRadius.circular(9),
-              ),
-              alignment: Alignment.center,
-              child: Icon(
-                Icons.cloud_off_rounded,
-                size: 14,
-                color: palette.textMuted,
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-class _EmptyTableArtworkPainter extends CustomPainter {
-  const _EmptyTableArtworkPainter({
-    required this.accent,
-    required this.surface,
-    required this.line,
-    required this.shadow,
-    required this.isDark,
-    required this.isPaper,
-  });
-
-  final Color accent;
-  final Color surface;
-  final Color line;
-  final Color shadow;
-  final bool isDark;
-  final bool isPaper;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) {
-      return;
-    }
-
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(size.width * 0.3, size.height * 0.48),
-        width: size.width * 0.72,
-        height: size.height * 0.68,
-      ),
-      Paint()
-        ..color = accent.withValues(
-          alpha: isDark
-              ? 0.085
-              : isPaper
-                  ? 0.055
-                  : 0.042,
-        )
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 24),
-    );
-
-    final tableRect = Rect.fromLTWH(
-      size.width * 0.07,
-      size.height * 0.12,
-      size.width * 0.86,
-      size.height * 0.74,
-    );
-    final backRect = tableRect.translate(7, 8);
-    final back = RRect.fromRectAndRadius(
-      backRect,
-      const Radius.circular(14),
-    );
-    canvas.drawRRect(
-      back,
-      Paint()
-        ..color = Color.alphaBlend(
-          accent.withValues(alpha: isDark ? 0.12 : 0.065),
-          surface,
-        ),
-    );
-
-    canvas
-      ..save()
-      ..translate(tableRect.center.dx, tableRect.center.dy)
-      ..rotate(-0.018)
-      ..translate(-tableRect.center.dx, -tableRect.center.dy);
-
-    final table = RRect.fromRectAndRadius(
-      tableRect,
-      const Radius.circular(14),
-    );
-    canvas.drawShadow(
-      Path()..addRRect(table),
-      shadow.withValues(alpha: isDark ? 0.34 : 0.14),
-      20,
-      false,
-    );
-    canvas.drawRRect(table, Paint()..color = surface);
-
-    final headerHeight = tableRect.height * 0.22;
-    final header = RRect.fromRectAndCorners(
-      Rect.fromLTWH(
-        tableRect.left,
-        tableRect.top,
-        tableRect.width,
-        headerHeight,
-      ),
-      topLeft: const Radius.circular(14),
-      topRight: const Radius.circular(14),
-    );
-    canvas.drawRRect(
-      header,
-      Paint()
-        ..color = Color.alphaBlend(
-          accent.withValues(alpha: isDark ? 0.16 : 0.09),
-          surface,
-        ),
-    );
-
-    final columnStops = [0.0, 0.48, 0.76, 1.0];
-    final separatorPaint = Paint()
-      ..color = line.withValues(alpha: isDark ? 0.09 : 0.055)
-      ..strokeWidth = 1;
-    for (final stop in columnStops.skip(1).take(2)) {
-      final x = tableRect.left + tableRect.width * stop;
-      canvas.drawLine(
-        Offset(x, tableRect.top + 8),
-        Offset(x, tableRect.bottom - 8),
-        separatorPaint,
-      );
-    }
-
-    const rowCount = 4;
-    final rowHeight = (tableRect.height - headerHeight) / rowCount;
-    for (var row = 0; row < rowCount; row++) {
-      final top = tableRect.top + headerHeight + row * rowHeight;
-      if (row.isOdd) {
-        canvas.drawRect(
-          Rect.fromLTWH(tableRect.left, top, tableRect.width, rowHeight),
-          Paint()..color = line.withValues(alpha: isDark ? 0.035 : 0.018),
-        );
-      }
-      if (row > 0) {
-        canvas.drawLine(
-          Offset(tableRect.left + 10, top),
-          Offset(tableRect.right - 10, top),
-          separatorPaint,
-        );
-      }
-    }
-
-    for (var column = 0; column < 3; column++) {
-      final left = tableRect.left + tableRect.width * columnStops[column] + 11;
-      final width =
-          tableRect.width * (columnStops[column + 1] - columnStops[column]) -
-              22;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            left,
-            tableRect.top + headerHeight * 0.42,
-            width * (column == 0 ? 0.68 : 0.54),
-            4,
-          ),
-          const Radius.circular(2),
-        ),
-        Paint()..color = line.withValues(alpha: isDark ? 0.42 : 0.26),
-      );
-    }
-
-    for (var row = 0; row < rowCount; row++) {
-      final centerY = tableRect.top + headerHeight + rowHeight * (row + 0.5);
-      final firstWidth = tableRect.width * (row.isEven ? 0.25 : 0.31);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            tableRect.left + 11,
-            centerY - 2,
-            firstWidth,
-            4,
-          ),
-          const Radius.circular(2),
-        ),
-        Paint()..color = line.withValues(alpha: isDark ? 0.24 : 0.14),
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            tableRect.left + tableRect.width * 0.48 + 11,
-            centerY - 2,
-            tableRect.width * (row.isEven ? 0.12 : 0.16),
-            4,
-          ),
-          const Radius.circular(2),
-        ),
-        Paint()..color = line.withValues(alpha: isDark ? 0.18 : 0.1),
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(
-            tableRect.left + tableRect.width * 0.76 + 11,
-            centerY - 6,
-            tableRect.width * 0.12,
-            12,
-          ),
-          const Radius.circular(6),
-        ),
-        Paint()
-          ..color = accent.withValues(
-            alpha: isDark ? 0.22 + row * 0.018 : 0.12 + row * 0.012,
-          ),
-      );
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_EmptyTableArtworkPainter oldDelegate) =>
-      accent != oldDelegate.accent ||
-      surface != oldDelegate.surface ||
-      line != oldDelegate.line ||
-      shadow != oldDelegate.shadow ||
-      isDark != oldDelegate.isDark ||
-      isPaper != oldDelegate.isPaper;
-}
-
-class _GalleryGenericFilePreview extends StatelessWidget {
-  const _GalleryGenericFilePreview({
-    required this.item,
-    required this.preview,
-  });
-
-  final WorkspaceExplorerItem item;
-  final FolderGalleryPreview preview;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    // The sheet is drawn at one size and scaled to whatever box it lands in,
-    // so the same artwork serves a full card and a thumbnail without
-    // overflowing the smaller one.
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Container(
-            width: 126,
-            height: 158,
-            padding: const EdgeInsets.fromLTRB(17, 20, 17, 16),
-            decoration: BoxDecoration(
-              color: palette.surface.withValues(alpha: 0.92),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: palette.shadow.withValues(alpha: 0.10),
-                  blurRadius: 24,
-                  offset: const Offset(0, 11),
-                  spreadRadius: -8,
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  preview.fileTypeLabel,
-                  style: TextStyle(
-                    color: palette.accent.withValues(alpha: 0.84),
-                    fontFamily: 'Inter',
-                    fontSize: 12,
-                    height: 1,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.15,
-                  ),
-                ),
-                const Spacer(),
-                for (final width in [0.92, 0.74, 0.86, 0.55]) ...[
-                  FractionallySizedBox(
-                    widthFactor: width,
-                    child: Container(
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: palette.textMuted.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ],
-            ),
-          ),
-          Positioned(
-            top: 29,
-            right: 54,
-            child: Container(
-              width: 24,
-              height: 24,
-              decoration: BoxDecoration(
-                color: palette.accent.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Center(
-                child: Text(
-                  item.name.isEmpty ? '?' : item.name.characters.first,
-                  style: TextStyle(
-                    color: palette.accent,
-                    fontFamily: 'Inter',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GalleryBlankDocumentPreview extends StatelessWidget {
-  const _GalleryBlankDocumentPreview({required this.item});
-
-  final WorkspaceExplorerItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    // Drawn at one width and scaled to fit, so a thumbnail sized box gets the
-    // same page of ruled lines without running past its bottom edge.
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.topLeft,
-      child: SizedBox(
-        width: 196,
-        child: Padding(
-          padding: const EdgeInsets.only(top: 5),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 74,
-                height: 7,
-                decoration: BoxDecoration(
-                  color: palette.textPrimary.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-              const SizedBox(height: 15),
-              for (final width in [0.92, 0.78, 0.86, 0.56, 0.72, 0.43]) ...[
-                FractionallySizedBox(
-                  widthFactor: width,
-                  child: Container(
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: palette.textMuted.withValues(alpha: 0.13),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 9),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
+    return unavailable
+        ? const _GalleryUnavailablePreview()
+        : const _GalleryIdentityPreview(
+            key: ValueKey('folder-gallery-empty-table-artwork'),
+            glyph: WorkspaceGlyph(Icons.table_chart_rounded, size: 64),
+          );
   }
 }
 
@@ -2490,10 +2196,18 @@ class _GalleryMetadata extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
+    final palette = WorkspacePalette.of(context);
+    final size = item.metadata?.size;
     final metadata = <String>[
+      if (preview.fileTypeLabel.isNotEmpty) preview.fileTypeLabel,
+      if (size != null && size >= 0)
+        '${NumberFormat.decimalPattern().format(size)} B',
       if (item.lastEdited case final modified?)
         DateFormat.MMMd().format(modified),
+      ...preview.tags.map((tag) => '#$tag'),
+    ];
+    final details = <String>[
+      ...metadata,
       if (preview.readingMinutes > 0)
         LocaleKeys.workspaceFolderExplorer_minuteRead.tr(
           args: [preview.readingMinutes.toString()],
@@ -2503,177 +2217,88 @@ class _GalleryMetadata extends StatelessWidget {
           args: [NumberFormat.compact().format(preview.wordCount)],
         ),
     ];
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       children: [
-        if (preview.tags.isNotEmpty) ...[
-          Text(
-            preview.tags.take(3).map((tag) => '#$tag').join('   '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: palette.accent.withValues(alpha: 0.72),
-              fontFamily: 'Inter',
-              fontSize: density.tagSize,
-              height: 1.2,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0.04,
-            ),
-          ),
-          const SizedBox(height: 11),
-        ],
-        Row(
-          children: [
-            Container(
-              width: 5,
-              height: 5,
-              decoration: BoxDecoration(
-                color: palette.accent.withValues(alpha: 0.58),
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 7),
-            Flexible(
+        Expanded(
+          child: Tooltip(
+            message: details.join(' · '),
+            excludeFromSemantics: true,
+            child: Semantics(
+              label: details.join(' · '),
+              excludeSemantics: true,
               child: Text(
-                preview.fileTypeLabel,
+                metadata.join(' · '),
+                key: const ValueKey('folder-gallery-metadata'),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.textMuted,
-                  fontFamily: 'Inter',
-                  fontSize: density.typeLabelSize,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.72,
-                ),
+                style: WorkspaceTypography.style(
+                  context,
+                  WorkspaceTextRole.metadata,
+                ).copyWith(fontSize: density.metadataSize),
               ),
             ),
-            if (metadata.isNotEmpty) ...[
-              Container(
-                width: 3,
-                height: 3,
-                margin: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: palette.textMuted.withValues(alpha: 0.40),
-                  shape: BoxShape.circle,
-                ),
-              ),
-              Expanded(
-                child: Text(
-                  metadata.join('   '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.textMuted,
-                    fontFamily: 'Inter',
-                    fontSize: density.metadataSize,
-                    height: 1.2,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              ),
-            ] else
-              const Spacer(),
-            if (view.isPinned)
-              Padding(
-                padding: const EdgeInsets.only(left: 5),
-                child: Tooltip(
-                  message: LocaleKeys.workspaceFolderExplorer_pinned.tr(),
-                  child: Icon(
-                    Icons.push_pin_rounded,
-                    size: 11,
-                    color: palette.accent.withValues(alpha: 0.74),
-                  ),
-                ),
-              ),
-            if (view.isFavorite)
-              Padding(
-                padding: const EdgeInsets.only(left: 5),
-                child: Icon(
-                  Icons.star_rounded,
-                  size: 12,
-                  color: palette.accent.withValues(alpha: 0.76),
-                ),
-              ),
-          ],
+          ),
         ),
+        if (view.isPinned)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 5),
+            child: Tooltip(
+              message: LocaleKeys.workspaceFolderExplorer_pinned.tr(),
+              child: Icon(
+                Icons.push_pin_rounded,
+                size: 12,
+                color: palette.accent,
+              ),
+            ),
+          ),
+        if (view.isFavorite)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 5),
+            child: Icon(Icons.star_rounded, size: 12, color: palette.accent),
+          ),
       ],
     );
   }
 }
 
-class _GalleryOverflowAction extends StatefulWidget {
+class _GalleryOverflowAction extends StatelessWidget {
   const _GalleryOverflowAction({required this.onMore});
 
   final ValueChanged<Offset> onMore;
 
   @override
-  State<_GalleryOverflowAction> createState() => _GalleryOverflowActionState();
-}
-
-class _GalleryOverflowActionState extends State<_GalleryOverflowAction> {
-  bool hovered = false;
-  bool pressed = false;
-
-  @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return Builder(
-      builder: (buttonContext) => Semantics(
-        button: true,
-        label: LocaleKeys.workspaceFolderExplorer_more.tr(),
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onEnter: (_) => setState(() => hovered = true),
-          onExit: (_) => setState(() {
-            hovered = false;
-            pressed = false;
-          }),
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTapDown: (_) => setState(() => pressed = true),
-            onTapCancel: () => setState(() => pressed = false),
-            onTapUp: (_) => setState(() => pressed = false),
-            onTap: () {
-              final box = buttonContext.findRenderObject() as RenderBox;
-              widget.onMore(
+    final label = LocaleKeys.workspaceFolderExplorer_more.tr();
+    return Shortcuts(
+      // Resolve activation before the gallery's selection/navigation handler.
+      shortcuts: const {
+        SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+        SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+      },
+      child: Tooltip(
+        message: label,
+        excludeFromSemantics: true,
+        child: IconButton(
+          key: const ValueKey('folder-gallery-more'),
+          style: WorkspaceChrome.controlStyle(context).copyWith(
+            minimumSize: const WidgetStatePropertyAll(Size.square(40)),
+            tapTargetSize: MaterialTapTargetSize.padded,
+            visualDensity: VisualDensity.standard,
+            backgroundColor: WidgetStatePropertyAll(
+              WorkspacePalette.of(context).elevatedSurface,
+            ),
+          ),
+          onPressed: () {
+            final box = context.findRenderObject() as RenderBox?;
+            if (box != null && box.hasSize) {
+              onMore(
                 box.localToGlobal(Offset(box.size.width, box.size.height + 5)),
               );
-            },
-            child: AnimatedScale(
-              scale: pressed ? 0.94 : 1,
-              duration: const Duration(milliseconds: 90),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    curve: Curves.easeOutCubic,
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: hovered
-                          ? palette.floatingSurface.withValues(alpha: 0.96)
-                          : palette.floatingSurface.withValues(alpha: 0.84),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: palette.shadow.withValues(alpha: 0.14),
-                          blurRadius: 18,
-                          offset: const Offset(0, 7),
-                          spreadRadius: -5,
-                        ),
-                      ],
-                    ),
-                    child: Icon(
-                      Icons.more_horiz_rounded,
-                      size: 18,
-                      color: palette.textSecondary,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+            }
+          },
+          icon: Semantics(
+            label: label,
+            child: const WorkspaceGlyph(Icons.more_horiz_rounded),
           ),
         ),
       ),
@@ -2682,164 +2307,67 @@ class _GalleryOverflowActionState extends State<_GalleryOverflowAction> {
 }
 
 class _GalleryCardSkeleton extends StatelessWidget {
-  const _GalleryCardSkeleton({
-    required this.item,
-    required this.editing,
-    required this.onRename,
-    required this.onRenameSubmitted,
-    required this.onRenameCancelled,
-  });
-
-  final WorkspaceExplorerItem item;
-  final bool editing;
-  final VoidCallback onRename;
-  final Future<bool> Function(String) onRenameSubmitted;
-  final VoidCallback onRenameCancelled;
+  const _GalleryCardSkeleton();
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final density = GalleryCardDensity.forWidth(constraints.maxWidth);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(27, 32, 27, 24),
-                color: palette.floatingSurface.withValues(alpha: 0.56),
-                child: LayoutBuilder(
-                  builder: (context, constraints) => FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      width: constraints.maxWidth,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 92,
-                            height: 11,
-                            decoration: BoxDecoration(
-                              color: palette.textMuted.withValues(alpha: 0.11),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          for (final width in [
-                            0.94,
-                            0.76,
-                            0.88,
-                            0.61,
-                            0.82,
-                            0.49,
-                          ]) ...[
-                            FractionallySizedBox(
-                              widthFactor: width,
-                              alignment: Alignment.centerLeft,
-                              child: Container(
-                                height: 6,
-                                decoration: BoxDecoration(
-                                  color: palette.textMuted
-                                      .withValues(alpha: 0.085),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 13),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: density.footerPadding,
-              child: _GalleryCardTitle(
-                item: item,
-                editing: editing,
-                density: density,
-                onRename: onRename,
-                onSubmitted: onRenameSubmitted,
-                onCancelled: onRenameCancelled,
-              ),
-            ),
-          ],
-        );
-      },
+    return ColoredBox(
+      key: const ValueKey('folder-gallery-preview-loading'),
+      color: _galleryIdentitySurface(context),
+      child: const Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: WorkspaceGlyph.named('hourglass', size: 28),
+        ),
+      ),
     );
   }
 }
 
 class _GalleryUnavailablePreview extends StatelessWidget {
-  const _GalleryUnavailablePreview();
+  const _GalleryUnavailablePreview({this.onRetry});
+
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: LayoutBuilder(
-              // A chat or otherwise unreadable page still has to fit the card it
-              // was dealt. The ruled lines are drawn at the card's own width and
-              // scaled down only when the stage is too short for them, so the
-              // caption below keeps its place instead of being pushed off.
-              builder: (context, constraints) => FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.topLeft,
-                child: SizedBox(
-                  width: constraints.maxWidth,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: 72,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: palette.textMuted.withValues(alpha: 0.13),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      for (final width in [0.92, 0.76, 0.84, 0.58]) ...[
-                        FractionallySizedBox(
-                          widthFactor: width,
-                          alignment: Alignment.centerLeft,
-                          child: Container(
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: palette.textMuted.withValues(alpha: 0.09),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 11),
-                      ],
-                    ],
+    return ColoredBox(
+      key: const ValueKey('folder-gallery-preview-unavailable'),
+      color: _galleryIdentitySurface(context),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Center(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: SizedBox(
+              width: 180,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const WorkspaceGlyph.named('warning', size: 32),
+                  const SizedBox(height: 10),
+                  Text(
+                    LocaleKeys.workspaceFolderExplorer_previewUnavailable.tr(),
+                    textAlign: TextAlign.center,
+                    style: WorkspaceTypography.style(
+                      context,
+                      WorkspaceTextRole.metadata,
+                    ),
                   ),
-                ),
+                  if (onRetry != null) ...[
+                    const SizedBox(height: 8),
+                    TextButton(
+                      key: const ValueKey('folder-gallery-preview-retry'),
+                      style: WorkspaceChrome.controlStyle(context),
+                      onPressed: onRetry,
+                      child: Text(LocaleKeys.button_retry.tr()),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
-          Text(
-            LocaleKeys.workspaceFolderExplorer_previewUnavailable.tr(),
-            style: TextStyle(
-              color: palette.textMuted,
-              fontFamily: 'Inter',
-              fontSize: 10.5,
-              letterSpacing: 0.08,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -2851,12 +2379,19 @@ class _GalleryMediaLoading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return Center(
-      child: SizedBox.square(
-        dimension: 17,
-        child: CircularProgressIndicator(
-          strokeWidth: 1.5,
-          color: palette.textMuted,
+    return ColoredBox(
+      key: const ValueKey('folder-gallery-preview-loading'),
+      color: _galleryIdentitySurface(context),
+      child: Center(
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: SizedBox.square(
+            dimension: 17,
+            child: CircularProgressIndicator(
+              strokeWidth: 1.5,
+              color: palette.textMuted,
+            ),
+          ),
         ),
       ),
     );
@@ -2870,13 +2405,8 @@ class _GalleryMediaFallback extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return Center(
-      child: Icon(
-        icon,
-        size: 34,
-        color: palette.textMuted.withValues(alpha: 0.62),
-      ),
+    return _GalleryIdentityPreview(
+      glyph: WorkspaceGlyph(icon, size: 64),
     );
   }
 }
@@ -2926,23 +2456,16 @@ class _FolderGalleryDraftCard extends StatelessWidget {
     required this.draft,
     required this.onCancel,
     required this.onSubmitted,
+    this.thumbnail = false,
   });
 
   final WorkspaceExplorerDraft draft;
   final VoidCallback onCancel;
   final Future<bool> Function(String) onSubmitted;
+  final bool thumbnail;
 
   @override
   Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    final titleStyle = TextStyle(
-      color: palette.textPrimary,
-      fontFamily: 'Inter',
-      fontSize: 17,
-      height: 1.24,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.38,
-    );
     final item = WorkspaceExplorerItem(
       id: 'draft',
       parentId: draft.parentId,
@@ -2954,60 +2477,116 @@ class _FolderGalleryDraftCard extends StatelessWidget {
       hasChildren: false,
       lastEdited: null,
     );
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: palette.accent.withValues(alpha: 0.16),
-            blurRadius: 34,
-            offset: const Offset(0, 14),
-            spreadRadius: -10,
-          ),
-          BoxShadow(
-            color: palette.shadow.withValues(alpha: 0.07),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
-            spreadRadius: -10,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(22),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Takes whatever the grid left over, exactly as a real card does:
-            // the cell height is worked out from the card width now, so a
-            // fixed preview overflows as soon as a card is short.
-            Expanded(
-              child: draft.kind == WorkspaceExplorerDraftKind.folder
-                  ? FolderGalleryCollectionArtwork(item: item)
-                  : DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: palette.floatingSurface.withValues(alpha: 0.56),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(27, 30, 27, 24),
-                        child: _GalleryBlankDocumentPreview(item: item),
-                      ),
-                    ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(21, 18, 21, 21),
-              child: WorkspaceInlineNameEditor(
-                initialValue: draft.suggestedName,
-                onSubmitted: onSubmitted,
-                onCancelled: onCancel,
-                textStyle: titleStyle,
-                selectFileStem: draft.kind == WorkspaceExplorerDraftKind.file,
-              ),
-            ),
-          ],
+    if (thumbnail) {
+      return FolderThumbnailTile(
+        selected: true,
+        preview: _GalleryIdentityPreview(
+          glyph: _GalleryIdentityGlyph(item: item),
         ),
-      ),
+        name: WorkspaceInlineNameEditor(
+          initialValue: draft.suggestedName,
+          onSubmitted: onSubmitted,
+          onCancelled: onCancel,
+          textStyle: WorkspaceTypography.style(context, WorkspaceTextRole.body)
+              .copyWith(fontSize: 13, height: 1.4),
+          selectFileStem: draft.kind == WorkspaceExplorerDraftKind.file,
+        ),
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final density = GalleryCardDensity.forWidth(constraints.maxWidth);
+        return GalleryCardSurface(
+          selected: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: draft.kind == WorkspaceExplorerDraftKind.folder
+                    ? FolderGalleryCollectionArtwork(item: item)
+                    : _GalleryIdentityPreview(
+                        glyph: _GalleryIdentityGlyph(item: item),
+                      ),
+              ),
+              GalleryCardFooter(
+                key: const ValueKey('folder-gallery-footer'),
+                padding: density.footerPadding,
+                child: WorkspaceInlineNameEditor(
+                  initialValue: draft.suggestedName,
+                  onSubmitted: onSubmitted,
+                  onCancelled: onCancel,
+                  textStyle: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.cardTitle,
+                  ).copyWith(fontSize: density.titleSize),
+                  selectFileStem: draft.kind == WorkspaceExplorerDraftKind.file,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
+  }
+}
+
+/// Keep Flutter's drag/drop lifecycle, but do not turn ordinary mouse wobble
+/// into a drag. ImmediateMultiDragGestureRecognizer uses a 1px mouse slop,
+/// whereas the card/title tap recognizers allow 18px. Accepting at 1px cancels
+/// those taps and swaps in childWhenDragging before a click can complete.
+class _GalleryDraggable extends Draggable<ViewPB> {
+  const _GalleryDraggable({
+    required super.data,
+    required super.feedback,
+    required super.childWhenDragging,
+    required super.child,
+  }) : super(
+          // The hover region returns a non-opaque hit. deferToChild omits the
+          // Draggable's Listener from that path even though the card is hit.
+          hitTestBehavior: HitTestBehavior.translucent,
+        );
+
+  @override
+  MultiDragGestureRecognizer createRecognizer(
+    GestureMultiDragStartCallback onStart,
+  ) =>
+      _GalleryDragGestureRecognizer()..onStart = onStart;
+}
+
+class _GalleryDragGestureRecognizer
+    extends ImmediateMultiDragGestureRecognizer {
+  @override
+  MultiDragPointerState createNewPointerState(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse) {
+      return super.createNewPointerState(event);
+    }
+    return _GalleryMouseDragState(
+      event.position,
+      event.kind,
+      gestureSettings,
+    );
+  }
+}
+
+class _GalleryMouseDragState extends MultiDragPointerState {
+  _GalleryMouseDragState(
+    super.initialPosition,
+    super.kind,
+    super.gestureSettings,
+  );
+
+  static const _dragSlop = 4.0;
+
+  @override
+  void checkForResolutionAfterMove() {
+    if (pendingDelta!.distance > _dragSlop) {
+      resolve(GestureDisposition.accepted);
+    }
+  }
+
+  @override
+  void accepted(GestureMultiDragStartCallback starter) {
+    starter(initialPosition);
   }
 }
 
@@ -3051,7 +2630,7 @@ class _GalleryDragTargetState extends State<_GalleryDragTarget> {
         widget.onAccept(details.data);
       },
       builder: (context, candidateData, rejectedData) => AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
+        duration: WorkspaceTokens.motion(context, galleryCardHoverDuration),
         curve: Curves.easeOutCubic,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(18),
@@ -3162,12 +2741,4 @@ class _PaperTexturePainter extends CustomPainter {
 bool _isNetworkUrl(String source) {
   final uri = Uri.tryParse(source);
   return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
-}
-
-int _stableHash(String value) {
-  var hash = 17;
-  for (final codeUnit in value.codeUnits) {
-    hash = 0x1fffffff & (hash * 37 + codeUnit);
-  }
-  return hash;
 }

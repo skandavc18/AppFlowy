@@ -11,12 +11,17 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'menu_user_bloc.freezed.dart';
 
 class MenuUserBloc extends Bloc<MenuUserEvent, MenuUserState> {
-  MenuUserBloc(this.userProfile, this.workspaceId)
-      : _userListener = UserListener(userProfile: userProfile),
+  MenuUserBloc(
+    this.userProfile,
+    this.workspaceId, {
+    UserListener? userListener,
+    UserBackendService? userService,
+  })  : _userListener = userListener ?? UserListener(userProfile: userProfile),
         _userWorkspaceListener = FolderListener(
           workspaceId: workspaceId,
         ),
-        _userService = UserBackendService(userId: userProfile.id),
+        _userService =
+            userService ?? UserBackendService(userId: userProfile.id),
         super(MenuUserState.initial(userProfile)) {
     _dispatch();
   }
@@ -26,9 +31,19 @@ class MenuUserBloc extends Bloc<MenuUserEvent, MenuUserState> {
   final UserListener _userListener;
   final FolderListener _userWorkspaceListener;
   final UserProfilePB userProfile;
+  bool _started = false;
+  bool _closing = false;
+
+  Future<FlowyResult<void, FlowyError>> saveUserIcon(String iconUrl) {
+    if (_closing || isClosed) {
+      return Future.error(StateError('The profile is no longer active'));
+    }
+    return _userService.updateUserProfile(iconUrl: iconUrl);
+  }
 
   @override
   Future<void> close() async {
+    _closing = true;
     await _userListener.stop();
     await _userWorkspaceListener.stop();
     return super.close();
@@ -39,10 +54,13 @@ class MenuUserBloc extends Bloc<MenuUserEvent, MenuUserState> {
       (event, emit) async {
         await event.when(
           initial: () async {
+            if (_started || _closing) return;
+            _started = true;
             _userListener.start(onProfileUpdated: _profileUpdated);
             await _initUser();
           },
           didReceiveUserProfile: (UserProfilePB newUserProfile) {
+            if (_closing || newUserProfile.id != userProfile.id) return;
             emit(state.copyWith(userProfile: newUserProfile));
           },
           updateUserName: (String name) {
@@ -66,11 +84,15 @@ class MenuUserBloc extends Bloc<MenuUserEvent, MenuUserState> {
   void _profileUpdated(
     FlowyResult<UserProfilePB, FlowyError> userProfileOrFailed,
   ) {
-    if (isClosed) {
+    if (_closing || isClosed) {
       return;
     }
     userProfileOrFailed.fold(
-      (profile) => add(MenuUserEvent.didReceiveUserProfile(profile)),
+      (profile) {
+        if (profile.id == userProfile.id) {
+          add(MenuUserEvent.didReceiveUserProfile(profile));
+        }
+      },
       (err) => Log.error(err),
     );
   }

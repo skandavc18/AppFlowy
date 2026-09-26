@@ -1,7 +1,9 @@
 import 'package:appflowy/plugins/collection/collection_style.dart';
-import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/shared/text_rendering.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -17,24 +19,24 @@ abstract final class DatabaseMetrics {
   static const double space6 = 24;
   static const double space8 = 32;
 
-  static const double gutter = 24;
-  static const double railWidth = 236;
+  static const double gutter = CollectionWorkspaceMetrics.gutter;
+  static const double railWidth = CollectionWorkspaceMetrics.railWidth;
   static const double rowHeight = 30;
   static const double rowRadius = 8;
-  static const double controlRadius = 8;
-  static const double panelRadius = EditorSurfaceStyle.embedCornerRadius;
+  static const double controlRadius = WorkspaceTokens.controlRadius;
+  static const double panelRadius = WorkspaceTokens.cardRadius;
 
   static const double schemaCardWidth = 320;
 
   static const double titleSize = 14;
   static const double bodySize = 12.5;
   static const double metaSize = 11.5;
-  static const double sectionSize = 10.5;
+  static const double sectionSize = 12;
   static const double tracking = -0.006;
-  static const double sectionTracking = 0.07;
-  static const double bodyWeightAxis = 545;
-  static const double strongWeightAxis = 620;
-  static const double sectionWeightAxis = 640;
+  static const double sectionTracking = 0;
+  static const double bodyWeightAxis = 500;
+  static const double strongWeightAxis = 500;
+  static const double sectionWeightAxis = 500;
 
   static const Duration hover = Duration(milliseconds: 140);
   static const Curve curve = Curves.easeOutCubic;
@@ -71,10 +73,12 @@ class DatabaseTheme {
       panel: palette.surface,
       raised: palette.floatingSurface,
       sunken: Color.alphaBlend(
-        palette.hover.withValues(alpha: isDark ? 0.42 : 0.6),
+        palette.hover
+            .withValues(alpha: palette.hover.a * (isDark ? 0.42 : 0.6)),
         palette.background,
       ),
-      hover: palette.hover.withValues(alpha: isDark ? 0.62 : 0.8),
+      hover: palette.hover
+          .withValues(alpha: palette.hover.a * (isDark ? 0.62 : 0.8)),
       selected: palette.accent.withValues(alpha: isDark ? 0.16 : 0.10),
       textStrong: palette.textPrimary,
       textBody: Color.lerp(palette.textSecondary, palette.textPrimary, 0.5)!,
@@ -135,8 +139,6 @@ class DatabaseTheme {
   TextStyle get title => face(
         fontSize: DatabaseMetrics.titleSize,
         color: textStrong,
-        axis: DatabaseMetrics.strongWeightAxis,
-        weight: FontWeight.w600,
         height: 1.3,
       );
 
@@ -149,26 +151,23 @@ class DatabaseTheme {
   TextStyle get meta => face(
         fontSize: DatabaseMetrics.metaSize,
         color: textFaint,
-        axis: 500,
         weight: FontWeight.w400,
       );
 
   TextStyle get sectionLabel => face(
         fontSize: DatabaseMetrics.sectionSize,
-        color: textFaint,
-        axis: DatabaseMetrics.sectionWeightAxis,
-        weight: FontWeight.w600,
+        color: textSoft,
         tracking: DatabaseMetrics.sectionTracking,
       );
 }
 
-/// A region of the collection, drawn as the application's own card.
+/// A flush region by default; explicit content panels remain unelevated.
 class DatabasePanel extends StatelessWidget {
   const DatabasePanel({
     super.key,
     required this.child,
     this.padding = EdgeInsets.zero,
-    this.elevation = ViewerCardElevation.resting,
+    this.elevation = ViewerCardElevation.flush,
     this.color,
   });
 
@@ -178,11 +177,12 @@ class DatabasePanel extends StatelessWidget {
   final Color? color;
 
   @override
-  Widget build(BuildContext context) => ViewerCard(
-        reactsToPointer: false,
-        elevation: elevation,
-        color: color ?? databaseThemeOf(context).panel,
-        child: Padding(padding: padding, child: child),
+  Widget build(BuildContext context) => CollectionWorkspaceSurface(
+        color: color,
+        tonal: elevation != ViewerCardElevation.flush,
+        rounded: elevation != ViewerCardElevation.flush,
+        padding: padding,
+        child: child,
       );
 }
 
@@ -197,7 +197,7 @@ class DatabaseGap extends StatelessWidget {
 }
 
 /// A borderless control: the toolbar buttons and the rail actions.
-class DatabaseAction extends StatefulWidget {
+class DatabaseAction extends StatelessWidget {
   const DatabaseAction({
     super.key,
     required this.icon,
@@ -218,76 +218,19 @@ class DatabaseAction extends StatefulWidget {
   final double size;
 
   @override
-  State<DatabaseAction> createState() => _DatabaseActionState();
-}
-
-class _DatabaseActionState extends State<DatabaseAction> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final enabled = widget.onPressed != null;
-    final tint = widget.active
-        ? theme.accent
-        : enabled
-            ? theme.iconRest
-            : theme.textFaint.withValues(alpha: 0.5);
-    final fill = widget.active
-        ? theme.accent.withValues(alpha: theme.isDark ? 0.18 : 0.11)
-        : _hovered
-            ? theme.hover
-            : theme.transparentAs(theme.hover);
-    final label = widget.label;
-
-    return Tooltip(
-      message: widget.tooltip,
-      waitDuration: const Duration(milliseconds: 500),
-      child: MouseRegion(
-        cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          child: AnimatedContainer(
-            duration: DatabaseMetrics.hover,
-            curve: DatabaseMetrics.curve,
-            height: widget.size,
-            padding: label == null
-                ? EdgeInsets.symmetric(horizontal: (widget.size - 16) / 2)
-                : const EdgeInsets.symmetric(horizontal: 10),
-            decoration: BoxDecoration(
-              color: fill,
-              borderRadius:
-                  BorderRadius.circular(DatabaseMetrics.controlRadius),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(widget.icon, size: 16, color: tint),
-                if (label != null) ...[
-                  const SizedBox(width: 6),
-                  Text(
-                    label,
-                    style: theme.face(
-                      fontSize: DatabaseMetrics.metaSize + 0.5,
-                      color: tint,
-                      axis: DatabaseMetrics.strongWeightAxis,
-                      weight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => CollectionWorkspaceAction(
+        icon: icon,
+        tooltip: tooltip,
+        label: label,
+        onPressed: onPressed,
+        selected: active,
+        size: size,
+        color: theme.textSoft,
+      );
 }
 
 /// A row in the table rail, with the hover pill every collection uses.
-class DatabaseRow extends StatefulWidget {
+class DatabaseRow extends StatelessWidget {
   const DatabaseRow({
     super.key,
     required this.theme,
@@ -306,47 +249,13 @@ class DatabaseRow extends StatefulWidget {
   final double height;
 
   @override
-  State<DatabaseRow> createState() => _DatabaseRowState();
-}
-
-class _DatabaseRowState extends State<DatabaseRow> {
-  bool _hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = widget.theme;
-    final fill = widget.selected
-        ? theme.selected
-        : _hovered
-            ? theme.hover
-            : theme.transparentAs(theme.hover);
-
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        onSecondaryTapDown: widget.onContextMenu == null
-            ? null
-            : (details) => widget.onContextMenu!(details.globalPosition),
-        child: AnimatedContainer(
-          duration: DatabaseMetrics.hover,
-          curve: DatabaseMetrics.curve,
-          height: widget.height,
-          padding: const EdgeInsets.symmetric(
-            horizontal: DatabaseMetrics.space2,
-          ),
-          decoration: BoxDecoration(
-            color: fill,
-            borderRadius: BorderRadius.circular(DatabaseMetrics.rowRadius),
-          ),
-          child: Row(children: [Expanded(child: widget.child)]),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => CollectionWorkspaceNavRow(
+        selected: selected,
+        onTap: onTap,
+        onContextMenu: onContextMenu,
+        minHeight: height,
+        child: child,
+      );
 }
 
 /// Nothing to show yet.
@@ -373,7 +282,7 @@ class DatabaseEmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
+              WorkspaceGlyph(
                 icon,
                 size: 30,
                 color: theme.textFaint.withValues(alpha: 0.7),
@@ -385,8 +294,6 @@ class DatabaseEmptyState extends StatelessWidget {
                 style: theme.face(
                   fontSize: DatabaseMetrics.titleSize,
                   color: theme.textBody,
-                  axis: DatabaseMetrics.strongWeightAxis,
-                  weight: FontWeight.w600,
                 ),
               ),
               if (message != null) ...[
@@ -427,13 +334,13 @@ IconData databaseFieldIcon(FieldType type) => switch (type) {
       FieldType.Checkbox => Icons.check_box_rounded,
       FieldType.URL => Icons.link_rounded,
       FieldType.Checklist => Icons.fact_check_rounded,
-      FieldType.LastEditedTime => Icons.update_rounded,
+      FieldType.LastEditedTime => Icons.history_rounded,
       FieldType.CreatedTime => Icons.schedule_rounded,
       FieldType.Relation => Icons.hub_rounded,
       FieldType.Summary => Icons.auto_awesome_rounded,
       FieldType.Translate => Icons.translate_rounded,
       FieldType.Time => Icons.timer_rounded,
-      FieldType.Media => Icons.perm_media_rounded,
+      FieldType.Media => Icons.photo_library_rounded,
       _ => Icons.short_text_rounded,
     };
 

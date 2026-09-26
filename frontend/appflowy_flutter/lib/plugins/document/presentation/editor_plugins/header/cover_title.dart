@@ -1,5 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_appearance_cubit.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_title.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_search_highlight.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/shared_context/shared_context.dart';
 import 'package:appflowy/shared/text_field/text_filed_with_metric_lines.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
@@ -34,7 +36,7 @@ class CoverTitle extends StatelessWidget {
   }
 }
 
-/// The text style of the page title shown next to the page icon.
+/// The editable title uses the workspace's major page-identity typography.
 TextStyle coverTitleTextStyle(BuildContext context) =>
     WorkspaceChrome.title(context);
 
@@ -64,7 +66,10 @@ class _InnerCoverTitle extends StatefulWidget {
 }
 
 class _InnerCoverTitleState extends State<_InnerCoverTitle> {
-  final titleTextController = TextEditingController();
+  late final titleTextController = DocumentFindTitleController(
+    editorState: editorState,
+    text: widget.view.name,
+  );
 
   late final editorContext = context.read<SharedEditorContext>();
   late final editorState = context.read<EditorState>();
@@ -79,6 +84,8 @@ class _InnerCoverTitleState extends State<_InnerCoverTitle> {
 
     titleTextController.text = widget.view.name;
     titleTextController.addListener(_onViewNameChanged);
+    DocumentFindTitle.of(editorState)
+        .attach(titleTextController, () => context);
 
     titleFocusNode
       ..onKeyEvent = _onKeyEvent
@@ -94,6 +101,7 @@ class _InnerCoverTitleState extends State<_InnerCoverTitle> {
     titleFocusNode
       ..onKeyEvent = null
       ..removeListener(_onFocusChanged);
+    DocumentFindTitle.of(editorState).detach(titleTextController);
     titleTextController.dispose();
     editorState.selectionNotifier.removeListener(_onSelectionChanged);
     super.dispose();
@@ -119,19 +127,22 @@ class _InnerCoverTitleState extends State<_InnerCoverTitle> {
                     DefaultAppearanceSettings.getDefaultSelectionColor(context),
               ),
             ),
-            child: TextFieldWithMetricLines(
-              controller: titleTextController,
-              enabled: editorState.editable,
-              focusNode: titleFocusNode,
-              style: fontStyle,
-              onLineCountChange: (count) => lineCount = count,
-              decoration: InputDecoration(
-                border: InputBorder.none,
-                isCollapsed: true,
-                contentPadding: EdgeInsets.zero,
-                hintText: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
-                hintStyle: fontStyle.copyWith(
-                  color: Theme.of(context).hintColor,
+            child: ListenableBuilder(
+              listenable: DocumentSearchHighlight.instance,
+              builder: (context, _) => TextFieldWithMetricLines(
+                controller: titleTextController,
+                enabled: editorState.editable,
+                focusNode: titleFocusNode,
+                style: fontStyle,
+                onLineCountChange: (count) => lineCount = count,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  isCollapsed: true,
+                  contentPadding: EdgeInsets.zero,
+                  hintText: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
+                  hintStyle: fontStyle.copyWith(
+                    color: Theme.of(context).hintColor,
+                  ),
                 ),
               ),
             ),
@@ -266,6 +277,18 @@ class _InnerCoverTitleState extends State<_InnerCoverTitle> {
     } else if (event.logicalKey == LogicalKeyboardKey.escape) {
       return _exitEditing();
     } else if (event.logicalKey == LogicalKeyboardKey.tab) {
+      // Traverse to the native header tools without letting the editor's Tab
+      // command indent an old body selection. The title/controller stay put.
+      final keyboard = HardwareKeyboard.instance;
+      if (!keyboard.isControlPressed &&
+          !keyboard.isMetaPressed &&
+          !keyboard.isAltPressed) {
+        if (keyboard.isShiftPressed) {
+          titleFocusNode.previousFocus();
+        } else {
+          titleFocusNode.nextFocus();
+        }
+      }
       return KeyEventResult.handled;
     }
 

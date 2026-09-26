@@ -25,6 +25,7 @@ import 'package:appflowy/shared/af_image.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/util/xfile_ext.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
@@ -213,8 +214,8 @@ void main() {
                 expect(find.byType(MediaFileLabel), findsOneWidget);
                 expect(tester.widget<Text>(_name(file.id)).data, file.name);
                 expect(
-                  tester.widget<Icon>(_icon(file.id)).icon,
-                  entry.value,
+                  tester.widget<WorkspaceGlyph>(_icon(file.id)).name,
+                  WorkspaceGlyphs.nameForFile(entry.key),
                   reason: '${entry.key}, $upload, $width',
                 );
                 final label = tester.widget<Text>(_name(file.id));
@@ -541,8 +542,8 @@ void main() {
           findsNothing,
         );
         expect(
-          tester.widget<Icon>(_icon(file.id)).icon,
-          Icons.picture_as_pdf_rounded,
+          tester.widget<WorkspaceGlyph>(_icon(file.id)).name,
+          'file-pdf',
         );
         fixture.controller.replaceFiles([_file(name: '', url: '')]);
         await tester.pumpAndSettle();
@@ -551,8 +552,8 @@ void main() {
           LocaleKeys.document_plugins_file_name.tr(),
         );
         expect(
-          tester.widget<Icon>(_icon(file.id)).icon,
-          Icons.insert_drive_file_rounded,
+          tester.widget<WorkspaceGlyph>(_icon(file.id)).name,
+          'file',
         );
         expect(fixture.backend.mediaEvents, isEmpty);
       } finally {
@@ -602,7 +603,10 @@ void main() {
       final fixture = _Fixture(skin, [file]);
       try {
         await _pump(tester, fixture.cell(), 'light');
-        expect(tester.widget<Icon>(_icon(file.id)).icon, Icons.link_rounded);
+        expect(
+          tester.widget<WorkspaceGlyph>(_icon(file.id)).name,
+          'link-simple',
+        );
         await tester.tap(_name(file.id));
         await tester.pumpAndSettle();
         expect(boundary.launcher.urls, [file.url]);

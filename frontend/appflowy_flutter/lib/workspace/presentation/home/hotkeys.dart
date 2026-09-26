@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/startup/startup.dart';
@@ -7,6 +8,7 @@ import 'package:appflowy/workspace/application/settings/appearance/appearance_cu
 import 'package:appflowy/workspace/application/sidebar/rename_view/rename_view_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
+import 'package:appflowy/workspace/presentation/home/tabs/tabs_manager.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
@@ -104,6 +106,33 @@ class _HomeHotKeysState extends State<HomeHotKeys> {
       ),
       keyDownHandler: (_) =>
           context.read<AppearanceSettingsCubit>().toggleThemeMode(),
+    ),
+
+    // A new tab is Home; Ctrl/Cmd+N remains the existing new-page action.
+    HotKeyItem(
+      hotKey: HotKey(
+        KeyCode.keyT,
+        modifiers: [Platform.isMacOS ? KeyModifier.meta : KeyModifier.control],
+        scope: HotKeyScope.inapp,
+      ),
+      keyDownHandler: (_) => unawaited(openWorkspaceTab(context)),
+    ),
+
+    HotKeyItem(
+      hotKey: HotKey(
+        KeyCode.arrowLeft,
+        modifiers: [KeyModifier.alt],
+        scope: HotKeyScope.inapp,
+      ),
+      keyDownHandler: (_) => context.read<TabsBloc>().goBack(),
+    ),
+    HotKeyItem(
+      hotKey: HotKey(
+        KeyCode.arrowRight,
+        modifiers: [KeyModifier.alt],
+        scope: HotKeyScope.inapp,
+      ),
+      keyDownHandler: (_) => context.read<TabsBloc>().goForward(),
     ),
 
     // Close current tab

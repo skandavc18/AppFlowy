@@ -320,6 +320,7 @@ class _SidebarState extends State<_Sidebar> {
   void dispose() {
     _scrollController.dispose();
     _isHovered.dispose();
+    _muteUpdateButton.dispose();
     super.dispose();
   }
 
@@ -339,49 +340,39 @@ class _SidebarState extends State<_Sidebar> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 color: palette.background,
-                border: Border(
-                  right: BorderSide(color: palette.edge, width: 0.5),
-                ),
               ),
               child: Column(
                 children: [
-                  // top menu
+                  // Workspace identity and window utilities share one shallow
+                  // row. No empty title strip sits above the name.
                   Padding(
                     padding: menuHorizontalInset,
                     child: SidebarTopMenu(
                       isSidebarOnHover: _isHovered,
+                      identity:
+                          BlocBuilder<UserWorkspaceBloc, UserWorkspaceState>(
+                        builder: (context, state) => SizedBox(
+                          height: HomeSizes.workspaceSectionHeight,
+                          child: state.isCollabWorkspaceOn &&
+                                  state.workspaces.isNotEmpty
+                              ? SidebarWorkspace(
+                                  userProfile: widget.userProfile,
+                                  showUtilities: false,
+                                )
+                              : SidebarUser(
+                                  userProfile: widget.userProfile,
+                                  showUtilities: false,
+                                ),
+                        ),
+                      ),
                     ),
                   ),
-                  // user or workspace, setting
-                  BlocBuilder<UserWorkspaceBloc, UserWorkspaceState>(
-                    builder: (context, state) => Container(
-                      height: HomeSizes.workspaceSectionHeight,
-                      padding: menuHorizontalInset,
-                      // if the workspaces are empty, show the user profile instead
-                      child: state.isCollabWorkspaceOn &&
-                              state.workspaces.isNotEmpty
-                          ? SidebarWorkspace(userProfile: widget.userProfile)
-                          : SidebarUser(userProfile: widget.userProfile),
-                    ),
-                  ),
-                  const VSpace(SidebarMetrics.space3),
+                  const VSpace(SidebarMetrics.space1),
                   if (FeatureFlag.search.isOn)
                     Container(
                       padding: menuHorizontalInset,
                       height: HomeSizes.searchSectionHeight,
                       child: const _SidebarSearchButton(),
-                    ),
-
-                  if (context
-                          .read<UserWorkspaceBloc>()
-                          .state
-                          .currentWorkspace
-                          ?.role !=
-                      AFRolePB.Guest)
-                    // new page button
-                    Padding(
-                      padding: menuHorizontalInset,
-                      child: const SidebarNewPageButton(),
                     ),
 
                   Padding(
@@ -402,6 +393,19 @@ class _SidebarState extends State<_Sidebar> {
                     padding: menuHorizontalInset,
                     child: const SidebarFooter(),
                   ),
+                  if (context
+                          .read<UserWorkspaceBloc>()
+                          .state
+                          .currentWorkspace
+                          ?.role !=
+                      AFRolePB.Guest) ...[
+                    const VSpace(SidebarMetrics.space1),
+                    Padding(
+                      key: const ValueKey('sidebar-bottom-creation'),
+                      padding: menuHorizontalInset,
+                      child: const SidebarNewPageButton(),
+                    ),
+                  ],
                   const VSpace(SidebarMetrics.space2),
                 ],
               ),

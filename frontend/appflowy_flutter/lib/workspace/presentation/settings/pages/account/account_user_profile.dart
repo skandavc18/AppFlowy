@@ -1,18 +1,12 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
-import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/workspace/application/user/settings_user_bloc.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/settings_input_field.dart';
-import 'package:appflowy/workspace/presentation/widgets/user_avatar.dart';
+import 'package:appflowy/workspace/presentation/widgets/user_avatar_button.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-import '../../../../../shared/icon_emoji_picker/tab.dart';
 
 // Account name and account avatar
 class AccountUserProfile extends StatefulWidget {
@@ -36,7 +30,6 @@ class _AccountUserProfileState extends State<AccountUserProfile> {
       TextEditingController(text: widget.name);
   final FocusNode focusNode = FocusNode();
   bool isEditing = false;
-  bool isHovering = false;
 
   @override
   void initState() {
@@ -71,27 +64,18 @@ class _AccountUserProfileState extends State<AccountUserProfile> {
   }
 
   Widget _buildAvatar() {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => _showIconPickerDialog(context),
-      child: FlowyHover(
-        resetHoverOnRebuild: false,
-        onHover: (state) => setState(() => isHovering = state),
-        style: HoverStyle(
-          hoverColor: Colors.transparent,
-          borderRadius: BorderRadius.circular(100),
-        ),
-        child: FlowyTooltip(
-          message:
-              LocaleKeys.settings_accountPage_general_changeProfilePicture.tr(),
-          verticalOffset: 28,
-          child: UserAvatar(
-            iconUrl: widget.iconUrl,
-            name: widget.name,
-            size: AFAvatarSize.l,
-          ),
-        ),
-      ),
+    return BlocBuilder<SettingsUserViewBloc, SettingsUserState>(
+      builder: (context, state) {
+        final user = context.read<SettingsUserViewBloc>();
+        final userId = state.userProfile.id;
+        return UserAvatarButton(
+          userProfile: state.userProfile,
+          saveIcon: user.saveUserIcon,
+          isCurrent: () =>
+              !user.isClosed && user.state.userProfile.id == userId,
+          size: AFAvatarSize.l,
+        );
+      },
     );
   }
 
@@ -133,39 +117,6 @@ class _AccountUserProfileState extends State<AccountUserProfile> {
       focusNode: focusNode..requestFocus(),
       onCancel: () => setState(() => isEditing = false),
       onSave: (_) => _saveChanges(),
-    );
-  }
-
-  Future<void> _showIconPickerDialog(BuildContext context) {
-    final userBloc = context.read<SettingsUserViewBloc>();
-
-    return showDialog(
-      context: context,
-      builder: (dialogContext) => SimpleDialog(
-        children: [
-          Container(
-            height: 380,
-            width: 360,
-            margin: const EdgeInsets.all(0),
-            child: FlowyIconEmojiPicker(
-              tabs: const [
-                PickerTabType.emoji,
-                PickerTabType.icon,
-                PickerTabType.custom,
-              ],
-              // the profile picture is stored next to the other assets of the
-              // user, so their id is used as the parent folder.
-              documentId: userBloc.state.userProfile.id.toString(),
-              onSelectedEmoji: (r) {
-                userBloc.add(
-                  SettingsUserEvent.updateUserIcon(iconUrl: r.emoji),
-                );
-                Navigator.of(dialogContext).pop();
-              },
-            ),
-          ),
-        ],
-      ),
     );
   }
 

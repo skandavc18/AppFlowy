@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -22,7 +23,7 @@ class ViewDatabaseButton extends StatelessWidget {
         width: 24,
         height: 24,
         iconPadding: const EdgeInsets.all(3),
-        icon: const FlowySvg(FlowySvgs.database_fullscreen_s),
+        icon: const WorkspaceGlyph.svg(FlowySvgs.database_fullscreen_s),
         onPressed: () {
           getIt<TabsBloc>().add(
             TabsEvent.openPlugin(

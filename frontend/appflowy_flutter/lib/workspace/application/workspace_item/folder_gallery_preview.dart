@@ -29,6 +29,7 @@ enum FolderGalleryPreviewKind {
   file,
   folder,
   database,
+  chat,
 }
 
 enum FolderGalleryPreviewBlockKind {
@@ -133,33 +134,47 @@ class FolderGalleryPreviewLoader {
     required ViewPB view,
     required WorkspaceExplorerItem item,
   }) async {
-    if (item.kind == WorkspaceExplorerItemKind.database) {
-      return _databasePreviewLoader.load(view: view);
-    }
+    try {
+      // Chat is a real layout, not a provider node or a collab document. The
+      // explorer's coarse item kind currently also calls it a database, so
+      // this must precede BOTH content readers. Never invent message content.
+      if (view.layout == ViewLayoutPB.Chat) {
+        return FolderGalleryPreviewParser.chat(view);
+      }
+      if (item.kind == WorkspaceExplorerItemKind.database) {
+        return await _databasePreviewLoader.load(view: view);
+      }
 
-    final immediate = FolderGalleryPreviewParser.withoutDocument(
-      view: view,
-      item: item,
-    );
-    if (immediate != null) {
-      return _withFileContent(immediate, item);
-    }
-
-    final result = await _documentService.getDocument(documentId: view.id);
-    return result.fold(
-      (document) => FolderGalleryPreviewParser.parse(
+      final immediate = FolderGalleryPreviewParser.withoutDocument(
         view: view,
         item: item,
-        document: document,
-      ),
-      (error) {
-        Log.warn('Unable to load gallery preview for ${view.id}: $error');
-        return FolderGalleryPreviewParser.unavailable(
+      );
+      if (immediate != null) {
+        return await _withFileContent(immediate, view: view, item: item);
+      }
+
+      final result = await _documentService.getDocument(documentId: view.id);
+      return result.fold(
+        (document) => FolderGalleryPreviewParser.parse(
           view: view,
           item: item,
-        );
-      },
-    );
+          document: document,
+        ),
+        (error) {
+          Log.warn('Unable to load gallery preview for ${view.id}: $error');
+          return FolderGalleryPreviewParser.unavailable(
+            view: view,
+            item: item,
+          );
+        },
+      );
+    } on Object catch (error) {
+      Log.warn('Unable to load gallery preview for ${view.id}: $error');
+      return FolderGalleryPreviewParser.unavailable(
+        view: view,
+        item: item,
+      );
+    }
   }
 
   /// Fills a text file's card with what the file actually says.
@@ -168,24 +183,30 @@ class FolderGalleryPreviewLoader {
   /// itself becomes the preview — markdown keeps its structure, everything
   /// else reads as plain paragraphs.
   Future<FolderGalleryPreview> _withFileContent(
-    FolderGalleryPreview preview,
-    WorkspaceExplorerItem item,
-  ) async {
+    FolderGalleryPreview preview, {
+    required ViewPB view,
+    required WorkspaceExplorerItem item,
+  }) async {
     if (preview.kind != FolderGalleryPreviewKind.document &&
         preview.kind != FolderGalleryPreviewKind.code) {
       return preview;
     }
     final path = item.metadata?.storageUrl;
     if (path == null || path.isEmpty) {
-      return preview;
+      return FolderGalleryPreviewParser.unavailable(view: view, item: item);
     }
     final scheme = Uri.tryParse(path)?.scheme.toLowerCase() ?? '';
     if (scheme == 'http' || scheme == 'https') {
-      return preview;
+      // This cheap preview deliberately does not download remote text. An
+      // unread file is not an empty file (and must not look like one).
+      return FolderGalleryPreviewParser.unavailable(view: view, item: item);
     }
 
-    final source = await _readHead(File(path));
-    if (source == null || source.trim().isEmpty) {
+    final source = await _readHead(path);
+    if (source == null) {
+      return FolderGalleryPreviewParser.unavailable(view: view, item: item);
+    }
+    if (source.trim().isEmpty) {
       return preview;
     }
 
@@ -221,17 +242,27 @@ class FolderGalleryPreviewLoader {
 
   static const _maxPreviewBytes = 8 * 1024;
 
-  Future<String?> _readHead(File file) async {
+  Future<String?> _readHead(String path) async {
     try {
+      final uri = Uri.tryParse(path);
+      final file = uri?.scheme == 'file' ? File.fromUri(uri!) : File(path);
       final handle = await file.open();
       try {
-        final bytes = await handle.read(_maxPreviewBytes);
-        return const Utf8Decoder(allowMalformed: true).convert(bytes);
+        final bytes = await handle.read(_maxPreviewBytes + 1);
+        final truncated = bytes.length > _maxPreviewBytes;
+        final source = const Utf8Decoder(allowMalformed: true).convert(
+          bytes,
+          0,
+          truncated ? _maxPreviewBytes : bytes.length,
+        );
+        // A bounded prefix with no words is not evidence that the whole file
+        // is empty. Do not read the remainder merely to decorate a card.
+        return truncated && source.trim().isEmpty ? null : source;
       } finally {
         await handle.close();
       }
-    } on FileSystemException catch (error) {
-      Log.info('Unable to read the preview of ${file.path}: $error');
+    } on Object catch (error) {
+      Log.info('Unable to read the gallery file preview: $error');
       return null;
     }
   }
@@ -618,7 +649,8 @@ class FolderGalleryDatabasePreviewLoader {
         Log.warn(
           'Unable to load gallery cell $rowId/${field.id}: $error',
         );
-        return '';
+        // An unread cell must not become a fabricated empty value in a table.
+        throw StateError('Unable to read gallery cell');
       },
     );
   }
@@ -742,6 +774,7 @@ class FolderGalleryPreviewCache {
   void clear() => _entries.clear();
 
   String _stamp(ViewPB view, WorkspaceExplorerItem item) => [
+        view.layout.value,
         view.lastEdited.toString(),
         item.lastEdited?.millisecondsSinceEpoch ?? 0,
         item.metadata?.modifiedAt?.millisecondsSinceEpoch ?? 0,
@@ -826,6 +859,7 @@ class FolderGalleryPreviewParser {
     required ViewPB view,
     required WorkspaceExplorerItem item,
   }) {
+    if (view.layout == ViewLayoutPB.Chat) return chat(view);
     if (item.kind == WorkspaceExplorerItemKind.folder) {
       return FolderGalleryPreview(
         kind: FolderGalleryPreviewKind.folder,
@@ -833,7 +867,7 @@ class FolderGalleryPreviewParser {
         wordCount: 0,
         readingMinutes: 0,
         tags: _tagsFromExtra(view.extra),
-        fileTypeLabel: 'COLLECTION',
+        fileTypeLabel: item.isCollection ? 'COLLECTION' : 'FOLDER',
       );
     }
     final metadata = item.metadata;
@@ -871,21 +905,30 @@ class FolderGalleryPreviewParser {
     required ViewPB view,
     required WorkspaceExplorerItem item,
   }) {
-    final kind = item.isFile
-        ? _kindForFile(
-            name: item.name,
-            mimeType: item.metadata?.mimeType,
-          )
-        : FolderGalleryPreviewKind.document;
+    if (view.layout == ViewLayoutPB.Chat) return chat(view);
+    final kind = switch (item.kind) {
+      WorkspaceExplorerItemKind.folder => FolderGalleryPreviewKind.folder,
+      WorkspaceExplorerItemKind.database => FolderGalleryPreviewKind.database,
+      WorkspaceExplorerItemKind.file => _kindForFile(
+          name: item.name,
+          mimeType: item.metadata?.mimeType,
+        ),
+      WorkspaceExplorerItemKind.document => FolderGalleryPreviewKind.document,
+    };
     return FolderGalleryPreview(
       kind: kind,
       blocks: const [],
-      wordCount: _wordCount(view.name),
-      readingMinutes: view.name.trim().isEmpty ? 0 : 1,
+      wordCount: 0,
+      readingMinutes: 0,
       tags: _tagsFromExtra(view.extra),
-      fileTypeLabel: item.isFile
-          ? _fileTypeLabel(item.name, item.metadata?.mimeType)
-          : 'PAGE',
+      fileTypeLabel: switch (item.kind) {
+        WorkspaceExplorerItemKind.folder =>
+          item.isCollection ? 'COLLECTION' : 'FOLDER',
+        WorkspaceExplorerItemKind.database => 'TABLE',
+        WorkspaceExplorerItemKind.file =>
+          _fileTypeLabel(item.name, item.metadata?.mimeType),
+        WorkspaceExplorerItemKind.document => 'PAGE',
+      },
       language:
           kind == FolderGalleryPreviewKind.code ? _extension(item.name) : null,
       unavailable: true,
@@ -897,11 +940,13 @@ class FolderGalleryPreviewParser {
     required WorkspaceExplorerItem item,
     required DocumentDataPB document,
   }) {
+    if (view.layout == ViewLayoutPB.Chat) return chat(view);
     final previewBlocks = <FolderGalleryPreviewBlock>[];
-    final allText = StringBuffer(view.name);
+    final allText = StringBuffer();
     final visited = <String>{};
     String? heroUrl;
     var hasMeaningfulContent = false;
+    var incomplete = false;
     String? firstCodeLanguage;
 
     void visit(String id) {
@@ -910,10 +955,19 @@ class FolderGalleryPreviewParser {
       }
       final block = document.blocks[id];
       if (block == null) {
+        incomplete = true;
         return;
       }
       final attributes = _attributes(block, document);
+      if (attributes == null) {
+        incomplete = true;
+        return;
+      }
       final runs = _runsFromDelta(attributes[_delta]);
+      if (runs == null) {
+        incomplete = true;
+        return;
+      }
       final plainText = runs.map((run) => run.text).join().trim();
       if (plainText.isNotEmpty) {
         allText
@@ -957,11 +1011,15 @@ class FolderGalleryPreviewParser {
 
     final root = document.blocks[document.pageId];
     final rootChildrenId = root?.childrenId;
-    if (rootChildrenId != null && rootChildrenId.isNotEmpty) {
-      for (final childId
-          in document.meta.childrenMap[rootChildrenId]?.children ?? const []) {
-        visit(childId);
-      }
+    final children = document.meta.childrenMap[rootChildrenId]?.children;
+    if (root == null || rootChildrenId == null || children == null) {
+      return unavailable(view: view, item: item);
+    }
+    for (final childId in children) {
+      visit(childId);
+    }
+    if (incomplete) {
+      return unavailable(view: view, item: item);
     }
 
     final text = allText.toString();
@@ -980,7 +1038,7 @@ class FolderGalleryPreviewParser {
       blocks: List.unmodifiable(previewBlocks),
       wordCount: wordCount,
       readingMinutes: wordCount == 0 ? 0 : (wordCount / wordsPerMinute).ceil(),
-      tags: _collectTags(view.extra, text),
+      tags: _collectTags(view.extra, '${view.name} $text'),
       fileTypeLabel: item.isFile
           ? _fileTypeLabel(item.name, item.metadata?.mimeType)
           : 'PAGE',
@@ -989,7 +1047,7 @@ class FolderGalleryPreviewParser {
     );
   }
 
-  static Map<String, dynamic> _attributes(
+  static Map<String, dynamic>? _attributes(
     BlockPB block,
     DocumentDataPB document,
   ) {
@@ -999,18 +1057,19 @@ class FolderGalleryPreviewParser {
           ? const <String, dynamic>{}
           : jsonDecode(block.data);
     } on FormatException {
-      return <String, dynamic>{};
+      return null;
     }
-    final attributes = decoded is Map
-        ? Map<String, dynamic>.from(decoded)
-        : <String, dynamic>{};
+    if (decoded is! Map) return null;
+    final attributes = Map<String, dynamic>.from(decoded);
     if (block.externalType == 'text' && block.externalId.isNotEmpty) {
       final externalDelta = document.meta.textMap[block.externalId];
+      if (externalDelta == null && attributes[_delta] == null) return null;
       if (externalDelta != null && externalDelta.isNotEmpty) {
         try {
           attributes[_delta] = jsonDecode(externalDelta);
         } on FormatException {
           // Keep the inline delta when an external text payload is malformed.
+          if (attributes[_delta] == null) return null;
         }
       }
     }
@@ -1071,28 +1130,29 @@ class FolderGalleryPreviewParser {
     };
   }
 
-  static List<FolderGalleryTextRun> _runsFromDelta(Object? rawDelta) {
+  static List<FolderGalleryTextRun>? _runsFromDelta(Object? rawDelta) {
+    if (rawDelta == null) return const [];
     Object? decoded = rawDelta;
     if (decoded case final String encoded) {
       try {
         decoded = jsonDecode(encoded);
       } on FormatException {
-        return encoded.isEmpty
-            ? const []
-            : [FolderGalleryTextRun(text: encoded)];
+        // Serialized/partial deltas are not prose. Never leak their raw text
+        // into a card or classify a decoding failure as an empty document.
+        return null;
       }
     }
     if (decoded is Map) {
       decoded = decoded['ops'];
     }
     if (decoded is! List) {
-      return const [];
+      return null;
     }
 
     final runs = <FolderGalleryTextRun>[];
     for (final operation in decoded) {
       if (operation is! Map) {
-        continue;
+        return null;
       }
       final insert = operation['insert'];
       final attributes = operation['attributes'];
@@ -1196,6 +1256,17 @@ class FolderGalleryPreviewParser {
   }
 
   static List<String> tagsFromExtra(String extra) => _tagsFromExtra(extra);
+
+  /// Identity only: no transcript read, fake messages, counts or loading state.
+  /// The rendering host still gives a saved cover/icon precedence.
+  static FolderGalleryPreview chat(ViewPB view) => FolderGalleryPreview(
+        kind: FolderGalleryPreviewKind.chat,
+        blocks: const [],
+        wordCount: 0,
+        readingMinutes: 0,
+        tags: _tagsFromExtra(view.extra),
+        fileTypeLabel: 'AI CHAT',
+      );
 }
 
 class _FolderGalleryPreviewCacheEntry {

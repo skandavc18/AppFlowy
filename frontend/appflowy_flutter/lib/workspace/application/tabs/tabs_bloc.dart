@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:appflowy/plugins/blank/blank.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
 import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -20,8 +23,11 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   TabsBloc({
     Future<ViewPB?> Function(String)? loadHistoryView,
     Plugin Function(ViewPB)? buildHistoryPlugin,
+    Future<ViewPB?> Function(String)? loadHomeView,
   })  : _loadHistoryView = loadHistoryView ?? _readHistoryView,
         _buildHistoryPlugin = buildHistoryPlugin ?? _pluginForHistory,
+        _loadHomeView =
+            loadHomeView ?? DashboardHome.instance.resolveForWorkspace,
         super(TabsState()) {
     menuSharedState = getIt<MenuSharedState>();
     _dispatch();
@@ -31,6 +37,16 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   final navigationHistory = PageNavigationHistory();
   final Future<ViewPB?> Function(String) _loadHistoryView;
   final Plugin Function(ViewPB) _buildHistoryPlugin;
+  final Future<ViewPB?> Function(String) _loadHomeView;
+  final _homePlugins = Set<Plugin>.identity();
+  final _newHomeTabs = Map<Plugin, _HomeTabRequest>.identity();
+  final _resolvedHomeTabs = Map<Plugin, _HomeTabRequest>.identity();
+  bool _closing = false;
+  int _homeRequest = 0;
+  String? _homeWorkspaceId;
+  String? _startupHomeWorkspaceId;
+  ({String workspaceId, int request})? _workspaceHomeRequest;
+  String? homeViewId;
   int _navigationEpoch = 0;
   int? _pendingHistoryEpoch;
 
@@ -54,7 +70,141 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   static const _deduplicationWindow = Duration(milliseconds: 500);
 
   @override
+  void add(TabsEvent event) {
+    // Invalidate at dispatch, not later when the event is handled: a queued
+    // deep link/click must also beat an asynchronous Home lookup.
+    _homeRequest++;
+    if (event is _SwitchWorkspace) {
+      _homeWorkspaceId = null;
+      homeViewId = null;
+      // The shell opens Home only once the workspace change is confirmed.
+      // Navigation queued while that change is pending must still win.
+      _workspaceHomeRequest = (
+        workspaceId: event.workspaceId,
+        request: _homeRequest,
+      );
+    }
+    super.add(event);
+  }
+
+  /// A fresh session starts at Home. Legacy openedTabs/pinned-tab preferences
+  /// are deliberately neither read nor deleted; constructing those plugins
+  /// offstage would still mount the page which crashed the previous session.
+  /// Explicit navigation and manually opened tabs always take precedence.
+  Future<void> openHome({
+    required String workspaceId,
+    bool startup = false,
+    bool newTab = false,
+    bool Function()? isCurrent,
+  }) async {
+    if (_closing ||
+        isClosed ||
+        workspaceId.isEmpty ||
+        isCurrent?.call() == false) {
+      return;
+    }
+    _homeWorkspaceId = workspaceId;
+    if (newTab) {
+      await _openNewHomeTab(workspaceId, isCurrent);
+      return;
+    }
+    if (startup) {
+      if (_startupHomeWorkspaceId == workspaceId) return;
+      final firstWorkspace = _startupHomeWorkspaceId == null;
+      _startupHomeWorkspaceId = workspaceId;
+      final workspaceRequest = _workspaceHomeRequest;
+      if (!firstWorkspace || workspaceRequest?.workspaceId == workspaceId) {
+        homeViewId = null;
+      }
+      if (workspaceRequest?.workspaceId == workspaceId) {
+        _workspaceHomeRequest = null;
+        if (workspaceRequest!.request != _homeRequest) return;
+      } else if (firstWorkspace &&
+          (_homeRequest != 0 ||
+              state.pages != 1 ||
+              state.currentPageManager.isPinned ||
+              state.currentPageManager.plugin.pluginType != PluginType.blank)) {
+        return;
+      }
+    }
+    final request = ++_homeRequest;
+    ViewPB? view;
+    try {
+      view = await _loadHomeView(workspaceId);
+    } catch (error, stackTrace) {
+      Log.error('Could not open Home: $error', error, stackTrace);
+    }
+    if (_closing ||
+        isClosed ||
+        request != _homeRequest ||
+        isCurrent?.call() == false) {
+      return;
+    }
+    homeViewId = view?.id;
+    final plugin = view == null ? BlankPagePlugin() : _buildHistoryPlugin(view);
+    _homePlugins.add(plugin);
+    add(
+      TabsEvent.openPlugin(
+        plugin: plugin,
+        view: view,
+        // Startup/Home is not a write to the shared latest-view preference.
+        setLatest: false,
+      ),
+    );
+  }
+
+  /// A new Home has its own tab lifetime, even when another Home is open.
+  /// Resolve into that exact placeholder without stealing a newer selection,
+  /// resurrecting a closed tab or replacing a page opened while it was loading.
+  Future<void> _openNewHomeTab(
+    String workspaceId,
+    bool Function()? isCurrent,
+  ) async {
+    final request = _HomeTabRequest(workspaceId, isCurrent);
+    _newHomeTabs[request.placeholder] = request;
+    add(
+      TabsEvent.openPlugin(plugin: request.placeholder, setLatest: false),
+    );
+    if (!await request.started.future) return;
+    ViewPB? view;
+    try {
+      view = await _loadHomeView(workspaceId);
+    } catch (error, stackTrace) {
+      Log.error('Could not open Home', error, stackTrace);
+    }
+    if (!_isCurrentHomeTab(request)) return;
+    final plugin =
+        view == null ? request.placeholder : _buildHistoryPlugin(view);
+    _resolvedHomeTabs[plugin] = request;
+    // This is completion of an existing navigation, not a new user intent.
+    // In particular it must not cancel a newer explicit Home request.
+    super.add(
+      TabsEvent.openPlugin(plugin: plugin, view: view, setLatest: false),
+    );
+  }
+
+  bool _isCurrentHomeTab(_HomeTabRequest request) =>
+      !_closing &&
+      !isClosed &&
+      request.isCurrent?.call() != false &&
+      _homeWorkspaceId == request.workspaceId &&
+      state.pageManagers.contains(request.manager) &&
+      identical(request.manager.plugin, request.placeholder);
+
+  @override
   Future<void> close() {
+    _closing = true;
+    _homeRequest++;
+    for (final request in _newHomeTabs.values) {
+      request.manager.dispose();
+      request.started.complete(false);
+    }
+    _newHomeTabs.clear();
+    for (final plugin in [..._resolvedHomeTabs.keys, ..._homePlugins]) {
+      state._disposeUnopenedPlugin(plugin);
+    }
+    _resolvedHomeTabs.clear();
+    _homePlugins.clear();
     _navigationEpoch++;
     navigationHistory.clear();
     state.dispose();
@@ -64,6 +214,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   void _dispatch() {
     on<TabsEvent>(
       (event, emit) async {
+        if (_closing) return;
         if (event is _NavigateHistory) {
           await _navigateHistory(event.forward, emit);
           return;
@@ -71,6 +222,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
         final switchingWorkspace = event is _SwitchWorkspace;
         _navigationEpoch++;
         ViewPB? visitedView;
+        var recordVisit = true;
         event.when(
           navigateHistory: (_) {},
           selectTab: (int index) {
@@ -88,22 +240,10 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
             }
           },
           closeTab: (String pluginId) {
-            final pm = state._pageManagers
-                .firstWhereOrNull((pm) => pm.plugin.id == pluginId);
-            if (pm?.isPinned == true) {
-              return;
-            }
-
-            emit(state.closeView(pluginId));
-            _setLatestOpenView();
+            _closeTab(pluginId, emit);
           },
           closeCurrentTab: () {
-            if (state.currentPageManager.isPinned) {
-              return;
-            }
-
-            emit(state.closeView(state.currentPageManager.plugin.id));
-            _setLatestOpenView();
+            _closeTab(state.currentPageManager.tabId, emit);
           },
           openTab: (Plugin plugin, ViewPB view) {
             visitedView = view;
@@ -114,10 +254,51 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
             _setLatestOpenView(view);
           },
           openPlugin: (Plugin plugin, ViewPB? view, bool setLatest) {
+            final newHome = _newHomeTabs.remove(plugin);
+            if (newHome != null) {
+              if (newHome.isCurrent?.call() == false ||
+                  _homeWorkspaceId != newHome.workspaceId) {
+                recordVisit = false;
+                newHome.manager.dispose();
+                newHome.started.complete(false);
+                return;
+              }
+              emit(
+                state.copyWith(
+                  currentIndex: state.pages,
+                  pageManagers: [...state.pageManagers, newHome.manager],
+                ),
+              );
+              menuSharedState.latestOpenView = null;
+              newHome.started.complete(true);
+              return;
+            }
+            final resolvedHome = _resolvedHomeTabs.remove(plugin);
+            if (resolvedHome != null) {
+              recordVisit = false;
+              if (!_isCurrentHomeTab(resolvedHome)) {
+                state._disposeUnopenedPlugin(plugin);
+                return;
+              }
+              final manager = resolvedHome.manager;
+              homeViewId = view?.id;
+              if (view != null) manager.setPlugin(plugin, false);
+              final entry = _historyEntry(manager, view);
+              if (entry != null) {
+                navigationHistory.resolveHomeTab(manager.tabId, entry);
+              }
+              if (identical(state.currentPageManager, manager)) {
+                menuSharedState.latestOpenView = view;
+              }
+              emit(state.copyWith(pageManagers: [...state.pageManagers]));
+              return;
+            }
             final now = DateTime.now();
+            final openingHome = _homePlugins.remove(plugin);
 
             // deduplicate. skip if same plugin and view were just opened
             if (_lastOpenedPluginId == plugin.id &&
+                state.currentPageManager.plugin.id == plugin.id &&
                 _lastOpenedViewId == view?.id &&
                 _lastOpenTime != null) {
               final timeSinceLastOpen = now.difference(_lastOpenTime!);
@@ -135,7 +316,17 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
             state.currentPageManager
               ..hideSecondaryPlugin()
               ..setSecondaryPlugin(BlankPagePlugin());
-            emit(state.openPlugin(plugin: plugin, setLatest: setLatest));
+            // Home is its own destination. Reuse the initial empty tab, but
+            // never replace a manually opened/pinned page just to go Home.
+            emit(
+              openingHome &&
+                      (state.currentPageManager.isPinned ||
+                          state.currentPageManager.plugin.pluginType !=
+                              PluginType.blank)
+                  ? state.openView(plugin, setLatest: false)
+                  : state.openPlugin(plugin: plugin, setLatest: setLatest),
+            );
+            if (openingHome) menuSharedState.latestOpenView = view;
             if (setLatest) {
               // the space view should be filtered out.
               if (view != null && view.isSpace) {
@@ -147,20 +338,20 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
             }
           },
           closeOtherTabs: (String pluginId) {
+            final target = state.managerForTab(pluginId);
+            if (target == null) return;
             final previousManagers = [...state._pageManagers];
             final pageManagers = [
               ...state._pageManagers
-                  .where((pm) => pm.plugin.id == pluginId || pm.isPinned),
+                  .where((pm) => identical(pm, target) || pm.isPinned),
             ];
 
             int newIndex;
             if (state.currentPageManager.isPinned) {
               // Retain current index if it's already pinned
-              newIndex = state.currentIndex;
+              newIndex = pageManagers.indexOf(state.currentPageManager);
             } else {
-              final pm = state._pageManagers
-                  .firstWhereOrNull((pm) => pm.plugin.id == pluginId);
-              newIndex = pm != null ? pageManagers.indexOf(pm) : 0;
+              newIndex = pageManagers.indexOf(target);
             }
 
             emit(
@@ -176,8 +367,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
             _setLatestOpenView();
           },
           togglePin: (String pluginId) {
-            final pm = state._pageManagers
-                .firstWhereOrNull((pm) => pm.plugin.id == pluginId);
+            final pm = state.managerForTab(pluginId);
             if (pm != null) {
               final index = state._pageManagers.indexOf(pm);
 
@@ -256,32 +446,54 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
             _lastOpenedPluginId = null;
             _lastOpenedViewId = null;
             _lastOpenTime = null;
-            final pluginId = state.currentPageManager.plugin.id;
+            final current = state.currentPageManager;
 
             // Close all tabs except current
             final pagesToClose = [
               ...state._pageManagers
-                  .where((pm) => pm.plugin.id != pluginId && !pm.isPinned),
+                  .where((pm) => !identical(pm, current) && !pm.isPinned),
             ];
 
             if (pagesToClose.isNotEmpty) {
               var newstate = state;
               for (final pm in pagesToClose) {
-                newstate = newstate.closeView(pm.plugin.id);
+                newstate = newstate.closeView(pm.tabId);
               }
               emit(newstate.copyWith(currentIndex: 0));
             }
           },
         );
-        if (!switchingWorkspace) {
+        if (!switchingWorkspace && recordVisit) {
           _recordVisit(visitedView);
         }
       },
     );
   }
 
+  void _closeTab(String tabId, Emitter<TabsState> emit) {
+    if (state.managerForTab(tabId) == null) return;
+    final lastTab = state.pages == 1;
+    emit(state.closeView(tabId));
+    _setLatestOpenView();
+    if (lastTab) {
+      _lastOpenedPluginId = null;
+      _lastOpenedViewId = null;
+      _lastOpenTime = null;
+      menuSharedState.latestOpenView = null;
+      final workspaceId = _homeWorkspaceId;
+      if (workspaceId != null) {
+        unawaited(openHome(workspaceId: workspaceId));
+      }
+    }
+  }
+
   void _recordVisit(ViewPB? view) {
-    final plugin = state.currentPageManager.plugin;
+    final entry = _historyEntry(state.currentPageManager, view);
+    if (entry != null) navigationHistory.record(entry);
+  }
+
+  PageHistoryEntry? _historyEntry(PageManager manager, ViewPB? view) {
+    final plugin = manager.plugin;
     final notifier = plugin.notifier;
     final currentView = view?.id == plugin.id
         ? view
@@ -289,15 +501,14 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
             ? notifier.view
             : null;
     if (currentView != null && currentView.id.isNotEmpty) {
-      navigationHistory.record(
-        PageHistoryEntry(
-          pluginType: plugin.pluginType,
-          viewId: currentView.id,
-          workspaceRoot:
-              currentView.parentViewId.isEmpty && currentView.isWorkspaceFolder
-                  ? currentView
-                  : null,
-        ),
+      return PageHistoryEntry(
+        tabId: manager.tabId,
+        pluginType: plugin.pluginType,
+        viewId: currentView.id,
+        workspaceRoot:
+            currentView.parentViewId.isEmpty && currentView.isWorkspaceFolder
+                ? currentView
+                : null,
       );
     } else if (const {
       PluginType.blank,
@@ -305,8 +516,12 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       PluginType.templates,
       PluginType.extensions,
     }.contains(plugin.pluginType)) {
-      navigationHistory.record(PageHistoryEntry(pluginType: plugin.pluginType));
+      return PageHistoryEntry(
+        tabId: manager.tabId,
+        pluginType: plugin.pluginType,
+      );
     }
+    return null;
   }
 
   Future<void> _navigateHistory(bool forward, Emitter<TabsState> emit) async {
@@ -317,11 +532,14 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       PageHistoryEntry? entry;
       while ((entry = navigationHistory.peek(forward: forward)) != null) {
         final target = entry!;
-        final existing = state.pageManagers.indexWhere(
-          (pm) => target.viewId != null
-              ? pm.plugin.id == target.viewId
-              : pm.plugin.pluginType == target.pluginType,
+        bool matches(PageManager pm) => target.viewId != null
+            ? pm.plugin.id == target.viewId
+            : pm.plugin.pluginType == target.pluginType;
+        final exactTab = state.pageManagers.indexWhere(
+          (pm) => pm.tabId == target.tabId && matches(pm),
         );
+        final existing =
+            exactTab >= 0 ? exactTab : state.pageManagers.indexWhere(matches);
         final notifier =
             existing >= 0 ? state.pageManagers[existing].plugin.notifier : null;
         if (notifier is ViewPluginNotifier &&
@@ -423,6 +641,16 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
   }
 }
 
+class _HomeTabRequest {
+  _HomeTabRequest(this.workspaceId, this.isCurrent);
+
+  final String workspaceId;
+  final bool Function()? isCurrent;
+  final placeholder = BlankPagePlugin();
+  late final manager = PageManager(plugin: placeholder);
+  final started = Completer<bool>();
+}
+
 @freezed
 class TabsEvent with _$TabsEvent {
   const factory TabsEvent.navigateHistory({required bool forward}) =
@@ -489,11 +717,11 @@ class TabsState {
   /// If the [Plugin.id] is already associated with an open tab,
   /// then it selects that tab.
   ///
-  TabsState openView(Plugin plugin) {
+  TabsState openView(Plugin plugin, {bool setLatest = true}) {
     final existingIndex = _indexOfPlugin(plugin.id);
     if (existingIndex != -1 &&
         _pageManagers[existingIndex].plugin.runtimeType != plugin.runtimeType) {
-      _pageManagers[existingIndex].setPlugin(plugin, true);
+      _pageManagers[existingIndex].setPlugin(plugin, setLatest);
       return copyWith(
         currentIndex: existingIndex,
         pageManagers: [..._pageManagers],
@@ -502,7 +730,7 @@ class TabsState {
     final selectExistingPlugin = _selectPluginIfOpen(plugin.id);
 
     if (selectExistingPlugin == null) {
-      _pageManagers.add(PageManager()..setPlugin(plugin, true));
+      _pageManagers.add(PageManager()..setPlugin(plugin, setLatest));
 
       return copyWith(
         currentIndex: pages - 1,
@@ -515,15 +743,13 @@ class TabsState {
   }
 
   TabsState closeView(String pluginId) {
-    // Avoid closing the only open tab
-    if (_pageManagers.length == 1) {
-      return this;
-    }
-
-    final remaining =
-        _pageManagers.where((pm) => pm.plugin.id != pluginId).toList();
-    if (remaining.length == pages || remaining.isEmpty) {
-      return this;
+    final target = managerForTab(pluginId);
+    if (target == null) return this;
+    final remaining = _pageManagers.where((pm) => pm != target).toList();
+    if (remaining.isEmpty) {
+      target.dispose();
+      // The shell always owns a valid page; TabsBloc resolves its Home choice.
+      return TabsState();
     }
     final selectedIndex = remaining.indexOf(currentPageManager);
 
@@ -539,6 +765,12 @@ class TabsState {
       pageManagers: remaining,
     );
   }
+
+  /// UI commands address a tab, while legacy callers may still pass a view ID.
+  /// Distinct Home tabs can share a page without closing/pinning each other.
+  PageManager? managerForTab(String id) =>
+      _pageManagers.firstWhereOrNull((pm) => pm.tabId == id) ??
+      _pageManagers.firstWhereOrNull((pm) => pm.plugin.id == id);
 
   TabsState reorderTab(int oldIndex, int newIndex) {
     if (oldIndex < 0 || oldIndex >= pages || newIndex < 0 || newIndex > pages) {

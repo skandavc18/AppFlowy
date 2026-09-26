@@ -1,6 +1,7 @@
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:flutter/material.dart';
 
 /// The colours every visual block — diagram, mind map, equation, drawing —
@@ -157,7 +158,7 @@ class VisualBlockButton extends StatelessWidget {
           foregroundColor: selected ? colours.accent : colours.textSecondary,
           disabledForegroundColor: colours.textMuted.withValues(alpha: 0.5),
           backgroundColor: selected ? colours.accentSoft : colours.hoverBase,
-          hoverColor: colours.hover,
+          hoverColor: WorkspaceChrome.hoverColor(context),
           focusColor: colours.hover,
           shape: RoundedRectangleBorder(
             borderRadius:
@@ -228,20 +229,41 @@ class _Segment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hover = WorkspaceChrome.hoverColor(context);
+    bool pointerHover(Set<WidgetState> states) =>
+        states.contains(WidgetState.hovered) &&
+        !states.contains(WidgetState.focused) &&
+        !states.contains(WidgetState.pressed) &&
+        !states.contains(WidgetState.disabled);
+    final style = TextButton.styleFrom(
+      padding: EdgeInsets.zero,
+      minimumSize: Size.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      foregroundColor: palette.text,
+      overlayColor: palette.hover,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
     return Semantics(
       selected: selected,
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         child: TextButton(
           onPressed: onTap,
-          style: TextButton.styleFrom(
-            padding: EdgeInsets.zero,
-            minimumSize: Size.zero,
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            foregroundColor: palette.text,
-            overlayColor: palette.hover,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+          style: style.copyWith(
+            // Only the overlay paints pointer hover, not a second inherited
+            // background wash. Other states retain their theme background.
+            backgroundColor: WidgetStateProperty.resolveWith(
+              (states) =>
+                  pointerHover(states) ? hover.withValues(alpha: 0) : null,
+            ),
+            // styleFrom replaces overlay alpha internally. Override pointer
+            // hover only; preserve its existing focus and press resolution.
+            overlayColor: WidgetStateProperty.resolveWith(
+              (states) => pointerHover(states)
+                  ? hover
+                  : style.overlayColor?.resolve(states),
             ),
           ),
           child: AnimatedContainer(

@@ -7,6 +7,9 @@ import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/plugins/database/board/presentation/toolbar/card_preview_button.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart'
+    show DSWorkspaceGlyph, WorkspaceGlyphs;
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy_backend/log.dart';
@@ -648,7 +651,7 @@ void main() {
             expect(
               find.descendant(
                 of: find.byWidget(rows[mode.index]),
-                matching: find.byIcon(_icons[mode]!),
+                matching: _glyph(_icons[mode]!),
               ),
               findsOneWidget,
             );
@@ -666,13 +669,22 @@ void main() {
           );
           final style =
               tester.widget<AppMenuSurface>(find.byType(AppMenuSurface)).style!;
+          final palette = PremiumThemeExtension.of(buttonContext);
+          expect(style.hover, palette.subtleHover);
+          expect(
+            style.hover.a,
+            allOf(greaterThan(0), lessThanOrEqualTo(0.07)),
+          );
           expect(
             style.brightness,
             appearance == 'dark' ? Brightness.dark : Brightness.light,
           );
           if (appearance == 'paper') {
             expect(style.surface, PaperTheme.popupBackground);
-            expect(style.hover, PaperTheme.controlHover);
+            final painted = Color.alphaBlend(style.hover, style.surface);
+            expect(painted, isNot(style.surface));
+            expect(painted.r, greaterThanOrEqualTo(painted.g));
+            expect(painted.g, greaterThan(painted.b));
             expect(style.accent, PaperTheme.accent);
           }
           _expectChecked(tester, CardPreviewMode.cover);
@@ -686,8 +698,9 @@ void main() {
             expect(find.byType(AppMenuSurface), findsNothing);
             final icon = tester
                 .widget<FlowyIconButton>(find.byType(FlowyIconButton))
-                .icon as Icon;
+                .icon as DSWorkspaceGlyph;
             expect(icon.icon, _icons[mode]);
+            expect(icon.name, WorkspaceGlyphs.nameForIcon(_icons[mode]!));
             _expectButtonSemantics(tester, mode);
             await _openMenu(tester);
             _expectChecked(tester, mode);
@@ -834,15 +847,23 @@ Future<void> _openMenu(WidgetTester tester) async {
   expect(find.byType(AppMenuSurface), findsOneWidget);
 }
 
+Finder _glyph(IconData icon) => find.byWidgetPredicate(
+      (widget) =>
+          widget is DSWorkspaceGlyph &&
+          widget.icon == icon &&
+          widget.name == WorkspaceGlyphs.nameForIcon(icon),
+      description: 'WorkspaceGlyph(${WorkspaceGlyphs.nameForIcon(icon)})',
+    );
+
 void _expectChecked(WidgetTester tester, CardPreviewMode mode) {
   final selected = find.byWidgetPredicate(
     (widget) => widget is AppMenuRow && widget.selected,
   );
   expect(selected, findsOneWidget);
   expect(tester.widget<AppMenuRow>(selected).label, _labelKeys[mode]!.tr());
-  expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+  expect(_glyph(Icons.check_rounded), findsOneWidget);
   expect(
-    find.descendant(of: selected, matching: find.byIcon(Icons.check_rounded)),
+    find.descendant(of: selected, matching: _glyph(Icons.check_rounded)),
     findsOneWidget,
   );
 }

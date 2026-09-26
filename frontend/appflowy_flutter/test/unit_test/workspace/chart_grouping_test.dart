@@ -1240,7 +1240,11 @@ Future<void> _zoomIn(WidgetTester tester, TestGesture mouse) async {
   await tester.pumpAndSettle();
   final button = find.descendant(
     of: find.byType(AppChart),
-    matching: find.byIcon(Icons.add_rounded),
+    matching: find.byWidgetPredicate(
+      (widget) =>
+          widget is IconButton &&
+          widget.tooltip == LocaleKeys.canvas_zoom_zoomIn.tr(),
+    ),
   );
   expect(button.hitTestable(), findsOneWidget);
   final position = tester.getCenter(button);
@@ -1284,10 +1288,8 @@ Future<void> _openChartMenu(WidgetTester tester, String control) async {
     matching: find.byType(TextButton),
   );
   expect(button, findsOneWidget);
-  // The toolbar scrolls horizontally; a mounted chip can still be clipped.
-  // Reveal its native button instead of tapping through to a sibling action.
-  await tester.ensureVisible(button);
-  await tester.pumpAndSettle();
+  // At this wide host the complete native control must already fit. Do not
+  // scroll a clipped chip into view and conceal a toolbar-layout regression.
   expect(button.hitTestable(), findsOneWidget, reason: control);
   await tester.tap(button);
   await tester.pumpAndSettle();

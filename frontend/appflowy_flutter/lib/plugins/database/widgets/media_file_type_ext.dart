@@ -9,6 +9,7 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/util/xfile_ext.dart';
 import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/file_entities.pbenum.dart';
@@ -102,6 +103,20 @@ extension MediaFileTypeResolution on MediaFilePB {
         Icons.description_rounded,
       _ => Icons.insert_drive_file_rounded,
     };
+  }
+
+  /// Match the authoritative media category first, then refine shared font
+  /// identities (spreadsheet/table, code/file, etc.) using the same resolver
+  /// as workspace and archive files. No protobuf, MIME or viewer changes.
+  String get displayGlyphName {
+    final icon = displayIcon;
+    for (final source in [name.trim(), url]) {
+      final path = fileTypePath(source);
+      if (fileIconForName(path) == icon) {
+        return WorkspaceGlyphs.nameForFile(path);
+      }
+    }
+    return WorkspaceGlyphs.nameForIcon(icon) ?? 'file';
   }
 }
 
@@ -301,11 +316,10 @@ class _MediaFileFallback extends StatelessWidget {
                     size: iconSize,
                     color: theme.colorScheme.onSurfaceVariant,
                   )
-                : Icon(
-                    file.displayIcon,
+                : WorkspaceGlyph.named(
+                    file.displayGlyphName,
                     key: ValueKey('media-file-icon-${file.id}'),
                     size: iconSize,
-                    color: theme.colorScheme.onSurfaceVariant,
                   ),
           ),
         ),

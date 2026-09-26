@@ -17,10 +17,11 @@ void main() {
 
   setUp(resetIconPacksForTesting);
 
-  test('the selectable defaults include every sidebar symbol exactly once', () {
+  test('selectable defaults retain sidebar symbols and add eight identities',
+      () {
     final defaults =
         appFlowyDefaultIconGroups.expand((group) => group.icons).toList();
-    expect(defaults.length, SidebarIcon.values.length);
+    expect(defaults.length, SidebarIcon.values.length + 8);
     expect(
       defaults.map((icon) => icon.iconPath).toSet().length,
       defaults.length,
@@ -187,6 +188,9 @@ void main() {
     expect(search('git'), contains('repository'));
     expect(search('photos'), contains('album'));
     expect(search('inbox'), contains('mail'));
+    expect(search('jupyter'), contains('notebook'));
+    expect(search('assistant'), contains('ai-chat'));
+    expect(search('readme'), contains('markdown'));
   });
 
   test('recents retain namespaced default identities without parent cycles',

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:appflowy/plugins/base/emoji/emoji_text.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/appflowy_network_svg.dart';
+import 'package:appflowy/shared/icon_emoji_picker/icon_optical_size.dart';
+import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/user/application/user_service.dart';
 import 'package:appflowy_backend/log.dart';
@@ -15,6 +17,8 @@ import 'package:string_validator/string_validator.dart';
 
 import '../../../../../shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import '../../../../base/icon/icon_widget.dart';
+
+export 'package:appflowy/shared/icon_emoji_picker/icon_optical_size.dart';
 
 class EmojiIconWidget extends StatefulWidget {
   const EmojiIconWidget({
@@ -73,12 +77,18 @@ class RawEmojiIconWidget extends StatefulWidget {
     required this.emojiSize,
     this.enableColor = true,
     this.lineHeight,
+    this.opticalRole,
   });
 
   final EmojiIconData emoji;
   final double emojiSize;
   final bool enableColor;
   final double? lineHeight;
+
+  /// Opt-in for identity surfaces only. Null keeps existing picker/inline
+  /// geometry. Header hosts reserve 66px and pass emojiSize: 56; sidebar hosts
+  /// reserve 24px and pass emojiSize: 18. The stored icon is never rewritten.
+  final IconOpticalRole? opticalRole;
 
   @override
   State<RawEmojiIconWidget> createState() => _RawEmojiIconWidgetState();
@@ -103,11 +113,31 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final role = widget.opticalRole;
+    if (role == null) return _buildArtwork(widget.emojiSize);
+    var colorful = widget.emoji.type != FlowyIconType.icon;
+    if (!colorful) {
+      try {
+        final data = IconsData.fromJson(jsonDecode(widget.emoji.emoji));
+        colorful = iconPackForGroup(data.groupName).isColorful;
+      } catch (_) {
+        // The existing renderer owns malformed-data recovery below.
+      }
+    }
+    return OpticalIconFrame(
+      role: role,
+      baseSize: widget.emojiSize,
+      colorful: colorful,
+      builder: _buildArtwork,
+    );
+  }
+
+  Widget _buildArtwork(double size) {
     final defaultEmoji = SizedBox(
-      width: widget.emojiSize,
+      width: size,
       child: EmojiText(
         emoji: '❓',
-        fontSize: widget.emojiSize,
+        fontSize: size,
         textAlign: TextAlign.center,
       ),
     );
@@ -120,8 +150,9 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
           // baseline of a taller line.
           return FlowyText.emoji(
             widget.emoji.emoji,
-            fontSize: widget.emojiSize,
-            lineHeight: widget.lineHeight ?? 1.0,
+            fontSize: size,
+            lineHeight:
+                widget.opticalRole == null ? widget.lineHeight ?? 1.0 : 1.0,
             optimizeEmojiAlign: true,
           );
         case FlowyIconType.icon:
@@ -132,10 +163,9 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
             iconData = iconData.noColor();
           }
 
-          final iconSize = widget.emojiSize;
           return IconWidget(
             iconsData: iconData,
-            size: iconSize,
+            size: size,
           );
         case FlowyIconType.custom:
           final url = widget.emoji.emoji;
@@ -148,14 +178,15 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
                 url,
                 headers:
                     hasUserProfile ? _buildRequestHeader(userProfile!) : {},
-                width: widget.emojiSize,
-                height: widget.emojiSize,
+                width: size,
+                height: size,
               );
             } else if (hasUserProfile) {
               child = FlowyNetworkImage(
                 url: url,
-                width: widget.emojiSize,
-                height: widget.emojiSize,
+                width: size,
+                height: size,
+                fit: widget.opticalRole == null ? BoxFit.cover : BoxFit.contain,
                 userProfilePB: userProfile,
                 errorWidgetBuilder: (context, url, error) {
                   return const SizedBox.shrink();
@@ -163,7 +194,7 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
               );
             }
             return SizedBox.square(
-              dimension: widget.emojiSize,
+              dimension: size,
               child: child,
             );
           }
@@ -172,18 +203,20 @@ class _RawEmojiIconWidgetState extends State<RawEmojiIconWidget> {
             throw PathNotFoundException(url, const OSError());
           }
           return SizedBox.square(
-            dimension: widget.emojiSize,
+            dimension: size,
             child: isSvg
                 ? SvgPicture.file(
                     File(url),
-                    width: widget.emojiSize,
-                    height: widget.emojiSize,
+                    width: size,
+                    height: size,
                   )
                 : Image.file(
                     imageFile,
-                    fit: BoxFit.cover,
-                    width: widget.emojiSize,
-                    height: widget.emojiSize,
+                    fit: widget.opticalRole == null
+                        ? BoxFit.cover
+                        : BoxFit.contain,
+                    width: size,
+                    height: size,
                   ),
           );
       }

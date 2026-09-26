@@ -16,7 +16,8 @@ class BreadcrumbBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
     return SizedBox(
-      height: 28,
+      height: (MediaQuery.textScalerOf(context).scale(12) * 1.4 + 10)
+          .clamp(28.0, double.infinity),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: items.length,

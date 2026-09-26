@@ -2,16 +2,21 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_selection.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_picker_dialog.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
@@ -24,6 +29,7 @@ import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import 'archive_document.dart';
+import 'archive_browser.dart';
 import 'archive_entry_viewer.dart';
 import 'archive_gallery.dart';
 import 'archive_view_factory.dart';
@@ -45,6 +51,11 @@ class ArchiveExplorer extends StatefulWidget {
     this.editable = true,
     this.embedded = true,
     this.toolbarTrailing,
+    this.headerIcon,
+    this.metadata = const {},
+    this.onMetadataChanged,
+    this.canEdit,
+    this.onSessionViewModeChanged,
     this.onChanged,
     this.mediaActions = const MediaActionService(),
   });
@@ -65,6 +76,13 @@ class ArchiveExplorer extends StatefulWidget {
   /// block's own menu.
   final Widget? toolbarTrailing;
 
+  /// The host's existing saved-icon picker, never a second icon binding.
+  final Widget? headerIcon;
+  final Map<String, dynamic> metadata;
+  final ValueChanged<Map<String, dynamic>>? onMetadataChanged;
+  final bool Function()? canEdit;
+  final ValueChanged<FileBrowserViewMode>? onSessionViewModeChanged;
+
   /// Called after the archive on disk has been rewritten.
   final VoidCallback? onChanged;
 
@@ -79,6 +97,16 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   final TextEditingController searchController = TextEditingController();
   final FocusNode searchFocusNode = FocusNode(debugLabel: 'archive-search');
   final FolderGalleryPreviewCache previewCache = FolderGalleryPreviewCache();
+  final browserSelection = WorkspaceExplorerSelection();
+  final Map<String, Future<List<ArchiveEntryView>>> directoryEntries = {};
+  late Map<String, dynamic> _metadata = Map.of(widget.metadata);
+  late FileBrowserViewMode viewMode = FileBrowserViewSettings.read(_metadata);
+  Map<String, dynamic>? _incomingMetadata;
+  StandaloneFileScope? _host;
+  bool get _editable =>
+      widget.editable &&
+      (widget.canEdit?.call() ?? true) &&
+      (_host?.canEdit() ?? true);
 
   ArchiveDocument? document;
   ArchiveViewFactory? factory;
@@ -104,6 +132,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   @override
   void initState() {
     super.initState();
+    browserSelection.addListener(_selectionChanged);
     unawaited(GalleryCardSizeStore.ensureLoaded());
     unawaited(_load());
   }
@@ -112,8 +141,48 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   void didUpdateWidget(covariant ArchiveExplorer oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.file.path != widget.file.path) {
+      _metadata = Map.of(widget.metadata);
+      viewMode = FileBrowserViewSettings.read(_metadata);
       unawaited(_load());
+    } else if (!mapEquals(oldWidget.metadata, widget.metadata)) {
+      _adoptMetadata(widget.metadata);
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _host = StandaloneFileScope.forName(context, widget.name);
+    final incoming = _host?.metadata ?? widget.metadata;
+    if (!mapEquals(_incomingMetadata, incoming)) _adoptMetadata(incoming);
+  }
+
+  void _adoptMetadata(Map<String, dynamic> incoming) {
+    _incomingMetadata = Map.of(incoming);
+    _metadata = Map.of(incoming);
+    viewMode = FileBrowserViewSettings.read(incoming);
+  }
+
+  void _setViewMode(FileBrowserViewMode mode) {
+    if (!mounted || mode == viewMode || renamingPath != null) return;
+    setState(() {
+      viewMode = mode;
+      _metadata = FileBrowserViewSettings.withMode(_metadata, mode);
+    });
+    // A read-only archive still allows a session-only presentation choice.
+    // This never invokes _persist, onChanged, or any file-byte write.
+    widget.onSessionViewModeChanged?.call(mode);
+    if (_editable) widget.onMetadataChanged?.call(Map.of(_metadata));
+  }
+
+  void _selectionChanged() {
+    if (!mounted) return;
+    final id = browserSelection.anchorId;
+    final prefix = '${factory?.archiveId}::';
+    final path = id != null && id.startsWith(prefix)
+        ? id.substring(prefix.length)
+        : null;
+    if (selectedPath != path) setState(() => selectedPath = path);
   }
 
   @override
@@ -126,6 +195,10 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     _disposeWorkingDirectory();
     searchController.dispose();
     searchFocusNode.dispose();
+    browserSelection
+      ..removeListener(_selectionChanged)
+      ..dispose();
+    previewCache.clear();
     super.dispose();
   }
 
@@ -157,6 +230,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
         return;
       }
       previewCache.clear();
+      directoryEntries.clear();
       setState(() {
         document = loaded;
         workingDirectory = directory;
@@ -197,11 +271,16 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
       }
       return matches;
     }
-    return views.childrenOf(value, currentPath);
+    return _childrenFor(currentPath);
   }
 
+  Future<List<ArchiveEntryView>> _childrenFor(String path) =>
+      directoryEntries.putIfAbsent(
+        path,
+        () => factory!.childrenOf(document!, path),
+      );
+
   void _refreshEntries() {
-    previewCache.clear();
     // A block body, not an arrow: an arrow would hand setState the future the
     // assignment evaluates to, which it refuses.
     setState(() {
@@ -232,13 +311,14 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
       '${value.fileCount} files',
       '${value.folderCount} folders',
       formatArchiveBytes(value.totalSize),
-      if (!widget.editable) 'Read only',
+      if (!_editable) 'Read only',
     ].join('  ·  ');
   }
 
   void _navigateTo(String path) {
     searchDebounce?.cancel();
     searchController.clear();
+    browserSelection.clear();
     setState(() {
       currentPath = path;
       query = '';
@@ -322,7 +402,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
         );
       });
       writeBackTimer?.cancel();
-      if (widget.editable) {
+      if (_editable) {
         writeBackTimer = Timer.periodic(
           archiveWriteBackInterval,
           (_) => unawaited(_syncSession()),
@@ -394,7 +474,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   Future<void> _syncSession() async {
     final open = session;
     final value = document;
-    if (open == null || value == null || !widget.editable) {
+    if (open == null || value == null || !_editable) {
       return;
     }
     try {
@@ -414,6 +494,9 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
         modified: stat.modified,
       );
       factory?.invalidate(open.path);
+      directoryEntries.clear();
+      previewCache.clear();
+      if (mounted) _refreshEntries();
       await _persist();
     } catch (error, stackTrace) {
       Log.error('Unable to save an archive entry', error, stackTrace);
@@ -424,11 +507,14 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   Future<void> _finishSession(_ArchiveEntrySession open) async {
     final value = document;
     try {
-      if (widget.editable && value != null && await open.file.exists()) {
+      if (_editable && value != null && await open.file.exists()) {
         final bytes = await open.file.readAsBytes();
         if (!_matchesStored(value, open.path, bytes)) {
           value.writeBytes(open.path, bytes);
           factory?.invalidate(open.path);
+          directoryEntries.clear();
+          previewCache.clear();
+          if (mounted) _refreshEntries();
           await _persist();
         }
       }
@@ -454,7 +540,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
       return;
     }
     try {
-      if (widget.editable && value != null && open.file.existsSync()) {
+      if (_editable && value != null && open.file.existsSync()) {
         final bytes = open.file.readAsBytesSync();
         if (!_matchesStored(value, open.path, bytes)) {
           value.writeBytes(open.path, bytes);
@@ -490,7 +576,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
 
   Future<void> _persist() async {
     final value = document;
-    if (value == null) {
+    if (value == null || !_editable) {
       return;
     }
     if (saving) {
@@ -503,6 +589,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     try {
       do {
         savePending = false;
+        if (!_editable) break;
         await value.saveTo(widget.file);
       } while (savePending);
       widget.onChanged?.call();
@@ -520,7 +607,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
 
   Future<void> _mutate(void Function(ArchiveDocument document) change) async {
     final value = document;
-    if (value == null || !widget.editable) {
+    if (value == null || !_editable) {
       return;
     }
     try {
@@ -530,6 +617,8 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
       return;
     }
     factory?.clear();
+    directoryEntries.clear();
+    previewCache.clear();
     _refreshEntries();
     await _persist();
   }
@@ -556,10 +645,8 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
                   padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
                   child: Row(
                     children: [
-                      Icon(
-                        Icons.folder_zip_rounded,
-                        size: 18,
-                        color: palette.accent,
+                      WorkspaceGlyph.file(
+                        widget.name,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
@@ -828,7 +915,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
         name: open.name,
         path: open.path,
         archiveName: widget.name,
-        editable: widget.editable,
+        editable: _editable,
         metadata: open.metadata,
         onMetadataChanged: (value) => setState(() {
           open.metadata
@@ -849,13 +936,13 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
 
     return _shell(
       palette,
-      CallbackShortcuts(
-        bindings: {
-          const SingleActivator(LogicalKeyboardKey.keyF, control: true):
-              _openSearch,
-          const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
-              _openSearch,
-        },
+      ContextualFindRegion(
+        onFind: _openSearch,
+        onDismiss: _closeSearch,
+        findFocusNode: searchFocusNode,
+        findOpen: searching,
+        isActive: () => mounted && session == null && opening == null,
+        debugLabel: 'Archive search',
         child: Focus(
           autofocus: !widget.embedded,
           child: PremiumScrollScope(
@@ -906,57 +993,108 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     return FutureBuilder<List<ArchiveEntryView>>(
       future: entries,
       builder: (context, snapshot) {
-        final items = snapshot.data ?? const <ArchiveEntryView>[];
+        final items = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data ?? const <ArchiveEntryView>[]
+            : const <ArchiveEntryView>[];
+        final header = ArchiveGalleryHeader(
+          title: widget.name.isEmpty ? 'Archive' : widget.name,
+          leading: widget.headerIcon,
+          viewMode: viewMode,
+          onViewModeChanged: _setViewMode,
+          breadcrumbs: breadcrumbs,
+          rootLabel: widget.name.isEmpty ? 'Archive' : widget.name,
+          subtitle: _subtitle,
+          searchController: searchController,
+          searchFocusNode: searchFocusNode,
+          searching: searching,
+          onSearchChanged: _scheduleSearch,
+          onSearchDismissed: _closeSearch,
+          onSearchRequested: _openSearch,
+          onNavigate: _navigateTo,
+          editable: _editable && (value?.supportsMultipleEntries ?? false),
+          busy: saving,
+          keepActionsVisible: renamingPath != null ||
+              (widget.embedded && _editable && value?.fileCount == 0),
+          onAddFiles: () => unawaited(_addFiles()),
+          onNewFolder: () => unawaited(_createFolder()),
+          onRefresh: () => unawaited(_load()),
+          trailing: _buildHeaderTrailing(),
+        );
+        final gallery = viewMode == FileBrowserViewMode.gallery ||
+            viewMode == FileBrowserViewMode.thumbnails;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             if (message != null) _buildMessageBanner(palette),
-            Expanded(
-              child: ArchiveGallery(
-                entries: items,
-                previewCache: previewCache,
-                compact: widget.embedded,
-                selectedPath: selectedPath,
-                renamingPath: renamingPath,
-                editable: widget.editable &&
-                    (value?.supportsMultipleEntries ?? false),
-                onSelect: (entry) =>
-                    setState(() => selectedPath = entry.entry.path),
-                onOpen: _open,
-                onRenameRequested: (entry) =>
-                    setState(() => renamingPath = entry.entry.path),
-                onRenameSubmitted: _commitRename,
-                onRenameCancelled: () => setState(() => renamingPath = null),
-                onMore: (entry, position) =>
-                    unawaited(_showEntryMenu(context, entry.entry, position)),
-                onBackgroundContextMenu: (position) =>
-                    unawaited(_showBackgroundMenu(context, position)),
-                emptyMessage: query.isEmpty
-                    ? 'This archive is empty'
-                    : 'No entries match your search',
-                header: ArchiveGalleryHeader(
-                  title: widget.name.isEmpty ? 'Archive' : widget.name,
-                  breadcrumbs: breadcrumbs,
-                  rootLabel: widget.name.isEmpty ? 'Archive' : widget.name,
-                  subtitle: _subtitle,
-                  searchController: searchController,
-                  searchFocusNode: searchFocusNode,
-                  searching: searching,
-                  onSearchChanged: _scheduleSearch,
-                  onSearchDismissed: _closeSearch,
-                  onSearchRequested: _openSearch,
-                  onNavigate: _navigateTo,
-                  editable: widget.editable &&
-                      (value?.supportsMultipleEntries ?? false),
-                  busy: saving,
-                  keepActionsVisible: renamingPath != null ||
-                      (widget.editable && value?.fileCount == 0),
-                  onAddFiles: () => unawaited(_addFiles()),
-                  onNewFolder: () => unawaited(_createFolder()),
-                  onRefresh: () => unawaited(_load()),
-                  trailing: _buildHeaderTrailing(),
-                ),
+            // Only the listing changes mode. Keep the header/search element
+            // in one permanent slot in both embedded and standalone hosts.
+            header,
+            if (snapshot.hasError)
+              TextButton(
+                onPressed: () {
+                  directoryEntries.clear();
+                  _refreshEntries();
+                },
+                child: const Text('Unable to read this folder. Retry'),
               ),
+            Expanded(
+              child: !gallery
+                  ? ArchiveBrowser(
+                      mode: viewMode,
+                      entries: items,
+                      loading: snapshot.connectionState != ConnectionState.done,
+                      path: currentPath,
+                      paths: breadcrumbs,
+                      rootLabel: widget.name,
+                      loadChildren: _childrenFor,
+                      selection: browserSelection,
+                      onOpen: _open,
+                      onNavigate: _navigateTo,
+                      onMenu: (entry, position) => unawaited(
+                        _showEntryMenu(context, entry.entry, position),
+                      ),
+                      onBackgroundMenu: (position) =>
+                          unawaited(_showBackgroundMenu(context, position)),
+                      emptyMessage: query.isEmpty
+                          ? 'This archive is empty'
+                          : 'No entries match your search',
+                      editable: _editable &&
+                          (value?.supportsMultipleEntries ?? false),
+                      onRename: (entry) =>
+                          setState(() => renamingPath = entry.entry.path),
+                      onRenameSubmitted: _commitRename,
+                      onRenameCancelled: () =>
+                          setState(() => renamingPath = null),
+                      renamingPath: renamingPath,
+                      searching: query.isNotEmpty,
+                      listingRevision: entries,
+                    )
+                  : ArchiveGallery(
+                      entries: items,
+                      previewCache: previewCache,
+                      compact: widget.embedded,
+                      thumbnails: viewMode == FileBrowserViewMode.thumbnails,
+                      selectedPath: selectedPath,
+                      renamingPath: renamingPath,
+                      editable: _editable &&
+                          (value?.supportsMultipleEntries ?? false),
+                      onSelect: (entry) =>
+                          browserSelection.selectOnly(entry.view.id),
+                      onOpen: _open,
+                      onRenameRequested: (entry) =>
+                          setState(() => renamingPath = entry.entry.path),
+                      onRenameSubmitted: _commitRename,
+                      onRenameCancelled: () =>
+                          setState(() => renamingPath = null),
+                      onMore: (entry, position) => unawaited(
+                        _showEntryMenu(context, entry.entry, position),
+                      ),
+                      onBackgroundContextMenu: (position) =>
+                          unawaited(_showBackgroundMenu(context, position)),
+                      emptyMessage: query.isEmpty
+                          ? 'This archive is empty'
+                          : 'No entries match your search',
+                    ),
             ),
           ],
         );
@@ -972,6 +1110,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     if (!widget.embedded) {
       return widget.toolbarTrailing;
     }
+    final originalPath = widget.file.path;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -983,7 +1122,22 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
               context,
               file: widget.file,
               name: widget.name,
-              editable: widget.editable,
+              editable: _editable,
+              canEdit: () =>
+                  mounted && widget.file.path == originalPath && _editable,
+              metadata: _metadata,
+              onSessionViewModeChanged: (mode) {
+                if (!mounted || widget.file.path != originalPath) return;
+                setState(() {
+                  viewMode = mode;
+                  _metadata = FileBrowserViewSettings.withMode(_metadata, mode);
+                });
+              },
+              onMetadataChanged: (value) {
+                if (!mounted || widget.file.path != originalPath) return;
+                setState(() => _adoptMetadata(value));
+                if (_editable) widget.onMetadataChanged?.call(value);
+              },
               onChanged: widget.onChanged,
               mediaActions: widget.mediaActions,
             ),
@@ -1040,8 +1194,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     BuildContext menuContext,
     Offset position,
   ) async {
-    final canEdit =
-        widget.editable && (document?.supportsMultipleEntries ?? false);
+    final canEdit = _editable && (document?.supportsMultipleEntries ?? false);
     final action = await showAppMenu<_ArchiveBackgroundAction>(
       context: menuContext,
       globalPosition: position,
@@ -1092,8 +1245,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
     ArchiveEntry entry,
     Offset position,
   ) async {
-    final canEdit =
-        widget.editable && (document?.supportsMultipleEntries ?? false);
+    final canEdit = _editable && (document?.supportsMultipleEntries ?? false);
     final action = await showAppMenu<_ArchiveEntryAction>(
       context: menuContext,
       globalPosition: position,
@@ -1152,6 +1304,10 @@ Future<void> showArchiveFullscreen(
   required File file,
   required String name,
   required bool editable,
+  Map<String, dynamic> metadata = const {},
+  ValueChanged<Map<String, dynamic>>? onMetadataChanged,
+  bool Function()? canEdit,
+  ValueChanged<FileBrowserViewMode>? onSessionViewModeChanged,
   VoidCallback? onChanged,
   MediaActionService mediaActions = const MediaActionService(),
 }) {
@@ -1178,6 +1334,10 @@ Future<void> showArchiveFullscreen(
         file: file,
         name: name,
         editable: editable,
+        metadata: metadata,
+        onMetadataChanged: onMetadataChanged,
+        canEdit: canEdit,
+        onSessionViewModeChanged: onSessionViewModeChanged,
         onChanged: onChanged,
         mediaActions: mediaActions,
       ),
@@ -1192,6 +1352,10 @@ class _ArchiveFullscreenView extends StatefulWidget {
     required this.editable,
     required this.onChanged,
     required this.mediaActions,
+    required this.metadata,
+    required this.onMetadataChanged,
+    this.canEdit,
+    this.onSessionViewModeChanged,
   });
 
   final File file;
@@ -1199,26 +1363,28 @@ class _ArchiveFullscreenView extends StatefulWidget {
   final bool editable;
   final VoidCallback? onChanged;
   final MediaActionService mediaActions;
+  final Map<String, dynamic> metadata;
+  final ValueChanged<Map<String, dynamic>>? onMetadataChanged;
+  final bool Function()? canEdit;
+  final ValueChanged<FileBrowserViewMode>? onSessionViewModeChanged;
 
   @override
   State<_ArchiveFullscreenView> createState() => _ArchiveFullscreenViewState();
 }
 
 class _ArchiveFullscreenViewState extends State<_ArchiveFullscreenView> {
-  final _hovered = ValueNotifier(false);
+  final _chrome = StandaloneFileChromeController();
+  final _fileActionsKey = GlobalKey(debugLabel: 'archive-file-actions');
 
   @override
   void dispose() {
-    _hovered.dispose();
+    _chrome.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    final platform = Theme.of(context).platform;
-    final touch =
-        platform == TargetPlatform.android || platform == TargetPlatform.iOS;
     final source = MediaActionSource(
       source: widget.file.path,
       name: widget.name,
@@ -1226,74 +1392,92 @@ class _ArchiveFullscreenViewState extends State<_ArchiveFullscreenView> {
     return Scaffold(
       key: const ValueKey('archive-fullscreen'),
       backgroundColor: palette.background,
-      body: SafeArea(
-        child: CallbackShortcuts(
-          bindings: {
-            const SingleActivator(LogicalKeyboardKey.escape): () =>
-                unawaited(Navigator.of(context).maybePop()),
-          },
-          child: MouseRegion(
-            onEnter: (_) {
-              if (mounted) _hovered.value = true;
+      body: ContextualFindScope(
+        child: SafeArea(
+          child: CallbackShortcuts(
+            bindings: {
+              const SingleActivator(LogicalKeyboardKey.escape): () =>
+                  unawaited(Navigator.of(context).maybePop()),
             },
-            onExit: (_) {
-              if (mounted) _hovered.value = false;
-            },
-            child: ValueListenableBuilder<bool>(
-              valueListenable: _hovered,
-              // Hover changes only chrome. Keep the explorer, its search and
-              // any open entry mounted without rebuilding the renderer.
-              child: ArchiveExplorer(
-                key: ValueKey('fullscreen-${widget.file.path}'),
-                file: widget.file,
-                name: widget.name,
-                editable: widget.editable,
-                embedded: false,
-                onChanged: widget.onChanged,
-                mediaActions: widget.mediaActions,
-              ),
-              builder: (context, hovered, explorer) => Column(
+            child: PreviewToolbarRegion(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Padding(
-                    key: const ValueKey('archive-fullscreen-media-actions'),
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
-                      16,
-                      4,
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        // Do not let the explorer's autofocus root pin this
-                        // reveal; only actual controls retain keyboard focus.
-                        MediaActionReveal(
-                          visible: hovered || touch,
-                          child: MediaActionButtons(
+                  ValueListenableBuilder<StandaloneFileHeader>(
+                    valueListenable: _chrome,
+                    builder: (context, controls, _) {
+                      final fileActions = Row(
+                        key: _fileActionsKey,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          MediaActionButtons(
                             source: source,
                             actions: widget.mediaActions,
                             decorated: false,
                           ),
+                        ],
+                      );
+                      final toolbar = controls.toolbarBuilder?.call(
+                            context,
+                            fileActions,
+                          ) ??
+                          fileActions;
+                      return Padding(
+                        // Reserve the existing Copy feedback badge, without a
+                        // second action strip above the archive controls.
+                        padding: EdgeInsets.only(
+                          top:
+                              MediaQuery.textScalerOf(context).scale(10) * 1.2 +
+                                  6,
                         ),
-                        const SizedBox(width: 12),
-                        IconButton(
-                          key: const ValueKey('archive-fullscreen-close'),
-                          tooltip: 'Close',
-                          onPressed: () =>
-                              unawaited(Navigator.of(context).maybePop()),
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          color: palette.textSecondary,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 28,
-                            height: 28,
+                        child: DocumentViewportHeader(
+                          identity: DocumentIdentity(
+                            title: widget.name,
+                            icon: Icons.folder_zip_rounded,
                           ),
+                          background: palette.background,
+                          leading: WorkspaceControlButton(
+                            key: const ValueKey('archive-fullscreen-close'),
+                            icon: Icons.close_rounded,
+                            tooltip: 'Close',
+                            onPressed: () =>
+                                unawaited(Navigator.of(context).maybePop()),
+                          ),
+                          keepActionsVisible: controls.keepActionsVisible,
+                          toolbar: toolbar,
                         ),
-                      ],
+                      );
+                    },
+                  ),
+                  Expanded(
+                    child: StandaloneFileScope(
+                      canvas: palette.background,
+                      rendererName: widget.name,
+                      displayName: widget.name,
+                      chrome: _chrome,
+                      canEdit: () =>
+                          mounted &&
+                          widget.editable &&
+                          (widget.canEdit?.call() ?? true),
+                      canRead: () => mounted,
+                      editable: widget.editable,
+                      available: true,
+                      child: ArchiveExplorer(
+                        key: ValueKey('fullscreen-${widget.file.path}'),
+                        file: widget.file,
+                        name: widget.name,
+                        editable: widget.editable,
+                        embedded: false,
+                        metadata: widget.metadata,
+                        onMetadataChanged: widget.onMetadataChanged,
+                        canEdit: widget.canEdit,
+                        onSessionViewModeChanged:
+                            widget.onSessionViewModeChanged,
+                        onChanged: widget.onChanged,
+                        mediaActions: widget.mediaActions,
+                      ),
                     ),
                   ),
-                  Expanded(child: explorer!),
                 ],
               ),
             ),
@@ -1343,10 +1527,9 @@ class _ArchiveOpeningStage extends StatelessWidget {
                 borderRadius: BorderRadius.circular(19),
               ),
               alignment: Alignment.center,
-              child: Icon(
-                fileIconForName(opening.entry.name),
+              child: WorkspaceGlyph.file(
+                opening.entry.name,
                 size: 26,
-                color: palette.accent,
               ),
             ),
             const SizedBox(height: 18),
@@ -1434,10 +1617,9 @@ class _ArchiveMessage extends StatelessWidget {
                 borderRadius: BorderRadius.circular(18),
               ),
               alignment: Alignment.center,
-              child: Icon(
-                Icons.folder_zip_rounded,
+              child: const WorkspaceGlyph.named(
+                'file-zip',
                 size: 26,
-                color: palette.accent.withValues(alpha: 0.7),
               ),
             ),
             const SizedBox(height: 16),
@@ -1464,7 +1646,7 @@ class _ArchiveMessage extends StatelessWidget {
 }
 
 /// One place a file can be taken from, in the "add to archive" sheet.
-class _ArchiveSourceRow extends StatefulWidget {
+class _ArchiveSourceRow extends StatelessWidget {
   const _ArchiveSourceRow({
     required this.icon,
     required this.label,
@@ -1476,51 +1658,33 @@ class _ArchiveSourceRow extends StatefulWidget {
   final VoidCallback onPressed;
 
   @override
-  State<_ArchiveSourceRow> createState() => _ArchiveSourceRowState();
-}
-
-class _ArchiveSourceRowState extends State<_ArchiveSourceRow> {
-  bool hovered = false;
-
-  @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 120),
-          curve: Curves.easeOutCubic,
-          height: 40,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: hovered ? palette.hover : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              Icon(widget.icon, size: 17, color: palette.accent),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text(
-                  widget.label,
-                  style: TextStyle(
-                    color: palette.textPrimary,
-                    fontFamily: 'Inter',
-                    fontSize: 13.5,
-                  ),
+    return TextButton(
+      onPressed: onPressed,
+      style: WorkspaceChrome.controlStyle(context),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 32),
+        child: Row(
+          children: [
+            WorkspaceGlyph(icon, size: 17, color: palette.accent),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: palette.textPrimary,
+                  fontFamily: 'Inter',
+                  fontSize: 13.5,
                 ),
               ),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 17,
-                color: palette.textMuted,
-              ),
-            ],
-          ),
+            ),
+            WorkspaceGlyph(
+              Icons.chevron_right_rounded,
+              size: 17,
+              color: palette.textMuted,
+            ),
+          ],
         ),
       ),
     );

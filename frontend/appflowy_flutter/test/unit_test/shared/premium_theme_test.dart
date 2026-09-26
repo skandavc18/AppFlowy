@@ -3,6 +3,7 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/premium_theme_backdrop.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/mobile_appearance.dart';
@@ -54,7 +55,8 @@ void main() {
       );
     });
 
-    test('Dark keeps existing legacy palette values', () {
+    test('Dark has a distinct calm surface hierarchy and readable contrast',
+        () {
       final legacy = AppTheme.fallback.darkTheme;
       final dark = PremiumTheme.resolve(
         appTheme: paperTheme,
@@ -63,11 +65,16 @@ void main() {
       );
 
       expect(dark.isPaper, isFalse);
-      expect(dark.canvas, legacy.surface);
-      expect(dark.floatingSurface, legacy.input);
-      expect(dark.sidebar, legacy.sidebarBg);
-      expect(dark.textPrimary, legacy.text);
-      expect(dark.accent, legacy.primary);
+      expect(dark.canvas, isNot(legacy.surface));
+      expect(dark.surface, isNot(dark.canvas));
+      expect(dark.floatingSurface, isNot(dark.surface));
+      expect(dark.sidebar, isNot(dark.canvas));
+      expect(HSLColor.fromColor(dark.accent).saturation, lessThan(0.4));
+      for (final surface in [dark.canvas, dark.surface, dark.floatingSurface]) {
+        expect(_contrastRatio(dark.textPrimary, surface), greaterThan(7));
+        expect(_contrastRatio(dark.textSecondary, surface), greaterThan(4.5));
+      }
+      expect(_contrastRatio(dark.onAccent, dark.accent), greaterThan(4.5));
       expect(dark.paperGrain, Colors.transparent);
     });
 
@@ -108,6 +115,35 @@ void main() {
     });
   });
 
+  test('subtle washes multiply source alpha and preserve its RGB', () {
+    final base = PremiumTheme.resolve(
+      appTheme: AppTheme.fallback,
+      legacy: AppTheme.fallback.lightTheme,
+      brightness: Brightness.light,
+    );
+    for (final (alpha, hoverAlpha, pressedAlpha) in const [
+      (0.0, 0.0, 0.0),
+      (0.02, 0.013, 0.024),
+      (0.1, 0.065, 0.12),
+      (1.0, 0.07, 0.12),
+    ]) {
+      final source = PaperTheme.hoverOverlay.withValues(alpha: alpha);
+      final palette = base.copyWith(hoverOverlay: source);
+      for (final (wash, expectedAlpha, cap) in [
+        (palette.subtleHover, hoverAlpha, 0.07),
+        (palette.subtlePressed, pressedAlpha, 0.12),
+      ]) {
+        expect(wash.a, closeTo(expectedAlpha, 1e-9));
+        expect(wash.a, inInclusiveRange(0.0, cap));
+        expect(
+          wash.withValues(alpha: 1),
+          source.withValues(alpha: 1),
+          reason: 'Even a transparent wash must retain its source hue.',
+        );
+      }
+    }
+  });
+
   group('Material 3 component system', () {
     test('Desktop Light uses premium component geometry and states', () {
       final theme = DesktopAppearance().getThemeData(
@@ -124,7 +160,10 @@ void main() {
       expect(theme.scaffoldBackgroundColor, palette.canvas);
       expect(theme.cardColor, palette.floatingSurface);
       expect(theme.dividerColor, palette.border);
-      expect(cardShape.borderRadius, BorderRadius.circular(13));
+      expect(
+        cardShape.borderRadius,
+        BorderRadius.circular(WorkspaceTokens.cardRadius),
+      );
       expect(cardShape.side.color, palette.border);
       expect(theme.inputDecorationTheme.filled, isNot(true));
       expect(theme.inputDecorationTheme.enabledBorder, isNull);
@@ -140,7 +179,12 @@ void main() {
       expect(
         theme.outlinedButtonTheme.style!.backgroundColor!
             .resolve(const {WidgetState.hovered}),
-        palette.hover,
+        palette.subtleHover,
+      );
+      expect(theme.hoverColor, palette.subtleHover);
+      expect(
+        theme.hoverColor.a,
+        allOf(greaterThan(0), lessThanOrEqualTo(0.07)),
       );
       expect(theme.textTheme.bodyLarge?.height, closeTo(1.5, 0.001));
       expect(theme.textTheme.bodySmall?.height, closeTo(1.5, 0.001));
@@ -211,7 +255,15 @@ void main() {
         transformed.fillColorScheme.content.b,
         closeTo(palette.floatingSurface.b, 0.001),
       );
-      expect(transformed.fillColorScheme.contentHover, palette.hoverOverlay);
+      expect(transformed.fillColorScheme.contentHover, palette.subtleHover);
+      expect(
+        transformed.fillColorScheme.contentVisible,
+        palette.selectedOverlay,
+      );
+      expect(
+        transformed.fillColorScheme.contentVisibleHover,
+        palette.focusRing,
+      );
       expect(transformed.borderColorScheme.primary, palette.border);
       expect(transformed.shadow.medium, isNotEmpty);
       expect(
@@ -220,7 +272,8 @@ void main() {
       );
     });
 
-    test('Dark AppFlowy theme is returned unchanged', () {
+    test('Dark AppFlowy controls share the same canvas and semantic hierarchy',
+        () {
       final base = AppFlowyDefaultTheme().dark();
       final palette = PremiumTheme.resolve(
         appTheme: AppTheme.fallback,
@@ -233,7 +286,11 @@ void main() {
         brightness: Brightness.dark,
       );
 
-      expect(transformed, same(base));
+      expect(transformed.backgroundColorScheme.primary, palette.canvas);
+      expect(transformed.surfaceColorScheme.primary, palette.floatingSurface);
+      expect(transformed.textColorScheme.primary, palette.textPrimary);
+      expect(transformed.fillColorScheme.themeThick, palette.accent);
+      expect(transformed.textColorScheme.error, base.textColorScheme.error);
     });
   });
 

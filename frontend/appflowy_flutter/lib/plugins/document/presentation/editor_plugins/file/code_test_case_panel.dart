@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_block_chrome.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_test_case.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -192,6 +193,7 @@ class _CodeTestCasePanelState extends State<CodeTestCasePanel> {
               palette: palette,
               tooltip: 'Delete this test case',
               icon: Icons.delete_outline_rounded,
+              iconRole: WorkspaceGlyphRole.preserveInk,
               onPressed:
                   widget.running || cases.isEmpty ? null : _removeSelected,
             ),
@@ -205,6 +207,9 @@ class _CodeTestCasePanelState extends State<CodeTestCasePanel> {
                 : Icons.play_circle_outline_rounded,
             label: widget.running ? 'Stop' : 'Run tests',
             foregroundColor: widget.running ? palette.error : palette.accent,
+            iconRole: widget.running
+                ? WorkspaceGlyphRole.preserveInk
+                : WorkspaceGlyphRole.standard,
             onPressed: widget.running
                 ? widget.onStop
                 : cases.isEmpty || !widget.canRun
@@ -266,6 +271,7 @@ class _CodeTestCasePanelState extends State<CodeTestCasePanel> {
               icon: Icons.add_rounded,
               label: 'Add a case',
               foregroundColor: palette.accent,
+              iconRole: WorkspaceGlyphRole.standard,
               onPressed: _addCase,
             ),
         ],

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_add_menu.dart';
 import 'package:appflowy/plugins/collection/collection_icon_button.dart';
@@ -11,8 +12,14 @@ import 'package:appflowy/plugins/collection/providers/external_import.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/collection/providers/source_picker.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
-import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/icon_emoji_picker/icon_optical_size.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -22,15 +29,21 @@ import 'package:appflowy/workspace/application/providers/provider_cache.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
+import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
+import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
+import 'package:appflowy/workspace/presentation/home/home_stack.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/breadcrumb_bar.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 /// The full window presentation of a collection.
@@ -42,24 +55,50 @@ class CollectionPage extends StatefulWidget {
     super.key,
     required this.view,
     this.onOpen,
+    this.controller,
+    this.shellOwnsBreadcrumbs,
+    this.service = const CollectionService(),
   });
 
   final ViewPB view;
   final ValueChanged<ViewPB>? onOpen;
+  final CollectionService service;
+
+  /// An embedding host may lend its already-loaded graph. It stays host-owned;
+  /// key the page when replacing this controller or the collection identity.
+  final WorkspaceExplorerController? controller;
+
+  /// Null detects the full-page shell; standalone hosts retain navigation.
+  final bool? shellOwnsBreadcrumbs;
 
   @override
   State<CollectionPage> createState() => _CollectionPageState();
 }
 
 class _CollectionPageState extends State<CollectionPage> {
-  static const _service = CollectionService();
-
   final TextEditingController searchController = TextEditingController();
+  final FocusNode searchFocusNode = FocusNode(debugLabel: 'collection-search');
+  final GlobalKey _searchFieldKey = GlobalKey();
   late final WorkspaceExplorerController controller;
+  late final bool ownsController;
   late CollectionMetadata metadata;
   late String activeViewId;
   List<ViewPB> ancestors = const [];
   Timer? searchDebounce;
+  bool searchExpanded = false;
+  bool _ancestorsRequested = false;
+  bool _metadataRebuildScheduled = false;
+
+  bool get _shellOwnsBreadcrumbs =>
+      widget.shellOwnsBreadcrumbs ??
+      (context.read<PageNotifier?>()?.plugin.id == widget.view.id &&
+          context.findAncestorWidgetOfExactType<PageStack>() != null);
+
+  bool get _canEdit {
+    final access = context.read<PageAccessLevelBloc?>();
+    return !_currentView.isLocked &&
+        (access?.view.id != _currentView.id || access!.state.isEditable);
+  }
 
   @override
   void initState() {
@@ -68,20 +107,30 @@ class _CollectionPageState extends State<CollectionPage> {
         const CollectionMetadata(kind: CollectionKind.book);
     activeViewId =
         CollectionRegistry.resolveView(metadata.kind, metadata.activeViewId).id;
-    controller = WorkspaceExplorerController(
-      root: widget.view,
-      repository: const WorkspaceItemService(),
-    );
-    unawaited(controller.initialize());
-    unawaited(_loadAncestors());
+    ownsController = widget.controller == null;
+    controller = widget.controller ??
+        WorkspaceExplorerController(
+          root: widget.view,
+          repository: const WorkspaceItemService(),
+        );
+    if (ownsController) unawaited(controller.initialize());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_shellOwnsBreadcrumbs && !_ancestorsRequested) {
+      _ancestorsRequested = true;
+      unawaited(_loadAncestors());
+    }
   }
 
   /// The folders the collection lives in, so it is placed in the workspace the
   /// same way a page or a folder is.
   Future<void> _loadAncestors() async {
-    final result =
-        await const WorkspaceItemService().getAncestors(widget.view.id);
-    if (!mounted) {
+    final viewId = widget.view.id;
+    final result = await const WorkspaceItemService().getAncestors(viewId);
+    if (!mounted || widget.view.id != viewId) {
       return;
     }
     result.fold(
@@ -99,8 +148,10 @@ class _CollectionPageState extends State<CollectionPage> {
   void didUpdateWidget(covariant CollectionPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.view.id == widget.view.id) {
-      controller.updateRoot(widget.view);
-    } else {
+      if (oldWidget.view != widget.view) {
+        controller.updateRoot(widget.view);
+      }
+    } else if (!_shellOwnsBreadcrumbs) {
       unawaited(_loadAncestors());
     }
   }
@@ -109,32 +160,54 @@ class _CollectionPageState extends State<CollectionPage> {
   void dispose() {
     searchDebounce?.cancel();
     searchController.dispose();
-    controller.dispose();
+    searchFocusNode.dispose();
+    if (ownsController) controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    context.watch<PageAccessLevelBloc?>();
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
         final palette = CollectionPalette.of(context, metadata.kind);
         final definition = CollectionRegistry.typeFor(metadata.kind);
         final view = _viewFor(definition);
-        return DecoratedBox(
-          decoration: BoxDecoration(color: palette.background),
-          child: ProviderSourceUpdate(
-            onChanged: (source) => unawaited(_persistSource(source)),
-            child: ProviderReconnectRequest(
-              onReconnect: (source) => unawaited(_reconnect(source)),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildHeader(context, palette, definition, view),
-                  Expanded(
-                    child: view.builder(context, _viewContext(view)),
+        return ContextualFindRegion(
+          debugLabel: 'Collection search',
+          onFind: _showSearch,
+          onDismiss: _closeSearch,
+          findOpen: searchExpanded || controller.query.isNotEmpty,
+          findFocusNode: searchFocusNode,
+          child: WorkspaceSurface(
+            kind: WorkspaceSurfaceKind.canvas,
+            radius: 0,
+            child: ProviderSourceUpdate(
+              onChanged: (source) => unawaited(_persistSource(source)),
+              child: ProviderReconnectRequest(
+                onReconnect: (source) => unawaited(_reconnect(source)),
+                child: PremiumCoordinatedScrollScope(
+                  child: NestedScrollView(
+                    key: const ValueKey('collection-page-scroll-view'),
+                    headerSliverBuilder: (context, innerBoxIsScrolled) => [
+                      SliverToBoxAdapter(
+                        child: _buildHeader(context, palette, definition, view),
+                      ),
+                    ],
+                    body: Builder(
+                      // Resolve BELOW NestedScrollView, not from the page's own
+                      // context. Only opted-in main scrollers borrow this owner.
+                      builder: (context) => CollectionPageScrollScope(
+                        controller: PrimaryScrollController.of(context),
+                        child: Builder(
+                          builder: (context) =>
+                              view.builder(context, _viewContext(view)),
+                        ),
+                      ),
+                    ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -166,38 +239,80 @@ class _CollectionPageState extends State<CollectionPage> {
         ? LocaleKeys.collections_untitled.tr()
         : root.name;
     final nested = controller.breadcrumbs.length > 1;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        CollectionMetrics.headerHorizontalPadding,
-        CollectionMetrics.headerTopPadding,
-        CollectionMetrics.headerHorizontalPadding,
-        0,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (ancestors.isNotEmpty) ...[
-            _CollectionAncestors(
-              ancestors: ancestors,
-              palette: palette,
-              onOpen: _openView,
-            ),
-            const SizedBox(height: 8),
-          ] else ...[
-            // A collection at the root has no chain above it, so the
-            // workspace itself says where it lives.
-            _WorkspaceCrumb(palette: palette),
-            const SizedBox(height: 8),
-          ],
-          WorkspaceHeaderLayout(
-            identity: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
+    final current = _currentView;
+    final cover = current.cover;
+    final canEdit = _canEdit;
+    return PreviewToolbarRegion(
+      child: LayoutBuilder(
+        builder: (headerContext, constraints) => ViewDecorationActions(
+          view: current,
+          visible: searchExpanded || controller.query.isNotEmpty,
+          showIconAction: canEdit,
+          showCoverAction: canEdit,
+          showDownloadAction: true,
+          leading: CollectionViewSwitcher(
+            palette: palette,
+            views: [
+              for (final view in definition.views)
+                if (view.availableFor(current.source)) view,
+            ],
+            activeViewId: activeView.id,
+            onChanged: _setActiveView,
+          ),
+          userProfile: context.read<UserWorkspaceBloc?>()?.state.userProfile,
+          onViewChanged: (updated) {
+            final latest = _currentView;
+            if (!_canEdit || updated.id != latest.id) return;
+            final cover = updated.cover;
+            controller.updateView(
+              ViewPB()
+                ..mergeFromMessage(latest)
+                ..icon = updated.icon
+                ..extra = cover == null
+                    ? latest.extra
+                    : ViewCoverCodec.mergeCover(latest.extra, cover),
+            );
+          },
+          layoutBuilder: (iconActions, coverActions, pageActions) =>
+              WorkspacePageHeader(
+            maxWidth: double.infinity,
+            contentInset: CollectionMetrics.gutter,
+            leading: _shellOwnsBreadcrumbs
+                ? null
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (ancestors.isNotEmpty)
+                        _CollectionAncestors(
+                          ancestors: ancestors,
+                          palette: palette,
+                          onOpen: _openView,
+                        )
+                      else
+                        _WorkspaceCrumb(palette: palette),
+                      const SizedBox(height: WorkspaceTokens.space6),
+                    ],
+                  ),
+            cover: cover != null && !cover.isNone
+                ? ViewCoverImage(
+                    cover: cover,
+                    userProfile:
+                        context.read<UserWorkspaceBloc?>()?.state.userProfile,
+                    width: double.infinity,
+                  )
+                : null,
+            coverActions: coverActions,
+            identity: WorkspacePageIdentity(
+              key: const ValueKey('collection-page-identity'),
+              icon: ExcludeFocus(
+                excluding: !canEdit,
+                child: IgnorePointer(
+                  ignoring: !canEdit,
                   child: CollectionIconButton(
                     key: const ValueKey('collection-header-icon'),
-                    view: _currentView,
+                    view: current,
+                    iconSize: CollectionMetrics.pageIconSize,
+                    opticalRole: IconOpticalRole.header,
                     onViewChanged: (updated) => controller.updateView(
                       ViewPB()
                         ..mergeFromMessage(_currentView)
@@ -205,104 +320,133 @@ class _CollectionPageState extends State<CollectionPage> {
                     ),
                   ),
                 ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      WorkspaceInlineEditableText(
-                        key: const ValueKey('collection-title'),
-                        text: title,
-                        editingValue: root.name,
-                        editing: controller.editingId == root.id,
-                        onSubmitted: controller.commitRename,
-                        onCancelled: controller.cancelEditing,
-                        onDoubleTap: () => controller.beginRename(root.id),
-                        style: WorkspaceChrome.title(context, compact: true),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              _subtitle(definition),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: palette.textSecondary,
-                                fontSize: 12,
-                              ),
-                            ),
-                          ),
-                          if (_currentView.source.isRemote) ...[
-                            Text(
-                              '  ·  ',
-                              style: TextStyle(
-                                color: palette.textMuted,
-                                fontSize: 12,
-                              ),
-                            ),
-                            Flexible(
-                              child: ProviderBadge(
-                                source: _currentView.source,
-                                palette: palette,
-                                detail: _currentView.source.remoteName,
-                                onTap: () => unawaited(_changeSource()),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
+              ),
+              iconActions: iconActions,
+              title: ExcludeFocus(
+                excluding: !canEdit,
+                child: IgnorePointer(
+                  ignoring: !canEdit,
+                  child: WorkspaceInlineEditableText(
+                    key: const ValueKey('collection-title'),
+                    text: title,
+                    editingValue: root.name,
+                    maxLines: 2,
+                    editing: controller.editingId == root.id,
+                    onSubmitted: (name) => _canEdit
+                        ? controller.commitRename(name)
+                        : Future.value(false),
+                    onCancelled: controller.cancelEditing,
+                    onDoubleTap:
+                        canEdit ? () => controller.beginRename(root.id) : null,
+                    style: WorkspaceTypography.style(
+                      context,
+                      WorkspaceTextRole.pageTitle,
+                      compact: constraints.maxWidth < 600,
+                    ),
                   ),
                 ),
-              ],
+              ),
+              description: Text(definition.description),
+              metadata: Wrap(
+                spacing: WorkspaceTokens.space3,
+                runSpacing: WorkspaceTokens.space2,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(_subtitle(definition)),
+                  if (current.source.isRemote)
+                    ProviderBadge(
+                      source: current.source,
+                      palette: palette,
+                      detail: current.source.remoteName,
+                      onTap: canEdit ? () => unawaited(_changeSource()) : null,
+                    ),
+                ],
+              ),
+              actions: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (pageActions != null) pageActions,
+                  if (nested) ...[
+                    const SizedBox(height: WorkspaceTokens.space2),
+                    // This is navigation INSIDE the collection, not the
+                    // workspace ancestor trail owned by the shell.
+                    BreadcrumbBar(
+                      items: controller.breadcrumbs,
+                      onSelected: (id) => unawaited(controller.navigateTo(id)),
+                    ),
+                  ],
+                ],
+              ),
             ),
-            actions: Wrap(
-              alignment: WrapAlignment.end,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (ProviderServices.hasRemoteOptions(metadata.kind))
-                  _SourceButton(
-                    palette: palette,
-                    source: _currentView.source,
-                    onPressed: () => unawaited(_changeSource()),
-                  ),
-                _CollectionSearchField(
+          ),
+          children: [
+            if (searchExpanded || controller.query.isNotEmpty)
+              SizedBox(
+                key: const ValueKey('collection-search'),
+                width: (constraints.maxWidth - CollectionMetrics.gutter * 2)
+                    .clamp(0.0, CollectionMetrics.searchFieldWidth)
+                    .toDouble(),
+                child: _CollectionSearchField(
+                  key: _searchFieldKey,
                   controller: searchController,
+                  focusNode: searchFocusNode,
                   palette: palette,
                   onChanged: _scheduleSearch,
+                  onClose: _closeSearch,
                 ),
-                _CollectionAddButton(
+              )
+            else
+              IconButton(
+                tooltip: LocaleKeys.collections_searchPlaceholder.tr(),
+                onPressed: _showSearch,
+                style: WorkspaceChrome.controlStyle(context),
+                icon: const WorkspaceGlyph(Icons.search_rounded),
+              ),
+            if (canEdit) ...[
+              _CollectionAddButton(
+                key: const ValueKey('collection-add'),
+                palette: palette,
+                onPressed: _showAddMenu,
+              ),
+              if (ProviderServices.hasRemoteOptions(metadata.kind))
+                _SourceButton(
+                  key: const ValueKey('collection-source'),
                   palette: palette,
-                  onPressed: _showAddMenu,
+                  source: current.source,
+                  onPressed: _changeSource,
                 ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 18),
-          CollectionViewSwitcher(
-            palette: palette,
-            views: [
-              for (final view in definition.views)
-                if (view.availableFor(_currentView.source)) view,
             ],
-            activeViewId: activeView.id,
-            onChanged: _setActiveView,
-          ),
-          if (nested) ...[
-            const SizedBox(height: 8),
-            BreadcrumbBar(
-              items: controller.breadcrumbs,
-              onSelected: (id) => unawaited(controller.navigateTo(id)),
-            ),
           ],
-          const SizedBox(height: 6),
-        ],
+        ),
       ),
     );
+  }
+
+  void _showSearch() {
+    setState(() => searchExpanded = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !searchExpanded) return;
+      final field = _searchFieldKey.currentContext?.findRenderObject();
+      if (field != null && field.attached) {
+        // Reveal the whole control only when clipped. Top-aligning the inner
+        // EditableText moves even a visible field, clips its decoration and
+        // triggers a second native caret scroll that blocks pointer input.
+        // Include the native scroll padding before handing focus to the field.
+        field.showOnScreen(
+          rect: _CollectionSearchField.scrollPadding.inflateRect(
+            field.paintBounds,
+          ),
+        );
+      }
+      searchFocusNode.requestFocus();
+    });
+  }
+
+  void _closeSearch() {
+    searchDebounce?.cancel();
+    searchController.clear();
+    unawaited(controller.search(''));
+    setState(() => searchExpanded = false);
   }
 
   String _subtitle(CollectionTypeDefinition definition) {
@@ -356,7 +500,7 @@ class _CollectionPageState extends State<CollectionPage> {
     setState(() => activeViewId = id);
     final next = metadata.copyWith(activeViewId: id);
     metadata = next;
-    await _service.updateMetadata(view: _currentView, metadata: next);
+    await widget.service.updateMetadata(view: _currentView, metadata: next);
   }
 
   Future<void> _persistViewState(
@@ -367,12 +511,27 @@ class _CollectionPageState extends State<CollectionPage> {
     if (!mounted) {
       return;
     }
-    setState(() => metadata = next);
-    await _service.updateMetadata(view: _currentView, metadata: next);
+    // Readers flush their final position/time from dispose. Persist that
+    // value immediately, but never dirty an ancestor while the tree is locked.
+    metadata = next;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      if (!_metadataRebuildScheduled) {
+        _metadataRebuildScheduled = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _metadataRebuildScheduled = false;
+          if (mounted) setState(() {});
+        });
+      }
+    } else {
+      setState(() {});
+    }
+    await widget.service.updateMetadata(view: _currentView, metadata: next);
   }
 
   /// Asks what the collection should be backed by, and rebinds it.
   Future<void> _changeSource() async {
+    if (!_canEdit) return;
     final view = _currentView;
     final previous = view.source;
     final chosen = await showCollectionSourcePicker(
@@ -412,6 +571,7 @@ class _CollectionPageState extends State<CollectionPage> {
   }
 
   Future<void> _showAddMenu(Offset position) async {
+    if (!_canEdit) return;
     final parentId = controller.currentFolder.id;
     final definition = CollectionRegistry.typeFor(metadata.kind);
     final choice = await showCollectionAddMenu(
@@ -592,10 +752,10 @@ class _CollectionAncestorState extends State<_CollectionAncestor> {
   }
 }
 
-/// The adaptive views a collection offers, as one row of tabs.
+/// The adaptive views a collection offers, all visible without scrolling.
 ///
-/// An underline rather than a pill: the row has to read as navigation sitting
-/// on the page, not as a control floating above it.
+/// Native buttons wrap at the actual pane width/text scale. Navigation stays
+/// visible independently of the contextual actions sharing its row.
 class CollectionViewSwitcher extends StatelessWidget {
   const CollectionViewSwitcher({
     super.key,
@@ -613,72 +773,21 @@ class CollectionViewSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (views.isEmpty) return const SizedBox.shrink();
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final active = views.firstWhere(
-          (view) => view.id == activeViewId,
-          orElse: () => views.first,
-        );
-        final compact = constraints.maxWidth < 480;
-        return SizedBox(
-          height: MediaQuery.textScalerOf(context).scale(13) + 20,
-          child: Row(
-            children: [
-              Expanded(
-                child: compact
-                    ? Align(
-                        alignment: AlignmentDirectional.centerStart,
-                        child: Text(
-                          active.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(color: palette.textPrimary),
-                        ),
-                      )
-                    : ScrollConfiguration(
-                        behavior: ScrollConfiguration.of(context)
-                            .copyWith(scrollbars: false),
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              for (final view in views)
-                                _CollectionViewSegment(
-                                  key: ValueKey(view.id),
-                                  palette: palette,
-                                  definition: view,
-                                  selected: view.id == activeViewId,
-                                  onTap: () => onChanged(view.id),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-              ),
-              if (views.length > 1)
-                AppMenuIconButton(
-                  key: const ValueKey('collection-view-menu'),
-                  icon: Icons.keyboard_arrow_down_rounded,
-                  tooltip: LocaleKeys.grid_settings_layout.tr(),
-                  size: WorkspaceChrome.controlHeight,
-                  entries: () => [
-                    for (final view in views)
-                      AppMenuItem(
-                        label: view.label,
-                        icon: view.icon,
-                        selected: view.id == activeViewId,
-                        onSelected: () => onChanged(view.id),
-                      ),
-                  ],
-                ),
-            ],
+    return Wrap(
+      key: const ValueKey('collection-view-tabs'),
+      spacing: WorkspaceTokens.space1,
+      runSpacing: WorkspaceTokens.space2,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        for (final view in views)
+          _CollectionViewSegment(
+            key: ValueKey(view.id),
+            palette: palette,
+            definition: view,
+            selected: view.id == activeViewId,
+            onTap: () => onChanged(view.id),
           ),
-        );
-      },
+      ],
     );
   }
 }
@@ -714,9 +823,9 @@ class _CollectionViewSegment extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(definition.icon, size: 15),
+                  WorkspaceGlyph(definition.icon, size: 15, color: foreground),
                   const SizedBox(width: 7),
-                  Text(definition.label),
+                  Flexible(child: Text(definition.label)),
                 ],
               ),
             ),
@@ -749,14 +858,21 @@ class _CollectionViewSegment extends StatelessWidget {
 
 class _CollectionSearchField extends StatelessWidget {
   const _CollectionSearchField({
+    super.key,
     required this.controller,
+    required this.focusNode,
     required this.palette,
     required this.onChanged,
+    required this.onClose,
   });
 
+  static const scrollPadding = EdgeInsets.all(20);
+
   final TextEditingController controller;
+  final FocusNode focusNode;
   final CollectionPalette palette;
   final ValueChanged<String> onChanged;
+  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
@@ -767,24 +883,43 @@ class _CollectionSearchField extends StatelessWidget {
       child: TextEntryShortcuts(
         child: TextField(
           controller: controller,
+          focusNode: focusNode,
           onChanged: onChanged,
           cursorWidth: 1.4,
           cursorColor: palette.accent,
-          style: TextStyle(color: palette.textPrimary, fontSize: 12.5),
+          style: TextStyle(
+            color: palette.textPrimary,
+            fontSize: 12.5,
+            height: 1.2,
+          ),
           decoration: InputDecoration(
             isDense: true,
             filled: true,
             fillColor: field,
             hoverColor: field,
             contentPadding: const EdgeInsets.symmetric(vertical: 8),
-            prefixIcon: Icon(
+            prefixIcon: WorkspaceGlyph(
               Icons.search_rounded,
               size: 15,
               color: palette.textMuted,
             ),
             prefixIconConstraints: const BoxConstraints(minWidth: 30),
+            suffixIconConstraints:
+                const BoxConstraints(minWidth: 32, minHeight: 32),
+            suffixIcon: IconButton(
+              tooltip: LocaleKeys.button_close.tr(),
+              onPressed: onClose,
+              style: WorkspaceChrome.controlStyle(context).copyWith(
+                padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+              ),
+              icon: const WorkspaceGlyph(Icons.close_rounded, size: 16),
+            ),
             hintText: LocaleKeys.collections_searchPlaceholder.tr(),
-            hintStyle: TextStyle(color: palette.textMuted, fontSize: 12.5),
+            hintStyle: TextStyle(
+              color: palette.textMuted,
+              fontSize: 12.5,
+              height: 1.2,
+            ),
             // A shade, not an outlined box.
             border: _border,
             enabledBorder: _border,
@@ -808,6 +943,7 @@ class _CollectionSearchField extends StatelessWidget {
 /// collection to a service is a first-class choice, not a setting.
 class _SourceButton extends StatelessWidget {
   const _SourceButton({
+    super.key,
     required this.palette,
     required this.source,
     required this.onPressed,
@@ -815,7 +951,7 @@ class _SourceButton extends StatelessWidget {
 
   final CollectionPalette palette;
   final CollectionSource source;
-  final VoidCallback onPressed;
+  final Future<void> Function() onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -824,7 +960,14 @@ class _SourceButton extends StatelessWidget {
     return Tooltip(
       message: LocaleKeys.providers_changeSource.tr(),
       child: TextButton(
-        onPressed: onPressed,
+        onPressed: () async {
+          final release = PreviewToolbarRegion.hold(context);
+          try {
+            await onPressed();
+          } finally {
+            release();
+          }
+        },
         style: WorkspaceChrome.controlStyle(
           context,
           accent: remote ? info.accent : null,
@@ -832,7 +975,7 @@ class _SourceButton extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
+            WorkspaceGlyph(
               remote ? info.icon : Icons.cloud_sync_rounded,
               size: 15,
               color: remote ? info.accent : palette.textSecondary,
@@ -853,10 +996,14 @@ class _SourceButton extends StatelessWidget {
 }
 
 class _CollectionAddButton extends StatefulWidget {
-  const _CollectionAddButton({required this.palette, required this.onPressed});
+  const _CollectionAddButton({
+    super.key,
+    required this.palette,
+    required this.onPressed,
+  });
 
   final CollectionPalette palette;
-  final ValueChanged<Offset> onPressed;
+  final Future<void> Function(Offset) onPressed;
 
   @override
   State<_CollectionAddButton> createState() => _CollectionAddButtonState();
@@ -875,7 +1022,7 @@ class _CollectionAddButtonState extends State<_CollectionAddButton> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.add_rounded, size: 15, color: palette.accent),
+          WorkspaceGlyph(Icons.add_rounded, size: 15, color: palette.accent),
           const SizedBox(width: 5),
           Flexible(
             child: Text(
@@ -889,11 +1036,16 @@ class _CollectionAddButtonState extends State<_CollectionAddButton> {
     );
   }
 
-  void _open() {
+  Future<void> _open() async {
     final box = anchor.currentContext?.findRenderObject() as RenderBox?;
     if (box == null) {
       return;
     }
-    widget.onPressed(box.localToGlobal(Offset(0, box.size.height + 6)));
+    final release = PreviewToolbarRegion.hold(context);
+    try {
+      await widget.onPressed(box.localToGlobal(Offset(0, box.size.height + 6)));
+    } finally {
+      release();
+    }
   }
 }

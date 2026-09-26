@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/presentation/widgets/toggle/toggle.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -29,7 +30,7 @@ class DateFormatButton extends StatelessWidget {
         ),
         onTap: onTap,
         onHover: onHover,
-        rightIcon: const FlowySvg(FlowySvgs.more_s),
+        rightIcon: const WorkspaceGlyph.svg(FlowySvgs.more_s, size: 16),
       ),
     );
   }
@@ -56,7 +57,7 @@ class TimeFormatButton extends StatelessWidget {
         ),
         onTap: onTap,
         onHover: onHover,
-        rightIcon: const FlowySvg(FlowySvgs.more_s),
+        rightIcon: const WorkspaceGlyph.svg(FlowySvgs.more_s, size: 16),
       ),
     );
   }

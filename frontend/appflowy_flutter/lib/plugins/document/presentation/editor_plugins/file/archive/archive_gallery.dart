@@ -1,6 +1,10 @@
 import 'dart:async';
 
+import 'package:appflowy/shared/document_viewer/standalone_file_scope.dart';
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
@@ -33,6 +37,7 @@ class ArchiveGallery extends StatelessWidget {
     this.onBackgroundContextMenu,
     this.header,
     this.compact = false,
+    this.thumbnails = false,
     this.emptyMessage = 'This archive is empty',
   });
 
@@ -57,6 +62,8 @@ class ArchiveGallery extends StatelessWidget {
   /// Tightens the grid for a card embedded in a page, where the full window
   /// measurements would fit barely one card.
   final bool compact;
+
+  final bool thumbnails;
 
   final String emptyMessage;
 
@@ -98,18 +105,31 @@ class ArchiveGallery extends StatelessWidget {
                   child: _ArchiveGalleryEmptyState(message: emptyMessage),
                 );
               }
-              final metrics = GalleryCardMetrics.resolve(
-                available: constraints.crossAxisExtent - horizontal * 2,
-                size: cardSize,
-                spacing: _spacing,
-                scale: _scale,
-                maximumColumns: compact ? 4 : 5,
-              );
+              final contentWidth = constraints.crossAxisExtent - horizontal * 2;
+              final metrics = thumbnails
+                  ? GalleryCardMetrics.thumbnails(
+                      available: contentWidth,
+                      compact: compact,
+                      textScale:
+                          MediaQuery.textScalerOf(context).scale(13) / 13,
+                    )
+                  : GalleryCardMetrics.resolve(
+                      available: contentWidth,
+                      size: cardSize,
+                      spacing: _spacing,
+                      scale: _scale,
+                      maximumColumns: null,
+                      fillRow: false,
+                      textScale:
+                          MediaQuery.textScalerOf(context).scale(15) / 15,
+                    );
               return SliverPadding(
-                padding: EdgeInsets.fromLTRB(
+                padding: EdgeInsetsDirectional.fromSTEB(
                   horizontal,
                   compact ? 4 : 8,
-                  horizontal,
+                  horizontal +
+                      (contentWidth - metrics.gridWidth)
+                          .clamp(0.0, double.infinity),
                   compact ? 20 : 84,
                 ),
                 sliver: SliverGrid(
@@ -124,6 +144,7 @@ class ArchiveGallery extends StatelessWidget {
                       final entry = entries[index];
                       return FolderGalleryCard(
                         key: ValueKey('archive-card-${entry.entry.path}'),
+                        thumbnail: thumbnails,
                         item: entry.item,
                         view: entry.view,
                         preview: previewCache.previewFor(
@@ -133,6 +154,7 @@ class ArchiveGallery extends StatelessWidget {
                         userProfile: null,
                         selected: selectedPath == entry.entry.path,
                         editing: renamingPath == entry.entry.path,
+                        canRename: editable,
                         onTap: () {
                           onSelect(entry);
                           onOpen(entry);
@@ -186,10 +208,9 @@ class _ArchiveGalleryEmptyState extends StatelessWidget {
                 borderRadius: BorderRadius.circular(20),
               ),
               alignment: Alignment.center,
-              child: Icon(
-                Icons.folder_zip_rounded,
+              child: const WorkspaceGlyph.named(
+                'file-zip',
                 size: 28,
-                color: palette.accent.withValues(alpha: 0.7),
               ),
             ),
             const SizedBox(height: 18),
@@ -234,6 +255,9 @@ class ArchiveGalleryHeader extends StatelessWidget {
     required this.onNewFolder,
     required this.onRefresh,
     this.trailing,
+    this.leading,
+    this.viewMode = FileBrowserViewMode.gallery,
+    this.onViewModeChanged,
     this.keepActionsVisible = false,
   });
 
@@ -254,25 +278,55 @@ class ArchiveGalleryHeader extends StatelessWidget {
   final VoidCallback onNewFolder;
   final VoidCallback onRefresh;
   final Widget? trailing;
+  final Widget? leading;
+  final FileBrowserViewMode viewMode;
+  final ValueChanged<FileBrowserViewMode>? onViewModeChanged;
   final bool keepActionsVisible;
 
   @override
   Widget build(BuildContext context) {
+    final host = StandaloneFileScope.forName(context, title);
+    if (host == null) return _buildHeader(context);
+    return StandaloneFileHeaderSlot(
+      controller: host.chrome,
+      controls: StandaloneFileHeader(
+        toolbarBuilder: (context, fileActions) => CallbackShortcuts(
+          // Published controls are siblings of the renderer, so they no
+          // longer inherit the explorer body's keyboard shortcuts.
+          bindings: {
+            const SingleActivator(LogicalKeyboardKey.keyF, control: true):
+                onSearchRequested,
+            const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
+                onSearchRequested,
+          },
+          child: _buildHeader(context, fileActions: fileActions),
+        ),
+        keepActionsVisible: searching || busy || keepActionsVisible,
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, {Widget? fileActions}) {
     final palette = FolderExplorerPalette.of(context);
     return LayoutBuilder(
       builder: (context, constraints) {
-        final horizontal =
-            KnowledgeGalleryLayout.horizontalPadding(constraints.maxWidth);
+        final horizontal = fileActions == null
+            ? KnowledgeGalleryLayout.horizontalPadding(constraints.maxWidth)
+            : 0.0;
         final compact = constraints.maxWidth < 860;
         final available =
             (constraints.maxWidth - horizontal * 2).clamp(0.0, double.infinity);
         final scale = MediaQuery.textScalerOf(context).scale(13) / 13;
         final stacked = constraints.maxWidth < (searching ? 1000 : 720) * scale;
-        final actionsWidth = stacked ? available : available * 0.62;
-        final identityWidth =
-            stacked ? available : available - actionsWidth - 12;
+        final actionsWidth =
+            fileActions != null || stacked ? available : available * 0.62;
+        final identityWidth = fileActions != null || stacked
+            ? available
+            : available - actionsWidth - 12;
         return Padding(
-          padding: EdgeInsets.fromLTRB(horizontal, 20, horizontal, 14),
+          padding: fileActions == null
+              ? EdgeInsets.fromLTRB(horizontal, 20, horizontal, 14)
+              : EdgeInsets.zero,
           child: ConstrainedBox(
             constraints: const BoxConstraints(
               maxWidth: KnowledgeGalleryLayout.maxContentWidth,
@@ -295,77 +349,85 @@ class ArchiveGalleryHeader extends StatelessWidget {
                   runSpacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    SizedBox(
-                      width: identityWidth,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: palette.accent.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(13),
+                    if (fileActions == null)
+                      SizedBox(
+                        width: identityWidth,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 38,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                color: palette.accent.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(13),
+                              ),
+                              alignment: Alignment.center,
+                              child: leading ??
+                                  WorkspaceGlyph.file(title, size: 20),
                             ),
-                            alignment: Alignment.center,
-                            child: Icon(
-                              Icons.folder_zip_rounded,
-                              size: 20,
-                              color: palette.accent,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: palette.textPrimary,
-                                    fontFamily: 'Inter',
-                                    fontSize: compact ? 17 : 19,
-                                    height: 1.2,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: -0.4,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.textPrimary,
+                                      fontFamily: 'Inter',
+                                      fontSize: compact ? 17 : 19,
+                                      height: 1.2,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: -0.4,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  subtitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: palette.textMuted,
-                                    fontFamily: 'Inter',
-                                    fontSize: 11.5,
-                                    height: 1.2,
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.textMuted,
+                                      fontFamily: 'Inter',
+                                      fontSize: 11.5,
+                                      height: 1.2,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
                     SizedBox(
                       width: actionsWidth,
                       child: PreviewToolbar(
                         keepVisible: searching || busy || keepActionsVisible,
                         child: Wrap(
-                          spacing: 8,
+                          key: const ValueKey('archive-controls'),
+                          spacing: 4,
                           runSpacing: 6,
                           alignment: WrapAlignment.end,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
+                            if (onViewModeChanged != null)
+                              FileBrowserViewButton(
+                                mode: viewMode,
+                                onChanged: onViewModeChanged!,
+                                compact: compact,
+                              ),
                             if (searching)
-                              _ArchiveSearchField(
-                                controller: searchController,
-                                focusNode: searchFocusNode,
-                                onChanged: onSearchChanged,
-                                onDismissed: onSearchDismissed,
+                              SizedBox(
+                                width: actionsWidth.clamp(0.0, 244.0),
+                                child: _ArchiveSearchField(
+                                  controller: searchController,
+                                  focusNode: searchFocusNode,
+                                  onChanged: onSearchChanged,
+                                  onDismissed: onSearchDismissed,
+                                ),
                               )
                             else
                               ArchivePillButton(
@@ -387,30 +449,32 @@ class ArchiveGalleryHeader extends StatelessWidget {
                                 onPressed: busy ? null : onNewFolder,
                               ),
                             ],
-                            Builder(
-                              builder: (buttonContext) => ArchivePillButton(
-                                icon: Icons.tune_rounded,
-                                tooltip: 'Card size',
-                                onPressed: () {
-                                  final box = buttonContext.findRenderObject()
-                                      as RenderBox?;
-                                  if (box == null) return;
-                                  unawaited(
-                                    showGalleryCardSizeMenu(
-                                      context: buttonContext,
-                                      globalPosition: box.localToGlobal(
-                                        Offset(0, box.size.height + 4),
+                            if (viewMode == FileBrowserViewMode.gallery)
+                              Builder(
+                                builder: (buttonContext) => ArchivePillButton(
+                                  icon: Icons.tune_rounded,
+                                  tooltip: 'Card size',
+                                  onPressed: () {
+                                    final box = buttonContext.findRenderObject()
+                                        as RenderBox?;
+                                    if (box == null) return;
+                                    unawaited(
+                                      showGalleryCardSizeMenu(
+                                        context: buttonContext,
+                                        globalPosition: box.localToGlobal(
+                                          Offset(0, box.size.height + 4),
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
+                                    );
+                                  },
+                                ),
                               ),
-                            ),
                             ArchivePillButton(
                               icon: Icons.refresh_rounded,
                               tooltip: 'Reload archive',
                               onPressed: onRefresh,
                             ),
+                            if (fileActions != null) fileActions,
                             if (trailing != null) trailing!,
                           ],
                         ),
@@ -427,9 +491,8 @@ class ArchiveGalleryHeader extends StatelessWidget {
   }
 }
 
-/// A soft, fully rounded action button — the shape used across the file
-/// surfaces so a control never reads as a framework default.
-class ArchivePillButton extends StatefulWidget {
+/// Retains the public archive API while sharing the file/code control style.
+class ArchivePillButton extends StatelessWidget {
   const ArchivePillButton({
     super.key,
     required this.icon,
@@ -446,104 +509,15 @@ class ArchivePillButton extends StatefulWidget {
   final bool primary;
 
   @override
-  State<ArchivePillButton> createState() => _ArchivePillButtonState();
-}
-
-class _ArchivePillButtonState extends State<ArchivePillButton> {
-  bool hovered = false;
-  bool focused = false;
-
-  @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    final enabled = widget.onPressed != null;
-    final background = widget.primary
-        ? palette.accent.withValues(alpha: enabled ? (hovered ? 1 : 0.92) : 0.4)
-        : hovered || focused
-            ? Color.alphaBlend(palette.hover, palette.surface)
-            : palette.surface;
-    final foreground = widget.primary
-        ? Colors.white
-        : enabled
-            ? palette.textSecondary
-            : palette.textMuted.withValues(alpha: 0.5);
-
-    final pointerButton = MouseRegion(
-      cursor: enabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        onTap: widget.onPressed,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          height: 36,
-          padding: EdgeInsets.symmetric(
-            horizontal: widget.label == null ? 9 : 14,
-          ),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(18),
-            border: focused
-                ? Border.all(color: palette.accent, width: 1.2)
-                : widget.primary
-                    ? null
-                    : Border.all(color: palette.border, width: 0.8),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(widget.icon, size: 17, color: foreground),
-              if (widget.label != null) ...[
-                const SizedBox(width: 7),
-                Text(
-                  widget.label!,
-                  style: TextStyle(
-                    color: foreground,
-                    fontFamily: 'Inter',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: -0.1,
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-
-    final tooltip = widget.tooltip ?? widget.label;
-    final button = Semantics(
-      button: true,
-      enabled: enabled,
-      label: tooltip,
-      child: FocusableActionDetector(
-        enabled: enabled,
-        onShowFocusHighlight: (value) => setState(() => focused = value),
-        shortcuts: const {
-          SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
-          SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
-        },
-        actions: {
-          ActivateIntent: CallbackAction<ActivateIntent>(
-            onInvoke: (_) {
-              widget.onPressed?.call();
-              return null;
-            },
-          ),
-        },
-        child: pointerButton,
-      ),
-    );
-    if (tooltip == null) {
-      return button;
-    }
-    return Tooltip(
-      message: tooltip,
-      excludeFromSemantics: true,
-      waitDuration: const Duration(milliseconds: 450),
-      child: button,
+    return WorkspaceControlButton(
+      icon: icon,
+      tooltip: tooltip ?? label ?? '',
+      label: label,
+      foregroundColor: primary ? palette.accent : null,
+      iconRole: WorkspaceGlyphRole.standard,
+      onPressed: onPressed,
     );
   }
 }
@@ -570,7 +544,6 @@ class _ArchiveSearchField extends StatelessWidget {
     final palette = FolderExplorerPalette.of(context);
     return SizedBox(
       width: 244,
-      height: 38,
       child: CallbackShortcuts(
         bindings: {
           const SingleActivator(LogicalKeyboardKey.escape): onDismissed,
@@ -592,14 +565,15 @@ class _ArchiveSearchField extends StatelessWidget {
               color: palette.textMuted,
               fontSize: 13,
             ),
-            prefixIcon: Icon(
+            prefixIcon: WorkspaceGlyph(
               Icons.search_rounded,
               size: 17,
               color: palette.textMuted,
             ),
             prefixIconConstraints: const BoxConstraints(minWidth: 34),
             suffixIcon: IconButton(
-              icon: const Icon(Icons.close_rounded, size: 15),
+              tooltip: 'Close search',
+              icon: const WorkspaceGlyph(Icons.close_rounded, size: 15),
               color: palette.textMuted,
               splashRadius: 13,
               onPressed: onDismissed,
@@ -609,15 +583,18 @@ class _ArchiveSearchField extends StatelessWidget {
             filled: true,
             fillColor: palette.surface,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(19),
-              borderSide: BorderSide(color: palette.border, width: 0.8),
+              borderRadius:
+                  BorderRadius.circular(WorkspaceChrome.controlRadius),
+              borderSide: BorderSide.none,
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(19),
-              borderSide: BorderSide(color: palette.border, width: 0.8),
+              borderRadius:
+                  BorderRadius.circular(WorkspaceChrome.controlRadius),
+              borderSide: BorderSide.none,
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(19),
+              borderRadius:
+                  BorderRadius.circular(WorkspaceChrome.controlRadius),
               borderSide: BorderSide(color: palette.accent, width: 1.2),
             ),
           ),
@@ -642,11 +619,12 @@ class _ArchiveBreadcrumbs extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
     return SizedBox(
-      height: 26,
+      height: (MediaQuery.textScalerOf(context).scale(12) * 1.4 + 10)
+          .clamp(26.0, double.infinity),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: paths.length,
-        separatorBuilder: (_, __) => Icon(
+        separatorBuilder: (_, __) => WorkspaceGlyph(
           Icons.chevron_right_rounded,
           size: 15,
           color: palette.textMuted,
@@ -657,20 +635,10 @@ class _ArchiveBreadcrumbs extends StatelessWidget {
           final label = path.isEmpty ? rootLabel : archiveEntryName(path);
           return TextButton(
             onPressed: isLast ? null : () => onSelected(path),
-            style: TextButton.styleFrom(
-              foregroundColor:
-                  isLast ? palette.textPrimary : palette.textSecondary,
-              disabledForegroundColor: palette.textPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: Size.zero,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(13),
-              ),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              textStyle: const TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 12.5,
-                fontWeight: FontWeight.w500,
+            style: WorkspaceChrome.controlStyle(context).copyWith(
+              minimumSize: const WidgetStatePropertyAll(Size.zero),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 8),
               ),
             ),
             child: Text(

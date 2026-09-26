@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/plugins/collection/views/email/email_file_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_explorer.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_icon_picker.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_media_player.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
@@ -14,24 +14,59 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/comm
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_page.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
+import 'package:appflowy/plugins/workspace_file/workspace_file_identity.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_migrator.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
-import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/email/email_message.dart';
+import 'package:appflowy/workspace/application/user/user_workspace_bloc.dart';
+import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
+import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/log.dart';
+import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
+import 'package:appflowy_result/appflowy_result.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
+import 'package:collection/collection.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:path/path.dart' as p;
+
+typedef WorkspaceFileExtraWriter = Future<FlowyResult<void, FlowyError>>
+    Function({
+  required String viewId,
+  required String extra,
+});
+
+Future<FlowyResult<void, FlowyError>> _writeWorkspaceFileExtra({
+  required String viewId,
+  required String extra,
+}) async {
+  final result =
+      await ViewBackendService.updateView(viewId: viewId, extra: extra);
+  // UpdateView returns a success ACK, not necessarily a populated ViewPB.
+  return result.fold(
+    (_) => FlowyResult.success(null),
+    FlowyResult.failure,
+  );
+}
 
 /// The full window renderer for a workspace file.
 ///
@@ -47,6 +82,12 @@ class WorkspaceFileView extends StatefulWidget {
     this.materializeFile = materializeMediaFile,
     this.editable = true,
     this.iconListenerFactory,
+    this.repository = const WorkspaceItemService(),
+    this.coverBackend = const ViewCoverActionsBackend(),
+    this.updateIcon = ViewBackendService.updateViewIcon,
+    this.writeExtra = _writeWorkspaceFileExtra,
+    this.ocrService,
+    this.ocrSourceBuilder,
   });
 
   final ViewPB view;
@@ -55,6 +96,14 @@ class WorkspaceFileView extends StatefulWidget {
   /// Identity editing is independent of whether materialized bytes are local.
   final bool editable;
   final ViewListener Function(String viewId)? iconListenerFactory;
+  final WorkspaceItemRepository repository;
+  final ViewCoverActionsBackend coverBackend;
+  final WorkspaceFileIconWriter updateIcon;
+  final WorkspaceFileExtraWriter writeExtra;
+
+  /// OCR-only boundaries; the retained image and its storage IO are unchanged.
+  final OcrService? ocrService;
+  final ImageOcrSourceBuilder? ocrSourceBuilder;
 
   /// Optional IO boundaries; the normal storage migration and materialization
   /// remain the defaults, and every renderer still receives the resolved file.
@@ -73,12 +122,48 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   Future<File>? _file;
   String? _source;
   int _fileRevision = 0;
+  late ViewPB _view;
+  late String _rendererName;
+  ViewListener? _listener;
+  int _listenerGeneration = 0;
+  bool _available = true;
+  Object _binding = Object();
+  int? _size;
+  Widget? _renderer;
+  File? _renderedFile;
+  bool? _renderedEditable;
+  bool? _renderedEditingSource;
+  PageAccessLevelBloc? _access;
+  StandaloneFileChromeController _chrome = StandaloneFileChromeController();
+  late MediaActionService _guardedActions;
+  MediaActionSource? _actionTarget;
+  late bool Function() _canEditBinding;
+  late bool Function() _canReadBinding;
+  late ViewCoverActionsBackend _guardedCoverBackend;
+  Future<void> _viewWrites = Future.value();
+  int _pendingMetadataWrites = 0;
+  final _fileFocus = FocusNode(debugLabel: 'Standalone file');
+  final _focused = ValueNotifier(false);
 
-  String get _name => widget.view.name.isEmpty ? 'Untitled' : widget.view.name;
+  String get _name => _view.name.isEmpty ? 'Untitled' : _view.name;
+
+  bool get _canRename {
+    if (!mounted || !widget.editable || !_available || _view.isLocked) {
+      return false;
+    }
+    final access = _access;
+    if (access == null) return true;
+    return !access.isClosed &&
+        access.state.view.id == _view.id &&
+        !access.state.isLoadingLockStatus &&
+        !access.state.isReadOnly &&
+        access.state.isEditable;
+  }
 
   /// Files kept inside AppFlowy's own storage can be written back in place.
   /// A downloaded copy of a cloud object cannot, so it opens read only.
   bool get _isEditable {
+    if (!_canRename) return false;
     final source = _source;
     if (source == null || source.isEmpty) {
       return false;
@@ -87,35 +172,136 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
     return scheme != 'http' && scheme != 'https';
   }
 
-  FilePreviewKind? get _previewKind => filePreviewKindFromName(_name);
+  FilePreviewKind? get _previewKind => filePreviewKindFromName(_rendererName);
 
-  FileMediaKind? get _mediaKind => fileMediaKind(_name, _source);
+  FileMediaKind? get _mediaKind => fileMediaKind(_rendererName, _source);
 
-  bool get _isImage => imgExtensionRegex.hasMatch(_name.toLowerCase());
+  bool get _isImage => imgExtensionRegex.hasMatch(_rendererName.toLowerCase());
 
   @override
   void initState() {
     super.initState();
+    FocusManager.instance.addListener(_syncFocus);
+    _view = widget.view;
+    _rendererName = _name;
     metadata = _seedMetadata(
       WorkspaceFilePreviewCodec.decode(widget.view.extra),
     );
     _resolveFile();
+    _listen();
   }
 
   @override
   void didUpdateWidget(covariant WorkspaceFileView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.view.id != widget.view.id ||
-        oldWidget.view.name != widget.view.name ||
         oldWidget.view.workspaceItem?.storageUrl !=
             widget.view.workspaceItem?.storageUrl ||
         oldWidget.resolveStorageUrl != widget.resolveStorageUrl ||
         oldWidget.materializeFile != widget.materializeFile) {
+      _view = widget.view;
+      _rendererName = _name;
       metadata = _seedMetadata(
         WorkspaceFilePreviewCodec.decode(widget.view.extra),
       );
       _resolveFile();
+    } else if (oldWidget.view != widget.view) {
+      _adoptMetadata(widget.view);
+      _view = widget.view;
     }
+    if (oldWidget.view.id != widget.view.id ||
+        oldWidget.iconListenerFactory != widget.iconListenerFactory) {
+      unawaited(_listener?.stop());
+      _listen();
+    }
+    if (oldWidget.mediaActions != widget.mediaActions) {
+      _bindMediaActions();
+      // Update the forwarded service without changing renderer keys or bytes.
+      _renderer = null;
+    }
+    if (oldWidget.ocrService != widget.ocrService ||
+        oldWidget.ocrSourceBuilder != widget.ocrSourceBuilder) {
+      _renderer = null;
+    }
+    if (oldWidget.repository != widget.repository ||
+        oldWidget.coverBackend != widget.coverBackend) {
+      _bindCoverActions();
+    }
+  }
+
+  void _listen() {
+    final generation = ++_listenerGeneration;
+    _available = true;
+    _listener = (widget.iconListenerFactory?.call(_view.id) ??
+        ViewListener(viewId: _view.id))
+      ..start(
+        onViewUpdated: (view) {
+          if (mounted && generation == _listenerGeneration) _accept(view);
+        },
+        onViewDeleted: (result) => result.onSuccess((_) {
+          if (mounted && generation == _listenerGeneration) {
+            setState(() => _available = false);
+          }
+        }),
+        onViewMoveToTrash: (result) => result.onSuccess((_) {
+          if (mounted && generation == _listenerGeneration) {
+            setState(() => _available = false);
+          }
+        }),
+        onViewRestored: (result) => result.onSuccess((view) {
+          if (mounted && generation == _listenerGeneration) {
+            _accept(view, restored: true);
+          }
+        }),
+      );
+  }
+
+  void _accept(ViewPB view, {bool restored = false}) {
+    if (!mounted || view.id != widget.view.id) return;
+    // Only an explicit restore can reopen a deleted binding. A delayed rename
+    // or icon notification must not make its original-file actions live again.
+    if (!_available && !restored) return;
+    final changedSource =
+        _view.workspaceItem?.storageUrl != view.workspaceItem?.storageUrl;
+    setState(() {
+      if (!changedSource) _adoptMetadata(view);
+      _view = view;
+      _available = true;
+      if (changedSource) {
+        _rendererName = _name;
+        metadata = _seedMetadata(WorkspaceFilePreviewCodec.decode(view.extra));
+        _resolveFile();
+      }
+    });
+  }
+
+  void _adoptMetadata(ViewPB view) {
+    if (_pendingMetadataWrites != 0) return;
+    final stored = WorkspaceFilePreviewCodec.decode(view.extra);
+    if (!const DeepCollectionEquality().equals(
+      stored,
+      WorkspaceFilePreviewCodec.decode(_view.extra),
+    )) {
+      metadata = _seedMetadata(stored);
+    }
+  }
+
+  void _syncFocus() {
+    if (mounted && _focused.value != _fileFocus.hasFocus) {
+      _focused.value = _fileFocus.hasFocus;
+    }
+  }
+
+  @override
+  void dispose() {
+    _listenerGeneration++;
+    _fileRevision++;
+    FocusManager.instance.removeListener(_syncFocus);
+    _fileFocus.dispose();
+    _focused.dispose();
+    unawaited(_listener?.stop());
+    _chrome.dispose();
+    super.dispose();
   }
 
   /// Plain text opens ready to type. Markup keeps its rendered preview and an
@@ -130,7 +316,69 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
 
   void _resolveFile() {
     _source = null;
-    _file = _openFile(widget.view, _name, ++_fileRevision);
+    _binding = Object();
+    _chrome.dispose();
+    _chrome = StandaloneFileChromeController();
+    _size = _view.workspaceItem?.size;
+    _renderer = null;
+    _renderedFile = null;
+    _actionTarget = null;
+    _pendingMetadataWrites = 0;
+    final binding = _binding;
+    _canEditBinding = () => mounted && binding == _binding && _isEditable;
+    _canReadBinding = () =>
+        mounted &&
+        binding == _binding &&
+        _available &&
+        (_actionTarget?.source.isNotEmpty ?? false);
+    _bindMediaActions();
+    _bindCoverActions();
+    _file = _openFile(_view, _rendererName, ++_fileRevision);
+  }
+
+  void _bindMediaActions() {
+    final binding = _binding;
+    _guardedActions = _WorkspaceFileMediaActions(
+      delegate: widget.mediaActions,
+      isCurrent: (source) =>
+          mounted &&
+          _available &&
+          binding == _binding &&
+          source.source.isNotEmpty &&
+          source.name == _name &&
+          source == _actionTarget,
+    );
+  }
+
+  void _bindCoverActions() {
+    final binding = _binding;
+    final repository = widget.repository;
+    final backend = widget.coverBackend;
+    _guardedCoverBackend = _WorkspaceFileCoverBackend(
+      delegate: backend,
+      repository: repository,
+      serialize: _serializeViewWrite,
+      isCurrent: (view) =>
+          mounted &&
+          binding == _binding &&
+          repository == widget.repository &&
+          backend == widget.coverBackend &&
+          _canRename &&
+          view.id == _view.id &&
+          view.cover == _view.cover &&
+          view.workspaceItem?.storageUrl == _view.workspaceItem?.storageUrl,
+    );
+  }
+
+  Future<FlowyResult<void, FlowyError>> _serializeViewWrite(
+    Future<FlowyResult<void, FlowyError>> Function() write,
+  ) {
+    final operation = _viewWrites.then((_) => write());
+    _viewWrites = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
+    return operation;
   }
 
   Future<File> _openFile(ViewPB view, String name, int revision) async {
@@ -139,30 +387,93 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
         await (widget.resolveStorageUrl ?? _migrator.resolveStorageUrl)(
       view,
     );
+    if (!mounted || revision != _fileRevision) {
+      throw const FileSystemException('The file source changed while opening.');
+    }
     if (source == null || source.isEmpty) {
       throw const FileSystemException(
         'The stored copy of this file could not be found in this workspace.',
       );
     }
-    if (mounted && revision == _fileRevision) _source = source;
-    return materialize(source: source, name: name);
+    _source = source;
+    final file = await materialize(source: source, name: name);
+    if (mounted && revision == _fileRevision) {
+      unawaited(_readSize(file, revision));
+    }
+    return file;
+  }
+
+  Future<void> _readSize(File file, int revision) async {
+    try {
+      final size = await file.length();
+      if (mounted && revision == _fileRevision && _size != size) {
+        setState(() => _size = size);
+      }
+    } catch (_) {
+      // Unknown size is not a reason to refuse an otherwise readable file.
+    }
   }
 
   void _saveMetadata(Map<String, dynamic> value) {
-    setState(() => metadata = value);
-    unawaited(
-      ViewBackendService.updateView(
-        viewId: widget.view.id,
-        extra: WorkspaceFilePreviewCodec.merge(widget.view.extra, value),
-      ).then(
-        (result) => result.onFailure(
-          (error) => Log.error('Unable to store the file viewer state: $error'),
-        ),
-      ),
-    );
+    if (!_canRename) return;
+    try {
+      ViewCoverCodec.decodeExtra(_view.extra);
+    } on FormatException {
+      Log.error('Unable to preserve the file view metadata');
+      return;
+    }
+    final binding = _binding;
+    final original = _view;
+    final repository = widget.repository;
+    final writer = widget.writeExtra;
+    final settings = Map<String, dynamic>.from(value);
+    setState(() {
+      metadata = settings;
+      _view = ViewPB.fromBuffer(_view.writeToBuffer())
+        ..extra = WorkspaceFilePreviewCodec.merge(_view.extra, settings);
+      _pendingMetadataWrites++;
+    });
+    bool current() =>
+        mounted &&
+        binding == _binding &&
+        _canRename &&
+        repository == widget.repository &&
+        writer == widget.writeExtra;
+    unawaited(() async {
+      try {
+        final result = await _serializeViewWrite(() async {
+          if (!current()) return _fileWriteRefused();
+          final read = await repository.getView(original.id);
+          final live = read.fold<ViewPB?>((view) => view, (_) => null);
+          if (!current() ||
+              live == null ||
+              live.id != original.id ||
+              live.isLocked ||
+              live.workspaceItem?.storageUrl !=
+                  original.workspaceItem?.storageUrl) {
+            return _fileWriteRefused();
+          }
+          // The preview codec is intentionally forgiving while reading. A
+          // write must not turn malformed unrelated metadata into an empty map.
+          ViewCoverCodec.decodeExtra(live.extra);
+          return writer(
+            viewId: live.id,
+            extra: WorkspaceFilePreviewCodec.merge(live.extra, settings),
+          );
+        });
+        result.onFailure(
+          (_) => Log.error('Unable to store the file viewer state'),
+        );
+      } catch (_) {
+        Log.error('Unable to store the file viewer state');
+      } finally {
+        if (mounted && binding == _binding) _pendingMetadataWrites--;
+      }
+    }());
   }
 
   void _toggleSourceEditing() {
+    if (!_isEditable) return;
     final editing = metadata[filePreviewEditModeKey] == true;
     _saveMetadata({...metadata, filePreviewEditModeKey: !editing});
   }
@@ -180,6 +491,13 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
 
   @override
   Widget build(BuildContext context) {
+    _access = context.watch<PageAccessLevelBloc?>();
+    final profile = context.watch<UserWorkspaceBloc?>()?.state.userProfile;
+    final canvas = EditorSurfaceStyle.canvasBackgroundFor(
+      Theme.of(context).brightness,
+      Theme.of(context).scaffoldBackgroundColor,
+      isPaper: PaperTheme.isEnabled(context),
+    );
     return FutureBuilder<File>(
       future: _file,
       builder: (context, snapshot) {
@@ -200,10 +518,20 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
               onPressed: () => setState(_resolveFile),
             ),
           );
-        } else if (file == null) {
+        } else if (file == null || _access?.state.isLoadingLockStatus == true) {
           renderer = const Center(child: CircularProgressIndicator());
         } else {
-          renderer = _buildRenderer(context, file);
+          final editingSource = metadata[filePreviewEditModeKey] == true;
+          if (_renderer == null ||
+              !identical(file, _renderedFile) ||
+              _renderedEditable != _isEditable ||
+              _renderedEditingSource != editingSource) {
+            _renderedFile = file;
+            _renderedEditable = _isEditable;
+            _renderedEditingSource = editingSource;
+            _renderer = _buildRenderer(context, file);
+          }
+          renderer = _renderer!;
         }
         final source = MediaActionSource(
           // A cloud download is already local here. Do not fetch it again or
@@ -212,35 +540,69 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
           name: _name,
           isImage: _isImage,
         );
+        _actionTarget = source;
         final body = KeyedSubtree(key: ObjectKey(_file), child: renderer);
-        return MediaHoverRegion(
-          builder: (context, visible) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                key: const ValueKey('workspace-file-media-actions'),
-                // The shared badge paints above the buttons. Reserve its
-                // scaled height, outside renderer menus and scrollbars.
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
-                  16,
-                  4,
-                ),
-                child: _WorkspaceFileIdentityActions(
-                  view: widget.view,
-                  editable: widget.editable,
-                  listenerFactory: widget.iconListenerFactory,
-                  visible: visible,
-                  fileAvailable: file != null,
-                  source: source,
-                  actions: widget.mediaActions,
+        final binding = _binding;
+        return PreviewToolbarRegion(
+          child: Focus(
+            focusNode: _fileFocus,
+            canRequestFocus: false,
+            skipTraversal: true,
+            includeSemantics: false,
+            onFocusChange: (_) => _syncFocus(),
+            child: StandaloneFileScope(
+              canvas: canvas,
+              rendererName: _rendererName,
+              displayName: _name,
+              canEdit: _canEditBinding,
+              canRead: _canReadBinding,
+              editable: _isEditable,
+              available: _available && file != null,
+              metadata: metadata,
+              chrome: _chrome,
+              child: ColoredBox(
+                key: const ValueKey('workspace-file-canvas'),
+                color: canvas,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ValueListenableBuilder<StandaloneFileHeader>(
+                      valueListenable: _chrome,
+                      builder: (context, controls, _) =>
+                          ValueListenableBuilder<bool>(
+                        valueListenable: _focused,
+                        builder: (context, focused, _) =>
+                            WorkspaceFileIdentityRow(
+                          key: const ValueKey('workspace-file-identity'),
+                          view: _view,
+                          binding: binding,
+                          summary: [
+                            p
+                                .extension(_name)
+                                .replaceFirst('.', '')
+                                .toUpperCase(),
+                            if (_size != null) _describeSize(_size!),
+                          ].where((part) => part.isNotEmpty).join(' · '),
+                          canRename: () => binding == _binding && _canRename,
+                          onViewChanged: _accept,
+                          repository: widget.repository,
+                          coverBackend: _guardedCoverBackend,
+                          updateIcon: widget.updateIcon,
+                          userProfile: profile,
+                          source: source,
+                          mediaActions: _guardedActions,
+                          fileAvailable: file != null && _available,
+                          actionsVisible: focused,
+                          controls: controls,
+                        ),
+                      ),
+                    ),
+                    // Hover only rebuilds chrome, not the retained renderer.
+                    Expanded(child: body),
+                  ],
                 ),
               ),
-              // Capture the renderer outside the hover builder: revealing the
-              // controls must not rebuild a player, editor or platform view.
-              Expanded(child: body),
-            ],
+            ),
           ),
         );
       },
@@ -248,31 +610,45 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   }
 
   Widget _buildRenderer(BuildContext context, File file) {
+    final binding = _binding;
+    final name = _rendererName;
+    final viewId = _view.id;
+    final editable = _isEditable;
+    final rendererMetadata = metadata;
+    void saveMetadata(Map<String, dynamic> value) {
+      if (mounted && binding == _binding) _saveMetadata(value);
+    }
+
     final mediaKind = _mediaKind;
     if (mediaKind != null) {
       return _WorkspaceMediaStage(
         file: file,
-        name: _name,
+        name: _rendererName,
         kind: mediaKind,
       );
     }
 
     if (_isImage) {
-      return _WorkspaceImageStage(file: file, name: _name);
+      return _WorkspaceImageStage(
+        file: file,
+        name: _rendererName,
+        ocrService: widget.ocrService,
+        ocrSourceBuilder: widget.ocrSourceBuilder,
+      );
     }
 
     // A stored message is still a message, so it opens in the mail reader
     // rather than as an unreadable attachment.
-    if (looksLikeMessageFileName(_name)) {
-      return EmailFileView(view: widget.view, file: file);
+    if (looksLikeMessageFileName(_rendererName)) {
+      return EmailFileView(view: _view, file: file);
     }
 
     final kind = _previewKind;
 
-    if (isOfficeFile(_name)) {
+    if (isOfficeFile(_rendererName)) {
       return OfficeDocumentView(
         file: file,
-        name: _name,
+        name: _rendererName,
         source: _source ?? file.path,
         editable: _isEditable,
         fallbackBuilder: kind == null
@@ -280,11 +656,11 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
             : (context) => LayoutBuilder(
                   builder: (context, constraints) => FilePreview(
                     file: file,
-                    name: _name,
+                    name: name,
                     kind: kind,
-                    metadata: metadata,
-                    onMetadataChanged: _saveMetadata,
-                    editable: _isEditable,
+                    metadata: rendererMetadata,
+                    onMetadataChanged: saveMetadata,
+                    editable: editable,
                     height: constraints.maxHeight,
                     framed: false,
                   ),
@@ -295,11 +671,15 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
     if (kind == null) {
       return _WorkspaceFileMessage(
         icon: fileIconForName(_name),
-        title: _name,
+        title: '',
         message: 'AppFlowy has no viewer for this file type yet.',
         action: _WorkspaceFileAction(
           label: 'Open with system app',
-          onPressed: () => unawaited(afLaunchUrlString(file.uri.toString())),
+          onPressed: () {
+            if (mounted && binding == _binding && _available) {
+              unawaited(afLaunchUrlString(file.uri.toString()));
+            }
+          },
         ),
       );
     }
@@ -308,9 +688,9 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
       return PdfPreview(
         key: ValueKey('${widget.view.id}_pdf'),
         file: file,
-        name: _name,
+        name: _rendererName,
         metadata: metadata,
-        onMetadataChanged: _saveMetadata,
+        onMetadataChanged: saveMetadata,
         editable: _isEditable,
         mediaActions: widget.mediaActions,
       );
@@ -320,28 +700,32 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
       return ArchiveExplorer(
         key: ValueKey('${widget.view.id}_archive'),
         file: file,
-        name: _name,
+        name: _rendererName,
         editable: _isEditable,
         embedded: false,
+        metadata: rendererMetadata,
+        onMetadataChanged: saveMetadata,
         mediaActions: widget.mediaActions,
       );
     }
 
     return LayoutBuilder(
       builder: (context, constraints) => FilePreview(
-        key: ValueKey('${widget.view.id}_${file.path}'),
+        key: ValueKey('${viewId}_${file.path}'),
         file: file,
-        name: _name,
+        name: name,
         kind: kind,
-        metadata: metadata,
-        onMetadataChanged: _saveMetadata,
-        editable: _isEditable,
+        metadata: rendererMetadata,
+        onMetadataChanged: saveMetadata,
+        editable: editable,
         height: constraints.maxHeight,
         framed: false,
-        toolbarTrailing: kind.supportsSourceEditing
+        toolbarTrailing: kind.supportsSourceEditing && editable
             ? _SourceModeToggle(
-                editing: metadata[filePreviewEditModeKey] == true,
-                onPressed: _toggleSourceEditing,
+                editing: rendererMetadata[filePreviewEditModeKey] == true,
+                onPressed: () {
+                  if (mounted && binding == _binding) _toggleSourceEditing();
+                },
               )
             : null,
       ),
@@ -349,161 +733,87 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
   }
 }
 
-/// ViewPluginNotifier does not rebuild every file host on identity changes.
-/// Keep that subscription (and the open picker) in the chrome, so neither an
-/// icon notification nor a hover can rematerialize bytes or replace a renderer.
-class _WorkspaceFileIdentityActions extends StatefulWidget {
-  const _WorkspaceFileIdentityActions({
-    required this.view,
-    required this.editable,
-    required this.visible,
-    required this.fileAvailable,
-    required this.source,
-    required this.actions,
-    this.listenerFactory,
+class _WorkspaceFileMediaActions extends MediaActionService {
+  const _WorkspaceFileMediaActions({
+    required this.delegate,
+    required this.isCurrent,
   });
 
-  final ViewPB view;
-  final bool editable;
-  final bool visible;
-  final bool fileAvailable;
-  final MediaActionSource source;
-  final MediaActionService actions;
-  final ViewListener Function(String viewId)? listenerFactory;
+  final MediaActionService delegate;
+  final bool Function(MediaActionSource) isCurrent;
 
   @override
-  State<_WorkspaceFileIdentityActions> createState() =>
-      _WorkspaceFileIdentityActionsState();
+  Future<void> copy(MediaActionSource source) async {
+    if (!isCurrent(source)) throw StateError('File unavailable');
+    await delegate.copy(source);
+  }
+
+  @override
+  Future<void> share(
+    MediaActionSource source, {
+    Rect? sharePositionOrigin,
+  }) async {
+    if (!isCurrent(source)) throw StateError('File unavailable');
+    await delegate.share(source, sharePositionOrigin: sharePositionOrigin);
+  }
 }
 
-class _WorkspaceFileIdentityActionsState
-    extends State<_WorkspaceFileIdentityActions> {
-  late ViewPB _view;
-  ViewListener? _listener;
-  int _generation = 0;
-  bool _available = true;
-  bool _pickerOpen = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _bind();
-  }
-
-  @override
-  void didUpdateWidget(covariant _WorkspaceFileIdentityActions oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.view.id != widget.view.id ||
-        oldWidget.listenerFactory != widget.listenerFactory) {
-      unawaited(_listener?.stop());
-      _bind();
-    } else if (oldWidget.view.icon != widget.view.icon) {
-      _view = widget.view;
-    }
-    if (!widget.editable) _pickerOpen = false;
-  }
-
-  void _bind() {
-    final generation = ++_generation;
-    _view = widget.view;
-    _available = true;
-    _pickerOpen = false;
-    _listener = (widget.listenerFactory?.call(_view.id) ??
-        ViewListener(viewId: _view.id))
-      ..start(
-        onViewUpdated: (view) => _accept(generation, view),
-        onViewDeleted: (result) =>
-            result.onSuccess((_) => _unavailable(generation)),
-        onViewMoveToTrash: (result) =>
-            result.onSuccess((_) => _unavailable(generation)),
-        onViewRestored: (result) =>
-            result.onSuccess((view) => _accept(generation, view)),
-      );
-  }
-
-  void _accept(int generation, ViewPB view) {
-    if (!mounted || generation != _generation || view.id != widget.view.id) {
-      return;
-    }
-    setState(() {
-      _view = view;
-      _available = true;
-    });
-  }
-
-  void _unavailable(int generation) {
-    if (!mounted || generation != _generation) return;
-    setState(() {
-      _available = false;
-      _pickerOpen = false;
-    });
-  }
-
-  @override
-  void dispose() {
-    _generation++;
-    unawaited(_listener?.stop());
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final generation = _generation;
-    final glyph = SizedBox.square(
-      dimension: 30,
-      child: Center(
-        child: FileIdentityGlyph(
-          icon: _view.icon.toEmojiIconData(),
-          name: widget.view.name,
-          color: AppFlowyTheme.of(context).iconColorScheme.secondary,
-        ),
-      ),
+FlowyResult<void, FlowyError> _fileWriteRefused() => FlowyResult.failure(
+      FlowyError(msg: 'This file is no longer available for editing.'),
     );
-    return Row(
-      children: [
-        KeyedSubtree(
-          key: const ValueKey('workspace-file-identity-icon'),
-          child: widget.editable && _available
-              ? ViewIconPicker(
-                  key: ValueKey((widget.view.id, generation)),
-                  view: _view,
-                  onViewChanged: (view) {
-                    if (mounted && widget.editable && _available) {
-                      _accept(generation, view);
-                    }
-                  },
-                  onOpenChanged: (open) {
-                    if (mounted &&
-                        generation == _generation &&
-                        widget.editable &&
-                        _available) {
-                      setState(() => _pickerOpen = open);
-                    }
-                  },
-                  child: glyph,
-                )
-              : glyph,
-        ),
-        const Spacer(),
-        ExcludeFocus(
-          excluding: !widget.fileAvailable,
-          child: Visibility(
-            visible: widget.fileAvailable,
-            maintainState: true,
-            maintainAnimation: true,
-            maintainSize: true,
-            child: MediaActionReveal(
-              visible: widget.visible || _pickerOpen,
-              child: MediaActionButtons(
-                source: widget.source,
-                actions: widget.actions,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+
+/// Uses the existing cover action model and its upload/cleanup ownership. Only
+/// the save boundary adds file-binding guards and a fresh-extra preflight.
+class _WorkspaceFileCoverBackend extends ViewCoverActionsBackend {
+  const _WorkspaceFileCoverBackend({
+    required this.delegate,
+    required this.repository,
+    required this.serialize,
+    required this.isCurrent,
+  });
+
+  final ViewCoverActionsBackend delegate;
+  final WorkspaceItemRepository repository;
+  final Future<FlowyResult<void, FlowyError>> Function(
+    Future<FlowyResult<void, FlowyError>> Function() write,
+  ) serialize;
+  final bool Function(ViewPB) isCurrent;
+
+  @override
+  Future<FlowyResult<UserProfilePB, FlowyError>> currentUser() =>
+      delegate.currentUser();
+
+  @override
+  Future<ViewCoverUpload?> upload({
+    required String path,
+    required ViewPB view,
+    required UserProfilePB profile,
+  }) async =>
+      isCurrent(view)
+          ? delegate.upload(path: path, view: view, profile: profile)
+          : null;
+
+  @override
+  Future<FlowyResult<void, FlowyError>> save({
+    required ViewPB view,
+    required PageStyleCover cover,
+  }) =>
+      serialize(() async {
+        if (!isCurrent(view)) return _fileWriteRefused();
+        final read = await repository.getView(view.id);
+        final live = read.fold<ViewPB?>((view) => view, (_) => null);
+        if (!isCurrent(view) ||
+            live == null ||
+            live.isLocked ||
+            !isCurrent(live) ||
+            live.cover != view.cover) {
+          return _fileWriteRefused();
+        }
+        return delegate.save(view: live, cover: cover);
+      });
+
+  @override
+  Future<void> delete(PageStyleCover cover) => delegate.delete(cover);
 }
 
 /// Switches markup files between their rendered preview and the editor.
@@ -520,7 +830,7 @@ class _SourceModeToggle extends StatelessWidget {
       child: TextButton.icon(
         onPressed: onPressed,
         style: WorkspaceChrome.controlStyle(context),
-        icon: Icon(
+        icon: WorkspaceGlyph(
           editing ? Icons.visibility_rounded : Icons.edit_rounded,
           size: 16,
         ),
@@ -559,10 +869,17 @@ class _WorkspaceMediaStage extends StatelessWidget {
 }
 
 class _WorkspaceImageStage extends StatefulWidget {
-  const _WorkspaceImageStage({required this.file, required this.name});
+  const _WorkspaceImageStage({
+    required this.file,
+    required this.name,
+    this.ocrService,
+    this.ocrSourceBuilder,
+  });
 
   final File file;
   final String name;
+  final OcrService? ocrService;
+  final ImageOcrSourceBuilder? ocrSourceBuilder;
 
   @override
   State<_WorkspaceImageStage> createState() => _WorkspaceImageStageState();
@@ -581,11 +898,26 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
   int _revision = 0;
   int _fitRevision = 0;
   String? _subtitle;
+  StandaloneFileScope? _host;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _host = StandaloneFileScope.forName(context, widget.name);
+  }
 
   ImageEditorSource get _source => ImageEditorSource(
         url: widget.file.path,
         type: CustomImageType.local,
       );
+
+  ImageEditorSource get _ocrSource =>
+      widget.ocrSourceBuilder?.call(
+        ImageBlockData(url: widget.file.path, type: CustomImageType.local),
+      ) ??
+      _source;
+
+  bool _canRead() => mounted && _host?.canRead() == true;
 
   @override
   void initState() {
@@ -614,16 +946,20 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
   }
 
   Future<void> _edit() async {
+    final host = _host;
+    if (!mounted || host == null || !host.canEdit()) return;
+    bool current() => mounted && _host?.chrome == host.chrome && host.canEdit();
     final saved = await showImageEditor(
       context,
       source: _source,
-      name: widget.name,
+      name: host.displayName,
       onSave: (bytes) async {
+        if (!current()) return false;
         await widget.file.writeAsBytes(bytes, flush: true);
         return true;
       },
     );
-    if (saved == true && mounted) {
+    if (saved == true && current()) {
       // The path is unchanged, so the decoded frame has to be dropped by hand.
       await FileImage(widget.file).evict();
       if (mounted) {
@@ -634,6 +970,7 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
   }
 
   void _fitToView() {
+    if (!mounted || _host?.canRead() != true) return;
     _fitAnimation.stop();
     // A controller assignment does not stop InteractiveViewer's private pinch
     // inertia. Reset its gesture state, retaining the matrix and cached image,
@@ -663,6 +1000,10 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
+    final host = _host;
+    const extractKey = 'document.plugins.image.extractText';
+    final translated = extractKey.tr();
+    final extractLabel = translated == extractKey ? 'Extract text' : translated;
     return DocumentViewport(
       framed: false,
       background: Theme.of(context).scaffoldBackgroundColor,
@@ -676,18 +1017,24 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
         DocumentViewportButton(
           icon: Icons.tune_rounded,
           tooltip: 'Edit image',
-          onPressed: () => unawaited(_edit()),
+          onPressed: host?.canEdit() == true ? () => unawaited(_edit()) : null,
         ),
         DocumentViewportButton(
-          icon: Icons.text_fields_rounded,
-          tooltip: 'Extract text',
-          onPressed: () => unawaited(
-            showImageOcrOverlay(
-              context,
-              source: _source,
-              name: widget.name,
-            ),
-          ),
+          icon: Icons.document_scanner_rounded,
+          tooltip: extractLabel,
+          onPressed: host?.canRead() == true
+              ? () {
+                  if (!mounted || host?.canRead() != true) return;
+                  unawaited(
+                    showImageOcrOverlay(
+                      context,
+                      source: _ocrSource,
+                      name: _host?.displayName ?? widget.name,
+                      service: widget.ocrService,
+                    ),
+                  );
+                }
+              : null,
         ),
         const DocumentViewportSeparator(),
         DocumentViewportFitButton(
@@ -715,15 +1062,23 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
                     reactsToPointer: false,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
-                      child: Image.file(
-                        widget.file,
-                        key: ValueKey('${widget.file.path}_$_revision'),
-                        errorBuilder: (context, error, stackTrace) => Padding(
-                          padding: const EdgeInsets.all(28),
-                          child: Text(
-                            'This picture could not be decoded.',
-                            style: TextStyle(
-                              color: theme.textColorScheme.secondary,
+                      child: ImageOcrFindRegion(
+                        source: _ocrSource,
+                        name: host?.displayName ?? widget.name,
+                        service: widget.ocrService,
+                        isAvailable: _canRead,
+                        isSelected: _canRead,
+                        debugLabel: 'Workspace image',
+                        child: Image.file(
+                          widget.file,
+                          key: ValueKey('${widget.file.path}_$_revision'),
+                          errorBuilder: (context, error, stackTrace) => Padding(
+                            padding: const EdgeInsets.all(28),
+                            child: Text(
+                              'This picture could not be decoded.',
+                              style: TextStyle(
+                                color: theme.textColorScheme.secondary,
+                              ),
                             ),
                           ),
                         ),
@@ -818,18 +1173,20 @@ class _WorkspaceFileMessage extends StatelessWidget {
                         size: tight ? 24 : 34,
                         color: theme.iconColorScheme.secondary,
                       ),
-                      SizedBox(height: tight ? 8 : 14),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: tight ? 13.5 : 15,
-                          fontWeight: FontWeight.w600,
-                          color: theme.textColorScheme.primary,
+                      if (title.isNotEmpty) ...[
+                        SizedBox(height: tight ? 8 : 14),
+                        Text(
+                          title,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: tight ? 13.5 : 15,
+                            fontWeight: FontWeight.w600,
+                            color: theme.textColorScheme.primary,
+                          ),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 6),
                       Text(
                         message,

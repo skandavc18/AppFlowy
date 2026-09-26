@@ -3,6 +3,8 @@ import 'package:appflowy/shared/charts/chart_color_menu.dart';
 import 'package:appflowy/shared/charts/chart_style.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:appflowy/workspace/application/charts/chart_data.dart';
 import 'package:appflowy/workspace/application/charts/chart_spec.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -54,7 +56,7 @@ String chartSortLabel(ChartSort sort) => switch (sort) {
 ///
 /// Shared by the collection view, the standalone chart page, the database tab
 /// and the block, so a chart is configured the same way wherever it is drawn.
-class ChartToolbar extends StatelessWidget {
+class ChartToolbar extends StatefulWidget {
   const ChartToolbar({
     super.key,
     required this.table,
@@ -63,6 +65,10 @@ class ChartToolbar extends StatelessWidget {
     required this.onChanged,
     this.data,
     this.compact = false,
+    this.showControls = true,
+    this.keepVisible = false,
+    this.trailing = const [],
+    this.additionalEntries = const [],
   });
 
   final ChartTable table;
@@ -73,46 +79,159 @@ class ChartToolbar extends StatelessWidget {
   /// What is actually drawn, so the colour menu can name each series.
   final ChartData? data;
   final bool compact;
+  final bool showControls;
+  final bool keepVisible;
+
+  /// Host actions share the controls' wrap, never a clipped fixed-width slot.
+  final List<Widget> trailing;
+  final List<AppMenuEntry> additionalEntries;
+
+  @override
+  State<ChartToolbar> createState() => _ChartToolbarState();
+}
+
+class _ChartToolbarState extends State<ChartToolbar> {
+  final Set<Key> _active = {};
+
+  ChartTable get table => widget.table;
+  ChartSpec get spec => widget.spec;
+  ChartPalette get palette => widget.palette;
+  ChartData? get data => widget.data;
+  ValueChanged<ChartSpec> get onChanged => widget.onChanged;
+
+  void _retain(String name, bool active) {
+    final key = ValueKey(name);
+    if (_active.contains(key) == active) return;
+    setState(() => active ? _active.add(key) : _active.remove(key));
+  }
 
   @override
   Widget build(BuildContext context) {
     final numeric = table.numericColumns.map(table.keyOf).toList();
     final measured = spec.plotsAgainstValues;
+    final controls = <ChartChip>[
+      _typeChip(),
+      _horizontalChip(numeric, measured),
+      _verticalChip(numeric),
+      if (!measured && !spec.type.drawsPoints && spec.valueColumns.isNotEmpty)
+        _aggregateChip(),
+      if (spec.type.sizesPoints) _sizeChip(numeric),
+      if (measured || spec.type.drawsPoints) _labelChip(),
+      _colorChip(),
+      _optionsChip(measured),
+    ];
 
     return PreviewToolbar(
-      keepVisible: table.isEmpty || (data?.isEmpty ?? false),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Wrap(
-          spacing: 6,
-          runSpacing: 7,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            _typeChip(),
-            _horizontalChip(numeric, measured),
-            _verticalChip(numeric),
-            if (!measured &&
-                !spec.type.drawsPoints &&
-                spec.valueColumns.isNotEmpty)
-              _aggregateChip(),
-            if (spec.type.sizesPoints) _sizeChip(numeric),
-            if (measured || spec.type.drawsPoints) _labelChip(),
-            _colorChip(),
-            if (!compact) _optionsChip(measured),
-          ],
-        ),
+      keepVisible:
+          widget.keepVisible || table.isEmpty || (data?.isEmpty ?? false),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth;
+          final measure = width / MediaQuery.textScalerOf(context).scale(1);
+          final count = measure >= 960 && !widget.compact
+              ? controls.length - 1
+              : measure >= 600
+                  ? 3
+                  : measure < 200 || (widget.compact && measure < 260)
+                      ? 0
+                      : 1;
+          return Wrap(
+            runSpacing: 6,
+            alignment:
+                widget.showControls ? WrapAlignment.start : WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var index = 0; index < controls.length; index++)
+                // Key the WRAPPER too. Resize must not dispose a menu anchor
+                // or transfer a focused button's state to its neighbour.
+                _controlSlot(
+                  controls[index],
+                  width,
+                  widget.showControls &&
+                      (index < count || _active.contains(controls[index].key)),
+                ),
+              for (var index = 0; index < widget.trailing.length; index++)
+                ConstrainedBox(
+                  key: ValueKey(
+                    ('chart-action-slot', widget.trailing[index].key ?? index),
+                  ),
+                  constraints: BoxConstraints(maxWidth: width),
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 6),
+                    child: widget.trailing[index],
+                  ),
+                ),
+              // Always retain this anchor, even when a resize can expose all
+              // the controls. Its submenus also make compact charts complete.
+              ConstrainedBox(
+                key: const ValueKey('chart-more-slot'),
+                constraints: BoxConstraints(maxWidth: width),
+                child: ChartChip(
+                  key: const ValueKey('chart-more-controls'),
+                  icon: Icons.more_horiz_rounded,
+                  label: LocaleKeys.document_plugins_optionAction_more.tr(),
+                  palette: palette,
+                  showChevron: false,
+                  entries: [
+                    for (final control in controls)
+                      AppMenuItem(
+                        label: control.caption ?? control.label,
+                        subtitle:
+                            control.caption == null ? null : control.label,
+                        icon: control.icon,
+                        iconWidget: control.swatch == null
+                            ? null
+                            : Container(
+                                width: 12,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: control.swatch,
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                        submenu: control.entries,
+                      ),
+                    if (widget.additionalEntries.isNotEmpty) ...[
+                      const AppMenuSeparator(),
+                      ...widget.additionalEntries,
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 
-  Widget _colorChip() => ChartChip(
+  Widget _controlSlot(ChartChip control, double width, bool visible) =>
+      Visibility(
+        key: ValueKey(('chart-control-slot', control.key)),
+        visible: visible,
+        maintainState: true,
+        child: ExcludeFocus(
+          excluding: !visible,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: width),
+            child: Padding(
+              padding: const EdgeInsetsDirectional.only(end: 6),
+              child: control,
+            ),
+          ),
+        ),
+      );
+
+  ChartChip _colorChip() => ChartChip(
+        key: const ValueKey('chart-colors'),
+        onActiveChanged: (value) => _retain('chart-colors', value),
         icon: Icons.palette_outlined,
         label: chartPaletteLabel(spec.palette),
         caption: LocaleKeys.charts_colors.tr(),
         palette: palette,
         swatch: ChartColors.of(palette, spec).at(
           0,
-          data?.series.isNotEmpty ?? false ? data!.series.first.name : '',
+          _firstColorName,
         ),
         entries: chartColorEntries(
           spec: spec,
@@ -122,7 +241,20 @@ class ChartToolbar extends StatelessWidget {
         ),
       );
 
-  Widget _typeChip() => ChartChip(
+  String get _firstColorName {
+    final series = data?.series;
+    if (series == null || series.isEmpty) return '';
+    final first = series.first;
+    return spec.type.isCircular
+        ? first.points.isEmpty
+            ? ''
+            : first.points.first.label
+        : first.name;
+  }
+
+  ChartChip _typeChip() => ChartChip(
+        key: const ValueKey('chart-type'),
+        onActiveChanged: (value) => _retain('chart-type', value),
         icon: chartTypeIcon(spec.type),
         label: chartTypeLabel(spec.type),
         caption: LocaleKeys.charts_chartType.tr(),
@@ -171,10 +303,11 @@ class ChartToolbar extends StatelessWidget {
   }
 
   /// The axis that runs across the plot: names, or numbers.
-  Widget _horizontalChip(List<String> numeric, bool measured) {
+  ChartChip _horizontalChip(List<String> numeric, bool measured) {
     final canMeasure = spec.type.supportsValueAxis;
     return ChartChip(
       key: const ValueKey('chart-horizontal-column'),
+      onActiveChanged: (value) => _retain('chart-horizontal-column', value),
       icon: spec.type.isHorizontal
           ? Icons.swap_vert_rounded
           : Icons.swap_horiz_rounded,
@@ -232,8 +365,9 @@ class ChartToolbar extends StatelessWidget {
   }
 
   /// The numbers themselves. Several columns can be plotted at once.
-  Widget _verticalChip(List<String> numeric) => ChartChip(
+  ChartChip _verticalChip(List<String> numeric) => ChartChip(
         key: const ValueKey('chart-value-columns'),
+        onActiveChanged: (value) => _retain('chart-value-columns', value),
         icon: Icons.stacked_line_chart_rounded,
         label: spec.valueColumns.isEmpty
             ? (spec.plotsAgainstValues || spec.type.drawsPoints
@@ -275,7 +409,9 @@ class ChartToolbar extends StatelessWidget {
         ],
       );
 
-  Widget _aggregateChip() => ChartChip(
+  ChartChip _aggregateChip() => ChartChip(
+        key: const ValueKey('chart-aggregate'),
+        onActiveChanged: (value) => _retain('chart-aggregate', value),
         icon: Icons.functions_rounded,
         label: chartAggregateLabel(spec.aggregate),
         caption: LocaleKeys.charts_count.tr(),
@@ -290,7 +426,9 @@ class ChartToolbar extends StatelessWidget {
         ],
       );
 
-  Widget _sizeChip(List<String> numeric) => ChartChip(
+  ChartChip _sizeChip(List<String> numeric) => ChartChip(
+        key: const ValueKey('chart-size-column'),
+        onActiveChanged: (value) => _retain('chart-size-column', value),
         icon: Icons.blur_circular_rounded,
         label: spec.sizeColumn == null
             ? LocaleKeys.charts_noSize.tr()
@@ -316,8 +454,9 @@ class ChartToolbar extends StatelessWidget {
       );
 
   /// What names a point when the axes both carry numbers.
-  Widget _labelChip() => ChartChip(
+  ChartChip _labelChip() => ChartChip(
         key: const ValueKey('chart-label-column'),
+        onActiveChanged: (value) => _retain('chart-label-column', value),
         icon: Icons.label_outline_rounded,
         label: spec.categoryColumn == null
             ? LocaleKeys.charts_everyRow.tr()
@@ -343,7 +482,9 @@ class ChartToolbar extends StatelessWidget {
         ],
       );
 
-  Widget _optionsChip(bool measured) => ChartChip(
+  ChartChip _optionsChip(bool measured) => ChartChip(
+        key: const ValueKey('chart-display'),
+        onActiveChanged: (value) => _retain('chart-display', value),
         icon: Icons.tune_rounded,
         label: LocaleKeys.charts_display.tr(),
         palette: palette,
@@ -399,6 +540,7 @@ class ChartChip extends StatefulWidget {
     this.caption,
     this.showChevron = true,
     this.swatch,
+    this.onActiveChanged,
   });
 
   final IconData icon;
@@ -412,6 +554,7 @@ class ChartChip extends StatefulWidget {
 
   /// Shown in place of the icon, for a control that sets a colour.
   final Color? swatch;
+  final ValueChanged<bool>? onActiveChanged;
 
   @override
   State<ChartChip> createState() => _ChartChipState();
@@ -434,7 +577,10 @@ class _ChartChipState extends State<ChartChip> {
       child: TextButton(
         key: _anchor,
         onPressed: _openMenu,
-        onFocusChange: (value) => setState(() => _focused = value),
+        onFocusChange: (value) {
+          setState(() => _focused = value);
+          widget.onActiveChanged?.call(_focused || _open);
+        },
         style: TextButton.styleFrom(
           padding: EdgeInsets.zero,
           minimumSize: Size.zero,
@@ -443,64 +589,76 @@ class _ChartChipState extends State<ChartChip> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(ChartMetrics.chipRadius),
           ),
+        ).copyWith(
+          animationDuration:
+              WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
         ),
-        child: AnimatedContainer(
-          duration: ChartMetrics.hoverDuration,
-          curve: ChartMetrics.hoverCurve,
-          height: ChartMetrics.chipHeight,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            color: lit ? palette.chipHover : palette.chip,
-            borderRadius: BorderRadius.circular(ChartMetrics.chipRadius),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.swatch != null)
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: widget.swatch,
-                    borderRadius: BorderRadius.circular(4),
+        child: Tooltip(
+          message:
+              [widget.caption, widget.label].whereType<String>().join(': '),
+          excludeFromSemantics: true,
+          child: AnimatedContainer(
+            duration:
+                WorkspaceTokens.motion(context, ChartMetrics.hoverDuration),
+            curve: ChartMetrics.hoverCurve,
+            constraints:
+                const BoxConstraints(minHeight: ChartMetrics.chipHeight),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: palette.chipHover
+                  .withValues(alpha: lit ? palette.chipHover.a : 0),
+              borderRadius: BorderRadius.circular(ChartMetrics.chipRadius),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.swatch != null)
+                  Container(
+                    width: 12,
+                    height: 12,
+                    decoration: BoxDecoration(
+                      color: widget.swatch,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  )
+                else
+                  WorkspaceGlyph(
+                    widget.icon,
+                    size: 16,
+                    color: palette.label,
                   ),
-                )
-              else
-                Icon(
-                  widget.icon,
-                  size: 13.5,
-                  color: lit ? palette.strongLabel : palette.label,
-                ),
-              const SizedBox(width: 6),
-              if (widget.caption != null) ...[
-                Text(
-                  widget.caption!,
-                  style: palette.text(size: 11, color: palette.label),
-                ),
-                const SizedBox(width: 5),
-              ],
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 180),
-                child: Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: palette.text(
-                    size: 11.5,
-                    color: palette.strongLabel,
-                    weight: FontWeight.w500,
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text.rich(
+                    TextSpan(
+                      children: [
+                        if (widget.caption != null)
+                          TextSpan(
+                            text: '${widget.caption!}  ',
+                            style: palette.text(size: 11, color: palette.label),
+                          ),
+                        TextSpan(text: widget.label),
+                      ],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: palette.text(
+                      size: 11.5,
+                      color: palette.strongLabel,
+                      weight: FontWeight.w500,
+                    ),
                   ),
                 ),
-              ),
-              if (widget.showChevron) ...[
-                const SizedBox(width: 3),
-                Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 14,
-                  color: palette.label,
-                ),
+                if (widget.showChevron) ...[
+                  const SizedBox(width: 3),
+                  WorkspaceGlyph(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 14,
+                    color: palette.label,
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -514,15 +672,19 @@ class _ChartChipState extends State<ChartChip> {
       return;
     }
     setState(() => _open = true);
-    await showAppMenu<void>(
-      context: context,
-      globalPosition: box.localToGlobal(
-        box.size.bottomLeft(const Offset(0, 5)),
-      ),
-      entries: widget.entries,
-    );
-    if (mounted) {
-      setState(() => _open = false);
+    widget.onActiveChanged?.call(true);
+    try {
+      await showAppMenu<void>(
+        context: context,
+        anchor: box.localToGlobal(Offset.zero) & box.size,
+        placement: AppMenuPlacement.below,
+        entries: widget.entries,
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _open = false);
+        widget.onActiveChanged?.call(_focused);
+      }
     }
   }
 }

@@ -1,5 +1,6 @@
+import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flowy_infra_ui/widget/spacing.dart';
 import 'package:flutter/material.dart';
 
@@ -21,41 +22,73 @@ class SettingsMenuElement extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-    return AFBaseButton(
-      onTap: () => changeSelectedPage(page),
-      padding: EdgeInsets.all(theme.spacing.m),
-      borderRadius: theme.borderRadius.m,
-      borderColor: (_, __, ___, ____) => Colors.transparent,
-      backgroundColor: (_, isHovering, __) {
-        if (page == selectedPage) {
-          return theme.fillColorScheme.themeSelect;
-        }
-        if (isHovering) {
-          return theme.fillColorScheme.contentHover;
-        }
-        return Colors.transparent;
-      },
-      builder: (_, __, ___) {
-        return Row(
-          children: [
-            icon,
-            HSpace(theme.spacing.m),
-            // The rail is a fixed width, so a long label — or a longer one in
-            // another language — has to ellipsize rather than overflow.
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: theme.textStyle.body.standard(
-                  color: theme.textColorScheme.primary,
-                ),
+    final palette = WorkspacePalette.of(context);
+    final selected = page == selectedPage;
+    final ink = workspaceGlyphInk(context);
+    return Semantics(
+      selected: selected,
+      child: Tooltip(
+        message: label,
+        child: TextButton(
+          onPressed: () => changeSelectedPage(page),
+          style: ButtonStyle(
+            animationDuration:
+                WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
+            alignment: AlignmentDirectional.centerStart,
+            minimumSize: const WidgetStatePropertyAll(
+              Size(0, WorkspaceTokens.navigationHeight),
+            ),
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            ),
+            foregroundColor: WidgetStatePropertyAll(ink),
+            iconColor: WidgetStatePropertyAll(ink),
+            backgroundColor: WidgetStateProperty.resolveWith((states) {
+              if (selected) return palette.selected;
+              if (states.contains(WidgetState.hovered) ||
+                  states.contains(WidgetState.focused)) {
+                return palette.hover;
+              }
+              return palette.hover.withValues(alpha: 0);
+            }),
+            shape: WidgetStatePropertyAll(
+              RoundedRectangleBorder(
+                borderRadius:
+                    BorderRadius.circular(WorkspaceTokens.controlRadius),
               ),
             ),
-          ],
-        );
-      },
+          ),
+          child: Row(
+            children: [
+              SizedBox.square(
+                dimension: 24,
+                child: Center(
+                  child: WorkspaceGlyph.adapt(
+                    icon,
+                    color: ink,
+                  ),
+                ),
+              ),
+              const HSpace(WorkspaceTokens.space3),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: WorkspaceTypography.style(
+                    context,
+                    WorkspaceTextRole.body,
+                    color: ink,
+                  ).copyWith(
+                    fontWeight: FontWeight.w500,
+                    fontVariations: const [FontVariation.weight(500)],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

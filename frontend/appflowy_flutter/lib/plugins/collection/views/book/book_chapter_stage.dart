@@ -205,8 +205,10 @@ class BookPageSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final margin =
-            constraints.maxWidth < 640 ? 0.0 : BookReaderMetrics.pageMargin;
+        final workspace = palette.theme == BookReaderTheme.workspace;
+        final margin = workspace || constraints.maxWidth < 640
+            ? 0.0
+            : BookReaderMetrics.pageMargin;
         final available = constraints.maxWidth - margin * 2;
         final target = measure.maxWidth;
         final width = target == null ? available : math.min(target, available);
@@ -222,8 +224,9 @@ class BookPageSheet extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: palette.page,
-                  borderRadius:
-                      BorderRadius.circular(BookReaderMetrics.pageRadius),
+                  borderRadius: BorderRadius.circular(
+                    workspace ? 0 : BookReaderMetrics.pageRadius,
+                  ),
                   boxShadow: margin == 0
                       ? null
                       : [
@@ -241,8 +244,9 @@ class BookPageSheet extends StatelessWidget {
                         ],
                 ),
                 child: ClipRRect(
-                  borderRadius:
-                      BorderRadius.circular(BookReaderMetrics.pageRadius),
+                  borderRadius: BorderRadius.circular(
+                    workspace ? 0 : BookReaderMetrics.pageRadius,
+                  ),
                   child: child,
                 ),
               ),

@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_chrome_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/background_color/theme_background_color.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_host.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/i18n/editor_i18n.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/spell_check/document_spell_check.dart';
@@ -18,11 +19,13 @@ import 'package:appflowy/plugins/inline_actions/handlers/inline_page_reference.d
 import 'package:appflowy/plugins/inline_actions/handlers/reminder_reference.dart';
 import 'package:appflowy/plugins/inline_actions/inline_actions_service.dart';
 import 'package:appflowy/shared/feature_flags.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/shortcuts/settings_shortcuts_service.dart';
 import 'package:appflowy/workspace/application/view/view_bloc.dart';
 import 'package:appflowy/workspace/application/view_info/view_info_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/af_focus_manager.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart' hide QuoteBlockKeys;
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:collection/collection.dart';
@@ -58,6 +61,8 @@ class AppFlowyEditorPage extends StatefulWidget {
     this.placeholderText,
     this.initialSelection,
     this.useViewInfoBloc = true,
+    this.isSelected,
+    this.findMetadataScope,
   });
 
   final Widget? header;
@@ -73,6 +78,14 @@ class AppFlowyEditorPage extends StatefulWidget {
   final Selection? initialSelection;
 
   final bool useViewInfoBloc;
+
+  /// Optional live tab/pane ownership when multiple editors remain mounted.
+  /// Find must not reopen an inactive editor from retained focus or hover.
+  final bool Function()? isSelected;
+
+  /// Row hosts supply actual document metadata separately from table access.
+  /// The host observes this scope; native body editing and Find share its gate.
+  final DocumentFindMetadataScope? findMetadataScope;
 
   @override
   State<AppFlowyEditorPage> createState() => _AppFlowyEditorPageState();
@@ -152,6 +165,7 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
       ).handler(editorState);
 
   AFFocusManager? focusManager;
+  BuildContext? _findOwnerContext;
 
   AppLifecycleState? lifecycleState = WidgetsBinding.instance.lifecycleState;
   List<Selection?> previousSelections = [];
@@ -323,7 +337,19 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
   }
 
   @override
+  void didUpdateWidget(covariant AppFlowyEditorPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.editorState, widget.editorState) ||
+        !identical(oldWidget.findMetadataScope, widget.findMetadataScope)) {
+      DocumentFindMenu.dismiss(editorState: oldWidget.editorState);
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    DocumentFindMenu.dismiss(editorState: widget.editorState);
+    _findOwnerContext = null;
     widget.editorState.selectionNotifier.removeListener(onSelectionChanged);
     widget.editorState.service.keyboardService?.unregisterInterceptor(
       editorKeyboardInterceptor,
@@ -360,11 +386,12 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
       context.read<AppearanceSettingsCubit>().state.enableRtlToolbarItems,
     );
 
-    final isViewDeleted = context.read<DocumentBloc>().state.isDeleted;
+    final isViewDeleted = context.watch<DocumentBloc>().state.isDeleted;
+    final access = context.watch<PageAccessLevelBloc?>()?.state;
     final isEditable =
-        context.read<PageAccessLevelBloc?>()?.state.isEditable ?? true;
+        _ownsDocumentFind(widget.editorState) && _isDocumentEditable(access);
 
-    final editor = Directionality(
+    final editorContent = Directionality(
       textDirection: textDirection,
       child: EditorContextMenuRegion(
         editorState: widget.editorState,
@@ -408,10 +435,7 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
                 : appFlowyEditorAutoScrollEdgeOffset,
             footer: GestureDetector(
               behavior: HitTestBehavior.translucent,
-              onTap: () async {
-                // if the last one isn't a empty node, insert a new empty node.
-                await _focusOnLastEmptyParagraph();
-              },
+              onTap: isEditable ? _focusOnLastEmptyParagraph : null,
               child: SizedBox(
                 width: double.infinity,
                 height: UniversalPlatform.isDesktopOrWeb ? 600 : 400,
@@ -424,6 +448,39 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
             ),
           ),
         ),
+      ),
+    );
+
+    final findEditor = widget.editorState;
+    final editor = ValueListenableBuilder<EditorState?>(
+      valueListenable: DocumentFindMenu.activeEditorListenable,
+      builder: (context, activeEditor, child) => ContextualFindRegion(
+        enabled: UniversalPlatform.isDesktopOrWeb &&
+            !isViewDeleted &&
+            !findEditor.isDisposed,
+        isActive: () => _ownsDocumentFind(findEditor),
+        // The page title belongs to page-wide Find too. More specific native
+        // source/cell regions retain priority through the contextual router.
+        findInEditable: true,
+        onFind: () => _showDocumentFind(findEditor),
+        onReplace: isEditable && !isViewDeleted
+            ? () => _showDocumentFind(findEditor, replace: true)
+            : null,
+        onDismiss: () => DocumentFindMenu.dismiss(editorState: findEditor),
+        findOpen: identical(activeEditor, findEditor),
+        findFocusNode: identical(activeEditor, findEditor)
+            ? DocumentFindMenu.findFocusNode
+            : null,
+        isSelected: () => _ownsDocumentFind(findEditor),
+        debugLabel: 'document',
+        child: child!,
+      ),
+      // Keep the content subtree stable when just the overlay owner changes.
+      child: Builder(
+        builder: (context) {
+          _findOwnerContext = context;
+          return editorContent;
+        },
       ),
     );
 
@@ -568,11 +625,95 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
     EditorState editorState, {
     bool replace = false,
   }) {
-    if (UniversalPlatform.isMobile || !mounted) {
+    if (UniversalPlatform.isMobile ||
+        !mounted ||
+        editorState.isDisposed ||
+        !identical(editorState, widget.editorState)) {
       return KeyEventResult.ignored;
     }
-    DocumentFindMenu.show(context, editorState, replace: replace);
-    return KeyEventResult.handled;
+    return ContextualFindRegion.dispatch(
+      _findOwnerContext ?? context,
+      replace: replace,
+    )
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
+  }
+
+  bool _ownsDocumentFind(EditorState editorState) {
+    if (!mounted ||
+        editorState.isDisposed ||
+        !identical(editorState, widget.editorState) ||
+        !(widget.isSelected?.call() ?? true)) {
+      return false;
+    }
+    final document = documentBloc;
+    final scope = widget.findMetadataScope;
+    return !document.isClosing &&
+        !document.isClosed &&
+        !document.state.isDeleted &&
+        !document.state.forceClose &&
+        (scope == null ||
+            (scope.documentId == document.documentId && scope.isActive)) &&
+        (document.state.editorState == null ||
+            identical(document.state.editorState, editorState));
+  }
+
+  bool _isDocumentEditable(PageAccessLevelState? access) {
+    final scope = widget.findMetadataScope;
+    if (scope != null) {
+      if (scope.documentId != documentBloc.documentId || !scope.canReplace) {
+        return false;
+      }
+      // Popup routes need not inherit a bloc. The row scope owns native table
+      // authority; an unrelated ancestor's bloc must never grant it access.
+      if (access?.view.id != scope.tableViewId) return true;
+      return !access!.isLoadingLockStatus &&
+          !access.isReadOnly &&
+          access.isEditable;
+    }
+    return access == null || (!access.isLoadingLockStatus && access.isEditable);
+  }
+
+  /// Region callbacks open directly; only the customized command dispatches.
+  void _showDocumentFind(EditorState editorState, {bool replace = false}) {
+    if (!_ownsDocumentFind(editorState)) {
+      return;
+    }
+    final boundDocument = documentBloc;
+    final boundScope = widget.findMetadataScope;
+    final boundView = boundScope == null ? context.read<ViewBloc?>() : null;
+    bool ownsBinding() =>
+        _ownsDocumentFind(editorState) &&
+        identical(documentBloc, boundDocument) &&
+        identical(widget.findMetadataScope, boundScope) &&
+        (boundScope != null || identical(context.read<ViewBloc?>(), boundView));
+    ViewPB? currentView() {
+      if (!ownsBinding() ||
+          boundView?.isClosed == true ||
+          boundView?.state.isDeleted == true) {
+        return null;
+      }
+      final view =
+          boundScope == null ? boundView?.state.view : boundScope.currentView;
+      // In a full-page row ViewBloc belongs to the TABLE. Do not hand its ID
+      // (or name) to a session attached to the row's DocumentBloc.
+      return view?.id == boundDocument.documentId ? view : null;
+    }
+
+    DocumentFindMenu.show(
+      _findOwnerContext ?? context,
+      editorState,
+      documentId: boundDocument.documentId,
+      currentView: currentView,
+      viewChanges: boundScope?.viewChanges ??
+          boundView?.stream.map((state) => state.view),
+      replace: replace,
+      isSelected: ownsBinding,
+      canReplace: () =>
+          ownsBinding() &&
+          currentView() != null &&
+          _isDocumentEditable(context.read<PageAccessLevelBloc?>()?.state),
+    );
   }
 
   /// Reaching the suggestions from the keyboard, for anybody who does not
@@ -603,6 +744,12 @@ class _AppFlowyEditorPageState extends State<AppFlowyEditorPage>
   void _initEditorL10n() => AppFlowyEditorL10n.current = EditorI18n();
 
   Future<void> _focusOnLastEmptyParagraph() async {
+    // A retained footer callback can run before a revoked permission or closed
+    // document reaches the next build. Match the live gate used by Replace.
+    if (!_ownsDocumentFind(widget.editorState) ||
+        !_isDocumentEditable(context.read<PageAccessLevelBloc?>()?.state)) {
+      return;
+    }
     final editorState = widget.editorState;
     final root = editorState.document.root;
     final lastNode = root.children.lastOrNull;

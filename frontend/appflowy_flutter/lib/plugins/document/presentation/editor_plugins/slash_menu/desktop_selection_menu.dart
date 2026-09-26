@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_menu_style.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -32,7 +33,9 @@ class AppFlowyDesktopSelectionMenu implements SelectionMenuService {
   final SelectionMenuStyle style;
 
   OverlayEntry? _selectionMenuEntry;
-  bool _selectionUpdateByInner = false;
+  VoidCallback? _releaseServices;
+  int _showRequest = 0;
+  int? _pendingShow;
   Offset _offset = Offset.zero;
   Alignment _alignment = Alignment.topLeft;
 
@@ -44,16 +47,58 @@ class AppFlowyDesktopSelectionMenu implements SelectionMenuService {
 
   @override
   Future<void> show() {
+    dismiss();
+    final request = ++_showRequest;
+    _pendingShow = request;
     final completer = Completer<void>();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _show();
-      completer.complete();
+      try {
+        if (request == _pendingShow) {
+          _pendingShow = null;
+          if (context.mounted && !editorState.isDisposed) {
+            _show();
+          }
+        }
+        completer.complete();
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      }
     });
     return completer.future;
   }
 
   void _show() {
-    dismiss();
+    final selectionState = editorState.service.selectionServiceKey.currentState;
+    final editorBox = editorState.renderBox;
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    final overlayBox = overlay?.context.findRenderObject();
+    if (selectionState == null ||
+        editorBox == null ||
+        !editorBox.attached ||
+        !editorBox.hasSize ||
+        overlayBox is! RenderBox ||
+        !overlayBox.hasSize) {
+      return;
+    }
+
+    final routes = <ModalRoute<dynamic>>{};
+    var route = ModalRoute.of(context);
+    while (route != null && routes.add(route)) {
+      final navigator = route.navigator;
+      route = navigator == null ? null : ModalRoute.of(navigator.context);
+    }
+    bool ownerIsActive() =>
+        context.mounted &&
+        !editorState.isDisposed &&
+        overlay!.mounted &&
+        identical(
+          editorState.service.selectionServiceKey.currentState,
+          selectionState,
+        ) &&
+        routes.every((route) => route.isCurrent);
+    if (!ownerIsActive()) {
+      return;
+    }
 
     final selectionService = editorState.service.selectionService;
     final selectionRects = selectionService.selectionRects;
@@ -61,90 +106,159 @@ class AppFlowyDesktopSelectionMenu implements SelectionMenuService {
       return;
     }
 
-    _calculateSelectionMenuOffset(selectionRects.first);
+    _calculateSelectionMenuOffset(selectionRects.first, editorBox, overlayBox);
     final (left, top, right, bottom) = getPosition();
-    final editorSize = editorState.renderBox!.size;
+    final selection = selectionService.currentSelection;
+    final keyboard = editorState.service.keyboardService;
+    final scroll = editorState.service.scrollService;
+    final keyboardContext =
+        editorState.service.keyboardServiceKey.currentContext;
+    final editorFocusScope =
+        keyboardContext == null ? null : FocusScope.of(keyboardContext);
+    final menuKey = GlobalKey<_AppFlowyDesktopSelectionMenuWidgetState>();
+    var servicesDisabled = false;
+    var selectionUpdateByInner = false;
+    late final OverlayEntry entry;
+    bool isCurrentSession() => identical(_selectionMenuEntry, entry);
+    void close() {
+      if (isCurrentSession()) {
+        dismiss();
+      }
+    }
+
+    void onSelectionChange() {
+      if (!isCurrentSession() || selection.value == null) {
+        return;
+      }
+      if (selectionUpdateByInner) {
+        selectionUpdateByInner = false;
+      } else {
+        close();
+      }
+    }
 
     for (final item in selectionMenuItems) {
       item
         ..deleteSlash = deleteSlashByDefault
         ..deleteKeywords = deleteKeywordsByDefault
-        ..onSelected = dismiss;
+        ..onSelected = close;
     }
 
     final menu = InheritedTheme.captureAll(
       context,
       AppFlowyDesktopSelectionMenuWidget(
+        key: menuKey,
         items: selectionMenuItems,
         editorState: editorState,
         menuService: this,
-        onExit: dismiss,
-        onSelectionUpdate: () => _selectionUpdateByInner = true,
+        onExit: close,
+        isActive: () => isCurrentSession() && ownerIsActive(),
+        onSelectionUpdate: () {
+          if (isCurrentSession()) {
+            selectionUpdateByInner = true;
+          }
+        },
         selectionMenuStyle: style,
         deleteSlashByDefault: deleteSlashByDefault,
       ),
     );
 
-    _selectionMenuEntry = OverlayEntry(
-      builder: (_) => SizedBox(
-        width: editorSize.width,
-        height: editorSize.height,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: dismiss,
-          child: Stack(
-            children: [
-              Positioned(
-                top: top,
-                bottom: bottom,
-                left: left,
-                right: right,
+    entry = OverlayEntry(
+      builder: (_) => Positioned.fill(
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: close,
+                onSecondaryTap: close,
+                onTertiaryTapUp: (_) => close(),
+              ),
+            ),
+            Positioned(
+              top: top,
+              bottom: bottom,
+              left: left,
+              right: right,
+              child: Listener(
+                // Padding and headings belong to the menu, not the barrier.
+                behavior: HitTestBehavior.opaque,
                 child: menu,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
 
-    Overlay.of(context, rootOverlay: true).insert(_selectionMenuEntry!);
-    editorState.service.keyboardService?.disable(showCursor: true);
-    editorState.service.scrollService?.disable();
-    selectionService.currentSelection.addListener(_onSelectionChange);
+    _selectionMenuEntry = entry;
+    _releaseServices = () {
+      final closedAt = _showRequest;
+      final menuFocus = menuKey.currentState?._focusNode;
+      selection.removeListener(onSelectionChange);
+      editorState.onDispose.removeListener(close);
+      if (!servicesDisabled) {
+        return;
+      }
+      if (identical(editorState.service.scrollService, scroll)) {
+        scroll?.enable();
+      }
+      // Let a newer native field/route receive its pending focus first.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (closedAt != _showRequest ||
+            !ownerIsActive() ||
+            !identical(editorState.service.keyboardService, keyboard)) {
+          return;
+        }
+        final focus = FocusManager.instance.primaryFocus;
+        if (focus == null ||
+            focus is FocusScopeNode ||
+            identical(focus, menuFocus) ||
+            (editorFocusScope?.descendants.contains(focus) ?? false)) {
+          keyboard?.enable();
+        }
+      });
+    };
+    selection.addListener(onSelectionChange);
+    editorState.onDispose.addListener(close);
+    overlay!.insert(entry);
+
+    void checkOwner(Duration _) {
+      if (!isCurrentSession()) {
+        return;
+      }
+      if (!ownerIsActive()) {
+        close();
+        return;
+      }
+      // Observe owner teardown on existing frames; never schedule a frame.
+      WidgetsBinding.instance.addPostFrameCallback(checkOwner);
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((timeStamp) {
+      if (!isCurrentSession() || !ownerIsActive()) {
+        close();
+        return;
+      }
+      // The menu has now acquired its keep-editor-focus hold in initState.
+      // Unfocusing earlier can clear the document selection before it mounts.
+      servicesDisabled = true;
+      keyboard?.disable(showCursor: true);
+      scroll?.disable();
+      checkOwner(timeStamp);
+    });
   }
 
   @override
   void dismiss() {
-    if (_selectionMenuEntry != null) {
-      editorState.service.keyboardService?.enable();
-      editorState.service.scrollService?.enable();
-    }
-
-    _selectionMenuEntry?.remove();
+    _pendingShow = null;
+    final entry = _selectionMenuEntry;
+    final releaseServices = _releaseServices;
     _selectionMenuEntry = null;
-
-    final selectionServiceState =
-        editorState.service.selectionServiceKey.currentState;
-    if (selectionServiceState != null) {
-      final selectionService = editorState.service.selectionService;
-      editorState.selection = editorState.selection;
-      selectionService.currentSelection.removeListener(_onSelectionChange);
-    }
-  }
-
-  void _onSelectionChange() {
-    final selectionServiceState =
-        editorState.service.selectionServiceKey.currentState;
-    if (selectionServiceState != null &&
-        editorState.service.selectionService.currentSelection.value == null) {
-      return;
-    }
-
-    if (_selectionUpdateByInner) {
-      _selectionUpdateByInner = false;
-    } else {
-      dismiss();
-    }
+    _releaseServices = null;
+    entry?.remove();
+    entry?.dispose();
+    releaseServices?.call();
   }
 
   @override
@@ -170,34 +284,45 @@ class AppFlowyDesktopSelectionMenu implements SelectionMenuService {
     return (left, top, right, bottom);
   }
 
-  void _calculateSelectionMenuOffset(Rect rect) {
+  void _calculateSelectionMenuOffset(
+    Rect rect,
+    RenderBox editorBox,
+    RenderBox overlayBox,
+  ) {
     const menuOffset = Offset(0, 10);
     const menuHeight = AppFlowyEditorMenuStyle.slashMenuMaxHeight;
     const menuWidth = AppFlowyEditorMenuStyle.menuWidth;
-    final editorOffset =
-        editorState.renderBox?.localToGlobal(Offset.zero) ?? Offset.zero;
-    final editorSize = editorState.renderBox!.size;
+    final editorBounds = Rect.fromPoints(
+      overlayBox.globalToLocal(editorBox.localToGlobal(Offset.zero)),
+      overlayBox.globalToLocal(
+        editorBox.localToGlobal(editorBox.size.bottomRight(Offset.zero)),
+      ),
+    );
+    rect = Rect.fromPoints(
+      overlayBox.globalToLocal(rect.topLeft),
+      overlayBox.globalToLocal(rect.bottomRight),
+    );
 
     _alignment = Alignment.topLeft;
     var candidate = rect.bottomRight + menuOffset;
     _offset = candidate;
 
-    if (candidate.dy + menuHeight >= editorOffset.dy + editorSize.height) {
+    if (candidate.dy + menuHeight >= editorBounds.bottom) {
       candidate = rect.topRight - menuOffset;
       _alignment = Alignment.bottomLeft;
       _offset = Offset(
         candidate.dx,
-        editorSize.height + editorOffset.dy - candidate.dy,
+        overlayBox.size.height - candidate.dy,
       );
     }
 
-    if (_offset.dx + menuWidth >= editorOffset.dx + editorSize.width &&
-        candidate.dx - editorOffset.dx > menuWidth) {
+    if (candidate.dx + menuWidth >= editorBounds.right &&
+        candidate.dx - editorBounds.left > menuWidth) {
       _alignment = _alignment == Alignment.topLeft
           ? Alignment.topRight
           : Alignment.bottomRight;
       _offset = Offset(
-        editorSize.width - _offset.dx + editorOffset.dx,
+        overlayBox.size.width - candidate.dx,
         _offset.dy,
       );
     }
@@ -214,6 +339,7 @@ class AppFlowyDesktopSelectionMenuWidget extends StatefulWidget {
     required this.onSelectionUpdate,
     required this.selectionMenuStyle,
     required this.deleteSlashByDefault,
+    this.isActive,
   });
 
   final List<SelectionMenuItem> items;
@@ -223,6 +349,7 @@ class AppFlowyDesktopSelectionMenuWidget extends StatefulWidget {
   final VoidCallback onSelectionUpdate;
   final SelectionMenuStyle selectionMenuStyle;
   final bool deleteSlashByDefault;
+  final bool Function()? isActive;
 
   @override
   State<AppFlowyDesktopSelectionMenuWidget> createState() =>
@@ -245,7 +372,9 @@ class _AppFlowyDesktopSelectionMenuWidgetState
     super.initState();
     keepEditorFocusNotifier.increase();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
+      if (mounted &&
+          !widget.editorState.isDisposed &&
+          (widget.isActive?.call() ?? true)) {
         _focusNode.requestFocus();
       }
     });
@@ -253,9 +382,18 @@ class _AppFlowyDesktopSelectionMenuWidgetState
 
   @override
   void dispose() {
+    final focus = FocusManager.instance.primaryFocus;
+    final preserveFocus = focus != null &&
+        focus != _focusNode &&
+        !_focusNode.descendants.contains(focus);
     _focusNode.dispose();
     _scrollController.dispose();
     keepEditorFocusNotifier.decrease();
+    // Releasing the editor's hold requests editor focus synchronously. Do not
+    // override a native field or a newer dialog that already owns focus.
+    if (preserveFocus && focus.context?.mounted == true) {
+      focus.requestFocus();
+    }
     super.dispose();
   }
 
@@ -303,10 +441,14 @@ class _AppFlowyDesktopSelectionMenuWidgetState
             label: item.name,
             subtitle: metadata.description,
             highlighted: isSelected,
-            iconWidget: item.icon(
-              widget.editorState,
-              isSelected,
-              widget.selectionMenuStyle,
+            // Some entries (outline and extension items) return Icon/FlowySvg
+            // directly instead of going through the selectable helpers.
+            iconWidget: WorkspaceGlyph.adapt(
+              item.icon(
+                widget.editorState,
+                isSelected,
+                widget.selectionMenuStyle,
+              ),
             ),
             trailing: _buildTrailing(context, metadata),
             onHover: (_) {

@@ -115,7 +115,7 @@ class LocationPickerCard extends StatelessWidget {
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            color: palette.hover.withValues(alpha: 0.35),
+            color: palette.hover.withValues(alpha: palette.hover.a * 0.35),
             child: Row(
               children: [
                 Icon(Icons.touch_app_rounded, size: 13, color: palette.accent),

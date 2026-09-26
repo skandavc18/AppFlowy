@@ -1,11 +1,18 @@
 // Original artwork authored for AppFlowy's Vivid collection; distributed under
 // the repository's LICENSE. Not copied from or attributed to Fluent Emoji.
 
+import 'package:appflowy/shared/icon_emoji_picker/default_icon_artwork.dart';
+
+part 'vivid_extra_artwork.dart';
+
 /// Rounded illustrations on a consistent 32px grid. Gradients, inset highlights
 /// and contrasting faces supply depth without filters or embedded raster data.
 /// The canvas is transparent: pale fills are object details, not UI surfaces.
 String? vividIconSvg(String name) {
-  final art = _illustrations[name];
+  if (name.startsWith('utility-')) {
+    return _vividUtilitySvg(name.substring('utility-'.length));
+  }
+  final art = _illustrations[name] ?? _extraIllustrations[name];
   if (art == null) return null;
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" '
       'fill="none" stroke-linecap="round" stroke-linejoin="round">'
@@ -23,6 +30,53 @@ String? vividIconSvg(String name) {
       '</defs>${art.body}</svg>';
 }
 
+/// Utility marks retain their precise geometry instead of borrowing an
+/// unrelated object. A compiled gradient gives even a one-path arrow a vivid
+/// palette; there is no asset IO, name hashing, badge, or theme-colored tint.
+String? _vividUtilitySvg(String name) {
+  final source = defaultIconSvg(name);
+  if (source == null || name == 'unknown') return null;
+  return _utilityCache.putIfAbsent(name, () {
+    final (light, shade) = switch (name) {
+      'dots-six-vertical' => ('#789DA3', '#7E8FB1'),
+      'trash' || 'x' || 'minus-circle' || 'block' || 'backspace' => (
+          '#EA7893',
+          '#BD486D'
+        ),
+      'check' || 'check-all' || 'check-circle' || 'checkbox' || 'radio' => (
+          '#43C7A7',
+          '#3277BD'
+        ),
+      'text' ||
+      'input' ||
+      'bold' ||
+      'italic' ||
+      'underline' ||
+      'strikethrough' ||
+      'quote' ||
+      'sigma' =>
+        ('#AC79E0', '#527DDD'),
+      'star' || 'bookmark' || 'push-pin' || 'warning' || 'priority' => (
+          '#E5B44F',
+          '#D16D55'
+        ),
+      _ => ('#489ECC', '#9365CD'),
+    };
+    final body = source
+        .substring(source.indexOf('>') + 1, source.lastIndexOf('</svg>'))
+        .replaceAll('currentColor', 'url(#utility)');
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
+        '<defs><linearGradient id="utility" x1="4" y1="3" x2="20" y2="21" '
+        'gradientUnits="userSpaceOnUse"><stop stop-color="$light"/>'
+        '<stop offset="1" stop-color="$shade"/></linearGradient></defs>'
+        '<g transform="scale(1.3333333333)" fill="none" stroke="url(#utility)" '
+        'stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">'
+        '$body</g></svg>';
+  });
+}
+
+final _utilityCache = <String, String>{};
+
 class _Illustration {
   const _Illustration(
     this.light,
@@ -38,6 +92,21 @@ class _Illustration {
   final String accentShade;
   final String body;
 }
+
+// Reusable object faces, not UI backgrounds. Every illustration remains
+// transparent outside the object and uses its original palette without tint.
+const _fileFace = '<path d="M8 3h11l8 8v16a3 3 0 0 1-3 3H8'
+    'a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3Z" fill="url(#main)"/>'
+    '<path d="M19 3v6a2 2 0 0 0 2 2h6Z" fill="url(#accent)"/>'
+    '<path d="M8 7v17" stroke="#FFFFFF" stroke-opacity=".5" stroke-width="1.2"/>';
+const _panelFace = '<rect x="3" y="5" width="26" height="24" rx="4" '
+    'fill="url(#main)"/>'
+    '<rect x="5" y="7" width="22" height="19" rx="2" fill="#FFF6E8"/>'
+    '<path d="M7 7h18a2 2 0 0 1 2 2v3H5V9a2 2 0 0 1 2-2Z" '
+    'fill="url(#accent)"/>';
+const _chatFace = '<path d="M7 4h18a5 5 0 0 1 5 5v11a5 5 0 0 1-5 5H13'
+    'l-8 5 1-5a5 5 0 0 1-4-5V9a5 5 0 0 1 5-5Z" fill="url(#main)"/>'
+    '<path d="M7 7h17" stroke="#F5F6FF" stroke-opacity=".65" stroke-width="1.4"/>';
 
 const _illustrations = <String, _Illustration>{
   'home': _Illustration(
@@ -407,5 +476,321 @@ const _illustrations = <String, _Illustration>{
         '<path d="m22 9-3.5 8.5-5-5Z" fill="url(#main)"/>'
         '<circle cx="16" cy="15" r="1.5" fill="#FFF7E7"/>'
         '<path d="M7 8a11 11 0 0 1 7-4" stroke="#FFD8C9" stroke-width="1.3"/>',
+  ),
+  'page': _Illustration(
+    '#E5F5FF',
+    '#99C8EA',
+    '#9FDCD6',
+    '#4CAAA6',
+    '$_fileFace<path d="M11 14h10M11 18h10M11 22h7" '
+        'stroke="#507BA7" stroke-width="1.7"/>',
+  ),
+  'file': _Illustration(
+    '#E5EAF8',
+    '#AFBDD9',
+    '#ADCFEF',
+    '#6A92C7',
+    '$_fileFace<rect x="11" y="16" width="10" height="7" rx="2" '
+        'fill="#F8F7FF"/>',
+  ),
+  'pdf': _Illustration(
+    '#FFF0E7',
+    '#F4CABC',
+    '#FF9C94',
+    '#D65370',
+    '$_fileFace<path d="M12 12h9M12 16h9M12 20h7" '
+        'stroke="#C96A73" stroke-width="1.5"/>'
+        '<rect x="2" y="20" width="12" height="8" rx="2" fill="url(#accent)"/>'
+        '<path d="M6 25v-3h3a1.5 1.5 0 0 1 0 3H6" '
+        'stroke="#FFF3E9" stroke-width="1.3"/>',
+  ),
+  'document': _Illustration(
+    '#E1F1FF',
+    '#99BFE8',
+    '#81B5FA',
+    '#4074BD',
+    '$_fileFace<path d="M12 14h10M12 18h10M12 22h6" '
+        'stroke="#4F7CAB" stroke-width="1.5"/>'
+        '<rect x="2" y="16" width="13" height="12" rx="3" fill="url(#accent)"/>'
+        '<path d="m5 20 1.5 5 2-3 2 3 1.5-5" stroke="#F5FBFF" '
+        'stroke-width="1.5"/>',
+  ),
+  'spreadsheet': _Illustration(
+    '#E4F8EC',
+    '#9AD5B3',
+    '#80D6AF',
+    '#279775',
+    '$_fileFace<rect x="11" y="13" width="12" height="11" rx="1.5" '
+        'stroke="#418E73" stroke-width="1.3"/>'
+        '<path d="M11 17h12M11 21h12M17 13v11" stroke="#418E73" stroke-width="1.2"/>'
+        '<rect x="2" y="17" width="12" height="11" rx="2.5" fill="url(#accent)"/>'
+        '<path d="m6 20 4 5m-4 0 4-5" stroke="#EDFFF7" stroke-width="1.6"/>',
+  ),
+  'presentation': _Illustration(
+    '#FFF0DA',
+    '#F1CAA4',
+    '#FFA576',
+    '#DC7354',
+    '$_fileFace<rect x="11" y="13" width="12" height="9" rx="1.5" '
+        'stroke="#B87B58" stroke-width="1.3"/>'
+        '<path d="M17 22v4m-3 0h6" stroke="#B87B58" stroke-width="1.3"/>'
+        '<rect x="2" y="17" width="12" height="11" rx="2.5" fill="url(#accent)"/>'
+        '<path d="M6 25v-5h3a1.5 1.5 0 0 1 0 3H6" stroke="#FFF5E8" '
+        'stroke-width="1.5"/>',
+  ),
+  'archive': _Illustration(
+    '#FFE6AA',
+    '#ECAF59',
+    '#AE9BE8',
+    '#7960B5',
+    '$_fileFace<path d="M13 3v3h3v3h-3v3h3v3h-3v3" '
+        'stroke="#96714C" stroke-width="2"/>'
+        '<rect x="11" y="18" width="7" height="8" rx="2" fill="url(#accent)"/>'
+        '<rect x="13" y="21" width="3" height="3" rx="1" fill="#FFF3D3"/>',
+  ),
+  'code-file': _Illustration(
+    '#E1EEF9',
+    '#AAC7E2',
+    '#AFA0F1',
+    '#7552BD',
+    '$_fileFace<rect x="9" y="13" width="20" height="13" rx="3" '
+        'fill="url(#accent)"/>'
+        '<path d="m15 17-3 3 3 3m8-6 3 3-3 3m-3-7-2 8" '
+        'stroke="#F5EDFF" stroke-width="1.5"/>',
+  ),
+  'markdown': _Illustration(
+    '#EDF3F8',
+    '#B1C7D8',
+    '#8FBCCB',
+    '#568799',
+    '$_fileFace<rect x="8" y="14" width="21" height="12" rx="2.5" '
+        'fill="url(#accent)"/>'
+        '<path d="M11 23v-6l3 3 3-3v6m7-6v6m-2-2 2 2 2-2" '
+        'stroke="#F7FCFF" stroke-width="1.5"/>',
+  ),
+  'html-file': _Illustration(
+    '#FFF0DB',
+    '#EDCAA4',
+    '#FFB878',
+    '#D98257',
+    '$_fileFace<rect x="9" y="14" width="20" height="12" rx="3" '
+        'fill="url(#accent)"/>'
+        '<path d="m15 17-3 3 3 3m8-6 3 3-3 3m-3-7-2 8" '
+        'stroke="#FFF6E8" stroke-width="1.5"/>',
+  ),
+  'json-file': _Illustration(
+    '#FFF5CE',
+    '#E9D69C',
+    '#B3C982',
+    '#7F9954',
+    '$_fileFace<rect x="9" y="14" width="20" height="12" rx="3" '
+        'fill="url(#accent)"/>'
+        '<path d="M16 17h-2v2l-1 1 1 1v2h2m6-6h2v2l1 1-1 1v2h-2" '
+        'stroke="#FCFFE7" stroke-width="1.4"/>',
+  ),
+  'notebook': _Illustration(
+    '#FFD8A5',
+    '#E9A361',
+    '#AE9BEA',
+    '#7353B5',
+    '<rect x="6" y="3" width="23" height="27" rx="3" fill="url(#main)"/>'
+        '<path d="M10 3v27" stroke="#C58653" stroke-width="1.5"/>'
+        '<path d="M4 8h4M4 15h4M4 22h4" stroke="#FFF0D3" stroke-width="3"/>'
+        '<rect x="13" y="10" width="13" height="13" rx="2" fill="url(#accent)"/>'
+        '<path d="m16 14 3 3-3 3m5 0h2" stroke="#FAEFFF" stroke-width="1.5"/>',
+  ),
+  'csv': _Illustration(
+    '#E5F5EB',
+    '#ADD2B8',
+    '#A4D8CF',
+    '#5EAA9D',
+    '$_fileFace<rect x="10" y="13" width="13" height="12" rx="1.5" '
+        'fill="#F6FFF8"/>'
+        '<path d="M10 17h13M10 21h13M15 13v12M19 13v12" '
+        'stroke="#659F88" stroke-width="1.3"/>',
+  ),
+  'image': _Illustration(
+    '#A8DBF2',
+    '#5E94CC',
+    '#ACD891',
+    '#4EAA87',
+    '<rect x="3" y="4" width="26" height="25" rx="4" fill="url(#main)"/>'
+        '<rect x="6" y="7" width="20" height="18" rx="2" fill="#E8F8FE"/>'
+        '<circle cx="21" cy="11" r="2.5" fill="#FFD48B"/>'
+        '<path d="m6 22 6-9 7 8 4-5 3 4v5H6Z" fill="url(#accent)"/>',
+  ),
+  'video': _Illustration(
+    '#A8C3F4',
+    '#667BCC',
+    '#FBC992',
+    '#E4966E',
+    '<rect x="3" y="4" width="26" height="25" rx="4" fill="url(#main)"/>'
+        '<rect x="8" y="7" width="16" height="19" rx="2" fill="#E8EBFA"/>'
+        '<path d="m13 11 8 5.5-8 5.5Z" fill="url(#accent)"/>'
+        '<path d="M5 9h1m-1 7h1m-1 7h1M26 9h1m-1 7h1m-1 7h1" '
+        'stroke="#DEE8FF" stroke-width="2"/>',
+  ),
+  'album': _Illustration(
+    '#E5B8EC',
+    '#AD79C0',
+    '#A8DCE8',
+    '#659EC7',
+    '<rect x="3" y="7" width="23" height="23" rx="4" fill="url(#main)"/>'
+        '<rect x="7" y="2" width="23" height="23" rx="4" fill="url(#accent)"/>'
+        '<rect x="10" y="5" width="17" height="16" rx="2" fill="#EFF9FF"/>'
+        '<circle cx="23" cy="9" r="2" fill="#FFD090"/>'
+        '<path d="m10 19 5-8 6 7 3-3 3 4v2H10Z" fill="#78BAA6"/>',
+  ),
+  'repository': _Illustration(
+    '#A2D6EB',
+    '#619DBE',
+    '#B6ACEE',
+    '#8370BE',
+    '<path d="M3 9V7a3 3 0 0 1 3-3h6l4 5h10a3 3 0 0 1 3 3v14'
+        'a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3Z" fill="url(#main)"/>'
+        '<rect x="7" y="12" width="18" height="13" rx="3" fill="url(#accent)"/>'
+        '<path d="m12 16-3 3 3 3m8-6 3 3-3 3m-3-7-2 8" '
+        'stroke="#F1F4FF" stroke-width="1.6"/>',
+  ),
+  'database': _Illustration(
+    '#A8DFEA',
+    '#538FAE',
+    '#BEB3F2',
+    '#8772C1',
+    '<path d="M4 8h24v17c0 7-24 7-24 0Z" fill="url(#main)"/>'
+        '<ellipse cx="16" cy="8" rx="12" ry="5" fill="url(#accent)"/>'
+        '<path d="M4 15c0 7 24 7 24 0M4 22c0 7 24 7 24 0" '
+        'stroke="#E4F8FC" stroke-width="1.3"/>'
+        '<path d="M8 8c4-2 12-2 16 0" stroke="#EDE8FF" stroke-width="1.2"/>',
+  ),
+  'bookmark': _Illustration(
+    '#ADCDF2',
+    '#6A96CB',
+    '#FFD79B',
+    '#E9A768',
+    '$_panelFace<path d="M11 10h10v14l-5-3-5 3Z" fill="url(#accent)"/>'
+        '<path d="M14 13h4" stroke="#FFF5D9" stroke-width="1.3"/>',
+  ),
+  'mail': _Illustration(
+    '#C2E4EF',
+    '#71A7C9',
+    '#F3CCEA',
+    '#C48DBB',
+    '<rect x="2" y="6" width="28" height="23" rx="4" fill="url(#main)"/>'
+        '<path d="m3 8 11 9a3 3 0 0 0 4 0l11-9-9 1H9Z" fill="url(#accent)"/>'
+        '<path d="m4 26 8-8m16 8-8-8M6 9l9 7a1.5 1.5 0 0 0 2 0l9-7" '
+        'stroke="#EEF7FF" stroke-width="1.3"/>',
+  ),
+  'table': _Illustration(
+    '#A8D8CE',
+    '#569F97',
+    '#A8C7F4',
+    '#779ACE',
+    '$_panelFace<path d="M5 17h22M5 22h22M12 12v14M20 12v14" '
+        'stroke="#91B7B4" stroke-width="1.2"/>',
+  ),
+  'board': _Illustration(
+    '#B3C4F3',
+    '#7C8BC5',
+    '#CBB6F0',
+    '#AA87CE',
+    '$_panelFace<rect x="7" y="14" width="5" height="9" rx="1.3" fill="#98C9BE"/>'
+        '<rect x="14" y="14" width="5" height="5" rx="1.3" fill="#F4C48C"/>'
+        '<rect x="21" y="14" width="4" height="11" rx="1.3" fill="#AFA0D7"/>',
+  ),
+  'chat': _Illustration(
+    '#A6DCE9',
+    '#5B9DC0',
+    '#FFE2AA',
+    '#F0BA7C',
+    '$_chatFace<g fill="url(#accent)"><circle cx="9" cy="15" r="2"/>'
+        '<circle cx="16" cy="15" r="2"/><circle cx="23" cy="15" r="2"/></g>',
+  ),
+  'ai-chat': _Illustration(
+    '#C4B3F5',
+    '#8770C9',
+    '#FFE6AC',
+    '#F0BB78',
+    '$_chatFace<path d="m16 8 2.2 5.8L24 16l-5.8 2.2L16 24l-2.2-5.8'
+        'L8 16l5.8-2.2Z" fill="url(#accent)"/>'
+        '<path d="m25 2 1 3 3 1-3 1-1 3-1-3-3-1 3-1Z" fill="#A6ECE2"/>',
+  ),
+  'map': _Illustration(
+    '#A5D5EB',
+    '#5893BB',
+    '#B2DEAC',
+    '#6CAD8C',
+    '<path d="m2 8 9-4 10 4 9-4v23l-9 4-10-4-9 4Z" fill="url(#main)"/>'
+        '<path d="m11 4 10 4v23l-10-4Z" fill="url(#accent)"/>'
+        '<path d="m3 18 8-3 10 5 8-4M11 5v21M21 9v21" '
+        'stroke="#EFF8DB" stroke-width="1.4"/>'
+        '<path d="M25 7c0 4-5 8-5 8s-5-4-5-8a5 5 0 0 1 10 0Z" fill="#E9838C"/>'
+        '<circle cx="20" cy="7" r="2" fill="#FFEDE2"/>',
+  ),
+  'slides': _Illustration(
+    '#B6C5EE',
+    '#7F90C4',
+    '#F3C79D',
+    '#D99A78',
+    '<rect x="2" y="9" width="6" height="17" rx="2" fill="url(#accent)"/>'
+        '<rect x="24" y="9" width="6" height="17" rx="2" fill="url(#accent)"/>'
+        '<rect x="6" y="4" width="20" height="25" rx="3" fill="url(#main)"/>'
+        '<rect x="9" y="7" width="14" height="11" rx="2" fill="#F7EFD9"/>'
+        '<path d="m10 16 4-6 3 4 3-2 2 4Z" fill="#99C5B1"/>'
+        '<path d="M10 22h12M10 25h8" stroke="#EEF3FF" stroke-width="1.4"/>',
+  ),
+  'timeline': _Illustration(
+    '#AED4EB',
+    '#6A9CBC',
+    '#C4B0EA',
+    '#9672C3',
+    '$_panelFace<path d="M10 14v10M21 14v10" stroke="#C2CCD3" stroke-width="1"/>'
+        '<rect x="7" y="15" width="12" height="3" rx="1.5" fill="url(#main)"/>'
+        '<rect x="13" y="21" width="12" height="3" rx="1.5" fill="url(#accent)"/>',
+  ),
+  'feed': _Illustration(
+    '#D4C1EE',
+    '#AC90CC',
+    '#A2D1D9',
+    '#719FAB',
+    '$_panelFace<rect x="7" y="14" width="5" height="5" rx="1" fill="#F2C395"/>'
+        '<path d="M15 15h9M15 18h7M7 22h17" stroke="#9A8DB0" stroke-width="1.3"/>',
+  ),
+  'form': _Illustration(
+    '#B9DDCB',
+    '#7FAE97',
+    '#DFC4EC',
+    '#B38BC4',
+    '$_panelFace<path d="m7 16 1 1 2-3m-3 9 1 1 2-3M14 16h10M14 23h10" '
+        'stroke="#74998C" stroke-width="1.5"/>',
+  ),
+  'gallery': _Illustration(
+    '#E9C2D8',
+    '#C58DAE',
+    '#ADC8EF',
+    '#7B9BC7',
+    '$_panelFace<rect x="7" y="14" width="7" height="10" rx="1.5" fill="#B8DBCB"/>'
+        '<rect x="17" y="14" width="7" height="10" rx="1.5" fill="#EDD09D"/>'
+        '<path d="m8 20 2-3 3 4m5-1 2-3 3 4" stroke="#FCFFF3" stroke-width="1.2"/>',
+  ),
+  'dashboard': _Illustration(
+    '#ADCFEF',
+    '#729BC7',
+    '#CDB5EA',
+    '#A283C4',
+    '$_panelFace<rect x="7" y="14" width="7" height="10" rx="1.5" fill="#9CCDBD"/>'
+        '<rect x="17" y="14" width="7" height="4" rx="1.3" fill="#EDC995"/>'
+        '<rect x="17" y="20" width="7" height="4" rx="1.3" fill="#C6AFDD"/>',
+  ),
+  'canvas': _Illustration(
+    '#E2D3B8',
+    '#B9A489',
+    '#B9C8F1',
+    '#889BCC',
+    '<rect x="3" y="3" width="26" height="26" rx="4" fill="url(#main)"/>'
+        '<rect x="5" y="5" width="22" height="22" rx="2" fill="#FFF5DE"/>'
+        '<path d="M11 12v9h10" stroke="#9CABB7" stroke-width="1.5"/>'
+        '<rect x="7" y="7" width="10" height="9" rx="2" fill="url(#accent)"/>'
+        '<rect x="18" y="18" width="7" height="7" rx="2" fill="#E7AF91"/>',
   ),
 };

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/tasks/app_widget.dart';
 import 'package:appflowy/workspace/application/encryption/encryption.dart';
 import 'package:appflowy/workspace/presentation/encryption/encryption_dialogs.dart';
@@ -38,7 +39,7 @@ class EncryptPageAction extends StatelessWidget {
       child: FlowyIconTextButton(
         margin: const EdgeInsets.symmetric(horizontal: 6),
         onTap: () => unawaited(_toggle(protected)),
-        leftIconBuilder: (_) => Icon(
+        leftIconBuilder: (_) => WorkspaceGlyph(
           protected ? Icons.shield_rounded : Icons.shield_outlined,
           size: 16,
         ),

@@ -22,7 +22,20 @@ enum ExplorerContextAction {
   newFolder,
   copyPath,
   properties,
-  togglePreviewMode,
+  togglePreviewMode;
+
+  bool get requiresWrite => switch (this) {
+        rename ||
+        duplicate ||
+        cut ||
+        paste ||
+        delete ||
+        newFile ||
+        newFolder ||
+        togglePreviewMode =>
+          true,
+        _ => false,
+      };
 }
 
 Future<ExplorerContextAction?> showExplorerContextMenu({
@@ -32,6 +45,8 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
   required bool canPaste,
   required bool isFavorite,
   required bool knowledgeMode,
+  bool canWrite = true,
+  bool canRename = true,
   ValueChanged<CollectionKind>? onCreateCollection,
   ViewPreviewMode previewMode = ViewPreviewMode.cover,
 }) {
@@ -46,6 +61,8 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
         icon: icon,
         value: value,
         destructive: danger,
+        enabled: (!value.requiresWrite || canWrite) &&
+            (value != ExplorerContextAction.rename || canRename),
       );
 
   return showAppMenu<ExplorerContextAction>(
@@ -123,6 +140,7 @@ Future<ExplorerContextAction?> showExplorerContextMenu({
           AppMenuItem(
             label: LocaleKeys.collections_newCollection.tr(),
             icon: collectionAddIcon,
+            enabled: canWrite,
             submenu: collectionKindEntries(onSelected: onCreateCollection),
           ),
       ],

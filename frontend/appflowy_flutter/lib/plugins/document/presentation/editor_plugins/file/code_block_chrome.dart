@@ -1,7 +1,10 @@
+import 'package:appflowy/shared/document_viewer/standalone_file_scope.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/google_fonts_extension.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -13,6 +16,8 @@ const codeBlockAnimationDuration = AppFlowyMotion.standard;
 /// reads as one uniform card instead of a toolbar stacked on a page — and a
 /// block in the editor matches a code file opened in the viewer exactly.
 Color codeBlockSurfaceColor(BuildContext context) {
+  final standalone = StandaloneFileScope.maybeOf(context);
+  if (standalone != null) return standalone.canvas;
   if (Theme.of(context).brightness == Brightness.dark) {
     return const Color(0xFF18191D);
   }
@@ -63,7 +68,7 @@ class CodeBlockPalette {
         textPrimary: const Color(0xFFE7E8EC),
         textSecondary: const Color(0xFFB0B3BC),
         textMuted: const Color(0xFF737780),
-        hover: const Color(0x12FFFFFF),
+        hover: WorkspaceChrome.hoverColor(context),
         selected: const Color(0x267AA2F7),
         accent: const Color(0xFF8AB4F8),
         success: const Color(0xFF86D9A2),
@@ -93,11 +98,13 @@ class CodeBlockPalette {
         menu: PaperTheme.popupBackground,
         input: PaperTheme.controlBackground,
         border: PaperTheme.codeBlockBorder,
-        divider: PaperTheme.codeBlockBorder.withValues(alpha: 0.7),
+        divider: PaperTheme.codeBlockBorder.withValues(
+          alpha: PaperTheme.codeBlockBorder.a * 0.7,
+        ),
         textPrimary: appFlowyTheme.textColorScheme.primary,
         textSecondary: appFlowyTheme.textColorScheme.secondary,
         textMuted: appFlowyTheme.textColorScheme.tertiary,
-        hover: PaperTheme.hoverOverlay,
+        hover: WorkspaceChrome.hoverColor(context),
         selected: PaperTheme.selectedOverlay,
         accent: PaperTheme.accent,
         success: const Color(0xFF53734F),
@@ -135,12 +142,11 @@ class CodeBlockPalette {
       input: premiumPalette?.mutedSurface ??
           appFlowyTheme.fillColorScheme.contentHover,
       border: border,
-      divider: border.withValues(alpha: 0.7),
+      divider: border.withValues(alpha: border.a * 0.7),
       textPrimary: appFlowyTheme.textColorScheme.primary,
       textSecondary: appFlowyTheme.textColorScheme.secondary,
       textMuted: appFlowyTheme.textColorScheme.tertiary,
-      hover:
-          premiumPalette?.hover ?? appFlowyTheme.fillColorScheme.contentHover,
+      hover: WorkspaceChrome.hoverColor(context),
       selected:
           premiumPalette?.selected ?? appFlowyTheme.fillColorScheme.themeSelect,
       accent:
@@ -187,7 +193,8 @@ class CodeBlockPalette {
   /// a card only muddies the first.
   List<BoxShadow> get nestedShadows => [
         BoxShadow(
-          color: shadows.first.color.withValues(alpha: 0.5),
+          color: shadows.first.color
+              .withValues(alpha: shadows.first.color.a * 0.5),
           blurRadius: 14,
           offset: const Offset(0, 3),
           spreadRadius: -6,
@@ -236,12 +243,17 @@ class _CodeHoverSurfaceState extends State<CodeHoverSurface> {
       onEnter: (_) => setState(() => hovering = true),
       onExit: (_) => setState(() => hovering = false),
       child: AnimatedContainer(
-        duration: codeBlockAnimationDuration,
+        duration: MediaQuery.disableAnimationsOf(context) ||
+                MediaQuery.accessibleNavigationOf(context)
+            ? Duration.zero
+            : codeBlockAnimationDuration,
         curve: AppFlowyMotion.standardCurve,
         height: 28,
         padding: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
-          color: hovering ? widget.palette.hover : Colors.transparent,
+          color: hovering
+              ? widget.palette.hover
+              : widget.palette.hover.withValues(alpha: 0),
           borderRadius: BorderRadius.circular(7),
         ),
         child: widget.child,
@@ -252,9 +264,9 @@ class _CodeHoverSurfaceState extends State<CodeHoverSurface> {
 
 /// The one control every code surface uses.
 ///
-/// Material's `IconButton` brings its own metrics and ripples, which read as a
-/// bootstrap form dropped into the code shell.
-class CodeToolbarButton extends StatefulWidget {
+/// Uses the same native control, outline glyph and UI face as other file tools.
+/// Monospace remains reserved for the source and terminal contents.
+class CodeToolbarButton extends StatelessWidget {
   const CodeToolbarButton({
     super.key,
     required this.palette,
@@ -264,6 +276,7 @@ class CodeToolbarButton extends StatefulWidget {
     this.label,
     this.selected = false,
     this.foregroundColor,
+    this.iconRole,
   });
 
   final CodeBlockPalette palette;
@@ -274,100 +287,24 @@ class CodeToolbarButton extends StatefulWidget {
   final bool selected;
   final Color? foregroundColor;
 
-  @override
-  State<CodeToolbarButton> createState() => _CodeToolbarButtonState();
-}
-
-class _CodeToolbarButtonState extends State<CodeToolbarButton> {
-  bool hovering = false;
-  bool focused = false;
-  bool pressing = false;
+  /// Decorative emphasis can use standard artwork; status ink stays explicit.
+  /// The shared control always preserves disabled ink, regardless of this role.
+  final WorkspaceGlyphRole? iconRole;
 
   @override
-  Widget build(BuildContext context) {
-    final enabled = widget.onPressed != null;
-    final foreground = widget.foregroundColor ?? widget.palette.textSecondary;
-    final background = pressing
-        ? Color.alphaBlend(
-            widget.palette.textPrimary.withValues(alpha: 0.06),
-            widget.palette.hover,
-          )
-        : widget.selected
-            ? widget.palette.selected
-            : hovering || focused
-                ? widget.palette.hover
-                : Colors.transparent;
-
-    return Tooltip(
-      message: widget.tooltip,
-      child: Semantics(
-        button: true,
-        enabled: enabled,
-        label: widget.tooltip,
-        child: AnimatedOpacity(
-          duration: codeBlockAnimationDuration,
-          opacity: enabled ? 1 : 0.42,
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: widget.onPressed,
-              onHover:
-                  enabled ? (value) => setState(() => hovering = value) : null,
-              onFocusChange:
-                  enabled ? (value) => setState(() => focused = value) : null,
-              onHighlightChanged:
-                  enabled ? (value) => setState(() => pressing = value) : null,
-              hoverColor: Colors.transparent,
-              focusColor: Colors.transparent,
-              highlightColor: Colors.transparent,
-              splashColor: Colors.transparent,
-              splashFactory: NoSplash.splashFactory,
-              borderRadius: BorderRadius.circular(7),
-              child: AnimatedContainer(
-                duration: codeBlockAnimationDuration,
-                curve: AppFlowyMotion.standardCurve,
-                height: 28,
-                padding: EdgeInsets.symmetric(
-                  horizontal: widget.label == null ? 7 : 8,
-                ),
-                decoration: BoxDecoration(
-                  color: background,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: AnimatedSwitcher(
-                  duration: codeBlockAnimationDuration,
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) => FadeTransition(
-                    opacity: animation,
-                    child: child,
-                  ),
-                  child: Row(
-                    key: ValueKey((widget.icon, widget.label)),
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(widget.icon, size: 15, color: foreground),
-                      if (widget.label != null) ...[
-                        const SizedBox(width: 5),
-                        Text(
-                          widget.label!,
-                          style: codeUiTextStyle(
-                            color: foreground,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => WorkspaceControlButton(
+        icon: icon,
+        tooltip: tooltip,
+        label: label,
+        selected: selected,
+        foregroundColor: foregroundColor ??
+            (icon == Icons.delete_outline_rounded ||
+                    icon == Icons.delete_rounded
+                ? palette.error
+                : null),
+        iconRole: iconRole,
+        onPressed: onPressed,
+      );
 }
 
 class CodeHeaderDivider extends StatelessWidget {

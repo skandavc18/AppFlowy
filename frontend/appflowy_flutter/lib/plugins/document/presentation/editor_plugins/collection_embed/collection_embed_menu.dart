@@ -2,6 +2,8 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_registry.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/collection_embed/collection_embed_settings.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -132,6 +134,30 @@ List<AppMenuEntry> collectionEmbedMenuEntries({
   return [
     if (editable) ...[
       ...appearance,
+      const AppMenuSeparator(),
+    ] else if (embed.kind == null || embed.kind == CollectionKind.folder) ...[
+      // A read-only folder can be browsed in any mode. Its frame keeps these
+      // choices in session state and never calls the persistence boundary.
+      AppMenuItem(
+        label: LocaleKeys.collections_embed_preview.tr(),
+        icon: Icons.dashboard_customize_rounded,
+        submenu: fileBrowserViewEntries(
+          selected: settings.folderViewMode,
+          onChanged: (mode) => apply(settings.copyWith(style: mode.id)),
+        ),
+      ),
+      AppMenuItem(
+        label: LocaleKeys.collections_embed_sort.tr(),
+        icon: Icons.sort_rounded,
+        submenu: [
+          for (final sort in CollectionEmbedSort.values)
+            AppMenuItem(
+              label: _sortLabel(sort),
+              selected: settings.sort == sort,
+              onSelected: () => apply(settings.copyWith(sort: sort)),
+            ),
+        ],
+      ),
       const AppMenuSeparator(),
     ],
     AppMenuItem(

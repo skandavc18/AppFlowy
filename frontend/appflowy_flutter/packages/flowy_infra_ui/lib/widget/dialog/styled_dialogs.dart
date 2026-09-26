@@ -44,7 +44,7 @@ class StyledDialog extends StatelessWidget {
     this.padding,
     this.margin,
     this.bgColor,
-    this.borderRadius = const BorderRadius.all(Radius.circular(16)),
+    this.borderRadius = const BorderRadius.all(Radius.circular(24)),
     this.shrinkWrap = true,
   });
 
@@ -76,12 +76,8 @@ class StyledDialog extends StatelessWidget {
           ),
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: bgColor ?? theme.cardColor,
+              color: bgColor ?? theme.dialogBackgroundColor,
               borderRadius: borderRadius,
-              border: Border.all(
-                color: theme.colorScheme.outlineVariant,
-                width: 0.6,
-              ),
               boxShadow: [
                 BoxShadow(
                   color: theme.shadowColor.withValues(alpha: 0.12),
@@ -117,9 +113,20 @@ class StyledDialog extends StatelessWidget {
 class Dialogs {
   static Future<dynamic> show(BuildContext context,
       {required Widget child}) async {
+    final theme = Theme.of(context);
+    final media = MediaQuery.maybeOf(context);
+    final reduced = (media?.disableAnimations ?? false) ||
+        (media?.accessibleNavigation ?? false);
     return await Navigator.of(context).push(
       StyledDialogRoute(
-        barrier: DialogBarrier(color: Colors.black.withValues(alpha: 0.28)),
+        transitionDuration:
+            reduced ? Duration.zero : const Duration(milliseconds: 180),
+        barrier: DialogBarrier(
+          color: theme.colorScheme.surface.withValues(
+            alpha: theme.brightness == Brightness.dark ? 0.38 : 0.68,
+          ),
+          label: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+        ),
         pageBuilder: (BuildContext buildContext, Animation<double> animation,
             Animation<double> secondaryAnimation) {
           return SafeArea(child: child);
@@ -188,11 +195,15 @@ class StyledDialogRoute<T> extends PopupRoute<T> {
   @override
   Widget buildTransitions(BuildContext context, Animation<double> animation,
       Animation<double> secondaryAnimation, Widget child) {
+    final media = MediaQuery.maybeOf(context);
+    if ((media?.disableAnimations ?? false) ||
+        (media?.accessibleNavigation ?? false)) {
+      return child;
+    }
     if (_transitionBuilder == null) {
       return FadeTransition(
-        opacity: CurvedAnimation(
-          parent: animation,
-          curve: const Cubic(0.2, 0, 0, 1),
+        opacity: animation.drive(
+          CurveTween(curve: const Cubic(0.2, 0, 0, 1)),
         ),
         child: child,
       );

@@ -9,10 +9,19 @@ enum CalendarViewMode {
   week,
   day,
   agenda,
-  year;
+  year,
+
+  // Append only: dashboard settings persist these names, and callers may
+  // still hold the original five ordinals.
+  monthAgenda,
+  monthSplit;
 
   bool get isTimeGrid =>
       this == CalendarViewMode.week || this == CalendarViewMode.day;
+
+  bool get hasMonthAgenda =>
+      this == CalendarViewMode.monthAgenda ||
+      this == CalendarViewMode.monthSplit;
 
   static CalendarViewMode fromValue(Object? value) =>
       CalendarViewMode.values.firstWhere(
@@ -24,6 +33,18 @@ enum CalendarViewMode {
 /// Midnight on the day [value] falls in.
 DateTime startOfDay(DateTime value) =>
     DateTime(value.year, value.month, value.day);
+
+/// Calendar arithmetic, not elapsed hours: a clock change must not select
+/// yesterday twice or skip a date when navigating a month.
+DateTime calendarDayOffset(DateTime day, int days) =>
+    DateTime(day.year, day.month, day.day + days);
+
+/// Keep the selected day where possible, clamping January 31 to February 28.
+DateTime calendarMonthOffset(DateTime day, int months) {
+  final month = DateTime(day.year, day.month + months);
+  final last = DateTime(month.year, month.month + 1, 0).day;
+  return DateTime(month.year, month.month, math.min(day.day, last));
+}
 
 /// Whether two instants land on the same day in the reader's own clock.
 bool isSameDay(DateTime a, DateTime b) =>
@@ -42,7 +63,7 @@ int daysBetween(DateTime from, DateTime to) {
 DateTime startOfWeek(DateTime day, int firstDayOfWeek) {
   final start = firstDayOfWeek.clamp(1, 7);
   final delta = (day.weekday - start + 7) % 7;
-  return startOfDay(day).subtract(Duration(days: delta));
+  return calendarDayOffset(day, -delta);
 }
 
 /// The seven (or five) weekday numbers a grid shows, in the order it draws
@@ -76,7 +97,7 @@ List<DateTime> monthGridDays(
   final days = <DateTime>[];
   for (var week = 0; week < weeks; week++) {
     for (var offset = 0; offset < 7; offset++) {
-      final day = gridStart.add(Duration(days: week * 7 + offset));
+      final day = calendarDayOffset(gridStart, week * 7 + offset);
       if (order.contains(day.weekday)) {
         days.add(day);
       }

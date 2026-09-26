@@ -1,10 +1,13 @@
 import 'dart:async';
 
 import 'package:appflowy/extensions/dart/extension_registries.dart';
+import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
@@ -20,16 +23,15 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_explorer
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/breadcrumb_bar.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/explorer_context_menu.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/explorer_toolbar.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery_header.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/explorer_tree.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_browser_presentations.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_permissions.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
-import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -56,6 +58,8 @@ class FolderExplorer extends StatefulWidget {
     this.onOpen,
     this.controller,
     this.initialPresentation,
+    this.initialViewMode,
+    this.onViewModeChanged,
     this.contentPolicy,
     this.onConnectSource,
   });
@@ -71,6 +75,12 @@ class FolderExplorer extends StatefulWidget {
   final ValueChanged<ViewPB>? onOpen;
   final WorkspaceExplorerController? controller;
   final FolderExplorerPresentation? initialPresentation;
+  final FileBrowserViewMode? initialViewMode;
+
+  /// Borrowing hosts persist in their own view state. Without a callback a
+  /// borrowed graph keeps the choice in this session; an owned folder saves
+  /// just the mode in its existing ViewPB.extra.
+  final ValueChanged<FileBrowserViewMode>? onViewModeChanged;
 
   /// What the host will hold. A collection narrows every add affordance to
   /// the types it is for; a plain folder leaves this null and takes anything.
@@ -89,39 +99,140 @@ class _FolderExplorerState extends State<FolderExplorer> {
   final FavoriteService favoriteService = FavoriteService();
   final FolderGalleryPreviewCache previewCache = FolderGalleryPreviewCache();
   final TextEditingController searchController = TextEditingController();
+  final FocusNode searchFocusNode = FocusNode(debugLabel: 'folder-search');
   late final WorkspaceExplorerController controller;
   late final bool ownsController;
-  late FolderExplorerPresentation presentation;
+  late final VoidCallback releaseWriteGuard;
+  bool active = true;
+  String? workspaceId;
+  late FileBrowserViewMode presentation;
+  Future<void> _presentationWrites = Future.value();
   Timer? searchDebounce;
+
+  bool _canEditView(ViewPB view, {bool identity = false}) {
+    if (!active || !mounted) return false;
+    final access = context.read<PageAccessLevelBloc?>();
+    if (access?.view.id == view.id && access!.isClosed) return false;
+    return canEditFolderExplorerView(
+      view,
+      pageAccess: access?.state,
+      workspace: context.read<UserWorkspaceBloc?>()?.state.currentWorkspace,
+      identity: identity,
+    );
+  }
+
+  bool _canWriteInHost() {
+    if (!active || !mounted || widget.rootView.id != controller.root.id) {
+      return false;
+    }
+    final workspace = context.read<UserWorkspaceBloc?>();
+    if (workspaceId != null &&
+        (workspace?.isClosed == true ||
+            workspace?.state.currentWorkspace?.workspaceId != workspaceId)) {
+      return false;
+    }
+    return _canEditView(controller.viewForId(controller.root.id)!) &&
+        _canEditView(controller.viewForId(controller.currentFolder.id)!);
+  }
+
+  bool _canRenameInHost(String id) {
+    final view = controller.viewForId(id);
+    return view != null && _canEditView(view, identity: true);
+  }
+
+  bool Function() _writeContinuation(String parentId) {
+    final folderId = controller.currentFolder.id;
+    final rootId = widget.rootView.id;
+    return () =>
+        active &&
+        mounted &&
+        widget.rootView.id == rootId &&
+        controller.currentFolder.id == folderId &&
+        controller.canWriteTo(parentId);
+  }
 
   @override
   void initState() {
     super.initState();
+    searchFocusNode.addListener(_searchFocusChanged);
     ownsController = widget.controller == null;
-    presentation = widget.initialPresentation ??
-        (widget.embedded
-            ? FolderExplorerPresentation.tree
-            : FolderExplorerPresentation.gallery);
+    presentation = widget.initialViewMode ??
+        (widget.initialPresentation == null
+            ? FileBrowserViewSettings.fromExtra(
+                widget.rootView.extra,
+                fallback: widget.embedded
+                    ? FileBrowserViewMode.tree
+                    : FileBrowserViewMode.gallery,
+              )
+            : widget.initialPresentation == FolderExplorerPresentation.tree
+                ? FileBrowserViewMode.tree
+                : FileBrowserViewMode.gallery);
     controller = widget.controller ??
         WorkspaceExplorerController(
           root: widget.rootView,
           repository: service,
         );
-    unawaited(controller.initialize());
+    releaseWriteGuard = controller.restrictWrites(
+      canWrite: _canWriteInHost,
+      canRename: _canRenameInHost,
+    );
+    if (ownsController) {
+      unawaited(controller.initialize());
+    } else {
+      // A borrowed graph can notify its owning collection. Do not load it
+      // while that ancestor is mounting this view.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && active) unawaited(controller.initialize());
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    workspaceId ??=
+        context.read<UserWorkspaceBloc?>()?.state.currentWorkspace?.workspaceId;
+  }
+
+  @override
+  void deactivate() {
+    active = false;
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    active = true;
   }
 
   @override
   void didUpdateWidget(covariant FolderExplorer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.rootView.id == widget.rootView.id) {
+    if (oldWidget.initialViewMode != widget.initialViewMode &&
+        widget.initialViewMode != null &&
+        controller.editingId == null &&
+        controller.draft == null) {
+      presentation = widget.initialViewMode!;
+    }
+    // The collection already supplied this snapshot from its graph. Writing
+    // it back while building creates a parent -> child -> parent rebuild loop.
+    if (ownsController &&
+        oldWidget.rootView.id == widget.rootView.id &&
+        oldWidget.rootView != widget.rootView) {
       controller.updateRoot(widget.rootView);
     }
   }
 
   @override
   void dispose() {
+    active = false;
+    releaseWriteGuard();
     searchDebounce?.cancel();
     previewCache.clear();
+    searchFocusNode
+      ..removeListener(_searchFocusChanged)
+      ..dispose();
     searchController.dispose();
     if (ownsController) {
       controller.dispose();
@@ -131,122 +242,175 @@ class _FolderExplorerState extends State<FolderExplorer> {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild affordances on permission changes without replacing the graph,
+    // selection, preview cache, or the currently mounted presentation.
+    context.watch<PageAccessLevelBloc?>();
+    context.watch<UserWorkspaceBloc?>();
     return AnimatedBuilder(
       animation: controller,
       builder: (context, _) {
         final palette = FolderExplorerPalette.of(context);
-        if (presentation == FolderExplorerPresentation.gallery &&
-            !widget.embedded) {
-          return _buildGalleryShell(context, palette);
-        }
-        return _buildExplorerShell(context, palette);
+        final shell = _buildShell(context, palette);
+        // A borrowing host owns its own Find. Do not mask it with a disabled
+        // descendant region when this folder supplies no search controls.
+        if (!widget.showControls) return shell;
+        return ContextualFindRegion(
+          debugLabel: 'Folder explorer',
+          enabled: widget.showControls,
+          isActive: () => mounted && active && widget.showControls,
+          findFocusNode: searchFocusNode,
+          findOpen:
+              searchFocusNode.hasFocus || searchController.text.isNotEmpty,
+          onFind: _showSearch,
+          onDismiss: _dismissSearch,
+          child: shell,
+        );
       },
     );
   }
 
-  Widget _buildGalleryShell(
-    BuildContext context,
-    FolderExplorerPalette palette,
-  ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final header = widget.showHeader
-        ? FolderGalleryHeader(
-            controller: controller,
-            userProfile: context.read<UserWorkspaceBloc?>()?.state.userProfile,
-            workspace:
-                context.watch<UserWorkspaceBloc?>()?.state.currentWorkspace,
-            searchController: searchController,
-            onSearchChanged: _scheduleSearch,
-            onNavigate: (id) => unawaited(_navigateTo(id)),
-            onAddFile: (action) => unawaited(
-              _createFileOfKind(
-                action,
-                parentId: controller.currentFolder.id,
-              ),
-            ),
-            onCreateCollection: (kind) => unawaited(
-              _createCollection(kind, parentId: controller.currentFolder.id),
-            ),
-            onCreateDatabase: (kind) => unawaited(
-              _createDatabase(kind, parentId: controller.currentFolder.id),
-            ),
-            onMore: (position) => unawaited(_showBackgroundMenu(position)),
-          )
-        : null;
-    final errorMessage = controller.errorMessage;
-    final errorBanner = errorMessage == null
-        ? null
-        : _ExplorerErrorBanner(
-            message: errorMessage,
-            onDismiss: controller.clearError,
-            spacious: true,
-          );
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.background,
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color.alphaBlend(
-              palette.accent.withValues(alpha: isDark ? 0.018 : 0.012),
-              palette.background,
-            ),
-            palette.background,
-          ],
-          stops: const [0, 0.42],
-        ),
-      ),
-      child: PremiumScrollScope(
-        enabled: true,
-        child: _buildGallery(
-          context,
-          header: header,
-          errorBanner: errorBanner,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildExplorerShell(
+  Widget _buildShell(
     BuildContext context,
     FolderExplorerPalette palette,
   ) {
     return ViewerCard(
+      key: const ValueKey('folder-explorer-shell'),
       color: palette.background,
       borderRadius: BorderRadius.circular(widget.embedded ? 13 : 0),
-      // Only an embed floats above a page; the full-window explorer already
-      // owns its background.
       elevation: widget.embedded
           ? ViewerCardElevation.resting
           : ViewerCardElevation.flush,
       clipBehavior: widget.embedded ? Clip.antiAlias : Clip.none,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.showHeader) _buildHeader(context),
-          if (widget.showControls) _buildControls(context),
-          if (controller.errorMessage case final message?)
-            _ExplorerErrorBanner(
-              message: message,
-              onDismiss: controller.clearError,
-            ),
-          Expanded(
-            child: PremiumScrollScope(
-              enabled: true,
-              child: _buildPresentation(context),
-            ),
-          ),
-          if (widget.showFooter) _buildFooter(context),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final horizontal = FolderExplorerLayout.horizontalPadding(
+            constraints.maxWidth,
+            embedded: widget.embedded,
+          );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (widget.showHeader || widget.showControls)
+                // Do not move this header between presentation scrollables.
+                // Capping its own scrollport keeps covers/2x text usable in
+                // short embeds without replacing native list/column scrollers.
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: constraints.maxHeight * 0.6,
+                  ),
+                  child: SingleChildScrollView(
+                    key: const ValueKey('folder-explorer-header-scroll'),
+                    primary: false,
+                    child: FolderGalleryHeader(
+                      key: const ValueKey('folder-explorer-header'),
+                      controller: controller,
+                      viewMode: presentation,
+                      onViewModeChanged: _setPresentation,
+                      showHeader: widget.showHeader,
+                      showControls: widget.showControls,
+                      contentInset: horizontal,
+                      contentPolicy: widget.contentPolicy,
+                      userProfile:
+                          context.read<UserWorkspaceBloc?>()?.state.userProfile,
+                      workspace: context
+                          .read<UserWorkspaceBloc?>()
+                          ?.state
+                          .currentWorkspace,
+                      searchController: searchController,
+                      searchFocusNode: searchFocusNode,
+                      onSearchChanged: _scheduleSearch,
+                      onNavigate: (id) => unawaited(_navigateTo(id)),
+                      onAddFile: (action) => unawaited(
+                        _createFileOfKind(
+                          action,
+                          parentId: presentation == FileBrowserViewMode.tree
+                              ? null
+                              : controller.currentFolder.id,
+                        ),
+                      ),
+                      onCreateCollection: (kind) => unawaited(
+                        _createCollection(
+                          kind,
+                          parentId: controller.currentFolder.id,
+                        ),
+                      ),
+                      onCreateDatabase: (kind) => unawaited(
+                        _createDatabase(
+                          kind,
+                          parentId: controller.currentFolder.id,
+                        ),
+                      ),
+                      onNewFolder: () => _beginGalleryCreate(
+                        WorkspaceExplorerDraftKind.folder,
+                        parentId: presentation == FileBrowserViewMode.tree
+                            ? controller.selectedOrCurrentFolderId
+                            : controller.currentFolder.id,
+                      ),
+                      onPaste: controller.canPaste
+                          ? () => unawaited(controller.paste())
+                          : null,
+                      onRefresh: () {
+                        previewCache.clear();
+                        unawaited(controller.refresh());
+                      },
+                      onConnectSource: widget.onConnectSource != null &&
+                              controller.canRename(controller.root.id)
+                          ? _connectSource
+                          : null,
+                      onMore: (position) =>
+                          unawaited(_showBackgroundMenu(position)),
+                    ),
+                  ),
+                ),
+              if (controller.errorMessage case final message?)
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: horizontal),
+                  child: _ExplorerErrorBanner(
+                    message: message,
+                    onDismiss: controller.clearError,
+                  ),
+                ),
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: horizontal),
+                  child: SizedBox.expand(
+                    key: const ValueKey('folder-explorer-content'),
+                    child: PremiumScrollScope(
+                      enabled: true,
+                      child: _buildPresentation(context),
+                    ),
+                  ),
+                ),
+              ),
+              if (widget.showFooter)
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: horizontal),
+                  child: _buildFooter(context),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
 
   Widget _buildPresentation(BuildContext context) {
-    if (presentation == FolderExplorerPresentation.tree) {
+    if (presentation == FileBrowserViewMode.tree) {
       return ExplorerTree(
         controller: controller,
+        onOpen: _openView,
+        onNavigate: (id) => unawaited(_navigateTo(id)),
+        onContextMenu: _showContextMenu,
+        onBackgroundContextMenu: (position) =>
+            unawaited(_showBackgroundMenu(position)),
+        onRequestDelete: _confirmDelete,
+      );
+    }
+    if (presentation != FileBrowserViewMode.gallery &&
+        presentation != FileBrowserViewMode.thumbnails) {
+      return FolderBrowserPresentation(
+        controller: controller,
+        mode: presentation,
         onOpen: _openView,
         onNavigate: (id) => unawaited(_navigateTo(id)),
         onContextMenu: _showContextMenu,
@@ -258,17 +422,68 @@ class _FolderExplorerState extends State<FolderExplorer> {
     return _buildGallery(context);
   }
 
-  Widget _buildGallery(
-    BuildContext context, {
-    Widget? header,
-    Widget? errorBanner,
-  }) {
+  void _setPresentation(FileBrowserViewMode mode) {
+    // Do not throw away an unfinished native inline rename/draft.
+    if (!mounted ||
+        !active ||
+        presentation == mode ||
+        controller.editingId != null ||
+        controller.draft != null) {
+      return;
+    }
+    setState(() => presentation = mode);
+    if (!controller.canWrite || controller.root.readsFromService) return;
+    if (widget.onViewModeChanged != null) {
+      widget.onViewModeChanged!(mode);
+    } else if (ownsController) {
+      _presentationWrites =
+          _presentationWrites.then((_) => _persistPresentation(mode));
+    }
+  }
+
+  Future<void> _persistPresentation(FileBrowserViewMode mode) async {
+    final rootId = widget.rootView.id;
+    bool current() =>
+        mounted &&
+        active &&
+        widget.rootView.id == rootId &&
+        presentation == mode &&
+        _canWriteInHost() &&
+        !controller.root.readsFromService;
+    if (!current()) return;
+    try {
+      final result = await ViewBackendService.getView(rootId);
+      final live = result.fold<ViewPB?>((view) => view, (_) => null);
+      if (!current() ||
+          live == null ||
+          live.id != rootId ||
+          !_canEditView(live)) {
+        return;
+      }
+      final extra = FileBrowserViewSettings.mergeExtra(live.extra, mode);
+      final saved =
+          await ViewBackendService.updateView(viewId: rootId, extra: extra);
+      if (!current()) return;
+      saved.fold(
+        // UpdateView may return an empty ACK, not a populated ViewPB.
+        (_) => controller
+            .updateView(ViewPB.fromBuffer(live.writeToBuffer())..extra = extra),
+        (error) => controller.showError(error.msg),
+      );
+    } catch (_) {
+      if (current()) {
+        controller.showError('Unable to save the folder presentation.');
+      }
+    }
+  }
+
+  Widget _buildGallery(BuildContext context) {
     return FolderGallery(
       controller: controller,
+      thumbnails: presentation == FileBrowserViewMode.thumbnails,
+      horizontalPadding: 0,
       previewCache: previewCache,
       userProfile: context.read<UserWorkspaceBloc?>()?.state.userProfile,
-      header: header,
-      errorBanner: errorBanner,
       onOpen: _openView,
       onNavigate: (id) => unawaited(_navigateTo(id)),
       onContextMenu: _showContextMenu,
@@ -279,203 +494,14 @@ class _FolderExplorerState extends State<FolderExplorer> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    final root = controller.root;
-    final modified = root.lastEdited;
-    final metadata = [
-      LocaleKeys.workspaceFolderExplorer_fileCount.tr(
-        args: [controller.visibleFileCount.toString()],
-      ),
-      LocaleKeys.workspaceFolderExplorer_folderCount.tr(
-        args: [controller.visibleFolderCount.toString()],
-      ),
-      if (modified != null)
-        LocaleKeys.workspaceFolderExplorer_modifiedAt.tr(
-          args: [DateFormat.yMMMd().add_jm().format(modified)],
-        ),
-    ].join('  ·  ');
-    final titleStyle = TextStyle(
-      color: palette.textPrimary,
-      fontSize: widget.embedded ? 16 : 20,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.2,
-    );
-    final title = root.name.isEmpty
-        ? LocaleKeys.workspaceFolderExplorer_untitledFolder.tr()
-        : root.name;
-
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        widget.embedded ? 18 : 24,
-        widget.embedded ? 16 : 24,
-        widget.embedded ? 18 : 24,
-        10,
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: palette.accent.withValues(alpha: 0.11),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            alignment: Alignment.center,
-            child: WorkspaceItemIcon(
-              item: root,
-              expanded: true,
-              color: palette.accent,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                WorkspaceInlineEditableText(
-                  key: const ValueKey('folder-explorer-title'),
-                  text: title,
-                  editingValue: root.name,
-                  editing: controller.editingId == root.id,
-                  onSubmitted: controller.commitRename,
-                  onCancelled: controller.cancelEditing,
-                  onTap: () => controller.beginRename(root.id),
-                  style: titleStyle,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  controller.breadcrumbs
-                      .map((item) => item.name)
-                      .where((name) => name.isNotEmpty)
-                      .join(' / '),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 12,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  metadata,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: palette.textMuted, fontSize: 11),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildControls(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.surface.withValues(alpha: 0.72),
-        border: Border(
-          bottom: BorderSide(color: palette.border),
-          top: widget.showHeader
-              ? BorderSide(color: palette.border.withValues(alpha: 0.55))
-              : BorderSide.none,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 7, 12, 6),
-        child: Column(
-          children: [
-            ExplorerToolbar(
-              searchController: searchController,
-              onNewFile: (action) => unawaited(
-                _createFileOfKind(
-                  action,
-                  parentId: presentation == FolderExplorerPresentation.gallery
-                      ? controller.currentFolder.id
-                      : null,
-                ),
-              ),
-              onNewFolder: () => controller.beginCreate(
-                WorkspaceExplorerDraftKind.folder,
-                parentId: presentation == FolderExplorerPresentation.gallery
-                    ? controller.currentFolder.id
-                    : null,
-              ),
-              onCreateCollection: (kind) => unawaited(
-                _createCollection(
-                  kind,
-                  parentId: presentation == FolderExplorerPresentation.gallery
-                      ? controller.currentFolder.id
-                      : null,
-                ),
-              ),
-              onCreateDatabase: (kind) => unawaited(
-                _createDatabase(
-                  kind,
-                  parentId: presentation == FolderExplorerPresentation.gallery
-                      ? controller.currentFolder.id
-                      : null,
-                ),
-              ),
-              onPaste: controller.canPaste
-                  ? () => unawaited(controller.paste())
-                  : null,
-              onRefresh: () {
-                previewCache.clear();
-                unawaited(controller.refresh());
-              },
-              onMore: _showMoreMenu,
-              onSearchChanged: _scheduleSearch,
-              canPaste: controller.canPaste,
-              isSearching: controller.isSearching,
-              trailing: widget.embedded
-                  ? null
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (widget.onConnectSource != null) ...[
-                          _ConnectSourceButton(
-                            onPressed: widget.onConnectSource!,
-                          ),
-                          const SizedBox(width: 6),
-                        ],
-                        _ExplorerPresentationToggle(
-                          presentation: presentation,
-                          onChanged: (value) {
-                            if (presentation != value) {
-                              setState(() => presentation = value);
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-            ),
-            const SizedBox(height: 4),
-            BreadcrumbBar(
-              items: controller.breadcrumbs,
-              onSelected: (id) => unawaited(_navigateTo(id)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildFooter(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
     final selected = controller.selection.length;
     return Container(
-      height: 26,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      key: const ValueKey('folder-explorer-status'),
+      constraints: const BoxConstraints(minHeight: 28),
+      padding: const EdgeInsets.symmetric(vertical: 5),
       alignment: Alignment.centerLeft,
-      decoration: BoxDecoration(
-        color: palette.surface.withValues(alpha: 0.66),
-        border: Border(top: BorderSide(color: palette.border)),
-      ),
       child: Text(
         selected > 0
             ? LocaleKeys.workspaceFolderExplorer_selectedCount.tr(
@@ -484,9 +510,30 @@ class _FolderExplorerState extends State<FolderExplorer> {
             : LocaleKeys.workspaceFolderExplorer_itemCount.tr(
                 args: [controller.rows.length.toString()],
               ),
-        style: TextStyle(fontSize: 10.5, color: palette.textMuted),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(fontSize: 11, color: palette.textMuted),
       ),
     );
+  }
+
+  void _searchFocusChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _showSearch() {
+    if (!mounted || !active || !widget.showControls) return;
+    searchFocusNode.requestFocus();
+    final field = searchFocusNode.context;
+    if (field != null && field.mounted) {
+      unawaited(Scrollable.ensureVisible(field));
+    }
+  }
+
+  void _dismissSearch() {
+    _clearPendingSearch();
+    searchFocusNode.unfocus();
+    controller.search('');
   }
 
   void _scheduleSearch(String query) {
@@ -521,31 +568,42 @@ class _FolderExplorerState extends State<FolderExplorer> {
     WorkspaceExplorerItem item,
     Offset position,
   ) async {
-    CollectionKind? collectionKind;
+    final selectedIds = controller.selection.ids.toList(growable: false);
+    final canContinue = _writeContinuation(item.id);
     final action = await showExplorerContextMenu(
       context: context,
       globalPosition: position,
       item: item,
-      canPaste: controller.canPaste,
+      canPaste: controller.clipboard.hasData,
+      canWrite: controller.canWriteTo(item.id) && controller.canMutateSelection,
+      canRename: controller.canRename(item.id),
       isFavorite: controller.viewForId(item.id)?.isFavorite ?? false,
-      knowledgeMode: presentation == FolderExplorerPresentation.gallery,
-      onCreateCollection: (kind) => collectionKind = kind,
+      knowledgeMode: presentation == FileBrowserViewMode.gallery ||
+          presentation == FileBrowserViewMode.thumbnails,
+      onCreateCollection: (kind) {
+        if (canContinue()) {
+          unawaited(_createCollection(kind, parentId: item.id));
+        }
+      },
       previewMode:
           controller.viewForId(item.id)?.previewMode ?? ViewPreviewMode.cover,
     );
     if (!mounted) {
       return;
     }
-    if (collectionKind != null) {
-      await _createCollection(collectionKind!, parentId: item.id);
+    if (action == null) {
       return;
     }
-    if (action == null) {
+    if (action.requiresWrite &&
+        (!canContinue() ||
+            !controller.canMutateSelection ||
+            selectedIds.length != controller.selection.length ||
+            !selectedIds.every(controller.selection.contains))) {
       return;
     }
     switch (action) {
       case ExplorerContextAction.open:
-        if (item.isFolder) {
+        if (item.isBrowsable) {
           await _navigateTo(item.id);
         } else {
           final view = controller.viewForId(item.id);
@@ -584,6 +642,8 @@ class _FolderExplorerState extends State<FolderExplorer> {
   }
 
   Future<void> _togglePreviewMode(String viewId) async {
+    final canContinue = _writeContinuation(viewId);
+    if (!canContinue()) return;
     final view = controller.viewForId(viewId);
     if (view == null) {
       controller.showError(
@@ -598,7 +658,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
       viewId: view.id,
       extra: ViewPreviewModeCodec.merge(view.extra, mode),
     );
-    if (!mounted) {
+    if (!canContinue()) {
       return;
     }
     result.fold(
@@ -614,8 +674,10 @@ class _FolderExplorerState extends State<FolderExplorer> {
     WorkspaceExplorerItem item,
     WorkspaceExplorerDraftKind kind,
   ) async {
-    if (presentation == FolderExplorerPresentation.gallery && item.isFolder) {
+    if (!controller.canWriteTo(item.id)) return;
+    if (presentation != FileBrowserViewMode.tree && item.isBrowsable) {
       await _navigateTo(item.id);
+      if (!mounted || !controller.canWriteTo(item.id)) return;
       _beginGalleryCreate(kind, parentId: item.id);
       return;
     }
@@ -626,6 +688,8 @@ class _FolderExplorerState extends State<FolderExplorer> {
     WorkspaceExplorerItem item,
     Offset position,
   ) async {
+    final canContinue = _writeContinuation(item.id);
+    if (!canContinue()) return;
     final policy = widget.contentPolicy;
     final action = await showWorkspaceFileKindMenu(
       context: context,
@@ -633,17 +697,26 @@ class _FolderExplorerState extends State<FolderExplorer> {
       kinds: policy?.fileKinds,
       onCreateCollection: policy != null && !policy.allowsCollections
           ? null
-          : (kind) => unawaited(_createCollection(kind, parentId: item.id)),
+          : (kind) {
+              if (canContinue()) {
+                unawaited(_createCollection(kind, parentId: item.id));
+              }
+            },
       onCreateDatabase: policy != null && !policy.allowsTables
           ? null
-          : (kind) => unawaited(_createDatabase(kind, parentId: item.id)),
+          : (kind) {
+              if (canContinue()) {
+                unawaited(_createDatabase(kind, parentId: item.id));
+              }
+            },
     );
-    if (action == null || !mounted) {
+    if (action == null || !canContinue()) {
       return;
     }
-    if (presentation == FolderExplorerPresentation.gallery && item.isFolder) {
+    if (presentation != FileBrowserViewMode.tree && item.isBrowsable) {
       await _navigateTo(item.id);
     }
+    if (!mounted || !controller.canWriteTo(item.id)) return;
     await _createFileOfKind(action, parentId: item.id);
   }
 
@@ -651,8 +724,11 @@ class _FolderExplorerState extends State<FolderExplorer> {
     WorkspaceFileMenuAction action, {
     String? parentId,
   }) async {
-    final view = await controller.createFileOfKind(action, parentId: parentId);
-    if (view != null && mounted) {
+    final targetId = parentId ?? controller.selectedOrCurrentFolderId;
+    final canContinue = _writeContinuation(targetId);
+    if (!canContinue()) return;
+    final view = await controller.createFileOfKind(action, parentId: targetId);
+    if (view != null && canContinue()) {
       _openView(view);
     }
   }
@@ -661,12 +737,15 @@ class _FolderExplorerState extends State<FolderExplorer> {
     CollectionKind kind, {
     String? parentId,
   }) async {
+    final targetId = parentId ?? controller.currentFolder.id;
+    final canContinue = _writeContinuation(targetId);
+    if (!canContinue()) return;
     final created = await const CollectionService().createCollection(
-      parentViewId: parentId ?? controller.currentFolder.id,
+      parentViewId: targetId,
       kind: kind,
       name: CollectionRegistry.typeFor(kind).defaultName,
     );
-    if (!mounted) {
+    if (!canContinue()) {
       return;
     }
     created.fold(
@@ -679,11 +758,15 @@ class _FolderExplorerState extends State<FolderExplorer> {
     WorkspaceTableKind kind, {
     String? parentId,
   }) async {
+    final targetId = parentId ?? controller.currentFolder.id;
+    final canContinue = _writeContinuation(targetId);
+    if (!canContinue()) return;
     final view = await createWorkspaceDatabase(
-      parentViewId: parentId ?? controller.currentFolder.id,
+      parentViewId: targetId,
       kind: kind,
+      canWrite: canContinue,
     );
-    if (view != null && mounted) {
+    if (view != null && canContinue()) {
       _openView(view);
     }
   }
@@ -692,11 +775,15 @@ class _FolderExplorerState extends State<FolderExplorer> {
     ExtensionTableView view, {
     String? parentId,
   }) async {
+    final targetId = parentId ?? controller.currentFolder.id;
+    final canContinue = _writeContinuation(targetId);
+    if (!canContinue()) return;
     final created = await createWorkspaceExtensionTable(
-      parentViewId: parentId ?? controller.currentFolder.id,
+      parentViewId: targetId,
       view: view,
+      canWrite: canContinue,
     );
-    if (created != null && mounted) {
+    if (created != null && canContinue()) {
       _openView(created);
     }
   }
@@ -715,6 +802,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
   }
 
   void _beginGalleryRename(String id) {
+    if (!controller.canRename(id)) return;
     controller.selection.selectOnly(id);
     controller.beginRename(id);
   }
@@ -730,52 +818,13 @@ class _FolderExplorerState extends State<FolderExplorer> {
     );
   }
 
-  Future<void> _showMoreMenu() async {
-    final box = context.findRenderObject() as RenderBox;
-    final origin = box.localToGlobal(Offset(box.size.width - 220, 76));
-    final action = await showAppMenu<_ExplorerMoreAction>(
-      context: context,
-      globalPosition: origin,
-      entries: [
-        AppMenuItem(
-          label: LocaleKeys.workspaceFolderExplorer_importFile.tr(),
-          icon: Icons.upload_file_rounded,
-          value: _ExplorerMoreAction.importFile,
-        ),
-        AppMenuItem(
-          label: LocaleKeys.workspaceFolderExplorer_selectAll.tr(),
-          icon: Icons.select_all_rounded,
-          value: _ExplorerMoreAction.selectAll,
-        ),
-        AppMenuItem(
-          label: LocaleKeys.workspaceFolderExplorer_properties.tr(),
-          icon: Icons.info_outline_rounded,
-          value: _ExplorerMoreAction.properties,
-        ),
-      ],
-    );
-    if (!mounted || action == null) {
-      return;
-    }
-    switch (action) {
-      case _ExplorerMoreAction.importFile:
-        await _importFile();
-      case _ExplorerMoreAction.selectAll:
-        controller.selectAll();
-      case _ExplorerMoreAction.properties:
-        await _showProperties(controller.currentFolder);
-    }
-  }
-
   /// The menu behind the toolbar's "more" button and behind a right click on
   /// empty space, so a folder can be filled from wherever the pointer is.
   Future<void> _showBackgroundMenu(Offset position) async {
-    final knowledgeMode = presentation == FolderExplorerPresentation.gallery;
+    final parentId = controller.currentFolder.id;
+    final canContinue = _writeContinuation(parentId);
+    final canWrite = canContinue();
     final policy = widget.contentPolicy;
-    WorkspaceFileMenuAction? kind;
-    CollectionKind? collectionKind;
-    WorkspaceTableKind? databaseLayout;
-    ExtensionTableView? extensionTable;
     final action = await showAppMenu<_GalleryMenuAction>(
       context: context,
       globalPosition: position,
@@ -784,9 +833,14 @@ class _FolderExplorerState extends State<FolderExplorer> {
           AppMenuItem(
             label: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
             icon: workspaceAddFileIcon,
+            enabled: canWrite,
             submenu: workspaceFileKindEntries(
               kinds: policy?.fileKinds,
-              onSelected: (action) => kind = action,
+              onSelected: (action) {
+                if (canContinue()) {
+                  unawaited(_createFileOfKind(action, parentId: parentId));
+                }
+              },
             ),
           ),
         if (policy == null || policy.allowsFolders)
@@ -794,34 +848,51 @@ class _FolderExplorerState extends State<FolderExplorer> {
             label: LocaleKeys.workspaceFolderExplorer_newFolder.tr(),
             icon: workspaceAddFolderIcon,
             value: _GalleryMenuAction.newFolder,
+            enabled: canWrite,
           ),
         if (policy == null || policy.allowsTables)
           AppMenuItem(
             label: LocaleKeys.collections_database_table.tr(),
             icon: Icons.table_rows_rounded,
+            enabled: canWrite,
             submenu: databaseLayoutEntries(
-              onSelected: (selected) => databaseLayout = selected,
-              onExtensionSelected: (selected) => extensionTable = selected,
+              onSelected: (kind) {
+                if (canContinue()) {
+                  unawaited(_createDatabase(kind, parentId: parentId));
+                }
+              },
+              onExtensionSelected: (view) {
+                if (canContinue()) {
+                  unawaited(_createExtensionTable(view, parentId: parentId));
+                }
+              },
             ),
           ),
         if (policy == null || policy.allowsCollections)
           AppMenuItem(
             label: LocaleKeys.collections_newCollection.tr(),
             icon: collectionAddIcon,
+            enabled: canWrite,
             submenu: collectionKindEntries(
-              onSelected: (selected) => collectionKind = selected,
+              onSelected: (kind) {
+                if (canContinue()) {
+                  unawaited(_createCollection(kind, parentId: parentId));
+                }
+              },
             ),
           ),
         AppMenuItem(
           label: LocaleKeys.workspaceFolderExplorer_importFile.tr(),
           icon: Icons.arrow_downward_rounded,
           value: _GalleryMenuAction.importFile,
+          enabled: canWrite,
         ),
-        if (controller.canPaste)
+        if (controller.clipboard.hasData)
           AppMenuItem(
             label: LocaleKeys.workspaceFolderExplorer_paste.tr(),
             icon: Icons.content_paste_rounded,
             value: _GalleryMenuAction.paste,
+            enabled: canWrite && controller.canPaste,
           ),
         const AppMenuSeparator(),
         if (widget.onConnectSource != null)
@@ -829,6 +900,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
             label: LocaleKeys.providers_connectThisFolder.tr(),
             icon: Icons.cloud_sync_rounded,
             value: _GalleryMenuAction.connectSource,
+            enabled: controller.canRename(controller.root.id),
           ),
         AppMenuItem(
           label: LocaleKeys.workspaceFolderExplorer_refresh.tr(),
@@ -836,38 +908,28 @@ class _FolderExplorerState extends State<FolderExplorer> {
           value: _GalleryMenuAction.refresh,
         ),
         AppMenuItem(
-          label: GalleryCardSizeStore.value.label,
-          icon: Icons.tune_rounded,
-          value: _GalleryMenuAction.cardSize,
+          label: LocaleKeys.workspaceFolderExplorer_selectAll.tr(),
+          icon: Icons.select_all_rounded,
+          value: _GalleryMenuAction.selectAll,
         ),
         AppMenuItem(
-          label: knowledgeMode
-              ? LocaleKeys.workspaceFolderExplorer_treeView.tr()
-              : LocaleKeys.workspaceFolderExplorer_galleryView.tr(),
-          icon: knowledgeMode
-              ? Icons.account_tree_rounded
-              : Icons.grid_view_rounded,
-          value: _GalleryMenuAction.switchPresentation,
+          label: LocaleKeys.workspaceFolderExplorer_properties.tr(),
+          icon: Icons.info_outline_rounded,
+          value: _GalleryMenuAction.properties,
+        ),
+        if (presentation == FileBrowserViewMode.gallery)
+          AppMenuItem(
+            label: GalleryCardSizeStore.value.label,
+            icon: Icons.tune_rounded,
+            value: _GalleryMenuAction.cardSize,
+          ),
+        ...fileBrowserViewEntries(
+          selected: presentation,
+          onChanged: _setPresentation,
         ),
       ],
     );
     if (!mounted) {
-      return;
-    }
-    if (kind != null) {
-      await _createFileOfKind(kind!, parentId: controller.currentFolder.id);
-      return;
-    }
-    if (collectionKind != null) {
-      await _createCollection(collectionKind!);
-      return;
-    }
-    if (databaseLayout != null) {
-      await _createDatabase(databaseLayout!);
-      return;
-    }
-    if (extensionTable != null) {
-      await _createExtensionTable(extensionTable!);
       return;
     }
     if (action == null) {
@@ -877,14 +939,15 @@ class _FolderExplorerState extends State<FolderExplorer> {
       case _GalleryMenuAction.addFile:
         break;
       case _GalleryMenuAction.newFolder:
+        if (!canContinue()) return;
         _beginGalleryCreate(
           WorkspaceExplorerDraftKind.folder,
-          parentId: controller.currentFolder.id,
+          parentId: parentId,
         );
       case _GalleryMenuAction.importFile:
-        await _importFile();
+        if (canContinue()) await _importFile(parentId: parentId);
       case _GalleryMenuAction.paste:
-        await controller.paste(parentId: controller.currentFolder.id);
+        if (canContinue()) await controller.paste(parentId: parentId);
       case _GalleryMenuAction.refresh:
         previewCache.clear();
         await controller.refresh();
@@ -893,29 +956,36 @@ class _FolderExplorerState extends State<FolderExplorer> {
           context: context,
           globalPosition: position,
         );
-      case _GalleryMenuAction.switchPresentation:
-        setState(
-          () => presentation = knowledgeMode
-              ? FolderExplorerPresentation.tree
-              : FolderExplorerPresentation.gallery,
-        );
       case _GalleryMenuAction.connectSource:
-        widget.onConnectSource?.call();
+        _connectSource();
+      case _GalleryMenuAction.selectAll:
+        controller.selectAll();
+      case _GalleryMenuAction.properties:
+        await _showProperties(controller.currentFolder);
     }
   }
 
-  Future<void> _importFile() async {
+  void _connectSource() {
+    if (mounted && active && controller.canRename(controller.root.id)) {
+      widget.onConnectSource?.call();
+    }
+  }
+
+  Future<void> _importFile({String? parentId}) async {
+    final targetId = parentId ?? controller.selectedOrCurrentFolderId;
+    final canContinue = _writeContinuation(targetId);
+    if (!canContinue()) return;
     final result = await FilePicker().pickFiles(
       dialogTitle: LocaleKeys.workspaceFolderExplorer_importDialogTitle.tr(),
       allowMultiple: true,
       lockParentWindow: true,
     );
-    if (result == null || result.files.isEmpty || !mounted) {
+    if (!mounted || result == null || result.files.isEmpty || !canContinue()) {
       return;
     }
     final userProfile = context.read<UserWorkspaceBloc?>()?.state.userProfile;
-    final parentId = controller.selectedOrCurrentFolderId;
     for (final picked in result.files) {
+      if (!canContinue()) return;
       final path = picked.path;
       if (path == null || path.isEmpty) {
         controller.showError(
@@ -924,10 +994,11 @@ class _FolderExplorerState extends State<FolderExplorer> {
         return;
       }
       final imported = await service.importBinaryFile(
-        parentViewId: parentId,
+        parentViewId: targetId,
         file: XFile(path, name: picked.name),
         userProfile: userProfile,
       );
+      if (!canContinue()) return;
       final shouldContinue = imported.fold(
         (_) => true,
         (error) {
@@ -943,9 +1014,13 @@ class _FolderExplorerState extends State<FolderExplorer> {
   }
 
   Future<void> _confirmDelete() async {
-    if (controller.selection.isEmpty) {
+    final canContinue = _writeContinuation(controller.currentFolder.id);
+    if (!canContinue() ||
+        !controller.canMutateSelection ||
+        controller.selection.isEmpty) {
       return;
     }
+    final ids = controller.selection.ids.toList(growable: false);
     final count = controller.selection.length;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -982,9 +1057,13 @@ class _FolderExplorerState extends State<FolderExplorer> {
         );
       },
     );
-    if (confirmed ?? false) {
-      final ids = controller.selection.ids.toList(growable: false);
+    if ((confirmed ?? false) &&
+        canContinue() &&
+        controller.canMutateSelection &&
+        ids.length == controller.selection.length &&
+        ids.every(controller.selection.contains)) {
       await controller.deleteSelection();
+      if (!canContinue()) return;
       for (final id in ids) {
         previewCache.invalidate(id);
       }
@@ -1037,7 +1116,11 @@ class _FolderExplorerState extends State<FolderExplorer> {
           ),
           title: Row(
             children: [
-              WorkspaceItemIcon(item: item, size: 20),
+              WorkspaceItemIcon(
+                item: item,
+                view: controller.viewForId(item.id),
+                size: 20,
+              ),
               const SizedBox(width: 9),
               Text(LocaleKeys.workspaceFolderExplorer_properties.tr()),
             ],
@@ -1111,169 +1194,6 @@ class _FolderExplorerState extends State<FolderExplorer> {
       };
 }
 
-/// Offers to back this folder with a service.
-///
-/// It sits on the toolbar rather than only in the background menu: a folder
-/// that can be a Google Drive folder has to say so where somebody looking at
-/// the folder will see it.
-class _ConnectSourceButton extends StatefulWidget {
-  const _ConnectSourceButton({required this.onPressed});
-
-  final VoidCallback onPressed;
-
-  @override
-  State<_ConnectSourceButton> createState() => _ConnectSourceButtonState();
-}
-
-class _ConnectSourceButtonState extends State<_ConnectSourceButton> {
-  bool hovered = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return Tooltip(
-      message: LocaleKeys.providers_connectThisFolder.tr(),
-      waitDuration: const Duration(milliseconds: 450),
-      child: MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => hovered = true),
-        onExit: (_) => setState(() => hovered = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 140),
-            curve: Curves.easeOutCubic,
-            height: 28,
-            padding: const EdgeInsets.symmetric(horizontal: 9),
-            decoration: BoxDecoration(
-              color: palette.hover.withValues(alpha: hovered ? 1 : 0.48),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: palette.border.withValues(alpha: 0.7)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.cloud_sync_rounded,
-                  size: 15,
-                  color: palette.textSecondary,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  LocaleKeys.providers_connect.tr(),
-                  style: TextStyle(
-                    color: palette.textSecondary,
-                    fontSize: 12,
-                    fontVariations: const [FontVariation.weight(570)],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ExplorerPresentationToggle extends StatelessWidget {
-  const _ExplorerPresentationToggle({
-    required this.presentation,
-    required this.onChanged,
-  });
-
-  final FolderExplorerPresentation presentation;
-  final ValueChanged<FolderExplorerPresentation> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return Container(
-      height: 28,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: palette.hover.withValues(alpha: 0.48),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: palette.border.withValues(alpha: 0.7)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _ExplorerPresentationButton(
-            selected: presentation == FolderExplorerPresentation.gallery,
-            icon: Icons.grid_view_rounded,
-            tooltip: LocaleKeys.workspaceFolderExplorer_galleryView.tr(),
-            onPressed: () => onChanged(FolderExplorerPresentation.gallery),
-          ),
-          _ExplorerPresentationButton(
-            selected: presentation == FolderExplorerPresentation.tree,
-            icon: Icons.account_tree_rounded,
-            tooltip: LocaleKeys.workspaceFolderExplorer_treeView.tr(),
-            onPressed: () => onChanged(FolderExplorerPresentation.tree),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ExplorerPresentationButton extends StatelessWidget {
-  const _ExplorerPresentationButton({
-    required this.selected,
-    required this.icon,
-    required this.tooltip,
-    required this.onPressed,
-  });
-
-  final bool selected;
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = FolderExplorerPalette.of(context);
-    return Tooltip(
-      message: tooltip,
-      waitDuration: const Duration(milliseconds: 400),
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(6),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          width: 27,
-          height: 23,
-          decoration: BoxDecoration(
-            color: selected ? palette.floatingSurface : Colors.transparent,
-            borderRadius: BorderRadius.circular(6),
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: palette.shadow.withValues(alpha: 0.10),
-                      blurRadius: 5,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Icon(
-            icon,
-            size: 14.5,
-            color: selected ? palette.accent : palette.textMuted,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-enum _ExplorerMoreAction {
-  importFile,
-  selectAll,
-  properties,
-}
-
 enum _GalleryMenuAction {
   addFile,
   newFolder,
@@ -1281,38 +1201,29 @@ enum _GalleryMenuAction {
   paste,
   refresh,
   cardSize,
-  switchPresentation,
   connectSource,
+  selectAll,
+  properties,
 }
 
 class _ExplorerErrorBanner extends StatelessWidget {
   const _ExplorerErrorBanner({
     required this.message,
     required this.onDismiss,
-    this.spacious = false,
   });
 
   final String message;
   final VoidCallback onDismiss;
-  final bool spacious;
 
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
     return Container(
-      margin: spacious
-          ? EdgeInsets.symmetric(
-              horizontal: KnowledgeGalleryLayout.minimumHorizontalPadding,
-            )
-          : EdgeInsets.zero,
       decoration: BoxDecoration(
         color: palette.danger.withValues(alpha: 0.07),
-        borderRadius: BorderRadius.circular(spacious ? 12 : 0),
+        borderRadius: BorderRadius.circular(12),
       ),
-      padding: EdgeInsets.only(
-        left: spacious ? 16 : 14,
-        right: 5,
-      ),
+      padding: const EdgeInsets.only(left: 14, right: 5),
       child: Row(
         children: [
           Icon(Icons.error_outline_rounded, size: 15, color: palette.danger),

@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -32,9 +34,21 @@ void main() {
       WidgetTester tester, {
       required List<AppMenuEntry> entries,
       ValueChanged<Object?>? onResult,
+      bool disableAnimations = false,
+      bool accessibleNavigation = false,
+      double textScale = 1,
+      bool settle = true,
     }) async {
       await tester.pumpWidget(
         MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              disableAnimations: disableAnimations,
+              accessibleNavigation: accessibleNavigation,
+              textScaler: TextScaler.linear(textScale),
+            ),
+            child: child!,
+          ),
           home: Scaffold(
             body: Center(
               child: Builder(
@@ -55,7 +69,12 @@ void main() {
         ),
       );
       await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
+      if (settle) {
+        await tester.pumpAndSettle();
+      } else {
+        await tester.pump();
+        await tester.pump();
+      }
     }
 
     Future<TestGesture> hover(WidgetTester tester, Finder finder) async {
@@ -348,13 +367,10 @@ void main() {
       // axis, which is what made menu text look thinner than the app.
       expect(
         style.fontVariations,
-        [FontVariation.weight(AppMenuMetrics.labelWeightAxis)],
+        const [FontVariation.weight(500)],
       );
-      // A step above the application's own regular, never into bold.
-      expect(
-        AppMenuMetrics.labelWeightAxis,
-        inExclusiveRange(550, FontWeight.w700.value),
-      );
+      // Variable and fallback faces share the same explicit medium weight.
+      expect(AppMenuMetrics.labelWeightAxis, 500);
       expect(style.fontSize, AppMenuMetrics.labelSize);
       expect(style.leadingDistribution, TextLeadingDistribution.even);
     });
@@ -459,6 +475,102 @@ void main() {
       expect(rect.bottom, lessThanOrEqualTo(600));
       expect(rect.left, greaterThanOrEqualTo(0));
       expect(rect.top, greaterThanOrEqualTo(0));
+    });
+
+    for (final accessible in [false, true]) {
+      testWidgets(
+          'reduced-motion menus skip root, row and submenu motion ($accessible)',
+          (tester) async {
+        await openMenu(
+          tester,
+          disableAnimations: !accessible,
+          accessibleNavigation: accessible,
+          settle: false,
+          entries: const [
+            AppMenuItem(
+              label: 'Parent',
+              submenu: [AppMenuItem(label: 'Child')],
+            ),
+          ],
+        );
+        final surface = find.byType(AppMenuSurface);
+        final route = ModalRoute.of(tester.element(surface))!;
+        expect(route.transitionDuration, Duration.zero);
+        expect(route.reverseTransitionDuration, Duration.zero);
+        final scale = tester.widget<ScaleTransition>(
+          find
+              .ancestor(of: surface, matching: find.byType(ScaleTransition))
+              .first,
+        );
+        expect(scale.scale.value, 1);
+        expect(
+          tester
+              .widget<AnimatedContainer>(
+                find.descendant(
+                  of: find.byType(AppMenuRow),
+                  matching: find.byType(AnimatedContainer),
+                ),
+              )
+              .duration,
+          Duration.zero,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('Child'), findsOneWidget);
+        expect(
+          tester
+              .widget<TweenAnimationBuilder<double>>(
+                find.byType(TweenAnimationBuilder<double>),
+              )
+              .duration,
+          Duration.zero,
+        );
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        expect(find.byType(AppMenuSurface), findsOneWidget);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pump();
+        await tester.pump();
+        expect(find.byType(AppMenuSurface), findsNothing);
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('scaled menu rows keep labels, metadata and disabled semantics',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        await openMenu(
+          tester,
+          textScale: 2,
+          entries: const [
+            AppMenuItem(label: 'Restore', subtitle: 'Recover this page'),
+            AppMenuItem(label: 'Unavailable', enabled: false),
+          ],
+        );
+        final row = find.widgetWithText(AppMenuRow, 'Restore');
+        expect(
+          tester.getSize(row).height,
+          greaterThan(AppMenuMetrics.rowHeightWithSubtitle),
+        );
+        final metadata = tester.getRect(find.text('Recover this page'));
+        final bounds = tester.getRect(row);
+        expect(metadata.bottom, lessThanOrEqualTo(bounds.bottom));
+        final disabled =
+            tester.getSemantics(find.widgetWithText(AppMenuRow, 'Unavailable'));
+        expect(disabled.hasFlag(ui.SemanticsFlag.isButton), isTrue);
+        expect(disabled.hasFlag(ui.SemanticsFlag.isEnabled), isFalse);
+        expect(
+          disabled.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+          isFalse,
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+      }
     });
   });
 }

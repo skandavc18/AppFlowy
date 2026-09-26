@@ -27,6 +27,7 @@ import 'package:appflowy/plugins/workspace_folder/workspace_folder_plugin.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_plugin.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
@@ -80,7 +81,7 @@ class ViewExtKeys {
 }
 
 extension MinimalViewExtension on FolderViewMinimalPB {
-  Widget defaultIcon({Size? size}) => FlowySvg(
+  Widget defaultIcon({Size? size}) => WorkspaceGlyph.svg(
         switch (layout) {
           ViewLayoutPB.Board => FlowySvgs.icon_board_s,
           ViewLayoutPB.Calendar => FlowySvgs.icon_calendar_s,
@@ -89,7 +90,7 @@ extension MinimalViewExtension on FolderViewMinimalPB {
           ViewLayoutPB.Chat => FlowySvgs.chat_ai_page_s,
           _ => FlowySvgs.icon_document_s,
         },
-        size: size,
+        size: size?.width ?? 16,
       );
 }
 
@@ -112,22 +113,35 @@ extension ViewExtension on ViewPB {
       );
     }
     if (isChart) {
-      return Icon(Icons.bar_chart_rounded, size: size?.width ?? 16);
+      return WorkspaceGlyph(Icons.bar_chart_rounded, size: size?.width ?? 16);
     }
     if (isMap) {
-      return Icon(Icons.map_rounded, size: size?.width ?? 16);
+      return WorkspaceGlyph(Icons.map_rounded, size: size?.width ?? 16);
     }
     if (isSlideDeck) {
-      return Icon(Icons.view_carousel_rounded, size: size?.width ?? 16);
+      return WorkspaceGlyph(
+        Icons.view_carousel_rounded,
+        size: size?.width ?? 16,
+      );
+    }
+    if (isDashboard) {
+      return WorkspaceGlyph(Icons.dashboard_rounded, size: size?.width ?? 16);
     }
     if (isCanvas) {
-      return Icon(Icons.dashboard_customize_rounded, size: size?.width ?? 16);
+      return WorkspaceGlyph(
+        Icons.dashboard_customize_rounded,
+        size: size?.width ?? 16,
+      );
     }
     final tableView = tableViewKind;
     if (tableView != null) {
-      return Icon(tableViewIcon(tableView), size: size?.width ?? 16);
+      return WorkspaceGlyph(tableViewIcon(tableView), size: size?.width ?? 16);
     }
-    return FlowySvg(
+    final extensionView = extensionTableView;
+    if (extensionView != null) {
+      return WorkspaceGlyph(extensionView.icon, size: size?.width ?? 16);
+    }
+    return WorkspaceGlyph.svg(
       switch (layout) {
         ViewLayoutPB.Board => FlowySvgs.icon_board_s,
         ViewLayoutPB.Calendar => FlowySvgs.icon_calendar_s,
@@ -136,7 +150,7 @@ extension ViewExtension on ViewPB {
         ViewLayoutPB.Chat => FlowySvgs.chat_ai_page_s,
         _ => FlowySvgs.icon_document_s,
       },
-      size: size,
+      size: size?.width ?? 16,
     );
   }
 

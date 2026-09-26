@@ -11,6 +11,8 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -67,6 +69,7 @@ class SandboxedCodeRunner extends StatefulWidget {
     this.onTestCasesChanged,
     this.onHeaderInteractionChanged,
     this.onTerminalFocusChanged,
+    this.localRunnerFactory = LocalCodeRunner.new,
   });
 
   final String code;
@@ -102,6 +105,9 @@ class SandboxedCodeRunner extends StatefulWidget {
   /// selection, so keys typed here are not also read as editing commands.
   final ValueChanged<bool>? onTerminalFocusChanged;
 
+  /// Execution boundary; the normal runner and its safety policy are unchanged.
+  final LocalCodeRunner Function() localRunnerFactory;
+
   @override
   State<SandboxedCodeRunner> createState() => _SandboxedCodeRunnerState();
 }
@@ -117,6 +123,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   int _sandboxGeneration = 0;
   int _executionGeneration = 0;
   LocalCodeRunner? localRunner;
+  CodeRuntime? _executionRuntime;
   Timer? copyFeedbackTimer;
   String output = '';
   String errorOutput = '';
@@ -138,10 +145,11 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
 
   /// Local programs read their input as they go, so the terminal takes one
   /// line at a time instead of a block of text handed over up front.
-  bool get isInteractive => runtime == CodeRuntime.local;
+  bool get isInteractive => (_executionRuntime ?? runtime) == CodeRuntime.local;
 
   bool get supportsTests =>
-      widget.onTestCasesChanged != null && runtime != CodeRuntime.unsupported;
+      widget.onTestCasesChanged != null &&
+      (testsVisible || runtime != CodeRuntime.unsupported);
 
   @override
   void initState() {
@@ -152,13 +160,12 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   @override
   void didUpdateWidget(covariant SandboxedCodeRunner oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (codeRuntimeForName(oldWidget.fileName) == CodeRuntime.javascript &&
+    if (!running &&
+        codeRuntimeForName(oldWidget.fileName) == CodeRuntime.javascript &&
         runtime != CodeRuntime.javascript) {
-      _executionGeneration++;
-      testRunCancelled = true;
+      // Changing highlighting/next-run language does not cancel a live run.
+      // Its Stop/input callbacks continue to target the captured runtime.
       unawaited(_disposeSandbox());
-      running = false;
-      testsRunning = false;
     }
   }
 
@@ -267,7 +274,10 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     );
     final animatedBody = TweenAnimationBuilder<double>(
       tween: Tween(end: collapsed ? 0 : 1),
-      duration: codeBlockAnimationDuration,
+      duration: MediaQuery.disableAnimationsOf(context) ||
+              MediaQuery.accessibleNavigationOf(context)
+          ? Duration.zero
+          : codeBlockAnimationDuration,
       curve: Curves.easeOutCubic,
       builder: (context, value, child) => ClipRect(
         child: Align(
@@ -639,9 +649,11 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   /// Runs the code once per saved case and judges what comes back.
   Future<void> _runTests() async {
     final cases = widget.testCases;
-    if (cases.isEmpty || running) {
+    if (cases.isEmpty || running || runtime == CodeRuntime.unsupported) {
       return;
     }
+    final code = widget.code;
+    _executionRuntime = runtime;
     final generation = ++_executionGeneration;
     testRunCancelled = false;
     setState(() {
@@ -654,10 +666,10 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       }
     });
     try {
-      if (runtime == CodeRuntime.local) {
-        await _runTestsLocally(cases);
+      if (_executionRuntime == CodeRuntime.local) {
+        await _runTestsLocally(cases, code);
       } else {
-        await _runTestsInSandbox(cases, generation);
+        await _runTestsInSandbox(cases, generation, code);
       }
     } on Object catch (error) {
       if (generation == _executionGeneration) {
@@ -673,22 +685,23 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
           testsRunning = false;
           running = false;
         });
+        if (runtime != CodeRuntime.javascript) unawaited(_disposeSandbox());
       }
     }
   }
 
-  Future<void> _runTestsLocally(List<CodeTestCase> cases) async {
+  Future<void> _runTestsLocally(List<CodeTestCase> cases, String code) async {
     final toolchain = this.toolchain;
     if (toolchain == null) {
       return;
     }
     // A toolchain installed since the last attempt should be picked up.
     clearExecutableCache();
-    final runner = LocalCodeRunner();
+    final runner = widget.localRunnerFactory();
     localRunner = runner;
     await runner.runCases(
       toolchain: toolchain,
-      code: widget.code,
+      code: code,
       inputs: [for (final testCase in cases) testCase.input],
       onCaseFinished: (index, result) {
         if (!mounted) {
@@ -711,6 +724,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   Future<void> _runTestsInSandbox(
     List<CodeTestCase> cases,
     int generation,
+    String code,
   ) async {
     final controller = await _ensureSandbox();
     if (!mounted || testRunCancelled || generation != _executionGeneration) {
@@ -737,7 +751,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       try {
         final result = await controller.callAsyncJavaScript(
           functionBody: _javascriptWorkerFunction,
-          arguments: {'code': widget.code, 'input': testCase.input},
+          arguments: {'code': code, 'input': testCase.input},
         ).timeout(const Duration(seconds: 8));
         final value = result?.value;
         if (result?.error != null) {
@@ -813,7 +827,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
 
   Future<void> _stopTests() async {
     testRunCancelled = true;
-    if (runtime == CodeRuntime.local) {
+    if (_executionRuntime == CodeRuntime.local) {
       localRunner?.cancel();
       return;
     }
@@ -828,10 +842,13 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
   }
 
   Future<void> _run() async {
-    if (running) return;
+    if (running || runtime == CodeRuntime.unsupported) return;
     if (runtime == CodeRuntime.local) {
       return _runLocally();
     }
+    final code = widget.code;
+    final input = inputController.text;
+    _executionRuntime = CodeRuntime.javascript;
     final generation = ++_executionGeneration;
     setState(() {
       running = true;
@@ -848,8 +865,8 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
       final result = await controller.callAsyncJavaScript(
         functionBody: _javascriptWorkerFunction,
         arguments: {
-          'code': widget.code,
-          'input': inputController.text,
+          'code': code,
+          'input': input,
         },
       ).timeout(const Duration(seconds: 8));
       if (!mounted || generation != _executionGeneration) {
@@ -878,6 +895,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     } finally {
       if (mounted && generation == _executionGeneration) {
         setState(() => running = false);
+        if (runtime != CodeRuntime.javascript) unawaited(_disposeSandbox());
       }
     }
   }
@@ -892,8 +910,9 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     }
     // A toolchain installed since the last attempt should be picked up.
     clearExecutableCache();
-    final runner = LocalCodeRunner();
+    final runner = widget.localRunnerFactory();
     localRunner = runner;
+    _executionRuntime = CodeRuntime.local;
     setState(() {
       running = true;
       terminalVisible = true;
@@ -928,7 +947,7 @@ class _SandboxedCodeRunnerState extends State<SandboxedCodeRunner> {
     if (testsRunning) {
       return _stopTests();
     }
-    if (runtime == CodeRuntime.local) {
+    if (_executionRuntime == CodeRuntime.local) {
       localRunner?.cancel();
       return;
     }
@@ -996,21 +1015,129 @@ class _CodeBlockHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final host = StandaloneFileScope.forName(context, displayName);
+    if (host == null) return _buildToolbar(context);
+    return StandaloneFileHeaderSlot(
+      controller: host.chrome,
+      controls: StandaloneFileHeader(
+        toolbarBuilder: (context, fileActions) => _buildToolbar(
+          context,
+          fileActions: fileActions,
+        ),
+        keepActionsVisible: keepActionsVisible,
+      ),
+    );
+  }
+
+  Widget _buildToolbar(BuildContext context, {Widget? fileActions}) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 520;
         final veryCompact = constraints.maxWidth < 380;
         final filename = displayName?.trim();
-        final canRun = runtime != CodeRuntime.unsupported;
+        final canRun = running || runtime != CodeRuntime.unsupported;
         final runTooltip = switch (runtime) {
-          CodeRuntime.unsupported => 'Preview only',
           _ when running => 'Stop',
+          CodeRuntime.unsupported => 'Preview only',
           CodeRuntime.local when toolchain?.isInstalled == false =>
             'Run with ${toolchain!.label} (not found on PATH)',
           CodeRuntime.local => 'Run with ${toolchain!.label}',
           CodeRuntime.javascript => 'Run',
         };
 
+        final languageMenu = _CodeLanguageMenu(
+          key: const ValueKey('code-language-menu'),
+          palette: palette,
+          selectedLanguage: selectedLanguage,
+          languages: languages,
+          maxLabelWidth: veryCompact ? 48 : 92,
+          onSelected: onLanguageChanged,
+        );
+        final buttons = <Widget>[
+          CodeToolbarButton(
+            key: const ValueKey('code-line-numbers'),
+            palette: palette,
+            tooltip:
+                showLineNumbers ? 'Hide line numbers' : 'Show line numbers',
+            icon: showLineNumbers
+                ? Icons.format_list_numbered_rounded
+                : Icons.subject_rounded,
+            selected: showLineNumbers,
+            onPressed: onToggleLineNumbers,
+          ),
+          if (onToggleTests != null)
+            CodeToolbarButton(
+              key: const ValueKey('code-tests'),
+              palette: palette,
+              tooltip: testsVisible
+                  ? 'Hide test cases'
+                  : 'Run the code against saved inputs',
+              icon: Icons.checklist_rounded,
+              label: testSummary?.label ?? (compact ? null : 'Tests'),
+              selected: testsVisible,
+              foregroundColor: testSummary == null
+                  ? null
+                  : testSummary!.allPassed
+                      ? palette.success
+                      : palette.error,
+              iconRole: testSummary == null
+                  ? WorkspaceGlyphRole.standard
+                  : WorkspaceGlyphRole.preserveInk,
+              onPressed: onToggleTests,
+            ),
+          CodeToolbarButton(
+            key: const ValueKey('code-run'),
+            palette: palette,
+            tooltip: runTooltip,
+            icon: running ? Icons.stop_rounded : Icons.play_arrow_rounded,
+            label: compact ? null : (running ? 'Stop' : 'Run'),
+            foregroundColor: running ? palette.error : palette.accent,
+            iconRole: running
+                ? WorkspaceGlyphRole.preserveInk
+                : WorkspaceGlyphRole.standard,
+            onPressed: canRun ? onRun : null,
+          ),
+          CodeToolbarButton(
+            key: const ValueKey('code-copy'),
+            palette: palette,
+            tooltip: copied
+                ? 'Copied ✓'
+                : LocaleKeys.document_codeBlock_copyTooltip.tr(),
+            icon: copied ? Icons.check_rounded : Icons.content_copy_rounded,
+            label: copied
+                ? 'Copied'
+                : compact
+                    ? null
+                    : LocaleKeys.editor_copy.tr(),
+            foregroundColor: copied ? palette.success : null,
+            iconRole: copied
+                ? WorkspaceGlyphRole.preserveInk
+                : WorkspaceGlyphRole.standard,
+            onPressed: onCopy,
+          ),
+          if (onDownload != null)
+            CodeToolbarButton(
+              key: const ValueKey('code-download'),
+              palette: palette,
+              tooltip: 'Download code',
+              icon: Icons.download_rounded,
+              onPressed: onDownload,
+            ),
+          if (trailing != null)
+            KeyedSubtree(
+              key: const ValueKey('code-host-actions'),
+              child: trailing!,
+            ),
+          CodeToolbarButton(
+            key: const ValueKey('code-collapse'),
+            palette: palette,
+            tooltip: collapsed ? 'Expand code' : 'Collapse code',
+            icon: collapsed
+                ? Icons.unfold_more_rounded
+                : Icons.unfold_less_rounded,
+            onPressed: onToggleCollapsed,
+          ),
+        ];
         return DecoratedBox(
           decoration: BoxDecoration(
             color: palette.header,
@@ -1018,158 +1145,70 @@ class _CodeBlockHeader extends StatelessWidget {
             // header so a code block reads as the same kind of surface.
             boxShadow: DocumentViewportStyle.of(context).chromeShadow,
           ),
-          child: SizedBox(
-            height: 42,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 42),
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10),
-              child: Row(
-                children: [
-                  _CodeLanguageMenu(
-                    key: const ValueKey('code-language-menu'),
-                    palette: palette,
-                    selectedLanguage: selectedLanguage,
-                    languages: languages,
-                    maxLabelWidth: veryCompact ? 48 : 92,
-                    onSelected: onLanguageChanged,
-                  ),
-                  if (filename != null && filename.isNotEmpty) ...[
-                    const SizedBox(width: 10),
-                    CodeHeaderDivider(palette: palette),
-                    const SizedBox(width: 10),
-                    Icon(
-                      Icons.code_rounded,
-                      size: 14,
-                      color: palette.textMuted,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        filename,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: codeUiTextStyle(
-                          color: palette.textSecondary,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(width: 14),
-                  Flexible(
-                    flex: 3,
-                    child: PreviewToolbar(
-                      keepVisible: keepActionsVisible,
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (!veryCompact) ...[
-                              CodeToolbarButton(
-                                key: const ValueKey('code-line-numbers'),
-                                palette: palette,
-                                tooltip: showLineNumbers
-                                    ? 'Hide line numbers'
-                                    : 'Show line numbers',
-                                icon: Icons.format_list_numbered_rounded,
-                                selected: showLineNumbers,
-                                onPressed: onToggleLineNumbers,
-                              ),
-                              const SizedBox(width: 3),
-                            ],
-                            if (onToggleTests != null) ...[
-                              CodeToolbarButton(
-                                key: const ValueKey('code-tests'),
-                                palette: palette,
-                                tooltip: testsVisible
-                                    ? 'Hide test cases'
-                                    : 'Run the code against saved inputs',
-                                icon: Icons.checklist_rounded,
-                                label: testSummary != null
-                                    ? testSummary!.label
-                                    : compact
-                                        ? null
-                                        : 'Tests',
-                                selected: testsVisible,
-                                foregroundColor: testSummary == null
-                                    ? null
-                                    : testSummary!.allPassed
-                                        ? palette.success
-                                        : palette.error,
-                                onPressed: onToggleTests,
-                              ),
-                              const SizedBox(width: 3),
-                            ],
-                            CodeToolbarButton(
-                              key: const ValueKey('code-run'),
-                              palette: palette,
-                              tooltip: runTooltip,
-                              icon: running
-                                  ? Icons.stop_rounded
-                                  : Icons.play_arrow_rounded,
-                              label:
-                                  compact ? null : (running ? 'Stop' : 'Run'),
-                              foregroundColor:
-                                  running ? palette.error : palette.accent,
-                              onPressed: canRun ? onRun : null,
-                            ),
-                            const SizedBox(width: 3),
-                            CodeToolbarButton(
-                              key: const ValueKey('code-copy'),
-                              palette: palette,
-                              tooltip: copied
-                                  ? 'Copied ✓'
-                                  : LocaleKeys.document_codeBlock_copyTooltip
-                                      .tr(),
-                              icon: copied
-                                  ? Icons.check_rounded
-                                  : Icons.content_copy_rounded,
-                              label: copied
-                                  ? 'Copied'
-                                  : compact
-                                      ? null
-                                      : LocaleKeys.editor_copy.tr(),
-                              foregroundColor: copied
-                                  ? palette.success
-                                  : palette.textSecondary,
-                              onPressed: onCopy,
-                            ),
-                            if (onDownload != null) ...[
-                              const SizedBox(width: 3),
-                              CodeToolbarButton(
-                                key: const ValueKey('code-download'),
-                                palette: palette,
-                                tooltip: 'Download code',
-                                icon: Icons.download_rounded,
-                                onPressed: onDownload,
-                              ),
-                            ],
-                            if (trailing != null) ...[
-                              const SizedBox(width: 3),
-                              KeyedSubtree(
-                                key: const ValueKey('code-host-actions'),
-                                child: trailing!,
-                              ),
-                            ],
-                            const SizedBox(width: 3),
-                            CodeToolbarButton(
-                              key: const ValueKey('code-collapse'),
-                              palette: palette,
-                              tooltip:
-                                  collapsed ? 'Expand code' : 'Collapse code',
-                              icon: collapsed
-                                  ? Icons.unfold_more_rounded
-                                  : Icons.unfold_less_rounded,
-                              onPressed: onToggleCollapsed,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 4 : 6,
+                vertical: 4,
               ),
+              child: fileActions != null
+                  ? Wrap(
+                      key: const ValueKey('code-controls'),
+                      spacing: 3,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [languageMenu, ...buttons, fileActions],
+                    )
+                  : Row(
+                      children: [
+                        languageMenu,
+                        if (fileActions == null &&
+                            filename != null &&
+                            filename.isNotEmpty) ...[
+                          const SizedBox(width: 10),
+                          CodeHeaderDivider(palette: palette),
+                          const SizedBox(width: 10),
+                          WorkspaceGlyph(
+                            Icons.code_rounded,
+                            size: 14,
+                            color: palette.textMuted,
+                          ),
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Text(
+                              filename,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: codeUiTextStyle(
+                                color: palette.textSecondary,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(width: 14),
+                        Flexible(
+                          flex: 3,
+                          child: PreviewToolbar(
+                            keepVisible: keepActionsVisible,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  for (var i = 0; i < buttons.length; i++) ...[
+                                    if (i > 0) const SizedBox(width: 3),
+                                    buttons[i],
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
             ),
           ),
         );
@@ -1200,65 +1239,59 @@ class _CodeLanguageMenu extends StatelessWidget {
         ? LocaleKeys.document_codeBlock_language_auto.tr()
         : _languageLabel(selectedLanguage);
 
-    return Semantics(
-      button: true,
-      child: Tooltip(
-        message: 'Select language',
-        child: Builder(
-          builder: (buttonContext) => Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(7),
-              focusColor: palette.hover,
-              splashFactory: NoSplash.splashFactory,
-              onTap: () => showAppMenuForWidget<void>(
-                context: buttonContext,
-                placement: AppMenuPlacement.below,
-                maxHeight: 320,
-                entries: [
-                  for (final language in languages)
-                    AppMenuItem(
-                      label: language == 'auto'
-                          ? LocaleKeys.document_codeBlock_language_auto.tr()
-                          : _languageLabel(language),
-                      selected: language == selectedLanguage,
-                      onSelected: () => onSelected(language),
-                    ),
-                ],
-              ),
-              child: CodeHoverSurface(
-                palette: palette,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.code_rounded,
-                      size: 14,
-                      color: palette.textMuted,
-                    ),
-                    const SizedBox(width: 6),
-                    ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: maxLabelWidth),
-                      child: Text(
-                        label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: codeUiTextStyle(
-                          color: palette.textSecondary,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 15,
-                      color: palette.textMuted,
-                    ),
-                  ],
+    return Tooltip(
+      message: 'Select language',
+      excludeFromSemantics: true,
+      child: Builder(
+        builder: (buttonContext) => TextButton(
+          style: WorkspaceChrome.controlStyle(context).copyWith(
+            minimumSize: const WidgetStatePropertyAll(Size(0, 28)),
+            padding: const WidgetStatePropertyAll(
+              EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            ),
+          ),
+          onPressed: () => showAppMenuForWidget<void>(
+            context: buttonContext,
+            placement: AppMenuPlacement.below,
+            maxHeight: 320,
+            entries: [
+              for (final language in languages)
+                AppMenuItem(
+                  label: language == 'auto'
+                      ? LocaleKeys.document_codeBlock_language_auto.tr()
+                      : _languageLabel(language),
+                  selected: language == selectedLanguage,
+                  onSelected: () => onSelected(language),
                 ),
-              ),
+            ],
+          ),
+          child: Semantics(
+            label: 'Select language: $label',
+            excludeSemantics: true,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                WorkspaceGlyph(
+                  Icons.code_rounded,
+                  size: 14,
+                  color: palette.textMuted,
+                ),
+                const SizedBox(width: 6),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: maxLabelWidth),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                WorkspaceGlyph(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 15,
+                  color: palette.textMuted,
+                ),
+              ],
             ),
           ),
         ),

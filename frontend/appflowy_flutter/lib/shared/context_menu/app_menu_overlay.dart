@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -97,6 +98,9 @@ Future<T?> showAppMenu<T>({
             placement: placement,
             width: width,
             maxHeight: maxHeight,
+            reduceMotion:
+                WorkspaceTokens.motion(context, AppMenuMetrics.openDuration) ==
+                    Duration.zero,
             capturedThemes:
                 InheritedTheme.capture(from: context, to: navigator.context),
             barrierLabel:
@@ -143,6 +147,7 @@ class _AppMenuRoute<T> extends PopupRoute<T> {
     required this.width,
     required this.maxHeight,
     required this.capturedThemes,
+    required this.reduceMotion,
     required this.barrierLabel,
   });
 
@@ -152,6 +157,7 @@ class _AppMenuRoute<T> extends PopupRoute<T> {
   final double? width;
   final double maxHeight;
   final CapturedThemes capturedThemes;
+  final bool reduceMotion;
 
   @override
   final String barrierLabel;
@@ -163,10 +169,12 @@ class _AppMenuRoute<T> extends PopupRoute<T> {
   bool get barrierDismissible => true;
 
   @override
-  Duration get transitionDuration => AppMenuMetrics.openDuration;
+  Duration get transitionDuration =>
+      reduceMotion ? Duration.zero : AppMenuMetrics.openDuration;
 
   @override
-  Duration get reverseTransitionDuration => AppMenuMetrics.closeDuration;
+  Duration get reverseTransitionDuration =>
+      reduceMotion ? Duration.zero : AppMenuMetrics.closeDuration;
 
   @override
   Widget buildPage(
@@ -183,7 +191,8 @@ class _AppMenuRoute<T> extends PopupRoute<T> {
         maxHeight: maxHeight,
         animation: animation,
         onDismiss: (value) {
-          if (!isActive) {
+          // A custom row can finish after another dialog has covered us.
+          if (!isCurrent) {
             return;
           }
           navigator?.pop(value is T ? value : null);
@@ -755,7 +764,8 @@ class _AppMenuStackState extends State<_AppMenuStack> {
         Scrollable.ensureVisible(
           rowContext,
           alignment: 0.5,
-          duration: AppMenuMetrics.submenuDuration,
+          duration:
+              WorkspaceTokens.motion(context, AppMenuMetrics.submenuDuration),
           curve: AppMenuMetrics.enterCurve,
         ),
       );
@@ -862,13 +872,18 @@ class _RootEntranceState extends State<_RootEntrance> {
 
   @override
   Widget build(BuildContext context) {
+    final reduced =
+        WorkspaceTokens.motion(context, AppMenuMetrics.openDuration) ==
+            Duration.zero;
     return FadeTransition(
-      opacity: _curved,
+      opacity: reduced ? kAlwaysCompleteAnimation : _curved,
       child: ScaleTransition(
-        scale: Tween<double>(
-          begin: AppMenuMetrics.openScale,
-          end: 1,
-        ).animate(_curved),
+        scale: reduced
+            ? kAlwaysCompleteAnimation
+            : Tween<double>(
+                begin: AppMenuMetrics.openScale,
+                end: 1,
+              ).animate(_curved),
         alignment: switch (widget.placement) {
           AppMenuPlacement.belowEnd => Alignment.topRight,
           AppMenuPlacement.above => Alignment.bottomLeft,
@@ -896,7 +911,7 @@ class _SubmenuEntrance extends StatelessWidget {
         : -AppMenuMetrics.submenuSlide;
     return TweenAnimationBuilder<double>(
       tween: Tween<double>(begin: 0, end: 1),
-      duration: AppMenuMetrics.submenuDuration,
+      duration: WorkspaceTokens.motion(context, AppMenuMetrics.submenuDuration),
       curve: AppMenuMetrics.enterCurve,
       builder: (context, value, child) => Opacity(
         opacity: value.clamp(0, 1),

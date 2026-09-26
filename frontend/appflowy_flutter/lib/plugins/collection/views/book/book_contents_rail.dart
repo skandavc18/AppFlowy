@@ -1,6 +1,10 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/book/book_format.dart';
+import 'package:appflowy/plugins/collection/views/book/book_reader_controls.dart';
 import 'package:appflowy/plugins/collection/views/book/book_reader_palette.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/book/book_chapter.dart';
 import 'package:appflowy/workspace/application/collections/book/book_reading_controller.dart';
 import 'package:appflowy/workspace/application/collections/book/book_reading_state.dart';
@@ -38,16 +42,8 @@ class _BookContentsRailState extends State<BookContentsRail> {
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: palette.chrome,
-        border: Border(
-          right: BorderSide(
-            color: palette.rule.withValues(alpha: 0.35),
-            width: 0.6,
-          ),
-        ),
-      ),
+    return CollectionWorkspaceSurface(
+      color: palette.canvas,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -65,37 +61,23 @@ class _BookContentsRailState extends State<BookContentsRail> {
   }
 
   Widget _buildTabs(BookReaderPalette palette) {
-    return Container(
-      height: BookReaderMetrics.chromeHeight,
-      padding: const EdgeInsets.fromLTRB(10, 11, 10, 11),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: palette.rule.withValues(alpha: 0.35),
-            width: 0.6,
-          ),
-        ),
-      ),
-      child: Row(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
         children: [
           for (final value in _RailTab.values)
-            Expanded(
-              child: Padding(
-                padding:
-                    EdgeInsets.only(right: value == _RailTab.notes ? 0 : 6),
-                child: _RailTabButton(
-                  palette: palette,
-                  label: switch (value) {
-                    _RailTab.chapters =>
-                      LocaleKeys.collections_book_chapters.tr(),
-                    _RailTab.bookmarks =>
-                      LocaleKeys.collections_book_bookmarks.tr(),
-                    _RailTab.notes => LocaleKeys.collections_book_notes.tr(),
-                  },
-                  selected: tab == value,
-                  onTap: () => setState(() => tab = value),
-                ),
-              ),
+            _RailTabButton(
+              palette: palette,
+              label: switch (value) {
+                _RailTab.chapters => LocaleKeys.collections_book_chapters.tr(),
+                _RailTab.bookmarks =>
+                  LocaleKeys.collections_book_bookmarks.tr(),
+                _RailTab.notes => LocaleKeys.collections_book_notes.tr(),
+              },
+              selected: tab == value,
+              onTap: () => setState(() => tab = value),
             ),
         ],
       ),
@@ -109,6 +91,7 @@ class _BookContentsRailState extends State<BookContentsRail> {
     }
     final current = widget.reading.currentChapter?.id;
     return ListView.builder(
+      primary: false,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: chapters.length,
       itemBuilder: (context, index) {
@@ -117,14 +100,14 @@ class _BookContentsRailState extends State<BookContentsRail> {
           return Padding(
             padding: const EdgeInsets.fromLTRB(18, 14, 14, 6),
             child: Text(
-              bookChapterTitle(chapter).toUpperCase(),
+              bookChapterTitle(chapter),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: palette.inkFaint,
                 fontSize: 10,
-                letterSpacing: 0.8,
-                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+                fontWeight: FontWeight.w500,
               ),
             ),
           );
@@ -151,6 +134,7 @@ class _BookContentsRailState extends State<BookContentsRail> {
       return _empty(palette, LocaleKeys.collections_book_noBookmarks.tr());
     }
     return ListView.builder(
+      primary: false,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: bookmarks.length,
       itemBuilder: (context, index) {
@@ -182,6 +166,7 @@ class _BookContentsRailState extends State<BookContentsRail> {
       return _empty(palette, LocaleKeys.collections_book_noNotes.tr());
     }
     return ListView.builder(
+      primary: false,
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: notes.length,
       itemBuilder: (context, index) {
@@ -237,31 +222,18 @@ class _RailTabButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: BookReaderMetrics.motion,
-          curve: BookReaderMetrics.curve,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: selected
-                ? palette.selected
-                : palette.hover.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(7),
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: selected ? palette.ink : palette.inkMuted,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+    return CollectionWorkspaceNavRow(
+      selected: selected,
+      onTap: onTap,
+      minHeight: 30,
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: collectionWorkspaceLabel(
+          context,
+          color: selected ? palette.ink : palette.inkMuted,
+          size: 11.5,
         ),
       ),
     );
@@ -296,121 +268,102 @@ class _ChapterRow extends StatefulWidget {
 }
 
 class _ChapterRowState extends State<_ChapterRow> {
-  bool hovered = false;
-
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final finished = widget.progress >= BookReadingState.finishedThreshold;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: CollectionWorkspaceNavRow(
+        selected: widget.selected,
         onTap: widget.onTap,
         onDoubleTap: widget.onOpenInWorkspace,
-        child: AnimatedContainer(
-          duration: BookReaderMetrics.motion,
-          curve: BookReaderMetrics.curve,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? palette.selected
-                : hovered
-                    ? palette.hover
-                    : palette.hover.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  SizedBox(
-                    width: 22,
-                    child: Text(
-                      '${widget.number}',
-                      style: TextStyle(
-                        color:
-                            widget.selected ? palette.accent : palette.inkFaint,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: Text(
-                      bookChapterTitle(widget.chapter),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: widget.selected ? palette.ink : palette.inkMuted,
-                        fontSize: 12.5,
-                        height: 1.35,
-                        fontWeight:
-                            widget.selected ? FontWeight.w600 : FontWeight.w400,
-                      ),
-                    ),
-                  ),
-                  if (widget.bookmarked)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 5),
-                      child: Icon(
-                        Icons.bookmark_rounded,
-                        size: 12,
-                        color: palette.accent,
-                      ),
-                    ),
-                  if (widget.noteCount > 0)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 5),
-                      child: Text(
-                        '${widget.noteCount}',
-                        style: TextStyle(
-                          color: palette.inkFaint,
-                          fontSize: 10.5,
-                        ),
-                      ),
-                    ),
-                  if (finished)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 5),
-                      child: Icon(
-                        Icons.check_circle_rounded,
-                        size: 12,
-                        color: palette.accent.withValues(alpha: 0.75),
-                      ),
-                    ),
-                ],
-              ),
-              if (widget.progress > 0 && !finished) ...[
-                const SizedBox(height: 6),
-                Padding(
-                  padding: const EdgeInsets.only(left: 22),
-                  child: SizedBox(
-                    height: 2,
-                    child: LayoutBuilder(
-                      builder: (context, constraints) => Stack(
-                        children: [
-                          Positioned.fill(
-                            child: ColoredBox(
-                              color: palette.rule.withValues(alpha: 0.5),
-                            ),
-                          ),
-                          Container(
-                            width: constraints.maxWidth * widget.progress,
-                            color: palette.accent.withValues(alpha: 0.8),
-                          ),
-                        ],
-                      ),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                SizedBox(
+                  width: 22,
+                  child: Text(
+                    '${widget.number}',
+                    style: TextStyle(
+                      color:
+                          widget.selected ? palette.accent : palette.inkFaint,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 ),
+                Expanded(
+                  child: Text(
+                    bookChapterTitle(widget.chapter),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: collectionWorkspaceLabel(
+                      context,
+                      color: widget.selected ? palette.ink : palette.inkMuted,
+                      size: 12.5,
+                    ),
+                  ),
+                ),
+                if (widget.bookmarked)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 5),
+                    child: WorkspaceGlyph(
+                      Icons.bookmark_rounded,
+                      size: 12,
+                      color: palette.accent,
+                    ),
+                  ),
+                if (widget.noteCount > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 5),
+                    child: Text(
+                      '${widget.noteCount}',
+                      style: TextStyle(
+                        color: palette.inkFaint,
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ),
+                if (finished)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 5),
+                    child: WorkspaceGlyph(
+                      Icons.check_circle_rounded,
+                      size: 12,
+                      color: palette.accent.withValues(alpha: 0.75),
+                    ),
+                  ),
               ],
+            ),
+            if (widget.progress > 0 && !finished) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.only(left: 22),
+                child: SizedBox(
+                  height: 2,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Stack(
+                      children: [
+                        Positioned.fill(
+                          child: ColoredBox(
+                            color: palette.rule.withValues(alpha: 0.5),
+                          ),
+                        ),
+                        Container(
+                          width: constraints.maxWidth * widget.progress,
+                          color: palette.accent.withValues(alpha: 0.8),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
             ],
-          ),
+          ],
         ),
       ),
     );
@@ -441,69 +394,47 @@ class _RailEntry extends StatefulWidget {
 }
 
 class _RailEntryState extends State<_RailEntry> {
-  bool hovered = false;
-
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+    return PreviewToolbarRegion(
+      child: CollectionWorkspaceNavRow(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: BookReaderMetrics.motion,
-          curve: BookReaderMetrics.curve,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
-          padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
-          decoration: BoxDecoration(
-            color: hovered ? palette.hover : palette.hover.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Row(
-            children: [
-              Icon(widget.icon, size: 14, color: widget.iconColor),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: palette.ink, fontSize: 12.5),
-                    ),
-                    Text(
-                      widget.subtitle,
-                      style: TextStyle(color: palette.inkFaint, fontSize: 10.5),
-                    ),
-                  ],
-                ),
-              ),
-              AnimatedOpacity(
-                duration: BookReaderMetrics.motion,
-                opacity: hovered ? 1 : 0,
-                child: IgnorePointer(
-                  ignoring: !hovered,
-                  child: GestureDetector(
-                    onTap: widget.onRemove,
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: Icon(
-                        Icons.close_rounded,
-                        size: 14,
-                        color: palette.inkFaint,
-                      ),
+        padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+        child: Row(
+          children: [
+            WorkspaceGlyph(widget.icon, size: 14, color: palette.inkMuted),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: collectionWorkspaceLabel(
+                      context,
+                      color: palette.ink,
+                      size: 12.5,
                     ),
                   ),
-                ),
+                  Text(
+                    widget.subtitle,
+                    style: TextStyle(color: palette.inkFaint, fontSize: 10.5),
+                  ),
+                ],
               ),
-            ],
-          ),
+            ),
+            PreviewToolbar(
+              child: BookControlButton(
+                icon: Icons.close_rounded,
+                tooltip: LocaleKeys.button_delete.tr(),
+                palette: palette,
+                onPressed: widget.onRemove,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -530,93 +461,76 @@ class _NoteCard extends StatefulWidget {
 }
 
 class _NoteCardState extends State<_NoteCard> {
-  bool hovered = false;
-
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
     final note = widget.note;
     final accent = bookNoteColor(note.color, isDark: palette.theme.isDark);
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) => setState(() => hovered = true),
-      onExit: (_) => setState(() => hovered = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
+    return PreviewToolbarRegion(
+      child: CollectionWorkspaceNavRow(
         onTap: widget.onTap,
-        child: AnimatedContainer(
-          duration: BookReaderMetrics.motion,
-          curve: BookReaderMetrics.curve,
-          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-          padding: const EdgeInsets.fromLTRB(11, 9, 8, 10),
-          decoration: BoxDecoration(
-            color: hovered ? palette.hover : palette.hover.withValues(alpha: 0),
-            borderRadius: BorderRadius.circular(9),
-            border: Border(left: BorderSide(color: accent, width: 2.5)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.chapterName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.inkFaint,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                      ),
+        padding: const EdgeInsets.fromLTRB(11, 9, 8, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                WorkspaceGlyph(
+                  Icons.edit_note_rounded,
+                  size: 14,
+                  color: accent,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    widget.chapterName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.inkFaint,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  AnimatedOpacity(
-                    duration: BookReaderMetrics.motion,
-                    opacity: hovered ? 1 : 0,
-                    child: IgnorePointer(
-                      ignoring: !hovered,
-                      child: GestureDetector(
-                        onTap: widget.onRemove,
-                        child: Icon(
-                          Icons.close_rounded,
-                          size: 13,
-                          color: palette.inkFaint,
-                        ),
-                      ),
-                    ),
+                ),
+                PreviewToolbar(
+                  child: BookControlButton(
+                    icon: Icons.close_rounded,
+                    tooltip: LocaleKeys.button_delete.tr(),
+                    palette: palette,
+                    onPressed: widget.onRemove,
                   ),
-                ],
+                ),
+              ],
+            ),
+            if (note.quote.trim().isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                note.quote,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.ink,
+                  fontSize: 12,
+                  height: 1.45,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
-              if (note.quote.trim().isNotEmpty) ...[
-                const SizedBox(height: 5),
-                Text(
-                  note.quote,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.ink,
-                    fontSize: 12,
-                    height: 1.45,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-              if (note.body.trim().isNotEmpty) ...[
-                const SizedBox(height: 5),
-                Text(
-                  note.body,
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.inkMuted,
-                    fontSize: 12,
-                    height: 1.45,
-                  ),
-                ),
-              ],
             ],
-          ),
+            if (note.body.trim().isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                note.body,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.inkMuted,
+                  fontSize: 12,
+                  height: 1.45,
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

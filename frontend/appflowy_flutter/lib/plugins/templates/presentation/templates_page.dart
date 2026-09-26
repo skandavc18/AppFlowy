@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/templates/presentation/template_card.dart';
 import 'package:appflowy/plugins/templates/presentation/template_preview.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/templates/built_in/built_in_templates.dart';
@@ -292,8 +293,8 @@ class TemplateSearchField extends StatelessWidget {
                     isCollapsed: true,
                     border: InputBorder.none,
                     hintText: LocaleKeys.templates_search.tr(),
-                    hintStyle: DashboardType.caption(palette)
-                        .copyWith(fontSize: 13),
+                    hintStyle:
+                        DashboardType.caption(palette).copyWith(fontSize: 13),
                   ),
                 ),
               ),
@@ -378,6 +379,7 @@ class _ShelfRowState extends State<_ShelfRow> {
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
+    final hover = WorkspaceChrome.hoverColor(context);
     final ink = widget.selected ? palette.accent : palette.textSecondary;
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -394,7 +396,9 @@ class _ShelfRowState extends State<_ShelfRow> {
           decoration: BoxDecoration(
             color: widget.selected
                 ? palette.accent.withValues(alpha: 0.12)
-                : palette.hover.withValues(alpha: _hovered ? 1 : 0),
+                : _hovered
+                    ? hover
+                    : hover.withValues(alpha: 0),
             borderRadius: BorderRadius.circular(9),
           ),
           child: Row(
