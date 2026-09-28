@@ -21,7 +21,8 @@ void main() {
   setUp(() => binding.platformDispatcher.semanticsEnabledTestValue = true);
   tearDown(() => binding.platformDispatcher.clearSemanticsEnabledTestValue());
 
-  testWidgets('native URLPattern boundaries and visible-only Reader capture', (tester) async {
+  testWidgets('native URLPattern boundaries and visible-only Reader capture',
+      (tester) async {
     final baselineHandles = binding.debugOutstandingSemanticsHandles;
     final semantics = tester.ensureSemantics();
     WebViewEnvironment? environment;
@@ -48,30 +49,41 @@ void main() {
     binding.reportData = report;
     try {
       expect(Platform.isWindows, isTrue);
-      expect(const bool.fromEnvironment('BROWSER_READER_BLOCKING_CONSENT'), isTrue);
-      for (final key in ['WEBVIEW2_USER_DATA_FOLDER',
-        'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER', 'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS']) {
+      expect(const bool.fromEnvironment('BROWSER_READER_BLOCKING_CONSENT'),
+          isTrue);
+      for (final key in [
+        'WEBVIEW2_USER_DATA_FOLDER',
+        'WEBVIEW2_BROWSER_EXECUTABLE_FOLDER',
+        'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS'
+      ]) {
         if ((Platform.environment[key] ?? '').isNotEmpty) {
-          throw StateError('External WebView overrides prevent fixture isolation.');
+          throw StateError(
+              'External WebView overrides prevent fixture isolation.');
         }
       }
-      final localServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final localServer =
+          await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       server = localServer;
       subscription = localServer.listen((request) {
         requests.add(request.uri.path);
-        request.response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
-        request.response.headers.set('Content-Security-Policy',
-          "default-src 'none'; script-src 'self'; "
-          "style-src 'unsafe-inline'; img-src 'self'; connect-src 'self'; "
-          "base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
+        request.response.headers
+            .set(HttpHeaders.cacheControlHeader, 'no-store');
+        request.response.headers.set(
+            'Content-Security-Policy',
+            "default-src 'none'; script-src 'self'; "
+                "style-src 'unsafe-inline'; img-src 'self'; connect-src 'self'; "
+                "base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
         if (request.uri.path == '/blocked/ad.js') {
-          request.response.headers.contentType = ContentType('application', 'javascript');
-          request.response.write('window.fixtureScriptLoads=(window.fixtureScriptLoads||0)+1;');
+          request.response.headers.contentType =
+              ContentType('application', 'javascript');
+          request.response.write(
+              'window.fixtureScriptLoads=(window.fixtureScriptLoads||0)+1;');
         } else if (request.uri.path == '/image-not-in-reader') {
           request.response.statusCode = HttpStatus.noContent;
         } else {
           request.response.headers.contentType = ContentType.html;
-          request.response.write('''<!doctype html><html><head><title>Local fixture</title></head><body>
+          request.response.write(
+              '''<!doctype html><html><head><title>Local fixture</title></head><body>
             ${request.uri.path == '/gated' ? '<div class="paywall">Sign in to continue</div>' : ''}
             <article><h1>Ordinary visible article</h1>
               <p>This is visible article prose with enough detail to select as the reader content.</p>
@@ -84,10 +96,12 @@ void main() {
         unawaited(request.response.close());
       });
       final origin = 'http://127.0.0.1:${localServer.port}';
-      final root = await Directory.systemTemp.createTemp('browser_reader_blocking_');
+      final root =
+          await Directory.systemTemp.createTemp('browser_reader_blocking_');
       creatingEnvironment = true;
-      final isolatedEnvironment = await WebViewEnvironment.create(settings:
-        WebViewEnvironmentSettings(userDataFolder: '${root.path}/profile'));
+      final isolatedEnvironment = await WebViewEnvironment.create(
+          settings: WebViewEnvironmentSettings(
+              userDataFolder: '${root.path}/profile'));
       environment = isolatedEnvironment;
       creatingEnvironment = false;
       final created = Completer<InAppWebViewController>();
@@ -95,19 +109,24 @@ void main() {
       var captureInvocations = 0;
       String? capturedHtml;
       mountingView = true;
-      await tester.pumpWidget(MaterialApp(home: Scaffold(body: InAppWebView(
+      await tester.pumpWidget(MaterialApp(
+          home: Scaffold(
+              body: InAppWebView(
         webViewEnvironment: isolatedEnvironment,
         initialUrlRequest: URLRequest(url: WebUri('about:blank')),
         initialUserScripts: UnmodifiableListView([
-          UserScript(source: bookmarkPopupActivationScript,
-            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START),
+          UserScript(
+              source: bookmarkPopupActivationScript,
+              injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START),
         ]),
         onWebViewCreated: (controller) {
           session.attach(owner, (source) async {
             final result = await controller.evaluateJavascript(source: source);
             if (source == bookmarkVisibleArticleScript) {
               captureInvocations++;
-              capturedHtml = result is String ? (jsonDecode(result) as Map)['html'] as String? : null;
+              capturedHtml = result is String
+                  ? (jsonDecode(result) as Map)['html'] as String?
+                  : null;
             }
             return result;
           });
@@ -115,52 +134,79 @@ void main() {
         },
         onLoadStart: (_, url) => session.navigationStarted(url?.toString()),
         onLoadStop: (_, url) {
-          if (url?.toString() == 'about:blank' && !blankLoaded.isCompleted) blankLoaded.complete();
+          if (url?.toString() == 'about:blank' && !blankLoaded.isCompleted)
+            blankLoaded.complete();
           session.navigationFinished(url?.toString());
         },
-        onPermissionRequest: (_, request) async => PermissionResponse(resources: request.resources),
+        onPermissionRequest: (_, request) async =>
+            PermissionResponse(resources: request.resources),
         onCreateWindow: (_, __) async => false,
       ))));
-      native = tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView)).controller;
-      await _pumpUntil(tester, () => created.isCompleted && blankLoaded.isCompleted);
+      native = tester
+          .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+          .controller;
+      await _pumpUntil(
+          tester, () => created.isCompleted && blankLoaded.isCompleted);
       final controller = await created.future;
       await tester.pump();
       final texture = tester.widget<Texture>(find.descendant(
-        of: find.byType(InAppWebView), matching: find.byType(Texture)));
-      final channel = MethodChannel('com.pichillilorenzo/custom_platform_view_${texture.textureId}');
-      await channel.invokeMethod<void>('_startTextureLifecycleProbe', 'offline-fixture-v1');
+          of: find.byType(InAppWebView), matching: find.byType(Texture)));
+      final channel = MethodChannel(
+          'com.pichillilorenzo/custom_platform_view_${texture.textureId}');
+      await channel.invokeMethod<void>(
+          '_startTextureLifecycleProbe', 'offline-fixture-v1');
       final patterns = BookmarkRequestPolicy.blockedUrls('$origin/article');
-      Future<void> install(List<String> values) => BookmarkRequestPolicy.install(values,
-        (parameters) => controller.callDevToolsProtocolMethod(
-        methodName: 'Network.setBlockedURLs', parameters: parameters,
-      ));
+      Future<void> install(List<String> values) =>
+          BookmarkRequestPolicy.install(
+              values,
+              (parameters) => controller.callDevToolsProtocolMethod(
+                    methodName: 'Network.setBlockedURLs',
+                    parameters: parameters,
+                  ));
       await controller.callDevToolsProtocolMethod(methodName: 'Network.enable');
-      await controller.callDevToolsProtocolMethod(methodName: 'Network.setCacheDisabled',
-        parameters: {'cacheDisabled': true});
+      await controller.callDevToolsProtocolMethod(
+          methodName: 'Network.setCacheDisabled',
+          parameters: {'cacheDisabled': true});
       final requestUrls = <String, String>{};
       final failures = <String, String>{};
       await controller.addDevToolsProtocolEventListener(
-        eventName: 'Network.requestWillBeSent', callback: (data) {
-          if (data is Map && data['requestId'] is String && data['request'] is Map) {
-            final url = (data['request'] as Map)['url'];
-            if (url is String) requestUrls[data['requestId'] as String] = url;
-          }
-        });
+          eventName: 'Network.requestWillBeSent',
+          callback: (data) {
+            if (data is Map &&
+                data['requestId'] is String &&
+                data['request'] is Map) {
+              final url = (data['request'] as Map)['url'];
+              if (url is String) requestUrls[data['requestId'] as String] = url;
+            }
+          });
       await controller.addDevToolsProtocolEventListener(
-        eventName: 'Network.loadingFailed', callback: (data) {
-          if (data is Map && data['requestId'] is String && data['blockedReason'] is String) {
-            failures[data['requestId'] as String] = data['blockedReason'] as String;
-          }
-        });
+          eventName: 'Network.loadingFailed',
+          callback: (data) {
+            if (data is Map &&
+                data['requestId'] is String &&
+                data['blockedReason'] is String) {
+              failures[data['requestId'] as String] =
+                  data['blockedReason'] as String;
+            }
+          });
       // Production startup ordering, including its malformed-BlockPattern
       // capability probe. Unsupported runtimes fail closed before navigation.
-      expect(await blocking.apply(enabled: true, firstPartyUrl: '$origin/article',
-        install: install, isCurrent: () => true, navigate: () async {
-          expectSync(requests, isEmpty, reason: 'No target request before policy ACK');
-          await controller.loadUrl(urlRequest: URLRequest(url: WebUri('$origin/article')));
-        }), isTrue);
+      expect(
+          await blocking.apply(
+              enabled: true,
+              firstPartyUrl: '$origin/article',
+              install: install,
+              isCurrent: () => true,
+              navigate: () async {
+                expectSync(requests, isEmpty,
+                    reason: 'No target request before policy ACK');
+                await controller.loadUrl(
+                    urlRequest: URLRequest(url: WebUri('$origin/article')));
+              }),
+          isTrue);
       report['capability_probe_and_install'] = true;
-      await _pumpUntil(tester, () => session.ready && session.url == '$origin/article');
+      await _pumpUntil(
+          tester, () => session.ready && session.url == '$origin/article');
 
       // Every production domain, exact/subdomain/port and strict boundaries.
       // These strings never enter loadUrl, fetch, script.src or DNS.
@@ -185,7 +231,8 @@ void main() {
         return ${jsonEncode(cases.keys.toList())}.map(url => patterns.some(p => p.test(url)));
       })()'''), cases.values.toList());
       for (final domain in BookmarkRequestPolicy.domains) {
-        final exempt = BookmarkRequestPolicy.blockedUrls('https://news.$domain/story');
+        final exempt =
+            BookmarkRequestPolicy.blockedUrls('https://news.$domain/story');
         expect(await controller.evaluateJavascript(source: '''(() => {
           const patterns = ${jsonEncode(exempt)}.map(p => new URLPattern(p));
           return ['https://$domain/ad','http://a.b.$domain:8080/ad']
@@ -193,23 +240,39 @@ void main() {
         })()'''), isFalse);
       }
       report['runtime_boundary_cases'] = cases.length;
-      expect(await controller.evaluateJavascript(source:
-        "window.open('about:blank') === null"), isTrue);
+      expect(
+          await controller.evaluateJavascript(
+              source: "window.open('about:blank') === null"),
+          isTrue);
 
       final capture = await session.capture();
       expect(capture, isNotNull);
       final snapshot = capture!;
-      expect(captureInvocations, 1, reason: 'Real visible-DOM capture script was invoked');
+      expect(captureInvocations, 1,
+          reason: 'Real visible-DOM capture script was invoked');
       expect(capturedHtml, contains('visible article prose'));
-      for (final excluded in ['HIDDEN_PAYLOAD', 'FORM_SECRET', 'FORM_TEXT', 'SCRIPT_PAYLOAD', '<form', '<script']) {
+      for (final excluded in [
+        'HIDDEN_PAYLOAD',
+        'FORM_SECRET',
+        'FORM_TEXT',
+        'SCRIPT_PAYLOAD',
+        '<form',
+        '<script'
+      ]) {
         expect(capturedHtml, isNot(contains(excluded)));
       }
       expect(snapshot.article.plainText, contains('visible article prose'));
-      for (final secret in ['HIDDEN_PAYLOAD', 'FORM_SECRET', 'FORM_TEXT', 'SCRIPT_PAYLOAD']) {
+      for (final secret in [
+        'HIDDEN_PAYLOAD',
+        'FORM_SECRET',
+        'FORM_TEXT',
+        'SCRIPT_PAYLOAD'
+      ]) {
         expect(snapshot.article.markdown, isNot(contains(secret)));
         expect(snapshot.article.plainText, isNot(contains(secret)));
       }
-      expect(snapshot.article.markdown, isNot(contains('/image-not-in-reader')));
+      expect(
+          snapshot.article.markdown, isNot(contains('/image-not-in-reader')));
       // Fixture-owned text roundtrip, not a claim about workspace snapshot UI.
       final offline = File('${root.path}/article.md');
       await offline.writeAsString(snapshot.article.markdown, flush: true);
@@ -221,10 +284,19 @@ void main() {
       var received = 0;
       var blockedCount = 0;
       for (final (index, enabled) in [true, false, true, false].indexed) {
-        expect(await blocking.apply(enabled: enabled, firstPartyUrl: '$origin/article',
-          install: (values) => install(values.isEmpty ? const [] : [
-            ...values, '$origin/blocked/*',
-          ]), navigate: () async {}, isCurrent: () => true), isTrue);
+        expect(
+            await blocking.apply(
+                enabled: enabled,
+                firstPartyUrl: '$origin/article',
+                install: (values) => install(values.isEmpty
+                    ? const []
+                    : [
+                        ...values,
+                        '$origin/blocked/*',
+                      ]),
+                navigate: () async {},
+                isCurrent: () => true),
+            isTrue);
         final target = '$origin/blocked/ad.js?attempt=$index';
         final result = await controller.callAsyncJavaScript(functionBody: '''
           return await new Promise(resolve => {
@@ -237,26 +309,40 @@ void main() {
         expect(result?.error, isNull);
         expect(result?.value, enabled ? 'error' : 'loaded');
         if (enabled) {
-          await _pumpUntil(tester, () => failures.entries.any((event) =>
-            event.value == 'inspector' && requestUrls[event.key] == target));
+          await _pumpUntil(
+              tester,
+              () => failures.entries.any((event) =>
+                  event.value == 'inspector' &&
+                  requestUrls[event.key] == target));
           blockedCount++;
         } else {
           received++;
-          expect(await controller.evaluateJavascript(source: 'window.fixtureScriptLoads'), received);
+          expect(
+              await controller.evaluateJavascript(
+                  source: 'window.fixtureScriptLoads'),
+              received);
         }
-        expect(requests.where((path) => path == '/blocked/ad.js').length, received,
-          reason: 'Blocked resources never reach the server; opt-out really clears policy');
+        expect(
+            requests.where((path) => path == '/blocked/ad.js').length, received,
+            reason:
+                'Blocked resources never reach the server; opt-out really clears policy');
       }
       report['inspector_blocked_local_requests'] = blockedCount;
       report['server_received_after_opt_out'] = received;
-      await controller.removeDevToolsProtocolEventListener(eventName: 'Network.requestWillBeSent');
-      await controller.removeDevToolsProtocolEventListener(eventName: 'Network.loadingFailed');
-      await controller.callDevToolsProtocolMethod(methodName: 'Network.disable');
+      await controller.removeDevToolsProtocolEventListener(
+          eventName: 'Network.requestWillBeSent');
+      await controller.removeDevToolsProtocolEventListener(
+          eventName: 'Network.loadingFailed');
+      await controller.callDevToolsProtocolMethod(
+          methodName: 'Network.disable');
 
-      await controller.loadUrl(urlRequest: URLRequest(url: WebUri('$origin/gated')));
-      await _pumpUntil(tester, () => session.ready && session.url == '$origin/gated');
+      await controller.loadUrl(
+          urlRequest: URLRequest(url: WebUri('$origin/gated')));
+      await _pumpUntil(
+          tester, () => session.ready && session.url == '$origin/gated');
       expect(session.isCurrent(snapshot), isFalse);
-      expect(await session.capture(), isNull, reason: 'Never remove the access gate');
+      expect(await session.capture(), isNull,
+          reason: 'Never remove the access gate');
       expect(captureInvocations, 2);
       expect(capturedHtml, isNull);
       report['paywall_capture_rejected'] = true;
@@ -265,14 +351,16 @@ void main() {
     } finally {
       try {
         report['cleanup_stage'] = 'native_view';
-        if (creatingEnvironment) throw StateError('No environment creation ACK; cleanup unproven.');
+        if (creatingEnvironment)
+          throw StateError('No environment creation ACK; cleanup unproven.');
         final views = find.byType(CustomPlatformView, skipOffstage: false);
         if (native == null && views.evaluate().isNotEmpty) {
           native = tester.state<CustomPlatformViewState>(views).controller;
         }
         await tester.pumpWidget(const SizedBox.shrink());
         await tester.pump();
-        if (mountingView && native == null) throw StateError('Missing native disposal owner.');
+        if (mountingView && native == null)
+          throw StateError('Missing native disposal owner.');
         // No timeout converts an outstanding native operation into completion.
         await native?.dispose();
         report['texture_lifecycle'] = native?.disposalDiagnostics;
@@ -280,8 +368,9 @@ void main() {
         report['cleanup_stage'] = 'environment';
         final ownedEnvironment = environment;
         if (ownedEnvironment != null) {
-          await MethodChannel('com.pichillilorenzo/flutter_webview_environment_${ownedEnvironment.id}')
-            .invokeMethod<void>('dispose');
+          await MethodChannel(
+                  'com.pichillilorenzo/flutter_webview_environment_${ownedEnvironment.id}')
+              .invokeMethod<void>('dispose');
           report['environment_dispose_ack'] = true;
         }
         if (native != null) {
@@ -297,7 +386,8 @@ void main() {
           await subscription?.cancel();
         } finally {
           semantics.dispose();
-          report['semantics_handles_after_body'] = binding.debugOutstandingSemanticsHandles;
+          report['semantics_handles_after_body'] =
+              binding.debugOutstandingSemanticsHandles;
           expect(binding.debugOutstandingSemanticsHandles, baselineHandles);
         }
       }

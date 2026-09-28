@@ -268,37 +268,40 @@ class _StageHeader extends StatelessWidget {
           const SizedBox(width: DatabaseMetrics.space1),
           Expanded(
             child: railVisible
-          ? Text(
-              summary == null
-                  ? ''
-                  : LocaleKeys.collections_database_tableSummary.tr(
-                      args: ['${summary.rowCount}', '${summary.fields.length}'],
-                    ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.meta,
-            )
-          : CollectionWorkspacePicker(
-              label: table.name,
-              tooltip: LocaleKeys.collections_database_showTables.tr(),
-              icon: databaseLayoutIcon(table.layout),
-              entries: [
-                for (final item in controller.tables)
-                  AppMenuItem(
-                    label: item.name,
-                    icon: databaseLayoutIcon(item.layout),
-                    selected: item.id == table.id,
-                    onSelected: () => controller.openTable(item.id),
+                ? Text(
+                    summary == null
+                        ? ''
+                        : LocaleKeys.collections_database_tableSummary.tr(
+                            args: [
+                              '${summary.rowCount}',
+                              '${summary.fields.length}'
+                            ],
+                          ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.meta,
+                  )
+                : CollectionWorkspacePicker(
+                    label: table.name,
+                    tooltip: LocaleKeys.collections_database_showTables.tr(),
+                    icon: databaseLayoutIcon(table.layout),
+                    entries: [
+                      for (final item in controller.tables)
+                        AppMenuItem(
+                          label: item.name,
+                          icon: databaseLayoutIcon(item.layout),
+                          selected: item.id == table.id,
+                          onSelected: () => controller.openTable(item.id),
+                        ),
+                      const AppMenuSeparator(),
+                      AppMenuItem(
+                        label: LocaleKeys.collections_database_showTables.tr(),
+                        icon: Icons.menu_open_rounded,
+                        selected: controller.state.showRail,
+                        onSelected: () => controller.setRailVisible(true),
+                      ),
+                    ],
                   ),
-                const AppMenuSeparator(),
-                AppMenuItem(
-                  label: LocaleKeys.collections_database_showTables.tr(),
-                  icon: Icons.menu_open_rounded,
-                  selected: controller.state.showRail,
-                  onSelected: () => controller.setRailVisible(true),
-                ),
-              ],
-            ),
           ),
         ],
       ),

@@ -12,7 +12,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/imag
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_view.dart'
-  show workspacePhotoRenderer;
+    show workspacePhotoRenderer;
 import 'package:appflowy/shared/document_viewer/file_action_band.dart';
 import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/document_viewer/standalone_file_scope.dart';

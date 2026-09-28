@@ -33,7 +33,8 @@ void main() {
     await f.dispose();
   }, timeout: platformViewTestTimeout);
 
-  testWidgets('late pinch uses the last actual contact time, not original start',
+  testWidgets(
+      'late pinch uses the last actual contact time, not original start',
       (tester) async {
     final f = await _Fixture.mount(tester);
     await f.start();
@@ -52,7 +53,8 @@ void main() {
     await f.dispose();
   }, timeout: platformViewTestTimeout);
 
-  testWidgets('a tiny gesture never starts a click-producing contact', (tester) async {
+  testWidgets('a tiny gesture never starts a click-producing contact',
+      (tester) async {
     final f = await _Fixture.mount(tester);
     await f.start();
     await f.move(10000, const Offset(1, 1), scale: 1.005);
@@ -136,7 +138,8 @@ void main() {
     }, timeout: platformViewTestTimeout);
   }
 
-  testWidgets('timed-out query recovers only fresh samples without history or zoom',
+  testWidgets(
+      'timed-out query recovers only fresh samples without history or zoom',
       (tester) async {
     final f = await _Fixture.mount(tester);
     f.policy = Completer<dynamic>();
@@ -147,7 +150,8 @@ void main() {
     expect(f.packets, isEmpty);
     expect(f.callsFor('siteGestureFallbackReady'), isEmpty);
     expect(f.callsFor('cancelTrackpadGesture'), isEmpty);
-    f.policy!.complete(false); // Late 'ordinary' answer cannot authorize history.
+    f.policy!
+        .complete(false); // Late 'ordinary' answer cannot authorize history.
     await tester.pump();
     expect(f.packets, isEmpty);
     await f.move(210000, const Offset(250, 0), scale: 2);
@@ -172,7 +176,8 @@ void main() {
   testWidgets('busy unknown retries state on new samples with one actual probe',
       (tester) async {
     final f = await _Fixture.mount(tester);
-    f.policy = Completer<dynamic>()..complete({'status': 'indeterminate', 'epoch': f.epoch});
+    f.policy = Completer<dynamic>()
+      ..complete({'status': 'indeterminate', 'epoch': f.epoch});
     f.readyReply = Completer<bool?>();
     await f.start();
     for (var i = 1; i <= 100; i++) {
@@ -197,11 +202,14 @@ void main() {
   }, timeout: platformViewTestTimeout);
 
   for (final phase in ['query', 'readiness']) {
-    testWidgets('native invalidation during $phase is not UNKNOWN recovery', (tester) async {
+    testWidgets('native invalidation during $phase is not UNKNOWN recovery',
+        (tester) async {
       final f = await _Fixture.mount(tester);
-      f.policy = Completer<dynamic>()..complete({
-        'status': phase == 'query' ? 'invalidated' : 'indeterminate', 'epoch': f.epoch,
-      });
+      f.policy = Completer<dynamic>()
+        ..complete({
+          'status': phase == 'query' ? 'invalidated' : 'indeterminate',
+          'epoch': f.epoch,
+        });
       f.readyReply = Completer<bool?>()..complete(null);
       await f.start();
       await f.move(10000, const Offset(120, 0), scale: 1.5);
@@ -215,32 +223,60 @@ void main() {
     }, timeout: platformViewTestTimeout);
   }
 
-  for (final interruption in ['navigation', 'end', 'hidden', 'cancel', 'resize', 'pause', 'detach']) {
-    testWidgets('$interruption retires fallback readiness and tiny tail cannot click', (tester) async {
+  for (final interruption in [
+    'navigation',
+    'end',
+    'hidden',
+    'cancel',
+    'resize',
+    'pause',
+    'detach'
+  ]) {
+    testWidgets(
+        '$interruption retires fallback readiness and tiny tail cannot click',
+        (tester) async {
       final f = await _Fixture.mount(tester);
-      f.policy = Completer<dynamic>()..complete({'status': 'indeterminate', 'epoch': f.epoch});
+      f.policy = Completer<dynamic>()
+        ..complete({'status': 'indeterminate', 'epoch': f.epoch});
       f.readyReply = Completer<bool?>();
       await f.start();
       await f.move(10000, const Offset(0, -20));
       switch (interruption) {
-        case 'navigation': await f.navigation(); break;
-        case 'end': await f.end(20000); break;
-        case 'hidden': f.index.value = 1; await tester.pump(); break;
+        case 'navigation':
+          await f.navigation();
+          break;
+        case 'end':
+          await f.end(20000);
+          break;
+        case 'hidden':
+          f.index.value = 1;
+          await tester.pump();
+          break;
         case 'cancel':
           await f.cancel();
           break;
-        case 'resize': f.size.value = 280; await tester.pump(); await tester.pump(); break;
+        case 'resize':
+          f.size.value = 280;
+          await tester.pump();
+          await tester.pump();
+          break;
         case 'detach':
-          final state = tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView));
+          final state = tester
+              .state<CustomPlatformViewState>(find.byType(CustomPlatformView));
           f.reparent.value = true;
           await tester.pump();
-          expect(tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView)), same(state));
+          expect(
+              tester.state<CustomPlatformViewState>(
+                  find.byType(CustomPlatformView)),
+              same(state));
           expect(tester.getCenter(find.byType(CustomPlatformView)), f.point);
           break;
         case 'pause':
-          tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+          tester.binding
+              .handleAppLifecycleStateChanged(AppLifecycleState.paused);
           await tester.pump();
-          tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+          tester.binding
+              .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
           break;
       }
       f.readyReply!.complete(true);
@@ -257,7 +293,14 @@ void main() {
     }, timeout: platformViewTestTimeout);
   }
 
-  for (final interruption in ['cancel', 'navigation', 'hidden', 'resize', 'pause', 'detach']) {
+  for (final interruption in [
+    'cancel',
+    'navigation',
+    'hidden',
+    'resize',
+    'pause',
+    'detach'
+  ]) {
     testWidgets('$interruption cancels an active pair and ignores stale tail',
         (tester) async {
       final f = await _Fixture.mount(tester);
@@ -281,15 +324,21 @@ void main() {
           await tester.pump();
           break;
         case 'detach':
-          final state = tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView));
+          final state = tester
+              .state<CustomPlatformViewState>(find.byType(CustomPlatformView));
           f.reparent.value = true;
           await tester.pump();
-          expect(tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView)), same(state));
+          expect(
+              tester.state<CustomPlatformViewState>(
+                  find.byType(CustomPlatformView)),
+              same(state));
           break;
         case 'pause':
-          tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+          tester.binding
+              .handleAppLifecycleStateChanged(AppLifecycleState.paused);
           await tester.pump();
-          tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+          tester.binding
+              .handleAppLifecycleStateChanged(AppLifecycleState.resumed);
           break;
       }
       expect(f.packets.map((p) => p[1]), [
@@ -321,7 +370,8 @@ void main() {
     await f.dispose();
   }, timeout: platformViewTestTimeout);
 
-  testWidgets('unmount cancels paired native contacts before disposal ACK', (tester) async {
+  testWidgets('unmount cancels paired native contacts before disposal ACK',
+      (tester) async {
     final f = await _Fixture.mount(tester);
     f.disposeAck = Completer<void>();
     await f.start();
@@ -352,19 +402,23 @@ void main() {
             physicalKey: PhysicalKeyboardKey.controlLeft);
       }
       await tester.sendEventToBinding(PointerScrollEvent(
-        position: f.point, scrollDelta: const Offset(12.25, 0.125)));
+          position: f.point, scrollDelta: const Offset(12.25, 0.125)));
       if (modified) {
         await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
             physicalKey: PhysicalKeyboardKey.controlLeft);
       }
     }
-    expect(f.callsFor('setScrollDelta').map((c) => c.arguments),
-        [[0.0, -0.125], [0.0, -0.125]]);
+    expect(f.callsFor('setScrollDelta').map((c) => c.arguments), [
+      [0.0, -0.125],
+      [0.0, -0.125]
+    ]);
     await tester.tapAt(f.point, kind: PointerDeviceKind.mouse);
     expect(f.callsFor('setPointerButton').map((c) => c.arguments), [
-      {'button': 1, 'isDown': true}, {'button': 1, 'isDown': false},
+      {'button': 1, 'isDown': true},
+      {'button': 1, 'isDown': false},
     ]);
-    final touch = await tester.startGesture(f.point, kind: PointerDeviceKind.touch);
+    final touch =
+        await tester.startGesture(f.point, kind: PointerDeviceKind.touch);
     await touch.moveBy(const Offset(0, -20));
     await touch.up();
     expect(f.packets.map((p) => p.length), everyElement(6));
@@ -373,27 +427,33 @@ void main() {
     await f.dispose();
   }, timeout: platformViewTestTimeout);
 
-  testWidgets('late query cannot resurrect disposed view; disposal waits for ACK',
+  testWidgets(
+      'late query cannot resurrect disposed view; disposal waits for ACK',
       (tester) async {
     final f = await _Fixture.mount(tester);
     f.policy = Completer<bool?>();
     f.disposeAck = Completer<void>();
     await f.start();
     await f.move(10000, Offset.zero, scale: 1.5);
-    final native = tester.state<CustomPlatformViewState>(
-      find.byType(CustomPlatformView)).controller;
+    final native = tester
+        .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+        .controller;
     await tester.pumpWidget(const SizedBox.shrink());
     var completed = false;
     final disposal = native.dispose();
-    unawaited(disposal.then<void>((_) { completed = true; }));
+    unawaited(disposal.then<void>((_) {
+      completed = true;
+    }));
     expect(native.dispose(), same(disposal));
-    await drainPlatformViewUntil(tester, () => f.disposals == 1, 'native dispose request');
+    await drainPlatformViewUntil(
+        tester, () => f.disposals == 1, 'native dispose request');
     expect(completed, isFalse);
     f.policy!.complete(true);
     await tester.pump();
     expect(f.packets, isEmpty);
     f.disposeAck!.complete();
-    await drainPlatformViewUntil(tester, () => completed, 'native ACK and stream closure');
+    await drainPlatformViewUntil(
+        tester, () => completed, 'native ACK and stream closure');
     await disposal;
     expect(completed, isTrue);
     expect(f.disposals, 1);
@@ -441,10 +501,12 @@ void main() {
 
   for (final settling in [false, true]) {
     for (final reattach in [false, true]) {
-      testWidgets('history teardown settling=$settling reattach=$reattach does not notify unmounting children',
+      testWidgets(
+          'history teardown settling=$settling reattach=$reattach does not notify unmounting children',
           (tester) async {
         final f = await _Fixture.mount(tester, site: false);
-        final state = tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView));
+        final state = tester
+            .state<CustomPlatformViewState>(find.byType(CustomPlatformView));
         await f.start();
         await f.move(10000, const Offset(120, 0));
         await tester.pump();
@@ -457,7 +519,10 @@ void main() {
         if (reattach) {
           f.reparent.value = true;
           await tester.pump();
-          expect(tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView)), same(state));
+          expect(
+              tester.state<CustomPlatformViewState>(
+                  find.byType(CustomPlatformView)),
+              same(state));
           await tester.pumpAndSettle();
           expect(f.history.isActive, isFalse);
           expect(f.history.isSettling, isFalse);
@@ -502,19 +567,27 @@ class _Fixture {
   Offset previousPan = Offset.zero;
   late Offset point;
   int origin = 1000000;
-  static const manager = MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager');
-  static const view = MethodChannel('com.pichillilorenzo/custom_platform_view_91');
-  static const events = MethodChannel('com.pichillilorenzo/custom_platform_view_91_events');
+  static const manager =
+      MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager');
+  static const view =
+      MethodChannel('com.pichillilorenzo/custom_platform_view_91');
+  static const events =
+      MethodChannel('com.pichillilorenzo/custom_platform_view_91_events');
 
-  List<MethodCall> callsFor(String method) => calls.where((c) => c.method == method).toList();
+  List<MethodCall> callsFor(String method) =>
+      calls.where((c) => c.method == method).toList();
   List<List<dynamic>> get packets => callsFor('setPointerUpdate')
-      .map((c) => c.arguments as List<dynamic>).toList();
+      .map((c) => c.arguments as List<dynamic>)
+      .toList();
 
-  HistorySwipeController get history => tester.widget<HistorySwipeSurface>(
-    find.byType(HistorySwipeSurface)).controller;
+  HistorySwipeController get history => tester
+      .widget<HistorySwipeSurface>(find.byType(HistorySwipeSurface))
+      .controller;
 
   static Future<_Fixture> mount(WidgetTester tester,
-      {bool site = true, bool manual = false, bool bothDisabled = false}) async {
+      {bool site = true,
+      bool manual = false,
+      bool bothDisabled = false}) async {
     final f = _Fixture(tester, site);
     final messenger = tester.binding.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(manager, (call) async {
@@ -531,12 +604,21 @@ class _Fixture {
       f.calls.add(call);
       if (call.method == 'querySiteGesturePolicyState') {
         final value = f.policy == null ? site : await f.policy!.future;
-        return value is bool ? {'status': value ? 'site' : 'browser', 'epoch': f.epoch} : value;
+        return value is bool
+            ? {'status': value ? 'site' : 'browser', 'epoch': f.epoch}
+            : value;
       }
-      if (call.method == 'siteGestureFallbackReady') return f.readyReply?.future ?? true;
+      if (call.method == 'siteGestureFallbackReady')
+        return f.readyReply?.future ?? true;
       if (call.method == 'getHistoryState') {
-        return {'back': true, 'forward': true, 'loading': false,
-          'current': f.currentPage, 'previous': 0, 'next': 2};
+        return {
+          'back': true,
+          'forward': true,
+          'loading': false,
+          'current': f.currentPage,
+          'previous': 0,
+          'next': 2
+        };
       }
       if (call.method == 'navigateHistory') return true;
       return null;
@@ -545,9 +627,12 @@ class _Fixture {
       try {
         // Successful body cleanup must not pump again in the teardown zone.
         if (!f._disposed) {
-          if (f.policy != null && !f.policy!.isCompleted) f.policy!.complete(null);
-          if (f.readyReply != null && !f.readyReply!.isCompleted) f.readyReply!.complete(null);
-          if (f.disposeAck != null && !f.disposeAck!.isCompleted) f.disposeAck!.complete();
+          if (f.policy != null && !f.policy!.isCompleted)
+            f.policy!.complete(null);
+          if (f.readyReply != null && !f.readyReply!.isCompleted)
+            f.readyReply!.complete(null);
+          if (f.disposeAck != null && !f.disposeAck!.isCompleted)
+            f.disposeAck!.complete();
           await f.dispose();
         }
       } finally {
@@ -560,30 +645,45 @@ class _Fixture {
       }
     });
     Widget child = CustomPlatformView(creationParams: {
-      'initialSettings': {'disableHorizontalScroll': true,
+      'initialSettings': {
+        'disableHorizontalScroll': true,
         'disableVerticalScroll': bothDisabled,
-        'allowsBackForwardNavigationGestures': true},
+        'allowsBackForwardNavigationGestures': true
+      },
     });
-    if (manual) child = WindowsWebViewGestureScope(
-      preferWebsiteGestures: true, child: child);
-    final retained = KeyedSubtree(key: GlobalKey(),
-      child: ValueListenableBuilder<double>(valueListenable: f.size,
+    if (manual)
+      child =
+          WindowsWebViewGestureScope(preferWebsiteGestures: true, child: child);
+    final retained = KeyedSubtree(
+      key: GlobalKey(),
+      child: ValueListenableBuilder<double>(
+        valueListenable: f.size,
         child: child,
-        builder: (_, size, child) => SizedBox.square(dimension: size,
-          child: ValueListenableBuilder<int>(valueListenable: f.index,
-            child: child,
-            builder: (_, index, child) => IndexedStack(index: index,
-              children: [child!, const ColoredBox(color: Colors.black)]))),
+        builder: (_, size, child) => SizedBox.square(
+            dimension: size,
+            child: ValueListenableBuilder<int>(
+                valueListenable: f.index,
+                child: child,
+                builder: (_, index, child) => IndexedStack(
+                        index: index,
+                        children: [
+                          child!,
+                          const ColoredBox(color: Colors.black)
+                        ]))),
       ),
     );
-    await tester.pumpWidget(MaterialApp(home: Center(
-      child: ValueListenableBuilder<bool>(valueListenable: f.reparent,
-        child: retained,
-        builder: (_, reparent, child) => reparent
-          ? Align(child: child)
-          : Padding(padding: EdgeInsets.zero, child: child)),
+    await tester.pumpWidget(MaterialApp(
+        home: Center(
+      child: ValueListenableBuilder<bool>(
+          valueListenable: f.reparent,
+          child: retained,
+          builder: (_, reparent, child) => reparent
+              ? Align(child: child)
+              : Padding(padding: EdgeInsets.zero, child: child)),
     )));
-    f.native = tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView)).controller;
+    f.native = tester
+        .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+        .controller;
     await awaitPlatformViewReady(tester, f.native!);
     await tester.pumpAndSettle();
     f.point = tester.getCenter(find.byType(CustomPlatformView));
@@ -593,31 +693,48 @@ class _Fixture {
   Future<void> start({int origin = 1000000}) async {
     this.origin = origin;
     previousPan = Offset.zero;
-    await tester.sendEventToBinding(PointerPanZoomStartEvent(pointer: 7,
-      device: 7, position: point, timeStamp: Duration(microseconds: origin)));
+    await tester.sendEventToBinding(PointerPanZoomStartEvent(
+        pointer: 7,
+        device: 7,
+        position: point,
+        timeStamp: Duration(microseconds: origin)));
     await tester.pump();
   }
 
   Future<void> move(int elapsed, Offset pan, {double scale = 1}) async {
-    await tester.sendEventToBinding(PointerPanZoomUpdateEvent(pointer: 7,
-      device: 7, position: point, pan: pan, panDelta: pan - previousPan,
-      scale: scale, timeStamp: Duration(microseconds: origin + elapsed)));
+    await tester.sendEventToBinding(PointerPanZoomUpdateEvent(
+        pointer: 7,
+        device: 7,
+        position: point,
+        pan: pan,
+        panDelta: pan - previousPan,
+        scale: scale,
+        timeStamp: Duration(microseconds: origin + elapsed)));
     previousPan = pan;
   }
 
-  Future<void> end(int elapsed) => tester.sendEventToBinding(
-    PointerPanZoomEndEvent(pointer: 7, device: 7, position: point,
-      timeStamp: Duration(microseconds: origin + elapsed)));
+  Future<void> end(int elapsed) =>
+      tester.sendEventToBinding(PointerPanZoomEndEvent(
+          pointer: 7,
+          device: 7,
+          position: point,
+          timeStamp: Duration(microseconds: origin + elapsed)));
 
   Future<void> navigation() async {
-    tester.binding.channelBuffers.push(events.name,
-      const StandardMethodCodec().encodeSuccessEnvelope({'type': 'navigationStarting'}), (_) {});
+    tester.binding.channelBuffers.push(
+        events.name,
+        const StandardMethodCodec()
+            .encodeSuccessEnvelope({'type': 'navigationStarting'}),
+        (_) {});
     await tester.pump();
   }
 
   Future<void> navigationCompleted() async {
-    tester.binding.channelBuffers.push(events.name,
-      const StandardMethodCodec().encodeSuccessEnvelope({'type': 'navigationCompleted'}), (_) {});
+    tester.binding.channelBuffers.push(
+        events.name,
+        const StandardMethodCodec()
+            .encodeSuccessEnvelope({'type': 'navigationCompleted'}),
+        (_) {});
     await tester.pump();
   }
 
@@ -643,7 +760,8 @@ class _Fixture {
     await tester.pumpAndSettle();
     final controller = native;
     if (controller != null) {
-      await awaitPlatformViewDisposal(tester, controller, ownerZone: _disposalZone!);
+      await awaitPlatformViewDisposal(tester, controller,
+          ownerZone: _disposalZone!);
     }
     // Only latch after unmount and successful ACK/stream closure (or no view).
     _disposed = true;

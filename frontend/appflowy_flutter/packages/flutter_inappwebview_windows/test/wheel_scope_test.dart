@@ -10,21 +10,30 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/platform_view_lifecycle.dart';
 
 void main() {
-  testWidgets('no scope preserves exact filtered wheel channel and owns resolver', (tester) async {
+  testWidgets(
+      'no scope preserves exact filtered wheel channel and owns resolver',
+      (tester) async {
     final f = await _WheelFixture.mount(tester);
     await f.wheel(const Offset(12.25, 0.125));
-    expect(f.scrolls, [[0.0, -0.125]]);
+    expect(f.scrolls, [
+      [0.0, -0.125]
+    ]);
     expect(f.parent.offset, 0);
-    expect(f.calls.where((call) => call.method == 'querySiteGesturePolicyState'), isEmpty);
+    expect(
+        f.calls.where((call) => call.method == 'querySiteGesturePolicyState'),
+        isEmpty);
     await f.dispose();
   }, timeout: platformViewTestTimeout);
 
-  testWidgets('scope consumes header before filtering and prevents parent double wheel', (tester) async {
+  testWidgets(
+      'scope consumes header before filtering and prevents parent double wheel',
+      (tester) async {
     var remainingHeader = 25.0;
     final received = <PointerScrollEvent>[];
     final f = await _WheelFixture.mount(tester, transform: (event) {
       received.add(event);
-      if (HardwareKeyboard.instance.isControlPressed || event.scrollDelta.dy <= 0) {
+      if (HardwareKeyboard.instance.isControlPressed ||
+          event.scrollDelta.dy <= 0) {
         return event.scrollDelta;
       }
       final consumed = event.scrollDelta.dy.clamp(0.0, remainingHeader);
@@ -38,45 +47,69 @@ void main() {
     expect(f.scrolls, isEmpty);
     expect(remainingHeader, 15);
     await f.wheel(const Offset(12.25, 20));
-    expect(f.scrolls, [[0.0, -5.0]]);
+    expect(f.scrolls, [
+      [0.0, -5.0]
+    ]);
     expect(remainingHeader, 0);
     await f.wheel(const Offset(12.25, -8));
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft,
-      physicalKey: PhysicalKeyboardKey.controlLeft);
+        physicalKey: PhysicalKeyboardKey.controlLeft);
     await f.wheel(const Offset(12.25, 20));
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
-      physicalKey: PhysicalKeyboardKey.controlLeft);
-    expect(f.scrolls, [[0.0, -5.0], [0.0, 8.0], [0.0, -20.0]]);
-    expect(received.map((event) => event.scrollDelta), [
-      const Offset(12.25, 10), const Offset(12.25, 20),
-      const Offset(12.25, -8), const Offset(12.25, 20),
+        physicalKey: PhysicalKeyboardKey.controlLeft);
+    expect(f.scrolls, [
+      [0.0, -5.0],
+      [0.0, 8.0],
+      [0.0, -20.0]
     ]);
-    expect(received.map((event) => event.timeStamp), everyElement(const Duration(seconds: 1)));
+    expect(received.map((event) => event.scrollDelta), [
+      const Offset(12.25, 10),
+      const Offset(12.25, 20),
+      const Offset(12.25, -8),
+      const Offset(12.25, 20),
+    ]);
+    expect(received.map((event) => event.timeStamp),
+        everyElement(const Duration(seconds: 1)));
     expect(f.parent.offset, 0);
     expect(tester.renderObject(find.byType(CustomPlatformView)), same(target));
     // The scope is inherited-only: the original native target still re-hits,
     // so a later native trackpad query is not invalidated by wrapper identities.
     await tester.sendEventToBinding(PointerPanZoomStartEvent(
-      pointer: 7, device: 7, position: f.point,
-      timeStamp: const Duration(seconds: 2)));
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        timeStamp: const Duration(seconds: 2)));
     await tester.pump();
     await tester.sendEventToBinding(PointerPanZoomUpdateEvent(
-      pointer: 7, device: 7, position: f.point,
-      pan: const Offset(0, -20), panDelta: const Offset(0, -20),
-      timeStamp: const Duration(milliseconds: 2010)));
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        pan: const Offset(0, -20),
+        panDelta: const Offset(0, -20),
+        timeStamp: const Duration(milliseconds: 2010)));
     await tester.sendEventToBinding(PointerPanZoomEndEvent(
-      pointer: 7, device: 7, position: f.point,
-      timeStamp: const Duration(milliseconds: 2020)));
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        timeStamp: const Duration(milliseconds: 2020)));
     expect(received, hasLength(4));
-    expect(f.calls.where((call) => call.method == 'querySiteGesturePolicyState'), hasLength(1));
-    expect(f.calls.where((call) => call.method == 'setPointerUpdate')
-        .map((call) => (call.arguments as List)[6]), [2000000, 2010000, 2020000]);
+    expect(
+        f.calls.where((call) => call.method == 'querySiteGesturePolicyState'),
+        hasLength(1));
+    expect(
+        f.calls
+            .where((call) => call.method == 'setPointerUpdate')
+            .map((call) => (call.arguments as List)[6]),
+        [2000000, 2010000, 2020000]);
     await f.dispose();
   }, timeout: platformViewTestTimeout);
 
-  testWidgets('blocked native delivery leaves scope untouched and Flutter scrolls', (tester) async {
+  testWidgets(
+      'blocked native delivery leaves scope untouched and Flutter scrolls',
+      (tester) async {
     var transforms = 0;
-    final f = await _WheelFixture.mount(tester, blocked: true, transform: (event) {
+    final f =
+        await _WheelFixture.mount(tester, blocked: true, transform: (event) {
       transforms++;
       return Offset.zero;
     });
@@ -87,7 +120,8 @@ void main() {
     await f.dispose();
   }, timeout: platformViewTestTimeout);
 
-  testWidgets('both disabled axes without scope leave wheel to Flutter', (tester) async {
+  testWidgets('both disabled axes without scope leave wheel to Flutter',
+      (tester) async {
     final f = await _WheelFixture.mount(tester, bothDisabled: true);
     await f.wheel(const Offset(0, 40));
     expect(f.scrolls, isEmpty);
@@ -95,9 +129,11 @@ void main() {
     await f.dispose();
   }, timeout: platformViewTestTimeout);
 
-  testWidgets('both disabled axes with scope consume only in winning callback', (tester) async {
+  testWidgets('both disabled axes with scope consume only in winning callback',
+      (tester) async {
     final deltas = <Offset>[];
-    final f = await _WheelFixture.mount(tester, bothDisabled: true, transform: (event) {
+    final f = await _WheelFixture.mount(tester, bothDisabled: true,
+        transform: (event) {
       deltas.add(event.scrollDelta);
       return event.scrollDelta;
     });
@@ -119,14 +155,20 @@ class _WheelFixture {
   Zone? _disposalZone;
   bool _disposed = false;
   late Offset point;
-  static const manager = MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager');
-  static const view = MethodChannel('com.pichillilorenzo/custom_platform_view_93');
-  static const events = MethodChannel('com.pichillilorenzo/custom_platform_view_93_events');
+  static const manager =
+      MethodChannel('com.pichillilorenzo/flutter_inappwebview_manager');
+  static const view =
+      MethodChannel('com.pichillilorenzo/custom_platform_view_93');
+  static const events =
+      MethodChannel('com.pichillilorenzo/custom_platform_view_93_events');
 
-  List<dynamic> get scrolls => calls.where((call) => call.method == 'setScrollDelta')
-      .map((call) => call.arguments).toList();
+  List<dynamic> get scrolls => calls
+      .where((call) => call.method == 'setScrollDelta')
+      .map((call) => call.arguments)
+      .toList();
 
-  static Future<_WheelFixture> mount(WidgetTester tester, {
+  static Future<_WheelFixture> mount(
+    WidgetTester tester, {
     Offset Function(PointerScrollEvent)? transform,
     bool blocked = false,
     bool bothDisabled = false,
@@ -144,7 +186,7 @@ class _WheelFixture {
       }
     });
     messenger.setMockMethodCallHandler(manager,
-      (call) async => call.method == 'createInAppWebView' ? 93 : null);
+        (call) async => call.method == 'createInAppWebView' ? 93 : null);
     messenger.setMockMethodCallHandler(events, (_) async => null);
     messenger.setMockMethodCallHandler(view, (call) async {
       f.calls.add(call);
@@ -162,18 +204,25 @@ class _WheelFixture {
     if (transform != null) {
       child = WindowsWebViewWheelScope(transform: transform, child: child);
     }
-    await tester.pumpWidget(MaterialApp(home: Center(child: SizedBox(
-      width: 300, height: 400,
+    await tester.pumpWidget(MaterialApp(
+        home: Center(
+            child: SizedBox(
+      width: 300,
+      height: 400,
       child: SingleChildScrollView(
         controller: f.parent,
         child: Column(children: [
           // Models suppressed native delivery without importing application code.
-          IgnorePointer(ignoring: blocked, child: SizedBox.square(dimension: 300, child: child)),
+          IgnorePointer(
+              ignoring: blocked,
+              child: SizedBox.square(dimension: 300, child: child)),
           const SizedBox(height: 800),
         ]),
       ),
     ))));
-    f.native = tester.state<CustomPlatformViewState>(find.byType(CustomPlatformView)).controller;
+    f.native = tester
+        .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+        .controller;
     await awaitPlatformViewReady(tester, f.native!);
     await tester.pumpAndSettle();
     f.point = tester.getCenter(find.byType(CustomPlatformView));
@@ -182,7 +231,9 @@ class _WheelFixture {
 
   Future<void> wheel(Offset delta) async {
     await tester.sendEventToBinding(PointerScrollEvent(
-      position: point, scrollDelta: delta, timeStamp: const Duration(seconds: 1)));
+        position: point,
+        scrollDelta: delta,
+        timeStamp: const Duration(seconds: 1)));
     await tester.pump();
   }
 
@@ -198,7 +249,8 @@ class _WheelFixture {
     await tester.pumpAndSettle();
     final controller = native;
     if (controller != null) {
-      await awaitPlatformViewDisposal(tester, controller, ownerZone: _disposalZone!);
+      await awaitPlatformViewDisposal(tester, controller,
+          ownerZone: _disposalZone!);
     }
     _disposed = true;
     expect(tester.takeException(), isNull);

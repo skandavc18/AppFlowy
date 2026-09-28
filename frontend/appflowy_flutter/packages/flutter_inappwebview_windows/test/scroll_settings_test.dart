@@ -115,8 +115,9 @@ void main() {
     );
     await tester.pump();
 
-    final native = tester.state<CustomPlatformViewState>(
-      find.byType(CustomPlatformView)).controller;
+    final native = tester
+        .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+        .controller;
     final position = tester.getCenter(find.byType(CustomPlatformView));
     await tester.sendEventToBinding(
       PointerPanZoomStartEvent(
@@ -155,7 +156,8 @@ void main() {
         ),
       );
       if (update.pan == -10) {
-        expect(viewCalls.where((call) => call.method == 'setPointerUpdate'), isEmpty);
+        expect(viewCalls.where((call) => call.method == 'setPointerUpdate'),
+            isEmpty);
       }
     }
     await tester.sendEventToBinding(
@@ -235,8 +237,9 @@ void main() {
       )),
     ));
     await tester.pump();
-    final native = tester.state<CustomPlatformViewState>(
-      find.byType(CustomPlatformView)).controller;
+    final native = tester
+        .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+        .controller;
     Future<void> cursor(String value) async {
       tester.binding.channelBuffers.push(
         events.name,
@@ -263,8 +266,9 @@ void main() {
     await tester.pump();
     await cursor('none');
     expect(actualCursor(), SystemMouseCursors.click);
-    await pan.panZoomUpdate(anchor, pan: const Offset(-20, -35),
-      timeStamp: const Duration(milliseconds: 10));
+    await pan.panZoomUpdate(anchor,
+        pan: const Offset(-20, -35),
+        timeStamp: const Duration(milliseconds: 10));
     await tester.pump();
     await cursor('text');
     expect(actualCursor(), SystemMouseCursors.click);
@@ -295,8 +299,9 @@ void main() {
     // widget or leave the renderer in the middle of a touch gesture.
     await pan.panZoomStart(anchor, timeStamp: const Duration(seconds: 1));
     await tester.pump();
-    await pan.panZoomUpdate(anchor, pan: const Offset(0, -20),
-      timeStamp: const Duration(milliseconds: 1010));
+    await pan.panZoomUpdate(anchor,
+        pan: const Offset(0, -20),
+        timeStamp: const Duration(milliseconds: 1010));
     await tester.pump();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -415,8 +420,9 @@ void main() {
         }),
       ))));
       await tester.pumpAndSettle();
-      final native = tester.state<CustomPlatformViewState>(
-        find.byType(CustomPlatformView)).controller;
+      final native = tester
+          .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+          .controller;
       final point = tester.getCenter(find.byType(CustomPlatformView));
       final pan = await tester.createGesture(kind: PointerDeviceKind.trackpad);
       await pan.panZoomStart(point);
@@ -433,7 +439,8 @@ void main() {
         await tester.pump();
       }
       expect(calls.where((call) => call.method == 'navigateHistory'), isEmpty);
-      await pan.panZoomEnd(timeStamp: Duration(milliseconds: (scenario.pans.length + 1) * 16));
+      await pan.panZoomEnd(
+          timeStamp: Duration(milliseconds: (scenario.pans.length + 1) * 16));
       await tester.pumpAndSettle();
       final navigation =
           calls.where((call) => call.method == 'navigateHistory').toList();
@@ -502,14 +509,15 @@ void main() {
       ]),
     )));
     await tester.pumpAndSettle();
-    final native = tester.state<CustomPlatformViewState>(
-      find.byType(CustomPlatformView)).controller;
+    final native = tester
+        .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+        .controller;
     final point = tester.getCenter(find.byType(CustomPlatformView));
     final pan = await tester.createGesture(kind: PointerDeviceKind.trackpad);
     await pan.panZoomStart(point);
     await tester.pump();
-    await pan.panZoomUpdate(point, pan: const Offset(120, 0),
-      timeStamp: const Duration(milliseconds: 10));
+    await pan.panZoomUpdate(point,
+        pan: const Offset(120, 0), timeStamp: const Duration(milliseconds: 10));
     selected.value = 1;
     await tester.pumpAndSettle();
     await pan.panZoomEnd(timeStamp: const Duration(milliseconds: 20));

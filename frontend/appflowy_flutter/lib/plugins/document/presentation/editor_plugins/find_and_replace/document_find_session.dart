@@ -210,7 +210,7 @@ class DocumentFindSession extends ChangeNotifier {
       return;
     }
     final incremental = _query.isNotEmpty &&
-      (query.startsWith(_query) || _query.startsWith(query));
+        (query.startsWith(_query) || _query.startsWith(query));
     _query = query;
     _options = options;
     _revision++;
@@ -554,7 +554,7 @@ class DocumentFindSession extends ChangeNotifier {
       if (_localTruncated) break;
     }
     if (_projectionRevision == _revision &&
-      _projectionModelRevision == _modelRevision &&
+        _projectionModelRevision == _modelRevision &&
         results.length == _matches.length &&
         List.generate(results.length,
                 (index) => results[index].sameLocation(_matches[index]))

@@ -29,14 +29,17 @@ const _expected = {
 void main() {
   const output = String.fromEnvironment('BROWSER_SCROLL_OUTPUT_DIRECTORY');
   const run = String.fromEnvironment('BROWSER_SCROLL_RUN');
-  if (!Platform.isWindows || kProfileMode ||
+  if (!Platform.isWindows ||
+      kProfileMode ||
       !const bool.fromEnvironment('BROWSER_SCROLL_NATIVE_CONSENT') ||
       !const bool.fromEnvironment('BROWSER_READER_BLOCKING_CONSENT') ||
       !const bool.fromEnvironment('WEBVIEW_SITE_GESTURES_CONSENT') ||
       !const bool.fromEnvironment('FILE_WEBVIEW_PAGE_FLOW_CONSENT') ||
-      const bool.fromEnvironment('INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE',
+      const bool.fromEnvironment(
+          'INTEGRATION_TEST_SHOULD_REPORT_RESULTS_TO_NATIVE',
           defaultValue: true) ||
-      !p.isAbsolute(output) || !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(run)) {
+      !p.isAbsolute(output) ||
+      !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(run)) {
     throw StateError('Requires isolated Windows Release/Debug, all consents, '
         'direct reporting, an absolute output directory and unique run label.');
   }
@@ -58,19 +61,21 @@ void main() {
         // A framework failure may precede a still-pending native cleanup.
         // Never start a second view while the previous owner is unproven.
         if (reports.any((report) => !_clean(report))) {
-          throw StateError('Previous fixture cleanup unproven; native execution fenced.');
+          throw StateError(
+              'Previous fixture cleanup unproven; native execution fenced.');
         }
       });
       tearDown(() {
         // Retain the actual report before the next main overwrites reportData.
         // Do not stringify Failure objects or silently drop missing reports.
-        final report = binding.reportData ?? <String, dynamic>{
-          'case': '$name:missing_${reports.length}',
-          'measurement_complete': false,
-          'cleanup_complete': false,
-          'quiescent': false,
-          'cleanup_stage': 'no_body_receipt_or_previous_cleanup_unproven',
-        };
+        final report = binding.reportData ??
+            <String, dynamic>{
+              'case': '$name:missing_${reports.length}',
+              'measurement_complete': false,
+              'cleanup_complete': false,
+              'quiescent': false,
+              'cleanup_stage': 'no_body_receipt_or_previous_cleanup_unproven',
+            };
         report['body_finished_utc'] = DateTime.now().toUtc().toIso8601String();
         reports.add(report);
       });
@@ -84,22 +89,27 @@ void main() {
   // Same direct-file mechanism as scroll_search_performance_test: the binding's
   // terminal future is the framework barrier, never "last test body returned".
   // Writer errors propagate; no catch converts a failure into a success receipt.
-  unawaited(binding.allTestsPassed.future.then((passed) => _writeReceipt(
-      binding, reports, passed, output, run, started, elapsed)));
+  unawaited(binding.allTestsPassed.future.then((passed) =>
+      _writeReceipt(binding, reports, passed, output, run, started, elapsed)));
 }
 
 bool _clean(Map<String, dynamic> report) {
   final lifecycle = report['texture_lifecycle'];
-  return report['cleanup_complete'] == true && report['quiescent'] == true &&
+  return report['cleanup_complete'] == true &&
+      report['quiescent'] == true &&
       report['native_dispose_ack'] == true &&
       report['environment_dispose_ack'] == true &&
       report['remaining_transient_callbacks'] == 0 &&
       report['semantics_handles_before_body'] is int &&
-      report['semantics_handles_before_body'] == report['semantics_handles_after_body'] &&
-      (!report.containsKey('remaining_held_ack_calls') || report['remaining_held_ack_calls'] == 0) &&
-      lifecycle is Map && lifecycle['schema'] == 1 &&
+      report['semantics_handles_before_body'] ==
+          report['semantics_handles_after_body'] &&
+      (!report.containsKey('remaining_held_ack_calls') ||
+          report['remaining_held_ack_calls'] == 0) &&
+      lifecycle is Map &&
+      lifecycle['schema'] == 1 &&
       lifecycle['stages'] is List &&
-      listEquals<dynamic>(lifecycle['stages'] as List, const [0, 1, 2, 3, 4, 5]);
+      listEquals<dynamic>(
+          lifecycle['stages'] as List, const [0, 1, 2, 3, 4, 5]);
 }
 
 Future<void> _writeReceipt(
@@ -113,11 +123,14 @@ Future<void> _writeReceipt(
 ) async {
   final cases = reports.map((report) => report['case']).toSet();
   final completeSet = reports.length == _expected.length &&
-      cases.length == _expected.length && cases.containsAll(_expected);
-  final measured = completeSet && reports.every((r) => r['measurement_complete'] == true);
+      cases.length == _expected.length &&
+      cases.containsAll(_expected);
+  final measured =
+      completeSet && reports.every((r) => r['measurement_complete'] == true);
   final remaining = binding.transientCallbackCount;
   final cleaned = completeSet && reports.every(_clean) && remaining == 0;
-  final failures = binding.failureMethodsDetails.length; // List<Failure>, not a string map.
+  final failures =
+      binding.failureMethodsDetails.length; // List<Failure>, not a string map.
   final report = <String, dynamic>{
     'schema': 1,
     'fixture_revision': 1,
@@ -132,16 +145,23 @@ Future<void> _writeReceipt(
     'framework_result_count': binding.results.length,
     'failed_test_count': failures,
     'measurement_complete': measured,
-    'test_success': passed && failures == 0 && measured && cleaned &&
+    'test_success': passed &&
+        failures == 0 &&
+        measured &&
+        cleaned &&
         binding.results.length == _expected.length,
     'quiescent': cleaned,
     'cleanup_complete': cleaned,
     'remaining_transient_callbacks': remaining,
-    'semantics_baselines_restored': completeSet && reports.every((r) =>
-      r['semantics_handles_before_body'] is int &&
-      r['semantics_handles_before_body'] == r['semantics_handles_after_body']),
-    'native_dispose_ack_count': reports.where((r) => r['native_dispose_ack'] == true).length,
-    'environment_dispose_ack_count': reports.where((r) => r['environment_dispose_ack'] == true).length,
+    'semantics_baselines_restored': completeSet &&
+        reports.every((r) =>
+            r['semantics_handles_before_body'] is int &&
+            r['semantics_handles_before_body'] ==
+                r['semantics_handles_after_body']),
+    'native_dispose_ack_count':
+        reports.where((r) => r['native_dispose_ack'] == true).length,
+    'environment_dispose_ack_count':
+        reports.where((r) => r['environment_dispose_ack'] == true).length,
     'unsafe_close_reasons': [
       if (!completeSet) 'missing_or_duplicate_case_receipts',
       if (remaining != 0) 'remaining_transient_callbacks',
@@ -163,7 +183,8 @@ Future<void> _writeReceipt(
   await directory.create(recursive: true);
   final own = await directory.createTemp('browser_scroll_${_mode}_${pid}_');
   final json = File(p.join(own.path, 'report.json.tmp'));
-  await json.writeAsString(const JsonEncoder.withIndent('  ').convert(report), flush: true);
+  await json.writeAsString(const JsonEncoder.withIndent('  ').convert(report),
+      flush: true);
   await json.rename(p.join(own.path, 'report.json'));
   final done = File(p.join(own.path, 'report.done.tmp'));
   await done.writeAsString('done', flush: true);

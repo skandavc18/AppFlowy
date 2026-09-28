@@ -735,7 +735,8 @@ void main() {
           .widget<TextButton>(_actionWithIcon(Icons.star_outline_rounded))
           .onPressed!;
       expect(
-        tester.widget<TextButton>(_actionWithIcon(Icons.download_rounded))
+        tester
+            .widget<TextButton>(_actionWithIcon(Icons.download_rounded))
             .onPressed,
         isNull,
       );
@@ -988,7 +989,12 @@ void main() {
   }
 
   for (final change in [
-    'readOnly', 'canEdit', 'controller', 'entry', 'source', 'dismissed',
+    'readOnly',
+    'canEdit',
+    'controller',
+    'entry',
+    'source',
+    'dismissed',
   ]) {
     _test(
         'late download after $change cannot reload or switch the current reader',

@@ -38,26 +38,27 @@ void main() {
         try {
           await explorer.initialize();
           await mountFileControls(
-            tester,
-            PremiumScrollScope(
-              enabled: true,
-              child: CollectionPage(
-              view: root,
-              controller: explorer,
-              shellOwnsBreadcrumbs: true,
-              )),
-            mode: 'paper',
-            width: 1000,
-            height: 850,
-            textScale: 2,
-            reduced: reduced);
+              tester,
+              PremiumScrollScope(
+                  enabled: true,
+                  child: CollectionPage(
+                    view: root,
+                    controller: explorer,
+                    shellOwnsBreadcrumbs: true,
+                  )),
+              mode: 'paper',
+              width: 1000,
+              height: 850,
+              textScale: 2,
+              reduced: reduced);
           final page = tester
-            .state<NestedScrollViewState>(find.byType(NestedScrollView));
+              .state<NestedScrollViewState>(find.byType(NestedScrollView));
           expect(page.innerController.positions, hasLength(1));
-          final identity = find.byKey(const ValueKey('collection-page-identity'),
-            skipOffstage: false);
+          final identity = find.byKey(
+              const ValueKey('collection-page-identity'),
+              skipOffstage: false);
           final tools =
-            find.byType(CollectionWorkspaceToolbar, skipOffstage: false);
+              find.byType(CollectionWorkspaceToolbar, skipOffstage: false);
           final identityElement = tester.element(identity);
           final toolsElement = tester.element(tools);
           final initialIdentityRect = tester.getRect(identity);
@@ -65,110 +66,113 @@ void main() {
           final stage = tester.getRect(find.byType(CollectionPage));
           final empty = tester.element(find.byType(AlbumEmptyState));
           final model = tester
-            .widget<AlbumScaffold>(find.byType(AlbumScaffold))
-            .controller;
+              .widget<AlbumScaffold>(find.byType(AlbumScaffold))
+              .controller;
           expect(tester.widget<CollectionWorkspaceToolbar>(tools).keepVisible,
-            isTrue);
+              isTrue);
 
           Finder action(IconData icon) => find.descendant(
-            of: tools,
-            matching: find.byWidgetPredicate(
-              (widget) =>
-                widget is CollectionWorkspaceAction &&
-                widget.icon == icon,
-              skipOffstage: false),
-            skipOffstage: false,
-            );
+                of: tools,
+                matching: find.byWidgetPredicate(
+                    (widget) =>
+                        widget is CollectionWorkspaceAction &&
+                        widget.icon == icon,
+                    skipOffstage: false),
+                skipOffstage: false,
+              );
           final sort = action(Icons.swap_vert_rounded);
           final slideshow = action(Icons.slideshow_rounded);
           final actionRects = <Finder, Rect>{};
           if (mode == AlbumViewIds.filmstrip) {
-          expect(sort, findsOneWidget);
-          expect(slideshow, findsOneWidget);
-          actionRects[sort] = tester.getRect(sort);
-          actionRects[slideshow] = tester.getRect(slideshow);
-          expect(actionRects[slideshow]!.right,
-            greaterThan(actionRects[sort]!.right));
+            expect(sort, findsOneWidget);
+            expect(slideshow, findsOneWidget);
+            actionRects[sort] = tester.getRect(sort);
+            actionRects[slideshow] = tester.getRect(slideshow);
+            expect(actionRects[slideshow]!.right,
+                greaterThan(actionRects[sort]!.right));
           } else {
-          // Empty Places has no actions, rather than disabled controls.
-          expect(tester.widget<CollectionWorkspaceToolbar>(tools).actions,
-            isEmpty);
+            // Empty Places has no actions, rather than disabled controls.
+            expect(tester.widget<CollectionWorkspaceToolbar>(tools).actions,
+                isEmpty);
           }
 
           bool hitsAction(Finder control, Offset point) {
-          // A disabled TextButton still has a pointer region. Check the
-          // actual control subtree, not the blank center of the wide toolbar
-          // or whether this button offers an enabled activation callback.
-          final targets = find
-            .descendant(
-              of: control,
-              matching: find.byWidgetPredicate(
-                (widget) => widget is RenderObjectWidget,
-                skipOffstage: false),
-              skipOffstage: false,
-            )
-            .evaluate()
-            .map((element) => element.findRenderObject())
-            .toSet();
-          return tester
-            .hitTestOnBinding(point)
-            .path
-            .any((entry) => targets.contains(entry.target));
+            // A disabled TextButton still has a pointer region. Check the
+            // actual control subtree, not the blank center of the wide toolbar
+            // or whether this button offers an enabled activation callback.
+            final targets = find
+                .descendant(
+                  of: control,
+                  matching: find.byWidgetPredicate(
+                      (widget) => widget is RenderObjectWidget,
+                      skipOffstage: false),
+                  skipOffstage: false,
+                )
+                .evaluate()
+                .map((element) => element.findRenderObject())
+                .toSet();
+            return tester
+                .hitTestOnBinding(point)
+                .path
+                .any((entry) => targets.contains(entry.target));
           }
 
           void expectActionsRestored() {
-          for (final entry in actionRects.entries) {
-            final rect = tester.getRect(entry.key);
-            expect(rect, entry.value);
-            expect(stage.deflate(8).contains(rect.center), isTrue);
-            expect(hitsAction(entry.key, rect.center), isTrue);
-          }
-          if (mode == AlbumViewIds.filmstrip) {
-            final sortButton = find.descendant(
-              of: sort, matching: find.byType(TextButton));
-            final slideshowButton = find.descendant(
-              of: slideshow, matching: find.byType(TextButton));
-            expect(tester.widget<TextButton>(sortButton).onPressed, isNotNull);
-            expect(sortButton.hitTestable(), findsOneWidget);
-            expect(tester.widget<TextButton>(slideshowButton).onPressed,
-              isNull);
-          }
+            for (final entry in actionRects.entries) {
+              final rect = tester.getRect(entry.key);
+              expect(rect, entry.value);
+              expect(stage.deflate(8).contains(rect.center), isTrue);
+              expect(hitsAction(entry.key, rect.center), isTrue);
+            }
+            if (mode == AlbumViewIds.filmstrip) {
+              final sortButton =
+                  find.descendant(of: sort, matching: find.byType(TextButton));
+              final slideshowButton = find.descendant(
+                  of: slideshow, matching: find.byType(TextButton));
+              expect(
+                  tester.widget<TextButton>(sortButton).onPressed, isNotNull);
+              expect(sortButton.hitTestable(), findsOneWidget);
+              expect(
+                  tester.widget<TextButton>(slideshowButton).onPressed, isNull);
+            }
           }
 
           expectActionsRestored();
           final point = stage.bottomCenter - const Offset(0, 32);
           for (var i = 0; i < 12; i++) {
-          await tester.sendEventToBinding(PointerScrollEvent(
-            position: point, scrollDelta: const Offset(0, 100)));
-          await tester.pumpAndSettle();
+            await tester.sendEventToBinding(PointerScrollEvent(
+                position: point, scrollDelta: const Offset(0, 100)));
+            await tester.pumpAndSettle();
           }
           expect(page.outerController.offset,
-            closeTo(page.outerController.position.maxScrollExtent, .01));
+              closeTo(page.outerController.position.maxScrollExtent, .01));
           expect(page.innerController.offset,
-            closeTo(page.innerController.position.maxScrollExtent, .01));
+              closeTo(page.innerController.position.maxScrollExtent, .01));
           final travel =
-            page.outerController.offset + page.innerController.offset;
+              page.outerController.offset + page.innerController.offset;
           final retiredToolsRect = tester.getRect(tools);
           expect(retiredToolsRect.size, initialToolsRect.size);
           expect(retiredToolsRect.left, initialToolsRect.left);
           expect(retiredToolsRect.top,
-            closeTo(initialToolsRect.top - travel, .01));
+              closeTo(initialToolsRect.top - travel, .01));
           expect(retiredToolsRect.bottom, lessThanOrEqualTo(stage.top + .01));
-          expect(tester.getRect(identity).top,
-            closeTo(initialIdentityRect.top - page.outerController.offset, .01));
+          expect(
+              tester.getRect(identity).top,
+              closeTo(
+                  initialIdentityRect.top - page.outerController.offset, .01));
           expect(identity.hitTestable(), findsNothing);
           expect(tools.hitTestable(), findsNothing);
           for (final control in actionRects.keys) {
-          expect(hitsAction(control, tester.getCenter(control)), isFalse);
-          expect(hitsAction(control, actionRects[control]!.center), isFalse);
+            expect(hitsAction(control, tester.getCenter(control)), isFalse);
+            expect(hitsAction(control, actionRects[control]!.center), isFalse);
           }
           expect(tester.element(identity), same(identityElement));
           expect(tester.element(tools), same(toolsElement));
           expect(tester.element(find.byType(AlbumEmptyState)), same(empty));
           for (var i = 0; i < 12; i++) {
-          await tester.sendEventToBinding(PointerScrollEvent(
-            position: point, scrollDelta: const Offset(0, -100)));
-          await tester.pumpAndSettle();
+            await tester.sendEventToBinding(PointerScrollEvent(
+                position: point, scrollDelta: const Offset(0, -100)));
+            await tester.pumpAndSettle();
           }
           expect(page.outerController.offset, closeTo(0, .01));
           expect(page.innerController.offset, closeTo(0, .01));
@@ -178,15 +182,17 @@ void main() {
           expect(tester.element(tools), same(toolsElement));
           expectActionsRestored();
           expect(
-            tester.widget<AlbumScaffold>(find.byType(AlbumScaffold)).controller,
-            same(model));
+              tester
+                  .widget<AlbumScaffold>(find.byType(AlbumScaffold))
+                  .controller,
+              same(model));
           expect(repository.reads, 1);
           expect(tester.takeException(), isNull);
         } finally {
           try {
-          await unmountFileControls(tester);
+            await unmountFileControls(tester);
           } finally {
-          explorer.dispose();
+            explorer.dispose();
           }
         }
       });

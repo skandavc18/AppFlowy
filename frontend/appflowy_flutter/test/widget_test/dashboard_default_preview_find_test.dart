@@ -35,7 +35,8 @@ void main() {
       ('page_link', ViewLayoutPB.Board),
       ('page_link', ViewLayoutPB.Calendar),
     ]) {
-      testWidgets('real default ${kind.$1}/${kind.$2} preview body Find '
+      testWidgets(
+          'real default ${kind.$1}/${kind.$2} preview body Find '
           'has native visible ranges in ${appearance.name}', (tester) async {
         final page = _PreviewHarness(type: kind.$1, layout: kind.$2);
         try {
@@ -48,8 +49,10 @@ void main() {
           final originalSource = page.reads.snapshot();
           await page.query(tester, 'bodyneedle');
           expect(page.find.matches, hasLength(2));
-          expect(page.find.matches.every((hit) =>
-              hit.id is DashboardEmbedFindId && !hit.entry.replaceable), isTrue);
+          expect(
+              page.find.matches.every((hit) =>
+                  hit.id is DashboardEmbedFindId && !hit.entry.replaceable),
+              isTrue);
           final paint = page.paint(tester);
           final native = <Rect>[];
           for (final run in paint.textRuns) {
@@ -87,16 +90,18 @@ void main() {
           expect(page.loader.calls, 1,
               reason: 'Find never rereads or expands the preview target');
           expect(page.reads.forbiddenReads, isEmpty);
-          expect(page.reads.calls.where((call) => call.startsWith('preflight:')),
-              hasLength(4), reason: 'Owner and target, before and after');
+          expect(
+              page.reads.calls.where((call) => call.startsWith('preflight:')),
+              hasLength(4),
+              reason: 'Owner and target, before and after');
 
-            page.dashboard.setReadOnly(true);
-            await pumpSurfaceFind(tester);
-            await pumpSurfaceFind(tester);
-            expect(page.find.matches, hasLength(2));
-            expect(page.find.supportsReplace, isFalse);
-            page.find.replaceAll();
-            expect(page.dashboard.document, same(originalDocument));
+          page.dashboard.setReadOnly(true);
+          await pumpSurfaceFind(tester);
+          await pumpSurfaceFind(tester);
+          expect(page.find.matches, hasLength(2));
+          expect(page.find.supportsReplace, isFalse);
+          page.find.replaceAll();
+          expect(page.dashboard.document, same(originalDocument));
 
           for (final excluded in [
             'target-title-only',
@@ -123,7 +128,8 @@ void main() {
     }
   }
 
-  testWidgets('real preview skeleton registers late body, then replaces its '
+  testWidgets(
+      'real preview skeleton registers late body, then replaces its '
       'snapshot without keeping old or duplicate results', (tester) async {
     final page = _PreviewHarness();
     final loaded = Completer<FolderGalleryPreview>();
@@ -147,8 +153,10 @@ void main() {
       await pumpSurfaceFind(tester);
       await pumpSurfaceFind(tester);
       expect(page.find.matches, hasLength(2));
-      expect(page.find.current!.entry.text, 'replacement bodyneedle bodyneedle');
-      expect(page.find.matches.any((hit) => hit.entry.text == 'bodyneedle'), isFalse);
+      expect(
+          page.find.current!.entry.text, 'replacement bodyneedle bodyneedle');
+      expect(page.find.matches.any((hit) => hit.entry.text == 'bodyneedle'),
+          isFalse);
       expect(page.paint(tester).matchRects, hasLength(2));
       expect(page.dashboard.canUndo, isFalse);
     } finally {
@@ -157,7 +165,8 @@ void main() {
     }
   });
 
-  testWidgets('real preview excludes ellipsized suffix and clipped lazy blocks '
+  testWidgets(
+      'real preview excludes ellipsized suffix and clipped lazy blocks '
       'without expanding or changing saved layout', (tester) async {
     final page = _PreviewHarness();
     page.loader.value = Future.value(_document(
@@ -189,19 +198,25 @@ void main() {
     }
   });
 
-  testWidgets('real rich preview preserves styled spans and newlines in native '
+  testWidgets(
+      'real rich preview preserves styled spans and newlines in native '
       'range geometry', (tester) async {
     final page = _PreviewHarness();
     page.loader.value = Future.value(const FolderGalleryPreview(
       kind: FolderGalleryPreviewKind.document,
-      blocks: [FolderGalleryPreviewBlock(
-        kind: FolderGalleryPreviewBlockKind.paragraph,
-        runs: [
-          FolderGalleryTextRun(text: 'body', bold: true),
-          FolderGalleryTextRun(text: 'needle\nsecond e\u0301', italic: true),
-        ],
-      )],
-      wordCount: 0, readingMinutes: 0, tags: [], fileTypeLabel: 'PAGE',
+      blocks: [
+        FolderGalleryPreviewBlock(
+          kind: FolderGalleryPreviewBlockKind.paragraph,
+          runs: [
+            FolderGalleryTextRun(text: 'body', bold: true),
+            FolderGalleryTextRun(text: 'needle\nsecond e\u0301', italic: true),
+          ],
+        )
+      ],
+      wordCount: 0,
+      readingMinutes: 0,
+      tags: [],
+      fileTypeLabel: 'PAGE',
     ));
     try {
       await page.mount(tester);
@@ -211,9 +226,11 @@ void main() {
       final run = paint.textRuns.single;
       expect(run.text, 'bodyneedle\nsecond e\u0301');
       final hit = page.find.current!;
-      final native = run.boxes(hit.range.start, hit.range.end)
+      final native = run
+          .boxes(hit.range.start, hit.range.end)
           .map((box) => MatrixUtils.transformRect(
-              run.render.getTransformTo(paint), box.toRect())).toList();
+              run.render.getTransformTo(paint), box.toRect()))
+          .toList();
       expect(native.length, greaterThanOrEqualTo(2));
       expect(paint.matchRects, native);
       await page.query(tester, 'e\u0301');
@@ -225,24 +242,37 @@ void main() {
     }
   });
 
-  for (final excluded in ['hidden', 'collapsed', 'protected', 'provider',
-    'cover', 'wrong-view', 'stale-view', 'unavailable', 'sealed']) {
+  for (final excluded in [
+    'hidden',
+    'collapsed',
+    'protected',
+    'provider',
+    'cover',
+    'wrong-view',
+    'stale-view',
+    'unavailable',
+    'sealed'
+  ]) {
     testWidgets('real default preview excludes $excluded body', (tester) async {
       final page = _PreviewHarness(
           hidden: excluded == 'hidden', collapsed: excluded == 'collapsed');
-        page.loader.value = Future.value(_document(
+      page.loader.value = Future.value(_document(
           excluded == 'sealed' ? 'af1.nonce.bodyneedle' : 'bodyneedle',
           unavailable: excluded == 'unavailable'));
       if (excluded == 'protected') page.reads.allowed = false;
       if (excluded == 'provider') {
-        page.view.extra = const WorkspaceItemMetadata.folder().mergeIntoExtra('');
+        page.view.extra =
+            const WorkspaceItemMetadata.folder().mergeIntoExtra('');
       }
       if (excluded == 'cover') {
-        page.view.extra = ViewCoverCodec.mergeCover('', const PageStyleCover(
-          type: PageStyleCoverImageType.pureColor, value: '#D9C7A4'));
+        page.view.extra = ViewCoverCodec.mergeCover(
+            '',
+            const PageStyleCover(
+                type: PageStyleCoverImageType.pureColor, value: '#D9C7A4'));
       }
       if (excluded == 'wrong-view') {
-        page.reads.wrongView = ViewPB(id: 'not-the-embed', layout: ViewLayoutPB.Document);
+        page.reads.wrongView =
+            ViewPB(id: 'not-the-embed', layout: ViewLayoutPB.Document);
       }
       if (excluded == 'stale-view') {
         page.renderedView = ViewPB.fromBuffer(page.view.writeToBuffer())
@@ -261,7 +291,8 @@ void main() {
     });
   }
 
-  testWidgets('cancelled real-preview read retains shared scheduler slot and '
+  testWidgets(
+      'cancelled real-preview read retains shared scheduler slot and '
       'cannot publish after close', (tester) async {
     final page = _PreviewHarness();
     page.loader.value = Future.value(_document('bodyneedle'));
@@ -290,48 +321,54 @@ void main() {
   });
 }
 
-FolderGalleryPreview _document(String text, {
+FolderGalleryPreview _document(
+  String text, {
   String? tail,
   bool unavailable = false,
-}) => FolderGalleryPreview(
-  kind: FolderGalleryPreviewKind.document,
-  blocks: [
-    FolderGalleryPreviewBlock(
-      kind: FolderGalleryPreviewBlockKind.paragraph,
-      runs: [FolderGalleryTextRun(text: text, bold: true)],
-    ),
-    if (tail != null) ...[
-      for (var index = 0; index < 20; index++)
-        const FolderGalleryPreviewBlock(
+}) =>
+    FolderGalleryPreview(
+      kind: FolderGalleryPreviewKind.document,
+      blocks: [
+        FolderGalleryPreviewBlock(
           kind: FolderGalleryPreviewBlockKind.paragraph,
-          runs: [FolderGalleryTextRun(text: 'ordinary filler line')],
+          runs: [FolderGalleryTextRun(text: text, bold: true)],
         ),
-      FolderGalleryPreviewBlock(
-        kind: FolderGalleryPreviewBlockKind.paragraph,
-        runs: [FolderGalleryTextRun(text: tail)],
-      ),
-    ],
-  ],
-  wordCount: 0,
-  readingMinutes: 0,
-  tags: const ['unrendered-tag'],
-  fileTypeLabel: 'PAGE',
-  unavailable: unavailable,
-);
+        if (tail != null) ...[
+          for (var index = 0; index < 20; index++)
+            const FolderGalleryPreviewBlock(
+              kind: FolderGalleryPreviewBlockKind.paragraph,
+              runs: [FolderGalleryTextRun(text: 'ordinary filler line')],
+            ),
+          FolderGalleryPreviewBlock(
+            kind: FolderGalleryPreviewBlockKind.paragraph,
+            runs: [FolderGalleryTextRun(text: tail)],
+          ),
+        ],
+      ],
+      wordCount: 0,
+      readingMinutes: 0,
+      tags: const ['unrendered-tag'],
+      fileTypeLabel: 'PAGE',
+      unavailable: unavailable,
+    );
 
 FolderGalleryPreview _table() => const FolderGalleryPreview(
-  kind: FolderGalleryPreviewKind.database,
-  blocks: [], wordCount: 0, readingMinutes: 0, tags: [], fileTypeLabel: 'TABLE',
-  database: FolderGalleryDatabaseSnapshot(
-    columns: ['Task', 'Link'],
-    rows: [
-      ['bodyneedle', 'https://example.test/url-secret'],
-      ['bodyneedle', 'https://example.test/url-secret'],
-    ],
-    totalRowCount: 25,
-    fieldTypes: [FieldType.RichText, FieldType.URL],
-  ),
-);
+      kind: FolderGalleryPreviewKind.database,
+      blocks: [],
+      wordCount: 0,
+      readingMinutes: 0,
+      tags: [],
+      fileTypeLabel: 'TABLE',
+      database: FolderGalleryDatabaseSnapshot(
+        columns: ['Task', 'Link'],
+        rows: [
+          ['bodyneedle', 'https://example.test/url-secret'],
+          ['bodyneedle', 'https://example.test/url-secret'],
+        ],
+        totalRowCount: 25,
+        fieldTypes: [FieldType.RichText, FieldType.URL],
+      ),
+    );
 
 /// Only IO is injected. The production PagePreviewCard, cache, thumbnail,
 /// rich paragraphs/table rows, dashboard bridge and shared painter are real.
@@ -350,23 +387,29 @@ class _PreviewLoader extends FolderGalleryPreviewLoader {
 }
 
 class _PreviewHarness {
-  _PreviewHarness({String type = 'page',
+  _PreviewHarness({
+    String type = 'page',
     ViewLayoutPB layout = ViewLayoutPB.Document,
-    bool hidden = false, bool collapsed = false,
+    bool hidden = false,
+    bool collapsed = false,
   }) : reads = DatabaseFindReads(layout: layout) {
     view.name = 'target-title-only';
     reads.addView(ownerId, 'dashboard owner', layout: ViewLayoutPB.Document);
     final spec = DashboardWidgetSpec(
-      id: 'preview', type: type, title: 'widget-title-only',
+      id: 'preview',
+      type: type,
+      title: 'widget-title-only',
       showTitle: false,
-      hidden: hidden, collapsed: collapsed,
-      source: const DashboardDataSource(kind: DashboardSourceKind.page,
-          viewId: databaseFindViewId),
+      hidden: hidden,
+      collapsed: collapsed,
+      source: const DashboardDataSource(
+          kind: DashboardSourceKind.page, viewId: databaseFindViewId),
     );
-    dashboard = DashboardController(viewId: ownerId,
-      document: DashboardDocument(sections: [
-        DashboardSection(id: 'section', widgets: [spec]),
-      ]));
+    dashboard = DashboardController(
+        viewId: ownerId,
+        document: DashboardDocument(sections: [
+          DashboardSection(id: 'section', widgets: [spec]),
+        ]));
     find = DashboardFindController(dashboard,
         title: () => 'dashboard title', readProvider: reads.provider());
     cache = FolderGalleryPreviewCache(loader: loader);
@@ -383,27 +426,38 @@ class _PreviewHarness {
   ViewPB? renderedView;
   ViewPB get view => reads.views[databaseFindViewId]!;
 
-  Future<void> mount(WidgetTester tester, {
+  Future<void> mount(
+    WidgetTester tester, {
     WorkspaceDesignAppearance appearance = WorkspaceDesignAppearance.light,
   }) async {
-    await tester.pumpWidget(surfaceFindTestApp(SurfaceFindHost(
-      controller: find,
-      child: SingleChildScrollView(controller: scroll, child: Column(children: [
-        const SizedBox(height: 850),
-        SizedBox(width: 480, height: 320,
-          child: DashboardFindEmbed(dashboard: dashboard,
-            spec: dashboard.document.allWidgets.single,
-            child: ValueListenableBuilder<int>(valueListenable: revision,
-              builder: (_, __, ___) => PagePreviewCard(
-                view: renderedView ?? view, userProfile: null,
-                previewCache: cache, onOpen: () {},
-              ),
-            ),
-          ),
+    await tester.pumpWidget(surfaceFindTestApp(
+        SurfaceFindHost(
+          controller: find,
+          child: SingleChildScrollView(
+              controller: scroll,
+              child: Column(children: [
+                const SizedBox(height: 850),
+                SizedBox(
+                  width: 480,
+                  height: 320,
+                  child: DashboardFindEmbed(
+                    dashboard: dashboard,
+                    spec: dashboard.document.allWidgets.single,
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: revision,
+                      builder: (_, __, ___) => PagePreviewCard(
+                        view: renderedView ?? view,
+                        userProfile: null,
+                        previewCache: cache,
+                        onOpen: () {},
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 200),
+              ])),
         ),
-        const SizedBox(height: 200),
-      ])),
-    ), appearance: appearance));
+        appearance: appearance));
     await pumpSurfaceFind(tester);
   }
 
@@ -439,6 +493,6 @@ class _PreviewHarness {
 
 // Outside the harness because its controller deliberately has the name find.
 Finder _findByTypeHighlight() => find.descendant(
-  of: find.byType(DashboardFindEmbed),
-  matching: find.byType(SurfaceFindHighlight),
-);
+      of: find.byType(DashboardFindEmbed),
+      matching: find.byType(SurfaceFindHighlight),
+    );

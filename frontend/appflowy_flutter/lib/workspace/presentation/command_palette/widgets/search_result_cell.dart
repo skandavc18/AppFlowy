@@ -88,7 +88,9 @@ class _SearchResultCellState extends State<SearchResultCell> {
   @override
   Widget build(BuildContext context) {
     final title = (widget.view?.name.trim().isNotEmpty == true
-      ? widget.view!.name : item.displayName).orDefault(
+            ? widget.view!.name
+            : item.displayName)
+        .orDefault(
       LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
     );
     final searchResultBloc = context.read<SearchResultListBloc>();

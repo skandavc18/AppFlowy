@@ -36,14 +36,10 @@ void main() {
     await fixture.move(origin + 30000, const Offset(0, -45));
     await fixture.end(origin + 35000);
     // The host native queue, not Dart futures, serializes CDP processing.
-    expect(fixture.packets.map((packet) => packet[6]), [
-      origin,
-      origin + 20000,
-      origin + 30000,
-      origin + 35000
-    ]);
+    expect(fixture.packets.map((packet) => packet[6]),
+        [origin, origin + 20000, origin + 30000, origin + 35000]);
     expect(fixture.packets.map((packet) => packet[3]),
-      [150.0, 125.0, 105.0, 105.0]);
+        [150.0, 125.0, 105.0, 105.0]);
     expect(fixture.packets.map((packet) => packet[7]), [20000, 0, 0, 0]);
     await tester.pump(const Duration(seconds: 2));
     held.complete();
@@ -207,7 +203,8 @@ class _Fixture {
     addTearDown(() async {
       try {
         if (!fixture._disposed) {
-          if (fixture.pointerReply != null && !fixture.pointerReply!.isCompleted) {
+          if (fixture.pointerReply != null &&
+              !fixture.pointerReply!.isCompleted) {
             fixture.pointerReply!.complete();
           }
           await fixture.dispose();
@@ -230,8 +227,9 @@ class _Fixture {
         }),
       )),
     ));
-    fixture.native = tester.state<CustomPlatformViewState>(
-      find.byType(CustomPlatformView)).controller;
+    fixture.native = tester
+        .state<CustomPlatformViewState>(find.byType(CustomPlatformView))
+        .controller;
     await awaitPlatformViewReady(tester, fixture.native!);
     await tester.pumpAndSettle();
     return fixture;
@@ -245,7 +243,8 @@ class _Fixture {
       position: point,
       timeStamp: Duration(microseconds: micros),
     ));
-    await tester.pump(); // Deliver the policy reply, without changing input time.
+    await tester
+        .pump(); // Deliver the policy reply, without changing input time.
   }
 
   Future<void> move(int micros, Offset pan,
@@ -293,7 +292,8 @@ class _Fixture {
     await tester.pumpAndSettle();
     final controller = native;
     if (controller != null) {
-      await awaitPlatformViewDisposal(tester, controller, ownerZone: _disposalZone!);
+      await awaitPlatformViewDisposal(tester, controller,
+          ownerZone: _disposalZone!);
     }
     _disposed = true;
     expect(tester.takeException(), isNull);

@@ -56,7 +56,9 @@ class SurfaceFindHighlight extends SingleChildRenderObjectWidget {
   /// A renderer-owned late mount/rebind behind a fixed-size repaint boundary.
   /// Signals membership only; the owner must still revalidate authorization.
   static void contentChanged(BuildContext context) {
-    context.findAncestorRenderObjectOfType<RenderSurfaceFindHighlight>()?.contentChanged();
+    context
+        .findAncestorRenderObjectOfType<RenderSurfaceFindHighlight>()
+        ?.contentChanged();
   }
 
   @override

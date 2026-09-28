@@ -216,46 +216,46 @@ class DatabaseFindSession extends ChangeNotifier {
   }
 
   void _match(DocumentFindContent content, ViewPB after, int generation) {
-      _truncated = content.truncated;
-      _unavailable = content.unavailable || content.references.isNotEmpty;
-      _coverageUnknown = content.coverageUnknown;
-      final pattern = buildFindPattern(_query, _options);
-      final matches = <DatabaseFindMatch>[];
-      var bytes = 0;
-      var entries = 0;
-      for (final part in [
-        DocumentFindText('title', after.name, 'Database title'),
-        ...content.texts,
-      ]) {
-        if (part.text.isEmpty) continue;
-        if (looksSealed(part.text.trimLeft())) {
-          _unavailable = true;
-          continue;
-        }
-        // Include the title in the SAME aggregate budget as the typed cells.
-        if (part.text.length > limits.maxBytes ||
-            ++entries > limits.maxEntries ||
-            (bytes += utf8.encode(part.text).length) > limits.maxBytes) {
+    _truncated = content.truncated;
+    _unavailable = content.unavailable || content.references.isNotEmpty;
+    _coverageUnknown = content.coverageUnknown;
+    final pattern = buildFindPattern(_query, _options);
+    final matches = <DatabaseFindMatch>[];
+    var bytes = 0;
+    var entries = 0;
+    for (final part in [
+      DocumentFindText('title', after.name, 'Database title'),
+      ...content.texts,
+    ]) {
+      if (part.text.isEmpty) continue;
+      if (looksSealed(part.text.trimLeft())) {
+        _unavailable = true;
+        continue;
+      }
+      // Include the title in the SAME aggregate budget as the typed cells.
+      if (part.text.length > limits.maxBytes ||
+          ++entries > limits.maxEntries ||
+          (bytes += utf8.encode(part.text).length) > limits.maxBytes) {
+        _truncated = true;
+        break;
+      }
+      if (pattern == null) continue;
+      // Use the shared pattern semantics, but bound retained occurrences as
+      // well as text entries (one long cell can contain thousands of hits).
+      for (final range in pattern.allMatches(part.text)) {
+        if (range.end == range.start) continue;
+        if (matches.length == limits.maxEntries) {
           _truncated = true;
           break;
         }
-        if (pattern == null) continue;
-        // Use the shared pattern semantics, but bound retained occurrences as
-        // well as text entries (one long cell can contain thousands of hits).
-        for (final range in pattern.allMatches(part.text)) {
-          if (range.end == range.start) continue;
-          if (matches.length == limits.maxEntries) {
-            _truncated = true;
-            break;
-          }
-          matches.add(DatabaseFindMatch(part, range));
-        }
-        if (matches.length == limits.maxEntries && _truncated) break;
+        matches.add(DatabaseFindMatch(part, range));
       }
-      if (!_current(generation)) return;
-      _matches = List.unmodifiable(matches);
-      _index = matches.isEmpty ? -1 : 0;
-      _finish(generation, DatabaseFindStatus.ready);
+      if (matches.length == limits.maxEntries && _truncated) break;
+    }
+    if (!_current(generation)) return;
+    _matches = List.unmodifiable(matches);
+    _index = matches.isEmpty ? -1 : 0;
+    _finish(generation, DatabaseFindStatus.ready);
   }
 
   /// Restrict the existing typed decoder BEFORE it reads any cell. Do not
@@ -313,8 +313,8 @@ class DatabaseFindSession extends ChangeNotifier {
     final retryGeneration = _generation;
     if (!_retried && !_started) {
       _retried = true;
-      provider.readScheduler.whenAvailable(this,
-        () => _current(retryGeneration), _restart);
+      provider.readScheduler
+          .whenAvailable(this, () => _current(retryGeneration), _restart);
     }
     notifyListeners();
     // NEVER Future.timeout/race the read: the shared slot belongs to the

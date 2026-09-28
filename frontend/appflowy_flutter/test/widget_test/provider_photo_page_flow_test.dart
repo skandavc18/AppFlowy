@@ -279,10 +279,8 @@ void main() {
           retained();
         }
         await pan.panZoomEnd(timeStamp: const Duration(milliseconds: 400));
-        await tester.pumpAndSettle(
-          const Duration(milliseconds: 100),
-          EnginePhase.sendSemanticsUpdate,
-          const Duration(seconds: 3));
+        await tester.pumpAndSettle(const Duration(milliseconds: 100),
+            EnginePhase.sendSemanticsUpdate, const Duration(seconds: 3));
         expect(page.outerController.offset, closeTo(extent, .01));
         expect(fit.hitTestable(), findsNothing);
         await tester.pump(const Duration(seconds: 1));
@@ -390,10 +388,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 16));
       }
       await pinch.panZoomEnd(timeStamp: const Duration(milliseconds: 300));
-        await tester.pumpAndSettle(
-          const Duration(milliseconds: 100),
-          EnginePhase.sendSemanticsUpdate,
-          const Duration(seconds: 3));
+      await tester.pumpAndSettle(const Duration(milliseconds: 100),
+          EnginePhase.sendSemanticsUpdate, const Duration(seconds: 3));
       expect(transform.value.getMaxScaleOnAxis(), greaterThan(1));
       final zoomed = transform.value.clone();
       await _pan(tester, dy: -24);
@@ -463,88 +459,100 @@ void main() {
       final native = tester.widget<InteractiveViewer>(_viewer);
       expect(native.maxScale, 6);
       expect(native.transformationController, isNull);
-        expect(native.panEnabled, isTrue);
-        expect(native.scaleEnabled, isTrue);
+      expect(native.panEnabled, isTrue);
+      expect(native.scaleEnabled, isTrue);
       final image = tester.widget<Image>(find.byType(Image));
       expect((image.image as FileImage).file.path, photo.path);
-        final viewerState = tester.state(_viewer);
-        final imageState = tester.state(find.byType(Image));
-        final page = _page(tester);
-        final scope = _scope(tester);
-        final transform = find.descendant(
-          of: _viewer, matching: find.byType(Transform));
-        final rawImage = find.descendant(
-          of: _viewer, matching: find.byType(RawImage));
-        expect(transform, findsOneWidget);
-        expect(rawImage, findsOneWidget);
-        final frame = tester.widget<RawImage>(rawImage).image!.clone();
-        retainedFrame = frame;
-        final fitted = tester.widget<Transform>(transform).transform.clone();
-        expect(fitted.isIdentity(), isTrue);
-        expect(page.outerController.offset, 0);
-        expect(page.outerController.position.maxScrollExtent, greaterThan(40));
+      final viewerState = tester.state(_viewer);
+      final imageState = tester.state(find.byType(Image));
+      final page = _page(tester);
+      final scope = _scope(tester);
+      final transform =
+          find.descendant(of: _viewer, matching: find.byType(Transform));
+      final rawImage =
+          find.descendant(of: _viewer, matching: find.byType(RawImage));
+      expect(transform, findsOneWidget);
+      expect(rawImage, findsOneWidget);
+      final frame = tester.widget<RawImage>(rawImage).image!.clone();
+      retainedFrame = frame;
+      final fitted = tester.widget<Transform>(transform).transform.clone();
+      expect(fitted.isIdentity(), isTrue);
+      expect(page.outerController.offset, 0);
+      expect(page.outerController.position.maxScrollExtent, greaterThan(40));
 
-        void retained() {
+      void retained() {
         expect(tester.state(_viewer), same(viewerState));
         expect(tester.state(find.byType(Image)), same(imageState));
         expect(_page(tester), same(page));
         expect(_scope(tester), same(scope));
-        expect(tester.widget<InteractiveViewer>(_viewer)
-          .transformationController, isNull);
-        expect(tester.widget<RawImage>(rawImage).image!.isCloneOf(frame), isTrue);
+        expect(
+            tester.widget<InteractiveViewer>(_viewer).transformationController,
+            isNull);
+        expect(
+            tester.widget<RawImage>(rawImage).image!.isCloneOf(frame), isTrue);
         expect(find.byType(StandaloneFileScope), findsOneWidget);
         expect(find.byType(StandaloneFileHeaderSlot), findsNothing);
         // The outer page has its own header adapter; the bare renderer must
         // neither install one nor sit underneath one in the body.
-        expect(find.descendant(
-          of: find.byType(ImageOcrFindRegion),
-          matching: find.byType(StandaloneFileScrollRegion)), findsNothing);
-        expect(find.ancestor(
-          of: _viewer,
-          matching: find.byType(StandaloneFileScrollRegion)), findsNothing);
+        expect(
+            find.descendant(
+                of: find.byType(ImageOcrFindRegion),
+                matching: find.byType(StandaloneFileScrollRegion)),
+            findsNothing);
+        expect(
+            find.ancestor(
+                of: _viewer, matching: find.byType(StandaloneFileScrollRegion)),
+            findsNothing);
         expect(chrome.value, same(initialChrome));
         expect(chrome.value.actions, isEmpty);
         expect(outerReads, 0);
         expect(outerEdits, 0);
-        }
+      }
 
-        expect(tester.widget<ScrollGestureGate>(
-          find.byType(ScrollGestureGate)).blocked, isTrue);
-        retained();
+      expect(
+          tester
+              .widget<ScrollGestureGate>(find.byType(ScrollGestureGate))
+              .blocked,
+          isTrue);
+      retained();
       await _wheel(tester, 40);
-        expect(page.outerController.offset, closeTo(40, .01),
-          reason: 'An unengaged bare preview leaves wheel input to its parent.');
-        expect(tester.widget<Transform>(transform).transform, fitted);
-        retained();
-        // Negative wheel input would zoom in natively, unlike positive input
-        // at minimum scale. This proves the gate, not merely the zoom clamp.
-        await _wheel(tester, -40);
-        expect(page.outerController.offset, closeTo(0, .01));
-        expect(tester.widget<Transform>(transform).transform, fitted);
-        expect(activations, isEmpty);
-        retained();
+      expect(page.outerController.offset, closeTo(40, .01),
+          reason:
+              'An unengaged bare preview leaves wheel input to its parent.');
+      expect(tester.widget<Transform>(transform).transform, fitted);
+      retained();
+      // Negative wheel input would zoom in natively, unlike positive input
+      // at minimum scale. This proves the gate, not merely the zoom clamp.
+      await _wheel(tester, -40);
+      expect(page.outerController.offset, closeTo(0, .01));
+      expect(tester.widget<Transform>(transform).transform, fitted);
+      expect(activations, isEmpty);
+      retained();
 
-        await tester.tapAt(_point(tester), kind: PointerDeviceKind.mouse);
-        await settleFileControls(tester);
-        expect(activations, [true]);
-        expect(tester.widget<ScrollGestureGate>(
-          find.byType(ScrollGestureGate)).blocked, isFalse);
-        expect(tester.widget<Transform>(transform).transform, fitted,
+      await tester.tapAt(_point(tester), kind: PointerDeviceKind.mouse);
+      await settleFileControls(tester);
+      expect(activations, [true]);
+      expect(
+          tester
+              .widget<ScrollGestureGate>(find.byType(ScrollGestureGate))
+              .blocked,
+          isFalse);
+      expect(tester.widget<Transform>(transform).transform, fitted,
           reason: 'Activation itself must not reset or reposition the photo.');
-        await _wheel(tester, -40);
-        expect(tester.widget<Transform>(transform).transform.getMaxScaleOnAxis(),
+      await _wheel(tester, -40);
+      expect(tester.widget<Transform>(transform).transform.getMaxScaleOnAxis(),
           greaterThan(1));
-        // Native InteractiveViewer can zoom AND let a parent scroll. Do not
-        // invent an exclusive page-handoff contract for the bare renderer.
-        await settleFileControls(tester);
-        retained();
+      // Native InteractiveViewer can zoom AND let a parent scroll. Do not
+      // invent an exclusive page-handoff contract for the bare renderer.
+      await settleFileControls(tester);
+      retained();
       expect(tester.takeException(), isNull);
     } finally {
       await unmountFileControls(tester);
-        retainedFrame?.dispose();
+      retainedFrame?.dispose();
       chrome.dispose();
     }
-      }, timeout: _testTimeout);
+  }, timeout: _testTimeout);
 }
 
 Finder get _viewer => find.byType(InteractiveViewer);
@@ -636,10 +644,8 @@ Future<void> _pan(WidgetTester tester, {required double dy}) async {
     await tester.pump(const Duration(milliseconds: 16));
   }
   await pan.panZoomEnd(timeStamp: const Duration(milliseconds: 400));
-  await tester.pumpAndSettle(
-      const Duration(milliseconds: 100),
-      EnginePhase.sendSemanticsUpdate,
-      const Duration(seconds: 3));
+  await tester.pumpAndSettle(const Duration(milliseconds: 100),
+      EnginePhase.sendSemanticsUpdate, const Duration(seconds: 3));
 }
 
 Future<void> _warm(WidgetTester tester, File file) async {

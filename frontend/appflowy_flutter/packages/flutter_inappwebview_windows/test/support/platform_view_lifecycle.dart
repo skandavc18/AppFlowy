@@ -16,16 +16,21 @@ Future<void> drainPlatformViewUntil(
     await tester.runAsync(() async {});
     await tester.pump();
   }
-  expect(reached(), isTrue, reason: '$phase did not finish within 20 drain turns');
+  expect(reached(), isTrue,
+      reason: '$phase did not finish within 20 drain turns');
 }
 
 Future<void> awaitPlatformViewDisposal(
   WidgetTester tester,
   CustomPlatformViewController controller, {
   Zone? ownerZone,
-}) => _awaitPlatformViewFuture(
-  tester, controller.dispose(), 'platform view disposal', ownerZone ?? Zone.current,
-);
+}) =>
+    _awaitPlatformViewFuture(
+      tester,
+      controller.dispose(),
+      'platform view disposal',
+      ownerZone ?? Zone.current,
+    );
 
 Future<void> awaitPlatformViewReady(
   WidgetTester tester,
@@ -33,7 +38,10 @@ Future<void> awaitPlatformViewReady(
 ) async {
   if (!controller.value.isInitialized) {
     await _awaitPlatformViewFuture(
-      tester, controller.ready, 'platform view initialization', Zone.current,
+      tester,
+      controller.ready,
+      'platform view initialization',
+      Zone.current,
     );
   }
   expect(controller.value.isInitialized, isTrue);

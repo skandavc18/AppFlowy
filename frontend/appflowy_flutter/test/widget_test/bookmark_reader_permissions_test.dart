@@ -576,10 +576,11 @@ void main() {
       try {
         await fixture.mount(tester);
         expect(
-          tester.widget<BookmarkReader>(find.byType(BookmarkReader))
+          tester
+              .widget<BookmarkReader>(find.byType(BookmarkReader))
               .readingSession,
           same(fixture.capture.session),
-            reason: 'The modal must preserve its supplied capture owner.',
+          reason: 'The modal must preserve its supplied capture owner.',
         );
         // Opening publishes navigation state; observe only subsequent save IO.
         fixture.controller.addListener(() {

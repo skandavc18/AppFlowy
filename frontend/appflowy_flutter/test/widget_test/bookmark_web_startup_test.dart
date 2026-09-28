@@ -117,7 +117,8 @@ void main() {
         hasLength(1),
       );
       expect(
-        fixture.input.singleWhere((call) => call.method == 'setScrollDelta')
+        fixture.input
+            .singleWhere((call) => call.method == 'setScrollDelta')
             .arguments,
         [0.0, -12.0],
       );
@@ -137,7 +138,8 @@ void main() {
       );
       await fixture.pump();
       expect(
-        fixture.input.where((call) => call.method == 'querySiteGesturePolicyState'),
+        fixture.input
+            .where((call) => call.method == 'querySiteGesturePolicyState'),
         hasLength(1),
       );
       expect(
@@ -392,7 +394,8 @@ class _Fixture {
               policyEvents.add('probe');
               throw PlatformException(
                 code: 'invalid-parameters',
-                message: 'Invalid parameters: urlPattern and block are required',
+                message:
+                    'Invalid parameters: urlPattern and block are required',
               );
             }
             expectSync(patterns, isNotEmpty);

@@ -87,7 +87,9 @@ void main() {
         )));
         await pumpSurfaceFind(tester);
         if (document) {
-          final editor = tester.widget<AppFlowyEditor>(find.byType(AppFlowyEditor)).editorState;
+          final editor = tester
+              .widget<AppFlowyEditor>(find.byType(AppFlowyEditor))
+              .editorState;
           childFind = DocumentFindSession(editor);
           childFind.search('and', const FindOptions());
           await pumpSurfaceFind(tester);
@@ -140,8 +142,10 @@ void main() {
           final editor = childFind!.editorState;
           expect(childFind.query, 'and');
           expect(editor.selection, childSelection);
-          expect(DocumentSearchHighlight.instance
-              .rangesOf(editor.document.root.children.single), childMarks);
+          expect(
+              DocumentSearchHighlight.instance
+                  .rangesOf(editor.document.root.children.single),
+              childMarks);
           expect(editor.undoManager.undoStack.isEmpty, isTrue);
           controller.replacementController.text = 'changed';
           controller.replaceCurrent();
@@ -183,8 +187,10 @@ void main() {
         if (document) {
           expect(childFind!.query, 'and');
           expect(childFind.editorState.selection, childSelection);
-          expect(DocumentSearchHighlight.instance.rangesOf(
-              childFind.editorState.document.root.children.single), childMarks);
+          expect(
+              DocumentSearchHighlight.instance.rangesOf(
+                  childFind.editorState.document.root.children.single),
+              childMarks);
         }
       } finally {
         childFind?.dispose();

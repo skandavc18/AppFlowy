@@ -24,7 +24,8 @@ class BookmarkReaderTestLocalizations extends AssetLoader {
   Future<Map<String, dynamic>> load(String path, Locale locale) =>
       Future.value(translations);
 
-  static Widget wrap({required Widget home, ThemeData? theme}) => EasyLocalization(
+  static Widget wrap({required Widget home, ThemeData? theme}) =>
+      EasyLocalization(
         supportedLocales: const [Locale('en', 'US')],
         startLocale: const Locale('en', 'US'),
         fallbackLocale: const Locale('en', 'US'),
