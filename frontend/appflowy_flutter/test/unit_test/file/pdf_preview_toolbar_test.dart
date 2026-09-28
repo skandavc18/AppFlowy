@@ -8,9 +8,12 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 // ignore: implementation_imports
@@ -595,8 +598,15 @@ void main() {
       findsOneWidget,
     );
     expect(find.byIcon(Icons.more_horiz_rounded), findsOneWidget);
-    for (final button in find.byType(FilePreviewToolbarButton).evaluate()) {
-      expect(tester.getSize(find.byWidget(button.widget)), const Size(28, 28));
+    final nativeControls = find.byType(WorkspaceControlButton);
+    expect(nativeControls, findsWidgets);
+    for (final button in nativeControls.evaluate()) {
+      final control = find.byWidget(button.widget);
+      expect(find.descendant(of: control, matching: find.byType(TextButton)),
+          findsOneWidget);
+      expect(
+          find.descendant(of: control, matching: find.byType(WorkspaceGlyph)),
+          findsOneWidget);
     }
     expect(PdfPreviewGeometry.toolbarHeight, 42);
     expect(PdfPreviewGeometry.toolbarRadius, 10);
@@ -730,8 +740,7 @@ void main() {
     }
   }
 
-  testWidgets('PDF page input survives the header wrapping on resize',
-      (tester) async {
+  testWidgets('PDF page input survives wrapping on resize', (tester) async {
     await tester.binding.setSurfaceSize(const Size(1200, 320));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final width = ValueNotifier<double>(1100);
@@ -758,6 +767,77 @@ void main() {
     expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
     expect(tester.takeException(), isNull);
   });
+
+  for (final width in [320.0, 1100.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('PDF/file actions wrap on screen at $width px / ${scale}x',
+          (tester) async {
+        await tester.binding.setSurfaceSize(const Size(1200, 400));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        const copy = ValueKey('pdf-test-file-copy');
+        const share = ValueKey('pdf-test-file-share');
+        const edit = ValueKey('pdf-test-file-edit');
+        var copied = 0;
+        var shared = 0;
+        var edited = 0;
+        await tester.pumpWidget(
+          _themedApp(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox(
+                width: width,
+                child: MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: _toolbar(
+                    fileActions: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        WorkspaceControlButton(
+                            key: copy,
+                            icon: Icons.copy_rounded,
+                            tooltip: 'Copy file',
+                            onPressed: () => copied++),
+                        WorkspaceControlButton(
+                            key: share,
+                            icon: Icons.ios_share_rounded,
+                            tooltip: 'Share file',
+                            onPressed: () => shared++),
+                        WorkspaceControlButton(
+                            key: edit,
+                            icon: Icons.edit_rounded,
+                            tooltip: 'Edit file',
+                            onPressed: () => edited++),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        final row = find.byKey(const ValueKey('pdf-toolbar-controls'));
+        expect(row, findsOneWidget);
+        expect(tester.widget(row), isA<Wrap>());
+        final bounds = tester.getRect(find.byType(DocumentViewportBar));
+        for (final key in [copy, share, edit]) {
+          final action = find.byKey(key);
+          expect(action, findsOneWidget);
+          final rect = tester.getRect(action);
+          expect(rect.left, greaterThanOrEqualTo(bounds.left));
+          expect(rect.right, lessThanOrEqualTo(bounds.right));
+          expect(rect.top, greaterThanOrEqualTo(bounds.top));
+          expect(rect.bottom, lessThanOrEqualTo(bounds.bottom));
+          expect(action.hitTestable(), findsOneWidget);
+          await tester.tap(action);
+          await tester.pump();
+        }
+        expect(copied, 1);
+        expect(shared, 1);
+        expect(edited, 1);
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
 
   testWidgets('compact PDF search is docked and supports enlarged text',
       (tester) async {
@@ -794,6 +874,7 @@ void main() {
       ),
     );
     expect(find.byType(DocumentViewportBar), findsOneWidget);
+    expect(find.byType(FindReplaceBar), findsOneWidget);
     expect(find.byType(BackdropFilter), findsNothing);
     expect(find.byKey(const ValueKey('pdf-search-field')), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -869,9 +950,9 @@ void main() {
             find.byKey(const ValueKey('pdf-search-ocr')),
             find.byKey(const ValueKey('pdf-search-ocr-retry')),
             find.byKey(const ValueKey('pdf-search-copy-match')),
-            find.byTooltip('Previous match (Shift Enter)'),
-            find.byTooltip('Next match (Enter)'),
-            find.byTooltip('Close search (Esc)'),
+            find.byKey(const ValueKey('findPreviousMatch')),
+            find.byKey(const ValueKey('findNextMatch')),
+            find.byKey(const ValueKey('findClose')),
           ];
           for (final control in controls) {
             final rect = tester.getRect(control);
@@ -948,7 +1029,8 @@ void main() {
     await mouse.removePointer();
   });
 
-  testWidgets('search status is announced as a live region', (tester) async {
+  testWidgets('PDF scan status supplements the shared result live region',
+      (tester) async {
     final controller = TextEditingController(text: 'flowy');
     final focusNode = FocusNode();
     addTearDown(controller.dispose);
@@ -964,6 +1046,7 @@ void main() {
           matchCount: 8,
           searchProgress: 0.6,
           isSearching: true,
+          statusOverride: 'Scanning page 2 of 8',
           onChanged: (_) {},
           onPrevious: () {},
           onNext: () {},
@@ -973,11 +1056,52 @@ void main() {
     );
 
     expect(
-      find.bySemanticsLabel('PDF search results: 2 of 8'),
+      find.bySemanticsLabel('PDF search results: Scanning page 2 of 8'),
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('pdf-search-field')), findsOneWidget);
     semantics.dispose();
+  });
+
+  testWidgets('shared PDF find forwards the first edit but not caret changes',
+      (tester) async {
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    final queries = <String>[];
+    try {
+      await tester.pumpWidget(
+        _themedApp(
+          child: PdfSearchToolbar(
+            controller: controller,
+            focusNode: focus,
+            currentMatch: 0,
+            matchCount: 0,
+            searchProgress: null,
+            isSearching: false,
+            onChanged: queries.add,
+            onPrevious: null,
+            onNext: null,
+            onClose: () {},
+          ),
+        ),
+      );
+      await tester.enterText(
+          find.byKey(const ValueKey('findTextField')), 'first query');
+      await tester.pump();
+      expect(queries, ['first query']);
+      controller.selection =
+          const TextSelection(baseOffset: 0, extentOffset: 5);
+      await tester.pump();
+      expect(queries, ['first query']);
+      controller.text = 'second';
+      await tester.pump();
+      expect(queries, ['first query', 'second']);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      focus.dispose();
+    }
   });
 
   testWidgets('palette preserves warm paper and neutral dark surfaces', (
@@ -1329,6 +1453,7 @@ PdfPreviewToolbar _toolbar({
   VoidCallback? onFitPage,
   VoidCallback? onFitWidth,
   VoidCallback? onActualSize,
+  Widget? fileActions,
 }) =>
     PdfPreviewToolbar(
       title: 'Premium design.pdf',
@@ -1355,6 +1480,7 @@ PdfPreviewToolbar _toolbar({
       onDownload: () {},
       onPrint: () {},
       onFullscreen: () {},
+      fileActions: fileActions,
       overflow: const SizedBox.square(
         key: ValueKey('merged-pdf-overflow-trigger'),
         dimension: 30,

@@ -42,3 +42,7 @@ frontend/*.deb
 **/Cargo.toml.bak
 
 **/.cargo/**
+
+# Local performance/debugging runs, logs, dumps and verification receipts.
+# Existing tracked reference assets in this directory remain tracked.
+/build/performance/

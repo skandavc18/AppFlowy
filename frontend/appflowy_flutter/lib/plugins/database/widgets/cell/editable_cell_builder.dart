@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:appflowy/plugins/database/application/cell/cell_controller.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_skeleton/media.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_skeleton/translate.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
@@ -311,6 +312,10 @@ abstract class GridCellState<T extends EditableCellWidget> extends State<T> {
 abstract class GridEditableTextCell<T extends EditableCellWidget>
     extends GridCellState<T> {
   SingleListenerFocusNode get focusNode;
+  DatabaseFindController? _findController;
+  KeepAliveHandle? _findKeepAlive;
+  bool _findFocusSuspended = false;
+  bool _findElementActive = true;
 
   @override
   void initState() {
@@ -321,7 +326,39 @@ abstract class GridEditableTextCell<T extends EditableCellWidget>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _findController = DatabaseFindScope.maybeOf(context);
+  }
+
+  void _retainFindDraft() {
+    if (_findKeepAlive != null) return;
+    final handle = _findKeepAlive = KeepAliveHandle();
+    KeepAliveNotification(handle).dispatch(context);
+  }
+
+  void _releaseFindDraft() {
+    _findKeepAlive?.dispose();
+    _findKeepAlive = null;
+  }
+
+  @override
+  void deactivate() {
+    _findElementActive = false;
+    _releaseFindDraft();
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _findElementActive = true;
+    if (_findFocusSuspended) _retainFindDraft();
+  }
+
+  @override
   void dispose() {
+    _releaseFindDraft();
     widget.shortcutHandlers.clear();
     focusNode.removeAllListener();
     focusNode.dispose();
@@ -339,6 +376,19 @@ abstract class GridEditableTextCell<T extends EditableCellWidget>
     widget.cellContainerNotifier.isFocus = focusNode.hasFocus;
     focusNode.setListener(() {
       widget.cellContainerNotifier.isFocus = focusNode.hasFocus;
+      if (!mounted || !_findElementActive) return;
+      // Find owns a separate input. Lending it focus is not a cell submit;
+      // keep this exact editor alive if the lazy row is subsequently retired.
+      if (!focusNode.hasFocus && (_findController?.ownsFocus ?? false)) {
+        _findFocusSuspended = true;
+        _retainFindDraft();
+        return;
+      }
+      if (focusNode.hasFocus && _findFocusSuspended) {
+        _findFocusSuspended = false;
+        _releaseFindDraft();
+        return;
+      }
       focusChanged();
     });
   }

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/shared/file_browser/file_browser_items.dart';
 import 'package:appflowy/shared/file_browser/file_browser_view.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_selection.dart';
 import 'package:flutter/material.dart';
 
@@ -139,6 +140,11 @@ class _ArchiveBrowserState extends State<ArchiveBrowser> {
     }
 
     return FileBrowserItems(
+      scrollController: widget.mode != FileBrowserViewMode.columns ||
+              widget.searching ||
+              currentColumn
+          ? StandaloneFilePageScroll.maybeOf(context)?.inner
+          : null,
       entries: rows,
       selection: widget.selection,
       details: widget.mode == FileBrowserViewMode.details,

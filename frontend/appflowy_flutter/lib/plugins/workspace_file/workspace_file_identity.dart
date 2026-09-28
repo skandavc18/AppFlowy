@@ -1,11 +1,16 @@
+import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_icon_picker.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/document_viewer/file_action_band.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/page_cover.dart';
+import 'package:appflowy/shared/page_icon.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
@@ -75,6 +80,7 @@ class WorkspaceFileIdentityRow extends StatefulWidget {
 
 class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
   final _titleFocus = FocusNode(debugLabel: 'workspace-file-title');
+  final _toolsScroll = ScrollController();
   // A renderer publishes after loading. Moving the original-file actions into
   // its toolbar must not reset a pending Copy/Share or its focus/feedback.
   final _fileActionsKey = GlobalKey(debugLabel: 'workspace-file-actions');
@@ -121,6 +127,7 @@ class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
   void dispose() {
     _generation++;
     _titleFocus.dispose();
+    _toolsScroll.dispose();
     super.dispose();
   }
 
@@ -253,33 +260,30 @@ class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
   @override
   Widget build(BuildContext context) {
     final style = DocumentViewportStyle.of(context);
-    final face = Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
     final canRename = _canRename;
     _wasEditable = canRename;
     final generation = _generation;
     final binding = widget.binding;
     final id = widget.view.id;
     final glyph = SizedBox.square(
-      dimension: 30,
+      dimension: WorkspaceTokens.pageIconSize,
       child: Center(
         child: FileIdentityGlyph(
           icon: widget.view.icon.toEmojiIconData(),
           name: _name,
+          size: WorkspaceTokens.pageIconSize,
           color: style.icon,
         ),
       ),
     );
-    final visible = widget.actionsVisible ||
-        _pickerOpen ||
-        _renaming ||
-        _failed ||
-        widget.controls.keepActionsVisible;
     final fileActions = Wrap(
       key: _fileActionsKey,
-      alignment: WrapAlignment.end,
-      runSpacing: 4,
+      spacing: WorkspaceTokens.space1,
+      runSpacing: WorkspaceTokens.space1,
+      alignment: fileActionRunAlignment(context),
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        ...widget.controls.actions,
         ExcludeFocus(
           excluding: !widget.fileAvailable,
           child: Visibility(
@@ -295,21 +299,20 @@ class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
           ),
         ),
         if (canRename)
-          DocumentViewportButton(
+          WorkspaceControlButton(
             key: const ValueKey('workspace-file-rename'),
             icon: Icons.drive_file_rename_outline_rounded,
             tooltip: LocaleKeys.disclosureAction_rename.tr(),
             onPressed: _saving ? null : _beginRename,
           ),
-        ...widget.controls.actions,
       ],
     );
     final toolbarBuilder = widget.controls.toolbarBuilder;
     final toolbar = toolbarBuilder == null
         ? Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 8,
-            runSpacing: 4,
+            spacing: WorkspaceTokens.space2,
+            runSpacing: WorkspaceTokens.space1,
+            alignment: fileActionRunAlignment(context),
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               if (widget.controls.toolbar != null) widget.controls.toolbar!,
@@ -317,169 +320,236 @@ class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
             ],
           )
         : Builder(builder: (context) => toolbarBuilder(context, fileActions));
-    final header = DocumentViewportBar(
-      key: const ValueKey('workspace-file-identity-row'),
-      background: style.canvas,
-      padding: EdgeInsets.fromLTRB(
-        16,
-        // Keep Copy's existing feedback badge inside the header's bounds.
-        MediaQuery.textScalerOf(context).scale(10) * 1.2 + 8,
-        16,
-        8,
-      ),
-      child: StandaloneFileHeaderLayout(
-        identity: Row(
-          children: [
-            if (widget.controls.leading != null) widget.controls.leading!,
-            KeyedSubtree(
-              key: const ValueKey('workspace-file-identity-icon'),
-              child: canRename
-                  ? ViewIconPicker(
-                      key: ValueKey(
-                        (
-                          widget.binding,
-                          widget.repository,
-                          widget.updateIcon,
-                        ),
-                      ),
-                      view: widget.view,
-                      updateIcon: _writeIcon,
-                      onViewChanged: (view) {
-                        if (_canRename &&
-                            generation == _generation &&
-                            binding == widget.binding &&
-                            id == widget.view.id &&
-                            view.id == id) {
-                          // A picker changes an icon, never rolls back
-                          // a name or metadata saved while it was open.
-                          widget.onViewChanged(
-                            ViewPB.fromBuffer(
-                              widget.view.writeToBuffer(),
-                            )..icon = view.icon,
-                          );
-                        }
-                      },
-                      onOpenChanged: (value) {
-                        if (mounted && binding == widget.binding) {
-                          setState(() => _pickerOpen = value);
-                        }
-                      },
-                      child: glyph,
-                    )
-                  : glyph,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Focus(
-                    focusNode: _titleFocus,
-                    canRequestFocus: canRename,
-                    skipTraversal: !canRename,
-                    onKeyEvent: (_, event) {
-                      if (!_renaming &&
-                          canRename &&
-                          event is KeyDownEvent &&
-                          (isWorkspaceRenameShortcut(
-                                Theme.of(context).platform,
-                                event.logicalKey,
-                              ) ||
-                              event.logicalKey == LogicalKeyboardKey.enter)) {
-                        _beginRename();
-                        return KeyEventResult.handled;
+    final coverView = widget.view;
+    final cover = coverView.cover;
+    Widget iconPicker(Widget child, String role) => ViewIconPicker(
+          key: ValueKey((role, binding, widget.repository, widget.updateIcon)),
+          view: widget.view,
+          updateIcon: _writeIcon,
+          onViewChanged: (view) {
+            if (_canRename &&
+                generation == _generation &&
+                binding == widget.binding &&
+                id == widget.view.id &&
+                view.id == id) {
+              // An icon write must not roll back a concurrent title/cover edit.
+              widget.onViewChanged(
+                ViewPB.fromBuffer(widget.view.writeToBuffer())
+                  ..icon = view.icon,
+              );
+            }
+          },
+          onOpenChanged: (value) {
+            if (mounted && binding == widget.binding) {
+              setState(() => _pickerOpen = value);
+            }
+          },
+          child: child,
+        );
+
+    Widget header(Widget? coverAction) => LayoutBuilder(
+          builder: (context, constraints) {
+            final inset = WorkspaceTokens.pageInset(constraints.maxWidth);
+            return DocumentViewportBar(
+              key: const ValueKey('workspace-file-identity-row'),
+              background: style.canvas,
+              padding: EdgeInsets.fromLTRB(
+                inset,
+                cover == null || cover.isNone
+                    ? WorkspaceTokens.pageTopWithoutCover
+                    : WorkspaceTokens.pageTopWithCover,
+                inset,
+                WorkspaceTokens.pageHeaderBottom,
+              ),
+              child: WorkspacePageIdentity(
+                icon: KeyedSubtree(
+                  key: const ValueKey('workspace-file-identity-icon'),
+                  child: ResizablePageIcon(
+                    view: widget.view,
+                    binding: (
+                      widget.binding,
+                      widget.repository,
+                      widget.view.workspaceItem?.storageUrl,
+                    ),
+                    editable: canRename,
+                    canResize: () =>
+                        _canRename &&
+                        binding == widget.binding &&
+                        id == widget.view.id,
+                    isSameTarget: (fresh) =>
+                        fresh.workspaceItem != null &&
+                        fresh.workspaceItem?.storageUrl ==
+                            widget.view.workspaceItem?.storageUrl &&
+                        fresh.workspaceItem?.contentKind ==
+                            widget.view.workspaceItem?.contentKind,
+                    onSizeChanged: (size) {
+                      if (_canRename &&
+                          binding == widget.binding &&
+                          id == widget.view.id) {
+                        widget
+                            .onViewChanged(IconSize.applyTo(widget.view, size));
                       }
-                      return KeyEventResult.ignored;
                     },
-                    child: Listener(
-                      onPointerDown: (_) {
-                        if (!_renaming) _titleFocus.requestFocus();
-                      },
-                      child: Tooltip(
-                        message: _name,
-                        excludeFromSemantics: true,
-                        child: ExcludeFocus(
-                          excluding: !canRename,
-                          child: IgnorePointer(
-                            ignoring: !canRename,
-                            child: TextEntryShortcuts(
-                              child: WorkspaceInlineEditableText(
+                    builder: (size, _) => canRename
+                        ? iconPicker(
+                            PageIconArtwork(size: size, child: glyph),
+                            'glyph',
+                          )
+                        : PageIconArtwork(size: size, child: glyph),
+                  ),
+                ),
+                iconActions: canRename
+                    ? PreviewToolbarRegion(
+                        child: PreviewToolbar(
+                          keepVisible: _headerActive || _pickerOpen,
+                          child: Wrap(
+                            spacing: WorkspaceTokens.space2,
+                            runSpacing: WorkspaceTokens.space1,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              KeyedSubtree(
                                 key: const ValueKey(
-                                  'workspace-file-name',
+                                  'workspace-file-change-icon',
                                 ),
-                                text: _name,
-                                editing: _renaming,
-                                selectFileStem: true,
-                                maxLines: 2,
-                                style: face.copyWith(
-                                  color: style.textPrimary,
-                                  fontSize: 16,
-                                  height: 1.3,
-                                  fontWeight: FontWeight.w600,
-                                  fontVariations: const [
-                                    FontVariation.weight(600),
-                                  ],
+                                child: iconPicker(
+                                  DecorationActionButton(
+                                    icon: FlowySvgs.add_icon_s,
+                                    label: LocaleKeys
+                                        .document_plugins_cover_changeIcon
+                                        .tr(),
+                                  ),
+                                  'change-icon',
                                 ),
-                                onDoubleTap: canRename ? _beginRename : null,
-                                onSubmitted: (name) => _rename(
-                                  name,
-                                  generation,
-                                  binding,
-                                  id,
-                                ),
-                                onCancelled: () {
-                                  if (mounted &&
-                                      generation == _generation &&
-                                      binding == widget.binding) {
-                                    _cancelRename();
-                                  }
-                                },
                               ),
+                              if (coverAction != null)
+                                KeyedSubtree(
+                                  key: const ValueKey(
+                                    'workspace-file-add-cover',
+                                  ),
+                                  child: coverAction,
+                                ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : null,
+                title: Focus(
+                  focusNode: _titleFocus,
+                  canRequestFocus: canRename,
+                  skipTraversal: !canRename,
+                  onKeyEvent: (_, event) {
+                    if (!_renaming &&
+                        canRename &&
+                        event is KeyDownEvent &&
+                        (isWorkspaceRenameShortcut(
+                              Theme.of(context).platform,
+                              event.logicalKey,
+                            ) ||
+                            event.logicalKey == LogicalKeyboardKey.enter)) {
+                      _beginRename();
+                      return KeyEventResult.handled;
+                    }
+                    return KeyEventResult.ignored;
+                  },
+                  child: Listener(
+                    onPointerDown: (_) {
+                      if (!_renaming) _titleFocus.requestFocus();
+                    },
+                    child: Tooltip(
+                      message: _name,
+                      excludeFromSemantics: true,
+                      child: ExcludeFocus(
+                        excluding: !canRename,
+                        child: IgnorePointer(
+                          ignoring: !canRename,
+                          child: TextEntryShortcuts(
+                            child: WorkspaceInlineEditableText(
+                              key: const ValueKey('workspace-file-name'),
+                              text: _name,
+                              editing: _renaming,
+                              selectFileStem: true,
+                              maxLines: 2,
+                              style: WorkspaceTypography.style(
+                                context,
+                                WorkspaceTextRole.pageTitle,
+                                compact: constraints.maxWidth < 600,
+                              ),
+                              onDoubleTap: canRename ? _beginRename : null,
+                              onSubmitted: (name) =>
+                                  _rename(name, generation, binding, id),
+                              onCancelled: () {
+                                if (mounted &&
+                                    generation == _generation &&
+                                    binding == widget.binding) {
+                                  _cancelRename();
+                                }
+                              },
                             ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                  Text(
-                    widget.summary,
-                    key: const ValueKey('workspace-file-metadata'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: face.copyWith(
-                      color: style.textMuted,
-                      fontSize: 11,
-                      height: 1.3,
+                ),
+                metadata: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.summary,
+                      key: const ValueKey('workspace-file-metadata'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  if (_failed)
-                    Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        LocaleKeys.workspaceFolderExplorer_operationFailed.tr(),
-                        key: const ValueKey(
-                          'workspace-file-rename-error',
-                        ),
-                        style: face.copyWith(
-                          color: Theme.of(context).colorScheme.error,
-                          fontSize: 11,
+                    if (_failed)
+                      Semantics(
+                        liveRegion: true,
+                        child: Text(
+                          LocaleKeys.workspaceFolderExplorer_operationFailed
+                              .tr(),
+                          key: const ValueKey('workspace-file-rename-error'),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
                         ),
                       ),
+                  ],
+                ),
+                actions: PreviewToolbar(
+                  key: const ValueKey('workspace-file-tools'),
+                  // Standalone file tools are persistent, unlike inline
+                  // editing overlays. Keep the retained subtree and clipping.
+                  keepVisible: true,
+                  child: FileActionBand(
+                    scrollKey: const ValueKey('workspace-file-toolbar-scroll'),
+                    controller: _toolsScroll,
+                    responsive: toolbarBuilder == null ||
+                        widget.controls.responsiveToolbar,
+                    // Reserve feedback ABOVE the action row, not above the
+                    // page icon. The scroll clip must not crop Copy's badge.
+                    padding: EdgeInsets.only(
+                      top:
+                          MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
                     ),
-                ],
+                    builder: (context) => Column(
+                      key: const ValueKey('workspace-file-toolbar-content'),
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: toolbarBuilder == null ||
+                              widget.controls.responsiveToolbar
+                          ? CrossAxisAlignment.stretch
+                          : CrossAxisAlignment.end,
+                      children: [
+                        if (widget.controls.leading != null)
+                          widget.controls.leading!,
+                        toolbar,
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ],
-        ),
-        tools: PreviewToolbar(
-          key: const ValueKey('workspace-file-tools'),
-          keepVisible: visible,
-          child: toolbar,
-        ),
-      ),
-    );
-    final cover = widget.view.cover;
+            );
+          },
+        );
     final decoration = ViewDecorationActions(
       key: const ValueKey('workspace-file-decoration'),
       view: widget.view,
@@ -513,36 +583,61 @@ class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
             Padding(
               key: const ValueKey('workspace-file-cover'),
               padding: const EdgeInsets.all(WorkspaceTokens.coverInset),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(WorkspaceTokens.heroRadius),
-                child: SizedBox(
-                  height: (MediaQuery.sizeOf(context).height * 0.18)
-                      .clamp(72.0, WorkspaceTokens.compactCoverHeight),
-                  child: WorkspacePageCover(
-                    image: ViewCoverImage(
-                      cover: cover,
-                      userProfile: widget.userProfile,
+              child: LayoutBuilder(
+                builder: (context, constraints) => PageCoverLayout(
+                  width: constraints.maxWidth,
+                  fallbackHeight: (MediaQuery.sizeOf(context).height * 0.18)
+                      .clamp(96.0, WorkspaceTokens.compactCoverHeight)
+                      .toDouble(),
+                  view: coverView,
+                  binding: (
+                    binding,
+                    widget.repository,
+                    coverView.workspaceItem?.storageUrl,
+                  ),
+                  editable: canRename && !_saving,
+                  // Copy/Share owns its private pending lock independently;
+                  // changing cover geometry does not replace that action owner.
+                  canResize: () =>
+                      _canRename &&
+                      !_saving &&
+                      binding == widget.binding &&
+                      samePageCoverSource(coverView, widget.view),
+                  isSameTarget: (fresh) =>
+                      fresh.workspaceItem != null &&
+                      fresh.workspaceItem?.storageUrl ==
+                          coverView.workspaceItem?.storageUrl &&
+                      fresh.workspaceItem?.contentKind ==
+                          coverView.workspaceItem?.contentKind,
+                  onHeightChanged: (height) {
+                    if (_canRename &&
+                        !_saving &&
+                        binding == widget.binding &&
+                        samePageCoverSource(coverView, widget.view)) {
+                      widget.onViewChanged(
+                        PageCoverHeight.applyTo(widget.view, height),
+                      );
+                    }
+                  },
+                  builder: (context, height, grip) => SizedBox(
+                    height: height,
+                    child: WorkspacePageCover(
+                      image: ViewCoverImage(
+                        cover: cover,
+                        userProfile: widget.userProfile,
+                      ),
+                      actions: coverActions,
+                      resizeGrip: grip,
                     ),
-                    actions: coverActions,
                   ),
                 ),
               ),
             ),
-          if (iconActions != null)
-            Padding(
-              key: const ValueKey('workspace-file-add-cover'),
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: PreviewToolbarRegion(child: iconActions),
-              ),
-            ),
-          // Both the saved cover and its empty-state action precede identity.
-          // Keep the heading keyed when either decoration appears/disappears:
+          // Keep the heading keyed when a cover appears/disappears:
           // title drafts, media actions and the renderer below stay mounted.
           KeyedSubtree(
             key: const ValueKey('workspace-file-heading'),
-            child: header,
+            child: header(iconActions),
           ),
         ],
       ),

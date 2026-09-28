@@ -34,10 +34,12 @@ namespace flutter_inappwebview_plugin
 
   FlutterInappwebviewWindowsPlugin::~FlutterInappwebviewWindowsPlugin()
   {
-    webViewEnvironmentManager = nullptr;
-    inAppWebViewManager = nullptr;
     inAppBrowserManager = nullptr;
     headlessInAppWebViewManager = nullptr;
+    inAppWebViewManager = nullptr;
     cookieManager = nullptr;
+    // Views close their apartment-bound controllers before environments close
+    // their hidden controllers. Deferred texture retirement owns no manager.
+    webViewEnvironmentManager = nullptr;
   }
 }

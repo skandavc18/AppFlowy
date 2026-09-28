@@ -1,9 +1,11 @@
 import 'dart:io';
 
 import 'package:appflowy/shared/appflowy_network_image.dart';
+import 'package:appflowy/shared/cover_image_decode.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/page_cover.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
@@ -14,15 +16,18 @@ class ViewCoverImage extends StatelessWidget {
     super.key,
     required this.cover,
     this.userProfile,
-    this.fit = BoxFit.cover,
+    BoxFit? fit,
+    this.alignment,
     this.width,
     this.height,
     this.fallback,
-  });
+  }) : _fit = fit;
 
   final PageStyleCover cover;
   final UserProfilePB? userProfile;
-  final BoxFit fit;
+  final BoxFit? _fit;
+  BoxFit get fit => _fit ?? BoxFit.cover;
+  final Alignment? alignment;
   final double? width;
   final double? height;
   final Widget? fallback;
@@ -31,22 +36,42 @@ class ViewCoverImage extends StatelessWidget {
   Widget build(BuildContext context) {
     final fallback =
         this.fallback ?? _CoverFallback(width: width, height: height);
+    final presentation = PageCoverPresentation.maybeOf(context);
+    final fit = _fit ?? presentation?.appearance.boxFit ?? BoxFit.cover;
+    final alignment =
+        this.alignment ?? presentation?.alignment ?? Alignment.center;
 
+    if (cover.type == PageStyleCoverImageType.builtInImage ||
+        cover.type == PageStyleCoverImageType.localImage ||
+        cover.type == PageStyleCoverImageType.customImage ||
+        cover.type == PageStyleCoverImageType.unsplashImage) {
+      return LayoutBuilder(builder: (context, constraints) {
+        final decode = CoverImageDecodeSize.fromConstraints(
+          constraints,
+          MediaQuery.devicePixelRatioOf(context),
+          width: width,
+          height: height,
+        );
+        if (cover.type == PageStyleCoverImageType.builtInImage) {
+          return _buildImage(
+            AssetImage(PageStyleCoverImageType.builtInImagePath(cover.value)),
+            fallback,
+            fit,
+            alignment,
+            decode,
+          );
+        }
+        if (cover.type == PageStyleCoverImageType.localImage) {
+          return _buildLocalImage(fallback, fit, alignment, decode);
+        }
+        return _buildNetworkImage(fallback, fit, alignment, decode);
+      });
+    }
     return switch (cover.type) {
       PageStyleCoverImageType.none => fallback,
       PageStyleCoverImageType.pureColor => _buildColor(context, fallback),
       PageStyleCoverImageType.gradientColor => _buildGradient(),
-      PageStyleCoverImageType.builtInImage => Image.asset(
-          PageStyleCoverImageType.builtInImagePath(cover.value),
-          width: width,
-          height: height,
-          fit: fit,
-          errorBuilder: (_, __, ___) => fallback,
-        ),
-      PageStyleCoverImageType.localImage => _buildLocalImage(fallback),
-      PageStyleCoverImageType.customImage ||
-      PageStyleCoverImageType.unsplashImage =>
-        _buildNetworkImage(fallback),
+      _ => fallback,
     };
   }
 
@@ -71,23 +96,38 @@ class ViewCoverImage extends StatelessWidget {
     );
   }
 
-  Widget _buildLocalImage(Widget fallback) {
-    final file = File(cover.value);
-    if (cover.value.isEmpty || !file.existsSync()) {
-      return fallback;
-    }
-    return Image.file(
-      file,
+  Widget _buildImage(ImageProvider provider, Widget fallback, BoxFit fit,
+      Alignment alignment, CoverImageDecodeSize? decode) {
+    return Image(
+      image:
+          decode == null ? provider : CoverImageProvider(provider, decode, fit),
       width: width,
       height: height,
       fit: fit,
+      alignment: alignment,
+      frameBuilder: (_, child, frame, synchronous) =>
+          frame != null || synchronous ? child : fallback,
       errorBuilder: (_, __, ___) => fallback,
     );
   }
 
-  Widget _buildNetworkImage(Widget fallback) {
+  Widget _buildLocalImage(Widget fallback, BoxFit fit, Alignment alignment,
+      CoverImageDecodeSize? decode) {
+    if (cover.value.isEmpty) return fallback;
     final uri = Uri.tryParse(cover.value);
-    if (uri == null || !uri.hasScheme) {
+    final file = uri?.scheme == 'file' ? File.fromUri(uri!) : File(cover.value);
+    // FileImage handles missing files asynchronously; do not stat every cover
+    // synchronously during layout/resize.
+    return _buildImage(FileImage(file), fallback, fit, alignment, decode);
+  }
+
+  Widget _buildNetworkImage(Widget fallback, BoxFit fit, Alignment alignment,
+      CoverImageDecodeSize? decode) {
+    final uri = Uri.tryParse(cover.value);
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        (cover.value.isAppFlowyCloudUrl &&
+            (userProfile == null || userProfile!.token.isEmpty))) {
       return fallback;
     }
     return FlowyNetworkImage(
@@ -96,7 +136,15 @@ class ViewCoverImage extends StatelessWidget {
       width: width,
       height: height,
       fit: fit,
-      progressIndicatorBuilder: (_, __, ___) => fallback,
+      alignment: alignment,
+      coverDecodeSize: decode,
+      placeholderBuilder: (_, __) => fallback,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      // A selected cover is not an AI image still being generated. Keep the
+      // shared default {404} for its existing consumers, but don't repeatedly
+      // download a permanently missing cover or retry unauthorized requests.
+      retryErrorCodes: const {408, 429, 500, 502, 503, 504},
       errorWidgetBuilder: (_, __, ___) => fallback,
     );
   }
@@ -136,6 +184,10 @@ class ViewCoverThumbnail extends StatelessWidget {
         child: ViewCoverImage(
           cover: cover,
           userProfile: userProfile,
+          // A thumbnail may live in a page-cover overlay. It is not the hero
+          // and must not inherit that page's fit/position presentation scope.
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
           width: width,
           height: height,
           fallback: fallback,

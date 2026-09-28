@@ -10,16 +10,25 @@ import 'package:pdfrx/pdfrx.dart';
 /// costs far more than the animation saves.
 const _maxRasterWidth = 1600.0;
 const _minRasterWidth = 240.0;
+const _maxRasterScale = 4.0;
 
 /// Anything within this factor of the requested width is reused rather than
 /// re-rendered, so a small zoom change never invalidates the cache.
 const _reuseFactor = 0.78;
 
 class _CachedPage {
-  _CachedPage(this.image, this.width);
+  _CachedPage(this.image, this.width, this.maximumWidth);
 
   final ui.Image image;
   final double width;
+  final double maximumWidth;
+}
+
+class _PendingPage {
+  _PendingPage(this.width, this.image);
+
+  final double width;
+  final Future<ui.Image?> image;
 }
 
 /// Keeps rasterised PDF pages ready so a page turn never has to decode a page
@@ -29,7 +38,9 @@ class PdfPageRasterCache {
 
   final int maxEntries;
   final Map<int, _CachedPage> _pages = {};
-  final Map<int, Future<ui.Image?>> _pending = {};
+  final Map<int, _PendingPage> _pending = {};
+  PdfDocument? _document;
+  int _generation = 0;
   int _lastRequested = 1;
   bool _disposed = false;
 
@@ -41,7 +52,11 @@ class PdfPageRasterCache {
     if (cached == null) {
       return null;
     }
-    return cached.width >= minWidth * _reuseFactor ? cached.image : null;
+    // A ready raster must satisfy the same bounded budget as its producer.
+    // Comparing a 1600px bitmap with an uncapped high-DPI width made every
+    // subsequent curl silently fall back, however long rasterisation waited.
+    final requiredWidth = math.min(minWidth, cached.maximumWidth);
+    return cached.width >= requiredWidth * _reuseFactor ? cached.image : null;
   }
 
   /// Renders [page] unless a good enough bitmap is already cached.
@@ -49,20 +64,44 @@ class PdfPageRasterCache {
     if (_disposed) {
       return Future.value();
     }
-    final width = targetWidth.clamp(_minRasterWidth, _maxRasterWidth);
+    _bindDocument(page.document);
+    final generation = _generation;
+    final width = math.min(
+      targetWidth.clamp(_minRasterWidth, _maxRasterWidth),
+      page.width * _maxRasterScale,
+    );
     _lastRequested = page.pageNumber;
     final existing = peek(page.pageNumber, minWidth: width);
     if (existing != null) {
       return Future.value(existing);
     }
-    return _pending[page.pageNumber] ??= _render(page, width).whenComplete(
-      () => _pending.remove(page.pageNumber),
+    final pending = _pending[page.pageNumber];
+    if (pending != null) {
+      if (pending.width >= width * _reuseFactor) return pending.image;
+      // A zoom/DPI increase may arrive while a smaller neighbour is rendering.
+      // Finish that work, then satisfy the newer budget rather than returning
+      // a bitmap that the scene immediately rejects as too small.
+      return pending.image.then((image) {
+        if (image == null || _disposed || generation != _generation) {
+          return null;
+        }
+        return load(page, targetWidth: width);
+      });
+    }
+    final image = _render(page, width, generation).whenComplete(
+      () {
+        // An old document's completion must not remove a newer pending page
+        // with the same number.
+        if (generation == _generation) _pending.remove(page.pageNumber);
+      },
     );
+    _pending[page.pageNumber] = _PendingPage(width, image);
+    return image;
   }
 
-  Future<ui.Image?> _render(PdfPage page, double width) async {
+  Future<ui.Image?> _render(PdfPage page, double width, int generation) async {
     try {
-      final scale = (width / page.width).clamp(0.2, 4.0);
+      final scale = width / page.width;
       final rendered = await page.render(
         fullWidth: page.width * scale,
         fullHeight: page.height * scale,
@@ -77,12 +116,16 @@ class PdfPageRasterCache {
       } finally {
         rendered.dispose();
       }
-      if (_disposed) {
+      if (_disposed || generation != _generation) {
         image.dispose();
         return null;
       }
       _pages.remove(page.pageNumber)?.image.dispose();
-      _pages[page.pageNumber] = _CachedPage(image, page.width * scale);
+      _pages[page.pageNumber] = _CachedPage(
+        image,
+        width,
+        math.min(_maxRasterWidth, page.width * _maxRasterScale),
+      );
       _evict();
       return image;
     } on Object {
@@ -112,8 +155,11 @@ class PdfPageRasterCache {
     Iterable<int> pageNumbers, {
     required double targetWidth,
   }) async {
+    if (_disposed) return;
+    _bindDocument(document);
+    final generation = _generation;
     for (final pageNumber in pageNumbers) {
-      if (_disposed) {
+      if (_disposed || generation != _generation) {
         return;
       }
       if (pageNumber < 1 || pageNumber > document.pages.length) {
@@ -128,14 +174,28 @@ class PdfPageRasterCache {
     required double onScreenWidth,
     required double devicePixelRatio,
   }) =>
-      math.max(onScreenWidth, 1) * devicePixelRatio;
+      (math.max(onScreenWidth, 1) * devicePixelRatio)
+          .clamp(_minRasterWidth, _maxRasterWidth);
 
-  void dispose() {
-    _disposed = true;
+  void _bindDocument(PdfDocument document) {
+    if (identical(document, _document)) return;
+    clear();
+    _document = document;
+  }
+
+  /// Invalidates both ready and pending pages without reopening the viewer.
+  void clear() {
+    ++_generation;
+    _document = null;
     for (final cached in _pages.values) {
       cached.image.dispose();
     }
     _pages.clear();
     _pending.clear();
+  }
+
+  void dispose() {
+    _disposed = true;
+    clear();
   }
 }

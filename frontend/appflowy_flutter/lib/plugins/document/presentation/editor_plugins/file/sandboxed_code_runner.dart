@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_test_case_panel.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/local_code_runner.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/document_viewer/file_action_band.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
@@ -1020,6 +1021,7 @@ class _CodeBlockHeader extends StatelessWidget {
     return StandaloneFileHeaderSlot(
       controller: host.chrome,
       controls: StandaloneFileHeader(
+        responsiveToolbar: true,
         toolbarBuilder: (context, fileActions) => _buildToolbar(
           context,
           fileActions: fileActions,
@@ -1155,6 +1157,7 @@ class _CodeBlockHeader extends StatelessWidget {
               child: fileActions != null
                   ? Wrap(
                       key: const ValueKey('code-controls'),
+                      alignment: fileActionRunAlignment(context),
                       spacing: 3,
                       runSpacing: 4,
                       crossAxisAlignment: WrapCrossAlignment.center,

@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/providers/external_collection_host.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
+import 'package:appflowy/plugins/collection/providers/provider_page_flow.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/album/album_metadata.dart';
@@ -29,6 +32,7 @@ class AlbumHost extends StatefulWidget {
     required this.collection,
     required this.builder,
     this.needsDates = true,
+    this.pageControlsBuilder,
   });
 
   final CollectionViewContext collection;
@@ -42,6 +46,11 @@ class AlbumHost extends StatefulWidget {
   /// header has to be read before the order settles.
   final bool needsDates;
 
+  /// Controls for a bounded reading with an explicitly borrowing primary list.
+  /// Built above provider statuses, never installed over a native player.
+  final Widget Function(BuildContext, AlbumController, CollectionPalette)?
+      pageControlsBuilder;
+
   @override
   State<AlbumHost> createState() => _AlbumHostState();
 }
@@ -49,6 +58,7 @@ class AlbumHost extends StatefulWidget {
 class _AlbumHostState extends State<AlbumHost> {
   late final AlbumController controller;
   ProviderController? provider;
+  int _providerBinding = 0;
 
   CollectionSource get source => widget.collection.collectionView.source;
 
@@ -82,6 +92,7 @@ class _AlbumHostState extends State<AlbumHost> {
     super.didUpdateWidget(oldWidget);
     final previous = oldWidget.collection.collectionView.source;
     if (previous.cacheKey != source.cacheKey) {
+      _providerBinding++;
       provider?.removeListener(_syncProviderItems);
       provider?.dispose();
       provider = null;
@@ -93,6 +104,7 @@ class _AlbumHostState extends State<AlbumHost> {
 
   @override
   void dispose() {
+    _providerBinding++;
     widget.collection.explorer.removeListener(_syncItems);
     provider?.removeListener(_syncProviderItems);
     provider?.dispose();
@@ -113,9 +125,10 @@ class _AlbumHostState extends State<AlbumHost> {
   /// coordinate the wall, the timeline and the places plot read, so nothing
   /// here is a second album implementation — only a second source of items.
   void _bindProvider() {
+    final binding = ++_providerBinding;
     unawaited(
       ProviderConnections.instance.ensureLoaded().then((_) {
-        if (!mounted || !source.isRemote) {
+        if (!mounted || !source.isRemote || binding != _providerBinding) {
           return;
         }
         final created = ProviderController(
@@ -165,43 +178,88 @@ class _AlbumHostState extends State<AlbumHost> {
 
   @override
   Widget build(BuildContext context) {
+    final controls = widget.pageControlsBuilder;
+    final flow = ProviderPageFlow(builder: _buildContent);
+    if (controls == null) return flow;
+    return FileBrowserPageHeader(
+      header: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (FileBrowserPageHeader.maybeOf(context) case final header?) header,
+          controls(context, controller,
+              CollectionPalette.of(context, CollectionKind.album)),
+        ],
+      ),
+      child: flow,
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
     final palette = CollectionPalette.of(context, CollectionKind.album);
     final live = provider;
     if (source.isRemote &&
         (live == null || (live.isBusy && live.nodes.isEmpty))) {
-      return ProviderStateView(
-        status: ProviderStatus.loading,
-        info: source.info,
-        palette: palette,
-      );
+      return _withPageHeader(
+          context,
+          ProviderStateView(
+            status: ProviderStatus.loading,
+            info: source.info,
+            palette: palette,
+          ));
     }
     if (live != null && live.hasFailed && live.nodes.isEmpty) {
-      return ProviderStateView(
-        status: live.status,
-        info: source.info,
-        palette: palette,
-        retryAfter: live.failure?.retryAfter,
-        onRetry: () => unawaited(live.refresh()),
-        onReconnect: () => ProviderReconnectRequest.of(context)?.call(source),
-      );
+      return _withPageHeader(
+          context,
+          ProviderStateView(
+            status: live.status,
+            info: source.info,
+            palette: palette,
+            retryAfter: live.failure?.retryAfter,
+            onRetry: () => unawaited(live.refresh()),
+            onReconnect: () =>
+                ProviderReconnectRequest.of(context)?.call(source),
+          ));
     }
     if (live == null) {
       return widget.builder(context, controller, palette);
     }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (live.hasFailed)
-          ProviderStaleBanner(
+    final banner = live.hasFailed
+        ? ProviderStaleBanner(
             status: live.status,
             info: source.info,
             palette: palette,
             onRetry: () => unawaited(live.refresh(silent: true)),
             onReconnect: () =>
                 ProviderReconnectRequest.of(context)?.call(source),
-          ),
+          )
+        : null;
+    final header = FileBrowserPageHeader.maybeOf(context);
+    if (header != null) {
+      return FileBrowserPageHeader(
+        header: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [header, if (banner != null) banner],
+        ),
+        child: Builder(
+            builder: (context) => widget.builder(context, controller, palette)),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (banner != null) banner,
         Expanded(child: widget.builder(context, controller, palette)),
       ],
+    );
+  }
+
+  Widget _withPageHeader(BuildContext context, Widget state) {
+    final header = FileBrowserPageHeader.maybeOf(context);
+    if (header == null) return state;
+    return FileBrowserScrollView(
+      controller: CollectionPageScrollScope.maybeOf(context),
+      header: header,
+      slivers: [SliverFillRemaining(hasScrollBody: false, child: state)],
     );
   }
 }

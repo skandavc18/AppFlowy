@@ -4,22 +4,29 @@ import 'package:fixnum/fixnum.dart';
 
 class CommandPaletteFilter {
   const CommandPaletteFilter({
-    this.titleOnly = false,
+    bool titleOnly = false,
+    this.pageContents = false,
     this.createdByMe = false,
     this.spaceId,
     this.pageType,
-  });
+  }) : titleOnly = titleOnly && !pageContents;
 
   final bool titleOnly;
+  final bool pageContents;
   final bool createdByMe;
   final String? spaceId;
   final ViewLayoutPB? pageType;
 
   bool get isActive =>
-      titleOnly || createdByMe || spaceId != null || pageType != null;
+      titleOnly ||
+      pageContents ||
+      createdByMe ||
+      spaceId != null ||
+      pageType != null;
 
   CommandPaletteFilter copyWith({
     bool? titleOnly,
+    bool? pageContents,
     bool? createdByMe,
     String? spaceId,
     bool clearSpace = false,
@@ -27,7 +34,9 @@ class CommandPaletteFilter {
     bool clearPageType = false,
   }) {
     return CommandPaletteFilter(
-      titleOnly: titleOnly ?? this.titleOnly,
+      titleOnly: titleOnly ?? (pageContents == true ? false : this.titleOnly),
+      pageContents:
+          pageContents ?? (titleOnly == true ? false : this.pageContents),
       createdByMe: createdByMe ?? this.createdByMe,
       spaceId: clearSpace ? null : spaceId ?? this.spaceId,
       pageType: clearPageType ? null : pageType ?? this.pageType,
@@ -42,8 +51,13 @@ class CommandPaletteFilter {
     required Int64? currentUserId,
   }) {
     if (titleOnly &&
-        query.isNotEmpty &&
-        !item.displayName.toLowerCase().contains(query.toLowerCase())) {
+        paletteTitleRank(
+              view != null && view.name.trim().isNotEmpty
+                  ? view.name
+                  : item.displayName,
+              query,
+            ) ==
+            null) {
       return false;
     }
 
@@ -115,4 +129,28 @@ class CommandPaletteFilter {
 
     return false;
   }
+}
+
+/// Shared literal/fuzzy title semantics. Exact and prefix hits win; whitespace
+/// and case never change whether the title-only toggle accepts a cached hit.
+String normalizePaletteQuery(String value) =>
+    value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+int? paletteTitleRank(String title, String query) {
+  final needle = normalizePaletteQuery(query);
+  final name = normalizePaletteQuery(title);
+  if (needle.isEmpty) return 0;
+  if (needle.length > 256) return null;
+  if (name == needle) return 0;
+  if (name.startsWith(needle)) return 1;
+  if (name.contains(needle)) return 2;
+  if (needle.split(' ').every(name.contains)) return 3;
+  // Subsequence matching keeps Ctrl+P useful for abbreviated page titles.
+  var offset = 0;
+  for (final rune in needle.runes) {
+    final found = name.indexOf(String.fromCharCode(rune), offset);
+    if (found < 0) return null;
+    offset = found + String.fromCharCode(rune).length;
+  }
+  return 4;
 }

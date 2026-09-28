@@ -15,6 +15,7 @@ class StandaloneFileHeader {
     this.actions = const [],
     this.toolbar,
     this.toolbarBuilder,
+    this.responsiveToolbar = false,
     this.leading,
     this.keepActionsVisible = false,
   });
@@ -25,6 +26,7 @@ class StandaloneFileHeader {
   /// Laid out at the host's actual width, with original-file actions in the
   /// same control group. The renderer itself remains in its original subtree.
   final StandaloneFileToolbarBuilder? toolbarBuilder;
+  final bool responsiveToolbar;
   final Widget? leading;
   final bool keepActionsVisible;
 }
@@ -33,7 +35,7 @@ class StandaloneFileHeader {
 ///
 /// Unlike a percentage-sized toolbar slot, loose measurement lets a renderer's
 /// Wrap hug its controls. The measured group is then placed at the content's
-/// trailing gutter. If the title would be squeezed, tools move below it using
+/// physical-right gutter. If the title would be squeezed, tools move below it using
 /// the same render children: no breakpoint reparenting, scrolling or clipping.
 /// Like the standalone pane it serves, this layout requires a bounded width.
 class StandaloneFileHeaderLayout extends MultiChildRenderObjectWidget {
@@ -52,7 +54,6 @@ class StandaloneFileHeaderLayout extends MultiChildRenderObjectWidget {
   RenderObject createRenderObject(BuildContext context) =>
       _RenderStandaloneFileHeader(
         minimumIdentityWidth: _minimumIdentityWidth(context),
-        textDirection: Directionality.of(context),
       );
 
   @override
@@ -60,9 +61,8 @@ class StandaloneFileHeaderLayout extends MultiChildRenderObjectWidget {
     BuildContext context,
     RenderObject renderObject,
   ) {
-    (renderObject as _RenderStandaloneFileHeader)
-      ..minimumIdentityWidth = _minimumIdentityWidth(context)
-      ..textDirection = Directionality.of(context);
+    (renderObject as _RenderStandaloneFileHeader).minimumIdentityWidth =
+        _minimumIdentityWidth(context);
   }
 }
 
@@ -76,24 +76,15 @@ class _RenderStandaloneFileHeader extends RenderBox
             _StandaloneFileHeaderParentData> {
   _RenderStandaloneFileHeader({
     required double minimumIdentityWidth,
-    required TextDirection textDirection,
-  })  : _minimumIdentityWidth = minimumIdentityWidth,
-        _textDirection = textDirection;
+  }) : _minimumIdentityWidth = minimumIdentityWidth;
 
   static const _spacing = 12.0;
   static const _runSpacing = 4.0;
   double _minimumIdentityWidth;
-  TextDirection _textDirection;
 
   set minimumIdentityWidth(double value) {
     if (_minimumIdentityWidth == value) return;
     _minimumIdentityWidth = value;
-    markNeedsLayout();
-  }
-
-  set textDirection(TextDirection value) {
-    if (_textDirection == value) return;
-    _textDirection = value;
     markNeedsLayout();
   }
 
@@ -123,13 +114,12 @@ class _RenderStandaloneFileHeader extends RenderBox
         ? identity.size.height + _runSpacing + tools.size.height
         : math.max(identity.size.height, tools.size.height);
     size = constraints.constrain(Size(width, height));
-    final ltr = _textDirection == TextDirection.ltr;
     (identity.parentData! as _StandaloneFileHeaderParentData).offset = Offset(
-      ltr ? 0 : width - identity.size.width,
+      0,
       stacked ? 0 : (height - identity.size.height) / 2,
     );
     (tools.parentData! as _StandaloneFileHeaderParentData).offset = Offset(
-      ltr ? width - tools.size.width : 0,
+      width - tools.size.width,
       stacked
           ? identity.size.height + _runSpacing
           : (height - tools.size.height) / 2,

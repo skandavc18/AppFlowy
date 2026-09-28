@@ -2,6 +2,8 @@
 
 import 'dart:async';
 
+import 'package:appflowy/plugins/ai_chat/presentation/chat_find.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/util/debounce.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:diffutil_dart/diffutil.dart' as diffutil;
@@ -79,6 +81,27 @@ class _ChatAnimatedListState extends State<ChatAnimatedList>
   List<Message> messages = [];
 
   final ChatMessageHeightManager heightManager = ChatMessageHeightManager();
+  ChatFindController? _find;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final owner = SurfaceFindScope.maybeOf(context);
+    final find = owner is ChatFindController ? owner : null;
+    if (find == _find) return;
+    _find?.detachList(_jumpToMessage);
+    _find = find;
+    _find?.attachList(_jumpToMessage);
+  }
+
+  void _jumpToMessage(String messageId) {
+    if (!mounted || !itemScrollController.isAttached) return;
+    final index = chatController.messages
+        .indexWhere((message) => message.id == messageId);
+    if (index < 0) return;
+    loadPreviousMessagesDebounce.dispose();
+    itemScrollController.jumpTo(index: index, alignment: 0.2);
+  }
 
   @override
   void initState() {
@@ -160,6 +183,8 @@ class _ChatAnimatedListState extends State<ChatAnimatedList>
 
   @override
   void dispose() {
+    _find?.detachList(_jumpToMessage);
+    loadPreviousMessagesDebounce.dispose();
     scrollToBottomShowTimer?.cancel();
     scrollToBottomController.dispose();
     operationsSubscription.cancel();
@@ -236,6 +261,7 @@ class _ChatAnimatedListState extends State<ChatAnimatedList>
   }
 
   Future<void> _scrollLastUserMessageToTop() async {
+    if (!mounted || _find?.isOpen == true) return;
     final user = Provider.of<User>(context, listen: false);
     final lastUserMessageIndex = messages.lastIndexWhere(
       (message) => message.author.id == user.id,
@@ -307,6 +333,7 @@ class _ChatAnimatedListState extends State<ChatAnimatedList>
   }
 
   void _handleLoadPreviousMessages() {
+    if (!mounted || _find?.isOpen == true) return;
     final sortedItems = itemPositionsListener.itemPositions.value.toList()
       ..sort((a, b) => a.index.compareTo(b.index));
     final minItem = sortedItems.firstOrNull;
@@ -317,7 +344,9 @@ class _ChatAnimatedListState extends State<ChatAnimatedList>
 
     loadPreviousMessagesDebounce.call(
       () {
-        widget.onLoadPreviousMessages?.call();
+        if (mounted && _find?.isOpen != true) {
+          widget.onLoadPreviousMessages?.call();
+        }
       },
     );
   }

@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy/workspace/application/settings/default_icon_style.dart';
@@ -39,7 +40,7 @@ late Map<String, dynamic> _translations;
 
 // Only the host's result counts and callback bookkeeping are controlled. The
 // bar, fields, tap regions, routes, shortcuts, semantics and desktop themes are
-// production widgets. Intentionally UNRUN in the restricted authoring session.
+// production widgets.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() async {
@@ -163,18 +164,27 @@ void main() {
     expect(bar.replaceAllCalls, 1);
     expect(find.text(_matchLabel(1, 3)), findsOneWidget);
 
-    await _click(tester, _within(_query));
-    final beforeCollapse = _FieldSnapshot(tester, _within(_query));
-    await _click(tester, _within(_toggleReplace));
-    expect(_within(_replacement), findsNothing);
-    expect(bar.queryFocus.hasPrimaryFocus, isTrue);
-    beforeCollapse.expectUnchanged(tester);
-    await _click(tester, _within(_toggleReplace));
-    expect(_within(_replacement), findsOneWidget);
-    expect(bar.replaceController.text, 'replacement draft');
-    expect(bar.queryFocus.hasPrimaryFocus, isTrue);
-    beforeCollapse.expectUnchanged(tester);
-    expect(bar.outsideCalls + bar.closeCalls, 0);
+    final semantics = tester.ensureSemantics();
+    try {
+      await _click(tester, _within(_query));
+      final beforeCollapse = _FieldSnapshot(tester, _within(_query));
+      await _click(tester, _within(_toggleReplace));
+      await _finishReplaceCollapse(tester, bar);
+      expect(bar.queryFocus.hasPrimaryFocus, isTrue);
+      beforeCollapse.expectUnchanged(tester);
+      await _click(tester, _within(_toggleReplace));
+      await tester.pump(const Duration(milliseconds: 160));
+      expect(_replacementOpacity(tester), 1);
+      await tester.pump(const Duration(microseconds: 1));
+      expect(_within(_replacement).hitTestable(), findsOneWidget);
+      expect(bar.replaceController.text, 'replacement draft');
+      expect(bar.queryFocus.hasPrimaryFocus, isTrue);
+      beforeCollapse.expectUnchanged(tester);
+      replacementSnapshot.expectUnchanged(tester);
+      expect(bar.outsideCalls + bar.closeCalls, 0);
+    } finally {
+      semantics.dispose();
+    }
   });
 
   for (final field in [_query, _replacement]) {
@@ -459,6 +469,91 @@ void main() {
   );
 
   for (final mode in _modes) {
+    _test('$mode: compact controls paint one subtle hover over their surface',
+        (tester, host) async {
+      host.layout(mode: mode);
+      await tester.pump();
+      final context = tester.element(_within(_next));
+      final palette = FindBarPalette.of(context);
+      final hover = WorkspaceChrome.hoverColor(context);
+      expect(palette.hover, hover);
+      expect(hover.a, greaterThan(0));
+      expect(hover.a, lessThanOrEqualTo(0.07));
+      final query = _FieldSnapshot(tester, _within(_query));
+      final replacement = _FieldSnapshot(tester, _within(_replacement));
+      final mouse =
+          await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+      await mouse.addPointer(location: const Offset(880, 780));
+      try {
+        final buttonBounds = tester.getRect(_within(_next));
+        expect(buttonBounds.size, const Size(26, 26));
+        expect(_buttonMaterial(tester, _next).color!.a, 0);
+        await mouse.moveTo(buttonBounds.center);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 140));
+        final button = tester.widget<IconButton>(_within(_next));
+        final ink = tester.widget<InkWell>(
+          find.descendant(of: _within(_next), matching: find.byType(InkWell)),
+        );
+        expect(button.hoverColor, isNull);
+        expect(_buttonMaterial(tester, _next).color, hover);
+        expect(ink.overlayColor!.resolve({WidgetState.hovered})!.a, 0);
+        expect(
+          Color.alphaBlend(
+            _buttonMaterial(tester, _next).color!,
+            palette.surface,
+          ),
+          PremiumThemeExtension.of(context).hoverOn(palette.surface),
+        );
+        expect(tester.getRect(_within(_next)), buttonBounds);
+        expect((button.icon as WorkspaceGlyph).size, 16);
+
+        await mouse.moveTo(const Offset(880, 780));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 140));
+        expect(_buttonMaterial(tester, _next).color!.a, 0);
+        for (final selected in [false, true]) {
+          if (selected) {
+            tester
+                .widget<FindReplaceBar>(find.byKey(_firstBar))
+                .onOptionsChanged(
+                  const FindOptions(caseSensitive: true),
+                );
+            await tester.pump();
+          }
+          final option = _option(LocaleKeys.findAndReplace_caseSensitive);
+          await mouse.moveTo(tester.getCenter(option));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 200));
+          final inkFinder = find.descendant(
+            of: option,
+            matching: find.byType(InkWell),
+          );
+          final ink = tester.widget<InkWell>(inkFinder);
+          final material = tester.widget<Material>(
+            find.ancestor(of: inkFinder, matching: find.byType(Material)).first,
+          );
+          expect(
+            material.color,
+            selected ? palette.selected : Colors.transparent,
+          );
+          expect(ink.hoverColor, hover);
+          final base = selected ? palette.selected : palette.field;
+          expect(
+            Color.alphaBlend(ink.hoverColor!, base),
+            PremiumThemeExtension.of(context).hoverOn(base),
+          );
+          expect(tester.getSize(option), const Size(26, 26));
+        }
+        query.expectUnchanged(tester);
+        replacement.expectUnchanged(tester);
+        expect(host.first.queryFocus.hasPrimaryFocus, isTrue);
+        expect(host.first.outsideCalls + host.first.closeCalls, 0);
+      } finally {
+        await mouse.removePointer();
+      }
+    });
+
     _test('$mode: native glyph buttons and toggles expose working semantics',
         (tester, host) async {
       final handle = tester.ensureSemantics();
@@ -554,11 +649,20 @@ void main() {
         expect(bar.optionChanges, hasLength(6));
         expect(bar.options, const FindOptions());
 
+        final replacement = _FieldSnapshot(tester, _within(_replacement));
         for (final show in [false, true]) {
           final node = tester.getSemantics(_within(_toggleReplace));
           node.owner!.performAction(node.id, ui.SemanticsAction.tap);
           await tester.pump();
-          expect(_within(_replacement), show ? findsOneWidget : findsNothing);
+          if (show) {
+            await tester.pump(const Duration(milliseconds: 160));
+            expect(_replacementOpacity(tester), 1);
+            await tester.pump(const Duration(microseconds: 1));
+            expect(_within(_replacement).hitTestable(), findsOneWidget);
+            replacement.expectUnchanged(tester);
+          } else {
+            await _finishReplaceCollapse(tester, bar);
+          }
           _expectNativeButton(
             tester,
             _toggleReplace,
@@ -661,7 +765,7 @@ void main() {
             expect(activeFocus.hasPrimaryFocus, isTrue);
             expect(tester.testTextInput.hasAnyClients, isTrue);
             final bounds = tester.getRect(find.byKey(_firstBar));
-            expect(bounds.width, closeTo(width > 560 ? 560 : width, 0.01));
+            expect(bounds.width, closeTo(width > 420 ? 420 : width, 0.01));
             expect(
               MediaQuery.textScalerOf(tester.element(_within(_query)))
                   .scale(13),
@@ -699,8 +803,90 @@ void main() {
     }
   }
 
+  for (final flag in ['disableAnimations', 'accessibleNavigation']) {
+    _test(
+      '$flag: entrance, buttons and disclosure are immediate without remounting fields',
+      (tester, host) async {
+        final handle = tester.ensureSemantics();
+        try {
+          final bar = host.first;
+          final query = _FieldSnapshot(tester, _within(_query));
+          final replacement = _FieldSnapshot(
+            tester,
+            _within(_replacement, skipOffstage: false),
+          );
+          expect(_entranceOpacity(tester), 1);
+          expect(_entranceOffset(tester), Offset.zero);
+          for (final key in [
+            _toggleReplace,
+            _previous,
+            _next,
+            _close,
+            _replaceOne,
+            _replaceAll,
+          ]) {
+            expect(
+              tester.widget<IconButton>(_within(key)).style!.animationDuration,
+              Duration.zero,
+            );
+            expect(tester.getSize(_within(key)), const Size(26, 26));
+          }
+          await _click(tester, _within(_toggleReplace));
+          expect(_replacementOpacity(tester), 0);
+          expect(_within(_replacement), findsNothing);
+          _expectReplacementExcluded(tester, bar);
+          query.expectUnchanged(tester);
+          replacement.expectUnchanged(tester);
+          await _click(tester, _within(_toggleReplace));
+          expect(_replacementOpacity(tester), 1);
+          expect(_within(_replacement).hitTestable(), findsOneWidget);
+          expect(bar.replaceFocus.canRequestFocus, isTrue);
+          query.expectUnchanged(tester);
+          replacement.expectUnchanged(tester);
+          expect(bar.queryFocus.hasPrimaryFocus, isTrue);
+        } finally {
+          handle.dispose();
+        }
+      },
+      configuration: _BarConfiguration(
+        disableAnimations: flag == 'disableAnimations',
+        accessibleNavigation: flag == 'accessibleNavigation',
+      ),
+      settle: false,
+    );
+  }
+
   _test(
-      'normal-scale 560px layout fits navigation beside the query (border regression)',
+    'normal entrance stays restrained for 160ms and counts do not restart it',
+    (tester, host) async {
+      final query = _FieldSnapshot(tester, _within(_query));
+      final replacement = _FieldSnapshot(tester, _within(_replacement));
+      expect(_entranceOpacity(tester), 0.94);
+      expect(_entranceOffset(tester).dx, 0);
+      expect(_entranceOffset(tester).dy, closeTo(-2.88, 0.000001));
+      expect(
+        tester.widget<IconButton>(_within(_next)).style!.animationDuration,
+        const Duration(milliseconds: 140),
+      );
+      await tester.pump(const Duration(milliseconds: 80));
+      final halfway = 0.94 + 0.06 * Curves.easeOutCubic.transform(0.5);
+      expect(_entranceOpacity(tester), closeTo(halfway, 0.000001));
+      host.first.setResults(4);
+      await tester.pump();
+      expect(_entranceOpacity(tester), closeTo(halfway, 0.000001));
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(_entranceOpacity(tester), 1);
+      expect(_entranceOffset(tester), Offset.zero);
+      await tester.pump(const Duration(microseconds: 1));
+      query.expectUnchanged(tester);
+      replacement.expectUnchanged(tester);
+      expect(host.first.queryFocus.hasPrimaryFocus, isTrue);
+    },
+    settle: false,
+  );
+
+  _test(
+      'normal-scale 420px cap fits navigation beside the query (border regression)',
       (tester, host) async {
     // Source regression, not an assertion of the accidental layout: Container
     // adds its 0.6px borders to the 6px padding. Previously, _buildFindRow
@@ -721,6 +907,8 @@ void main() {
     final query = tester.getRect(_within(const ValueKey('findQueryGroup')));
     final navigation =
         tester.getRect(_within(const ValueKey('findNavigationGroup')));
+    expect(FindBarMetrics.maxWidth, 420);
+    expect(tester.getSize(find.byKey(_firstBar)).width, 420);
     expect(navigation.center.dy, closeTo(query.center.dy, 0.01));
     expect(navigation.left, greaterThan(query.right));
   });
@@ -734,12 +922,16 @@ class _BarConfiguration {
     this.dismissOnTapOutside = true,
     this.replaceable = true,
     this.submitMode = _SubmitMode.next,
+    this.disableAnimations = false,
+    this.accessibleNavigation = false,
   });
 
   final bool customOutside;
   final bool dismissOnTapOutside;
   final bool replaceable;
   final _SubmitMode submitMode;
+  final bool disableAnimations;
+  final bool accessibleNavigation;
 }
 
 void _test(
@@ -747,6 +939,7 @@ void _test(
   Future<void> Function(WidgetTester, _HarnessState) body, {
   _BarConfiguration configuration = const _BarConfiguration(),
   bool twoBars = false,
+  bool settle = true,
 }) {
   testWidgets(
     name,
@@ -762,7 +955,12 @@ void _test(
             twoBars: twoBars,
           ),
         );
-        await tester.pumpAndSettle();
+        if (settle) {
+          await tester.pumpAndSettle();
+        } else {
+          await tester.pump();
+          await tester.pump();
+        }
         expect(tester.takeException(), isNull);
         expect(key.currentState!.first.queryFocus.hasPrimaryFocus, isTrue);
         await body(tester, key.currentState!);
@@ -845,6 +1043,9 @@ class _HarnessState extends State<_Harness> {
               builder: (context, child) => MediaQuery(
                 data: MediaQuery.of(context).copyWith(
                   textScaler: TextScaler.linear(textScale),
+                  disableAnimations: widget.configuration.disableAnimations,
+                  accessibleNavigation:
+                      widget.configuration.accessibleNavigation,
                 ),
                 child: child!,
               ),
@@ -892,7 +1093,7 @@ class _HarnessState extends State<_Harness> {
         top: top,
         left: 24,
         width: width,
-        // The pane bounds the bar without forcing it wider than its 560px cap.
+        // The pane bounds the bar without forcing it wider than its 420px cap.
         child: Align(
           alignment: Alignment.topLeft,
           child: _BarHost(
@@ -1068,10 +1269,93 @@ ThemeData _theme(String mode) => DesktopAppearance()
     )
     .copyWith(platform: TargetPlatform.windows);
 
-Finder _within(Key key, {Key bar = _firstBar}) => find.descendant(
+Finder _within(
+  Key key, {
+  Key bar = _firstBar,
+  bool skipOffstage = true,
+}) =>
+    find.descendant(
       of: find.byKey(bar),
-      matching: find.byKey(key),
+      matching: find.byKey(key, skipOffstage: skipOffstage),
+      skipOffstage: skipOffstage,
     );
+
+double _entranceOpacity(WidgetTester tester) => tester
+    .widget<Opacity>(
+      find.ancestor(of: _within(_query), matching: find.byType(Opacity)).first,
+    )
+    .opacity;
+
+Offset _entranceOffset(WidgetTester tester) {
+  final transform = tester
+      .widget<Transform>(
+        find
+            .ancestor(of: _within(_query), matching: find.byType(Transform))
+            .first,
+      )
+      .transform
+      .getTranslation();
+  return Offset(transform.x, transform.y);
+}
+
+double _replacementOpacity(WidgetTester tester) => tester
+    .widget<Opacity>(
+      find
+          .ancestor(
+            of: _within(_replacement, skipOffstage: false),
+            matching: find.byType(Opacity, skipOffstage: false),
+          )
+          .first,
+    )
+    .opacity;
+
+Material _buttonMaterial(WidgetTester tester, Key key) =>
+    tester.widget<Material>(
+      find.descendant(of: _within(key), matching: find.byType(Material)),
+    );
+
+void _expectReplacementExcluded(WidgetTester tester, _BarHostState bar) {
+  final field = _within(_replacement, skipOffstage: false);
+  expect(field, findsOneWidget);
+  expect(field.hitTestable(), findsNothing);
+  expect(bar.replaceFocus.hasFocus, isFalse);
+  expect(bar.replaceFocus.canRequestFocus, isFalse);
+  expect(
+    find.semantics.byFlag(ui.SemanticsFlag.isTextField).evaluate().where(
+          (node) => node.getSemanticsData().value == bar.replaceController.text,
+        ),
+    isEmpty,
+  );
+  expect(
+    find.semantics.byFlag(ui.SemanticsFlag.isButton).evaluate().where((node) {
+      final tooltip = node.getSemanticsData().tooltip;
+      return tooltip == LocaleKeys.findAndReplace_replace.tr() ||
+          tooltip == LocaleKeys.findAndReplace_replaceAll.tr();
+    }),
+    isEmpty,
+  );
+}
+
+Future<void> _finishReplaceCollapse(
+  WidgetTester tester,
+  _BarHostState bar,
+) async {
+  // It is still mounted and fading, but is inert from the first closing frame.
+  expect(_within(_replacement), findsOneWidget);
+  expect(_replacementOpacity(tester), 1);
+  _expectReplacementExcluded(tester, bar);
+  await tester.pump(const Duration(milliseconds: 80));
+  expect(
+    _replacementOpacity(tester),
+    closeTo(1 - Curves.easeOutCubic.transform(0.5), 0.000001),
+  );
+  _expectReplacementExcluded(tester, bar);
+  await tester.pump(const Duration(milliseconds: 80));
+  expect(_replacementOpacity(tester), 0);
+  await tester.pump(const Duration(microseconds: 1));
+  expect(_within(_replacement), findsNothing);
+  _expectReplacementExcluded(tester, bar);
+}
 
 Finder _option(String key) => find.descendant(
       of: find.byKey(_firstBar),
@@ -1209,7 +1493,11 @@ class _FieldSnapshot {
       : element = tester.element(finder),
         state = tester.state<State<TextField>>(finder),
         editableState = tester.state<EditableTextState>(
-          find.descendant(of: finder, matching: find.byType(EditableText)),
+          find.descendant(
+            of: finder,
+            matching: find.byType(EditableText, skipOffstage: false),
+            skipOffstage: false,
+          ),
         ),
         controller = tester.widget<TextField>(finder).controller!,
         focus = tester.widget<TextField>(finder).focusNode!,
@@ -1227,8 +1515,11 @@ class _FieldSnapshot {
 
   void expectUnchanged(WidgetTester tester) {
     final field = tester.widget<TextField>(finder);
-    final editable =
-        find.descendant(of: finder, matching: find.byType(EditableText));
+    final editable = find.descendant(
+      of: finder,
+      matching: find.byType(EditableText, skipOffstage: false),
+      skipOffstage: false,
+    );
     final input = tester.widget<EditableText>(editable);
     expect(element.mounted, isTrue);
     expect(state.mounted, isTrue);

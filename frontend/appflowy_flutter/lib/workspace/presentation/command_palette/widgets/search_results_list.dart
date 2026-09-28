@@ -30,6 +30,10 @@ class SearchResultList extends StatefulWidget {
     this.currentWorkspaceName,
     this.currentWorkspaceIcon,
     this.currentWorkspaceCover,
+    this.query,
+    this.contentSearch = false,
+    this.metadataOnly = false,
+    this.canUseResult,
     super.key,
   });
 
@@ -44,6 +48,10 @@ class SearchResultList extends StatefulWidget {
   final String? currentWorkspaceName;
   final String? currentWorkspaceIcon;
   final PageStyleCover? currentWorkspaceCover;
+  final String? query;
+  final bool contentSearch;
+  final bool metadataOnly;
+  final bool Function(String viewId)? canUseResult;
 
   @override
   State<SearchResultList> createState() => _SearchResultListState();
@@ -88,6 +96,11 @@ class _SearchResultListState extends State<SearchResultList> {
         listener: (context, state) {
           final pageId = state.openPageId;
           if (pageId != null && pageId.isNotEmpty) {
+            if (ModalRoute.of(context)?.isCurrent == false) return;
+            if (!_visibleResultItems.any((item) => item.id == pageId) ||
+                !(widget.canUseResult?.call(pageId) ?? true)) {
+              return;
+            }
             FlowyOverlay.pop(context);
             final view = cachedViews[pageId];
             view == null ? pageId.navigateTo() : view.navigateTo();
@@ -112,8 +125,16 @@ class _SearchResultListState extends State<SearchResultList> {
                     ? null
                     : cachedViews[narrowFolderView!.id] ?? narrowFolderView;
                 if (hidePreview && narrowFolder != null) {
+                  final narrowResult = _visibleResultItems
+                      .where((item) => item.id == narrowFolder.id)
+                      .firstOrNull;
                   return PageInspectionPanel(
                     view: narrowFolder,
+                    query: _query,
+                    matchingSnippet: narrowResult?.content,
+                    contentSearch: widget.contentSearch,
+                    metadataOnly: widget.metadataOnly,
+                    canUseView: widget.canUseResult,
                     cachedViews: cachedViews,
                     currentUserId: context
                         .read<UserWorkspaceBloc?>()
@@ -141,6 +162,11 @@ class _SearchResultListState extends State<SearchResultList> {
                       Expanded(
                         child: PageInspectionPanel(
                           view: selectedView,
+                          query: _query,
+                          matchingSnippet: selectedResult?.content,
+                          contentSearch: widget.contentSearch,
+                          metadataOnly: widget.metadataOnly,
+                          canUseView: widget.canUseResult,
                           cachedViews: cachedViews,
                           currentUserId: context
                               .read<UserWorkspaceBloc?>()
@@ -193,7 +219,7 @@ class _SearchResultListState extends State<SearchResultList> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    SearchAskAiEntrance(),
+                    if (!widget.contentSearch) SearchAskAiEntrance(),
                     if (showCommands)
                       CommandResultsList(
                         commands: commands,
@@ -217,15 +243,21 @@ class _SearchResultListState extends State<SearchResultList> {
                                 item: item,
                                 isNarrowWindow: hidePreview,
                                 view: cachedViews[item.id],
+                                cachedViews: cachedViews,
+                                contentSearch: widget.contentSearch,
                                 isHovered: hoveredId == item.id,
+                                onPreviewSelected:
+                                    widget.contentSearch && hidePreview
+                                        ? () => setState(() {
+                                              narrowFolderView =
+                                                  cachedViews[item.id];
+                                            })
+                                        : null,
                                 onFolderSelected: hidePreview
                                     ? (view) =>
                                         setState(() => narrowFolderView = view)
                                     : null,
-                                query: context
-                                    .read<CommandPaletteBloc?>()
-                                    ?.state
-                                    .query,
+                                query: _query,
                               );
                             },
                           ),
@@ -243,13 +275,17 @@ class _SearchResultListState extends State<SearchResultList> {
   }
 
   List<SearchResultItem> get _visibleResultItems {
-    if (cachedViews.isEmpty) {
+    if (cachedViews.isEmpty && !widget.contentSearch) {
       return widget.resultItems;
     }
     return widget.resultItems
         .where((item) => cachedViews.containsKey(item.id))
+        .where((item) => widget.canUseResult?.call(item.id) ?? true)
         .toList();
   }
+
+  String get _query =>
+      widget.query ?? context.read<CommandPaletteBloc?>()?.state.query ?? '';
 
   void _syncCachedViews() {
     cachedViews = widget.cachedViews;

@@ -2,6 +2,7 @@ import 'package:appflowy/plugins/ai_chat/application/chat_entity.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_message_service.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_message_stream.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_user_message_bloc.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -37,8 +38,9 @@ class ChatUserMessageWidget extends StatelessWidget {
           builder: (context, state) {
             return Opacity(
               opacity: state.messageState.isFinish ? 1.0 : 0.8,
-              child: TextMessageText(
-                text: state.text,
+              child: SurfaceFindTarget(
+                id: (message.id, ''),
+                child: TextMessageText(text: state.text),
               ),
             );
           },

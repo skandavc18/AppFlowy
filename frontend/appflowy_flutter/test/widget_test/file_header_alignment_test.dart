@@ -15,6 +15,7 @@ import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
@@ -33,6 +34,8 @@ const _header = ValueKey('workspace-file-identity-row');
 const _title = ValueKey('workspace-file-name');
 const _icon = ValueKey('workspace-file-identity-icon');
 const _tools = ValueKey('workspace-file-tools');
+const _scroll = ValueKey('workspace-file-toolbar-scroll');
+const _content = ValueKey('workspace-file-toolbar-content');
 const _cover = ValueKey('workspace-file-cover');
 const _addCover = ValueKey('workspace-file-add-cover');
 const _rename = ValueKey('workspace-file-rename');
@@ -95,53 +98,62 @@ void main() {
           final tools = tester.getRect(find.byKey(_tools));
           final code =
               tester.getRect(find.byKey(const ValueKey('code-controls')));
+          final inset = WorkspaceTokens.pageInset(width);
           expect(pane.width, closeTo(width, 0.01));
-          expect(tools.right, closeTo(pane.right - 16, 0.01));
+          expect(tools.right, closeTo(pane.right - inset, 0.01));
           expect(
             tester.getRect(find.byKey(_icon)).left,
-            closeTo(pane.left + 16, 0.01),
+            closeTo(pane.left + inset, 0.01),
           );
-          final rects = _expectActionsInside(
+          final rects = await _expectActionsInside(
             tester,
             _codeActions.map(find.byKey),
             code,
           );
-          final lastPaintedEdge =
-              rects.map((rect) => rect.right).reduce(math.max);
-          // The renderer keeps its existing 4/6px inner control padding. There
-          // is no unused percentage slot between actual buttons and that edge.
-          final innerPadding = width - 32 < 520 ? 4.0 : 6.0;
+          final lastPaintedEdge = tester.getRect(find.byKey(_rename)).right;
+          // Finite publishers use their compact padding and wrap when needed.
           expect(
             lastPaintedEdge,
-            closeTo(pane.right - 16 - innerPadding, 0.01),
+            closeTo(pane.right - inset - (tools.width < 520 ? 4 : 6), 0.01),
           );
-          if (width >= 1280) {
+          expect(
+            tools.top,
+            greaterThanOrEqualTo(tester
+                .getRect(find.byKey(const ValueKey('workspace-file-metadata')))
+                .bottom),
+          );
+          expect(rects, hasLength(_codeActions.length));
+          _expectAddCoverAboveTitle(tester);
+          _expectOneHeaderScrollRow();
+          expect(find.byType(WorkspacePageIdentity), findsOneWidget);
+          final tallIconActions = width == 320 && scale == 2;
+          // Bare identity rows center the icon beside their decoration tools.
+          // At 320px/200%, two 50px action lines plus their 4px gap are 104px
+          // tall, centering the unchanged 56px icon 24px below the row top.
+          expect(tester.getSize(find.byKey(_icon)), const Size.square(56));
+          if (tallIconActions) {
+            final iconRow =
+                find.byKey(const ValueKey('workspace-page-icon-row'));
+            expect(tester.getRect(iconRow).top - header.top, 20);
             expect(
-              code.top,
-              lessThan(tester.getRect(find.byKey(_title)).bottom),
-            );
-            expect(
-              tester.getRect(find.byKey(_rename)).right,
-              closeTo(lastPaintedEdge, 0.01),
-            );
-          } else if (width <= 640) {
-            expect(
-              tools.top,
-              greaterThanOrEqualTo(
-                tester
-                    .getRect(
-                      find.byKey(const ValueKey('workspace-file-metadata')),
-                    )
-                    .bottom,
-              ),
-            );
-            expect(
-              rects.map((rect) => rect.top).toSet().length,
-              greaterThan(1),
+              tester
+                  .getSize(find
+                      .descendant(of: iconRow, matching: find.byType(Wrap))
+                      .first)
+                  .height,
+              104,
             );
           }
-          _expectAddCoverAboveTitle(tester);
-          _expectNoHeaderHorizontalScroll();
+          expect(
+            tester.getRect(find.byKey(_icon)).top - header.top,
+            closeTo(tallIconActions ? 44 : WorkspaceTokens.pageTopWithoutCover,
+                0.01),
+          );
+          expect(
+            tester.getRect(find.byKey(_title)).top,
+            greaterThanOrEqualTo(tester.getRect(find.byKey(_icon)).bottom +
+                WorkspaceTokens.pageIconTitleGap),
+          );
           expect(header.bottom, lessThan(tester.getRect(_sourceField).bottom));
           final context = tester.element(find.byKey(_header));
           expect(
@@ -242,22 +254,23 @@ void main() {
             final pane = tester.getRect(find.byKey(_canvas));
             final header = tester.getRect(find.byKey(_header));
             final bounds = Rect.fromLTRB(
-              pane.left + 16,
+              pane.left + WorkspaceTokens.pageInset(width),
               header.top,
-              pane.right - 16,
+              pane.right - WorkspaceTokens.pageInset(width),
               header.bottom,
             );
-            final rects = _expectActionsInside(
+            final rects = await _expectActionsInside(
               tester,
               [...actionKeys, _copy, _share, _rename].map(find.byKey),
               bounds,
             );
             expect(
               rects.map((rect) => rect.right).reduce(math.max),
-              closeTo(bounds.right, 0.01),
+              closeTo(tester.getSize(find.byKey(_content)).width, 0.01),
             );
+            expect(rects, hasLength(actionKeys.length + 3));
             _expectSavedCoverAboveTitle(tester, _nextCover);
-            _expectNoHeaderHorizontalScroll();
+            _expectOneHeaderScrollRow();
             expect(
               tester.state(find.byType(WorkspaceFileIdentityRow)),
               same(identity),
@@ -480,7 +493,7 @@ void main() {
         expect(find.byKey(_rename), findsNothing);
         outside.requestFocus();
         await settleFileControls(tester);
-        expect(find.byKey(_copy).hitTestable(), findsNothing);
+        expect(find.byKey(_copy).hitTestable(), findsOneWidget);
 
         // A renderer-owned language menu must still hold the viewer's tools;
         // a decoration-local scope must not shadow the viewer's parent hold.
@@ -556,7 +569,7 @@ void main() {
     });
 
     testWidgets(
-        '$mode: wrapping optional Fit/Edit tools retains an in-flight code session',
+        '$mode: horizontally scrolling Fit/Edit tools retains an in-flight code session',
         (tester) async {
       final file = MemoryCodeFile('print("held")');
       final backend = FileControlBackend(
@@ -622,7 +635,7 @@ void main() {
           (1750.0, 1.0),
         ]) {
           await _mount(tester, child, mode: mode, width: width, scale: scale);
-          _expectActionsInside(
+          await _expectActionsInside(
             tester,
             [..._codeActions, _fit, _edit].map(find.byKey),
             tester.getRect(find.byKey(const ValueKey('code-controls'))),
@@ -654,7 +667,11 @@ void main() {
             'Stop',
           );
         }
+        await tester.ensureVisible(find.byKey(_fit));
+        await settleFileControls(tester);
         await clickFileControl(tester, find.byKey(_fit));
+        await tester.ensureVisible(find.byKey(_edit));
+        await settleFileControls(tester);
         await clickFileControl(tester, find.byKey(_edit));
         expect(fitCalls, 1);
         expect(editCalls, 1);
@@ -677,8 +694,73 @@ void main() {
     });
   }
 
+  testWidgets('legacy percentage-based toolbar receives a finite one-row slot',
+      (tester) async {
+    final file = MemoryCodeFile('fixture', path: '/fixture/legacy.ipynb');
+    final backend = FileControlBackend(
+      fileControlView('legacy-toolbar', 'Legacy.ipynb', file.path),
+      file,
+    );
+    const first = ValueKey('legacy-first-action');
+    const last = ValueKey('legacy-last-action');
+    final measuredWidths = <double>[];
+    final child = _HeaderHarness(
+      backend: backend,
+      controls: StandaloneFileHeader(
+        toolbar: LayoutBuilder(
+          builder: (context, constraints) {
+            measuredWidths.add(constraints.maxWidth);
+            final firstWidth = constraints.maxWidth * 0.48;
+            final secondWidth = constraints.maxWidth - firstWidth;
+            return Row(
+              children: [
+                SizedBox(
+                  width: firstWidth,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                        key: first,
+                        onPressed: () {},
+                        child: const Text('Kernel')),
+                  ),
+                ),
+                SizedBox(
+                  width: secondWidth,
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                        key: last,
+                        onPressed: () {},
+                        child: const Text('Run all')),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+    try {
+      for (final (width, scale) in const [(1280.0, 1.0), (240.0, 2.0)]) {
+        await _mount(tester, child, width: width, scale: scale);
+        expect(measuredWidths,
+            everyElement(allOf(isPositive, lessThan(double.infinity))));
+        final rects = await _expectActionsInside(
+          tester,
+          [first, last, _copy, _share, _rename].map(find.byKey),
+          tester.getRect(find.byKey(_header)),
+        );
+        expect(rects, hasLength(5));
+        _expectOneHeaderScrollRow();
+        expect(tester.takeException(), isNull);
+      }
+    } finally {
+      await unmountFileControls(tester);
+    }
+  });
+
   testWidgets(
-      'shared header places tools at the directional gutter without remounting',
+      'shared header places tools physically right without remounting in RTL',
       (tester) async {
     final editor = TextEditingController(text: 'a retained title');
     final width = ValueNotifier(1280.0);
@@ -726,22 +808,12 @@ void main() {
           final tool = tester.getRect(find.byKey(toolKey));
           final title = tester.getRect(find.byKey(leadingKey));
           expect(
-            textDirection == ui.TextDirection.ltr ? tool.right : tool.left,
-            closeTo(
-              textDirection == ui.TextDirection.ltr
-                  ? bounds.right
-                  : bounds.left,
-              0.01,
-            ),
+            tool.right,
+            closeTo(bounds.right, 0.01),
           );
           expect(
-            textDirection == ui.TextDirection.ltr ? title.left : title.right,
-            closeTo(
-              textDirection == ui.TextDirection.ltr
-                  ? bounds.left
-                  : bounds.right,
-              0.01,
-            ),
+            title.left,
+            closeTo(bounds.left, 0.01),
           );
           expect(
             tester.state(
@@ -796,30 +868,48 @@ Future<void> _mount(
   await settleFileControls(tester);
 }
 
-List<Rect> _expectActionsInside(
+Future<List<Rect>> _expectActionsInside(
   WidgetTester tester,
   Iterable<Finder> actions,
   Rect bounds,
-) {
+) async {
+  final scroll =
+      tester.widget<SingleChildScrollView>(find.byKey(_scroll)).controller!;
+  final initialOffset = scroll.offset;
   final rects = <Rect>[];
   for (final action in actions) {
     expect(action, findsOneWidget);
+    if (action.hitTestable().evaluate().isEmpty)
+      await tester.ensureVisible(action);
+    await settleFileControls(tester);
     expect(action.hitTestable(), findsOneWidget);
     final rect = tester.getRect(action);
+    final viewport = tester.getRect(find.byKey(_scroll));
     expect(rect.isEmpty, isFalse);
-    expect(rect.left, greaterThanOrEqualTo(bounds.left - 0.01));
-    expect(rect.right, lessThanOrEqualTo(bounds.right + 0.01));
+    expect(rect.left, greaterThanOrEqualTo(viewport.left - 0.01));
+    expect(rect.right, lessThanOrEqualTo(viewport.right + 0.01));
     expect(rect.top, greaterThanOrEqualTo(bounds.top - 0.01));
     expect(rect.bottom, lessThanOrEqualTo(bounds.bottom + 0.01));
+    // Compare geometry in the retained strip's coordinates, independent of
+    // which action is currently scrolled into the small viewport.
+    final content = tester.renderObject<RenderBox>(find.byKey(_content));
+    final local = content.globalToLocal(rect.topLeft) & rect.size;
     for (final previous in rects) {
-      expect(rect.deflate(0.1).overlaps(previous.deflate(0.1)), isFalse);
+      expect(local.deflate(0.1).overlaps(previous.deflate(0.1)), isFalse);
     }
-    rects.add(rect);
+    rects.add(local);
   }
+  // ensureVisible aligns the last button, not its enclosing toolbar padding.
+  // On this reversed strip it leaves a 6px offset when overflow is available.
+  // Restore the original position before callers assert the pane gutter;
+  // every action's hit target, containment and non-overlap were checked above.
+  scroll.jumpTo(initialOffset);
+  await settleFileControls(tester);
+  expect(scroll.offset, closeTo(initialOffset, 0.01));
   return rects;
 }
 
-void _expectNoHeaderHorizontalScroll() => expect(
+void _expectOneHeaderScrollRow() => expect(
       find.descendant(
         of: find.byKey(_header),
         matching: find.byWidgetPredicate(
@@ -828,7 +918,7 @@ void _expectNoHeaderHorizontalScroll() => expect(
               widget.scrollDirection == Axis.horizontal,
         ),
       ),
-      findsNothing,
+      findsOneWidget,
     );
 
 void _expectAddCoverAboveTitle(WidgetTester tester) {
@@ -846,8 +936,10 @@ void _expectAddCoverAboveTitle(WidgetTester tester) {
   );
   expect(
     tester.getRect(find.byKey(_addCover)).bottom,
-    lessThanOrEqualTo(tester.getRect(find.byKey(_header)).top),
+    lessThanOrEqualTo(tester.getRect(find.byKey(_title)).top),
   );
+  expect(
+      find.byKey(const ValueKey('workspace-file-change-icon')), findsOneWidget);
 }
 
 void _expectSavedCoverAboveTitle(

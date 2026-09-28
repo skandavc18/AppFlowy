@@ -9,6 +9,7 @@ import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 const _feedbackDuration = Duration(milliseconds: 1600);
 const _transitionDuration = Duration(milliseconds: 140);
@@ -45,11 +46,56 @@ class _MediaActionButtonsState extends State<MediaActionButtons> {
   final _copyFocus = FocusNode(debugLabel: 'Media copy');
   final _shareFocus = FocusNode(debugLabel: 'Media share');
   final _busyFocus = FocusNode(debugLabel: 'Media action in progress');
+  final _feedbackKey = GlobalKey();
   Timer? _feedbackTimer;
   _MediaAction? _pending;
   _MediaAction? _failed;
   bool _copied = false;
   int _revision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _copyFocus.addListener(_feedbackFocusChanged);
+    _shareFocus.addListener(_feedbackFocusChanged);
+  }
+
+  void _feedbackFocusChanged() {
+    if (_copied && (_copyFocus.hasFocus || _shareFocus.hasFocus)) {
+      _revealFeedback();
+    }
+  }
+
+  void _revealFeedback() {
+    final revision = _revision;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_copied || revision != _revision) return;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) return;
+      // A late clipboard completion must not pull a retired header back into
+      // view. Focus traversal already reveals its button before coming here.
+      var visible = MatrixUtils.transformRect(
+        box.getTransformTo(null),
+        Offset.zero & box.size,
+      );
+      for (RenderObject? ancestor = box.parent;
+          ancestor != null;
+          ancestor = ancestor.parent) {
+        if (ancestor is RenderAbstractViewport && ancestor is RenderBox) {
+          final viewport = ancestor as RenderBox;
+          visible = visible.intersect(MatrixUtils.transformRect(
+            viewport.getTransformTo(null),
+            Offset.zero & viewport.size,
+          ));
+          if (visible.isEmpty) return;
+        }
+      }
+      // Native showOnScreen is a minimal reveal (a no-op when already visible),
+      // unlike ensureVisible's default leading-edge alignment. No focus change,
+      // animation controller, or recurring layout/frame callback is introduced.
+      box.showOnScreen();
+    });
+  }
 
   @override
   void didUpdateWidget(covariant MediaActionButtons oldWidget) {
@@ -143,6 +189,7 @@ class _MediaActionButtonsState extends State<MediaActionButtons> {
       });
     }
     if (_revision == operationRevision && _copied) {
+      _revealFeedback();
       _feedbackTimer = Timer(_feedbackDuration, () {
         if (mounted && _revision == operationRevision) {
           setState(() {
@@ -193,105 +240,110 @@ class _MediaActionButtonsState extends State<MediaActionButtons> {
 
     // Explicit dimensions, rather than LayoutBuilder/AnimatedSize, also work
     // in intrinsic-height file rows. Only exceptionally tight hosts scale down.
-    return Focus(
-      focusNode: _busyFocus,
-      skipTraversal: true,
-      includeSemantics: false,
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: AlignmentDirectional.centerEnd,
-          child: SizedBox(
-            width: width,
-            height: height,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                DecoratedBox(
-                  key: const ValueKey('media-action-surface'),
-                  decoration: BoxDecoration(
-                    color: widget.decorated ? palette.surface : null,
-                    borderRadius: BorderRadius.circular(10),
-                    boxShadow: widget.decorated
-                        ? EditorSurfaceStyle.embedShadow(context)
-                        : null,
-                  ),
-                  child: Material(
-                    type: MaterialType.transparency,
-                    child: Padding(
-                      padding: EdgeInsets.all(padding),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (final action in _MediaAction.values) ...[
-                            if (action == _MediaAction.share)
-                              const SizedBox(width: 4),
-                            Builder(
-                              builder: (buttonContext) => _buildButton(
-                                buttonContext,
-                                action,
-                                palette,
-                                duration,
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+    return _MediaFeedbackBounds(
+      feedbackKey: _feedbackKey,
+      active: _copied,
+      child: Focus(
+        focusNode: _busyFocus,
+        skipTraversal: true,
+        includeSemantics: false,
+        child: SizedBox(
+          width: width,
+          height: height,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerEnd,
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  DecoratedBox(
+                    key: const ValueKey('media-action-surface'),
+                    decoration: BoxDecoration(
+                      color: widget.decorated ? palette.surface : null,
+                      borderRadius: BorderRadius.circular(10),
+                      boxShadow: widget.decorated
+                          ? EditorSurfaceStyle.embedShadow(context)
+                          : null,
                     ),
-                  ),
-                ),
-                // The badge has no layout or hit-test footprint. It stays small
-                // but can accommodate translated/scaled text above a narrow bar.
-                Positioned(
-                  bottom: height + 4,
-                  right: 0,
-                  width: 144,
-                  child: IgnorePointer(
-                    child: ExcludeSemantics(
-                      // The button's live region announces the same feedback.
-                      child: AnimatedSwitcher(
-                        key: ValueKey(('feedback', _revision)),
-                        duration: duration,
-                        switchInCurve: Curves.easeOut,
-                        switchOutCurve: Curves.easeIn,
-                        child: _copied
-                            ? Align(
-                                alignment: AlignmentDirectional.centerEnd,
-                                child: DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: palette.surface,
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 3,
-                                    ),
-                                    child: Text(
-                                      LocaleKeys.form_copied.tr(),
-                                      key: const ValueKey('media-copied'),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .labelSmall
-                                          ?.copyWith(
-                                            fontSize: 10,
-                                            height: 1.2,
-                                            color: palette.ink,
-                                          ),
-                                    ),
-                                  ),
+                    child: Material(
+                      type: MaterialType.transparency,
+                      child: Padding(
+                        padding: EdgeInsets.all(padding),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final action in _MediaAction.values) ...[
+                              if (action == _MediaAction.share)
+                                const SizedBox(width: 4),
+                              Builder(
+                                builder: (buttonContext) => _buildButton(
+                                  buttonContext,
+                                  action,
+                                  palette,
+                                  duration,
                                 ),
-                              )
-                            : const SizedBox.shrink(),
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                  // The badge has no layout or hit-test footprint. It stays small
+                  // but can accommodate translated/scaled text above a narrow bar.
+                  Positioned(
+                    bottom: height + 4,
+                    right: 0,
+                    width: 144,
+                    child: IgnorePointer(
+                      child: ExcludeSemantics(
+                        // The button's live region announces the same feedback.
+                        child: AnimatedSwitcher(
+                          key: ValueKey(('feedback', _revision)),
+                          duration: duration,
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeIn,
+                          child: _copied
+                              ? Align(
+                                  alignment: AlignmentDirectional.centerEnd,
+                                  child: DecoratedBox(
+                                    key: _feedbackKey,
+                                    decoration: BoxDecoration(
+                                      color: palette.surface,
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 3,
+                                      ),
+                                      child: Text(
+                                        LocaleKeys.form_copied.tr(),
+                                        key: const ValueKey('media-copied'),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .labelSmall
+                                            ?.copyWith(
+                                              fontSize: 10,
+                                              height: 1.2,
+                                              color: palette.ink,
+                                            ),
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -462,6 +514,62 @@ class _MediaActionButtonsState extends State<MediaActionButtons> {
               : palette.focusRing.withValues(alpha: 0),
         ),
       ),
+    );
+  }
+}
+
+/// Extends native reveal requests, not layout, hit testing or semantic labels.
+/// Measure the real translated/scaled badge, including its surface padding.
+class _MediaFeedbackBounds extends SingleChildRenderObjectWidget {
+  const _MediaFeedbackBounds({
+    required this.feedbackKey,
+    required this.active,
+    required super.child,
+  });
+
+  final GlobalKey feedbackKey;
+  final bool active;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _MediaFeedbackRenderBox(feedbackKey, active);
+
+  @override
+  void updateRenderObject(BuildContext context, _MediaFeedbackRenderBox box) {
+    box.active = active;
+  }
+}
+
+class _MediaFeedbackRenderBox extends RenderProxyBox {
+  _MediaFeedbackRenderBox(this.feedbackKey, this.active);
+  final GlobalKey feedbackKey;
+  bool active;
+
+  @override
+  void showOnScreen({
+    RenderObject? descendant,
+    Rect? rect,
+    Duration duration = Duration.zero,
+    Curve curve = Curves.ease,
+  }) {
+    final badge =
+        active ? feedbackKey.currentContext?.findRenderObject() : null;
+    if (badge is RenderBox && badge.attached && badge.hasSize && hasSize) {
+      final target = descendant ?? this;
+      rect = MatrixUtils.transformRect(
+        target.getTransformTo(this),
+        rect ?? target.paintBounds,
+      ).expandToInclude(MatrixUtils.transformRect(
+        badge.getTransformTo(this),
+        badge.paintBounds,
+      ));
+      descendant = this;
+    }
+    super.showOnScreen(
+      descendant: descendant,
+      rect: rect,
+      duration: duration,
+      curve: curve,
     );
   }
 }

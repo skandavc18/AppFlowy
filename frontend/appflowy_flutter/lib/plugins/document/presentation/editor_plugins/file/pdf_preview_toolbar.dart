@@ -1,15 +1,15 @@
 import 'dart:math' as math;
 
-import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/document_viewer/file_action_band.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
-import 'package:easy_localization/easy_localization.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'file_preview_toolbar.dart';
 import 'pdf_preview_theme.dart';
 
 abstract final class PdfPreviewGeometry {
@@ -55,6 +55,7 @@ class PdfPreviewToolbar extends StatelessWidget {
     this.onMenuVisibilityChanged,
     this.searchEnabled = true,
     this.searchTapRegionGroupId,
+    this.fileActions,
   });
 
   final String title;
@@ -85,6 +86,10 @@ class PdfPreviewToolbar extends StatelessWidget {
   final VoidCallback onFullscreen;
   final Widget overflow;
 
+  /// Full-screen file actions. Standalone hosts supply their retained actions
+  /// through the existing toolbar builder instead, never a second row.
+  final Widget? fileActions;
+
   /// Fullscreen hosts also have an independent idle timer to keep alive.
   final ValueChanged<bool>? onMenuVisibilityChanged;
 
@@ -98,171 +103,64 @@ class PdfPreviewToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = PdfPreviewPalette.of(context);
-    final controls = LayoutBuilder(
-      builder: (context, constraints) {
-        final textScale =
-            math.max(1.0, MediaQuery.textScalerOf(context).scale(12) / 12);
-        final available = constraints.maxWidth / textScale;
-        final showOutlineButton = available >= 500;
-        final showZoom = available >= 640;
-        final showDocumentActions = available >= 720;
-
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(
-            // Keep every essential action reachable even in a split pane.
-            width: math.max(constraints.maxWidth, 340 * textScale),
-            child: Row(
+    final host = !isFullscreen && showDocumentTitle
+        ? StandaloneFileScope.forName(context, title)
+        : null;
+    if (host != null) {
+      return StandaloneFileHeaderSlot(
+        controller: host.chrome,
+        controls: StandaloneFileHeader(
+          responsiveToolbar: true,
+          toolbarBuilder: (context, fileActions) =>
+              _buildControls(context, fileActions: fileActions),
+          keepActionsVisible: searchVisible,
+        ),
+      );
+    }
+    final controls = FileActionBand(
+      scrollKey: const ValueKey('pdf-toolbar-scroll'),
+      responsive: true,
+      padding: EdgeInsets.only(
+        top: fileActions == null
+            ? 0
+            : MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
+      ),
+      builder: (context) => _buildControls(context, fileActions: fileActions),
+    );
+    if (isFullscreen) {
+      return DocumentViewportBar(
+        key: const ValueKey('pdf-fullscreen-chrome'),
+        background: palette.canvas,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
-                _ToolbarGroup(
-                  children: [
-                    FilePreviewToolbarButton(
-                      tooltip: showThumbnails
-                          ? 'Hide page thumbnails'
-                          : 'Show page thumbnails',
-                      onPressed: onToggleThumbnails,
-                      selected: showThumbnails,
-                      icon: Icons.view_sidebar_rounded,
-                    ),
-                    if (showOutlineButton)
-                      FilePreviewToolbarButton(
-                        tooltip: showOutline
-                            ? 'Hide document outline'
-                            : 'Show document outline',
-                        onPressed: onToggleOutline,
-                        selected: showOutline,
-                        icon: Icons.account_tree_rounded,
-                      ),
-                  ],
-                ),
-                const Spacer(),
-                _ToolbarGroup(
-                  children: [
-                    FilePreviewToolbarButton(
-                      tooltip: 'Previous page (Page Up)',
-                      onPressed: onPreviousPage,
-                      icon: Icons.keyboard_arrow_up_rounded,
-                    ),
-                    PdfPageNumberField(
-                      page: currentPage,
-                      pageCount: pageCount,
-                      enabled: ready,
-                      onSubmitted: onPageSubmitted,
-                    ),
-                    FilePreviewToolbarButton(
-                      tooltip: 'Next page (Page Down)',
-                      onPressed: onNextPage,
-                      icon: Icons.keyboard_arrow_down_rounded,
-                    ),
-                  ],
-                ),
-                if (showZoom) ...[
-                  const DocumentViewportSeparator(),
-                  _ToolbarGroup(
-                    children: [
-                      FilePreviewToolbarButton(
-                        tooltip: 'Zoom out (Ctrl/Cmd −)',
-                        onPressed: onZoomOut,
-                        icon: Icons.remove_rounded,
-                      ),
-                      _ZoomLabel(zoom: zoom),
-                      FilePreviewToolbarButton(
-                        tooltip: 'Zoom in (Ctrl/Cmd +)',
-                        onPressed: onZoomIn,
-                        icon: Icons.add_rounded,
-                      ),
-                      const SizedBox(width: 4),
-                      DocumentViewportFitButton(
-                        tooltip: 'Fit whole page',
-                        onPressed: onFitPage,
-                        options: AppMenuIconButton(
-                          key: const ValueKey('pdf-fit-options'),
-                          icon: Icons.keyboard_arrow_down_rounded,
-                          tooltip: 'Fit options',
-                          size: 24,
-                          iconSize: 15,
-                          radius: 7,
-                          iconColor: palette.icon,
-                          enabled: ready,
-                          onVisibilityChanged: onMenuVisibilityChanged,
-                          entries: () => [
-                            AppMenuItem(
-                              label: 'Fit whole page',
-                              icon: Icons.crop_free_rounded,
-                              shortcut: 'Ctrl/Cmd 0',
-                              enabled: onFitPage != null,
-                              onSelected: onFitPage,
-                            ),
-                            AppMenuItem(
-                              label: 'Fit to width',
-                              icon: Icons.width_wide_rounded,
-                              enabled: onFitWidth != null,
-                              onSelected: onFitWidth,
-                            ),
-                            if (onActualSize != null) ...[
-                              const AppMenuSeparator(),
-                              AppMenuItem(
-                                label: 'Actual size',
-                                shortcut: '100%',
-                                onSelected: onActualSize,
-                              ),
-                            ],
-                          ],
+                Expanded(
+                  child: Text(
+                    title,
+                    key: const ValueKey('pdf-fullscreen-title'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          color: palette.textPrimary,
                         ),
-                      ),
-                    ],
                   ),
-                ],
-                const DocumentViewportSeparator(),
-                _ToolbarGroup(
-                  children: [
-                    TapRegion(
-                      enabled: searchTapRegionGroupId != null,
-                      groupId: searchTapRegionGroupId,
-                      child: FilePreviewToolbarButton(
-                        tooltip: 'Search document (Ctrl/Cmd F)',
-                        onPressed:
-                            ready && searchEnabled ? onToggleSearch : null,
-                        selected: searchVisible,
-                        icon: Icons.search_rounded,
-                      ),
-                    ),
-                    if (showDocumentActions) ...[
-                      FilePreviewToolbarButton(
-                        tooltip: 'Rotate clockwise',
-                        onPressed: onRotate,
-                        icon: Icons.rotate_90_degrees_cw_rounded,
-                      ),
-                      FilePreviewToolbarButton(
-                        tooltip: 'Download PDF',
-                        onPressed: onDownload,
-                        icon: Icons.download_rounded,
-                      ),
-                      FilePreviewToolbarButton(
-                        tooltip: 'Print PDF',
-                        onPressed: onPrint,
-                        icon: Icons.print_rounded,
-                      ),
-                    ],
-                    FilePreviewToolbarButton(
-                      tooltip: isFullscreen
-                          ? 'Exit full screen (Esc)'
-                          : 'Open in full screen',
-                      onPressed: onFullscreen,
-                      icon: isFullscreen
-                          ? Icons.close_fullscreen_rounded
-                          : Icons.open_in_full_rounded,
-                    ),
-                    if (viewMenu != null) viewMenu!,
-                    overflow,
-                  ],
+                ),
+                WorkspaceControlButton(
+                  key: const ValueKey('pdf-fullscreen-close'),
+                  icon: Icons.close_rounded,
+                  tooltip: 'Exit full screen (Esc)',
+                  onPressed: onFullscreen,
                 ),
               ],
             ),
-          ),
-        );
-      },
-    );
+            controls,
+          ],
+        ),
+      );
+    }
     return showDocumentTitle
         ? DocumentViewportHeader(
             background: palette.canvas,
@@ -271,16 +169,179 @@ class PdfPreviewToolbar extends StatelessWidget {
               icon: Icons.picture_as_pdf_rounded,
               subtitle: subtitle,
             ),
-            toolbar: controls,
+            // Let the shared header measure real tools, not the full-width
+            // overflow viewport used by fullscreen/title-less hosts.
+            toolbar: Padding(
+              padding: EdgeInsets.only(
+                top: fileActions == null
+                    ? 0
+                    : MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
+              ),
+              child: _buildControls(context, fileActions: fileActions),
+            ),
           )
         : DocumentViewportBar(
             background: palette.canvas,
             child: PreviewToolbar(child: controls),
           );
   }
+
+  Widget _buildControls(BuildContext context, {Widget? fileActions}) {
+    final palette = PdfPreviewPalette.of(context);
+    // Real groups wrap at the supplied pane width. No breakpoint hides tools
+    // or reparents the focused page field, including at large text scales.
+    return Wrap(
+      key: const ValueKey('pdf-toolbar-controls'),
+      alignment: fileActionRunAlignment(context),
+      crossAxisAlignment: WrapCrossAlignment.center,
+      runSpacing: 4,
+      children: [
+        _ToolbarGroup(
+          children: [
+            WorkspaceControlButton(
+              tooltip: showThumbnails
+                  ? 'Hide page thumbnails'
+                  : 'Show page thumbnails',
+              onPressed: ready ? onToggleThumbnails : null,
+              selected: showThumbnails,
+              icon: Icons.view_sidebar_rounded,
+            ),
+            WorkspaceControlButton(
+              tooltip: showOutline
+                  ? 'Hide document outline'
+                  : 'Show document outline',
+              onPressed: ready ? onToggleOutline : null,
+              selected: showOutline,
+              icon: Icons.account_tree_rounded,
+            ),
+          ],
+        ),
+        const SizedBox(width: 6),
+        _ToolbarGroup(
+          accented: true,
+          children: [
+            WorkspaceControlButton(
+              tooltip: 'Previous page (Page Up)',
+              onPressed: onPreviousPage,
+              icon: Icons.keyboard_arrow_up_rounded,
+              foregroundColor: palette.accent,
+              iconRole: WorkspaceGlyphRole.standard,
+            ),
+            PdfPageNumberField(
+              page: currentPage,
+              pageCount: pageCount,
+              enabled: ready,
+              onSubmitted: onPageSubmitted,
+            ),
+            WorkspaceControlButton(
+              tooltip: 'Next page (Page Down)',
+              onPressed: onNextPage,
+              icon: Icons.keyboard_arrow_down_rounded,
+              foregroundColor: palette.accent,
+              iconRole: WorkspaceGlyphRole.standard,
+            ),
+          ],
+        ),
+        const SizedBox(width: 6),
+        _ToolbarGroup(
+          children: [
+            WorkspaceControlButton(
+              tooltip: 'Zoom out (Ctrl/Cmd −)',
+              onPressed: onZoomOut,
+              icon: Icons.remove_rounded,
+            ),
+            _ZoomLabel(zoom: zoom),
+            WorkspaceControlButton(
+              tooltip: 'Zoom in (Ctrl/Cmd +)',
+              onPressed: onZoomIn,
+              icon: Icons.add_rounded,
+            ),
+            DocumentViewportFitButton(
+              tooltip: 'Fit whole page',
+              glyphName: 'fit-page',
+              onPressed: onFitPage,
+              options: AppMenuIconButton(
+                key: const ValueKey('pdf-fit-options'),
+                icon: Icons.keyboard_arrow_down_rounded,
+                tooltip: 'Fit options',
+                size: 24,
+                iconSize: 15,
+                radius: 7,
+                iconColor: palette.icon,
+                enabled: ready,
+                onVisibilityChanged: onMenuVisibilityChanged,
+                entries: () => [
+                  AppMenuItem(
+                    label: 'Fit whole page',
+                    icon: Icons.crop_free_rounded,
+                    shortcut: 'Ctrl/Cmd 0',
+                    enabled: onFitPage != null,
+                    onSelected: onFitPage,
+                  ),
+                  AppMenuItem(
+                    label: 'Fit to width',
+                    icon: Icons.width_wide_rounded,
+                    enabled: onFitWidth != null,
+                    onSelected: onFitWidth,
+                  ),
+                  if (onActualSize != null) ...[
+                    const AppMenuSeparator(),
+                    AppMenuItem(
+                      label: 'Actual size',
+                      shortcut: '100%',
+                      onSelected: onActualSize,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(width: 6),
+        _ToolbarGroup(
+          children: [
+            TapRegion(
+              enabled: searchTapRegionGroupId != null,
+              groupId: searchTapRegionGroupId,
+              child: WorkspaceControlButton(
+                tooltip: 'Search document (Ctrl/Cmd F)',
+                onPressed: ready && searchEnabled ? onToggleSearch : null,
+                selected: searchVisible,
+                icon: Icons.search_rounded,
+              ),
+            ),
+            WorkspaceControlButton(
+              tooltip: 'Rotate clockwise',
+              onPressed: onRotate,
+              icon: Icons.rotate_90_degrees_cw_rounded,
+            ),
+            WorkspaceControlButton(
+              tooltip: 'Download PDF',
+              onPressed: onDownload,
+              icon: Icons.download_rounded,
+            ),
+            WorkspaceControlButton(
+              tooltip: 'Print PDF',
+              onPressed: onPrint,
+              icon: Icons.print_rounded,
+            ),
+            if (!isFullscreen)
+              WorkspaceControlButton(
+                tooltip: 'Open in full screen',
+                onPressed: onFullscreen,
+                icon: Icons.open_in_full_rounded,
+              ),
+            if (viewMenu != null) viewMenu!,
+            overflow,
+            if (fileActions != null) fileActions,
+          ],
+        ),
+      ],
+    );
+  }
 }
 
-class PdfSearchToolbar extends StatelessWidget {
+class PdfSearchToolbar extends StatefulWidget {
   const PdfSearchToolbar({
     super.key,
     required this.controller,
@@ -332,268 +393,145 @@ class PdfSearchToolbar extends StatelessWidget {
   final String? statusOverride;
 
   @override
-  Widget build(BuildContext context) {
-    final palette = PdfPreviewPalette.of(context);
-    final resultLabel = statusOverride ??
-        (controller.text.isEmpty
-            ? 'Type to search'
-            : queryInvalid
-                ? LocaleKeys.findAndReplace_invalidRegex.tr()
-                : matchCount == 0
-                    ? isSearching
-                        ? 'Searching…'
-                        : 'No results'
-                    : '$currentMatch of $matchCount');
-
-    final face = Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
-    return TapRegion(
-      groupId: controller,
-      onTapOutside: onTapOutside,
-      child: DocumentViewportBar(
-        background: palette.canvas,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final scale =
-                math.max(1.0, MediaQuery.textScalerOf(context).scale(13) / 13);
-            final available = constraints.maxWidth;
-            final stacked = available < 720 * scale;
-            final toolsWidth = stacked ? available : 440 * scale;
-            return Wrap(
-              spacing: 12,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: stacked ? available : available - toolsWidth - 12,
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.search_rounded,
-                        size: PdfPreviewGeometry.iconSize,
-                        color: palette.icon,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: CallbackShortcuts(
-                          bindings: {
-                            const SingleActivator(
-                              LogicalKeyboardKey.enter,
-                              shift: true,
-                            ): () {
-                              onPrevious?.call();
-                              focusNode.requestFocus();
-                            },
-                            const SingleActivator(LogicalKeyboardKey.escape):
-                                onClose,
-                          },
-                          child: TextField(
-                            key: const ValueKey('pdf-search-field'),
-                            groupId: controller,
-                            controller: controller,
-                            focusNode: focusNode,
-                            autofocus: true,
-                            textInputAction: TextInputAction.search,
-                            onChanged: onChanged,
-                            onSubmitted: (_) {
-                              onNext?.call();
-                              focusNode.requestFocus();
-                            },
-                            style: face.copyWith(
-                              color: palette.textPrimary,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            decoration: InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              filled: false,
-                              hoverColor: Colors.transparent,
-                              hintText: 'Search in document…',
-                              hintStyle: face.copyWith(
-                                color: palette.textSecondary,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: toolsWidth,
-                  // Wrap the actual buttons instead of hiding the trailing
-                  // controls beyond a horizontal scroll view at 2x text.
-                  child: Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: stacked ? toolsWidth : 150 * scale,
-                        child: Semantics(
-                          container: true,
-                          liveRegion: true,
-                          label: 'PDF search results: $resultLabel',
-                          excludeSemantics: true,
-                          child: Text(
-                            resultLabel,
-                            maxLines: 3,
-                            overflow: TextOverflow.ellipsis,
-                            style: face.copyWith(
-                              color: queryInvalid
-                                  ? palette.accent
-                                  : palette.textSecondary,
-                              fontSize: 10.5,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (isSearching)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 7),
-                          child: SizedBox.square(
-                            dimension: 14,
-                            child: CircularProgressIndicator(
-                              value: searchProgress,
-                              strokeWidth: 1.5,
-                              color: palette.accent,
-                            ),
-                          ),
-                        ),
-                      if (onOptionsChanged != null) ...[
-                        _PdfSearchToggle(
-                          palette: palette,
-                          label: 'Aa',
-                          tooltip: LocaleKeys.findAndReplace_caseSensitive.tr(),
-                          selected: options.caseSensitive,
-                          onPressed: () => onOptionsChanged!(
-                            options.copyWith(
-                              caseSensitive: !options.caseSensitive,
-                            ),
-                          ),
-                        ),
-                        _PdfSearchToggle(
-                          palette: palette,
-                          label: 'ab',
-                          underlined: true,
-                          tooltip: LocaleKeys.findAndReplace_wholeWord.tr(),
-                          selected: options.wholeWord,
-                          onPressed: () => onOptionsChanged!(
-                            options.copyWith(wholeWord: !options.wholeWord),
-                          ),
-                        ),
-                        _PdfSearchToggle(
-                          palette: palette,
-                          label: '.*',
-                          tooltip: LocaleKeys.findAndReplace_useRegex.tr(),
-                          selected: options.useRegex,
-                          onPressed: () => onOptionsChanged!(
-                            options.copyWith(useRegex: !options.useRegex),
-                          ),
-                        ),
-                      ],
-                      if (onToggleOcr != null)
-                        FilePreviewToolbarButton(
-                          key: const ValueKey('pdf-search-ocr'),
-                          tooltip: ocrEnabled
-                              ? 'Stop including scanned pages (local OCR)'
-                              : 'Include scanned pages (local OCR)',
-                          onPressed: onToggleOcr,
-                          selected: ocrEnabled,
-                          icon: Icons.document_scanner_rounded,
-                        ),
-                      if (onRetryOcr != null)
-                        FilePreviewToolbarButton(
-                          key: const ValueKey('pdf-search-ocr-retry'),
-                          tooltip: 'Retry or resume local OCR',
-                          onPressed: onRetryOcr,
-                          icon: Icons.refresh_rounded,
-                        ),
-                      if (onCopyMatch != null)
-                        FilePreviewToolbarButton(
-                          key: const ValueKey('pdf-search-copy-match'),
-                          tooltip: 'Copy current OCR match',
-                          onPressed: onCopyMatch,
-                          icon: Icons.content_copy_rounded,
-                        ),
-                      FilePreviewToolbarButton(
-                        tooltip: 'Previous match (Shift Enter)',
-                        onPressed: onPrevious,
-                        icon: Icons.keyboard_arrow_up_rounded,
-                      ),
-                      FilePreviewToolbarButton(
-                        tooltip: 'Next match (Enter)',
-                        onPressed: onNext,
-                        icon: Icons.keyboard_arrow_down_rounded,
-                      ),
-                      FilePreviewToolbarButton(
-                        tooltip: 'Close search (Esc)',
-                        onPressed: onClose,
-                        icon: Icons.close_rounded,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
+  State<PdfSearchToolbar> createState() => _PdfSearchToolbarState();
 }
 
-class _PdfSearchToggle extends StatelessWidget {
-  const _PdfSearchToggle({
-    required this.palette,
-    required this.label,
-    required this.tooltip,
-    required this.selected,
-    required this.onPressed,
-    this.underlined = false,
-  });
+class _PdfSearchToolbarState extends State<PdfSearchToolbar> {
+  late String _query;
 
-  final PdfPreviewPalette palette;
-  final String label;
-  final String tooltip;
-  final bool selected;
-  final VoidCallback onPressed;
-  final bool underlined;
+  @override
+  void initState() {
+    super.initState();
+    _query = widget.controller.text;
+    widget.controller.addListener(_changed);
+  }
+
+  @override
+  void didUpdateWidget(covariant PdfSearchToolbar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_changed);
+      _query = widget.controller.text;
+      widget.controller.addListener(_changed);
+    }
+  }
+
+  void _changed() {
+    final query = widget.controller.text;
+    if (_query == query) return; // Selection/IME range changes are not queries.
+    _query = query;
+    widget.onChanged(query);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_changed);
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final color = selected ? palette.accent : palette.icon;
-    return Tooltip(
-      message: tooltip,
-      waitDuration: const Duration(milliseconds: 400),
-      child: SizedBox.square(
-        dimension: PdfPreviewGeometry.buttonSize *
-            math.max(1.0, MediaQuery.textScalerOf(context).scale(11) / 11),
-        child: Material(
-          color: selected
-              ? palette.accent.withValues(alpha: 0.16)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          child: InkWell(
-            onTap: onPressed,
-            borderRadius: BorderRadius.circular(6),
-            child: Center(
-              child: Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  height: 1,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                  decoration: underlined
-                      ? TextDecoration.underline
-                      : TextDecoration.none,
-                  decorationColor: color,
-                ),
+    final palette = PdfPreviewPalette.of(context);
+    // Ordinary result announcements belong to the shared bar. Only PDF/OCR
+    // progress and extraction failures need a supplemental live region.
+    final resultLabel = widget.statusOverride;
+    return TextFieldTapRegion(
+      child: TapRegion(
+        groupId: widget.controller,
+        onTapOutside: widget.onTapOutside,
+        child: DocumentViewportBar(
+          background: palette.canvas,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: ConstrainedBox(
+              constraints:
+                  const BoxConstraints(maxWidth: FindBarMetrics.maxWidth),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  CallbackShortcuts(
+                    bindings: {
+                      const SingleActivator(
+                        LogicalKeyboardKey.enter,
+                        shift: true,
+                      ): () {
+                        widget.onPrevious?.call();
+                        widget.focusNode.requestFocus();
+                      },
+                    },
+                    child: FindReplaceBar(
+                      key: const ValueKey('pdf-search-field'),
+                      findController: widget.controller,
+                      findFocusNode: widget.focusNode,
+                      options: widget.options,
+                      onOptionsChanged: widget.onOptionsChanged ?? (_) {},
+                      matchCount: widget.matchCount,
+                      currentMatch: widget.currentMatch,
+                      onPrevious: widget.onPrevious,
+                      onNext: widget.onNext,
+                      onClose: widget.onClose,
+                      queryInvalid: widget.queryInvalid,
+                      busy: widget.isSearching,
+                      hintText: 'Search in document…',
+                      autofocus: false,
+                      // The outer group also contains the PDF's OCR controls.
+                      dismissOnTapOutside: false,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Semantics(
+                          container: true,
+                          liveRegion: resultLabel != null,
+                          label: resultLabel == null
+                              ? null
+                              : 'PDF search results: $resultLabel',
+                          excludeSemantics: resultLabel != null,
+                          child: Text(
+                            widget.statusOverride ??
+                                (widget.controller.text.isEmpty
+                                    ? 'Type to search'
+                                    : ''),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: palette.textSecondary,
+                                      fontSize: 11,
+                                    ),
+                          ),
+                        ),
+                      ),
+                      if (widget.onToggleOcr != null)
+                        WorkspaceControlButton(
+                          key: const ValueKey('pdf-search-ocr'),
+                          tooltip: widget.ocrEnabled
+                              ? 'Stop including scanned pages (local OCR)'
+                              : 'Include scanned pages (local OCR)',
+                          onPressed: widget.onToggleOcr,
+                          selected: widget.ocrEnabled,
+                          icon: Icons.document_scanner_rounded,
+                        ),
+                      if (widget.onRetryOcr != null)
+                        WorkspaceControlButton(
+                          key: const ValueKey('pdf-search-ocr-retry'),
+                          tooltip: 'Retry or resume local OCR',
+                          onPressed: widget.onRetryOcr,
+                          icon: Icons.refresh_rounded,
+                        ),
+                      if (widget.onCopyMatch != null)
+                        WorkspaceControlButton(
+                          key: const ValueKey('pdf-search-copy-match'),
+                          tooltip: 'Copy current OCR match',
+                          onPressed: widget.onCopyMatch,
+                          icon: Icons.content_copy_rounded,
+                        ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ),
@@ -744,16 +682,31 @@ int? parsePdfPageNumber(String value, int pageCount) {
 }
 
 class _ToolbarGroup extends StatelessWidget {
-  const _ToolbarGroup({required this.children});
+  const _ToolbarGroup({required this.children, this.accented = false});
 
   final List<Widget> children;
+  final bool accented;
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
+    final palette = PdfPreviewPalette.of(context);
+    return Container(
       constraints: const BoxConstraints(minHeight: 32),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Color.alphaBlend(
+          palette.accent.withValues(alpha: accented ? 0.13 : 0.045),
+          palette.chrome,
+        ),
+        borderRadius: BorderRadius.circular(PdfPreviewGeometry.toolbarRadius),
+        border: Border.all(
+          color: palette.accent.withValues(alpha: accented ? 0.22 : 0.08),
+        ),
+      ),
+      child: Wrap(
+        alignment: fileActionRunAlignment(context),
+        crossAxisAlignment: WrapCrossAlignment.center,
+        runSpacing: 1,
         spacing: 1,
         children: children,
       ),

@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
-#include <deque>
 #include <filesystem>
 #include <limits>
 #include <nlohmann/json.hpp>
@@ -11,6 +10,7 @@
 #include "../custom_platform_view/util/composition.desktop.interop.h"
 #include "../plugin_scripts_js/javascript_bridge_js.h"
 #include "../types/create_window_action.h"
+#include "../types/javascript_handler_response.h"
 #include "../types/web_resource_error.h"
 #include "../types/web_resource_request.h"
 #include "../utils/base64.h"
@@ -21,67 +21,42 @@
 #include "../webview_environment/webview_environment_manager.h"
 #include "in_app_webview.h"
 #include "in_app_webview_manager.h"
+#include "trackpad_touch_queue.h"
+#include "site_gesture_policy.h"
 
 namespace flutter_inappwebview_plugin
 {
   using namespace Microsoft::WRL;
 
-  // CDP dispatch order is not a processing-order guarantee. Keep one touch
-  // event in flight per renderer, with callbacks owning only this queue (never
-  // a destroyed InAppWebView). Adjacent pending moves can share the newest
-  // absolute contact position; start/end boundaries are never dropped.
-  class TrackpadTouchQueue : public std::enable_shared_from_this<TrackpadTouchQueue>
+  static std::shared_ptr<TrackpadTouchQueue> createTrackpadTouchQueue(
+    wil::com_ptr<ICoreWebView2> target)
   {
-  public:
-    explicit TrackpadTouchQueue(wil::com_ptr<ICoreWebView2> target)
-      : target_(std::move(target)) {}
-
-    void enqueue(nlohmann::json event)
-    {
-      if (!target_) return;
-      if (!pending_.empty() && pending_.back()["type"] == "touchMove" &&
-        event["type"] == "touchMove") {
-        pending_.back() = std::move(event);
-      }
-      else {
-        pending_.push_back(std::move(event));
-      }
-      sendNext();
-    }
-
-    void close()
-    {
-      pending_.clear();
-      target_ = nullptr;
-    }
-
-  private:
-    wil::com_ptr<ICoreWebView2> target_;
-    std::deque<nlohmann::json> pending_;
-    bool inFlight_ = false;
-
-    void sendNext()
-    {
-      if (inFlight_ || pending_.empty() || !target_) return;
-      const auto payload = utf8_to_wide(pending_.front().dump());
-      pending_.pop_front();
-      inFlight_ = true;
-      const auto self = shared_from_this();
-      const auto hr = target_->CallDevToolsProtocolMethod(L"Input.dispatchTouchEvent",
-        payload.c_str(),
-        Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
-          [self](HRESULT errorCode, LPCWSTR) -> HRESULT {
-            failedLog(errorCode);
-            self->inFlight_ = false;
-            self->sendNext();
-            return S_OK;
-          }).Get());
-      if (failedAndLog(hr)) {
-        inFlight_ = false;
-        pending_.clear();
-      }
-    }
-  };
+    return std::make_shared<TrackpadTouchQueue>(
+      [target](const std::string& json, TrackpadTouchQueue::Completion complete) {
+        const auto payload = utf8_to_wide(json);
+        const auto hr = target->CallDevToolsProtocolMethod(L"Input.dispatchTouchEvent",
+          payload.c_str(),
+          Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
+            [complete](HRESULT errorCode, LPCWSTR) -> HRESULT {
+              failedLog(errorCode);
+              complete(SUCCEEDED(errorCode));
+              return S_OK;
+            }).Get());
+        if (failedAndLog(hr)) complete(false);
+      }, [] { return TrackpadTouchQueue::Clock::now(); },
+      std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(),
+      [target](const std::string& json, TrackpadTouchQueue::PolicyCompletion complete) {
+        const auto payload = utf8_to_wide(json);
+        const auto hr = target->CallDevToolsProtocolMethod(L"Runtime.evaluate", payload.c_str(),
+          Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
+            [complete](HRESULT errorCode, LPCWSTR result) -> HRESULT {
+              complete(SUCCEEDED(errorCode) && result
+                ? parseSiteGesturePolicy(wide_to_utf8(result)) : std::nullopt);
+              return S_OK;
+            }).Get());
+        if (FAILED(hr)) complete(std::nullopt);
+      });
+  }
 
   InAppWebView::InAppWebView(const FlutterInappwebviewWindowsPlugin* plugin, const InAppWebViewCreationParams& params, const HWND parentWindow, wil::com_ptr<ICoreWebView2Environment> webViewEnv,
     wil::com_ptr<ICoreWebView2Controller> webViewController,
@@ -481,6 +456,10 @@ namespace flutter_inappwebview_plugin
       Callback<ICoreWebView2NavigationStartingEventHandler>(
         [this](ICoreWebView2* sender, ICoreWebView2NavigationStartingEventArgs* args)
         {
+          // Cancel before the asynchronous Dart notification can return. Keep
+          // the outstanding CDP slot, discard unsent moves/end, and fence any
+          // new gesture behind cancellation of the old document's contact.
+          if (trackpadTouchQueue_) trackpadTouchQueue_->cancel();
           isLoading_ = true;
 
           if (!channelDelegate) {
@@ -692,19 +671,16 @@ namespace flutter_inappwebview_plugin
               std::string handlerArgs = body.at("args").is_string() ? body.at("args").get<std::string>() : "";
 
               auto callback = std::make_unique<WebViewChannelDelegate::CallJsHandlerCallback>();
-              callback->defaultBehaviour = [this, callHandlerID](const std::optional<const flutter::EncodableValue*> response)
+              callback->defaultBehaviour = withLiveJavaScriptOwner(popupOwnerAlive_, [this, callHandlerID](const std::optional<const flutter::EncodableValue*> response)
                 {
-                  std::string json = "null";
-                  if (response.has_value() && !response.value()->IsNull()) {
-                    json = std::get<std::string>(*(response.value()));
-                  }
+                  const auto json = javaScriptHandlerResponse(response);
 
                   evaluateJavascript("if (window." + JAVASCRIPT_BRIDGE_NAME + "[" + std::to_string(callHandlerID) + "] != null) { \
                       window." + JAVASCRIPT_BRIDGE_NAME + "[" + std::to_string(callHandlerID) + "].resolve(" + json + "); \
                       delete window." + JAVASCRIPT_BRIDGE_NAME + "[" + std::to_string(callHandlerID) + "]; \
                     }", ContentWorld::page(), nullptr);
-                };
-              callback->error = [this, callHandlerID](const std::string& error_code, const std::string& error_message, const flutter::EncodableValue* error_details)
+                });
+              callback->error = withLiveJavaScriptOwner(popupOwnerAlive_, [this, callHandlerID](const std::string& error_code, const std::string& error_message, const flutter::EncodableValue* error_details)
                 {
                   auto errorMessage = error_code + ", " + error_message;
                   debugLog(errorMessage);
@@ -713,7 +689,7 @@ namespace flutter_inappwebview_plugin
                       window." + JAVASCRIPT_BRIDGE_NAME + "[" + std::to_string(callHandlerID) + "].reject(new Error('" + replace_all_copy(errorMessage, "\'", "\\'") + "')); \
                       delete window." + JAVASCRIPT_BRIDGE_NAME + "[" + std::to_string(callHandlerID) + "]; \
                     }", ContentWorld::page(), nullptr);
-                };
+                  });
               channelDelegate->onCallJsHandler(handlerName, handlerArgs, std::move(callback));
             }
           }
@@ -776,7 +752,7 @@ namespace flutter_inappwebview_plugin
           if (channelDelegate && plugin && plugin->inAppWebViewManager && succeededOrLog(args->GetDeferral(&deferral))) {
             plugin->inAppWebViewManager->windowAutoincrementId++;
             int64_t windowId = plugin->inAppWebViewManager->windowAutoincrementId;
-            auto newWindowRequestedArgs = std::make_unique<NewWindowRequestedArgs>(args, deferral);
+            auto newWindowRequestedArgs = std::make_unique<NewWindowRequestedArgs>(this, args, deferral);
             plugin->inAppWebViewManager->windowWebViews.insert({ windowId, std::move(newWindowRequestedArgs) });
 
             wil::unique_cotaskmem_string uri = nullptr;
@@ -802,21 +778,21 @@ namespace flutter_inappwebview_plugin
               std::move(windowFeatures));
 
             auto callback = std::make_unique<WebViewChannelDelegate::CreateWindowCallback>();
-            auto defaultBehaviour = [this, windowId, urlRequest, deferral, args](const std::optional<const bool> handledByClient)
+            auto defaultBehaviour = [this, alive = std::weak_ptr<bool>(popupOwnerAlive_), windowId, urlRequest](const std::optional<const bool> handledByClient)
               {
-                if (plugin && plugin->inAppWebViewManager && map_contains(plugin->inAppWebViewManager->windowWebViews, windowId)) {
-                  plugin->inAppWebViewManager->windowWebViews.erase(windowId);
-                }
-                loadUrl(urlRequest);
-                failedLog(args->put_Handled(TRUE));
-                failedLog(deferral->Complete());
+                const auto owner = alive.lock();
+                if (!owner || !*owner || !plugin || !plugin->inAppWebViewManager) return;
+                auto request = takePendingWindow(plugin->inAppWebViewManager->windowWebViews, windowId, this);
+                if (!request) return; // Already rejected/adopted, never navigate.
+                request->finish();
+                if (*owner) loadUrl(urlRequest); // Completion can reenter teardown.
               };
-            callback->nonNullSuccess = [this, deferral, args](const bool handledByClient)
+            callback->nonNullSuccess = [](const bool handledByClient)
               {
                 return !handledByClient;
               };
             callback->defaultBehaviour = defaultBehaviour;
-            callback->error = [this, defaultBehaviour](const std::string& error_code, const std::string& error_message, const flutter::EncodableValue* error_details)
+            callback->error = [defaultBehaviour](const std::string& error_code, const std::string& error_message, const flutter::EncodableValue* error_details)
               {
                 debugLog(error_code + ", " + error_message);
                 defaultBehaviour(std::nullopt);
@@ -1215,6 +1191,13 @@ namespace flutter_inappwebview_plugin
     failedLog(webView->Stop());
   }
 
+  bool InAppWebView::rejectWindow(int64_t windowId)
+  {
+    if (disposed_ || !plugin || !plugin->inAppWebViewManager) return false;
+    auto request = takePendingWindow(plugin->inAppWebViewManager->windowWebViews, windowId, this);
+    return request && request->finish();
+  }
+
   void InAppWebView::getCopyBackForwardList(const std::function<void(std::unique_ptr<WebHistory>)> completionHandler) const
   {
     if (!webView) {
@@ -1602,6 +1585,7 @@ namespace flutter_inappwebview_plugin
 
   void InAppWebView::pause() const
   {
+    if (trackpadTouchQueue_) trackpadTouchQueue_->cancel();
     wil::com_ptr<ICoreWebView2_3> webView3;
     if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView3))) && succeededOrLog(webViewController->put_IsVisible(false))) {
       failedLog(webView3->TrySuspend(Callback<ICoreWebView2TrySuspendCompletedHandler>(
@@ -1669,6 +1653,12 @@ namespace flutter_inappwebview_plugin
     }
 
     if (surface_ && width > 0 && height > 0) {
+      RECT previous{};
+      if (SUCCEEDED(webViewController->get_Bounds(&previous)) &&
+        (previous.right != static_cast<LONG>(width * scale_factor) ||
+         previous.bottom != static_cast<LONG>(height * scale_factor) || scaleFactor_ != scale_factor)) {
+        cancelTrackpadGesture();
+      }
       scaleFactor_ = scale_factor;
       auto scaled_width = width * scale_factor;
       auto scaled_height = height * scale_factor;
@@ -1745,9 +1735,46 @@ namespace flutter_inappwebview_plugin
       virtualKeys_.state(), 0, point);
   }
 
+  void InAppWebView::cancelTrackpadGesture()
+  {
+    if (trackpadTouchQueue_) trackpadTouchQueue_->cancel();
+  }
+
+  bool InAppWebView::isTrackpadInputIdle() const
+  {
+    return !trackpadTouchQueue_ ||
+      (!trackpadTouchQueue_->inFlight() && trackpadTouchQueue_->pendingCount() == 0);
+  }
+
+  void InAppWebView::querySiteGesturePolicy(double x, double y,
+    TrackpadTouchQueue::PolicyStateCompletion completion)
+  {
+    if (disposed_ || !webView || !std::isfinite(x) || !std::isfinite(y)) {
+      completion({ std::nullopt, false, 0 });
+      return;
+    }
+    double zoom = 1.0;
+    if (webViewController) webViewController->get_ZoomFactor(&zoom);
+    if (!std::isfinite(zoom) || zoom <= 0.0) zoom = 1.0;
+    if (!trackpadTouchQueue_) trackpadTouchQueue_ = createTrackpadTouchQueue(webView);
+    // The callback owns only the queue/reply, never a raw view. Close and
+    // navigation invalidate the queue generation before a late query returns.
+    trackpadTouchQueue_->queryPolicyState(siteGesturePolicyParameters(x / zoom, y / zoom),
+      std::move(completion));
+  }
+
+  std::optional<bool> InAppWebView::siteGestureFallbackReady(uint64_t epoch) const
+  {
+    if (disposed_ || !trackpadTouchQueue_) return std::nullopt;
+    return trackpadTouchQueue_->fallbackReady(epoch);
+  }
+
   void InAppWebView::setPointerUpdate(int32_t pointer,
     InAppWebViewPointerEventKind eventKind, double x,
-    double y, double size, double pressure)
+    double y, double size, double pressure,
+    std::optional<int64_t> sourceMicros, int64_t inputAgeMicros,
+    std::optional<std::pair<double, double>> secondContact,
+    std::optional<uint64_t> inputEpoch)
   {
     if (!webViewEnv || !webViewCompositionController) {
       return;
@@ -1760,26 +1787,29 @@ namespace flutter_inappwebview_plugin
     // injecting any Windows pointer or changing the hardware cursor position.
     constexpr int32_t kTrackpadPointerId = 0x3ffffffe;
     if (pointer == kTrackpadPointerId && webView) {
-      const char* type = eventKind == InAppWebViewPointerEventKind::Down
-        ? "touchStart"
-        : eventKind == InAppWebViewPointerEventKind::Leave ? "touchCancel"
-        : eventKind == InAppWebViewPointerEventKind::Up ? "touchEnd" : "touchMove";
+      if (inputEpoch && (!trackpadTouchQueue_ ||
+        !trackpadTouchQueue_->fallbackReady(*inputEpoch).has_value())) return;
+      if (eventKind == InAppWebViewPointerEventKind::Leave || !sourceMicros) {
+        // Legacy six-value touchscreen calls remain supported. A trackpad
+        // without sample time cannot safely synthesize a Chromium velocity.
+        if (trackpadTouchQueue_) trackpadTouchQueue_->cancel();
+        return;
+      }
+      const auto kind = eventKind == InAppWebViewPointerEventKind::Down
+        ? TrackpadTouchKind::Start
+        : eventKind == InAppWebViewPointerEventKind::Up ? TrackpadTouchKind::End : TrackpadTouchKind::Move;
       double zoom = 1.0;
       if (webViewController) {
         webViewController->get_ZoomFactor(&zoom);
       }
-      if (zoom <= 0.0) zoom = 1.0;
-      nlohmann::json points = nlohmann::json::array();
-      if (eventKind != InAppWebViewPointerEventKind::Up &&
-        eventKind != InAppWebViewPointerEventKind::Leave) {
-        points.push_back({ {"id", 0}, {"x", x / zoom}, {"y", y / zoom},
-          {"radiusX", 1}, {"radiusY", 1}, {"force", pressure} });
-      }
-      const nlohmann::json parameters = { {"type", type}, {"touchPoints", points} };
+      if (!std::isfinite(zoom) || zoom <= 0.0) zoom = 1.0;
       if (!trackpadTouchQueue_) {
-        trackpadTouchQueue_ = std::make_shared<TrackpadTouchQueue>(webView);
+        trackpadTouchQueue_ = createTrackpadTouchQueue(webView);
       }
-      trackpadTouchQueue_->enqueue(parameters);
+      const auto second = secondContact
+        ? std::make_optional(TrackpadTouchQueue::Contact{ secondContact->first / zoom, secondContact->second / zoom })
+        : std::nullopt;
+      trackpadTouchQueue_->enqueue(kind, *sourceMicros, x / zoom, y / zoom, pressure, inputAgeMicros, second, inputEpoch);
       return;
     }
 
@@ -1989,6 +2019,23 @@ namespace flutter_inappwebview_plugin
   InAppWebView::~InAppWebView()
   {
     debugLog("dealloc InAppWebView");
+    Dispose();
+  }
+
+  HRESULT InAppWebView::Dispose()
+  {
+    if (disposed_) return close_result_;
+    disposed_ = true;
+    *popupOwnerAlive_ = false;
+    if (plugin && plugin->inAppWebViewManager) {
+      auto& pending = plugin->inAppWebViewManager->windowWebViews;
+      for (auto it = pending.begin(); it != pending.end();) {
+        if (it->second->owner != this) { ++it; continue; }
+        auto request = std::move(it->second);
+        it = pending.erase(it);
+        request->finish();
+      }
+    }
     if (trackpadTouchQueue_) trackpadTouchQueue_->close();
     userContentController = nullptr;
     if (webView) {
@@ -2012,7 +2059,8 @@ namespace flutter_inappwebview_plugin
     // no longer exists, which is an access violation inside this plugin.
     if (webViewController) {
       failedLog(webViewController->put_IsVisible(false));
-      failedLog(webViewController->Close());
+      close_result_ = webViewController->Close();
+      failedLog(close_result_);
     }
 
     if (hasCompositionWindow && parentWindow) {
@@ -2022,5 +2070,6 @@ namespace flutter_inappwebview_plugin
     navigationActions_.clear();
     inAppBrowser = nullptr;
     plugin = nullptr;
+    return close_result_;
   }
 }

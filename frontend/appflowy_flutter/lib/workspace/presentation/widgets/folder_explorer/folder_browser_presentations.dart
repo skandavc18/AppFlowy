@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:appflowy/shared/file_browser/file_browser_items.dart';
 import 'package:appflowy/shared/file_browser/file_browser_view.dart';
+import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
@@ -20,6 +22,10 @@ class FolderBrowserPresentation extends StatelessWidget {
     required this.onContextMenu,
     required this.onBackgroundContextMenu,
     required this.onRequestDelete,
+    this.header,
+    this.footer,
+    this.scrollController,
+    this.horizontalPadding = 0,
   });
 
   final WorkspaceExplorerController controller;
@@ -29,6 +35,10 @@ class FolderBrowserPresentation extends StatelessWidget {
   final void Function(WorkspaceExplorerItem, Offset) onContextMenu;
   final ValueChanged<Offset> onBackgroundContextMenu;
   final VoidCallback onRequestDelete;
+  final Widget? header;
+  final Widget? footer;
+  final ScrollController? scrollController;
+  final double horizontalPadding;
 
   void _open(FileBrowserEntry entry) {
     if (entry.item.isBrowsable) {
@@ -38,12 +48,13 @@ class FolderBrowserPresentation extends StatelessWidget {
     }
   }
 
-  Widget _items(String folderId, {String? activeChildId}) {
-    if (controller.currentFolder.id == folderId &&
+  Widget _items(String folderId,
+      {String? activeChildId,
+      ScrollController? columnScroll,
+      bool column = false}) {
+    final loading = controller.currentFolder.id == folderId &&
         controller.isLoading &&
-        !controller.hasLoaded(folderId)) {
-      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
-    }
+        !controller.hasLoaded(folderId);
     final query = controller.query.toLowerCase();
     final searching = query.isNotEmpty;
     final views = searching
@@ -56,6 +67,32 @@ class FolderBrowserPresentation extends StatelessWidget {
         : controller.childrenOf(folderId);
     final draft = controller.draft;
     return FileBrowserItems(
+      horizontalPadding: column ? 0 : horizontalPadding,
+      emptyChild: loading
+          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+          : null,
+      header: column
+          ? Builder(
+              builder: (context) => TextButton(
+                onPressed: () => onNavigate(folderId),
+                style: WorkspaceChrome.controlStyle(context),
+                child: Text(
+                  controller.itemForId(folderId)!.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            )
+          : header,
+      footer: column
+          ? Column(
+              children: [
+                if (columnScroll != null && footer != null) footer!,
+                const SizedBox(height: 10),
+              ],
+            )
+          : footer,
+      scrollController: column ? columnScroll : scrollController,
       key: ValueKey('folder-browser-items-$folderId'),
       entries: views.map(FileBrowserEntry.fromView).toList(),
       selection: controller.selection,
@@ -130,20 +167,36 @@ class FolderBrowserPresentation extends StatelessWidget {
       return _items(controller.currentFolder.id);
     }
     final path = controller.breadcrumbs;
-    return FileBrowserColumns(
-      onNavigate: onNavigate,
-      columns: [
-        for (var index = 0; index < path.length; index++)
-          FileBrowserColumn(
-            id: path[index].id,
-            label: path[index].name,
-            child: _items(
-              path[index].id,
-              activeChildId:
-                  index + 1 < path.length ? path[index + 1].id : null,
-            ),
-          ),
-      ],
+    Widget columns(BuildContext context) => FileBrowserColumns(
+          onNavigate: onNavigate,
+          columns: [
+            for (var index = 0; index < path.length; index++)
+              FileBrowserColumn(
+                id: path[index].id,
+                label: path[index].name,
+                headerInChild: true,
+                child: _items(
+                  path[index].id,
+                  column: true,
+                  columnScroll: index == path.length - 1 && header != null
+                      ? PrimaryScrollController.of(context)
+                      : null,
+                  activeChildId:
+                      index + 1 < path.length ? path[index + 1].id : null,
+                ),
+              ),
+          ],
+        );
+    if (header == null) return columns(context);
+    // Columns intentionally retain independent native directory viewports.
+    // Only the active directory borrows the nested coordinator; no deltas are
+    // replayed and ancestor columns retain their own scroll controllers.
+    return PremiumCoordinatedScrollScope(
+      child: NestedScrollView(
+        controller: scrollController,
+        headerSliverBuilder: (_, __) => [SliverToBoxAdapter(child: header)],
+        body: Builder(builder: columns),
+      ),
     );
   }
 

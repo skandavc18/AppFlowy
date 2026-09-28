@@ -4,9 +4,11 @@ import 'dart:math' as math;
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_text_selection.dart';
+import 'package:appflowy/plugins/ai_chat/presentation/chat_find.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/shared/markdown_to_document.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -22,10 +24,12 @@ class AIMarkdownText extends StatelessWidget {
     super.key,
     required this.markdown,
     this.withAnimation = false,
+    this.findMessageId,
   });
 
   final String markdown;
   final bool withAnimation;
+  final String? findMessageId;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +39,7 @@ class AIMarkdownText extends StatelessWidget {
       child: _AppFlowyEditorMarkdown(
         markdown: markdown,
         withAnimation: withAnimation,
+        findMessageId: findMessageId,
       ),
     );
   }
@@ -44,6 +49,7 @@ class _AppFlowyEditorMarkdown extends StatefulWidget {
   const _AppFlowyEditorMarkdown({
     required this.markdown,
     this.withAnimation = false,
+    this.findMessageId,
   });
 
   // the text should be the markdown format
@@ -51,6 +57,7 @@ class _AppFlowyEditorMarkdown extends StatefulWidget {
 
   /// Whether to animate the text.
   final bool withAnimation;
+  final String? findMessageId;
 
   @override
   State<_AppFlowyEditorMarkdown> createState() =>
@@ -66,8 +73,12 @@ class _AppFlowyEditorMarkdownState extends State<_AppFlowyEditorMarkdown>
 
   late EditorState editorState;
   late EditorScrollController scrollController;
-  late Timer markdownOutputTimer;
+  Timer? markdownOutputTimer;
   int offset = 0;
+  String _renderedMarkdown = '';
+  SurfaceFindController? _find;
+  bool _reduceMotion = false;
+  bool _animate = false;
 
   final Map<String, (AnimationController, Animation<double>)> _animations = {};
 
@@ -75,65 +86,70 @@ class _AppFlowyEditorMarkdownState extends State<_AppFlowyEditorMarkdown>
   void initState() {
     super.initState();
 
-    editorState = _parseMarkdown(widget.markdown.trim());
+    _renderedMarkdown = widget.markdown.trim();
+    editorState = _parseMarkdown(_renderedMarkdown);
+    offset = widget.markdown.length;
     scrollController = EditorScrollController(
       editorState: editorState,
       shrinkWrap: true,
     );
+  }
 
-    if (widget.withAnimation) {
-      markdownOutputTimer = Timer.periodic(_revealInterval, (timer) {
-        if (offset >= widget.markdown.length || !widget.withAnimation) {
-          return;
-        }
-
-        final markdown = widget.markdown.substring(0, offset);
-        // The further the reveal has fallen behind, the more of it is shown at
-        // once, so a fast provider is never left trailing a slow animation.
-        final behind = widget.markdown.length - offset;
-        offset += math.max(_revealChunk, behind ~/ 16);
-
-        final editorState = _parseMarkdown(
-          markdown,
-          previousDocument: this.editorState.document,
-        );
-        final lastCurrentNode = editorState.document.last;
-        final lastPreviousNode = this.editorState.document.last;
-        if (lastCurrentNode?.id != lastPreviousNode?.id ||
-            lastCurrentNode?.type != lastPreviousNode?.type ||
-            lastCurrentNode?.delta?.toPlainText() !=
-                lastPreviousNode?.delta?.toPlainText()) {
-          setState(() {
-            this.editorState.dispose();
-            this.editorState = editorState;
-            scrollController.dispose();
-            scrollController = EditorScrollController(
-              editorState: editorState,
-              shrinkWrap: true,
-            );
-          });
-        }
-      });
-    }
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _find = SurfaceFindScope.maybeOf(context);
+    _reduceMotion = MediaQuery.disableAnimationsOf(context);
+    _syncReveal();
   }
 
   @override
   void didUpdateWidget(covariant _AppFlowyEditorMarkdown oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    if (oldWidget.markdown != widget.markdown && !widget.withAnimation) {
-      final editorState = _parseMarkdown(
-        widget.markdown.trim(),
-        previousDocument: this.editorState.document,
-      );
-      this.editorState.dispose();
-      this.editorState = editorState;
-      scrollController.dispose();
-      scrollController = EditorScrollController(
-        editorState: editorState,
-        shrinkWrap: true,
-      );
+    _syncReveal();
+  }
+
+  void _syncReveal() {
+    _animate = widget.withAnimation && !_reduceMotion && _find?.isOpen != true;
+    if (!_animate || offset > widget.markdown.length) {
+      markdownOutputTimer?.cancel();
+      markdownOutputTimer = null;
+      offset = widget.markdown.length;
+      _adoptMarkdown(widget.markdown);
+      for (final entry in _animations.values) {
+        entry.$1
+          ..stop()
+          ..value = 1;
+      }
+      return;
     }
+    if (offset >= widget.markdown.length || markdownOutputTimer != null) return;
+    markdownOutputTimer = Timer.periodic(_revealInterval, (_) {
+      if (!mounted || !_animate) return;
+      final behind = widget.markdown.length - offset;
+      offset = math.min(
+        widget.markdown.length,
+        offset + math.max(_revealChunk, behind ~/ 16),
+      );
+      setState(() => _adoptMarkdown(widget.markdown.substring(0, offset)));
+      if (offset >= widget.markdown.length) {
+        markdownOutputTimer?.cancel();
+        markdownOutputTimer = null;
+      }
+    });
+  }
+
+  void _adoptMarkdown(String markdown) {
+    final text = markdown.trim();
+    if (text == _renderedMarkdown) return;
+    final next = _parseMarkdown(text, previousDocument: editorState.document);
+    _renderedMarkdown = text;
+    scrollController.dispose();
+    editorState.dispose();
+    editorState = next;
+    scrollController =
+        EditorScrollController(editorState: next, shrinkWrap: true);
   }
 
   @override
@@ -141,11 +157,9 @@ class _AppFlowyEditorMarkdownState extends State<_AppFlowyEditorMarkdown>
     scrollController.dispose();
     editorState.dispose();
 
-    if (widget.withAnimation) {
-      markdownOutputTimer.cancel();
-      for (final controller in _animations.values.map((e) => e.$1)) {
-        controller.dispose();
-      }
+    markdownOutputTimer?.cancel();
+    for (final controller in _animations.values.map((e) => e.$1)) {
+      controller.dispose();
     }
 
     super.dispose();
@@ -196,11 +210,16 @@ class _AppFlowyEditorMarkdownState extends State<_AppFlowyEditorMarkdown>
             required Node node,
             required Widget child,
           }) {
-            if (!widget.withAnimation) {
-              return child;
-            }
+            final messageId = widget.findMessageId;
+            final content = messageId != null && node.delta != null
+                ? SurfaceFindTarget(
+                    id: chatFindTextId(messageId, node.path),
+                    includeEditable: true,
+                    child: child,
+                  )
+                : child;
 
-            if (!_animations.containsKey(node.id)) {
+            if (_animate && !_animations.containsKey(node.id)) {
               final duration = UniversalPlatform.isMobile
                   ? const Duration(milliseconds: 260)
                   : const Duration(milliseconds: 420);
@@ -215,10 +234,14 @@ class _AppFlowyEditorMarkdownState extends State<_AppFlowyEditorMarkdown>
               _animations[node.id] = (controller, fade);
               controller.forward();
             }
-            final (controller, fade) = _animations[node.id]!;
+            // Always retain this wrapper: toggling Find/reduced motion must
+            // not reparent a native editor block or dispose its selection.
+            final fade = _animate
+                ? _animations[node.id]!.$2
+                : const AlwaysStoppedAnimation<double>(1);
             return _AnimatedWrapper(
               fade: fade,
-              child: child,
+              child: content,
             );
           },
           contextMenuItems: [

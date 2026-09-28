@@ -9,6 +9,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/tab_bar_bloc.dart';
 import 'package:appflowy/plugins/database/find/database_find_host.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/grid/presentation/layout/sizes.dart';
 import 'package:appflowy/plugins/document/presentation/compact_mode_event.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/database/database_view_block_component.dart';
@@ -16,6 +17,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/plugins/shared/share/share_button.dart';
 import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/page_cover.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
@@ -653,6 +655,24 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
                   )
                 : null,
             coverActions: coverActions,
+            coverView: view,
+            coverBinding: widget.view.id,
+            coverEditable: canEdit && showsCover,
+            canResizeCover: () =>
+                mounted &&
+                _canEdit &&
+                samePageCoverSource(view, locallyUpdatedView ?? widget.view) &&
+                AutomaticViewCover.showsCover(
+                    locallyUpdatedView ?? widget.view),
+            isSameCoverTarget: (fresh) =>
+                fresh.layout == view.layout &&
+                AutomaticViewCover.showsCover(fresh),
+            onCoverHeightChanged: (height) {
+              final latest = locallyUpdatedView ?? widget.view;
+              if (mounted && _canEdit && samePageCoverSource(view, latest)) {
+                _updateView(PageCoverHeight.applyTo(latest, height));
+              }
+            },
             identity: WorkspacePageIdentity(
               key: const ValueKey('database-page-identity'),
               icon: canEdit
@@ -667,19 +687,22 @@ class _DatabasePageDecorationState extends State<DatabasePageDecoration> {
                 excluding: !canEdit,
                 child: IgnorePointer(
                   ignoring: !canEdit,
-                  child: WorkspaceInlineEditableText(
-                    key: const ValueKey('database-page-title'),
-                    text: view.nameOrDefault,
-                    editingValue: view.name,
-                    editing: editingTitle,
-                    onSubmitted: _rename,
-                    onCancelled: _cancelRename,
-                    onTap: canEdit ? _beginRename : null,
-                    maxLines: 2,
-                    style: WorkspaceTypography.style(
-                      context,
-                      WorkspaceTextRole.pageTitle,
-                      compact: constraints.maxWidth < 600,
+                  child: DatabaseFindAnchor(
+                    target: DatabaseFindTarget.title(view.id),
+                    child: WorkspaceInlineEditableText(
+                      key: const ValueKey('database-page-title'),
+                      text: view.nameOrDefault,
+                      editingValue: view.name,
+                      editing: editingTitle,
+                      onSubmitted: _rename,
+                      onCancelled: _cancelRename,
+                      onTap: canEdit ? _beginRename : null,
+                      maxLines: 2,
+                      style: WorkspaceTypography.style(
+                        context,
+                        WorkspaceTextRole.pageTitle,
+                        compact: constraints.maxWidth < 600,
+                      ),
                     ),
                   ),
                 ),

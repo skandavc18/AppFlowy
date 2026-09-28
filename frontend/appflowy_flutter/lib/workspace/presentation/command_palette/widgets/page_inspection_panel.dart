@@ -1,6 +1,7 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -18,6 +19,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'page_preview.dart';
+import 'search_icon.dart';
 
 class PageInspectionPanel extends StatefulWidget {
   const PageInspectionPanel({
@@ -27,6 +29,11 @@ class PageInspectionPanel extends StatefulWidget {
     required this.onOpen,
     required this.onClose,
     this.onBack,
+    this.query,
+    this.matchingSnippet,
+    this.contentSearch = false,
+    this.metadataOnly = false,
+    this.canUseView,
     super.key,
   });
 
@@ -36,6 +43,11 @@ class PageInspectionPanel extends StatefulWidget {
   final ValueChanged<ViewPB> onOpen;
   final VoidCallback onClose;
   final VoidCallback? onBack;
+  final String? query;
+  final String? matchingSnippet;
+  final bool contentSearch;
+  final bool metadataOnly;
+  final bool Function(String id)? canUseView;
 
   @override
   State<PageInspectionPanel> createState() => _PageInspectionPanelState();
@@ -76,10 +88,31 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
           ? _buildFolderInspection(context, inspectedView)
           : Column(
               children: [
+                if (widget.onBack != null)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton.icon(
+                      key: const ValueKey(
+                        'command-palette-content-preview-back',
+                      ),
+                      onPressed: widget.onBack,
+                      icon: const WorkspaceGlyph(
+                        Icons.arrow_back_rounded,
+                        size: 16,
+                      ),
+                      label: Text(
+                        MaterialLocalizations.of(context).backButtonTooltip,
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: PagePreview(
                     key: ValueKey(widget.view.id),
                     view: widget.view,
+                    query: widget.query,
+                    matchingSnippet: widget.matchingSnippet,
+                    contentSearch: widget.contentSearch,
+                    metadataOnly: widget.metadataOnly,
                     onViewOpened: () => widget.onOpen(widget.view),
                   ),
                 ),
@@ -100,7 +133,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
 
   Widget _buildFolderInspection(BuildContext context, ViewPB folder) {
     final palette = WorkspacePalette.of(context);
-    final cover = folder.cover;
+    final cover = widget.metadataOnly ? null : folder.cover;
     final collectionArtwork = FolderGalleryCollectionArtwork(
       item: WorkspaceExplorerItem.fromView(folder),
     );
@@ -125,7 +158,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
               child: TextButton.icon(
                 key: const ValueKey('command-palette-folder-browser-back'),
                 onPressed: widget.onBack,
-                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                icon: const WorkspaceGlyph(Icons.arrow_back_rounded, size: 16),
                 label:
                     Text(MaterialLocalizations.of(context).backButtonTooltip),
               ),
@@ -279,7 +312,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
         children: [
           Row(
             children: [
-              Icon(
+              WorkspaceGlyph(
                 _layoutIcon(view.layout),
                 size: 14,
                 color: palette.secondaryText,
@@ -339,46 +372,52 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
             label: LocaleKeys.settings_files_open.tr(),
             onTap: () => widget.onOpen(view),
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (!view.isWorkspaceRootFolder)
-                IconButton(
-                  key: const ValueKey('command-palette-open-new-tab-action'),
-                  tooltip: LocaleKeys.disclosureAction_openNewTab.tr(),
-                  style: iconStyle,
-                  color: palette.secondaryText,
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                  onPressed: () {
-                    getIt<TabsBloc>().openTab(view);
-                    widget.onClose();
-                  },
-                ),
-              Semantics(
-                toggled: isFavorite,
-                child: IconButton(
-                  key: const ValueKey('command-palette-favorite-action'),
-                  style: iconStyle,
-                  tooltip: isFavorite
-                      ? LocaleKeys.disclosureAction_unfavorite.tr()
-                      : LocaleKeys.disclosureAction_favorite.tr(),
-                  color: isFavorite ? palette.accent : palette.secondaryText,
-                  icon: Icon(
-                    isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
-                    size: 18,
+          if (!widget.contentSearch)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!view.isWorkspaceRootFolder)
+                  IconButton(
+                    key: const ValueKey('command-palette-open-new-tab-action'),
+                    tooltip: LocaleKeys.disclosureAction_openNewTab.tr(),
+                    style: iconStyle,
+                    color: palette.secondaryText,
+                    icon: const WorkspaceGlyph(
+                      Icons.open_in_new_rounded,
+                    ),
+                    onPressed: () {
+                      if (!(widget.canUseView?.call(view.id) ?? true)) return;
+                      getIt<TabsBloc>().openTab(view);
+                      widget.onClose();
+                    },
                   ),
-                  onPressed:
-                      updatingFavorite ? null : () => _toggleFavorite(view),
+                Semantics(
+                  toggled: isFavorite,
+                  child: IconButton(
+                    key: const ValueKey('command-palette-favorite-action'),
+                    style: iconStyle,
+                    tooltip: isFavorite
+                        ? LocaleKeys.disclosureAction_unfavorite.tr()
+                        : LocaleKeys.disclosureAction_favorite.tr(),
+                    color: isFavorite ? palette.accent : palette.secondaryText,
+                    icon: WorkspaceGlyph(
+                      isFavorite
+                          ? Icons.star_rounded
+                          : Icons.star_border_rounded,
+                    ),
+                    onPressed:
+                        updatingFavorite ? null : () => _toggleFavorite(view),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
         ],
       ),
     );
   }
 
   Future<void> _toggleFavorite(ViewPB view) async {
+    if (!(widget.canUseView?.call(view.id) ?? true)) return;
     final request = ++favoriteRequest;
     setState(() => updatingFavorite = true);
     final result = await ViewBackendService.favorite(viewId: view.id);
@@ -470,7 +509,7 @@ class _FolderInspectionBreadcrumbs extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (index > 0)
-                Icon(
+                WorkspaceGlyph(
                   Icons.chevron_right_rounded,
                   color: palette.mutedText,
                   size: 15,
@@ -537,7 +576,7 @@ class _FolderInspectionItem extends StatelessWidget {
           SizedBox.square(
             dimension: 19,
             child: Center(
-              child: view.defaultIcon(size: const Size.square(17)),
+              child: view.buildIcon(context),
             ),
           ),
           const HSpace(9),
@@ -565,7 +604,7 @@ class _FolderInspectionItem extends StatelessWidget {
               ],
             ),
           ),
-          Icon(
+          WorkspaceGlyph(
             view.isWorkspaceFolder
                 ? Icons.chevron_right_rounded
                 : Icons.open_in_new_rounded,
@@ -595,7 +634,7 @@ class _ActionButton extends StatelessWidget {
     final palette = WorkspacePalette.of(context);
     return TextButton.icon(
       onPressed: onTap,
-      icon: Icon(icon, size: WorkspaceTokens.iconSize),
+      icon: WorkspaceGlyph(icon),
       label: Text(label),
       style: TextButton.styleFrom(
         foregroundColor: palette.accent,

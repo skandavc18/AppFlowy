@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/database/application/field/property_style.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/row/cell_menu.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flutter/gestures.dart';
@@ -24,6 +25,7 @@ class CellContainer extends StatelessWidget {
     this.viewId,
     this.fieldId,
     this.rowId,
+    this.styleSnapshot,
   });
 
   final EditableCellWidget child;
@@ -38,8 +40,18 @@ class CellContainer extends StatelessWidget {
   final String? fieldId;
   final String? rowId;
 
+  /// A host that already owns presentation metadata can supply it directly.
+  /// Null keeps the normal live registry; this does not affect cell values.
+  final PropertyStyles? styleSnapshot;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DatabaseFindAnchor(
+        target: DatabaseFindTarget.cell(viewId ?? '', rowId, fieldId),
+        enabled: viewId != null && rowId != null && fieldId != null,
+        child: _buildContainer(context),
+      );
+
+  Widget _buildContainer(BuildContext context) {
     return ChangeNotifierProvider.value(
       value: child.cellContainerNotifier,
       child: Selector<CellContainerNotifier, bool>(
@@ -114,6 +126,13 @@ class CellContainer extends StatelessWidget {
     final field = fieldId;
     if (view == null || field == null) {
       return Center(child: content);
+    }
+    final snapshot = styleSnapshot;
+    if (snapshot != null) {
+      return Align(
+        alignment: snapshot[field]?.align?.alignment ?? Alignment.center,
+        child: content,
+      );
     }
     return ValueListenableBuilder<PropertyStyles>(
       valueListenable: PropertyStyleRegistry.instance.listenable(view),

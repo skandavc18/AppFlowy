@@ -308,7 +308,7 @@ class _DocumentFindDetails extends StatelessWidget {
     final matchedEnd =
         match == null ? 0 : (match.start + 160).clamp(match.start, match.end);
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 560),
+      constraints: const BoxConstraints(maxWidth: FindBarMetrics.maxWidth),
       child: Container(
         key: const ValueKey('documentFindDetails'),
         margin: const EdgeInsets.only(top: 4),

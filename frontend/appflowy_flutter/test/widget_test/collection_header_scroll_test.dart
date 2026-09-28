@@ -606,7 +606,7 @@ void main() {
         final body = _body(tester);
         final before = tester.getRect(_mainArea);
         expect(buttons, findsNWidgets(5));
-        expect(buttons.hitTestable(), findsNothing);
+        expect(buttons.hitTestable(), findsNWidgets(5));
         expect(find.text('96 links').hitTestable(), findsOneWidget);
         await mouse.moveTo(tester.getCenter(find.byType(BookmarkToolbar)));
         await tester.pumpAndSettle();
@@ -760,7 +760,7 @@ void main() {
       model.setQuery('there is no bookmark with this title');
       await tester.pumpAndSettle();
       expect(find.byType(BookmarkEmptyState), findsOneWidget);
-      expect(controller.hasClients, isFalse);
+      expect(controller.positions, hasLength(1));
       model.setQuery('');
       await tester.pumpAndSettle();
       expect(_nested(tester).innerController, same(controller));

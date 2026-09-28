@@ -263,7 +263,15 @@ void main() {
         _expectIdentity('Javascript');
         expect(find.byType(InAppWebView), findsNothing);
         final runner = tester.state(find.byType(SandboxedCodeRunner));
-        final copyState = tester.state(copy);
+        final copyElement = tester.element(copy);
+        // CodeToolbarButton is a stateless adapter; its native TextButton
+        // owns the interaction state that must survive a narrower header.
+        final nativeCopy = find.descendant(
+          of: copy,
+          matching: find.byType(TextButton),
+        );
+        expect(nativeCopy, findsOneWidget);
+        final copyState = tester.state(nativeCopy);
         final source = find.byType(TextField);
         final field = tester.widget<TextField>(source);
         final editor = tester.state(find.byType(EditableText));
@@ -284,8 +292,24 @@ void main() {
         await _tabTo(tester, copy);
         width.value = 300;
         await _motion(tester);
-        expect(tester.state(copy), same(copyState));
+        expect(tester.element(copy), same(copyElement));
+        expect(tester.state(nativeCopy), same(copyState));
         expect(_focusedInside(copy), isTrue);
+        expect(_focusedInside(nativeCopy), isTrue);
+        _expectToolbar(tester, toolbar, true);
+        final narrowedFrame = tester.getRect(find.byKey(_frame));
+        expect(narrowedFrame.width, 300);
+        // Resizing retains focus but does not repeat Tab's scroll-to-reveal.
+        // The horizontal action viewport can clip the native button's center;
+        // scroll it into view without hovering or requesting focus again.
+        await tester.ensureVisible(nativeCopy);
+        await _motion(tester);
+        expect(tester.getRect(find.byKey(_frame)), narrowedFrame);
+        expect(tester.element(copy), same(copyElement));
+        expect(tester.state(nativeCopy), same(copyState));
+        expect(_focusedInside(nativeCopy), isTrue);
+        _expectToolbar(tester, toolbar, true);
+        expect(nativeCopy.hitTestable(), findsOneWidget);
         _expectIdentity(file.name);
         _expectIdentity('Javascript');
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -650,8 +674,17 @@ void main() {
         );
         await _ready(tester, kind);
         await tester.pump(const Duration(seconds: 4));
-        expect(find.byType(PreviewToolbarRegion), findsNothing);
-        _expectToolbar(tester, _toolbarFor(_trigger(kind)), true);
+        final toolbar = _toolbarFor(_trigger(kind));
+        // Gallery cards may own quiet overflow actions; only the standalone
+        // header must be outside a preview's hover/reveal boundary.
+        expect(
+          find.ancestor(
+            of: toolbar,
+            matching: find.byType(PreviewToolbarRegion),
+          ),
+          findsNothing,
+        );
+        _expectToolbar(tester, toolbar, true);
         expect(tester.takeException(), isNull);
       } finally {
         await _unmount(tester);
@@ -742,11 +775,17 @@ void main() {
       await _mount(
         tester,
         'paper',
-        _preview(file, FilePreviewKind.archive, editable: true),
+        // FileBlockComponent's archive embed mounts this explorer directly.
+        // FilePreview intentionally supplies embedded:false for its viewer.
+        ArchiveExplorer(file: file, name: file.name),
       );
       await _waitFor(
         tester,
         () => find.text('This archive is empty').evaluate().isNotEmpty,
+      );
+      expect(
+        tester.widget<ArchiveExplorer>(find.byType(ArchiveExplorer)).embedded,
+        isTrue,
       );
       _expectToolbar(
         tester,
@@ -816,8 +855,7 @@ void main() {
     }
   });
 
-  _test(
-      'stored PDF idle hide remains fullscreen-only; all fullscreen menus pin it',
+  _test('stored PDF idle hide cannot hide standalone or fullscreen controls',
       (tester) async {
     final pdf = await _PdfFixture.prepare('fullscreen-menus');
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
@@ -868,7 +906,8 @@ void main() {
         _focusOutside(tester);
         await tester.pump(const Duration(seconds: 4));
         await _motion(tester);
-        expect(tester.widget<AnimatedOpacity>(chrome).opacity, 0);
+        expect(tester.widget<AnimatedOpacity>(chrome).opacity, 1);
+        expect(button.hitTestable(), findsOneWidget);
       }
       expect(pdfFactory.opened, [pdf.file.path]);
       expect(tester.takeException(), isNull);
@@ -997,7 +1036,20 @@ Future<void> _ready(WidgetTester tester, FilePreviewKind kind) async {
         .widget<ArchiveExplorer>(find.byType(ArchiveExplorer))
         .file as _MemoryFile;
     expect(file.byteReads, 1);
-    expect(find.byType(FolderGalleryCard).hitTestable(), findsWidgets);
+    // The card's outer hover region is non-opaque; it need not be a hit-test
+    // entry even when its real content gesture is visible and actionable.
+    final cards = find.byType(FolderGalleryCard);
+    expect(cards, findsWidgets);
+    final targets = find.descendant(
+      of: cards,
+      matching: find.byKey(const ValueKey('folder-gallery-card-content')),
+    );
+    expect(targets.hitTestable(), findsWidgets);
+    for (final target in tester.widgetList<GestureDetector>(
+      targets.hitTestable(),
+    )) {
+      expect(target.onTap, isNotNull);
+    }
   }
 }
 

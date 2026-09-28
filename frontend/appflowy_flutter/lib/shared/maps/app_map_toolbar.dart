@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:appflowy/shared/maps/map_style.dart';
 import 'package:appflowy/shared/maps/map_suggestions.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 
 /// One control on the map.
@@ -32,7 +33,16 @@ class MapControlButton extends StatelessWidget {
         tooltip: tooltip,
         isSelected: selected,
         onPressed: onPressed,
-        icon: Icon(icon, size: 17.5),
+        icon: WorkspaceGlyph(
+          icon,
+          size: 17.5,
+          color: onPressed == null
+              ? palette.textMuted.withValues(alpha: 0.5)
+              : selected
+                  ? palette.accent
+                  : palette.textPrimary,
+          role: onPressed == null ? WorkspaceGlyphRole.preserveInk : null,
+        ),
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,
           minimumSize: Size.square(size),
@@ -331,7 +341,7 @@ class _AppMapSearchFieldState extends State<AppMapSearchField> {
             ),
             child: Row(
               children: [
-                Icon(
+                WorkspaceGlyph(
                   Icons.search_rounded,
                   size: 16,
                   color: palette.textMuted,
@@ -380,7 +390,7 @@ class _AppMapSearchFieldState extends State<AppMapSearchField> {
                       widget.onSubmitted('');
                       setState(() {});
                     },
-                    child: Icon(
+                    child: WorkspaceGlyph(
                       Icons.close_rounded,
                       size: 15,
                       color: palette.textMuted,

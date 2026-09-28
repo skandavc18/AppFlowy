@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -44,9 +45,7 @@ class FindBarPalette {
       field: usePaper
           ? PaperTheme.controlBackground
           : premium?.mutedSurface ?? scheme.surfaceContainerHighest,
-      hover: usePaper
-          ? PaperTheme.controlHover
-          : premium?.hover ?? scheme.onSurface.withValues(alpha: 0.07),
+      hover: WorkspaceChrome.hoverColor(context),
       selected: usePaper
           ? PaperTheme.controlSelected
           : premium?.selected ??
@@ -86,12 +85,13 @@ class FindBarPalette {
 /// Fixed geometry, so every surface's find bar is the same size.
 abstract final class FindBarMetrics {
   static const rowHeight = 32.0;
-  static const cardRadius = 16.0;
-  static const fieldRadius = 11.0;
+  static const maxWidth = 420.0;
+  static const cardRadius = 12.0;
+  static const fieldRadius = 7.0;
   static const controlSize = 26.0;
   static const controlRadius = 8.0;
   static const iconSize = 16.0;
-  static const fieldWidth = 236.0;
+  static const fieldWidth = 190.0;
   static const gap = 4.0;
 }
 
@@ -199,45 +199,54 @@ class FindReplaceBar extends StatelessWidget {
                 final available = constraints.hasBoundedWidth
                     ? constraints.maxWidth
                     : math.max(0.0, MediaQuery.sizeOf(context).width - 32);
-                final width = math.min(560.0, available);
-                return Container(
-                  width: width,
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: palette.surface,
-                    borderRadius:
-                        BorderRadius.circular(FindBarMetrics.cardRadius),
-                    border: Border.all(color: palette.border, width: 0.6),
-                    boxShadow: [
-                      BoxShadow(
-                        color: palette.shadow,
-                        blurRadius: 26,
-                        offset: const Offset(0, 10),
-                        spreadRadius: -12,
-                      ),
-                      BoxShadow(
-                        color: palette.shadow
-                            .withValues(alpha: palette.shadow.a * 0.6),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                        spreadRadius: -4,
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildFindRow(
-                        context,
-                        palette,
-                        math.max(0, width - 13.2),
-                      ),
-                      if (showReplace && _canReplace) ...[
-                        const SizedBox(height: FindBarMetrics.gap),
-                        _buildReplaceRow(context, palette),
+                final width = math.min(FindBarMetrics.maxWidth, available);
+                return _FindBarEntrance(
+                  child: Container(
+                    width: width,
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: palette.surface,
+                      borderRadius:
+                          BorderRadius.circular(FindBarMetrics.cardRadius),
+                      border: Border.all(color: palette.border, width: 0.6),
+                      boxShadow: [
+                        BoxShadow(
+                          color: palette.shadow,
+                          blurRadius: 26,
+                          offset: const Offset(0, 10),
+                          spreadRadius: -12,
+                        ),
+                        BoxShadow(
+                          color: palette.shadow
+                              .withValues(alpha: palette.shadow.a * 0.6),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                          spreadRadius: -4,
+                        ),
                       ],
-                    ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildFindRow(
+                          context,
+                          palette,
+                          math.max(0, width - 13.2),
+                        ),
+                        _ReplaceRowReveal(
+                          visible: showReplace && _canReplace,
+                          child: _canReplace
+                              ? Padding(
+                                  padding: const EdgeInsets.only(
+                                    top: FindBarMetrics.gap,
+                                  ),
+                                  child: _buildReplaceRow(context, palette),
+                                )
+                              : const SizedBox.shrink(),
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -256,7 +265,7 @@ class FindReplaceBar extends StatelessWidget {
     final controlSize = _controlSize(context);
     final controlsWidth = math.min(
       width,
-      MediaQuery.textScalerOf(context).scale(100) + controlSize * 3 + 8,
+      MediaQuery.textScalerOf(context).scale(64) + controlSize * 3 + 8,
     );
     final inline = width >=
         controlsWidth +
@@ -289,7 +298,16 @@ class FindReplaceBar extends StatelessWidget {
                   onPressed: onToggleReplace,
                 )
               else
-                SizedBox(width: controlSize),
+                SizedBox.square(
+                  dimension: controlSize,
+                  child: Center(
+                    child: WorkspaceGlyph(
+                      Icons.search_rounded,
+                      size: FindBarMetrics.iconSize,
+                      color: palette.textSecondary,
+                    ),
+                  ),
+                ),
               const SizedBox(width: FindBarMetrics.gap),
               Expanded(
                 child: _buildField(
@@ -507,6 +525,45 @@ class FindReplaceBar extends StatelessWidget {
   }
 }
 
+/// A size factor avoids RenderAnimatedSize's zero-duration self-layout bug.
+/// Keep the field at one depth when motion preferences or disclosure change;
+/// collapsed controls retain their draft but never take focus or pointer input.
+class _ReplaceRowReveal extends StatelessWidget {
+  const _ReplaceRowReveal({required this.visible, required this.child});
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween(begin: visible ? 1 : 0, end: visible ? 1 : 0),
+        duration: MediaQuery.disableAnimationsOf(context) ||
+                MediaQuery.accessibleNavigationOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) => Offstage(
+          offstage: !visible && value == 0,
+          child: ClipRect(
+            child: Align(
+              alignment: Alignment.topCenter,
+              heightFactor: value,
+              child: ExcludeFocus(
+                excluding: !visible,
+                child: ExcludeSemantics(
+                  excluding: !visible,
+                  child: IgnorePointer(
+                    ignoring: !visible,
+                    child: Opacity(opacity: value, child: child),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        child: child,
+      );
+}
+
 double _controlSize(BuildContext context) => math.max(
       FindBarMetrics.controlSize,
       MediaQuery.textScalerOf(context).scale(11) + 8,
@@ -530,6 +587,7 @@ class _FindBarButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
+    final controlStyle = WorkspaceChrome.controlStyle(context);
     return SizedBox.square(
       dimension: _controlSize(context),
       child: IconButton(
@@ -538,7 +596,20 @@ class _FindBarButton extends StatelessWidget {
         onPressed: onPressed,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(),
-        hoverColor: palette.hover,
+        style: IconButton.styleFrom(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(FindBarMetrics.controlRadius),
+          ),
+        ).copyWith(
+          // Paint one wash on this surface, not a second Ink overlay over the
+          // global IconButton background. Native sizing and glyphs stay intact.
+          backgroundColor: controlStyle.backgroundColor,
+          overlayColor: controlStyle.overlayColor,
+          animationDuration: MediaQuery.disableAnimationsOf(context) ||
+                  MediaQuery.accessibleNavigationOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 140),
+        ),
         icon: WorkspaceGlyph(
           icon,
           size: FindBarMetrics.iconSize,
@@ -552,6 +623,31 @@ class _FindBarButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// One entrance for the chrome, never a transition around the editor/viewer.
+/// Rebuilding counts does not restart the tween or recreate native fields.
+class _FindBarEntrance extends StatelessWidget {
+  const _FindBarEntrance({required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.94, end: 1),
+        duration: MediaQuery.disableAnimationsOf(context) ||
+                MediaQuery.accessibleNavigationOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 160),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) => Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * -48),
+            child: child,
+          ),
+        ),
+        child: child,
+      );
 }
 
 class _FindBarToggle extends StatelessWidget {

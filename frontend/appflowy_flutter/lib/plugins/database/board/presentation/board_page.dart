@@ -12,6 +12,7 @@ import 'package:appflowy/plugins/database/board/application/board_actions_bloc.d
 import 'package:appflowy/plugins/database/board/group_ext.dart';
 import 'package:appflowy/plugins/database/board/presentation/board_style.dart';
 import 'package:appflowy/plugins/database/board/presentation/widgets/board_column_header.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/grid/presentation/grid_page.dart';
 import 'package:appflowy/plugins/database/tab_bar/desktop/setting_menu.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
@@ -19,6 +20,7 @@ import 'package:appflowy/plugins/database/widgets/card/card_bloc.dart';
 import 'package:appflowy/plugins/database/widgets/cell/card_cell_style_maps/desktop_board_card_cell_style.dart';
 import 'package:appflowy/plugins/database/widgets/cell_editor/extension.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_detail.dart';
+import 'package:appflowy/plugins/database/widgets/setting/field_visibility_extension.dart';
 import 'package:appflowy/shared/conditional_listenable_builder.dart';
 import 'package:appflowy/shared/flowy_error_page.dart';
 import 'package:appflowy/util/field_type_extension.dart';
@@ -319,7 +321,26 @@ class _BoardContentState extends State<_BoardContent> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DatabaseFindLayout(
+        viewId: widget.view.id,
+        snapshot: _findSnapshot,
+        child: _buildContent(context),
+      );
+
+  DatabaseFindViewSnapshot _findSnapshot() => DatabaseFindViewSnapshot(
+        viewId: widget.view.id,
+        rowIds: {
+          for (final group in widget.boardController.groupDatas)
+            for (final row in group.items)
+              if (!row.isPhantom) row.id,
+        },
+        fieldIds: databaseController.fieldController.fieldInfos
+            .where((field) => field.visibility?.isVisibleState() ?? false)
+            .map((field) => field.id),
+        revision: databaseController,
+      );
+
+  Widget _buildContent(BuildContext context) {
     final palette = boardPaletteOf(context);
     final config = _configOf(palette);
     final builderSize = context.read<DatabasePluginWidgetBuilderSize?>();

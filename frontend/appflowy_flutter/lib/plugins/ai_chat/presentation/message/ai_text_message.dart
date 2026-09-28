@@ -281,6 +281,7 @@ class _NonEmptyMessage extends StatelessWidget {
             child: AIMarkdownText(
               markdown: state.text,
               withAnimation: enableAnimation && stream != null,
+              findMessageId: message.id,
             ),
           ),
           if (state.sources.isNotEmpty)

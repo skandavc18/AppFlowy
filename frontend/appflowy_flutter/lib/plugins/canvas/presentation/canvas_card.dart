@@ -1,9 +1,13 @@
 import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/canvas/presentation/canvas_find.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_node_body.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_view_resolver.dart';
+import 'package:appflowy/shared/find_replace/find_highlight.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/gestures.dart';
@@ -275,7 +279,9 @@ class _CanvasCardState extends State<CanvasCard> {
     final ringColour = widget.connectTarget
         ? palette.accent
         : widget.searchHit
-            ? const Color(0xFFF59E0B)
+            ? FindHighlightColors.current(
+                palette.isDark ? Brightness.dark : Brightness.light,
+              )
             : palette.accent;
     final showRing =
         widget.selected || widget.connectTarget || widget.searchHit;
@@ -316,7 +322,7 @@ class _CanvasCardState extends State<CanvasCard> {
             node: node,
             palette: palette,
             resolver: widget.resolver,
-            editable: widget.editable,
+            editable: widget.editable && !node.locked,
             editing: widget.editing,
             onTextChanged: widget.onTextChanged,
             onEditingFinished: widget.onEditingFinished,
@@ -777,6 +783,27 @@ class _CanvasFrameBoxState extends State<CanvasFrameBox> {
               child: _heading(palette, accent),
             ),
           ),
+          if (!frame.collapsed && frame.description.isNotEmpty)
+            Positioned(
+              left: CanvasMetrics.space3,
+              right: CanvasMetrics.space3,
+              top: CanvasMetrics.frameHeaderHeight * inverse,
+              bottom: CanvasMetrics.space2,
+              child: IgnorePointer(
+                child: SingleChildScrollView(
+                  child: SurfaceFindTarget(
+                    id: canvasFindFrame(
+                      frame.id,
+                      CanvasSearchField.description,
+                    ),
+                    child: Text(
+                      frame.description,
+                      style: canvasLabelStyle(palette),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           if (widget.editable && (widget.selected || _hovered))
             for (final handle in CanvasHandle.values)
               _grip(handle, inverse, palette, accent),
@@ -845,13 +872,16 @@ class _CanvasFrameBoxState extends State<CanvasFrameBox> {
             onTap:
                 widget.editable ? () => setState(() => _renaming = true) : null,
             behavior: HitTestBehavior.opaque,
-            child: Text(
-              frame.title.trim().isEmpty
-                  ? LocaleKeys.canvas_frame_untitled.tr()
-                  : frame.title.trim(),
-              style: frame.title.trim().isEmpty
-                  ? style.copyWith(color: palette.textMuted)
-                  : style,
+            child: SurfaceFindTarget(
+              id: canvasFindFrame(frame.id, CanvasSearchField.title),
+              child: Text(
+                frame.title.trim().isEmpty
+                    ? LocaleKeys.canvas_frame_untitled.tr()
+                    : frame.title,
+                style: frame.title.trim().isEmpty
+                    ? style.copyWith(color: palette.textMuted)
+                    : style,
+              ),
             ),
           ),
         if (widget.cardCount > 0) ...[

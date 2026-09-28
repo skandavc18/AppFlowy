@@ -56,6 +56,11 @@ const _bodies = <String, String>{
       '<circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/>'
       '<circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>'
       '<circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></g>',
+  'dots-two-vertical': '<g fill="currentColor" stroke="none">'
+      '<circle cx="12" cy="8" r="1.5"/><circle cx="12" cy="16" r="1.5"/></g>',
+  'dock-left': '<path d="M3 3v18M21 12H8m5-5-5 5 5 5"/>',
+  'chevrons-left': '<path d="m11 5-7 7 7 7m9-14-7 7 7 7"/>',
+  'chevrons-right': '<path d="m4 5 7 7-7 7m9-14 7 7-7 7"/>',
   'caret-right': '<path d="m9 5 7 7-7 7"/>',
   'caret-down': '<path d="m5 9 7 7 7-7"/>',
   'caret-up-down': '<path d="m8 8 4-4 4 4m-8 8 4 4 4-4"/>',
@@ -482,7 +487,7 @@ const _bodies = <String, String>{
   'layers-clear': '<path d="m12 2 10 5-10 5L2 7l10-5ZM2 12l10 5 10-5'
       'M2 17l10 5 10-5M3 3l18 18"/>',
   'skip-next': '<path d="m4 4 12 8-12 8V4ZM20 4v16"/>',
-  'rotate': '<path d="M21 10a9 9 0 0 0-15-6L3 7m0-5v5h5"/>'
+  'rotate': '<path d="M3 10a9 9 0 0 1 15-6l3 3m0-5v5h-5"/>'
       '<rect x="7" y="11" width="11" height="11" rx="1.5"/>',
   'print': '<path d="M6 8V2h12v6M6 17H2V8h20v9h-4M6 13h12v9H6V13ZM18 11h.01"/>',
   'page-portrait': '<rect x="5" y="2" width="14" height="20" rx="2"/>',
@@ -540,6 +545,190 @@ const _bodies = <String, String>{
       '<path d="M8 7V3h8v4M2 12l10 4 10-4M10 13h4"/>',
   'route': '<circle cx="5" cy="4" r="2"/><circle cx="19" cy="20" r="2"/>'
       '<path d="M8 4h8a4 4 0 0 1 0 8H8a4 4 0 0 0 0 8h8"/>',
+  // Source-audited chrome identities. These are not saved picker choices.
+  // Keep opposite directions, absent states and actions distinguishable.
+  'find-replace': '<circle cx="8" cy="8" r="5"/>'
+      '<path d="m12 12 3 3M3 18h17m-4-4 4 4-4 4"/>',
+  'replace-all': '<path d="M3 8a9 9 0 0 1 16-3l2 3m0-5v5h-5'
+      'M21 16a9 9 0 0 1-16 3l-2-3m0 5v-5h5M8 10h6m-4 4h6"/>',
+  'rotate-ccw': '<path d="M21 10a9 9 0 0 0-15-6L3 7m0-5v5h5"/>'
+      '<rect x="6" y="11" width="11" height="11" rx="1.5"/>',
+  'flip-horizontal': '<path d="M12 2v3m0 4v6m0 4v3M3 6l6 6-6 6V6Z'
+      'm18 0-6 6 6 6V6Z"/>',
+  'flip-vertical': '<path d="M2 12h3m4 0h6m4 0h3M6 3l6 6 6-6H6Z'
+      'm0 18 6-6 6 6H6Z"/>',
+  'fit-page': '<path d="M6 2H2v4m16-4h4v4M2 18v4h4m12 0h4v-4"/>'
+      '<rect x="7" y="5" width="10" height="14" rx="1"/>',
+  'actual-size': '<path d="M7 3H3v4m14-4h4v4M3 17v4h4m10 0h4v-4'
+      'M6 10l2-1v6m8-5 2-1v6M12 10h.01M12 14h.01"/>',
+  'help': '<circle cx="12" cy="12" r="9"/>'
+      '<path d="M9 8a3 3 0 1 1 4 3c-1 .4-1 1-1 2M12 17h.01"/>',
+  'error': '<path d="M8 2h8l6 6v8l-6 6H8l-6-6V8l6-6Z'
+      'M12 7v6M12 17h.01"/>',
+  'highlight': '<path d="m8 15 10-12 4 4-11 11-3-3Zm0 0-3 5h7'
+      'M2 22h20M14 7l4 4"/>',
+  'marker-number': '<rect x="4" y="3" width="16" height="18" rx="3"/>'
+      '<path d="m9 9 3-2v10m-3 0h6"/>',
+  'bookmark-plus': '<path d="M13 3H5v18l7-4 7 4v-9M18 2v7m-3.5-3.5h7"/>',
+  'location-off': '<path d="M7 4a7 7 0 0 1 12 5c0 2-1 4-2 6'
+      'M5 9c0 5 7 13 7 13l3-4M3 3l18 18"/>',
+  'puzzle-off': '<path d="M9 4h3a3 3 0 0 1 6 0h3v5a3 3 0 0 0 0 6'
+      'M4 9v3a3 3 0 0 0 0 6v3h5a3 3 0 0 1 6 0h6M2 2l20 20"/>',
+  'cursor': '<path d="m4 2 16 11-8 1-4 8L4 2Zm8 12 6 8"/>',
+  'hand-pan': '<path d="M8 12V3a2 2 0 0 1 4 0v8-5a2 2 0 0 1 4 0v5-3'
+      'a2 2 0 0 1 4 0v8l-3 6H9l-6-8a2 2 0 0 1 3-2l2 2"/>',
+  'image-broken': '<rect x="3" y="3" width="18" height="18" rx="2"/>'
+      '<path d="m3 15 5-4 4 4 4-4 5 4M13 3l-3 6 4 2-4 6 3 4"/>',
+  'image-off': '<path d="M9 3h10a2 2 0 0 1 2 2v10M3 7v12a2 2 0 0 0 2 2h12'
+      'M3 16l5-5 7 7M3 3l18 18"/>',
+  'polyline': '<path d="m5 5 14 3-6 11-8-14Z"/>'
+      '<rect x="3" y="3" width="4" height="4" rx="1"/>'
+      '<rect x="17" y="6" width="4" height="4" rx="1"/>'
+      '<rect x="11" y="17" width="4" height="4" rx="1"/>',
+  'commit': '<circle cx="12" cy="12" r="5"/><path d="M2 12h5m10 0h5"/>',
+  'rebase': '<circle cx="5" cy="4" r="2"/><circle cx="5" cy="20" r="2"/>'
+      '<path d="M5 6v12M10 17h9V5m-4 4 4-4 4 4"/>',
+  'time-progress': '<circle cx="12" cy="12" r="9"/>'
+      '<path d="M12 3v9l6 6M12 7v5l-4 2"/>',
+  'lock-off': '<path d="M8 6a4 4 0 0 1 8 1v3h3v6M5 10v11h14'
+      'M3 3l18 18M12 15v2"/>',
+  'shuffle': '<path d="M3 5h3l12 14h3m-4-4 4 4-4 4M3 19h3l12-14h3'
+      'm-4-4 4 4-4 4"/>',
+  'skip-previous': '<path d="m20 4-12 8 12 8V4ZM4 4v16"/>',
+  'check-off': '<path d="m3 12 4 4 3-3m3-3 7-7M3 3l18 18"/>',
+  'tag-off': '<path d="M9 3h4l9 9-5 5M3 7v6l9 9 2-2M2 2l20 20"/>',
+  'signal': '<circle cx="12" cy="12" r="2"/>'
+      '<path d="M8 7a6 6 0 0 0 0 10m8-10a6 6 0 0 1 0 10'
+      'M5 3a11 11 0 0 0 0 18M19 3a11 11 0 0 1 0 18"/>',
+  'user-plus': '<circle cx="9" cy="7" r="4"/>'
+      '<path d="M2 21v-3a7 6 0 0 1 13-3M19 11v8m-4-4h8"/>',
+  'shield-info': '<path d="m12 2 8 3v6c0 5-3 8-8 11-5-3-8-6-8-11V5l8-3Z'
+      'M12 11v6M12 7h.01"/>',
+  'inboxes': '<path d="M5 3h14v4M2 12l3-4h14l3 4v9H2v-9Zm0 0h6'
+      'l2 3h4l2-3h6"/>',
+  'clipboard-check': '<rect x="8" y="2" width="8" height="5" rx="1"/>'
+      '<path d="M8 4H4v18h16V4h-4M7 14l3 3 7-7"/>',
+  'scales': '<path d="M12 2v19M7 22h10M3 6h18M5 6l-4 9h8L5 6Z'
+      'm14 0-4 9h8l-4-9Z"/>',
+  'brackets': '<path d="M8 3H4v18h4M16 3h4v18h-4"/>',
+  'fog': '<path d="M7 12a4 4 0 1 1 1-8 5 5 0 0 1 9 2 3 3 0 1 1 0 6'
+      'M2 16h20M5 20h14"/>',
+  'snowflake': '<path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7'
+      'M9 3l3 3 3-3M9 21l3-3 3 3M3 10l4-1-1-4m12 14-1-4 4-1'
+      'M3 14l4 1-1 4M18 5l-1 4 4 1"/>',
+  'storm': '<path d="M6 14a4 4 0 0 1 0-8 6 6 0 0 1 11-1'
+      ' 4.5 4.5 0 0 1 2 9M12 10l-5 7h5l-1 5 6-8h-5l1-4Z"/>',
+  'calendar-off': '<rect x="3" y="5" width="18" height="16" rx="2"/>'
+      '<path d="M7 3v4M17 3v4M3 10h18m-12 3 6 6m-6 0 6-6"/>',
+  'calendar-check': '<rect x="3" y="5" width="18" height="16" rx="2"/>'
+      '<path d="M7 3v4M17 3v4M3 10h18m-14 5 3 3 7-6"/>',
+  'books': '<path d="M4 3h5v18H4V3Zm5 2h5v16H9V5Zm7-2 5-1 3 18-5 1-3-18Z'
+      'M4 17h10"/>',
+  'key': '<circle cx="7" cy="7" r="5"/>'
+      '<path d="m11 11 10 10m-4-4 3-3m-6 0 3-3M5 5h.01"/>',
+  'folder-off': '<path d="M9 4h2l3 3h5a2 2 0 0 1 2 2v6M3 7v12h14'
+      'M2 2l20 20"/>',
+  'intersection': '<circle cx="8" cy="12" r="7"/>'
+      '<circle cx="16" cy="12" r="7"/><path d="M12 7v10"/>',
+  'replay': '<path d="M6 5a9 9 0 1 1-3 10M6 1v5h5"/>',
+  'rewind-5': '<path d="M6 5a9 9 0 1 1-3 10M6 1v5h5'
+      'M15 9h-5v4h3a2.5 2.5 0 0 1 0 5h-3"/>',
+  'forward-5': '<path d="M18 5a9 9 0 1 0 3 10M18 1v5h-5'
+      'M15 9h-5v4h3a2.5 2.5 0 0 1 0 5h-3"/>',
+  'playback-speed': '<path d="M12 3a9 9 0 1 1-9 9M3 8h.01M5 5h.01M8 3h.01'
+      'm2 5 7 4-7 4V8Z"/>',
+  'high-definition': '<rect x="2" y="5" width="20" height="14" rx="2"/>'
+      '<path d="M6 9v6M10 9v6M6 12h4M14 9h2a3 3 0 0 1 0 6h-2V9Z"/>',
+  'tab-key': '<path d="M3 12h14m-5-5 5 5-5 5M21 5v14"/>',
+  'currency-dollar': '<path d="M12 2v20M18 6c-8-8-18 5-6 6s2 14-6 6"/>',
+  'percent': '<circle cx="6" cy="6" r="3"/>'
+      '<circle cx="18" cy="18" r="3"/><path d="M3 21 21 3"/>',
+  'borders': '<rect x="3" y="3" width="18" height="18" rx="1"/>'
+      '<path d="M3 12h18M12 3v18"/>',
+  'borders-none': '<path d="M3 6V3h3m3 0h6m3 0h3v3m0 3v6m0 3v3h-3'
+      'm-3 0H9m-3 0H3v-3m0-3V9M12 11v2M11 12h2"/>',
+  'volume': '<path d="M3 9h4l5-5v16l-5-5H3V9Zm13 0a5 5 0 0 1 0 6'
+      'm3-10a9 9 0 0 1 0 14"/>',
+  'volume-off': '<path d="M3 9h4l5-5v16l-5-5H3V9Zm13 0 6 6m-6 0 6-6"/>',
+  'suitcase': '<rect x="4" y="6" width="16" height="15" rx="2"/>'
+      '<path d="M9 6V2h6v4M8 10v7m8-7v7M7 21v2m10-2v2"/>',
+  'bank': '<path d="m2 8 10-6 10 6H2ZM4 21h16M6 11v7m6-7v7m6-7v7"/>',
+  'receipt': '<path d="m5 2 3 2 4-2 4 2 3-2v20l-3-2-4 2-4-2-3 2V2Z'
+      'M8 8h8M8 12h8M8 16h5"/>',
+  'cutlery': '<path d="M3 2v6a3 3 0 0 0 6 0V2M6 2v20'
+      'M19 2c-4 2-5 7-5 12h5V2Zm0 12v8"/>',
+  'science': '<path d="M8 2h8M9 2v8l-7 11h20l-7-11V2M6 16h12"/>'
+      '<circle cx="10" cy="18" r=".6"/>',
+  'badge': '<rect x="2" y="5" width="20" height="16" rx="2"/>'
+      '<path d="M9 2v5h6V2M14 12h5m-5 4h5M4 18c0-4 8-4 8 0"/>'
+      '<circle cx="8" cy="12" r="2"/>',
+  'bug': '<rect x="7" y="6" width="10" height="15" rx="5"/>'
+      '<path d="m8 3 2 3m6-3-2 3M3 9h4m10 0h4M3 14h4m10 0h4M3 20l4-2'
+      'm10 0 4 2M12 10v11"/>',
+  'tab': '<path d="M3 7h9V3h9v18H3V7Zm0 0V3h9M12 7h9"/>',
+  'moon': '<path d="M15 2A10 10 0 1 0 22 16 10 10 0 0 1 15 2Z"/>',
+  'history-search': '<path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/>'
+      '<circle cx="13" cy="11" r="3"/><path d="m15 13 3 3"/>',
+  'microchip': '<rect x="5" y="5" width="14" height="14" rx="2"/>'
+      '<rect x="9" y="9" width="6" height="6" rx="1"/>'
+      '<path d="M8 2v3m8-3v3M8 19v3m8-3v3M2 8h3m14 0h3M2 16h3m14 0h3"/>',
+  'computer': '<rect x="2" y="3" width="20" height="14" rx="2"/>'
+      '<path d="M9 17v4m6-4v4M6 22h12M2 13h20"/>',
+  'paw': '<path d="M12 11c-3 0-3 3-6 4-5 4-1 8 3 6 2-1 4-1 6 0'
+      ' 4 2 8-2 3-6-3-1-3-4-6-4Z"/>'
+      '<ellipse cx="4" cy="9" rx="2" ry="3"/>'
+      '<ellipse cx="9" cy="5" rx="2" ry="3"/>'
+      '<ellipse cx="15" cy="5" rx="2" ry="3"/>'
+      '<ellipse cx="20" cy="9" rx="2" ry="3"/>',
+  'food': '<path d="M2 14a6 6 0 0 1 12 0H2Zm0 3h12M2 20h12'
+      'M16 6h6l-1 15h-4L16 6Zm2 0V2h4"/>',
+  'running': '<circle cx="16" cy="4" r="2"/>'
+      '<path d="m14 8-4 6 6 3-1 5m-5-8-3 6H2m10-11-3-3-5 4'
+      'm10-2 3 5h5"/>',
+  'city': '<path d="M3 21V8h7v13M10 21V3h11v18M1 21h22'
+      'M6 11v1m0 4v1M14 7h3m-3 4h3m-3 4h3"/>',
+  'workspace-home': '<path d="M3 13V3h10v5M6 6h3M6 10h3M2 15l9-7 11 7'
+      'M5 13v8h14v-8M10 21v-6h4v6"/>',
+  'brain': '<path d="M12 4c-3-4-9 0-7 4-5 2-4 8 0 9-1 5 5 7 7 3'
+      ' 2 4 8 2 7-3 4-1 5-7 0-9 2-4-4-8-7-4Zm0 0v16'
+      'M5 8l3 2m-3 7 3-3m11-6-3 2m3 7-3-3"/>',
+  'server': '<rect x="3" y="3" width="18" height="7" rx="2"/>'
+      '<rect x="3" y="14" width="18" height="7" rx="2"/>'
+      '<path d="M7 6.5h.01M7 17.5h.01M12 6.5h5M12 17.5h5"/>',
+  'unarchive': '<rect x="3" y="3" width="18" height="5" rx="1"/>'
+      '<path d="M5 8v13h14V8M12 18v-7m-3 3 3-3 3 3"/>',
+  'alarm': '<circle cx="12" cy="13" r="8"/>'
+      '<path d="m3 4 3-2m12 0 3 2M12 8v5l4 2M6 20l-2 2m14-2 2 2"/>',
+  'pin-off': '<path d="M11 3h6l-1 6 3 4v2h-4M7 7l1 3-3 5h6v6M3 3l18 18"/>',
+  'star-off': '<path d="m9 7 3-5 3 6 7 1-5 5 1 3M6 8l-4 1 5 5-1 7 6-3'
+      ' 6 3M2 2l20 20"/>',
+  'checkbox-indeterminate': '<rect x="3" y="3" width="18" height="18" rx="3"/>'
+      '<path d="M7 12h10"/>',
+  'divider-vertical': '<path d="M12 3v18"/>',
+  'direction-ltr': '<path d="M13 3v11M17 3v11M17 3h-7a4 4 0 0 0 0 8h3'
+      'M3 19h18m-4-3 4 3-4 3"/>',
+  'direction-rtl': '<path d="M13 3v11M17 3v11M17 3h-7a4 4 0 0 0 0 8h3'
+      'M21 19H3m4-3-4 3 4 3"/>',
+  'direction-auto': '<path d="M13 3v10M17 3v10M17 3h-7a3 3 0 0 0 0 6h3'
+      'M3 17h18m-3-2 3 2-3 2M21 21H3m3-2-3 2 3 2"/>',
+  'key-command': '<path d="M8 8H5a3 3 0 1 1 3-3v14a3 3 0 1 1-3-3h14'
+      'a3 3 0 1 1-3 3V5a3 3 0 1 1 3 3H8Z"/>',
+  'key-shift': '<path d="m12 3 10 10h-6v8H8v-8H2L12 3Z"/>',
+  'key-option': '<path d="M3 5h5l8 14h5M14 5h7"/>',
+  'paragraph': '<path d="M14 3v18M19 3v18M19 3h-9a5 5 0 0 0 0 10h4"/>',
+  'text-image': '<rect x="2" y="3" width="20" height="18" rx="2"/>'
+      '<path d="M6 7h12M6 11h7m-8 7 4-4 4 4 4-3 4 3"/>',
+  'thumb-up': '<path d="M8 10l5-8 3 1-1 6h6l-2 12H8V10Z'
+      'M3 10h5v11H3V10Z"/>',
+  'thumb-down': '<path d="m8 14 5 8 3-1-1-6h6L19 3H8v11Z'
+      'M3 3h5v11H3V3Z"/>',
+  'send': '<path d="m2 3 20 9-20 9 4-9-4-9Zm4 9h16"/>',
+  'keyboard-hide': '<rect x="2" y="3" width="20" height="12" rx="2"/>'
+      '<path d="M6 7h.1m4 0h.1m4 0h.1m4 0h.1M8 11h8m-8 8 4 3 4-3"/>',
+  'keyboard-show': '<rect x="2" y="9" width="20" height="12" rx="2"/>'
+      '<path d="M6 13h.1m4 0h.1m4 0h.1m4 0h.1M8 17h8M8 5l4-3 4 3"/>',
+  'globe-off': '<path d="M9 3.5A9 9 0 0 1 21 15M3 8a9 9 0 0 0 13 12'
+      'M12 3c3 3 4 7 3 10M8 8c-1 4 0 9 4 13M3 12h9m5 0h4M3 3l18 18"/>',
   'unknown': '<rect x="3" y="3" width="18" height="18" rx="4"/>'
       '<path d="M9 9a3 3 0 1 1 4 2.8c-1 .4-1 1.2-1 2.2M12 18h.01"/>',
 };

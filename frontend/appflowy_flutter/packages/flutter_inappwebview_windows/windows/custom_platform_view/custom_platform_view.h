@@ -31,6 +31,11 @@ namespace flutter_inappwebview_plugin
     int64_t texture_id() const { return texture_id_; }
 
     void UnregisterMethodCallHandler() const;
+    // Called on the creating platform thread. Completion owns no view/manager.
+    void Dispose(std::function<void(HRESULT)> completion = nullptr);
+    // Keep-alive transfer must detach the old owner's callbacks before moving.
+    std::shared_ptr<InAppWebView> DetachView();
+    std::shared_ptr<TextureLifecycleEvents> lifecycle_events() const { return lifecycle_events_; }
   private:
     HWND hwnd_;
     std::unique_ptr<flutter::TextureVariant> flutter_texture_;
@@ -47,6 +52,9 @@ namespace flutter_inappwebview_plugin
     EventRegistrationToken navigation_starting_token_ = {};
     EventRegistrationToken navigation_completed_token_ = {};
     bool history_handlers_registered_ = false;
+    bool disposed_ = false;
+    std::shared_ptr<TextureLifecycleEvents> lifecycle_events_;
+    void DetachViewCallbacks();
 
     void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue>& method_call,

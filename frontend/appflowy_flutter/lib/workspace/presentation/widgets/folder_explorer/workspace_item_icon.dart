@@ -1,3 +1,5 @@
+import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
@@ -6,7 +8,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspac
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
 
-/// Automatic fallback only. Hosts render a chosen IconPB first; neither this
+/// Saved identity first, then the semantic automatic fallback. Neither this
 /// renderer nor a device style change edits the item's stored identity.
 class WorkspaceItemIcon extends StatelessWidget {
   const WorkspaceItemIcon({
@@ -58,6 +60,10 @@ class WorkspaceItemIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final view = this.view;
+    final saved = view?.icon.toEmojiIconData();
+    if (saved != null && saved.isNotEmpty) {
+      return RawEmojiIconWidget(emoji: saved, emojiSize: size, lineHeight: 1);
+    }
     if (view != null &&
         !item.isFolder &&
         !item.isFile &&

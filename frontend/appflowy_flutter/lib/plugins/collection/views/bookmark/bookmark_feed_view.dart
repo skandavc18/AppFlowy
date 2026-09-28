@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_host.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_reader.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_toolbar.dart';
 import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
@@ -29,18 +30,11 @@ class BookmarkFeedView extends StatelessWidget {
           controller: controller,
           theme: theme,
           showGrouping: true,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              BookmarkFilterBar(controller: controller, theme: theme),
-              Expanded(
-                child: _Feed(
-                  collection: collection,
-                  controller: controller,
-                  theme: theme,
-                ),
-              ),
-            ],
+          pageFlow: true,
+          child: _Feed(
+            collection: collection,
+            controller: controller,
+            theme: theme,
           ),
         ),
       );
@@ -74,15 +68,6 @@ class _FeedState extends State<_Feed> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final scroll = CollectionPageScrollScope.maybeOf(context) ?? _scroll;
-    if (controller.entries.isEmpty) {
-      return bookmarkEmptyView(
-        context: context,
-        controller: controller,
-        collection: widget.collection,
-        theme: widget.theme,
-      );
-    }
-
     final groups = controller.groups();
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -94,61 +79,79 @@ class _FeedState extends State<_Feed> {
       ),
       child: BookmarkScrollArea(
         controller: scroll,
-        child: SingleChildScrollView(
+        child: FileBrowserScrollView(
           controller: scroll,
-          padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
-          child: Center(
-            child: ConstrainedBox(
-              constraints:
-                  const BoxConstraints(maxWidth: BookmarkMetrics.feedWidth),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final group in groups) ...[
-                    if (group.label.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          BookmarkMetrics.gutter,
-                          BookmarkMetrics.space4,
-                          BookmarkMetrics.gutter,
-                          BookmarkMetrics.space2,
-                        ),
-                        child: Row(
-                          children: [
-                            Text(
-                              _label(group.label).toUpperCase(),
-                              style: widget.theme.sectionLabel,
+          header: FileBrowserPageHeader.maybeOf(context),
+          slivers: [
+            if (controller.entries.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: bookmarkEmptyView(
+                  context: context,
+                  controller: controller,
+                  collection: widget.collection,
+                  theme: widget.theme,
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
+                sliver: SliverToBoxAdapter(
+                    child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                        maxWidth: BookmarkMetrics.feedWidth),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final group in groups) ...[
+                          if (group.label.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                BookmarkMetrics.gutter,
+                                BookmarkMetrics.space4,
+                                BookmarkMetrics.gutter,
+                                BookmarkMetrics.space2,
+                              ),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    _label(group.label).toUpperCase(),
+                                    style: widget.theme.sectionLabel,
+                                  ),
+                                  const SizedBox(width: BookmarkMetrics.space2),
+                                  Text(
+                                    '${group.entries.length}',
+                                    style: widget.theme.meta,
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: BookmarkMetrics.space2),
-                            Text(
-                              '${group.entries.length}',
-                              style: widget.theme.meta,
+                          for (final entry in group.entries)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(
+                                BookmarkMetrics.gutter,
+                                0,
+                                BookmarkMetrics.gutter,
+                                BookmarkMetrics.space3,
+                              ),
+                              child: BookmarkFeedRow(
+                                key: ValueKey(entry.id),
+                                entry: entry,
+                                theme: widget.theme,
+                                controller: controller,
+                                collection: widget.collection,
+                                showDescription:
+                                    controller.settings.showDescriptions,
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
-                    for (final entry in group.entries)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(
-                          BookmarkMetrics.gutter,
-                          0,
-                          BookmarkMetrics.gutter,
-                          BookmarkMetrics.space3,
-                        ),
-                        child: BookmarkFeedRow(
-                          key: ValueKey(entry.id),
-                          entry: entry,
-                          theme: widget.theme,
-                          controller: controller,
-                          collection: widget.collection,
-                          showDescription: controller.settings.showDescriptions,
-                        ),
-                      ),
-                  ],
-                ],
-              ),
-            ),
-          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                )),
+              )
+          ],
         ),
       ),
     );

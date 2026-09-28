@@ -159,7 +159,15 @@ void main() {
     );
     expect(
       appFlowyTheme.fillColorScheme.contentHover,
-      PaperTheme.hoverOverlay,
+      palette.subtleHover,
+    );
+    // Paper uses the shared subtle wash too, retaining its warm RGB while
+    // scaling (not replacing) the original overlay alpha.
+    expect(
+      palette.subtleHover,
+      PaperTheme.hoverOverlay.withValues(
+        alpha: (PaperTheme.hoverOverlay.a * 0.65).clamp(0.0, 0.07),
+      ),
     );
     expect(
       appFlowyTheme.fillColorScheme.themeSelect,
@@ -177,7 +185,7 @@ void main() {
       PaperTheme.sidebarBackground,
     );
     expect(materialTheme.dividerColor, PaperTheme.codeBlockBorder);
-    expect(materialTheme.hoverColor, PaperTheme.hoverOverlay);
+    expect(materialTheme.hoverColor, palette.subtleHover);
   });
 
   test('Paper warms mobile Material surfaces and interactions', () {

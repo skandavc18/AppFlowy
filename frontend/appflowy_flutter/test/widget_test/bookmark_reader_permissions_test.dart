@@ -39,6 +39,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'bookmark_reader_capture_fixture.dart';
 import 'test_asset_bundle.dart';
 import 'vivid_icon_test_support.dart';
 
@@ -336,6 +337,8 @@ void main() {
           notes.onChanged!('late change');
           expect(fixture.service.writes, isEmpty);
           expect(fixture.controller.refreshes, isEmpty);
+          expect(fixture.controller.captureSaves, isEmpty);
+          expect(fixture.capture.captureUrls, isEmpty);
           await _pumpReader(tester);
           expect(tester.widget<BookmarkReader>(readerFinder).readOnly, isTrue);
           expect(tester.state(readerFinder), same(readerState));
@@ -377,6 +380,7 @@ void main() {
           await tester.pump(const Duration(seconds: 1));
           expect(fixture.service.writes, isEmpty);
           expect(fixture.controller.refreshes, isEmpty);
+          expect(fixture.controller.captureSaves, isEmpty);
           expect(
             fixture.controller.entries.single.view.writeToBuffer(),
             original,
@@ -529,6 +533,7 @@ void main() {
                 standalone: true,
                 readOnly: readOnly,
                 snapshots: fixture.snapshots,
+                readingSession: fixture.capture.session,
                 webPageBuilder: _readerProbe,
               ),
             ),
@@ -566,13 +571,39 @@ void main() {
         'pending download after $revocation revocation has no reader follow-up',
         (tester) async {
       final fixture = _ModalFixture();
-      final gate = fixture.controller.refreshGate = Completer<void>();
+      final gate = fixture.controller.saveGate = Completer<void>();
+      final workStates = <bool>[];
       try {
         await fixture.mount(tester);
+        expect(
+          tester.widget<BookmarkReader>(find.byType(BookmarkReader))
+              .readingSession,
+          same(fixture.capture.session),
+            reason: 'The modal must preserve its supplied capture owner.',
+        );
+        // Opening publishes navigation state; observe only subsequent save IO.
+        fixture.controller.addListener(() {
+          workStates.add(
+            fixture.controller.isWorkingOn(fixture.source.bookmark.id),
+          );
+        });
         final leaf = tester.state(find.byType(_ReaderProbe));
         _readerAction(tester, Icons.download_rounded).onPressed!();
         await _pumpReader(tester);
-        expect(fixture.controller.refreshes, [fixture.source.bookmark.id]);
+        final url = fixture.controller.entries.single.url;
+        expect(fixture.capture.captureUrls, [url]);
+        expect(fixture.controller.captureSaves, [fixture.source.bookmark.id]);
+        expect(fixture.controller.savedCaptures.single.url, url);
+        expect(
+          fixture.capture.session.isCurrent(
+            fixture.controller.savedCaptures.single,
+          ),
+          isTrue,
+        );
+        expect(fixture.controller.saveStores.single, same(fixture.snapshots));
+        expect(fixture.controller.refreshes, isEmpty);
+        expect(fixture.controller.saveReceipts, isEmpty);
+        expect(workStates, [true]);
         if (revocation == 'access') {
           fixture.source.access.change(ShareAccessLevel.readOnly);
         } else if (revocation == 'root') {
@@ -582,10 +613,14 @@ void main() {
         }
         await _pumpReader(tester);
         final reads = fixture.snapshots.reads.length;
-        // The already-delegated operation still completes; only subsequent
-        // reader work can be stopped without changing the controller API.
+        // The real save boundary rechecks the live guard after pending IO.
+        // Revocation must refuse its receipt, not just hide the Save button.
         gate.complete();
         await _pumpReader(tester);
+        expect(fixture.controller.saveReceipts, [false]);
+        expect(workStates.last, isFalse);
+        expect(fixture.controller.isWorking, isFalse);
+        expect(fixture.controller.refreshes, isEmpty);
         expect(fixture.snapshots.reads.length, reads);
         expect(tester.state(find.byType(_ReaderProbe)), same(leaf));
         expect(fixture.service.writes, isEmpty);
@@ -921,6 +956,7 @@ Future<void> _closeReader(WidgetTester tester) async {
 class _ModalFixture {
   _ModalFixture() {
     controller = _ReaderController(service)..setViews([source.bookmark]);
+    capture = BookmarkReaderCaptureFixture(controller.entries.single.url);
   }
 
   final source = _CollectionFixture();
@@ -928,6 +964,7 @@ class _ModalFixture {
   final snapshots = _ReaderSnapshots();
   final ownerVisible = ValueNotifier(true);
   late final _ReaderController controller;
+  late final BookmarkReaderCaptureFixture capture;
   late BuildContext owner;
 
   Future<void> mount(
@@ -971,6 +1008,7 @@ class _ModalFixture {
         collection: source.collection,
         readOnly: readOnly,
         snapshots: snapshots,
+        readingSession: capture.session,
         webPageBuilder: _readerProbe,
       ),
     );
@@ -979,30 +1017,18 @@ class _ModalFixture {
 
   Future<void> dispose(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox.shrink());
-    final gate = controller.refreshGate;
+    final gate = controller.saveGate;
     if (gate != null && !gate.isCompleted) gate.complete();
     await _pumpReader(tester);
     controller.dispose();
+    capture.dispose();
     ownerVisible.dispose();
     await source.dispose(tester);
   }
 }
 
-class _ReaderController extends BookmarkController {
+class _ReaderController extends ReaderCaptureTestController {
   _ReaderController(BookmarkService service) : super(service: service);
-
-  final refreshes = <String>[];
-  Completer<void>? refreshGate;
-
-  @override
-  Future<void> refresh(
-    BookmarkEntry entry, {
-    bool snapshot = false,
-    bool force = true,
-  }) async {
-    refreshes.add(entry.id);
-    await refreshGate?.future;
-  }
 }
 
 class _ReaderService extends BookmarkService {

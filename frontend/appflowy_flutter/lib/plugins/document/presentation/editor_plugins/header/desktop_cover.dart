@@ -1,16 +1,13 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/document/application/prelude.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/document_immersive_cover_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
-import 'package:appflowy/shared/appflowy_network_image.dart';
-import 'package:appflowy/shared/flowy_gradient_colors.dart';
+import 'package:appflowy/shared/page_cover.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
+import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:flowy_infra/theme_extension.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:string_validator/string_validator.dart';
 
@@ -45,7 +42,7 @@ class _DesktopCoverState extends State<DesktopCover> {
 
   @override
   Widget build(BuildContext context) {
-    if (widget.view.extra.isEmpty) {
+    if (widget.view.cover == null) {
       return _buildCoverImageV1();
     }
 
@@ -54,113 +51,52 @@ class _DesktopCoverState extends State<DesktopCover> {
 
   // version > 0.5.5
   Widget _buildCoverImageV2() {
-    return BlocProvider(
-      create: (context) => DocumentImmersiveCoverBloc(view: widget.view)
-        ..add(const DocumentImmersiveCoverEvent.initial()),
-      child:
-          BlocBuilder<DocumentImmersiveCoverBloc, DocumentImmersiveCoverState>(
-        builder: (context, state) {
-          final cover = state.cover;
-          final type = state.cover.type;
-          const height = kDesktopCoverHeight;
-
-          if (type == PageStyleCoverImageType.customImage ||
-              type == PageStyleCoverImageType.unsplashImage) {
-            final userProfilePB =
-                context.read<DocumentBloc>().state.userProfilePB;
-            return SizedBox(
-              height: height,
-              width: double.infinity,
-              child: FlowyNetworkImage(
-                url: cover.value,
-                userProfilePB: userProfilePB,
-              ),
-            );
-          }
-
-          if (type == PageStyleCoverImageType.builtInImage) {
-            return SizedBox(
-              height: height,
-              width: double.infinity,
-              child: Image.asset(
-                PageStyleCoverImageType.builtInImagePath(cover.value),
-                fit: BoxFit.cover,
-              ),
-            );
-          }
-
-          if (type == PageStyleCoverImageType.pureColor) {
-            // try to parse the color from the tint id,
-            //  if it fails, try to parse the color as a hex string
-            final color = FlowyTint.fromId(cover.value)?.color(context) ??
-                cover.value.tryToColor();
-            return Container(
-              height: height,
-              width: double.infinity,
-              color: color,
-            );
-          }
-
-          if (type == PageStyleCoverImageType.gradientColor) {
-            return Container(
-              height: height,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                gradient: FlowyGradientColor.fromId(cover.value).linear,
-              ),
-            );
-          }
-
-          if (type == PageStyleCoverImageType.localImage) {
-            return SizedBox(
-              height: height,
-              width: double.infinity,
-              child: Image.file(
-                File(cover.value),
-                fit: BoxFit.cover,
-              ),
-            );
-          }
-
-          return const SizedBox.shrink();
-        },
-      ),
+    final cover = widget.view.cover!;
+    if (cover.isNone) return const SizedBox.shrink();
+    // DocumentCoverWidget owns the view subscription. A second async fetch
+    // here can briefly restore an older image after a target/cover change.
+    return ViewCoverImage(
+      cover: cover,
+      userProfile: context.read<DocumentBloc?>()?.state.userProfilePB,
+      width: double.infinity,
+      height: double.infinity,
     );
   }
 
   // version <= 0.5.5
   Widget _buildCoverImageV1() {
+    final presentation = PageCoverPresentation.maybeOf(context);
+    final fit = presentation?.appearance.boxFit ?? BoxFit.cover;
+    final alignment = presentation?.alignment ?? Alignment.center;
     final detail = coverDetails;
     if (detail == null) {
       return const SizedBox.shrink();
     }
     switch (widget.coverType) {
       case CoverType.file:
-        if (isURL(detail)) {
-          final userProfilePB =
-              context.read<DocumentBloc>().state.userProfilePB;
-          return FlowyNetworkImage(
-            url: detail,
-            userProfilePB: userProfilePB,
-            errorWidgetBuilder: (context, url, error) =>
-                const SizedBox.shrink(),
-          );
-        }
-        final imageFile = File(detail);
-        if (!imageFile.existsSync()) {
-          return const SizedBox.shrink();
-        }
-        return Image.file(
-          imageFile,
-          fit: BoxFit.cover,
+        return ViewCoverImage(
+          cover: PageStyleCover(
+            type: isURL(detail)
+                ? PageStyleCoverImageType.customImage
+                : PageStyleCoverImageType.localImage,
+            value: detail,
+          ),
+          userProfile: context.read<DocumentBloc?>()?.state.userProfilePB,
+          fit: fit,
+          alignment: alignment,
+          fallback: const SizedBox.shrink(),
         );
       case CoverType.asset:
-        return Image.asset(
-          PageStyleCoverImageType.builtInImagePath(detail),
-          fit: BoxFit.cover,
+        return ViewCoverImage(
+          cover: PageStyleCover(
+              type: PageStyleCoverImageType.builtInImage, value: detail),
+          fit: fit,
+          alignment: alignment,
+          fallback: const SizedBox.shrink(),
         );
       case CoverType.color:
-        final color = widget.coverDetails?.tryToColor() ?? Colors.white;
+        final color = widget.coverDetails?.tryToColor() ??
+            Theme.of(context).colorScheme.surface;
         return Container(color: color);
       case CoverType.none:
         return const SizedBox.shrink();

@@ -4,6 +4,7 @@ import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/database/application/tab_bar_bloc.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/mention/mention_page_block.dart';
 import 'package:appflowy/shared/context_menu_surface_style.dart';
@@ -557,12 +558,16 @@ class _TabBarItemButtonState extends State<TabBarItemButton> {
                     _buildViewIcon(),
                     const SizedBox(width: 7),
                     Flexible(
-                      child: Text(
-                        widget.view.nameOrDefault,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: DatabaseViewTabMetrics.labelStyle(context)
-                            .copyWith(color: color),
+                      child: DatabaseFindAnchor(
+                        target: DatabaseFindTarget.title(widget.view.id),
+                        enabled: widget.isSelected,
+                        child: Text(
+                          widget.view.nameOrDefault,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: DatabaseViewTabMetrics.labelStyle(context)
+                              .copyWith(color: color),
+                        ),
                       ),
                     ),
                   ],

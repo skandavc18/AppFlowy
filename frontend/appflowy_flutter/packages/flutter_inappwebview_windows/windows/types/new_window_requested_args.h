@@ -3,16 +3,14 @@
 
 #include <WebView2.h>
 #include <wil/com.h>
+#include "pending_window_request.h"
 
 namespace flutter_inappwebview_plugin
 {
-  class NewWindowRequestedArgs
+  class NewWindowRequestedArgs : public PendingWindowRequest<ICoreWebView2*>
   {
   public:
-    wil::com_ptr<ICoreWebView2NewWindowRequestedEventArgs> args;
-    wil::com_ptr<ICoreWebView2Deferral> deferral;
-
-    NewWindowRequestedArgs(wil::com_ptr<ICoreWebView2NewWindowRequestedEventArgs> args, wil::com_ptr<ICoreWebView2Deferral> deferral);
+    NewWindowRequestedArgs(const void* owner, wil::com_ptr<ICoreWebView2NewWindowRequestedEventArgs> args, wil::com_ptr<ICoreWebView2Deferral> deferral);
     ~NewWindowRequestedArgs() = default;
   };
 }

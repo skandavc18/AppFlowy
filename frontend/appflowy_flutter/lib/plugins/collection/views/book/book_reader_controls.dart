@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/book/book_reader_palette.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 
 /// A borderless control on the reading chrome. Quiet until it is pointed at.
@@ -24,11 +25,20 @@ class BookControlButton extends StatelessWidget {
   final String? label;
 
   @override
-  Widget build(BuildContext context) => Theme(
-        data: palette.themeFor(Theme.of(context)),
+  Widget build(BuildContext context) {
+    final scope = WorkspaceGlyphScope.maybeOf(context);
+    final hasStateInk = scope?.role == WorkspaceGlyphRole.preserveInk;
+    return Theme(
+      data: palette.themeFor(Theme.of(context)),
+      child: WorkspaceGlyphScope(
+        color: hasStateInk
+            ? scope!.color
+            : palette.inkMuted.withValues(alpha: onPressed == null ? 0.45 : 1),
+        role: onPressed == null || hasStateInk
+            ? WorkspaceGlyphRole.preserveInk
+            : WorkspaceGlyphRole.standard,
         child: CollectionWorkspaceAction(
-          icon:
-              icon == Icons.remove_done_rounded ? Icons.history_rounded : icon,
+          icon: icon,
           tooltip: tooltip,
           label: label,
           selected: selected,
@@ -36,7 +46,9 @@ class BookControlButton extends StatelessWidget {
           size: BookReaderMetrics.controlSize,
           color: palette.inkMuted,
         ),
-      );
+      ),
+    );
+  }
 }
 
 /// The hairline reading progress line under the chapter.

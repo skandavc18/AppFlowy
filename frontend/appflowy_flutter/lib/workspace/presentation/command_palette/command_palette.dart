@@ -4,19 +4,24 @@ import 'package:appflowy/features/workspace/application/workspace_cover_codec.da
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_content.dart';
 import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
 import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
+import 'package:appflowy/workspace/application/command_palette/workspace_content_search_controller.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/palette_commands.dart';
+import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_extension.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/command_results_list.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/content_search_widgets.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/recent_views_list.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_field.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_filter_bar.dart';
@@ -25,6 +30,7 @@ import 'package:appflowy/workspace/presentation/command_palette/widgets/search_r
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -39,8 +45,13 @@ class CommandPalette extends InheritedWidget {
     super.key,
     required Widget? child,
     required this.notifier,
+    DocumentFindReadProvider? readProvider,
   }) : super(
-          child: _CommandPaletteController(notifier: notifier, child: child),
+          child: _CommandPaletteController(
+            notifier: notifier,
+            child: child,
+            readProvider: readProvider,
+          ),
         );
 
   final ValueNotifier<CommandPaletteNotifierValue> notifier;
@@ -79,6 +90,16 @@ class CommandPalette extends InheritedWidget {
     );
   }
 
+  /// Find from navigation always opens search; repeating it never closes a
+  /// popup the user is already typing in (Ctrl+P remains a toggle).
+  void show({UserWorkspaceBloc? workspaceBloc, SpaceBloc? spaceBloc}) {
+    notifier.value = notifier.value.copyWith(
+      isOpen: true,
+      userWorkspaceBloc: workspaceBloc,
+      spaceBloc: spaceBloc,
+    );
+  }
+
   @override
   bool updateShouldNotify(covariant InheritedWidget oldWidget) => false;
 }
@@ -91,10 +112,12 @@ class _CommandPaletteController extends StatefulWidget {
   const _CommandPaletteController({
     required this.child,
     required this.notifier,
+    this.readProvider,
   });
 
   final Widget? child;
   final ValueNotifier<CommandPaletteNotifierValue> notifier;
+  final DocumentFindReadProvider? readProvider;
 
   @override
   State<_CommandPaletteController> createState() =>
@@ -132,18 +155,31 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
   void _onToggle() {
     if (_toggleNotifier.value.isOpen && !_isOpen) {
       _isOpen = true;
-      final workspaceBloc = _toggleNotifier.value.userWorkspaceBloc;
-      final spaceBloc = _toggleNotifier.value.spaceBloc;
+      final workspaceBloc = _toggleNotifier.value.userWorkspaceBloc ??
+          context.read<UserWorkspaceBloc?>();
+      final spaceBloc =
+          _toggleNotifier.value.spaceBloc ?? context.read<SpaceBloc?>();
       final commandBloc = context.read<CommandPaletteBloc>();
       Log.info(
         'CommandPalette onToggle: workspaceType ${workspaceBloc?.state.userProfile.workspaceType}',
       );
       commandBloc.add(CommandPaletteEvent.refreshCachedViews());
-      FlowyOverlay.show(
+      final navigator = Navigator.of(context, rootNavigator: true);
+      final themes =
+          InheritedTheme.capture(from: context, to: navigator.context);
+      final palette = WorkspacePalette.of(context);
+      final route = _CommandPaletteRoute(
         context: context,
-        barrierColor: Colors.transparent,
+        themes: themes,
+        reduceMotion: () {
+          if (!mounted) return true;
+          final media = MediaQuery.maybeOf(context);
+          return media?.disableAnimations == true ||
+              media?.accessibleNavigation == true;
+        },
+        barrierColor:
+            palette.shadow.withValues(alpha: palette.isDark ? .16 : .10),
         builder: (dialogContext) {
-          _paletteRoute = ModalRoute.of(dialogContext);
           return MultiBlocProvider(
             providers: [
               BlocProvider.value(value: commandBloc),
@@ -151,10 +187,15 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
                 BlocProvider.value(value: workspaceBloc),
               if (spaceBloc != null) BlocProvider.value(value: spaceBloc),
             ],
-            child: CommandPaletteModal(shortcutBuilder: _buildShortcut),
+            child: CommandPaletteModal(
+              shortcutBuilder: _buildShortcut,
+              contentReadProvider: widget.readProvider,
+            ),
           );
         },
-      ).then((_) {
+      );
+      _paletteRoute = route;
+      navigator.push<void>(route).then((_) {
         _isOpen = false;
         _paletteRoute = null;
         if (mounted) {
@@ -196,10 +237,66 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
       );
 }
 
+/// Only the popup moves. The underlying page and its focus tree stay mounted.
+/// Both accessibility flags suppress entry AND reverse motion.
+class _CommandPaletteRoute extends DialogRoute<void> {
+  _CommandPaletteRoute({
+    required this.reduceMotion,
+    required super.context,
+    required super.builder,
+    required super.themes,
+    required super.barrierColor,
+  }) : super(traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop);
+
+  @override
+  Widget buildTransitions(BuildContext context, Animation<double> animation,
+      Animation<double> secondaryAnimation, Widget child) {
+    final media = MediaQuery.maybeOf(context);
+    final reduced = reduceMotion() ||
+        media?.disableAnimations == true ||
+        media?.accessibleNavigation == true;
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (_, child) {
+        final progress =
+            reduced ? 1.0 : Curves.easeOutCubic.transform(animation.value);
+        return Opacity(
+          opacity: progress,
+          child: Transform.translate(
+            offset: Offset(0, -8 * (1 - progress)),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
+  final bool Function() reduceMotion;
+  @override
+  Duration get transitionDuration =>
+      reduceMotion() ? Duration.zero : const Duration(milliseconds: 160);
+  @override
+  Duration get reverseTransitionDuration => transitionDuration;
+
+  @override
+  bool didPop(dynamic result) {
+    // Accessibility can change while this route is open. The controller was
+    // created on entry, so refresh its reverse timing before Flutter pops it.
+    controller?.reverseDuration = reverseTransitionDuration;
+    return super.didPop(result);
+  }
+}
+
 class CommandPaletteModal extends StatefulWidget {
-  const CommandPaletteModal({super.key, required this.shortcutBuilder});
+  const CommandPaletteModal({
+    super.key,
+    required this.shortcutBuilder,
+    this.contentReadProvider,
+  });
 
   final Widget Function(Widget) shortcutBuilder;
+  final DocumentFindReadProvider? contentReadProvider;
 
   @override
   State<CommandPaletteModal> createState() => _CommandPaletteModalState();
@@ -207,11 +304,209 @@ class CommandPaletteModal extends StatefulWidget {
 
 class _CommandPaletteModalState extends State<CommandPaletteModal> {
   CommandPaletteFilter filter = const CommandPaletteFilter();
+  late final CommandPaletteBloc _paletteBloc;
+  late final UserWorkspaceBloc? _workspaceBloc;
+  late final WorkspaceContentSearchController _contentSearch;
+  late final WorkspaceTitleSearchController _titleSearch;
+  late String _draft;
+  StreamSubscription<CommandPaletteState>? _paletteSubscription;
+  StreamSubscription<UserWorkspaceState>? _workspaceSubscription;
+  final _sourceRefresh = Debouncer(delay: const Duration(milliseconds: 300));
+  bool _closing = false;
+  bool _titleSourceInvalidated = false;
+  int _titleRefreshGeneration = 0;
+  String _titleWorkspaceId = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _paletteBloc = context.read<CommandPaletteBloc>();
+    _workspaceBloc = context.read<UserWorkspaceBloc?>();
+    _draft = _paletteBloc.state.query ?? '';
+    final provider = widget.contentReadProvider;
+    _contentSearch = provider == null
+        ? WorkspaceContentSearchController.native(
+            isWorkspaceCurrent: _workspaceIsCurrent,
+            onSourceInvalidated: _refreshContentSource,
+          )
+        : WorkspaceContentSearchController(
+            provider: provider,
+            isWorkspaceCurrent: _workspaceIsCurrent,
+            onSourceInvalidated: _refreshContentSource,
+          );
+    _titleSearch = provider == null
+        ? WorkspaceTitleSearchController.native(
+            isWorkspaceCurrent: _workspaceIsCurrent,
+            onSourceInvalidated: _refreshTitleSource,
+          )
+        : WorkspaceTitleSearchController(
+            provider: provider,
+            isWorkspaceCurrent: _workspaceIsCurrent,
+            onSourceInvalidated: _refreshTitleSource,
+          );
+    _syncContentSource(_paletteBloc.state);
+    _contentSearch.addListener(_contentChanged);
+    _syncTitleSource(_paletteBloc.state);
+    _titleSearch.addListener(_titleChanged);
+    _paletteSubscription = _paletteBloc.stream.listen((state) {
+      _syncContentSource(state);
+      _syncTitleSource(state);
+    });
+    _workspaceSubscription = _workspaceBloc?.stream.listen((_) {
+      _syncContentSource(_paletteBloc.state);
+      _syncTitleSource(_paletteBloc.state);
+      if (mounted && !_closing) setState(() {});
+    });
+  }
+
+  void _syncTitleSource(CommandPaletteState state) {
+    if (_closing) return;
+    final workspace = _workspaceBloc?.state;
+    final id = workspace?.currentWorkspace?.workspaceId ?? '';
+    if (_titleWorkspaceId != id) {
+      _titleWorkspaceId = id;
+      _titleRefreshGeneration++;
+      _titleSourceInvalidated = false;
+    }
+    _titleSearch.updateSource(
+      workspaceId: id,
+      cachedViews: state.cachedViews,
+      excludedViewIds: state.trash.map((item) => item.id),
+      currentUserId: workspace?.userProfile.id,
+      ready: !_titleSourceInvalidated &&
+          state.cachedViews.isNotEmpty &&
+          _workspaceIsCurrent(id),
+    );
+    _searchTitles(state);
+  }
+
+  void _searchTitles(CommandPaletteState state) => _titleSearch.search(
+        _draft,
+        filter,
+        state.query == _draft
+            ? state.combinedResponseItems.values
+            : const <SearchResultItem>[],
+      );
+
+  Future<void> _refreshTitleSource() async {
+    if (_closing || _paletteBloc.isClosed) return;
+    _titleSourceInvalidated = true;
+    final generation = ++_titleRefreshGeneration;
+    final workspace = _workspaceBloc?.state;
+    final id = workspace?.currentWorkspace?.workspaceId ?? '';
+    final views = await _paletteBloc.reloadCachedViews();
+    if (!mounted ||
+        _closing ||
+        generation != _titleRefreshGeneration ||
+        views == null ||
+        !_workspaceIsCurrent(id)) return;
+    _titleSourceInvalidated = false;
+    _titleSearch.updateSource(
+      workspaceId: id,
+      cachedViews: {for (final view in views) view.id: view},
+      excludedViewIds: _paletteBloc.state.trash.map((item) => item.id),
+      currentUserId: workspace?.userProfile.id,
+      ready: true,
+    );
+    _searchTitles(_paletteBloc.state);
+  }
+
+  void _titleChanged() {
+    if (mounted && !_closing && !filter.pageContents) setState(() {});
+  }
+
+  bool _workspaceIsCurrent(String workspaceId) {
+    final state = _workspaceBloc?.state;
+    final action = state?.actionResult;
+    return mounted &&
+        !_closing &&
+        state?.currentWorkspace?.workspaceId == workspaceId &&
+        !(action?.actionType == WorkspaceActionType.open &&
+            action?.isLoading == true);
+  }
+
+  void _syncContentSource(CommandPaletteState state) {
+    if (_closing || !filter.pageContents) return;
+    final workspace = _workspaceBloc?.state;
+    final id = workspace?.currentWorkspace?.workspaceId ?? '';
+    _contentSearch.updateSource(
+      workspaceId: id,
+      cachedViews: state.cachedViews,
+      excludedViewIds: state.trash.map((item) => item.id),
+      currentUserId: workspace?.userProfile.id,
+      ready: state.cachedViews.isNotEmpty && _workspaceIsCurrent(id),
+    );
+  }
+
+  void _refreshContentSource() {
+    _sourceRefresh.run(() {
+      if (mounted &&
+          !_closing &&
+          !_paletteBloc.isClosed &&
+          filter.pageContents) {
+        _paletteBloc.add(const CommandPaletteEvent.refreshCachedViews());
+      }
+    });
+  }
+
+  void _contentChanged() {
+    if (mounted && !_closing && filter.pageContents) setState(() {});
+  }
+
+  void _queryChanged(String value) {
+    if (_closing || !mounted || _paletteBloc.isClosed) return;
+    setState(() => _draft = value);
+    _searchTitles(_paletteBloc.state);
+    _contentSearch.search(value, enabled: filter.pageContents, filter: filter);
+    if (!filter.pageContents) {
+      _paletteBloc.add(
+        value.isEmpty
+            ? const CommandPaletteEvent.clearSearch()
+            : CommandPaletteEvent.searchChanged(search: value),
+      );
+    }
+  }
+
+  void _filterChanged(CommandPaletteFilter value) {
+    if (_closing || !mounted || _paletteBloc.isClosed) return;
+    final wasContentSearch = filter.pageContents;
+    setState(() => filter = value);
+    _paletteBloc.setContentSearchEnabled(value.pageContents);
+    if (value.pageContents) _syncContentSource(_paletteBloc.state);
+    _contentSearch.search(_draft, enabled: value.pageContents, filter: value);
+    _searchTitles(_paletteBloc.state);
+    if (wasContentSearch && !value.pageContents) {
+      _paletteBloc.add(CommandPaletteEvent.searchChanged(search: _draft));
+    }
+  }
+
+  void _stopContentSearch() {
+    if (_closing) return;
+    _closing = true;
+    _sourceRefresh.cancel();
+    _contentSearch.stop();
+    _titleSearch.stop();
+    _paletteBloc.setContentSearchEnabled(false);
+  }
+
+  @override
+  void dispose() {
+    _stopContentSearch();
+    _contentSearch.removeListener(_contentChanged);
+    _contentSearch.dispose();
+    _titleSearch.removeListener(_titleChanged);
+    _titleSearch.dispose();
+    _sourceRefresh.dispose();
+    unawaited(_paletteSubscription?.cancel());
+    unawaited(_workspaceSubscription?.cancel());
+    super.dispose();
+  }
 
   void _dismiss() {
     if (!mounted) return;
     final route = ModalRoute.of(context);
     if (route != null && route.isCurrent && Navigator.canPop(context)) {
+      _stopContentSearch();
       route.navigator?.pop();
     }
   }
@@ -237,12 +532,20 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
         // Put the flag down, or a second "Ask AI" emits an identical state and
         // the listener is never called again.
         context.read<CommandPaletteBloc>().add(CommandPaletteEvent.askedAI());
+        // Discard an action queued before switching to local content mode.
+        if (filter.pageContents || _closing) return;
         unawaited(startPaletteAIChat(context, dismiss: _dismiss));
       },
       child: BlocBuilder<CommandPaletteBloc, CommandPaletteState>(
         builder: (context, state) {
           final palette = WorkspacePalette.of(context);
-          final noQuery = state.query?.isEmpty ?? true, hasQuery = !noQuery;
+          final rawQuery = _draft;
+          final commandQuery = paletteCommandModeQuery(rawQuery);
+          final inCommandMode = commandQuery != null;
+          final inContentMode = filter.pageContents && !inCommandMode;
+          final contentState = _contentSearch.state;
+          final searchQuery = rawQuery;
+          final noQuery = searchQuery.trim().isEmpty, hasQuery = !noQuery;
           final currentUserId = workspaceState?.userProfile.id;
           final currentWorkspace = workspaceState?.currentWorkspace;
           PageStyleCover? currentWorkspaceCover;
@@ -256,7 +559,8 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
               );
             }
           }
-          var cachedViews = state.cachedViews;
+          var cachedViews =
+              inContentMode || noQuery ? state.cachedViews : _titleSearch.views;
           final workspaceRoot = currentWorkspace == null
               ? null
               : cachedViews[currentWorkspace.workspaceId];
@@ -271,37 +575,43 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
               ),
             };
           }
-          final searchableItems = includeWorkspaceFolderSearchResults(
-            searchResults: state.combinedResponseItems.values,
-            cachedViews: cachedViews,
-            query: state.query ?? '',
-            excludedViewIds: state.trash.map((trash) => trash.id),
-          );
+          final searchableItems = inContentMode
+              ? contentState.results
+                  .map(
+                    (hit) => SearchResultItem(
+                      id: hit.view.id,
+                      icon: ResultIconPB(),
+                      content: hit.snippet,
+                      displayName: hit.view.name,
+                      workspaceId: currentWorkspace?.workspaceId,
+                    ),
+                  )
+                  .toList(growable: false)
+              : _titleSearch.results;
           final resultItems = searchableItems
               .where(
-                (item) =>
-                    cachedViews.isEmpty || cachedViews.containsKey(item.id),
+                (item) => cachedViews.containsKey(item.id),
               )
               .where(
                 (item) => filter.matchesSearchResult(
                   item: item,
                   view: cachedViews[item.id],
-                  query: state.query ?? '',
+                  query: searchQuery,
                   cachedViews: cachedViews,
                   currentUserId: currentUserId,
                 ),
               )
               .toList();
-          final hasResult = resultItems.isNotEmpty, searching = state.searching;
-          final rawQuery = state.query ?? '';
-          final commandQuery = paletteCommandModeQuery(rawQuery);
-          final inCommandMode = commandQuery != null;
+          final hasResult = resultItems.isNotEmpty;
+          final searching = inContentMode
+              ? contentState.isSearching
+              : _titleSearch.searching || state.searching;
           final commands = buildPaletteCommands(context);
           final matchedCommands = inCommandMode
               ? rankPaletteCommands(commands, commandQuery)
               // One stray letter matches half of them, which is noise beside
               // the pages somebody was actually looking for.
-              : rawQuery.trim().length < 2
+              : inContentMode || rawQuery.trim().length < 2
                   ? const <PaletteCommand>[]
                   : rankPaletteCommands(
                       commands,
@@ -311,7 +621,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
           final hasCommands = matchedCommands.isNotEmpty;
           final commandRunQuery = commandQuery ?? rawQuery;
           final spaces =
-              context.read<SpaceBloc?>()?.state.spaces ?? const <ViewPB>[];
+              context.watch<SpaceBloc?>()?.state.spaces ?? const <ViewPB>[];
           final media = MediaQuery.of(context);
           final dialogSize = commandPaletteDialogSize(
             media.size,
@@ -320,137 +630,203 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
           final contentInset = media.size.width < 640
               ? WorkspaceTokens.space4
               : WorkspaceTokens.space6;
-          return FlowyDialog(
-            backgroundColor: palette.elevatedSurface,
-            width: dialogSize.width,
-            elevation: 1,
-            shadowColor: palette.shadow,
-            surfaceTintColor: Colors.transparent,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(WorkspaceTokens.dialogRadius),
-            ),
-            alignment: Alignment.center,
-            insetPadding: commandPaletteDialogInsets(media.size),
-            padding: EdgeInsets.zero,
-            constraints: BoxConstraints.tight(dialogSize),
-            expandHeight: false,
-            child: widget.shortcutBuilder(
-              Padding(
-                padding: EdgeInsets.fromLTRB(
-                  contentInset,
-                  contentInset,
-                  contentInset,
-                  0,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ConstrainedBox(
-                      constraints:
-                          BoxConstraints(maxHeight: dialogSize.height * 0.4),
-                      child: SingleChildScrollView(
-                        primary: false,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            SearchField(
-                              query: state.query,
-                              isLoading: searching,
-                              onSubmit: inCommandMode && hasCommands
-                                  ? () => _runCommand(
-                                        matchedCommands.first,
-                                        commandRunQuery,
-                                      )
-                                  : null,
-                            ),
-                            if (!inCommandMode)
-                              SearchFilterBar(
-                                filter: filter,
-                                spaces: spaces,
-                                onChanged: (value) =>
-                                    setState(() => filter = value),
-                              )
-                            else
-                              const VSpace(WorkspaceTokens.space4),
-                          ],
+          return PopScope<Object?>(
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) _stopContentSearch();
+            },
+            child: FlowyDialog(
+              backgroundColor: palette.elevatedSurface,
+              width: dialogSize.width,
+              elevation: 8,
+              shadowColor: palette.shadow,
+              surfaceTintColor: Colors.transparent,
+              shape: RoundedRectangleBorder(
+                borderRadius:
+                    BorderRadius.circular(WorkspaceTokens.dialogRadius),
+              ),
+              alignment: Alignment.center,
+              insetPadding: commandPaletteDialogInsets(media.size),
+              padding: EdgeInsets.zero,
+              constraints: BoxConstraints.tight(dialogSize),
+              expandHeight: false,
+              child: widget.shortcutBuilder(
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    contentInset,
+                    contentInset,
+                    contentInset,
+                    0,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      ConstrainedBox(
+                        constraints:
+                            BoxConstraints(maxHeight: dialogSize.height * 0.4),
+                        child: SingleChildScrollView(
+                          primary: false,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              SearchField(
+                                query: _draft,
+                                isLoading: searching,
+                                onChanged: _queryChanged,
+                                onSubmit: inCommandMode && hasCommands
+                                    ? () => _runCommand(
+                                          matchedCommands.first,
+                                          commandRunQuery,
+                                        )
+                                    : hasResult
+                                        ? () {
+                                            final id = resultItems.first.id;
+                                            final allowed = inContentMode
+                                                ? _contentSearch.canUseResult(
+                                                    id, _draft)
+                                                : _titleSearch.canUseResult(
+                                                    id, _draft);
+                                            if (!allowed ||
+                                                ModalRoute.of(context)
+                                                        ?.isCurrent ==
+                                                    false) return;
+                                            final view = cachedViews[id];
+                                            if (view == null) return;
+                                            _dismiss();
+                                            view.navigateTo();
+                                          }
+                                        : null,
+                              ),
+                              if (!inCommandMode)
+                                SearchFilterBar(
+                                  filter: filter,
+                                  spaces: spaces,
+                                  onChanged: _filterChanged,
+                                )
+                              else
+                                const VSpace(WorkspaceTokens.space4),
+                              if (inContentMode)
+                                WorkspaceContentSearchStatusView(
+                                  state: contentState,
+                                ),
+                              if (!inContentMode &&
+                                  !inCommandMode &&
+                                  _titleSearch.timedOut)
+                                Semantics(
+                                  liveRegion: true,
+                                  child: Text(
+                                    'Title search timed out. Coverage is incomplete.',
+                                    key: const ValueKey(
+                                        'command-palette-title-timeout'),
+                                    style: WorkspaceTypography.style(
+                                        context, WorkspaceTextRole.metadata),
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                    if (inCommandMode)
-                      Expanded(
-                        child: CommandPalettePanel(
-                          commands: matchedCommands,
-                          onRun: (command) =>
-                              _runCommand(command, commandRunQuery),
+                      if (inCommandMode)
+                        Expanded(
+                          child: CommandPalettePanel(
+                            commands: matchedCommands,
+                            onRun: (command) =>
+                                _runCommand(command, commandRunQuery),
+                          ),
+                        )
+                      else if (inContentMode)
+                        Expanded(
+                          child: hasResult
+                              ? SearchResultList(
+                                  cachedViews: {
+                                    for (final hit in contentState.results)
+                                      hit.view.id: hit.view,
+                                  },
+                                  resultItems: resultItems,
+                                  resultSummaries: const [],
+                                  query: rawQuery,
+                                  contentSearch: true,
+                                  canUseResult: (id) =>
+                                      _contentSearch.canUseResult(id, _draft),
+                                )
+                              : WorkspaceContentSearchEmpty(
+                                  state: contentState,
+                                ),
+                        )
+                      else if (noQuery)
+                        Expanded(
+                          child: RecentViewsList(
+                            onSelected: _dismiss,
+                            filter: filter,
+                            cachedViews: cachedViews,
+                            currentUserId: currentUserId,
+                            currentWorkspaceId: currentWorkspace?.workspaceId,
+                            currentWorkspaceName: currentWorkspace?.name,
+                            currentWorkspaceIcon: currentWorkspace?.icon,
+                            currentWorkspaceCover: currentWorkspaceCover,
+                          ),
+                        )
+                      else if (hasQuery && (hasResult || hasCommands))
+                        Expanded(
+                          child: SearchResultList(
+                            cachedViews: cachedViews,
+                            resultItems: resultItems,
+                            resultSummaries: const [],
+                            query: rawQuery,
+                            metadataOnly: true,
+                            canUseResult: (id) =>
+                                _titleSearch.canUseResult(id, _draft),
+                            commands: matchedCommands,
+                            onRunCommand: (command) =>
+                                _runCommand(command, commandRunQuery),
+                            currentWorkspaceId: currentWorkspace?.workspaceId,
+                            currentWorkspaceName: currentWorkspace?.name,
+                            currentWorkspaceIcon: currentWorkspace?.icon,
+                            currentWorkspaceCover: currentWorkspaceCover,
+                          ),
+                        )
+                      // When there are no results and the query is not empty and not loading,
+                      // show the no results message, centered in the available space.
+                      else if (hasQuery &&
+                          !searching &&
+                          !_titleSearch.timedOut) ...[
+                        SearchAskAiEntrance(),
+                        Expanded(
+                          child: const NoSearchResultsHint(),
                         ),
-                      )
-                    else if (noQuery)
-                      Expanded(
-                        child: RecentViewsList(
-                          onSelected: _dismiss,
-                          filter: filter,
-                          cachedViews: cachedViews,
-                          currentUserId: currentUserId,
-                          currentWorkspaceId: currentWorkspace?.workspaceId,
-                          currentWorkspaceName: currentWorkspace?.name,
-                          currentWorkspaceIcon: currentWorkspace?.icon,
-                          currentWorkspaceCover: currentWorkspaceCover,
+                      ],
+                      if (hasQuery &&
+                          searching &&
+                          !hasResult &&
+                          !hasCommands &&
+                          !inContentMode &&
+                          !inCommandMode)
+                        // Show a loading indicator when searching
+                        Expanded(
+                          child: Center(
+                            child: Center(
+                              child: CircularProgressIndicator.adaptive(),
+                            ),
+                          ),
                         ),
-                      )
-                    else if (hasQuery && (hasResult || hasCommands))
-                      Expanded(
-                        child: SearchResultList(
-                          cachedViews: cachedViews,
-                          resultItems: resultItems,
-                          resultSummaries: state.resultSummaries,
-                          commands: matchedCommands,
-                          onRunCommand: (command) =>
-                              _runCommand(command, commandRunQuery),
-                          currentWorkspaceId: currentWorkspace?.workspaceId,
-                          currentWorkspaceName: currentWorkspace?.name,
-                          currentWorkspaceIcon: currentWorkspace?.icon,
-                          currentWorkspaceCover: currentWorkspaceCover,
-                        ),
-                      )
-                    // When there are no results and the query is not empty and not loading,
-                    // show the no results message, centered in the available space.
-                    else if (hasQuery && !searching) ...[
-                      SearchAskAiEntrance(),
-                      Expanded(
-                        child: const NoSearchResultsHint(),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final minimumWidth =
+                              MediaQuery.textScalerOf(context).scale(400);
+                          return SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: SizedBox(
+                              width: constraints.maxWidth < minimumWidth
+                                  ? minimumWidth
+                                  : constraints.maxWidth,
+                              child: CommandPaletteHintBar(
+                                commandMode: inCommandMode,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ],
-                    if (hasQuery &&
-                        searching &&
-                        !hasResult &&
-                        !hasCommands &&
-                        !inCommandMode)
-                      // Show a loading indicator when searching
-                      Expanded(
-                        child: Center(
-                          child: Center(
-                            child: CircularProgressIndicator.adaptive(),
-                          ),
-                        ),
-                      ),
-                    LayoutBuilder(
-                      builder: (context, constraints) {
-                        final minimumWidth =
-                            MediaQuery.textScalerOf(context).scale(400);
-                        return SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: SizedBox(
-                            width: constraints.maxWidth < minimumWidth
-                                ? minimumWidth
-                                : constraints.maxWidth,
-                            child: CommandPaletteHintBar(
-                              commandMode: inCommandMode,
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -474,10 +850,10 @@ class NoSearchResultsHint extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            FlowySvg(
+            WorkspaceGlyph.svg(
               FlowySvgs.m_home_search_icon_m,
               color: palette.secondaryText,
-              size: const Size.square(32),
+              size: 32,
             ),
             const VSpace(WorkspaceTokens.space4),
             Text(

@@ -415,8 +415,14 @@ void main() {
     expect(find.textContaining('Private native details'), findsNothing);
     expect(databaseFindBar(tester).matchCount, 0);
     page.reads.failures.clear();
-    await tester.tap(find.byKey(const ValueKey('databaseFindRetry')));
+    final retry = find.byKey(const ValueKey('databaseFindRetry'));
+    await tester.ensureVisible(retry);
+    await tester.pump();
+    expect(retry.hitTestable(), findsOneWidget,
+        reason: 'Retry belongs to the clipped, scrollable details panel');
+    await tester.tap(retry);
     await tester.pump(DatabaseFindSession.debounce);
+    expect(find.byType(FindReplaceBar), findsOneWidget);
     await databaseFindUntil(tester, () => !databaseFindBar(tester).busy);
     expect(databaseFindBar(tester).matchCount, 4);
     expect(find.textContaining('Partial search:'), findsOneWidget);
@@ -572,8 +578,11 @@ void main() {
       expect(page.reads.calls, calls, reason: 'Late work stops at isCurrent');
       expect(databaseFindBar(tester).matchCount, 0);
       expect(page.body, same(body));
-      await tester.tap(find.byKey(const ValueKey('databaseFindRetry')));
+      // Queued deadline recovery is automatic once the occupied slot ends.
+      // No retyping, focus repair, extra slot or longer deadline is required.
+      expect(databaseFindSession(tester).status, DatabaseFindStatus.loading);
       await tester.pump(DatabaseFindSession.debounce);
+      expect(find.byType(FindReplaceBar), findsOneWidget);
       await databaseFindUntil(tester, () => !databaseFindBar(tester).busy);
       expect(databaseFindBar(tester).matchCount, 4);
       expect(page.reads.maxInFlight, 1);

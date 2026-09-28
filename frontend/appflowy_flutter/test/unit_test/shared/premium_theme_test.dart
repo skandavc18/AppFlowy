@@ -245,15 +245,15 @@ void main() {
       expect(transformed.fillColorScheme.content.a, 0);
       expect(
         transformed.fillColorScheme.content.r,
-        closeTo(palette.floatingSurface.r, 0.001),
+        closeTo(palette.subtleHover.r, 0.001),
       );
       expect(
         transformed.fillColorScheme.content.g,
-        closeTo(palette.floatingSurface.g, 0.001),
+        closeTo(palette.subtleHover.g, 0.001),
       );
       expect(
         transformed.fillColorScheme.content.b,
-        closeTo(palette.floatingSurface.b, 0.001),
+        closeTo(palette.subtleHover.b, 0.001),
       );
       expect(transformed.fillColorScheme.contentHover, palette.subtleHover);
       expect(

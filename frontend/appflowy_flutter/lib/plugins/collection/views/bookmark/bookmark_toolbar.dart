@@ -4,6 +4,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart'
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_dialogs.dart';
 import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_state.dart';
@@ -22,6 +23,7 @@ class BookmarkScaffold extends StatelessWidget {
     this.trailing = const <Widget>[],
     this.showGrouping = false,
     this.showDensity = false,
+    this.pageFlow = false,
   });
 
   final CollectionViewContext collection;
@@ -31,6 +33,7 @@ class BookmarkScaffold extends StatelessWidget {
   final List<Widget> trailing;
   final bool showGrouping;
   final bool showDensity;
+  final bool pageFlow;
 
   @override
   Widget build(BuildContext context) {
@@ -39,20 +42,42 @@ class BookmarkScaffold extends StatelessWidget {
     final body = PreviewToolbarRegion(
       child: CollectionWorkspaceSurface(
         padding: const EdgeInsets.only(top: CollectionWorkspaceMetrics.topGap),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            BookmarkToolbar(
-              collection: collection,
-              controller: controller,
-              theme: theme,
-              trailing: trailing,
-              showGrouping: showGrouping,
-              showDensity: showDensity,
-            ),
-            Expanded(child: child),
-          ],
-        ),
+        child: pageFlow
+            ? FileBrowserPageHeader(
+                header: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (FileBrowserPageHeader.maybeOf(context)
+                        case final header?)
+                      header,
+                    BookmarkToolbar(
+                      collection: collection,
+                      controller: controller,
+                      theme: theme,
+                      trailing: trailing,
+                      showGrouping: showGrouping,
+                      showDensity: showDensity,
+                      persistent: true,
+                    ),
+                    BookmarkFilterBar(controller: controller, theme: theme),
+                  ],
+                ),
+                child: child,
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  BookmarkToolbar(
+                    collection: collection,
+                    controller: controller,
+                    theme: theme,
+                    trailing: trailing,
+                    showGrouping: showGrouping,
+                    showDensity: showDensity,
+                  ),
+                  Expanded(child: child),
+                ],
+              ),
       ),
     );
     // The main body explicitly borrows via CollectionPageScrollScope. Keep
@@ -79,6 +104,7 @@ class BookmarkToolbar extends StatelessWidget {
     this.trailing = const <Widget>[],
     this.showGrouping = false,
     this.showDensity = false,
+    this.persistent = false,
   });
 
   final CollectionViewContext collection;
@@ -87,6 +113,7 @@ class BookmarkToolbar extends StatelessWidget {
   final List<Widget> trailing;
   final bool showGrouping;
   final bool showDensity;
+  final bool persistent;
 
   @override
   Widget build(BuildContext context) {
@@ -131,7 +158,8 @@ class BookmarkToolbar extends StatelessWidget {
           ],
         ],
       ),
-      keepVisible: controller.isWorking ||
+      keepVisible: persistent ||
+          controller.isWorking ||
           settings.filter != BookmarkFilter.all ||
           controller.state.activeTags.isNotEmpty ||
           controller.state.activeSite != null,

@@ -305,7 +305,10 @@ void main() {
         expect(find.text('Renamed.py'), findsOneWidget);
 
         // Exercise the existing full icon picker’s actual selection callbacks.
-        await clickFileControl(tester, find.byType(ViewIconPicker));
+        await clickFileControl(
+          tester,
+          find.byKey(const ValueKey('workspace-file-change-icon')),
+        );
         final selectIcon = tester
             .widget<FlowyIconEmojiPicker>(find.byType(FlowyIconEmojiPicker))
             .onSelectedEmoji!;

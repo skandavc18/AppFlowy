@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview_windows/src/in_app_webview/custom_platform_view.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/platform_view_lifecycle.dart';
+
 void main() {
   test('filters only pointer-scroll axes disabled by WebView settings', () {
     const delta = Offset(12, 40);
@@ -77,6 +79,9 @@ void main() {
     });
     messenger.setMockMethodCallHandler(viewChannel, (call) async {
       viewCalls.add(call);
+      if (call.method == 'querySiteGesturePolicyState') {
+        return {'status': 'browser', 'epoch': 7};
+      }
       return null;
     });
     messenger.setMockMethodCallHandler(eventChannel, (_) async => null);
@@ -110,6 +115,8 @@ void main() {
     );
     await tester.pump();
 
+    final native = tester.state<CustomPlatformViewState>(
+      find.byType(CustomPlatformView)).controller;
     final position = tester.getCenter(find.byType(CustomPlatformView));
     await tester.sendEventToBinding(
       PointerPanZoomStartEvent(
@@ -119,6 +126,7 @@ void main() {
         timeStamp: Duration.zero,
       ),
     );
+    await tester.pump(); // Resolve policy before the timed input samples.
     for (final update in <({Duration time, double pan, double delta})>[
       (
         time: const Duration(milliseconds: 10),
@@ -146,6 +154,9 @@ void main() {
           panDelta: Offset(0, update.delta),
         ),
       );
+      if (update.pan == -10) {
+        expect(viewCalls.where((call) => call.method == 'setPointerUpdate'), isEmpty);
+      }
     }
     await tester.sendEventToBinding(
       PointerPanZoomEndEvent(
@@ -157,12 +168,17 @@ void main() {
     );
     final pointerCalls =
         viewCalls.where((call) => call.method == 'setPointerUpdate').toList();
-    expect(pointerCalls, hasLength(5));
+    expect(pointerCalls, hasLength(4));
+    expect(pointerCalls.map((call) => (call.arguments as List).length),
+        everyElement(8));
+    expect(pointerCalls.map((call) => (call.arguments as List)[6]),
+        [0, 20000, 30000, 35000]);
+    expect(pointerCalls.map((call) => (call.arguments as List)[7]),
+        [20000, 0, 0, 0]);
     expect(
       pointerCalls.map((call) => (call.arguments as List)[1]),
       [
         InAppWebViewPointerEventKind.down.index,
-        InAppWebViewPointerEventKind.update.index,
         InAppWebViewPointerEventKind.update.index,
         InAppWebViewPointerEventKind.update.index,
         InAppWebViewPointerEventKind.up.index,
@@ -170,14 +186,17 @@ void main() {
     );
     expect(
       pointerCalls.map((call) => (call.arguments as List)[3]),
-      [100.0, 90.0, 75.0, 55.0, 55.0],
+      [100.0, 75.0, 55.0, 55.0],
     );
     expect(
       viewCalls.where((call) => call.method == 'setScrollDelta'),
       isEmpty,
     );
     expect(parentScrollController.offset, 0);
-  });
+    await tester.pumpWidget(const SizedBox.shrink());
+    await awaitPlatformViewDisposal(tester, native);
+    expect(tester.takeException(), isNull);
+  }, timeout: platformViewTestTimeout);
 
   testWidgets('trackpad contact does not hide or replace the mouse cursor', (
     tester,
@@ -194,6 +213,9 @@ void main() {
         (call) async => call.method == 'createInAppWebView' ? id : null);
     messenger.setMockMethodCallHandler(view, (call) async {
       calls.add(call);
+      if (call.method == 'querySiteGesturePolicyState') {
+        return {'status': 'browser', 'epoch': 7};
+      }
       return null;
     });
     messenger.setMockMethodCallHandler(events, (_) async => null);
@@ -213,6 +235,8 @@ void main() {
       )),
     ));
     await tester.pump();
+    final native = tester.state<CustomPlatformViewState>(
+      find.byType(CustomPlatformView)).controller;
     Future<void> cursor(String value) async {
       tester.binding.channelBuffers.push(
         events.name,
@@ -239,11 +263,12 @@ void main() {
     await tester.pump();
     await cursor('none');
     expect(actualCursor(), SystemMouseCursors.click);
-    await pan.panZoomUpdate(anchor, pan: const Offset(-20, -35));
+    await pan.panZoomUpdate(anchor, pan: const Offset(-20, -35),
+      timeStamp: const Duration(milliseconds: 10));
     await tester.pump();
     await cursor('text');
     expect(actualCursor(), SystemMouseCursors.click);
-    await pan.panZoomEnd();
+    await pan.panZoomEnd(timeStamp: const Duration(milliseconds: 20));
     await tester.pump();
     // A cursor event received during the pan may not be repeated by WebView2.
     expect(actualCursor(), SystemMouseCursors.text);
@@ -268,8 +293,10 @@ void main() {
 
     // Cancelling a contact and removing its view must not rebuild a disposed
     // widget or leave the renderer in the middle of a touch gesture.
-    await pan.panZoomStart(anchor);
-    await pan.panZoomUpdate(anchor, pan: const Offset(0, -20));
+    await pan.panZoomStart(anchor, timeStamp: const Duration(seconds: 1));
+    await tester.pump();
+    await pan.panZoomUpdate(anchor, pan: const Offset(0, -20),
+      timeStamp: const Duration(milliseconds: 1010));
     await tester.pump();
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -277,8 +304,10 @@ void main() {
         calls.lastWhere((call) => call.method == 'setPointerUpdate');
     expect((lastContact.arguments as List)[1],
         InAppWebViewPointerEventKind.leave.index);
+    await pan.panZoomEnd(timeStamp: const Duration(milliseconds: 1020));
+    await awaitPlatformViewDisposal(tester, native);
     expect(tester.takeException(), isNull);
-  });
+  }, timeout: platformViewTestTimeout);
 
   for (final scenario in <({
     String name,
@@ -358,6 +387,9 @@ void main() {
           (call) async => call.method == 'createInAppWebView' ? id : null);
       messenger.setMockMethodCallHandler(view, (call) async {
         calls.add(call);
+        if (call.method == 'querySiteGesturePolicyState') {
+          return {'status': 'browser', 'epoch': 7};
+        }
         if (call.method == 'getHistoryState') {
           return {'back': true, 'forward': true};
         }
@@ -383,6 +415,8 @@ void main() {
         }),
       ))));
       await tester.pumpAndSettle();
+      final native = tester.state<CustomPlatformViewState>(
+        find.byType(CustomPlatformView)).controller;
       final point = tester.getCenter(find.byType(CustomPlatformView));
       final pan = await tester.createGesture(kind: PointerDeviceKind.trackpad);
       await pan.panZoomStart(point);
@@ -399,7 +433,7 @@ void main() {
         await tester.pump();
       }
       expect(calls.where((call) => call.method == 'navigateHistory'), isEmpty);
-      await pan.panZoomEnd();
+      await pan.panZoomEnd(timeStamp: Duration(milliseconds: (scenario.pans.length + 1) * 16));
       await tester.pumpAndSettle();
       final navigation =
           calls.where((call) => call.method == 'navigateHistory').toList();
@@ -416,7 +450,10 @@ void main() {
             calls.where((call) => call.method == 'setPointerUpdate'), isEmpty);
       }
       expect(tester.takeException(), isNull);
-    });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await awaitPlatformViewDisposal(tester, native);
+      expect(tester.takeException(), isNull);
+    }, timeout: platformViewTestTimeout);
   }
 
   testWidgets('switching bookmark tabs cancels an unfinished history swipe',
@@ -433,6 +470,12 @@ void main() {
         (call) async => call.method == 'createInAppWebView' ? id : null);
     messenger.setMockMethodCallHandler(view, (call) async {
       calls.add(call);
+      if (call.method == 'querySiteGesturePolicyState') {
+        return {'status': 'browser', 'epoch': 7};
+      }
+      if (call.method == 'getHistoryState') {
+        return {'back': true, 'forward': true};
+      }
       return null;
     });
     messenger.setMockMethodCallHandler(events, (_) async => null);
@@ -459,17 +502,23 @@ void main() {
       ]),
     )));
     await tester.pumpAndSettle();
+    final native = tester.state<CustomPlatformViewState>(
+      find.byType(CustomPlatformView)).controller;
     final point = tester.getCenter(find.byType(CustomPlatformView));
     final pan = await tester.createGesture(kind: PointerDeviceKind.trackpad);
     await pan.panZoomStart(point);
-    await pan.panZoomUpdate(point, pan: const Offset(120, 0));
+    await tester.pump();
+    await pan.panZoomUpdate(point, pan: const Offset(120, 0),
+      timeStamp: const Duration(milliseconds: 10));
     selected.value = 1;
     await tester.pumpAndSettle();
-    await pan.panZoomEnd();
+    await pan.panZoomEnd(timeStamp: const Duration(milliseconds: 20));
     await tester.pumpAndSettle();
     expect(calls.where((call) => call.method == 'navigateHistory'), isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await awaitPlatformViewDisposal(tester, native);
     expect(tester.takeException(), isNull);
-  });
+  }, timeout: platformViewTestTimeout);
 
   testWidgets('disposes a platform view that finishes creating late', (
     tester,

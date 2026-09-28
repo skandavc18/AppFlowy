@@ -61,7 +61,7 @@ const _collections = {
   CollectionKind.repository: (name: 'git-branch', vivid: 'repository'),
   CollectionKind.folder: (name: 'folder', vivid: 'folder'),
   CollectionKind.database: (name: 'database', vivid: 'database'),
-  CollectionKind.bookmark: (name: 'link-simple', vivid: 'bookmark'),
+  CollectionKind.bookmark: (name: 'link-simple', vivid: 'link'),
   CollectionKind.email: (name: 'envelope-simple', vivid: 'mail'),
 };
 const _chatFace = ValueKey('folder-gallery-chat-identity');
@@ -121,6 +121,12 @@ void main() {
       expect(CollectionRegistry.typeFor(kind).icon, icon);
       expect(WorkspaceGlyphs.nameForIcon(icon), action);
     }
+    // A saved-links collection uses link artwork; a bookmark action and the
+    // persisted picker illustration keep their distinct bookmark identity.
+    expect(WorkspaceGlyphs.nameForIcon(Icons.link_rounded), 'link-simple');
+    expect(WorkspaceGlyphs.nameForIcon(Icons.bookmark_rounded), 'bookmark');
+    expect(WorkspaceGlyphs.vividNameFor('bookmark'), 'bookmark');
+    expect(vividIconSvg('link'), isNot(vividIconSvg('bookmark')));
     _expectUtilityArtwork('code');
     expect(vividIconSvg('utility-code'), isNot(vividIconSvg('repository')));
     expect(WorkspaceGlyphs.unknownMappings, isEmpty);

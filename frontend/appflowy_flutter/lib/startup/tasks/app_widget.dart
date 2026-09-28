@@ -32,6 +32,7 @@ import 'package:appflowy/workspace/application/notification/notification_service
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/default_icon_style.dart';
+import 'package:appflowy/workspace/application/settings/cover_appearance.dart';
 import 'package:appflowy/workspace/application/settings/notifications/notification_settings_cubit.dart';
 import 'package:appflowy/workspace/application/sidebar/rename_view/rename_view_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -86,6 +87,7 @@ class InitAppWidgetTask extends LaunchTask {
     // Restore device-only glyph appearance before any application UI mounts.
     // Failure keeps the safe default and remains retryable from Settings.
     await DefaultIconStyleStore.instance.ensureLoaded();
+    await CoverAppearanceStore.instance.ensureLoaded();
 
     await loadIconGroups();
 
@@ -201,176 +203,184 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return MultiBlocProvider(
-      providers: [
-        if (FeatureFlag.search.isOn)
-          BlocProvider<CommandPaletteBloc>(create: (_) => CommandPaletteBloc()),
-        BlocProvider<AppearanceSettingsCubit>(
-          create: (_) => AppearanceSettingsCubit(
-            widget.appearanceSetting,
-            widget.dateTimeSettings,
-            widget.appTheme,
-          )..readLocaleWhenAppLaunch(context),
-        ),
-        BlocProvider<NotificationSettingsCubit>(
-          create: (_) => NotificationSettingsCubit(),
-        ),
-        BlocProvider<DocumentAppearanceCubit>(
-          create: (_) => DocumentAppearanceCubit()..fetch(),
-        ),
-        BlocProvider.value(value: getIt<RenameViewBloc>()),
-        BlocProvider.value(value: getIt<ActionNavigationBloc>()),
-      ],
-      child: BlocListener<ActionNavigationBloc, ActionNavigationState>(
-        listenWhen: (_, curr) => curr.action != null,
-        listener: (context, state) {
-          final action = state.action;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (action?.type == ActionType.openView &&
-                UniversalPlatform.isDesktop) {
-              final view =
-                  action!.arguments?[ActionArgumentKeys.view] as ViewPB?;
-              final nodePath = action.arguments?[ActionArgumentKeys.nodePath];
-              final blockId = action.arguments?[ActionArgumentKeys.blockId];
-              if (view != null) {
-                getIt<TabsBloc>().openPlugin(
-                  view,
-                  arguments: {
-                    PluginArgumentKeys.selection: nodePath,
-                    PluginArgumentKeys.blockId: blockId,
-                  },
-                );
+    return CoverAppearanceScope(
+      store: CoverAppearanceStore.instance,
+      child: MultiBlocProvider(
+        providers: [
+          if (FeatureFlag.search.isOn)
+            BlocProvider<CommandPaletteBloc>(
+                create: (_) => CommandPaletteBloc()),
+          BlocProvider<AppearanceSettingsCubit>(
+            create: (_) => AppearanceSettingsCubit(
+              widget.appearanceSetting,
+              widget.dateTimeSettings,
+              widget.appTheme,
+            )..readLocaleWhenAppLaunch(context),
+          ),
+          BlocProvider<NotificationSettingsCubit>(
+            create: (_) => NotificationSettingsCubit(),
+          ),
+          BlocProvider<DocumentAppearanceCubit>(
+            create: (_) => DocumentAppearanceCubit()..fetch(),
+          ),
+          BlocProvider.value(value: getIt<RenameViewBloc>()),
+          BlocProvider.value(value: getIt<ActionNavigationBloc>()),
+        ],
+        child: BlocListener<ActionNavigationBloc, ActionNavigationState>(
+          listenWhen: (_, curr) => curr.action != null,
+          listener: (context, state) {
+            final action = state.action;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (action?.type == ActionType.openView &&
+                  UniversalPlatform.isDesktop) {
+                final view =
+                    action!.arguments?[ActionArgumentKeys.view] as ViewPB?;
+                final nodePath = action.arguments?[ActionArgumentKeys.nodePath];
+                final blockId = action.arguments?[ActionArgumentKeys.blockId];
+                if (view != null) {
+                  getIt<TabsBloc>().openPlugin(
+                    view,
+                    arguments: {
+                      PluginArgumentKeys.selection: nodePath,
+                      PluginArgumentKeys.blockId: blockId,
+                    },
+                  );
+                }
+              } else if (action?.type == ActionType.openRow &&
+                  UniversalPlatform.isMobile) {
+                final view = action!.arguments?[ActionArgumentKeys.view];
+                if (view != null) {
+                  final view = action.arguments?[ActionArgumentKeys.view];
+                  final rowId = action.arguments?[ActionArgumentKeys.rowId];
+                  AppGlobals.rootNavKey.currentContext?.pushView(
+                    view,
+                    arguments: {
+                      PluginArgumentKeys.rowId: rowId,
+                    },
+                  );
+                }
               }
-            } else if (action?.type == ActionType.openRow &&
-                UniversalPlatform.isMobile) {
-              final view = action!.arguments?[ActionArgumentKeys.view];
-              if (view != null) {
-                final view = action.arguments?[ActionArgumentKeys.view];
-                final rowId = action.arguments?[ActionArgumentKeys.rowId];
-                AppGlobals.rootNavKey.currentContext?.pushView(
-                  view,
-                  arguments: {
-                    PluginArgumentKeys.rowId: rowId,
-                  },
-                );
-              }
-            }
-          });
-        },
-        child: BlocBuilder<AppearanceSettingsCubit, AppearanceSettingsState>(
-          builder: (context, state) {
-            _setSystemOverlayStyle(state);
-            return Provider(
-              create: (_) => ClipboardState(),
-              dispose: (_, state) => state.dispose(),
-              child: ToastificationWrapper(
-                child: Listener(
-                  onPointerDown: (_) =>
-                      // Clicking back into the window is the earliest moment a
-                      // modifier the shell swallowed can be handed back.
-                      KeyboardStateReconciler.instance.reconcile(),
-                  onPointerSignal: (pointerSignal) {
-                    /// This is a workaround to deal with below question:
-                    /// When the mouse hovers over the tooltip, the scroll event is intercepted by it
-                    /// Here, we listen for the scroll event and then remove the tooltip to avoid that situation
-                    if (pointerSignal is PointerScrollEvent) {
-                      Tooltip.dismissAllToolTips();
-                    }
-                  },
-                  child: ListenableBuilder(
-                    listenable: ExtensionThemeRegistry.changes,
-                    builder: (context, _) => MaterialApp.router(
-                      debugShowCheckedModeBanner: false,
-                      theme: ExtensionThemeRegistry.apply(
-                        state.lightTheme,
-                        Brightness.light,
-                      ),
-                      darkTheme: ExtensionThemeRegistry.apply(
-                        state.darkTheme,
-                        Brightness.dark,
-                      ),
-                      themeMode: state.themeMode,
-                      themeAnimationDuration:
-                          PremiumTheme.themeTransitionDuration,
-                      themeAnimationCurve: Curves.easeOutCubic,
-                      localizationsDelegates: context.localizationDelegates,
-                      supportedLocales: context.supportedLocales,
-                      locale: state.locale,
-                      routerConfig: routerConfig,
-                      builder: (context, child) {
-                        final brightness = Theme.of(context).brightness;
-                        final fontFamily = state.font
-                            .orDefault(defaultFontFamily)
-                            .fontFamilyName;
+            });
+          },
+          child: BlocBuilder<AppearanceSettingsCubit, AppearanceSettingsState>(
+            builder: (context, state) {
+              _setSystemOverlayStyle(state);
+              return Provider(
+                create: (_) => ClipboardState(),
+                dispose: (_, state) => state.dispose(),
+                child: ToastificationWrapper(
+                  child: Listener(
+                    onPointerDown: (_) =>
+                        // Clicking back into the window is the earliest moment a
+                        // modifier the shell swallowed can be handed back.
+                        KeyboardStateReconciler.instance.reconcile(),
+                    onPointerSignal: (pointerSignal) {
+                      /// This is a workaround to deal with below question:
+                      /// When the mouse hovers over the tooltip, the scroll event is intercepted by it
+                      /// Here, we listen for the scroll event and then remove the tooltip to avoid that situation
+                      if (pointerSignal is PointerScrollEvent) {
+                        Tooltip.dismissAllToolTips();
+                      }
+                    },
+                    child: ListenableBuilder(
+                      listenable: ExtensionThemeRegistry.changes,
+                      builder: (context, _) => MaterialApp.router(
+                        debugShowCheckedModeBanner: false,
+                        theme: ExtensionThemeRegistry.apply(
+                          state.lightTheme,
+                          Brightness.light,
+                        ),
+                        darkTheme: ExtensionThemeRegistry.apply(
+                          state.darkTheme,
+                          Brightness.dark,
+                        ),
+                        themeMode: state.themeMode,
+                        themeAnimationDuration:
+                            PremiumTheme.themeTransitionDuration,
+                        themeAnimationCurve: Curves.easeOutCubic,
+                        localizationsDelegates: context.localizationDelegates,
+                        supportedLocales: context.supportedLocales,
+                        locale: state.locale,
+                        routerConfig: routerConfig,
+                        builder: (context, child) {
+                          final brightness = Theme.of(context).brightness;
+                          final fontFamily = state.font
+                              .orDefault(defaultFontFamily)
+                              .fontFamilyName;
 
-                        final baseAppFlowyTheme = brightness == Brightness.light
-                            ? themeBuilder.light(fontFamily: fontFamily)
-                            : themeBuilder.dark(fontFamily: fontFamily);
-                        return AnimatedAppFlowyTheme(
-                          data: PremiumTheme.appFlowyTheme(
-                            base: baseAppFlowyTheme,
-                            palette: PremiumThemeExtension.of(context),
-                            brightness: brightness,
-                          ),
-                          child: PremiumThemeBackdrop(
-                            child: DefaultTextStyle.merge(
-                              style: AppTextRendering.rootStyleFor(brightness),
-                              child: MediaQuery(
-                                // Keep app typography independent from the host
-                                // OS scale while honoring AppFlowy's own
-                                // setting.
-                                data: MediaQuery.of(context).copyWith(
-                                  textScaler:
-                                      TextScaler.linear(state.textScaleFactor),
-                                ),
-                                child: ListenableBuilder(
-                                  listenable: EncryptionVault.instance,
-                                  builder: (context, child) =>
-                                      HistorySwipeTheme(
-                                    surface:
-                                        EditorSurfaceStyle.canvasBackgroundFor(
-                                      Theme.of(context).brightness,
-                                      Theme.of(context).colorScheme.surface,
-                                      isPaper: PaperTheme.isEnabled(context),
-                                    ),
-                                    back: LocaleKeys.button_back.tr(),
-                                    forward:
-                                        'workspaceChrome.historyForward'.tr(),
-                                    noPrevious:
-                                        'workspaceChrome.noPreviousPage'.tr(),
-                                    noNext: 'workspaceChrome.noNextPage'.tr(),
-                                    // Includes bookmark overlays and previews,
-                                    // not just the main workspace page stack.
-                                    allowPreviews: EncryptionVault
-                                            .instance.isLoaded &&
-                                        !EncryptionVault.instance.isConfigured,
-                                    child: child!,
+                          final baseAppFlowyTheme =
+                              brightness == Brightness.light
+                                  ? themeBuilder.light(fontFamily: fontFamily)
+                                  : themeBuilder.dark(fontFamily: fontFamily);
+                          return AnimatedAppFlowyTheme(
+                            data: PremiumTheme.appFlowyTheme(
+                              base: baseAppFlowyTheme,
+                              palette: PremiumThemeExtension.of(context),
+                              brightness: brightness,
+                            ),
+                            child: PremiumThemeBackdrop(
+                              child: DefaultTextStyle.merge(
+                                style:
+                                    AppTextRendering.rootStyleFor(brightness),
+                                child: MediaQuery(
+                                  // Keep app typography independent from the host
+                                  // OS scale while honoring AppFlowy's own
+                                  // setting.
+                                  data: MediaQuery.of(context).copyWith(
+                                    textScaler: TextScaler.linear(
+                                        state.textScaleFactor),
                                   ),
-                                  child: PremiumScrollScope(
-                                    enabled: state.enableKineticScrolling,
-                                    child: overlayManagerBuilder(
-                                      context,
-                                      !UniversalPlatform.isMobile &&
-                                              FeatureFlag.search.isOn
-                                          ? CommandPalette(
-                                              notifier: _commandPaletteNotifier,
-                                              child: child,
-                                            )
-                                          : child,
+                                  child: ListenableBuilder(
+                                    listenable: EncryptionVault.instance,
+                                    builder: (context, child) =>
+                                        HistorySwipeTheme(
+                                      surface: EditorSurfaceStyle
+                                          .canvasBackgroundFor(
+                                        Theme.of(context).brightness,
+                                        Theme.of(context).colorScheme.surface,
+                                        isPaper: PaperTheme.isEnabled(context),
+                                      ),
+                                      back: LocaleKeys.button_back.tr(),
+                                      forward:
+                                          'workspaceChrome.historyForward'.tr(),
+                                      noPrevious:
+                                          'workspaceChrome.noPreviousPage'.tr(),
+                                      noNext: 'workspaceChrome.noNextPage'.tr(),
+                                      // Includes bookmark overlays and previews,
+                                      // not just the main workspace page stack.
+                                      allowPreviews:
+                                          EncryptionVault.instance.isLoaded &&
+                                              !EncryptionVault
+                                                  .instance.isConfigured,
+                                      child: child!,
+                                    ),
+                                    child: PremiumScrollScope(
+                                      enabled: state.enableKineticScrolling,
+                                      child: overlayManagerBuilder(
+                                        context,
+                                        !UniversalPlatform.isMobile &&
+                                                FeatureFlag.search.isOn
+                                            ? CommandPalette(
+                                                notifier:
+                                                    _commandPaletteNotifier,
+                                                child: child,
+                                              )
+                                            : child,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
-              ),
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );

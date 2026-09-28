@@ -95,6 +95,15 @@ class DocumentFindReferenceIndex extends ChangeNotifier {
   bool _timedOut = false;
   int _unavailable = 0;
   int _coverageUnknown = 0;
+  bool _started = false;
+  bool _retried = false;
+  bool _refinable = false;
+  int _queryRevision = 0;
+  int _readQueryRevision = 0;
+
+  /// Prefix typing can refine this session's bounded, authorized source data.
+  /// Unversioned files are never reused after completion.
+  bool get canRefineQuery => _loading || (_refinable && !_timedOut);
 
   List<DocumentFindExternalText> get texts => _texts;
   bool get loading => _loading;
@@ -107,13 +116,16 @@ class DocumentFindReferenceIndex extends ChangeNotifier {
     List<DocumentFindAnchoredReference> roots, {
     required bool enabled,
     bool force = false,
+    int queryRevision = 0,
   }) {
+    _queryRevision = queryRevision;
     if (_disposed ||
         (!force && enabled == _enabled && listEquals(roots, _roots))) {
       return;
     }
     _roots = List.unmodifiable(roots);
     _enabled = enabled;
+    _retried = false;
     _restart();
   }
 
@@ -122,11 +134,14 @@ class DocumentFindReferenceIndex extends ChangeNotifier {
   void invalidate() {
     if (_disposed) return;
     _cache.clear();
+    _retried = false;
     _restart();
   }
 
   void _restart() {
     final generation = ++_generation;
+    _readQueryRevision = _queryRevision;
+    _refinable = false;
     _deadline?.cancel();
     provider.readScheduler.cancel(this);
     _texts = const [];
@@ -135,13 +150,17 @@ class DocumentFindReferenceIndex extends ChangeNotifier {
     _coverageUnknown = 0;
     _truncated = false;
     _timedOut = false;
+    _started = false;
     _loading = _enabled && _roots.isNotEmpty && isOwnerActive();
     if (_loading) {
       _deadline = Timer(provider.deadline, () => _expire(generation));
       provider.readScheduler.schedule(
         this,
         () => _current(generation),
-        () => _scan(generation),
+        () {
+          _started = true;
+          return _scan(generation);
+        },
       );
     }
     notifyListeners();
@@ -164,6 +183,12 @@ class DocumentFindReferenceIndex extends ChangeNotifier {
     _cache.clear();
     _loading = false;
     _timedOut = true;
+    final retryGeneration = _generation;
+    if ((!_started || _readQueryRevision != _queryRevision) && !_retried) {
+      _retried = true;
+      provider.readScheduler
+          .whenAvailable(this, () => _current(retryGeneration), _restart);
+    }
     notifyListeners();
   }
 
@@ -177,6 +202,7 @@ class DocumentFindReferenceIndex extends ChangeNotifier {
   }
 
   Future<void> _scan(int generation) async {
+    var refinable = true;
     final texts = <DocumentFindExternalText>[];
     final visited = <(String, DocumentFindReference)>{
       (pageId, DocumentFindReference(pageId)),
@@ -270,6 +296,7 @@ class DocumentFindReferenceIndex extends ChangeNotifier {
             _remember(reference, fresh, content);
           }
           if (content.unavailable) unavailable++;
+          refinable = refinable && content.cacheable;
           if (content.coverageUnknown) coverageUnknown++;
           truncated = truncated || content.truncated;
           final rawName =
@@ -338,6 +365,7 @@ class DocumentFindReferenceIndex extends ChangeNotifier {
     } finally {
       if (_current(generation)) {
         _deadline?.cancel();
+        _refinable = refinable;
         _texts = List.unmodifiable(texts);
         _unavailable = unavailable;
         _coverageUnknown = coverageUnknown;

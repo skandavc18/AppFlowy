@@ -1,19 +1,19 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_card.dart';
+import 'package:appflowy/plugins/collection/views/bookmark/bookmark_article_view.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_web_view.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_snapshot.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_article_document.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_reading_session.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
@@ -31,6 +31,7 @@ Future<void> openBookmarkReader({
   BookmarkSnapshotStore? snapshots,
   WidgetBuilder? webPageBuilder,
   WidgetBuilder? offlinePreviewBuilder,
+  BookmarkReadingSession? readingSession,
 }) async {
   if (!context.mounted) return;
   // A dialog does not inherit the source page's providers. Capture the owner
@@ -68,6 +69,7 @@ Future<void> openBookmarkReader({
           snapshots: snapshots,
           webPageBuilder: webPageBuilder,
           offlinePreviewBuilder: offlinePreviewBuilder,
+          readingSession: readingSession,
         ),
       ),
     ),
@@ -90,6 +92,7 @@ class BookmarkReader extends StatefulWidget {
     this.snapshots,
     this.webPageBuilder,
     this.offlinePreviewBuilder,
+    this.readingSession,
   });
 
   final String entryId;
@@ -108,10 +111,14 @@ class BookmarkReader extends StatefulWidget {
   final bool Function()? canEdit;
 
   /// Optional IO/leaf substitutions; normal readers use the existing store,
-  /// keyed [BookmarkWebPage] and read-only Markdown [FilePreview].
+  /// keyed [BookmarkWebPage] and text-only [BookmarkArticleView].
   final BookmarkSnapshotStore? snapshots;
   final WidgetBuilder? webPageBuilder;
   final WidgetBuilder? offlinePreviewBuilder;
+
+  /// Optional capture handle for host integration and isolated tests.
+  /// The caller retains ownership when supplied.
+  final BookmarkReadingSession? readingSession;
 
   @override
   State<BookmarkReader> createState() => _BookmarkReaderState();
@@ -131,13 +138,21 @@ class _BookmarkReaderState extends State<BookmarkReader> {
   bool _notesDirty = false;
   bool _loadingSnapshot = true;
   bool _showAside = true;
-  bool _readOffline = false;
+  BookmarkReadingMode _mode = BookmarkReadingMode.live;
+  late BookmarkReadingSession _reading;
+  BookmarkReaderCapture? _capture;
+  String? _offlineText;
+  bool _readingBusy = false;
+  String? _readingError;
+  int _readerRequest = 0;
 
   BookmarkEntry? get _entry => widget.controller.entryFor(widget.entryId);
 
   bool get _canEdit => !widget.readOnly && (widget.canEdit?.call() ?? true);
 
-  bool get _canReadOffline => _snapshot?.hasArticle ?? false;
+  bool get _canReadOffline =>
+      (_snapshot?.hasArticle ?? false) &&
+      (_offlineText != null || widget.offlinePreviewBuilder != null);
 
   @override
   void initState() {
@@ -145,6 +160,7 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     _notes = TextEditingController(text: _entry?.metadata.notes ?? '');
     _sourceUrl = _entry?.url;
     _snapshotPath = _entry?.metadata.snapshotPath;
+    _reading = widget.readingSession ?? BookmarkReadingSession();
     widget.controller.addListener(_onChanged);
     unawaited(_loadSnapshot());
     unawaited(_markAsReading());
@@ -153,6 +169,14 @@ class _BookmarkReaderState extends State<BookmarkReader> {
   @override
   void didUpdateWidget(covariant BookmarkReader oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.readingSession, widget.readingSession)) {
+      if (oldWidget.readingSession == null) _reading.dispose();
+      _reading = widget.readingSession ?? BookmarkReadingSession();
+      _capture = null;
+      _readerRequest++;
+      _readingBusy = false;
+      _mode = BookmarkReadingMode.live;
+    }
     if (!identical(oldWidget.controller, widget.controller) ||
         oldWidget.entryId != widget.entryId) {
       oldWidget.controller.removeListener(_onChanged);
@@ -175,6 +199,8 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     _notes.dispose();
     _tagInput.dispose();
     _asideScroll.dispose();
+    _readerRequest++;
+    if (widget.readingSession == null) _reading.dispose();
     super.dispose();
   }
 
@@ -205,7 +231,12 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     _webKey = GlobalKey();
     _snapshot = null;
     _loadingSnapshot = true;
-    _readOffline = false;
+    _mode = BookmarkReadingMode.live;
+    _readerRequest++;
+    _capture = null;
+    _offlineText = null;
+    _readingBusy = false;
+    _readingError = null;
     unawaited(_loadSnapshot());
     unawaited(_markAsReading());
   }
@@ -224,8 +255,23 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     final entryId = widget.entryId;
     final url = _entry?.url;
     final path = _snapshotPath = _entry?.metadata.snapshotPath;
-    final snapshot =
-        await (widget.snapshots ?? BookmarkSnapshotStore.instance).read(path);
+    final store = widget.snapshots ?? BookmarkSnapshotStore.instance;
+    BookmarkSnapshot? snapshot;
+    try {
+      snapshot = await store.read(path).timeout(bookmarkReaderDeadline);
+    } on Object {
+      snapshot = null;
+    }
+    String? offlineText;
+    if (snapshot?.articlePath != null && widget.offlinePreviewBuilder == null) {
+      try {
+        offlineText = await store
+            .readArticleText(snapshot!)
+            .timeout(bookmarkReaderDeadline);
+      } on Object {
+        // A missing/malformed old copy is unavailable, never a remote fallback.
+      }
+    }
     if (mounted &&
         request == _snapshotRequest &&
         identical(controller, widget.controller) &&
@@ -234,10 +280,11 @@ class _BookmarkReaderState extends State<BookmarkReader> {
         path == _entry?.metadata.snapshotPath) {
       setState(() {
         _snapshot = snapshot;
+        _offlineText = offlineText;
         _loadingSnapshot = false;
         // A page that cannot be rendered live has only the copy to show.
-        if (!canRenderLiveBookmarkPage && (snapshot?.hasArticle ?? false)) {
-          _readOffline = true;
+        if (!canRenderLiveBookmarkPage && _canReadOffline) {
+          _mode = BookmarkReadingMode.offline;
         }
       });
       return true;
@@ -408,7 +455,7 @@ class _BookmarkReaderState extends State<BookmarkReader> {
                   // Icon-only native controls are 28px, plus the source group's
                   // 8px insets. Reserve their real width, not a second flex share.
                   final toolsWidth =
-                      28.0 * (canRenderLiveBookmarkPage ? 7 : 6) +
+                      28.0 * (canRenderLiveBookmarkPage ? 8 : 7) +
                           BookmarkMetrics.space2 * 2;
                   final stacked = constraints.maxWidth <
                       toolsWidth +
@@ -450,7 +497,12 @@ class _BookmarkReaderState extends State<BookmarkReader> {
 
   Widget _identity(BookmarkTheme theme, BookmarkEntry entry) => Row(
         children: [
-          BookmarkFavicon(entry: entry, theme: theme, size: 22),
+          // Offline/Reader presentation must not request a remote favicon.
+          if (_mode == BookmarkReadingMode.live)
+            BookmarkFavicon(entry: entry, theme: theme, size: 22)
+          else
+            const SizedBox(
+                width: 22, child: Icon(Icons.article_outlined, size: 20)),
           const SizedBox(width: BookmarkMetrics.space3),
           Expanded(
             child: Column(
@@ -485,7 +537,7 @@ class _BookmarkReaderState extends State<BookmarkReader> {
 
   Widget _tools(BookmarkTheme theme, BookmarkEntry entry) => PreviewToolbar(
         key: const ValueKey('bookmark-reader-tools'),
-        keepVisible: widget.controller.isWorkingOn(entry.id),
+        keepVisible: widget.controller.isWorkingOn(entry.id) || _readingBusy,
         child: Wrap(
           alignment: WrapAlignment.end,
           crossAxisAlignment: WrapCrossAlignment.center,
@@ -552,9 +604,17 @@ class _BookmarkReaderState extends State<BookmarkReader> {
               icon: Icons.language_rounded,
               tooltip: LocaleKeys.collections_bookmark_live.tr(),
               theme: theme,
-              active: !_readOffline,
-              onPressed: () => setState(() => _readOffline = false),
+              active: _mode == BookmarkReadingMode.live,
+              onPressed: () => _selectMode(BookmarkReadingMode.live),
             ),
+          BookmarkAction(
+            key: const ValueKey('bookmark-reader-reader'),
+            icon: Icons.chrome_reader_mode_outlined,
+            tooltip: BookmarkReaderStrings.reader,
+            theme: theme,
+            active: _mode == BookmarkReadingMode.reader,
+            onPressed: _readingBusy ? null : _openReader,
+          ),
           BookmarkAction(
             key: const ValueKey('bookmark-reader-offline'),
             icon: Icons.article_rounded,
@@ -562,19 +622,25 @@ class _BookmarkReaderState extends State<BookmarkReader> {
                 ? LocaleKeys.collections_bookmark_offlineCopy.tr()
                 : LocaleKeys.collections_bookmark_offlineUnavailable.tr(),
             theme: theme,
-            active: _readOffline,
+            active: _mode == BookmarkReadingMode.offline,
             onPressed: _canReadOffline
-                ? () => setState(() => _readOffline = true)
+                ? () => _selectMode(BookmarkReadingMode.offline)
                 : null,
           ),
           BookmarkAction(
-            icon:
-                working ? Icons.hourglass_top_rounded : Icons.download_rounded,
+            icon: working || _readingBusy
+                ? Icons.hourglass_top_rounded
+                : Icons.download_rounded,
             tooltip: working
                 ? LocaleKeys.collections_bookmark_savingOffline.tr()
                 : LocaleKeys.collections_bookmark_saveOffline.tr(),
             theme: theme,
-            onPressed: working || !_canEdit ? null : () => _takeSnapshot(entry),
+            onPressed: working ||
+                    _readingBusy ||
+                    !_canEdit ||
+                    _mode == BookmarkReadingMode.offline
+                ? null
+                : () => _takeSnapshot(entry),
           ),
         ],
       ),
@@ -592,13 +658,65 @@ class _BookmarkReaderState extends State<BookmarkReader> {
       );
     }
 
-    final articlePath = _snapshot?.articlePath;
-    if (!_readOffline || articlePath == null) {
-      return canRenderLiveBookmarkPage
-          ? _livePage(theme, entry)
-          : _noSnapshot(theme, entry);
-    }
+    final live = _mode == BookmarkReadingMode.live;
+    return Stack(fit: StackFit.expand, children: [
+      Offstage(
+        key: const ValueKey('bookmark-retained-live'),
+        offstage: !live,
+        child: ExcludeFocus(
+          excluding: !live,
+          child: ExcludeSemantics(
+            excluding: !live,
+            child: IgnorePointer(
+              ignoring: !live,
+              child: TickerMode(
+                enabled: live,
+                child: canRenderLiveBookmarkPage
+                    ? _livePage(theme, entry)
+                    : _noSnapshot(theme, entry),
+              ),
+            ),
+          ),
+        ),
+      ),
+      if (!live) _localPage(theme, entry),
+      if (live && _readingError != null)
+        Positioned(
+          left: 8,
+          right: 8,
+          bottom: 8,
+          child: Material(
+            color: theme.panel,
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Semantics(
+                liveRegion: true,
+                child: Text(_readingError!, style: theme.body),
+              ),
+            ),
+          ),
+        ),
+    ]);
+  }
 
+  Widget _localPage(BookmarkTheme theme, BookmarkEntry entry) {
+    if (_readingBusy)
+      return Center(child: CircularProgressIndicator(color: theme.accent));
+    final text = _mode == BookmarkReadingMode.reader
+        ? (_capture == null
+            ? null
+            : bookmarkArticleText(_capture!.article.markdown))
+        : _offlineText;
+    final previewBuilder = _mode == BookmarkReadingMode.offline
+        ? widget.offlinePreviewBuilder
+        : null;
+    if (_readingError != null || (text == null && previewBuilder == null)) {
+      return BookmarkEmptyState(
+          theme: theme,
+          icon: Icons.article_outlined,
+          title: _readingError ?? BookmarkReaderStrings.unavailable);
+    }
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (!mounted || !_canEdit) return false;
@@ -624,20 +742,14 @@ class _BookmarkReaderState extends State<BookmarkReader> {
           BookmarkMetrics.space2,
           BookmarkMetrics.space2,
         ),
-        child: widget.offlinePreviewBuilder == null
-            ? FilePreview(
-                key: ValueKey(articlePath),
-                file: File(articlePath),
-                name: BookmarkSnapshotStore.articleFileName,
-                kind: FilePreviewKind.markdown,
-                metadata: const {},
-                onMetadataChanged: (_) {},
-                editable: false,
-                bare: true,
-              )
+        child: previewBuilder == null
+            ? BookmarkArticleView(
+                key: ValueKey(
+                    (_mode, _capture?.generation, _snapshot?.articlePath)),
+                text: text!)
             : KeyedSubtree(
-                key: ValueKey(articlePath),
-                child: Builder(builder: widget.offlinePreviewBuilder!),
+                key: ValueKey(_snapshot?.articlePath),
+                child: Builder(builder: previewBuilder),
               ),
       ),
     );
@@ -657,6 +769,8 @@ class _BookmarkReaderState extends State<BookmarkReader> {
                   key: _webKey,
                   url: entry.url,
                   theme: theme,
+                  active: _mode == BookmarkReadingMode.live,
+                  readingSession: _reading,
                   onOpenExternally: (uri) =>
                       launchUrl(uri, mode: LaunchMode.externalApplication),
                 )
@@ -915,6 +1029,8 @@ class _BookmarkReaderState extends State<BookmarkReader> {
 
   Future<void> _takeSnapshot(BookmarkEntry entry) async {
     if (!mounted ||
+        _readingBusy ||
+        widget.controller.isWorkingOn(entry.id) ||
         !_canEdit ||
         _entry?.id != entry.id ||
         _entry?.url != entry.url) {
@@ -922,6 +1038,12 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     }
     final controller = widget.controller;
     final revision = _sourceRevision;
+    final mode = _mode;
+    if (_mode != BookmarkReadingMode.live &&
+        (_capture == null || !_captureIsCurrent(_capture!))) {
+      setState(() => _readingError = BookmarkReaderStrings.unavailable);
+      return;
+    }
     bool stillCurrent() =>
         mounted &&
         _canEdit &&
@@ -929,14 +1051,110 @@ class _BookmarkReaderState extends State<BookmarkReader> {
         identical(controller, widget.controller) &&
         _entry?.id == entry.id &&
         _entry?.url == entry.url;
-    // Once delegated, refresh owns its network/native work and persistence.
-    // Revocation can stop our follow-up, but cannot cancel that in-flight IO.
-    await controller.refresh(entry, snapshot: true);
-    if (!stillCurrent()) return;
-    final loaded = await _loadSnapshot();
-    if (loaded && stillCurrent() && _canReadOffline) {
-      setState(() => _readOffline = true);
+    final capture = _capture != null && _captureIsCurrent(_capture!)
+        ? _capture
+        : await _readCurrentArticle();
+    if (capture == null || !stillCurrent()) return;
+    // Reader may show a followed link, but it must not save that document as
+    // the original bookmark's offline copy.
+    if (capture.url != entry.url || !_captureIsCurrent(capture)) {
+      setState(() => _readingError = BookmarkReaderStrings.unavailable);
+      return;
     }
+    final saved = await controller.saveReaderCapture(
+      entry,
+      capture,
+      store: widget.snapshots,
+      isCurrent: () => stillCurrent() && _captureIsCurrent(capture),
+    );
+    if (!stillCurrent()) return;
+    if (!saved) {
+      setState(() => _readingError = BookmarkReaderStrings.saveFailed);
+      return;
+    }
+    final loaded = await _loadSnapshot();
+    if (loaded &&
+        stillCurrent() &&
+        _captureIsCurrent(capture) &&
+        mode == _mode &&
+        _canReadOffline) {
+      _selectMode(BookmarkReadingMode.offline);
+    }
+  }
+
+  void _selectMode(BookmarkReadingMode mode) {
+    if (!mounted) return;
+    _readerRequest++;
+    setState(() {
+      _mode = mode;
+      _readingBusy = false;
+      _readingError = null;
+    });
+  }
+
+  bool _captureIsCurrent(BookmarkReaderCapture capture) =>
+      canRenderLiveBookmarkPage
+          ? _reading.isCurrent(capture)
+          : capture.url == _entry?.url;
+
+  Future<BookmarkReaderCapture?> _readCurrentArticle() async {
+    final request = ++_readerRequest;
+    final revision = _sourceRevision;
+    final controller = widget.controller;
+    final entry = _entry;
+    if (entry == null) return null;
+    setState(() {
+      _readingBusy = true;
+      _readingError = null;
+    });
+    BookmarkReaderCapture? capture;
+    try {
+      capture = await (canRenderLiveBookmarkPage
+              ? _reading.capture()
+              : controller.readArticleForReader(entry))
+          .timeout(bookmarkReaderDeadline);
+    } on Object {
+      // A failed/late fallback read must release the controls just like a
+      // failed live capture, without an unhandled async UI callback error.
+    }
+    if (!mounted ||
+        request != _readerRequest ||
+        revision != _sourceRevision ||
+        !identical(controller, widget.controller)) return null;
+    setState(() {
+      _readingBusy = false;
+      _capture = capture;
+      _readingError =
+          capture == null ? BookmarkReaderStrings.unavailable : null;
+    });
+    return capture;
+  }
+
+  Future<void> _openReader() async {
+    if (!mounted || _readingBusy) return;
+    // Capture before hiding/suspending the native page; a suspended renderer
+    // must not be asked to execute the Reader script.
+    if (_capture == null || !_captureIsCurrent(_capture!)) {
+      if (_mode != BookmarkReadingMode.live && canRenderLiveBookmarkPage) {
+        _selectMode(BookmarkReadingMode.live);
+        final ticket = _readerRequest;
+        await WidgetsBinding.instance.endOfFrame;
+        if (!mounted || ticket != _readerRequest) return;
+      }
+      final mode = _mode;
+      final revision = _sourceRevision;
+      final ticket = _readerRequest + 1;
+      final capture = await _readCurrentArticle();
+      if (!mounted ||
+          ticket != _readerRequest ||
+          revision != _sourceRevision ||
+          mode != _mode) return;
+      if (capture == null) {
+        setState(() => _mode = BookmarkReadingMode.reader);
+        return;
+      }
+    }
+    _selectMode(BookmarkReadingMode.reader);
   }
 
   Future<void> _openInBrowser(BookmarkEntry entry) async {

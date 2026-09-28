@@ -11,6 +11,7 @@ import 'package:fixnum/fixnum.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:universal_platform/universal_platform.dart';
@@ -111,69 +112,76 @@ class _NotificationItemState extends State<NotificationItem> {
                 ),
                 child: Opacity(
                   opacity: widget.isRead && !widget.readOnly ? 0.5 : 1,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: _isHovering && widget.onAction != null
-                          ? AFThemeExtension.of(context).lightGreyHover
-                          : Colors.transparent,
-                      border: widget.isRead || widget.readOnly
-                          ? null
-                          : Border(
-                              left: BorderSide(
-                                width: UniversalPlatform.isMobile ? 4 : 2,
-                                color: Theme.of(context).colorScheme.primary,
+                  child: FlowyHoverContainer(
+                    applyStyle: _isHovering && widget.onAction != null,
+                    style: HoverStyle(
+                      hoverColor: AFThemeExtension.of(context).lightGreyHover,
+                      borderRadius: BorderRadius.zero,
+                    ),
+                    // Keep the unread stripe in a DecoratedBox: a container
+                    // border would also add padding and shift the content.
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: widget.isRead || widget.readOnly
+                            ? null
+                            : Border(
+                                left: BorderSide(
+                                  width: UniversalPlatform.isMobile ? 4 : 2,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                              ),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 10,
+                          horizontal: 16,
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            FlowySvg(
+                              FlowySvgs.time_s,
+                              size: Size.square(
+                                UniversalPlatform.isMobile ? 24 : 20,
+                              ),
+                              color: AFThemeExtension.of(context).textColor,
+                            ),
+                            const HSpace(16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  FlowyText.semibold(
+                                    widget.title,
+                                    fontSize:
+                                        UniversalPlatform.isMobile ? 16 : 14,
+                                    color:
+                                        AFThemeExtension.of(context).textColor,
+                                  ),
+                                  FlowyText.regular(
+                                    infoString,
+                                    fontSize:
+                                        UniversalPlatform.isMobile ? 12 : 10,
+                                  ),
+                                  const VSpace(5),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      borderRadius: Corners.s8Border,
+                                      color:
+                                          Theme.of(context).colorScheme.surface,
+                                    ),
+                                    child: _NotificationContent(
+                                      block: widget.block,
+                                      reminder: widget.reminder,
+                                      body: widget.body,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 10,
-                        horizontal: 16,
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          FlowySvg(
-                            FlowySvgs.time_s,
-                            size: Size.square(
-                              UniversalPlatform.isMobile ? 24 : 20,
-                            ),
-                            color: AFThemeExtension.of(context).textColor,
-                          ),
-                          const HSpace(16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                FlowyText.semibold(
-                                  widget.title,
-                                  fontSize:
-                                      UniversalPlatform.isMobile ? 16 : 14,
-                                  color: AFThemeExtension.of(context).textColor,
-                                ),
-                                FlowyText.regular(
-                                  infoString,
-                                  fontSize:
-                                      UniversalPlatform.isMobile ? 12 : 10,
-                                ),
-                                const VSpace(5),
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    borderRadius: Corners.s8Border,
-                                    color:
-                                        Theme.of(context).colorScheme.surface,
-                                  ),
-                                  child: _NotificationContent(
-                                    block: widget.block,
-                                    reminder: widget.reminder,
-                                    body: widget.body,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
                   ),

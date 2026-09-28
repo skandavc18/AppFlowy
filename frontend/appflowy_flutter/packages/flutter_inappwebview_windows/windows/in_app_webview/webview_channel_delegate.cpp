@@ -92,7 +92,15 @@ namespace flutter_inappwebview_plugin
     auto& arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
     auto& methodName = method_call.method_name();
 
-    if (string_equals(methodName, "getUrl")) {
+    if (string_equals(methodName, "rejectWindow")) {
+      const auto found = arguments.find(flutter::EncodableValue("windowId"));
+      if (found == arguments.end()) return result->Error("invalidArguments");
+      const auto narrowId = std::get_if<int32_t>(&found->second);
+      const auto wideId = std::get_if<int64_t>(&found->second);
+      if (!narrowId && !wideId) return result->Error("invalidArguments");
+      result->Success(webView->rejectWindow(narrowId ? *narrowId : *wideId));
+    }
+    else if (string_equals(methodName, "getUrl")) {
       result->Success(make_fl_value(webView->getUrl()));
     }
     else if (string_equals(methodName, "getTitle")) {

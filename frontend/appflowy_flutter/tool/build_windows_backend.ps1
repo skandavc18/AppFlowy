@@ -34,6 +34,11 @@ try {
 $artifacts = @(foreach ($line in $output) {
   try { $message = $line.ToString() | ConvertFrom-Json -ErrorAction Stop }
   catch { continue }
+  # Blank output decodes to null without throwing. Other JSON output need not
+  # be a Cargo message either; property access must also be safe in strict mode.
+  if ($null -eq $message -or $null -eq $message.PSObject.Properties['reason']) {
+    continue
+  }
   if ($message.reason -eq 'compiler-artifact' -and
       $message.target.name -eq 'dart_ffi' -and
       $message.filenames -contains $expectedLibrary) {

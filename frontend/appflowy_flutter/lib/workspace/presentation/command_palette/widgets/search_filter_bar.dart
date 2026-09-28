@@ -1,4 +1,5 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -35,6 +36,15 @@ class SearchFilterBar extends StatelessWidget {
             selected: filter.titleOnly,
             onTap: () => onChanged(
               filter.copyWith(titleOnly: !filter.titleOnly),
+            ),
+          ),
+          _FilterButton(
+            key: const ValueKey('command-palette-content-filter'),
+            icon: Icons.find_in_page_rounded,
+            label: 'Page contents',
+            selected: filter.pageContents,
+            onTap: () => onChanged(
+              filter.copyWith(pageContents: !filter.pageContents),
             ),
           ),
           _FilterMenuButton<bool>(
@@ -223,9 +233,9 @@ class _FilterMenuButtonState<T> extends State<_FilterMenuButton<T>> {
                     selected: selected,
                     leading: option.icon == null
                         ? null
-                        : Icon(option.icon, size: 18),
+                        : WorkspaceGlyph(option.icon!),
                     trailing:
-                        selected ? const Icon(Icons.check, size: 18) : null,
+                        selected ? const WorkspaceGlyph(Icons.check) : null,
                     onTap: () {
                       controller.hide();
                       widget.onSelected(option.value);
@@ -268,47 +278,50 @@ class _FilterButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
 
-    return AFBaseButton(
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      borderRadius: theme.borderRadius.m,
-      borderColor: (_, __, ___, ____) => Colors.transparent,
-      backgroundColor: (_, isHovering, __) => selected || isHovering
-          ? theme.fillColorScheme.contentHover
-          : Colors.transparent,
-      builder: (_, __, ___) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 16,
-            color: selected
-                ? theme.iconColorScheme.primary
-                : theme.iconColorScheme.secondary,
-          ),
-          const SizedBox(width: 5),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 160),
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textStyle.caption.standard(
-                color: selected
-                    ? theme.textColorScheme.primary
-                    : theme.textColorScheme.secondary,
+    return Semantics(
+      toggled: selected,
+      child: AFBaseButton(
+        onTap: onTap,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        borderRadius: theme.borderRadius.m,
+        borderColor: (_, __, ___, ____) => Colors.transparent,
+        backgroundColor: (_, isHovering, __) => selected || isHovering
+            ? theme.fillColorScheme.contentHover
+            : Colors.transparent,
+        builder: (_, __, ___) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            WorkspaceGlyph(
+              icon,
+              size: 16,
+              color: selected
+                  ? theme.iconColorScheme.primary
+                  : theme.iconColorScheme.secondary,
+            ),
+            const SizedBox(width: 5),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 160),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textStyle.caption.standard(
+                  color: selected
+                      ? theme.textColorScheme.primary
+                      : theme.textColorScheme.secondary,
+                ),
               ),
             ),
-          ),
-          if (showChevron) ...[
-            const SizedBox(width: 2),
-            Icon(
-              Icons.arrow_drop_down,
-              size: 16,
-              color: theme.iconColorScheme.secondary,
-            ),
+            if (showChevron) ...[
+              const SizedBox(width: 2),
+              WorkspaceGlyph(
+                Icons.arrow_drop_down,
+                size: 16,
+                color: theme.iconColorScheme.secondary,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

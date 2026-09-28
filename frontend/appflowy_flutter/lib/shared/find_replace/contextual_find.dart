@@ -15,16 +15,23 @@ class ContextualFindScope extends InheritedWidget {
     super.key,
     required super.child,
     this.enabled = true,
+    this.findInControls = false,
   });
 
   final bool enabled;
+
+  /// A full page also owns Find from its title, cover and other header fields.
+  /// Opt in at the page boundary, not globally: dialogs and unrelated inputs
+  /// outside this scope must keep their own shortcuts and drafts.
+  final bool findInControls;
 
   static ContextualFindScope? _of(BuildContext context) =>
       context.getInheritedWidgetOfExactType<ContextualFindScope>();
 
   @override
   bool updateShouldNotify(ContextualFindScope oldWidget) =>
-      enabled != oldWidget.enabled;
+      enabled != oldWidget.enabled ||
+      findInControls != oldWidget.findInControls;
 }
 
 /// Supplies live block selection to owned viewers without an editor dependency.
@@ -94,6 +101,7 @@ class ContextualFindRegion extends StatefulWidget {
     this.debugLabel,
     this.useNativeFind = false,
     this.claimHoverFromControls = true,
+    this.navigation = false,
   }) : findInEditable = ownsEditable ?? findInEditable;
 
   final Widget child;
@@ -152,6 +160,10 @@ class ContextualFindRegion extends StatefulWidget {
   /// fields, native viewers and modal routes still retain their own handling.
   /// Set false only for a host whose controls must retain local Find instead.
   final bool claimHoverFromControls;
+
+  /// Sidebar/navigation Find opens workspace search. An explicit hover here
+  /// may take over an open page query; independent content panes may not.
+  final bool navigation;
 
   /// Optional entry point for a customized editor shortcut; normally unneeded.
   ///
@@ -462,7 +474,7 @@ class _FindRouter with WidgetsBindingObserver {
             other._bounds != null &&
             other._viewId == target._viewId &&
             other._route == target._route &&
-            identical(other._root, root) &&
+            (target.widget.navigation || identical(other._root, root)) &&
             other.widget.findOpen) {
           other.widget.onDismiss?.call();
         }
@@ -497,6 +509,7 @@ class _FindRouter with WidgetsBindingObserver {
       available.where((region) => region._hasContentFocus),
     );
     final nearestFocus = liveFocus ? _regionAt(focusContext) : null;
+    var unownedEditableFocus = false;
     if (liveFocus && queryOwner == null) {
       if (_isNativeFocus(focusContext)) return null;
       if (_isEditable(focusContext) &&
@@ -504,7 +517,7 @@ class _FindRouter with WidgetsBindingObserver {
               !available.contains(nearestFocus) ||
               !nearestFocus._hasContentFocus ||
               !nearestFocus.widget.findInEditable)) {
-        return null;
+        unownedEditableFocus = true;
       }
     }
     if (queryOwner == null &&
@@ -533,6 +546,9 @@ class _FindRouter with WidgetsBindingObserver {
           (focusRoute == null || region._routes.contains(focusRoute));
     }).toList();
     if (candidates.isEmpty) return null;
+    if (unownedEditableFocus) {
+      return _pageForControls(focusContext!, candidates);
+    }
 
     _ContextualFindRegionState? hoveredPage;
     final cursor = _cursor;
@@ -565,8 +581,11 @@ class _FindRouter with WidgetsBindingObserver {
             // native region is the root of a tree with nested Flutter content.
             if (hovered.widget.useNativeFind) return null;
             if (editableHit && !hovered.widget.findInEditable) {
-              return candidates.contains(queryOwner) ? queryOwner : null;
+              return candidates.contains(queryOwner)
+                  ? queryOwner
+                  : _pageForControls(hovered.context, candidates);
             }
+            if (hovered.widget.navigation) return hovered;
             if (queryOwner != null &&
                 (!identical(hovered._root, queryOwner._root) ||
                     _within(queryOwner.context, hovered.context))) {
@@ -636,6 +655,35 @@ class _FindRouter with WidgetsBindingObserver {
         (candidates.contains(focused) ? focused : null) ??
         _pageFallback(candidates);
   }
+}
+
+_ContextualFindRegionState? _pageForControls(
+  BuildContext context,
+  List<_ContextualFindRegionState> candidates,
+) {
+  final element =
+      context.getElementForInheritedWidgetOfExactType<ContextualFindScope>();
+  final scope = element?.widget as ContextualFindScope?;
+  if (scope == null ||
+      !scope.findInControls ||
+      !_renderWithin(context.findRenderObject(), element!.findRenderObject())) {
+    return null;
+  }
+  final family = candidates
+      .where(
+        (region) => identical(ContextualFindScope._of(region.context), scope),
+      )
+      .toList();
+  // An explicitly focused secondary pane can find from its header while it
+  // remains ineligible as the primary page's no-focus fallback.
+  final roots = family
+      .where(
+        (region) => !family.any(
+          (other) => other != region && _within(region.context, other.context),
+        ),
+      )
+      .toList();
+  return roots.length == 1 ? roots.single : null;
 }
 
 _ContextualFindRegionState? _pageFallback(

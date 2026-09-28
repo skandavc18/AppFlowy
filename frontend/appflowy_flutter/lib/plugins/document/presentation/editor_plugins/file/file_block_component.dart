@@ -779,10 +779,9 @@ class FileBlockComponentState extends State<FileBlockComponent>
                       previewScrollController.handlePointerPanZoomUpdate,
                   onPointerPanZoomEnd:
                       previewScrollController.handlePointerPanZoomEnd,
-                  child: _withPreviewActions(
-                    frame,
-                    showIdentity: kind != FilePreviewKind.pdf,
-                  ),
+                  child: kind == FilePreviewKind.pdf
+                      ? frame
+                      : _withPreviewActions(frame),
                 ),
               )
           : _withPreviewActions,
@@ -828,6 +827,10 @@ class FileBlockComponentState extends State<FileBlockComponent>
             pdfMenuBuilder:
                 UniversalPlatform.isDesktopOrWeb && kind == FilePreviewKind.pdf
                     ? _buildPdfMenu
+                    : null,
+            pdfFileActions:
+                UniversalPlatform.isDesktopOrWeb && kind == FilePreviewKind.pdf
+                    ? _buildMediaActionButtons(decorated: false)
                     : null,
             previewScrollController:
                 kind.usesFrameScrollGuard ? previewScrollController : null,

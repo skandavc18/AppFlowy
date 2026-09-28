@@ -19,6 +19,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/vide
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
@@ -41,19 +42,52 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 
 import 'search_layout.dart';
+import 'content_search_widgets.dart';
 
 class PagePreview extends StatelessWidget {
   const PagePreview({
     super.key,
     required this.view,
     required this.onViewOpened,
+    this.query,
+    this.matchingSnippet,
+    this.contentSearch = false,
+    this.metadataOnly = false,
   });
   final ViewPB view;
   final VoidCallback onViewOpened;
+  final String? query;
+  final String? matchingSnippet;
+  final bool contentSearch;
+  final bool metadataOnly;
 
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
+    if (contentSearch || metadataOnly) {
+      // Only already-authorized text enters this path. Do not mount the normal
+      // cover/editor/database/file previews: they can read or fetch again.
+      return CommandPalettePreviewSurface(
+        key: const ValueKey('page-preview-card'),
+        header: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              buildIcon(theme, view, false),
+              const HSpace(WorkspaceTokens.space3),
+              Expanded(child: buildTitle(context, view)),
+            ],
+          ),
+        ),
+        child: metadataOnly && (matchingSnippet?.isEmpty ?? true)
+            ? const SizedBox.shrink()
+            : SearchMatchContext(
+                query: query ?? '',
+                snippet: matchingSnippet ?? '',
+              ),
+      );
+    }
     return BlocProvider(
       create: (context) => DocumentImmersiveCoverBloc(view: view)
         ..add(const DocumentImmersiveCoverEvent.initial()),
@@ -215,9 +249,9 @@ class PagePreview extends StatelessWidget {
     if (view.isWorkspaceItem) {
       return WorkspaceItemIcon.fromView(view: view, size: 20);
     }
-    return FlowySvg(
+    return WorkspaceGlyph.svg(
       view.iconData,
-      size: const Size.square(20),
+      size: 20,
       color: theme.iconColorScheme.secondary,
     );
   }
@@ -258,7 +292,7 @@ class PagePreview extends StatelessWidget {
             const HSpace(WorkspaceTokens.space2),
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Icon(
+              child: WorkspaceGlyph(
                 Icons.open_in_new_rounded,
                 size: 16,
                 color: palette.secondaryText,

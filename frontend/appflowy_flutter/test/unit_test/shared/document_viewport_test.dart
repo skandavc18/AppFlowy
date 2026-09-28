@@ -4,6 +4,7 @@ import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -193,7 +194,20 @@ void main() {
       );
 
       expect(find.text('1 / 12'), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.download_rounded));
+      final download = find.byWidgetPredicate(
+        (widget) =>
+            widget is DocumentViewportButton && widget.tooltip == 'Download',
+      );
+      expect(download, findsOneWidget);
+      final glyph = find.descendant(
+        of: download,
+        matching: find.byType(WorkspaceGlyph),
+      );
+      expect(glyph, findsOneWidget);
+      expect(tester.widget<WorkspaceGlyph>(glyph).icon, Icons.download_rounded);
+      expect(tester.widget<WorkspaceGlyph>(glyph).name, 'download');
+      expect(download.hitTestable(), findsOneWidget);
+      await tester.tap(download);
       expect(pressed, 1);
       final renderer = tester.getRect(find.byKey(const ValueKey('renderer')));
       final footer = tester.getRect(find.byType(DocumentFloatingToolbar));

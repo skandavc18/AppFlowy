@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/media/medi
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/file_browser/file_browser_view.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
@@ -128,6 +129,7 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
   _ArchiveOpening? opening;
   Timer? writeBackTimer;
   Timer? searchDebounce;
+  final _galleryScrolls = <FileBrowserViewMode, ScrollController>{};
 
   @override
   void initState() {
@@ -199,6 +201,9 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
       ..removeListener(_selectionChanged)
       ..dispose();
     previewCache.clear();
+    for (final scroll in _galleryScrolls.values) {
+      scroll.dispose();
+    }
     super.dispose();
   }
 
@@ -1037,6 +1042,19 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
                 },
                 child: const Text('Unable to read this folder. Retry'),
               ),
+            if (query.isNotEmpty &&
+                snapshot.connectionState == ConnectionState.done)
+              Semantics(
+                liveRegion: true,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  child: Text(
+                    '${items.length} matches · all folders',
+                    key: const ValueKey('archive-search-results'),
+                  ),
+                ),
+              ),
             Expanded(
               child: !gallery
                   ? ArchiveBrowser(
@@ -1070,6 +1088,11 @@ class _ArchiveExplorerState extends State<ArchiveExplorer> {
                       listingRevision: entries,
                     )
                   : ArchiveGallery(
+                      scrollController: _galleryScrolls.putIfAbsent(
+                        viewMode,
+                        () => FileBrowserScrollController(),
+                      ),
+                      searching: query.isNotEmpty,
                       entries: items,
                       previewCache: previewCache,
                       compact: widget.embedded,
@@ -1375,6 +1398,16 @@ class _ArchiveFullscreenView extends StatefulWidget {
 class _ArchiveFullscreenViewState extends State<_ArchiveFullscreenView> {
   final _chrome = StandaloneFileChromeController();
   final _fileActionsKey = GlobalKey(debugLabel: 'archive-file-actions');
+  bool _closing = false;
+
+  void _close() {
+    if (!mounted || _closing) return;
+    final route = ModalRoute.of(context);
+    // A stale callback must not close a newer menu/dialog or the page below us.
+    if (route?.isCurrent != true) return;
+    _closing = true;
+    Navigator.of(context).pop();
+  }
 
   @override
   void dispose() {
@@ -1396,8 +1429,8 @@ class _ArchiveFullscreenViewState extends State<_ArchiveFullscreenView> {
         child: SafeArea(
           child: CallbackShortcuts(
             bindings: {
-              const SingleActivator(LogicalKeyboardKey.escape): () =>
-                  unawaited(Navigator.of(context).maybePop()),
+              const SingleActivator(LogicalKeyboardKey.escape): _close,
+              const SingleActivator(LogicalKeyboardKey.f11): _close,
             },
             child: PreviewToolbarRegion(
               child: Column(
@@ -1430,21 +1463,29 @@ class _ArchiveFullscreenViewState extends State<_ArchiveFullscreenView> {
                               MediaQuery.textScalerOf(context).scale(10) * 1.2 +
                                   6,
                         ),
-                        child: DocumentViewportHeader(
-                          identity: DocumentIdentity(
-                            title: widget.name,
-                            icon: Icons.folder_zip_rounded,
-                          ),
-                          background: palette.background,
-                          leading: WorkspaceControlButton(
-                            key: const ValueKey('archive-fullscreen-close'),
-                            icon: Icons.close_rounded,
-                            tooltip: 'Close',
-                            onPressed: () =>
-                                unawaited(Navigator.of(context).maybePop()),
-                          ),
-                          keepActionsVisible: controls.keepActionsVisible,
-                          toolbar: toolbar,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                                child: DocumentViewportHeader(
+                              identity: DocumentIdentity(
+                                title: widget.name,
+                                icon: Icons.folder_zip_rounded,
+                              ),
+                              background: palette.background,
+                              keepActionsVisible: controls.keepActionsVisible,
+                              toolbar: toolbar,
+                            )),
+                            // Route-owned, always visible, outside renderer reveal
+                            // and horizontal overflow. FileAction slots stay unique.
+                            WorkspaceControlButton(
+                              key: const ValueKey('archive-fullscreen-close'),
+                              icon: Icons.close_rounded,
+                              tooltip: 'Close',
+                              onPressed: _close,
+                            ),
+                            const SizedBox(width: 8),
+                          ],
                         ),
                       );
                     },

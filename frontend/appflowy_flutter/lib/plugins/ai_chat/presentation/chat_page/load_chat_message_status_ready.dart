@@ -6,6 +6,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/ai_chat/application/ai_chat_prelude.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_text_selection.dart';
 import 'package:appflowy/plugins/ai_chat/presentation/chat_message_selector_banner.dart';
+import 'package:appflowy/plugins/ai_chat/presentation/chat_find.dart';
 import 'package:appflowy/plugins/ai_chat/presentation/chat_page/chat_animation_list_widget.dart';
 import 'package:appflowy/plugins/ai_chat/presentation/chat_page/chat_footer.dart';
 import 'package:appflowy/plugins/ai_chat/presentation/chat_page/chat_message_widget.dart';
@@ -37,29 +38,32 @@ class LoadChatMessageStatusReady extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder(
-      stream: chatController.operationsStream,
-      builder: (context, _) {
-        // A conversation that has not started yet reads better with the
-        // composer in the middle of the page; it settles to the bottom as soon
-        // as there is something to read above it.
-        final isNew =
-            UniversalPlatform.isDesktop && isNewChat(chatController);
+    return ChatFindHost(
+      chatController: chatController,
+      child: StreamBuilder(
+        stream: chatController.operationsStream,
+        builder: (context, _) {
+          // A conversation that has not started yet reads better with the
+          // composer in the middle of the page; it settles to the bottom as soon
+          // as there is something to read above it.
+          final isNew =
+              UniversalPlatform.isDesktop && isNewChat(chatController);
 
-        return Column(
-          children: [
-            _buildHeader(context),
-            if (isNew) ...[
-              Expanded(child: _buildGreeting(context)),
-              _buildFooter(context),
-              Expanded(child: _buildSuggestions(context)),
-            ] else ...[
-              _buildBody(context),
-              _buildFooter(context),
+          return Column(
+            children: [
+              _buildHeader(context),
+              if (isNew) ...[
+                Expanded(child: _buildGreeting(context)),
+                _buildFooter(context),
+                Expanded(child: _buildSuggestions(context)),
+              ] else ...[
+                _buildBody(context),
+                _buildFooter(context),
+              ],
             ],
-          ],
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -151,57 +155,58 @@ class LoadChatMessageStatusReady extends StatelessWidget {
               onSelectionChanged: (content) =>
                   ChatTextSelection.instance.report(content?.plainText),
               child: ScrollConfiguration(
-              behavior: ScrollConfiguration.of(context).copyWith(
-                scrollbars: false,
-              ),
-              child: Chat(
-                chatController: chatController,
-                user: User(id: userProfile.id.toString()),
-                darkTheme: ChatTheme.fromThemeData(Theme.of(context)),
-                theme: ChatTheme.fromThemeData(Theme.of(context)),
-                builders: Builders(
-                  // we have a custom input builder, so we don't need the default one
-                  inputBuilder: (_) => const SizedBox.shrink(),
-                  textMessageBuilder: (
-                    context,
-                    message,
-                  ) =>
-                      TextMessageWidget(
-                    message: message,
-                    userProfile: userProfile,
-                    view: view,
-                    enableAnimation: enableAnimation,
-                  ),
-                  chatMessageBuilder: (
-                    context,
-                    message,
-                    animation,
-                    child,
-                  ) =>
-                      ChatMessage(
-                    message: message,
-                    padding: const EdgeInsets.symmetric(vertical: 18.0),
-                    child: child,
-                  ),
-                  scrollToBottomBuilder: (
-                    context,
-                    animation,
-                    onPressed,
-                  ) =>
-                      CustomScrollToBottom(
-                    animation: animation,
-                    onPressed: onPressed,
-                  ),
-                  chatAnimatedListBuilder: (
-                    context,
-                    scrollController,
-                    itemBuilder,
-                  ) =>
-                      ChatAnimationListWidget(
-                    userProfile: userProfile,
-                    scrollController: scrollController,
-                    itemBuilder: itemBuilder,
-                    enableReversedList: !enableAnimation,
+                behavior: ScrollConfiguration.of(context).copyWith(
+                  scrollbars: false,
+                ),
+                child: Chat(
+                  chatController: chatController,
+                  user: User(id: userProfile.id.toString()),
+                  darkTheme: ChatTheme.fromThemeData(Theme.of(context)),
+                  theme: ChatTheme.fromThemeData(Theme.of(context)),
+                  builders: Builders(
+                    // we have a custom input builder, so we don't need the default one
+                    inputBuilder: (_) => const SizedBox.shrink(),
+                    textMessageBuilder: (
+                      context,
+                      message,
+                    ) =>
+                        TextMessageWidget(
+                      message: message,
+                      userProfile: userProfile,
+                      view: view,
+                      enableAnimation: enableAnimation,
+                    ),
+                    chatMessageBuilder: (
+                      context,
+                      message,
+                      animation,
+                      child,
+                    ) =>
+                        ChatMessage(
+                      message: message,
+                      padding: const EdgeInsets.symmetric(vertical: 18.0),
+                      child: child,
+                    ),
+                    scrollToBottomBuilder: (
+                      context,
+                      animation,
+                      onPressed,
+                    ) =>
+                        CustomScrollToBottom(
+                      animation: animation,
+                      onPressed: onPressed,
+                    ),
+                    chatAnimatedListBuilder: (
+                      context,
+                      scrollController,
+                      itemBuilder,
+                    ) =>
+                        ChatAnimationListWidget(
+                      userProfile: userProfile,
+                      scrollController: scrollController,
+                      itemBuilder: itemBuilder,
+                      enableReversedList: !enableAnimation,
+                    ),
                   ),
                 ),
               ),
@@ -209,7 +214,6 @@ class LoadChatMessageStatusReady extends StatelessWidget {
           ),
         ),
       ),
-    ),
     );
   }
 

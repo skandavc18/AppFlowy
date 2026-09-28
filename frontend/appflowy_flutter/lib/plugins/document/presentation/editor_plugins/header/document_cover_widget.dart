@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
@@ -17,6 +18,8 @@ import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
+import 'package:appflowy/shared/page_icon.dart';
+import 'package:appflowy/shared/page_cover.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_action_row.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
@@ -93,6 +96,11 @@ class DocumentHeaderLayout extends StatelessWidget {
     this.cover,
     this.coverActions,
     this.actions,
+    this.coverView,
+    this.coverBinding,
+    this.coverEditable = false,
+    this.canResizeCover,
+    this.onCoverHeightChanged,
   });
 
   final EditorStyle editorStyle;
@@ -102,6 +110,11 @@ class DocumentHeaderLayout extends StatelessWidget {
   final Widget? cover;
   final Widget? coverActions;
   final Widget? actions;
+  final ViewPB? coverView;
+  final Object? coverBinding;
+  final bool coverEditable;
+  final bool Function()? canResizeCover;
+  final ValueChanged<double?>? onCoverHeightChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +127,11 @@ class DocumentHeaderLayout extends StatelessWidget {
       contentInset: 0,
       cover: cover,
       coverActions: coverActions,
+      coverView: coverView,
+      coverBinding: coverBinding,
+      coverEditable: coverEditable,
+      canResizeCover: canResizeCover,
+      onCoverHeightChanged: onCoverHeightChanged,
       overlapIcon: icon != null,
       identity: Padding(
         key: const ValueKey('document-page-identity'),
@@ -172,6 +190,8 @@ class DocumentCoverWidget extends StatefulWidget {
     required this.onIconChanged,
     required this.view,
     required this.tabs,
+    this.titleBuilder,
+    this.viewListenerFactory,
   });
 
   final Node node;
@@ -179,6 +199,10 @@ class DocumentCoverWidget extends StatefulWidget {
   final ValueChanged<EmojiIconData> onIconChanged;
   final ViewPB view;
   final List<PickerTabType> tabs;
+
+  /// Optional host boundaries; defaults retain the native title and listener.
+  final Widget Function(ViewPB view)? titleBuilder;
+  final ViewListener Function(String viewId)? viewListenerFactory;
 
   @override
   State<DocumentCoverWidget> createState() => _DocumentCoverWidgetState();
@@ -198,7 +222,7 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
 
   // Match DesktopCover's V1/V2 source selection. An explicit modern removal
   // wins over an old node attribute; do not keep a blank hero in its place.
-  bool get hasCover => view.extra.isEmpty
+  bool get hasCover => view.cover == null
       ? coverType != CoverType.none
       : cover != null && cover?.type != PageStyleCoverImageType.none;
 
@@ -208,7 +232,8 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
 
   PageStyleCover? cover;
   late ViewPB view;
-  late final ViewListener viewListener;
+  late ViewListener viewListener;
+  int _viewListenerGeneration = 0;
 
   final isCoverTitleHovered = ValueNotifier<bool>(false);
 
@@ -228,11 +253,20 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
     widget.node.addListener(_reload);
     widget.editorState.service.selectionService
         .registerGestureInterceptor(gestureInterceptor);
+    _bindViewListener();
+  }
 
-    viewListener = ViewListener(viewId: widget.view.id)
+  void _bindViewListener() {
+    final generation = ++_viewListenerGeneration;
+    final viewId = widget.view.id;
+    viewListener = (widget.viewListenerFactory?.call(widget.view.id) ??
+        ViewListener(viewId: widget.view.id))
       ..start(
         onViewUpdated: (updated) {
-          if (!mounted) return;
+          if (!mounted ||
+              generation != _viewListenerGeneration ||
+              updated.id != viewId ||
+              widget.view.id != viewId) return;
           setState(() {
             viewIcon = EmojiIconData.fromViewIconPB(updated.icon);
             cover = updated.cover;
@@ -245,6 +279,21 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
   @override
   void didUpdateWidget(covariant DocumentCoverWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.node != widget.node) {
+      oldWidget.node.removeListener(_reload);
+      widget.node.addListener(_reload);
+    }
+    if (oldWidget.editorState != widget.editorState) {
+      oldWidget.editorState.service.selectionService
+          .unregisterGestureInterceptor(_interceptorKey);
+      widget.editorState.service.selectionService
+          .registerGestureInterceptor(gestureInterceptor);
+    }
+    if (oldWidget.view.id != widget.view.id ||
+        oldWidget.viewListenerFactory != widget.viewListenerFactory) {
+      unawaited(viewListener.stop());
+      _bindViewListener();
+    }
     if (oldWidget.view != widget.view) {
       view = widget.view;
       viewIcon = EmojiIconData.fromViewIconPB(view.icon);
@@ -254,7 +303,8 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
 
   @override
   void dispose() {
-    viewListener.stop();
+    _viewListenerGeneration++;
+    unawaited(viewListener.stop());
     widget.node.removeListener(_reload);
     isCoverTitleHovered.dispose();
     widget.editorState.service.selectionService
@@ -277,6 +327,21 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
               _saveIconOrCover(cover: (type, details)),
           layoutBuilder: (image, coverActions) => DocumentHeaderLayout(
             editorStyle: widget.editorState.editorStyle,
+            coverView: view,
+            coverBinding: (
+              widget.editorState,
+              widget.node,
+              coverType,
+              coverDetails
+            ),
+            coverEditable: widget.editorState.editable,
+            canResizeCover: () =>
+                mounted && widget.editorState.editable && hasCover,
+            onCoverHeightChanged: (height) {
+              if (mounted && widget.editorState.editable) {
+                setState(() => view = PageCoverHeight.applyTo(view, height));
+              }
+            },
             cover: hasCover ? image : null,
             coverActions: coverActions.isEmpty
                 ? null
@@ -285,25 +350,16 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
                     runSpacing: WorkspaceTokens.space1,
                     children: coverActions,
                   ),
-            icon: hasIcon
-                ? DocumentIcon(
-                    editorState: widget.editorState,
-                    node: widget.node,
-                    icon: viewIcon,
-                    documentId: view.id,
-                    emojiSize: kTitleIconSize,
-                    opticalRole: IconOpticalRole.header,
-                    onChangeIcon: (icon) => _saveIconOrCover(icon: icon),
-                  )
-                : null,
+            icon: hasIcon ? _buildResizableIcon(optical: true) : null,
             title: ExcludeFocus(
               excluding: !widget.editorState.editable,
               child: IgnorePointer(
                 ignoring: !widget.editorState.editable,
-                child: CoverTitle(
-                  key: const ValueKey('document-cover-title'),
-                  view: widget.view,
-                ),
+                child: widget.titleBuilder?.call(widget.view) ??
+                    CoverTitle(
+                      key: const ValueKey('document-cover-title'),
+                      view: widget.view,
+                    ),
               ),
             ),
             iconActions: widget.editorState.editable
@@ -419,39 +475,65 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
       child: MouseRegion(
         onEnter: (event) => isCoverTitleHovered.value = true,
         onExit: (event) => isCoverTitleHovered.value = false,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (hasIcon) ...[
-              Padding(
-                padding: EdgeInsets.only(top: iconTopInset),
-                child: SizedBox.square(
-                  dimension: kTitleIconSize,
-                  child: DocumentIcon(
-                    editorState: widget.editorState,
-                    node: widget.node,
-                    icon: viewIcon,
-                    documentId: view.id,
-                    emojiSize: kTitleIconSize,
-                    onChangeIcon: (icon) => _saveIconOrCover(icon: icon),
+        child: LayoutBuilder(
+          builder: (context, constraints) => Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (hasIcon) ...[
+                Padding(
+                  padding: EdgeInsets.only(top: iconTopInset),
+                  child: _buildResizableIcon(
+                    maxSize: max(0.0, (constraints.maxWidth - 14) / 2),
                   ),
                 ),
-              ),
-              const SizedBox(width: 14),
-            ],
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(top: hasIcon ? titleTopInset : 0.0),
-                child: CoverTitle(
-                  view: widget.view,
+                const SizedBox(width: 14),
+              ],
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(top: hasIcon ? titleTopInset : 0.0),
+                  child: widget.titleBuilder?.call(widget.view) ??
+                      CoverTitle(view: widget.view),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
+
+  Widget _buildResizableIcon({
+    bool optical = false,
+    double maxSize = IconSize.maximum,
+  }) =>
+      ResizablePageIcon(
+        view: view,
+        binding: (widget.editorState, widget.node),
+        editable: widget.editorState.editable,
+        canResize: () => mounted && widget.editorState.editable && hasIcon,
+        isSameTarget: (fresh) => fresh.isDocument,
+        defaultSize: optical && isColorfulViewIcon(viewIcon)
+            ? IconOpticalSize.resolve(
+                role: IconOpticalRole.header,
+                baseSize: kTitleIconSize,
+              ).slotSize
+            : kTitleIconSize,
+        maxSize: maxSize,
+        onSizeChanged: (size) {
+          if (mounted && widget.editorState.editable) {
+            setState(() => view = IconSize.applyTo(view, size));
+          }
+        },
+        builder: (_, scale) => DocumentIcon(
+          editorState: widget.editorState,
+          node: widget.node,
+          icon: viewIcon,
+          documentId: view.id,
+          emojiSize: kTitleIconSize * scale,
+          opticalRole: optical ? IconOpticalRole.header : null,
+          onChangeIcon: (icon) => _saveIconOrCover(icon: icon),
+        ),
+      );
 
   void _reload() => setState(() {});
 
@@ -511,10 +593,12 @@ class _DocumentCoverWidgetState extends State<DocumentCoverWidget> {
     await widget.editorState.apply(transaction);
 
     // compatible with version > 0.5.5.
-    EditorMigration.migrateCoverIfNeeded(
-      view,
-      attributes,
-      overwrite: true,
+    unawaited(
+      EditorMigration.migrateCoverIfNeeded(
+        view,
+        attributes,
+        overwrite: true,
+      ),
     );
   }
 
@@ -741,9 +825,11 @@ class DocumentCover extends StatefulWidget {
 class DocumentCoverState extends State<DocumentCover> {
   final popoverController = PopoverController();
   VoidCallback? _releasePreview;
+  final _coverIdle = ValueNotifier(true);
 
   void _showCoverPicker(BuildContext context) {
     if (!widget.editorState.editable ||
+        !_coverIdle.value ||
         !widget.showCoverActions ||
         _releasePreview != null) {
       return;
@@ -774,6 +860,7 @@ class DocumentCoverState extends State<DocumentCover> {
 
   @override
   void dispose() {
+    _coverIdle.dispose();
     final release = _releasePreview;
     _releasePreview = null;
     if (release != null) {
@@ -784,9 +871,12 @@ class DocumentCoverState extends State<DocumentCover> {
 
   @override
   Widget build(BuildContext context) {
-    return UniversalPlatform.isDesktopOrWeb
-        ? _buildDesktopCover()
-        : _buildMobileCover();
+    return PageCoverInteractionGate(
+      allowed: _coverIdle,
+      child: UniversalPlatform.isDesktopOrWeb
+          ? _buildDesktopCover()
+          : _buildMobileCover(),
+    );
   }
 
   Widget _buildDesktopCover() {
@@ -807,17 +897,32 @@ class DocumentCoverState extends State<DocumentCover> {
             : <Widget>[];
         final layoutBuilder = widget.layoutBuilder;
         if (layoutBuilder != null) return layoutBuilder(image, actions);
-        return SizedBox(
-          height: kDesktopCoverHeight,
-          child: WorkspacePageCover(
-            image: image,
-            actions: actions.isEmpty
-                ? null
-                : Wrap(
-                    spacing: WorkspaceTokens.space1,
-                    runSpacing: WorkspaceTokens.space1,
-                    children: actions,
-                  ),
+        return PageCoverLayout(
+          width: constraints.maxWidth,
+          fallbackHeight: kDesktopCoverHeight,
+          view: widget.view,
+          binding: (
+            widget.editorState,
+            widget.node,
+            widget.coverType,
+            widget.coverDetails
+          ),
+          editable: widget.editorState.editable && widget.showCoverActions,
+          canResize: () =>
+              mounted && widget.editorState.editable && widget.showCoverActions,
+          builder: (context, height, grip) => SizedBox(
+            height: height,
+            child: WorkspacePageCover(
+              image: image,
+              resizeGrip: grip,
+              actions: actions.isEmpty
+                  ? null
+                  : Wrap(
+                      spacing: WorkspaceTokens.space1,
+                      runSpacing: WorkspaceTokens.space1,
+                      children: actions,
+                    ),
+            ),
           ),
         );
       },
@@ -1042,8 +1147,11 @@ class DocumentCoverState extends State<DocumentCover> {
 
   /// The picture currently painted behind the page title, when there is one to
   /// save. Covers written after 0.5.5 live on the view, older ones on the node.
+  @visibleForTesting
+  DownloadableCoverImage? get downloadableCover => _downloadableCover;
+
   DownloadableCoverImage? get _downloadableCover {
-    if (widget.view.extra.isNotEmpty) {
+    if (widget.view.cover != null) {
       return DownloadableCoverImage.fromPageStyleCover(widget.view.cover);
     }
 
@@ -1052,7 +1160,11 @@ class DocumentCoverState extends State<DocumentCover> {
       return null;
     }
     return switch (widget.coverType) {
-      CoverType.asset => DownloadableCoverImage.asset(details),
+      CoverType.asset => DownloadableCoverImage.asset(
+          details.startsWith('assets/')
+              ? details
+              : PageStyleCoverImageType.builtInImagePath(details),
+        ),
       CoverType.file => DownloadableCoverImage.resolve(details),
       CoverType.color || CoverType.none => null,
     };
@@ -1060,39 +1172,62 @@ class DocumentCoverState extends State<DocumentCover> {
 
   Future<void> _downloadCover() async {
     final cover = _downloadableCover;
-    if (cover == null) {
+    if (cover == null || !_coverIdle.value) {
       return;
     }
-    await downloadCoverImage(
-      cover,
-      userProfile: context.read<DocumentBloc>().state.userProfilePB,
-    );
+    _coverIdle.value = false;
+    try {
+      await downloadCoverImage(
+        cover,
+        userProfile: context.read<DocumentBloc>().state.userProfilePB,
+      );
+    } finally {
+      if (mounted) _coverIdle.value = true;
+    }
   }
 
   Future<void> onCoverChanged(CoverType type, String? details) async {
-    if (!widget.editorState.editable) return;
-    final previousType = CoverType.fromString(
-      widget.node.attributes[DocumentHeaderBlockKeys.coverType],
-    );
-    final previousDetails =
-        widget.node.attributes[DocumentHeaderBlockKeys.coverDetails];
+    if (!widget.editorState.editable || !_coverIdle.value) return;
+    final source = widget;
+    _coverIdle.value = false;
+    try {
+      final previousType = CoverType.fromString(
+        widget.node.attributes[DocumentHeaderBlockKeys.coverType],
+      );
+      final previousDetails =
+          widget.node.attributes[DocumentHeaderBlockKeys.coverDetails];
 
-    bool isFileType(CoverType type, String? details) =>
-        type == CoverType.file && details != null && !isURL(details);
+      bool isFileType(CoverType type, String? details) =>
+          type == CoverType.file && details != null && !isURL(details);
 
-    if (isFileType(type, details)) {
-      if (_isLocalMode()) {
-        details = await saveImageToLocalStorage(details!);
-      } else {
-        // else we should save the image to cloud storage
-        (details, _) = await saveImageToCloudStorage(details!, widget.view.id);
+      final localMode = (isFileType(type, details) ||
+              isFileType(previousType, previousDetails)) &&
+          _isLocalMode();
+
+      if (isFileType(type, details)) {
+        if (localMode) {
+          details = await saveImageToLocalStorage(details!);
+        } else {
+          // else we should save the image to cloud storage
+          (details, _) =
+              await saveImageToCloudStorage(details!, source.view.id);
+        }
       }
-    }
-    widget.onChangeCover(type, details);
+      if (!mounted ||
+          !widget.editorState.editable ||
+          widget.view.isLocked ||
+          widget.view.id != source.view.id ||
+          widget.node != source.node ||
+          widget.editorState != source.editorState ||
+          !samePageCoverSource(source.view, widget.view)) return;
+      widget.onChangeCover(type, details);
 
-    // After cover change,delete from localstorage if previous cover was image type
-    if (isFileType(previousType, previousDetails) && _isLocalMode()) {
-      await deleteImageFromLocalStorage(previousDetails);
+      // After cover change,delete from localstorage if previous cover was image type
+      if (isFileType(previousType, previousDetails) && localMode) {
+        await deleteImageFromLocalStorage(previousDetails);
+      }
+    } finally {
+      if (mounted) _coverIdle.value = true;
     }
   }
 

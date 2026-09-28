@@ -2,15 +2,23 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/collection/views/book/book_chapter_stage.dart';
+import 'package:appflowy/plugins/collection/views/book/book_reader_palette.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_ocr_search.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_page_turn.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_theme.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_toolbar.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_view_options.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_result.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/workspace/application/collections/book/book_chapter.dart';
+import 'package:appflowy/workspace/application/collections/book/book_reading_state.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -35,6 +43,7 @@ import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'test_asset_bundle.dart';
+import 'file_controls_test_support.dart' show fileControlView;
 
 const _query = ValueKey('pdf-search-field');
 const _pageInput = ValueKey('pdf-page-number-field');
@@ -312,6 +321,87 @@ void main() {
     }
   }
 
+  for (final layout in PdfPageLayoutMode.values) {
+    for (final presentation in ['normal', 'fullscreen', 'bare']) {
+      _test(
+          '$presentation ${layout.name}: delayed all-page totals and last-page navigation',
+          (tester) async {
+        final pdf = await _Fixture.prepare(
+            factory,
+            'totals-${layout.name}-$presentation',
+            ['needle needle', 'other needle', 'last needle needle']);
+        final host = _Host();
+        final lastPage = Completer<void>();
+        pdf.document.pages.last.textGate = lastPage.future;
+        try {
+          await _mount(
+              tester,
+              pdf.preview(
+                bare: presentation == 'bare',
+                fullscreen: presentation == 'fullscreen',
+                metadata: {'layoutMode': layout.name, 'pageTransition': 'none'},
+              ),
+              host,
+              mode: 'paper',
+              reduced: true);
+          await _ready(tester);
+          final viewer = tester.state(find.byType(PdfViewer));
+          final controller = _viewer(tester);
+          unawaited(
+              controller.goToPage(pageNumber: 3, duration: Duration.zero));
+          await _until(tester, () => controller.pageNumber == 3);
+          // Real key routing, also for the chrome-less book reading.
+          Focus.of(tester.element(find.byType(PdfViewer))).requestFocus();
+          await tester.pump();
+          await _controlF(tester);
+          await tester.enterText(_queryInput, 'needle');
+          await _until(tester, () => _bar(tester).matchCount == 3);
+          expect(_bar(tester).isSearching, isTrue);
+          expect(_bar(tester).searchProgress, closeTo(2 / 3, 0.001));
+          expect(_bar(tester).statusOverride,
+              '3 matches so far · Searching all 3 pages (2/3)');
+          expect(find.text(_bar(tester).statusOverride!), findsOneWidget);
+          expect(_bar(tester).currentMatch, 0);
+          expect(controller.pageNumber, 3,
+              reason:
+                  'Partial earlier results must not steal the starting page');
+          lastPage.complete();
+          await _settledSearch(tester, 5);
+          expect(_bar(tester).statusOverride, isNull);
+          expect(_bar(tester).currentMatch, 4);
+          expect(controller.pageNumber, 3);
+          for (final (index, page) in [
+            (5, 3),
+            (1, 1),
+            (2, 1),
+            (3, 2),
+            (4, 3)
+          ]) {
+            await tester.tap(find.byKey(const ValueKey('findNextMatch')));
+            await _motion(tester);
+            expect(_bar(tester).matchCount, 5);
+            expect(_bar(tester).currentMatch, index);
+            expect(controller.pageNumber, page);
+          }
+          await tester.tap(find.byKey(const ValueKey('findPreviousMatch')));
+          await _motion(tester);
+          expect(_bar(tester).currentMatch, 3);
+          expect(controller.pageNumber, 2);
+          expect(tester.state(find.byType(PdfViewer)), same(viewer));
+          expect(factory.opened, [pdf.file.path]);
+          expect(pdf.scanCalls, isEmpty);
+          pdf.expectNoOriginalIO();
+          expect(tester.takeException(), isNull);
+        } finally {
+          if (!lastPage.isCompleted) lastPage.complete();
+          await _unmount(tester);
+          pdf.release();
+          host.dispose();
+        }
+      });
+    }
+  }
+
   _test('native PDF text selection after an outside field still owns Ctrl+F',
       (tester) async {
     final pdf =
@@ -429,12 +519,20 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
       await _motion(tester);
       expect(_bar(tester).currentMatch, 1);
-      await tester.tap(find.byTooltip('Previous match (Shift Enter)'));
+      await tester.tap(find.byKey(const ValueKey('findPreviousMatch')));
       await _motion(tester);
       expect(_bar(tester).currentMatch, 3, reason: 'Navigation wraps');
 
-      await tester.tap(find.byKey(_query));
+      // _query keys the whole shared bar. At 420px its center is an option
+      // toggle, not the editable field; tapping it would restart the query.
+      final options = _bar(tester).options;
+      expect(_queryInput, findsOneWidget);
+      await tester.tap(_queryInput);
       await tester.pump();
+      expect(_bar(tester).options, options);
+      expect(_bar(tester).currentMatch, 3);
+      expect(_bar(tester).controller.text, 'alpha');
+      expect(_bar(tester).focusNode.hasPrimaryFocus, isTrue);
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await _motion(tester);
       expect(
@@ -469,7 +567,8 @@ void main() {
       await _settledSearch(tester, 1);
       await tester.enterText(find.byKey(_query), '^');
       await _settledSearch(tester, 0);
-      expect(find.text('No results'), findsOneWidget);
+      expect(
+          find.text(LocaleKeys.findAndReplace_noResult.tr()), findsOneWidget);
       await tester.enterText(find.byKey(_query), '');
       await tester.pump();
       expect(find.text('Type to search'), findsOneWidget);
@@ -479,6 +578,86 @@ void main() {
       expect(tester.takeException(), isNull);
     } finally {
       await _unmount(tester);
+      pdf.release();
+      host.dispose();
+    }
+  });
+
+  _test('reduced-motion PDF resize retains its viewer and open Find draft',
+      (tester) async {
+    final pdf = await _Fixture.prepare(
+        factory, 'reduced-find-resize', ['Needle needle']);
+    final host = _Host();
+    final width = ValueNotifier(980.0);
+    final child = ValueListenableBuilder<double>(
+      valueListenable: width,
+      builder: (_, value, __) => Align(
+        child: SizedBox(width: value, child: pdf.preview()),
+      ),
+    );
+    try {
+      await _mount(tester, child, host, mode: 'paper', reduced: true);
+      await _ready(tester);
+      final preview = tester.state(find.byType(PdfPreview));
+      final viewer = tester.state(find.byType(PdfViewer));
+      final controller = _viewer(tester);
+      expect(tester.takeException(), isNull);
+
+      // A hidden search wrapper must also tolerate a changed viewport width.
+      width.value = 420;
+      await _motion(tester);
+      expect(find.byType(PdfSearchToolbar), findsNothing);
+      expect(tester.state(find.byType(PdfViewer)), same(viewer));
+      expect(tester.takeException(), isNull);
+      final closedBounds = tester.getRect(find.byType(PdfViewer));
+
+      await _open(tester);
+      await tester.enterText(_queryInput, 'needle');
+      await _settledSearch(tester, 2);
+      final field = tester.widget<TextField>(_queryInput);
+      final editable = find.descendant(
+        of: _queryInput,
+        matching: find.byType(EditableText),
+      );
+      final editor = tester.state<EditableTextState>(editable);
+      const draft = TextEditingValue(
+        text: 'needle',
+        selection: TextSelection(baseOffset: 1, extentOffset: 4),
+        composing: TextRange(start: 0, end: 6),
+      );
+      tester.testTextInput.updateEditingValue(draft);
+      await tester.pump();
+      for (final available in [240.0, 980.0, 420.0]) {
+        width.value = available;
+        await _motion(tester);
+        expect(tester.state(find.byType(PdfPreview)), same(preview));
+        expect(tester.state(find.byType(PdfViewer)), same(viewer));
+        expect(_viewer(tester), same(controller));
+        expect(tester.state<EditableTextState>(editable), same(editor));
+        expect(tester.widget<TextField>(_queryInput).controller,
+            same(field.controller));
+        expect(field.controller!.value, draft);
+        expect(field.focusNode!.hasPrimaryFocus, isTrue);
+        expect(_bar(tester).matchCount, 2);
+        expect(
+          tester.getRect(find.byType(PdfSearchToolbar)).bottom,
+          lessThanOrEqualTo(tester.getRect(find.byType(PdfViewer)).top),
+        );
+        expect(tester.takeException(), isNull);
+      }
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape,
+          physicalKey: PhysicalKeyboardKey.escape);
+      await _motion(tester);
+      expect(find.byType(PdfSearchToolbar), findsNothing);
+      expect(tester.getRect(find.byType(PdfViewer)), closedBounds);
+      expect(tester.state(find.byType(PdfViewer)), same(viewer));
+      expect(_viewer(tester), same(controller));
+      expect(factory.opened, [pdf.file.path]);
+      pdf.expectNoOriginalIO();
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _unmount(tester);
+      width.dispose();
       pdf.release();
       host.dispose();
     }
@@ -549,7 +728,7 @@ void main() {
       await tester.enterText(find.byKey(_query), 'absent');
       await tester.pump(const Duration(milliseconds: 400));
       expect(_bar(tester).isSearching, isTrue);
-      expect(find.text('No results'), findsNothing);
+      expect(find.text(LocaleKeys.findAndReplace_noResult.tr()), findsNothing);
       expect(pdf.scanCalls, isEmpty);
       await tester.enterText(find.byKey(_query), 'Alpha');
       await tester.pump(const Duration(milliseconds: 400));
@@ -670,7 +849,7 @@ void main() {
       expect(pdf.scanCalls, [3]);
       expect(_bar(tester).ocrEnabled, isTrue);
       expect(_bar(tester).isSearching, isTrue);
-      expect(find.text('No results'), findsNothing);
+      expect(find.text(LocaleKeys.findAndReplace_noResult.tr()), findsNothing);
       final page = controller.layout.pageLayouts[2];
       final hit = Rect.fromLTWH(
         page.left + page.width * 0.68,
@@ -736,11 +915,11 @@ void main() {
       await _motion(tester);
       expect(clipboard, ['NaTiVe']);
       expect(find.byType(PdfSearchToolbar), findsOneWidget);
-      await tester.tap(find.byTooltip('Next match (Enter)'));
+      await tester.tap(find.byKey(const ValueKey('findNextMatch')));
       await _motion(tester);
       expect(_bar(tester).currentMatch, 1);
       expect(_toolbar(tester).currentPage, 1);
-      await tester.tap(find.byTooltip('Previous match (Shift Enter)'));
+      await tester.tap(find.byKey(const ValueKey('findPreviousMatch')));
       await _motion(tester);
       expect(_bar(tester).currentMatch, 2);
       expect(_toolbar(tester).currentPage, 3);
@@ -748,7 +927,8 @@ void main() {
       await _settledSearch(tester, 2);
       await tester.enterText(find.byKey(_query), 'genuine-empty');
       await _settledSearch(tester, 0);
-      expect(find.text('No results'), findsOneWidget);
+      expect(
+          find.text(LocaleKeys.findAndReplace_noResult.tr()), findsOneWidget);
       expect(pdf.scanCalls, [3, 2]);
       expect(pdf.indexCreations, 1);
       expect(
@@ -995,7 +1175,7 @@ void main() {
       );
       expect(_bar(tester).isSearching, isFalse);
       expect(_bar(tester).matchCount, 9);
-      expect(find.text('No results'), findsNothing);
+      expect(find.text(LocaleKeys.findAndReplace_noResult.tr()), findsNothing);
       expect(pdf.scanCalls, isEmpty);
       pdf.document.pages.last.textFailure = null;
       await tester.enterText(find.byKey(_query), 'Alpha');
@@ -1010,19 +1190,435 @@ void main() {
     }
   });
 
+  _test('presets retain PDF/controller/page-field state and write one snapshot',
+      (tester) async {
+    final pdf = await _Fixture.prepare(
+        factory, 'presets', ['One', 'Two', 'Three', 'Four']);
+    final host = _Host();
+    try {
+      await _mount(tester, pdf.preview(), host);
+      await _ready(tester);
+      final preview = tester.state(find.byType(PdfPreview));
+      final viewer = tester.state(find.byType(PdfViewer));
+      final controller = _viewer(tester);
+      final ref = tester.widget<PdfViewer>(find.byType(PdfViewer)).documentRef;
+      await tester.enterText(find.byKey(_pageInput), '2');
+      final field = tester.widget<TextField>(find.byKey(_pageInput));
+      final draft = field.controller!.value;
+      var writes = 0;
+      for (final preset in [
+        PdfViewPreset.book,
+        PdfViewPreset.singlePageFade,
+        PdfViewPreset.horizontal,
+        PdfViewPreset.singlePage,
+        PdfViewPreset.continuous,
+      ]) {
+        tester
+            .widget<PdfViewOptionsMenu>(find.byType(PdfViewOptionsMenu))
+            .onPresetChanged(preset);
+        expect(pdf.metadataWrites, hasLength(++writes));
+        expect(pdf.metadataWrites.last['layoutMode'], preset.layoutMode.name);
+        expect(
+            pdf.metadataWrites.last['pageTransition'], preset.transition.name);
+        await _motion(tester);
+        await tester.pump();
+        expect(tester.state(find.byType(PdfPreview)), same(preview));
+        expect(tester.state(find.byType(PdfViewer)), same(viewer));
+        expect(_viewer(tester), same(controller));
+        expect(tester.widget<PdfViewer>(find.byType(PdfViewer)).documentRef,
+            same(ref));
+        expect(tester.widget<TextField>(find.byKey(_pageInput)).controller,
+            same(field.controller));
+        expect(field.controller!.value, draft);
+        expect(field.focusNode!.hasPrimaryFocus, isTrue);
+        tester
+            .widget<PdfViewOptionsMenu>(find.byType(PdfViewOptionsMenu))
+            .onPresetChanged(preset);
+        expect(pdf.metadataWrites, hasLength(writes),
+            reason: 'Reselecting is a no-op');
+      }
+      expect(factory.opened, [pdf.file.path]);
+      expect(pdf.file.reads, 0);
+      expect(pdf.file.writes, 0);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _unmount(tester);
+      pdf.release();
+      host.dispose();
+    }
+  });
+
+  _test('high-DPI inner PDF keyboard navigation paints a real bounded curl',
+      (tester) async {
+    final pdf = await _Fixture.prepare(
+        factory, 'high-dpi-curl', ['One', 'Two', 'Three']);
+    final host = _Host();
+    try {
+      await _mount(
+        tester,
+        pdf.preview(metadata: const {
+          'layoutMode': 'pageBreak',
+          'pageTransition': 'flip'
+        }),
+        host,
+        dpr: 6,
+      );
+      await _ready(tester);
+      final viewer = tester.state(find.byType(PdfViewer));
+      final controller = _viewer(tester);
+      final selection = tester.widget<SelectableRegion>(
+        find.descendant(
+            of: find.byType(PdfViewer),
+            matching: find.byType(SelectableRegion)),
+      );
+      selection.focusNode.requestFocus();
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.pageDown,
+          physicalKey: PhysicalKeyboardKey.pageDown);
+      await _until(tester, () => _curl.evaluate().isNotEmpty);
+      final painter =
+          tester.widget<CustomPaint>(_curl).painter! as PageTurnPainter;
+      expect(painter.scene.leafRect.width * 6, greaterThan(1600 / 0.78));
+      expect(pdf.document.pages.expand((page) => page.curlWidths),
+          everyElement(lessThanOrEqualTo(1600)));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(
+          (tester.widget<CustomPaint>(_curl).painter! as PageTurnPainter)
+              .progress,
+          greaterThan(0));
+      await _until(tester,
+          () => _toolbar(tester).currentPage == 2 && _curl.evaluate().isEmpty);
+      expect(tester.state(find.byType(PdfViewer)), same(viewer));
+      expect(_viewer(tester), same(controller));
+      expect(factory.opened, [pdf.file.path]);
+      pdf.expectNoOriginalIO();
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _unmount(tester);
+      pdf.release();
+      host.dispose();
+    }
+  });
+
+  _test(
+      'changing mode during a live curl cancels its commit, not the next turn',
+      (tester) async {
+    final pdf = await _Fixture.prepare(
+        factory, 'cancel-live-curl', ['One', 'Two', 'Three']);
+    final host = _Host();
+    try {
+      await _mount(
+        tester,
+        pdf.preview(metadata: const {
+          'layoutMode': 'pageBreak',
+          'pageTransition': 'flip'
+        }),
+        host,
+      );
+      await _ready(tester);
+      final viewer = tester.state(find.byType(PdfViewer));
+      final controller = _viewer(tester);
+      _toolbar(tester).onPageSubmitted(2);
+      await _until(tester, () => _curl.evaluate().isNotEmpty);
+      await tester.pump(const Duration(milliseconds: 80));
+      tester
+          .widget<PdfViewOptionsMenu>(find.byType(PdfViewOptionsMenu))
+          .onPresetChanged(PdfViewPreset.singlePageFade);
+      await tester.pump();
+      expect(_curl, findsNothing);
+      expect(_toolbar(tester).currentPage, 1);
+      _toolbar(tester).onPageSubmitted(3);
+      await _until(tester, () => _toolbar(tester).currentPage == 3);
+      await tester.pump(const Duration(seconds: 1));
+      expect(_toolbar(tester).currentPage, 3);
+      expect(tester.state(find.byType(PdfViewer)), same(viewer));
+      expect(_viewer(tester), same(controller));
+      expect(pdf.metadataWrites, hasLength(1));
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _unmount(tester);
+      pdf.release();
+      host.dispose();
+    }
+  });
+
+  _test(
+      'mode change rejects a pending raster turn without unlocking a newer fade',
+      (tester) async {
+    final pdf = await _Fixture.prepare(
+        factory, 'cancel-raster', ['One', 'Two', 'Three', 'Four']);
+    final host = _Host();
+    final gate = Completer<void>();
+    for (final page in pdf.document.pages) {
+      page.curlGate = gate.future;
+    }
+    try {
+      await _mount(
+        tester,
+        pdf.preview(metadata: const {
+          'layoutMode': 'pageBreak',
+          'pageTransition': 'flip'
+        }),
+        host,
+      );
+      await _ready(tester);
+      _toolbar(tester).onPageSubmitted(2);
+      await tester.pump();
+      expect(pdf.document.pages.first.curlWidths, isNotEmpty);
+      tester
+          .widget<PdfViewOptionsMenu>(find.byType(PdfViewOptionsMenu))
+          .onPresetChanged(PdfViewPreset.singlePageFade);
+      await tester.pump();
+      _toolbar(tester).onPageSubmitted(4);
+      gate.complete();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(_toolbar(tester).currentPage, 1);
+      expect(_curl, findsNothing);
+      _toolbar(tester).onPageSubmitted(3); // Must still be busy with page 4.
+      await _until(tester, () => _toolbar(tester).currentPage == 4);
+      await tester.pump(const Duration(seconds: 1));
+      expect(_toolbar(tester).currentPage, 4);
+      expect(pdf.metadataWrites, hasLength(1));
+      expect(tester.takeException(), isNull);
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      await _unmount(tester);
+      pdf.release();
+      host.dispose();
+    }
+  });
+
+  _test('same-reference document replacement rejects the old curl commit',
+      (tester) async {
+    final pdf = await _Fixture.prepare(
+        factory, 'curl-replacement', ['One', 'Two', 'Three']);
+    final host = _Host();
+    final gate = Completer<void>();
+    for (final page in pdf.document.pages) {
+      page.curlGate = gate.future;
+    }
+    try {
+      await _mount(
+        tester,
+        pdf.preview(metadata: const {
+          'layoutMode': 'pageBreak',
+          'pageTransition': 'flip'
+        }),
+        host,
+      );
+      await _ready(tester);
+      final viewer = tester.state(find.byType(PdfViewer));
+      final controller = _viewer(tester);
+      _toolbar(tester).onPageSubmitted(2);
+      await tester.pump();
+      final replacement =
+          _Document(pdf.file.path, raster, ['New one', 'New two', 'New three']);
+      pdf.ref.resolveListenable().setDocument(replacement);
+      await _ready(tester, expectedDocument: replacement);
+      tester
+          .widget<PdfViewOptionsMenu>(find.byType(PdfViewOptionsMenu))
+          .onPresetChanged(PdfViewPreset.continuous);
+      await _motion(tester);
+      _toolbar(tester).onPageSubmitted(3);
+      await _until(tester, () => _toolbar(tester).currentPage == 3);
+      gate.complete();
+      await _motion(tester);
+      await tester.pump(const Duration(seconds: 1));
+      expect(_toolbar(tester).currentPage, 3);
+      expect(_curl, findsNothing);
+      expect(tester.state(find.byType(PdfViewer)), same(viewer));
+      expect(_viewer(tester), same(controller));
+      expect(factory.opened, [pdf.file.path]);
+      expect(tester.takeException(), isNull);
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      await _unmount(tester);
+      pdf.release();
+      host.dispose();
+    }
+  });
+
+  for (final transition in ['slide', 'fade', 'flip']) {
+    _test('reduced motion skips $transition without rewriting the chosen mode',
+        (tester) async {
+      final pdf = await _Fixture.prepare(
+          factory, 'reduced-$transition', ['One', 'Two']);
+      final host = _Host();
+      try {
+        await _mount(
+          tester,
+          pdf.preview(metadata: {
+            'layoutMode': 'pageBreak',
+            'pageTransition': transition
+          }),
+          host,
+          reduced: true,
+        );
+        await _ready(tester);
+        _toolbar(tester).onPageSubmitted(2);
+        await tester.pump();
+        await tester.pump();
+        expect(_toolbar(tester).currentPage, 2);
+        expect(_curl, findsNothing);
+        final opacity = tester.widget<Opacity>(
+          find
+              .ancestor(
+                  of: find.byType(PdfViewer), matching: find.byType(Opacity))
+              .first,
+        );
+        expect(opacity.opacity, 1);
+        expect(pdf.document.pages.expand((page) => page.curlWidths), isEmpty);
+        pdf.expectNoOriginalIO();
+        expect(tester.takeException(), isNull);
+      } finally {
+        await _unmount(tester);
+        pdf.release();
+        host.dispose();
+      }
+    });
+  }
+
+  for (final mode in _modes) {
+    _test(
+        '$mode bare reader Find beats collection fallback and reveals native matches',
+        (tester) async {
+      final pdf = await _Fixture.prepare(
+          factory, 'bare-find-$mode', ['Chapter one', 'Needle needle', 'End']);
+      final host = _Host();
+      try {
+        await _mount(tester, pdf.preview(bare: true), host, mode: mode);
+        await _ready(tester);
+        final viewer = tester.state(find.byType(PdfViewer));
+        final controller = _viewer(tester);
+        final normalBounds = tester.getRect(find.byType(PdfViewer));
+        expect(find.byType(PdfPreviewToolbar), findsNothing);
+        expect(find.byType(FindReplaceBar), findsNothing);
+        host.outerFocus.requestFocus();
+        await tester.pump();
+        await _controlF(
+            tester); // No hover/autofocus required for the active chapter.
+        expect(host.finds, 0);
+        expect(find.byType(FindReplaceBar), findsOneWidget);
+        expect(find.byType(PdfPreviewToolbar), findsNothing);
+        final zoom = controller.currentZoom;
+        await tester.enterText(find.byKey(_query), 'needle');
+        await _settledSearch(tester, 2);
+        await _motion(tester);
+        expect(controller.pageNumber, 2);
+        final page = controller.layout.pageLayouts[1];
+        expect(
+          page.contains(controller.visibleRect.center),
+          isTrue,
+          reason:
+              'Find must reveal this page, not a sliver below its neighbour',
+        );
+        expect(controller.currentZoom, closeTo(zoom, 0.001));
+        final hit = Offset(page.left + 50, page.top + 48);
+        expect(controller.visibleRect.contains(hit), isTrue);
+        final palette =
+            PdfPreviewPalette.of(tester.element(find.byType(PdfPreview)));
+        final painted =
+            await _pixelAt(tester, controller.documentToGlobal(hit)!);
+        final expected = Color.alphaBlend(palette.activeSearchMatch, _paper);
+        expect(painted.r, closeTo(expected.r, 2 / 255));
+        expect(painted.g, closeTo(expected.g, 2 / 255));
+        expect(painted.b, closeTo(expected.b, 2 / 255));
+        await tester.testTextInput.receiveAction(TextInputAction.search);
+        await _motion(tester);
+        expect(_bar(tester).currentMatch, 2);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape,
+            physicalKey: PhysicalKeyboardKey.escape);
+        await _motion(tester);
+        expect(find.byType(FindReplaceBar), findsNothing);
+        expect(find.byType(PdfPreviewToolbar), findsNothing);
+        expect(tester.getRect(find.byType(PdfViewer)), normalBounds);
+        expect(tester.state(find.byType(PdfViewer)), same(viewer));
+        expect(_viewer(tester), same(controller));
+        pdf.expectNoOriginalIO();
+        expect(tester.takeException(), isNull);
+      } finally {
+        await _unmount(tester);
+        pdf.release();
+        host.dispose();
+      }
+    });
+  }
+
+  _test('BookChapterStage settings update the retained bare PDF immediately',
+      (tester) async {
+    final pdf = await _Fixture.prepare(
+        factory, 'book-settings', ['One', 'Two', 'Three']);
+    final host = _Host();
+    final settings = ValueNotifier(
+        const BookReaderSettings(transition: BookPageTransition.none));
+    final chapter = BookChapter(
+      view: fileControlView('book-chapter', 'Chapter.pdf', pdf.file.path),
+      kind: BookChapterKind.pdf,
+      index: 0,
+    );
+    try {
+      await _mount(
+        tester,
+        ValueListenableBuilder<BookReaderSettings>(
+          valueListenable: settings,
+          builder: (context, settings, _) => BookChapterStage(
+            chapter: chapter,
+            palette: BookReaderPalette.of(context, settings.theme),
+            settings: settings,
+            onProgress: (_) {},
+            onReachedEnd: () {},
+          ),
+        ),
+        host,
+      );
+      await _ready(tester);
+      final preview = tester.state(find.byType(PdfPreview));
+      final viewer = tester.state(find.byType(PdfViewer));
+      final controller = _viewer(tester);
+      final original = controller.layout.pageLayouts;
+      expect(original[1].top, greaterThan(original[0].bottom));
+      settings.value = settings.value.copyWith(flow: BookReaderFlow.horizontal);
+      await _motion(tester);
+      final horizontal = controller.layout.pageLayouts;
+      expect(horizontal[0].center.dy, horizontal[1].center.dy);
+      expect(horizontal[1].left, greaterThan(horizontal[0].right));
+      settings.value = settings.value.copyWith(
+        flow: BookReaderFlow.paged,
+        transition: BookPageTransition.curl,
+      );
+      await _motion(tester);
+      expect(
+          controller.layout.pageLayouts[1].top, greaterThan(original[1].top));
+      expect(tester.state(find.byType(PdfPreview)), same(preview));
+      expect(tester.state(find.byType(PdfViewer)), same(viewer));
+      expect(_viewer(tester), same(controller));
+      expect(find.byType(PdfPreviewToolbar), findsNothing);
+      await _controlF(tester);
+      expect(find.byType(FindReplaceBar), findsOneWidget);
+      expect(host.finds, 0);
+      expect(factory.opened, [pdf.file.path]);
+      pdf.expectNoOriginalIO();
+      expect(tester.takeException(), isNull);
+    } finally {
+      await _unmount(tester);
+      settings.dispose();
+      pdf.release();
+      host.dispose();
+    }
+  });
+
   for (final bare in [true, false]) {
     _test(
-        '${bare ? 'bare' : 'unreadable'} PDF does not swallow the outer document find shortcut',
+        '${bare ? 'bare' : 'normal'} unreadable PDF does not swallow outer find',
         (tester) async {
       final pdf =
           await _Fixture.prepare(factory, 'ineligible-$bare', ['Alpha']);
       final host = _Host();
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-      if (!bare) {
-        pdf.ref
-            .resolveListenable()
-            .setError(const PdfException('Synthetic unreadable PDF'));
-      }
+      pdf.ref
+          .resolveListenable()
+          .setError(const PdfException('Synthetic unreadable PDF'));
       try {
         await _mount(tester, pdf.preview(bare: bare), host);
         await mouse.addPointer(
@@ -1082,6 +1678,8 @@ Future<void> _mount(
   _Host host, {
   String mode = 'light',
   double scale = 1,
+  double dpr = 1,
+  bool reduced = false,
 }) async {
   await tester.binding.setSurfaceSize(const Size(1100, 850));
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1107,8 +1705,11 @@ Future<void> _mount(
               brightness: theme.brightness,
             ),
             child: MediaQuery(
-              data: MediaQuery.of(context)
-                  .copyWith(textScaler: TextScaler.linear(scale)),
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(scale),
+                devicePixelRatio: dpr,
+                disableAnimations: reduced,
+              ),
               child: TooltipVisibility(visible: false, child: navigator!),
             ),
           ),
@@ -1197,7 +1798,12 @@ Future<void> _until(WidgetTester tester, bool Function() condition) async {
 Future<void> _ready(WidgetTester tester, {PdfDocument? expectedDocument}) =>
     _until(tester, () {
       final viewer = _viewer(tester);
-      if (!_toolbar(tester).ready || !viewer.isReady) return false;
+      final region = tester.widget<ContextualFindRegion>(
+        find.descendant(
+            of: find.byType(PdfPreview),
+            matching: find.byType(ContextualFindRegion)),
+      );
+      if (!region.enabled || !viewer.isReady) return false;
       if (expectedDocument == null) return true;
       // useDocument reads the ref's cache, not the viewer's attached handle.
       // This assertion specifically verifies pdfrx accepted the replacement.
@@ -1223,16 +1829,29 @@ PdfSearchToolbar _bar(WidgetTester tester) =>
 PdfViewerController _viewer(WidgetTester tester) =>
     tester.widget<PdfViewer>(find.byType(PdfViewer)).controller!;
 
+Finder get _queryInput => find.descendant(
+      of: find.byKey(_query),
+      matching: find.byKey(const ValueKey('findTextField')),
+    );
+
+Finder get _curl => find.byWidgetPredicate(
+      (widget) => widget is CustomPaint && widget.painter is PageTurnPainter,
+    );
+
 Future<void> _open(WidgetTester tester) async {
+  await tester.ensureVisible(find.byTooltip('Search document (Ctrl/Cmd F)'));
   await tester.tap(find.byTooltip('Search document (Ctrl/Cmd F)'));
   await _motion(tester);
   expect(find.byType(PdfSearchToolbar), findsOneWidget);
 }
 
 Future<void> _controlF(WidgetTester tester) async {
-  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-  await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
-  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+  await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft,
+      physicalKey: PhysicalKeyboardKey.controlLeft);
+  await tester.sendKeyEvent(LogicalKeyboardKey.keyF,
+      physicalKey: PhysicalKeyboardKey.keyF);
+  await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft,
+      physicalKey: PhysicalKeyboardKey.controlLeft);
   await _motion(tester);
 }
 
@@ -1349,13 +1968,19 @@ class _Fixture {
     return _Fixture(file, ref, document, release);
   }
 
-  PdfPreview preview({bool bare = false}) => PdfPreview(
+  PdfPreview preview({
+    bool bare = false,
+    bool fullscreen = false,
+    Map<String, dynamic> metadata = const {'pageTransition': 'none'},
+  }) =>
+      PdfPreview(
         file: file,
         name: 'Search fixture.pdf',
-        metadata: const {'pageTransition': 'none'},
+        metadata: metadata,
         onMetadataChanged: metadataWrites.add,
         editable: false,
         bare: bare,
+        fullscreen: fullscreen,
         sourceDocumentRef: ref,
         ocrIndexFactory: () {
           indexCreations++;
@@ -1442,6 +2067,8 @@ class _Page extends PdfPage {
   final ui.Image raster;
   final String text;
   Future<void>? textGate;
+  Future<void>? curlGate;
+  final curlWidths = <double>[];
   Object? textFailure;
   @override
   final int pageNumber;
@@ -1474,8 +2101,13 @@ class _Page extends PdfPage {
     PdfAnnotationRenderingMode annotationRenderingMode =
         PdfAnnotationRenderingMode.annotationAndForms,
     PdfPageRenderCancellationToken? cancellationToken,
-  }) async =>
-      cancellationToken?.isCanceled == true ? null : _Bitmap(raster);
+  }) async {
+    if (cancellationToken == null) {
+      curlWidths.add(fullWidth!);
+      if (curlGate != null) await curlGate;
+    }
+    return cancellationToken?.isCanceled == true ? null : _Bitmap(raster);
+  }
 }
 
 class _Cancellation extends PdfPageRenderCancellationToken {

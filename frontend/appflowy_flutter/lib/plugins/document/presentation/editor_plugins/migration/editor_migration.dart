@@ -3,13 +3,17 @@ import 'dart:convert';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
+import 'package:appflowy/workspace/application/view/view_cover_service.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy_backend/log.dart';
+import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_editor/appflowy_editor.dart'
     hide QuoteBlockComponentBuilder, quoteNode, QuoteBlockKeys;
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
+import 'package:appflowy_result/appflowy_result.dart';
 import 'package:collection/collection.dart';
 import 'package:string_validator/string_validator.dart';
 
@@ -176,12 +180,18 @@ class EditorMigration {
 
   // Before version 0.5.5, the cover is stored in the document root.
   // Now, the cover is stored in the view.ext.
-  static void migrateCoverIfNeeded(
+  static Future<void> migrateCoverIfNeeded(
     ViewPB view,
     Attributes attributes, {
     bool overwrite = false,
+    Future<FlowyResult<ViewPB, FlowyError>> Function(String) readView =
+        ViewBackendService.getView,
+    Future<FlowyResult<void, FlowyError>> Function({
+      required ViewPB view,
+      required PageStyleCover cover,
+    }) writeCover = ViewCoverService.updateCover,
   }) async {
-    if (view.extra.isNotEmpty && !overwrite) {
+    if (view.id.isEmpty || (view.cover != null && !overwrite)) {
       return;
     }
 
@@ -259,11 +269,20 @@ class EditorMigration {
     }
 
     try {
-      final current = view.extra.isNotEmpty ? jsonDecode(view.extra) : {};
-      final merged = mergeMaps(current, extra);
-      await ViewBackendService.updateView(
-        viewId: view.id,
-        extra: jsonEncode(merged),
+      // The caller may predate an icon resize or another metadata update.
+      // Recheck modern cover presence against the same fresh extra we merge.
+      final result = await readView(view.id);
+      final current = result.fold<ViewPB?>((view) => view, (_) => null);
+      if (current == null ||
+          current.id != view.id ||
+          current.layout != view.layout ||
+          current.isLocked ||
+          (!overwrite && ViewCoverCodec.decodeCover(current.extra) != null)) {
+        return;
+      }
+      await writeCover(
+        view: current,
+        cover: ViewCoverCodec.decodeCover(jsonEncode(extra))!,
       );
     } catch (e) {
       Log.error('Failed to migrating cover: $e');

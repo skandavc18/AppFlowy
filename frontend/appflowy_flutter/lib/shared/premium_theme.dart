@@ -74,6 +74,17 @@ class PremiumThemeExtension extends ThemeExtension<PremiumThemeExtension> {
         alpha: (hoverOverlay.a * 1.2).clamp(0.0, 0.12),
       );
 
+  /// Use an opaque endpoint only when the caller owns the resting surface.
+  /// Otherwise paint [subtleHover] once over the actual parent. Never replace
+  /// the alpha of a wash with an arbitrary nonzero opacity in a consumer.
+  Color hoverOn(Color background) => Color.alphaBlend(subtleHover, background);
+
+  Color pressedOn(Color background) =>
+      Color.alphaBlend(subtlePressed, background);
+
+  Color selectedOn(Color background) =>
+      Color.alphaBlend(selectedOverlay, background);
+
   static PremiumThemeExtension of(BuildContext context) {
     final extension = Theme.of(context).extension<PremiumThemeExtension>();
     assert(
@@ -181,11 +192,18 @@ class PremiumThemeExtension extends ThemeExtension<PremiumThemeExtension> {
 }
 
 abstract final class PremiumTheme {
+  // Shared fallbacks for chrome outside the full application theme (sign-in,
+  // isolated panes). Paper retains its established stationery tint.
+  static const lightChrome = Color(0xFFF6F0E5);
+  static const darkChrome = Color(0xFF27231F);
+  static const lightHoverOverlay = Color(0x0F675443);
+  static const darkHoverOverlay = Color(0x0FF8E6CA);
+
   static const controlRadius = WorkspaceTokens.inputRadius;
   static const surfaceRadius = WorkspaceTokens.cardRadius;
   static const dialogRadius = WorkspaceTokens.dialogRadius;
   static const largeSurfaceRadius = WorkspaceTokens.heroRadius;
-  static const transitionDuration = AppFlowyMotion.standard;
+  static const transitionDuration = WorkspaceTokens.hoverDuration;
   static const themeTransitionDuration = AppFlowyMotion.deliberate;
 
   static PremiumThemeExtension resolve({
@@ -236,7 +254,7 @@ abstract final class PremiumTheme {
     final accentPressed = _shiftLightness(accent, -0.11);
     const canvas = Color(0xFFFFFCF6);
     const surface = Color(0xFFF8F5EE);
-    const neutralSidebar = Color(0xFFF2EFE6);
+    const neutralSidebar = lightChrome;
     const textPrimary = Color(0xFF252522);
     const lightOnAccent = Color(0xFFFAFAF6);
     final onAccent = _contrastRatio(lightOnAccent, accent) >= 4.5
@@ -256,13 +274,13 @@ abstract final class PremiumTheme {
       floatingSurface: const Color(0xFFFFFDF8),
       mutedSurface: const Color(0xFFF4F0E7),
       sidebar: sidebar,
-      hover: const Color(0xFFF0EDE6),
+      hover: const Color(0xFFF1EBE1),
       pressed: const Color(0xFFE4DFD3),
       selected: Color.alphaBlend(
         accent.withValues(alpha: 0.11),
         surface,
       ),
-      hoverOverlay: const Color(0x0F252522),
+      hoverOverlay: lightHoverOverlay,
       selectedOverlay: accent.withValues(alpha: 0.14),
       border: const Color(0x16252522),
       borderStrong: const Color(0x29252522),
@@ -311,21 +329,21 @@ abstract final class PremiumTheme {
   /// beneath a light-only redesign. Explicit custom themes keep their palette.
   static const _workspaceDark = PremiumThemeExtension(
     isPaper: false,
-    canvas: Color(0xFF191A19),
-    surface: Color(0xFF232422),
-    floatingSurface: Color(0xFF2B2C29),
-    mutedSurface: Color(0xFF272825),
-    sidebar: Color(0xFF20211F),
-    hover: Color(0xFF2B2C29),
-    pressed: Color(0xFF383A35),
+    canvas: Color(0xFF1C1A18),
+    surface: Color(0xFF25221F),
+    floatingSurface: Color(0xFF2E2A26),
+    mutedSurface: Color(0xFF292521),
+    sidebar: darkChrome,
+    hover: Color(0xFF302B26),
+    pressed: Color(0xFF423B33),
     selected: Color(0xFF333D37),
-    hoverOverlay: Color(0x0FFFFFF4),
+    hoverOverlay: darkHoverOverlay,
     selectedOverlay: Color(0x2498B7AA),
     border: Color(0x16F0EFE8),
     borderStrong: Color(0x38F0EFE8),
-    textPrimary: Color(0xFFEDECE7),
-    textSecondary: Color(0xFFB6B5B0),
-    textMuted: Color(0xFF918F89),
+    textPrimary: Color(0xFFEEE9E2),
+    textSecondary: Color(0xFFBEB5A8),
+    textMuted: Color(0xFF998F82),
     accent: Color(0xFF98B7AA),
     accentHover: Color(0xFFB0CCBF),
     accentPressed: Color(0xFF86A697),
@@ -640,9 +658,11 @@ abstract final class PremiumTheme {
             (states) => BorderSide(
               color: states.contains(WidgetState.disabled)
                   ? palette.border.withValues(alpha: 0.55)
-                  : states.contains(WidgetState.hovered)
-                      ? palette.borderStrong
-                      : palette.border,
+                  : states.contains(WidgetState.focused)
+                      ? palette.accent
+                      : states.contains(WidgetState.hovered)
+                          ? palette.borderStrong
+                          : palette.border,
               width: states.contains(WidgetState.focused) ? 1 : 0.6,
             ),
           ),
@@ -896,15 +916,16 @@ abstract final class PremiumTheme {
       ),
       fillColorScheme: AppFlowyFillColorScheme(
         primary: palette.mutedSurface,
-        primaryHover:
-            Color.alphaBlend(palette.subtleHover, palette.mutedSurface),
+        primaryHover: palette.hoverOn(palette.mutedSurface),
         secondary: palette.pressed,
-        secondaryHover: palette.selected,
+        secondaryHover: palette.hoverOn(palette.pressed),
         tertiary: palette.textMuted,
         tertiaryHover: palette.textSecondary,
         quaternary: palette.textPrimary,
         quaternaryHover: palette.accentPressed,
-        content: palette.floatingSurface.withValues(alpha: 0),
+        // A transparent endpoint keeps the wash's RGB, not a white/black
+        // surrogate that changes hue halfway through an implicit animation.
+        content: palette.subtleHover.withValues(alpha: 0),
         contentHover: palette.subtleHover,
         contentVisible: palette.selectedOverlay,
         contentVisibleHover: palette.focusRing,
@@ -932,21 +953,15 @@ abstract final class PremiumTheme {
       ),
       surfaceColorScheme: AppFlowySurfaceColorScheme(
         primary: palette.floatingSurface,
-        primaryHover: Color.alphaBlend(
-          palette.subtleHover,
-          palette.floatingSurface,
-        ),
+        primaryHover: palette.hoverOn(palette.floatingSurface),
         layer01: palette.surface,
-        layer01Hover: Color.alphaBlend(palette.subtleHover, palette.surface),
+        layer01Hover: palette.hoverOn(palette.surface),
         layer02: palette.floatingSurface,
-        layer02Hover: Color.alphaBlend(
-          palette.subtleHover,
-          palette.floatingSurface,
-        ),
+        layer02Hover: palette.hoverOn(palette.floatingSurface),
         layer03: palette.floatingSurface,
-        layer03Hover: palette.pressed,
+        layer03Hover: palette.hoverOn(palette.floatingSurface),
         layer04: palette.floatingSurface,
-        layer04Hover: palette.pressed,
+        layer04Hover: palette.hoverOn(palette.floatingSurface),
         inverse: palette.textPrimary,
         secondary: palette.mutedSurface,
         overlay: palette.scrim,

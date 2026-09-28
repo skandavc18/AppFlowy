@@ -1,6 +1,6 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/search_result_ext.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -28,9 +28,8 @@ extension SearchIconExtension on ViewPB {
     if (isWorkspaceItem) {
       return WorkspaceItemIcon.fromView(view: this);
     }
-    return FlowySvg(
+    return WorkspaceGlyph.svg(
       iconData,
-      size: const Size.square(18),
       color: theme.iconColorScheme.secondary,
     );
   }

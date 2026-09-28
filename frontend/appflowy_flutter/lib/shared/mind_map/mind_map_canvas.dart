@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
@@ -1096,7 +1097,7 @@ class _CollapseMarker extends StatelessWidget {
                       color: palette.textMuted,
                     ),
                   )
-                : Icon(
+                : WorkspaceGlyph(
                     Icons.remove_rounded,
                     size: 11,
                     color: palette.textMuted,
@@ -1200,6 +1201,7 @@ class _ToolbarButton extends StatefulWidget {
     required this.palette,
     required this.onTap,
     this.destructive = false,
+    this.glyphName,
   });
 
   final IconData icon;
@@ -1207,6 +1209,7 @@ class _ToolbarButton extends StatefulWidget {
   final MindMapPalette palette;
   final VoidCallback onTap;
   final bool destructive;
+  final String? glyphName;
 
   @override
   State<_ToolbarButton> createState() => _ToolbarButtonState();
@@ -1247,7 +1250,25 @@ class _ToolbarButtonState extends State<_ToolbarButton> {
                     : palette.nodeHover.withValues(alpha: 0),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Icon(widget.icon, size: 15, color: ink),
+              child: Center(
+                child: widget.glyphName == null
+                    ? WorkspaceGlyph(
+                        widget.icon,
+                        size: 15,
+                        color: ink,
+                        role: widget.destructive
+                            ? WorkspaceGlyphRole.preserveInk
+                            : null,
+                      )
+                    : WorkspaceGlyph.named(
+                        widget.glyphName!,
+                        size: 15,
+                        color: ink,
+                        role: widget.destructive
+                            ? WorkspaceGlyphRole.preserveInk
+                            : null,
+                      ),
+              ),
             ),
           ),
         ),
@@ -1514,7 +1535,14 @@ class _MenuRowState extends State<_MenuRow> {
             ),
             child: Row(
               children: [
-                Icon(widget.icon, size: 15, color: ink),
+                WorkspaceGlyph(
+                  widget.icon,
+                  size: 15,
+                  color: ink,
+                  role: widget.destructive
+                      ? WorkspaceGlyphRole.preserveInk
+                      : null,
+                ),
                 const SizedBox(width: 9),
                 Expanded(
                   child: Text(
@@ -1630,7 +1658,14 @@ class _SwatchState extends State<_Swatch> {
             ),
             child: widget.icon == null
                 ? null
-                : Icon(widget.icon, size: 11, color: palette.textMuted),
+                : Center(
+                    child: WorkspaceGlyph(
+                      widget.icon!,
+                      size: 11,
+                      color: palette.textMuted,
+                      role: WorkspaceGlyphRole.preserveInk,
+                    ),
+                  ),
           ),
         ),
       ),
@@ -1717,12 +1752,14 @@ class MindMapViewportControls extends StatelessWidget {
           ),
           _ToolbarButton(
             icon: Icons.center_focus_strong_rounded,
+            glyphName: 'target',
             tooltip: 'Centre',
             palette: palette,
             onTap: onCentre,
           ),
           _ToolbarButton(
             icon: Icons.fit_screen_rounded,
+            glyphName: 'fit-page',
             tooltip: 'Fit to screen',
             palette: palette,
             onTap: onFit,

@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/database/application/cell/bloc/text_cell_bloc.d
 import 'package:appflowy/plugins/database/application/cell/cell_controller.dart';
 import 'package:appflowy/plugins/database/application/cell/cell_controller_builder.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/widgets/cell/property_style_cell.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
@@ -67,6 +68,7 @@ class _TextCellState extends State<TextCardCell> {
   );
   late final TextEditingController _textEditingController;
   final focusNode = SingleListenerFocusNode();
+  DatabaseFindController? _findController;
 
   @override
   void initState() {
@@ -88,11 +90,19 @@ class _TextCellState extends State<TextCardCell> {
     _bindEditableNotifier();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _findController = DatabaseFindScope.maybeOf(context);
+  }
+
   void _onFocusChanged() {
     if (!focusNode.hasFocus) {
       widget.editableNotifier?.isCellEditing.value = false;
       cellBloc.add(const TextCellEvent.enableEdit(false));
-      cellBloc.add(TextCellEvent.updateText(_textEditingController.text));
+      if (!(_findController?.ownsFocus ?? false)) {
+        cellBloc.add(TextCellEvent.updateText(_textEditingController.text));
+      }
     }
   }
 

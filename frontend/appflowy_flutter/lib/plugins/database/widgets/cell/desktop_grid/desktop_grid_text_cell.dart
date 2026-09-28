@@ -75,29 +75,11 @@ class DesktopGridTextCellSkin extends IEditableTextCellSkin {
                       fieldId: bloc.cellController.fieldId,
                       controller: textEditingController,
                       focusNode: focusNode,
-                      child: TextField(
-                        controller: textEditingController,
+                      child: buildTextField(
+                        context,
                         focusNode: focusNode,
-                        textAlign: align,
-                        maxLines:
-                            context.watch<TextCellBloc>().state.wrap ? null : 1,
-                        style: DesktopGridTextCellStyle.resolve(
-                          context,
-                          isPrimary: context
-                              .read<TextCellBloc>()
-                              .cellController
-                              .fieldInfo
-                              .isPrimary,
-                        ),
-                        decoration: const InputDecoration(
-                          border: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          errorBorder: InputBorder.none,
-                          disabledBorder: InputBorder.none,
-                          isDense: true,
-                          isCollapsed: true,
-                        ),
+                        controller: textEditingController,
+                        align: align,
                       ),
                     ),
                   ),
@@ -109,6 +91,35 @@ class DesktopGridTextCellSkin extends IEditableTextCellSkin {
       },
     );
   }
+
+  /// The native field, separated from metadata-loading decorators. Reused by
+  /// offline renderer tests without replacing typography, wrapping or input.
+  Widget buildTextField(
+    BuildContext context, {
+    required FocusNode focusNode,
+    required TextEditingController controller,
+    TextAlign align = TextAlign.start,
+  }) =>
+      TextField(
+        controller: controller,
+        focusNode: focusNode,
+        textAlign: align,
+        maxLines: context.watch<TextCellBloc>().state.wrap ? null : 1,
+        style: DesktopGridTextCellStyle.resolve(
+          context,
+          isPrimary:
+              context.read<TextCellBloc>().cellController.fieldInfo.isPrimary,
+        ),
+        decoration: const InputDecoration(
+          border: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          isDense: true,
+          isCollapsed: true,
+        ),
+      );
 }
 
 /// The primary row's identity, separate from the column's field-type icon.

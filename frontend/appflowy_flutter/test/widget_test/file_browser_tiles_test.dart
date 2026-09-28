@@ -62,11 +62,15 @@ void main() {
             textScale: textScale,
             reduced: textScale == 2,
           );
-          final grid = tester.widget<GridView>(find.byKey(_gridKey));
+          final grid = tester.widget<CustomScrollView>(find.byKey(_gridKey));
+          final sliver = tester.widget<SliverGrid>(
+            find.descendant(
+                of: find.byKey(_gridKey), matching: find.byType(SliverGrid)),
+          );
           final delegate =
-              grid.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
+              sliver.gridDelegate as SliverGridDelegateWithFixedCrossAxisCount;
           expect(delegate.crossAxisCount, columns);
-          expect(grid.childrenDelegate, isA<SliverChildBuilderDelegate>());
+          expect(sliver.delegate, isA<SliverChildBuilderDelegate>());
           expect(
             find.byType(WorkspaceItemIcon).evaluate().length,
             lessThan(entries.length),
@@ -205,7 +209,8 @@ void main() {
         reduced: true,
       );
       final state = tester.state(find.byType(FileBrowserItems));
-      final scroll = tester.widget<GridView>(find.byKey(_gridKey)).controller;
+      final scroll =
+          tester.widget<CustomScrollView>(find.byKey(_gridKey)).controller;
       final tileRect = tester.getRect(_tile(entries[0].id));
       for (final next in [
         FileBrowserViewMode.list,
@@ -219,7 +224,9 @@ void main() {
         expect(row.width, greaterThan(tileRect.width));
         expect(row.height, lessThan(tileRect.height));
         expect(
-          tester.widget<ListView>(find.byType(ListView)).controller,
+          tester
+              .widget<CustomScrollView>(find.byType(CustomScrollView))
+              .controller,
           same(scroll),
         );
         expect(
@@ -232,7 +239,7 @@ void main() {
       await settleFileControls(tester);
       expect(tester.state(find.byType(FileBrowserItems)), same(state));
       expect(
-        tester.widget<GridView>(find.byKey(_gridKey)).controller,
+        tester.widget<CustomScrollView>(find.byKey(_gridKey)).controller,
         same(scroll),
       );
       expect(tester.getRect(_tile(entries[0].id)), tileRect);
@@ -321,7 +328,7 @@ void main() {
         expect(opened, [entries[4].id, entries[4].id]);
 
         final scroll =
-            tester.widget<GridView>(find.byKey(_gridKey)).controller!;
+            tester.widget<CustomScrollView>(find.byKey(_gridKey)).controller!;
         final offset = scroll.offset;
         await _tapTile(tester, entries[0].id);
         await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -366,7 +373,10 @@ void main() {
         expect(selection.ids, {entries.last.id});
         expect(_tile(entries.last.id).hitTestable(), findsOneWidget);
         expect(
-          tester.widget<GridView>(find.byKey(_gridKey)).controller!.offset,
+          tester
+              .widget<CustomScrollView>(find.byKey(_gridKey))
+              .controller!
+              .offset,
           greaterThan(0),
         );
         await _key(tester, LogicalKeyboardKey.home);
@@ -965,10 +975,40 @@ Future<void> _chooseArchiveMode(
   WidgetTester tester,
   FileBrowserViewMode mode,
 ) async {
-  await clickFileControl(
-    tester,
-    _currentKey(const ValueKey('file-browser-view-button')),
+  final button = _currentKey(const ValueKey('file-browser-view-button'));
+  expect(button, findsOneWidget);
+  final element = tester.element(button);
+  final owner = Scrollable.maybeOf(element);
+  final position = owner?.position;
+  // Standalone file tools start at the trailing actions. Earlier controls
+  // remain mounted but must be scrolled into the real header viewport.
+  await tester.ensureVisible(button);
+  await settleFileControls(tester);
+  expect(tester.element(button), same(element));
+  expect(Scrollable.maybeOf(element), same(owner));
+  expect(owner?.position, same(position));
+  final headerScroll = find.ancestor(
+    of: button,
+    matching: find.byKey(const ValueKey('workspace-file-toolbar-scroll')),
   );
+  if (headerScroll.evaluate().isNotEmpty) {
+    expect(headerScroll, findsOneWidget);
+    final header = find.ancestor(
+      of: button,
+      matching: find.byKey(const ValueKey('workspace-file-identity-row')),
+    );
+    expect(header, findsOneWidget);
+    final viewport =
+        tester.getRect(headerScroll).intersect(tester.getRect(header));
+    final rect = tester.getRect(button);
+    expect(rect.isEmpty, isFalse);
+    expect(rect.left, greaterThanOrEqualTo(viewport.left - 0.01));
+    expect(rect.right, lessThanOrEqualTo(viewport.right + 0.01));
+    expect(rect.top, greaterThanOrEqualTo(viewport.top - 0.01));
+    expect(rect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+    expectFileControlPainted(tester, button);
+  }
+  await clickFileControl(tester, button);
   for (final choice in FileBrowserViewMode.values) {
     expect(find.widgetWithText(AppMenuRow, choice.label), findsOneWidget);
   }

@@ -4,6 +4,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/table_views/table_query.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -38,7 +39,11 @@ class TableViewButton extends StatelessWidget {
         tooltip: tooltip,
         isSelected: active,
         onPressed: onTap,
-        icon: Icon(icon, size: 17),
+        icon: WorkspaceGlyph(
+          icon,
+          size: 17,
+          color: active ? palette.accent : palette.textSecondary,
+        ),
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,
           minimumSize: const Size.square(TableViewMetrics.controlSize),
@@ -274,12 +279,19 @@ class TableViewHeaderState extends State<TableViewHeader> {
             fillColor: palette.raised,
             hintText: LocaleKeys.tableViews_searchHint.tr(),
             hintStyle: TextStyle(fontSize: 13, color: palette.textMuted),
-            prefixIcon:
-                Icon(Icons.search_rounded, size: 15, color: palette.textMuted),
+            prefixIcon: Center(
+              widthFactor: 1,
+              heightFactor: 1,
+              child: WorkspaceGlyph(
+                Icons.search_rounded,
+                size: 15,
+                color: palette.textMuted,
+              ),
+            ),
             prefixIconConstraints:
                 const BoxConstraints(minWidth: 32, minHeight: 32),
             suffixIcon: IconButton(
-              icon: Icon(
+              icon: WorkspaceGlyph(
                 Icons.close_rounded,
                 size: 14,
                 color: palette.textMuted,
@@ -590,7 +602,7 @@ class _TableViewActionState extends State<TableViewAction> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (widget.icon != null) ...[
-                Icon(widget.icon, size: 15, color: tint),
+                WorkspaceGlyph(widget.icon!, size: 15, color: tint),
                 const SizedBox(width: 7),
               ],
               Text(

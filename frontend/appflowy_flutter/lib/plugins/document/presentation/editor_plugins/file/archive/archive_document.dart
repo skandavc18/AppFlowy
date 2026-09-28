@@ -325,8 +325,9 @@ class ArchiveDocument {
   List<ArchiveEntry> childrenOf(String directory) =>
       _childrenByParent[normalizeArchivePath(directory)] ?? const [];
 
-  /// Every file whose path contains [query], searched across the whole
-  /// archive rather than only the open folder.
+  /// Every entry whose path (including its basename) contains [query], searched
+  /// across the whole archive rather than only the open folder. This is literal
+  /// case-insensitive matching: quotes, regex and settings syntax are not parsed.
   List<ArchiveEntry> search(String query) {
     final needle = query.trim().toLowerCase();
     if (needle.isEmpty) {

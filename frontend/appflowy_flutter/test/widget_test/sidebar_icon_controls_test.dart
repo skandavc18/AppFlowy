@@ -83,8 +83,18 @@ void main() {
     final source = File(
       'lib/plugins/collection/collection_page.dart',
     ).readAsStringSync();
-    expect(source, contains('child: CollectionIconButton('));
-    expect(source, contains('view: _currentView,'));
+    expect(source, contains('final current = _currentView;'));
+    expect(
+      source,
+      matches(
+        RegExp(
+          r"builder: \(_, scale\) => CollectionIconButton\(\s+"
+          r"key: const ValueKey\('collection-header-icon'\),\s+"
+          r'view: current,\s+'
+          r'iconSize: CollectionMetrics\.pageIconSize \* scale,',
+        ),
+      ),
+    );
     expect(
       source,
       contains('onViewChanged: (updated) => controller.updateView('),

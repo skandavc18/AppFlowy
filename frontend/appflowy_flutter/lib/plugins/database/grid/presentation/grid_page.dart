@@ -7,10 +7,13 @@ import 'package:appflowy/plugins/database/application/database_row_opener.dart';
 import 'package:appflowy/plugins/database/application/row/row_service.dart';
 import 'package:appflowy/plugins/database/application/tab_bar_bloc.dart';
 import 'package:appflowy/plugins/database/domain/sort_service.dart';
+import 'package:appflowy/plugins/database/find/database_find_grid_navigation.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/calculations/calculations_row.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/toolbar/grid_setting_bar.dart';
 import 'package:appflowy/plugins/database/tab_bar/desktop/setting_menu.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_builder.dart';
+import 'package:appflowy/plugins/database/widgets/setting/field_visibility_extension.dart';
 import 'package:appflowy/shared/flowy_error_page.dart';
 import 'package:appflowy/shared/scrolling/no_scrollbar_behavior.dart';
 import 'package:appflowy/workspace/application/action_navigation/action_navigation_bloc.dart';
@@ -382,6 +385,48 @@ class _GridRows extends StatefulWidget {
 class _GridRowsState extends State<_GridRows> {
   bool showFloatingCalculations = false;
   bool isAtBottom = false;
+  GridState? _findSnapshotState;
+  DatabaseFindViewSnapshot? _findSnapshotValue;
+
+  DatabaseFindViewSnapshot _findSnapshot() {
+    final state = context.read<GridBloc>().state;
+    final previous = _findSnapshotValue;
+    if (identical(state, _findSnapshotState) &&
+        previous != null &&
+        previous.viewId == widget.viewId) {
+      return previous;
+    }
+    // GridState is immutable. Reuse the ID snapshot during scroll/paint
+    // checks instead of copying every row on every frame of a large grid.
+    _findSnapshotState = state;
+    return _findSnapshotValue = DatabaseFindViewSnapshot(
+      viewId: widget.viewId,
+      rowIds: state.rowInfos.map((row) => row.rowId),
+      fieldIds: state.fields
+          .where((field) => field.visibility?.isVisibleState() ?? false)
+          .map((field) => field.id),
+      revision: (state.fields, state.filters, state.sorts),
+    );
+  }
+
+  Future<String?> _materializeFindTarget(DatabaseFindRequest request) =>
+      materializeDatabaseFindGridRow(
+        request: request,
+        vertical: widget.scrollController.verticalController,
+        rowIds: () => _findSnapshot().rowIds,
+        loadThrough: (index) async {
+          if (!mounted || !request.isCurrent || !widget.shrinkWrap) return;
+          final bloc = context.read<GridBloc>();
+          // Use the existing presentation-only load-more action, so the next
+          // manual Load more starts where Find left it. No backend write.
+          for (var count = bloc.state.visibleRows;
+              count <= index;
+              count += 25) {
+            if (!request.isCurrent || bloc.isClosed) return;
+            bloc.add(const GridEvent.loadMoreRows());
+          }
+        },
+      );
 
   @override
   void initState() {
@@ -486,10 +531,13 @@ class _GridRowsState extends State<_GridRows> {
       );
     }
 
-    if (widget.shrinkWrap) {
-      return child;
-    }
-
+    child = DatabaseFindLayout(
+      viewId: widget.viewId,
+      snapshot: _findSnapshot,
+      materialize: _materializeFindTarget,
+      child: child,
+    );
+    if (widget.shrinkWrap) return child;
     return Flexible(child: child);
   }
 

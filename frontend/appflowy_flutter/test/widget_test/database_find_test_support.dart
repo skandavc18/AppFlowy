@@ -270,6 +270,7 @@ class DatabaseFindHarness {
   double height = 480;
   double textScale = 1;
   String mode = 'light';
+  Widget? content;
 
   DatabaseDraftSurfaceState get body => bodyKey.currentState!;
 
@@ -286,7 +287,7 @@ class DatabaseFindHarness {
           'Ahem',
         )
         .copyWith(platform: TargetPlatform.windows);
-    Widget surface = DatabaseDraftSurface(key: bodyKey);
+    Widget surface = content ?? DatabaseDraftSurface(key: bodyKey);
     if (delegated && nativeChild) {
       surface = DatabaseFindHost(
         view: view,

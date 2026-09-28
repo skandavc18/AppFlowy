@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_selection.dart';
@@ -150,6 +151,11 @@ class FileBrowserItems extends StatefulWidget {
     this.rowWrapper,
     this.draft,
     this.emptyMessage = 'This folder is empty',
+    this.header,
+    this.footer,
+    this.scrollController,
+    this.horizontalPadding = 0,
+    this.emptyChild,
   });
 
   final List<FileBrowserEntry> entries;
@@ -179,6 +185,11 @@ class FileBrowserItems extends StatefulWidget {
   final Widget Function(FileBrowserEntry entry, Widget row)? rowWrapper;
   final Widget? draft;
   final String emptyMessage;
+  final Widget? header;
+  final Widget? footer;
+  final ScrollController? scrollController;
+  final double horizontalPadding;
+  final Widget? emptyChild;
 
   @override
   State<FileBrowserItems> createState() => _FileBrowserItemsState();
@@ -186,7 +197,9 @@ class FileBrowserItems extends StatefulWidget {
 
 class _FileBrowserItemsState extends State<FileBrowserItems> {
   final _focus = FocusNode(debugLabel: 'file-browser-items');
-  final _vertical = ScrollController();
+  final _ownedVertical = ScrollController();
+  ScrollController get _vertical => widget.scrollController ?? _ownedVertical;
+  final _contentOrigin = GlobalKey();
   final _horizontal = ScrollController();
   String? _sort;
   bool _descending = false;
@@ -244,7 +257,7 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
   @override
   void dispose() {
     _focus.dispose();
-    _vertical.dispose();
+    _ownedVertical.dispose();
     _horizontal.dispose();
     super.dispose();
   }
@@ -283,13 +296,17 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
               // text scaling. Even a narrow 2x embed gets one usable column.
               _tileColumns = math.max(
                 1,
-                ((constraints.maxWidth - 2 * _tilePadding + _tileSpacing) /
+                ((constraints.maxWidth -
+                            2 * widget.horizontalPadding -
+                            2 * _tilePadding +
+                            _tileSpacing) /
                         (72 + 200 * scale + _tileSpacing))
                     .floor(),
               );
               final tileAvailable = math.max(
                 0.0,
                 constraints.maxWidth -
+                    2 * widget.horizontalPadding -
                     2 * _tilePadding -
                     (_tileColumns - 1) * _tileSpacing,
               );
@@ -305,7 +322,8 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
               Widget itemBuilder(BuildContext context, int index) =>
                   _row(ordered[index], ordered);
               final width = widget.details
-                  ? math.max(constraints.maxWidth, 640.0 * scale)
+                  ? math.max(constraints.maxWidth,
+                      640.0 * scale + 2 * widget.horizontalPadding)
                   : constraints.maxWidth;
               return Scrollbar(
                 controller: _horizontal,
@@ -317,14 +335,32 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
                   child: SizedBox(
                     width: width,
                     height: constraints.maxHeight,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (widget.details) _heading(context, scale),
-                        if (widget.draft != null) widget.draft!,
-                        Expanded(
-                          child: ordered.isEmpty
-                              ? Center(
+                    child: FileBrowserScrollView(
+                      scrollKey: widget.tiles
+                          ? const ValueKey('file-browser-tiles')
+                          : PageStorageKey(widget.key ?? 'file-browser-list'),
+                      controller: _vertical,
+                      header: widget.header == null
+                          ? null
+                          : Align(
+                              alignment: AlignmentDirectional.topStart,
+                              child: SizedBox(
+                                  width: constraints.maxWidth,
+                                  child: widget.header),
+                            ),
+                      footer: widget.footer,
+                      slivers: [
+                        if (widget.details)
+                          SliverToBoxAdapter(child: _heading(context, scale)),
+                        if (widget.draft != null)
+                          SliverToBoxAdapter(child: widget.draft),
+                        SliverToBoxAdapter(
+                            child: SizedBox(key: _contentOrigin)),
+                        if (ordered.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: widget.emptyChild ??
+                                Center(
                                   child: Padding(
                                     padding: const EdgeInsets.all(12),
                                     child: Text(
@@ -336,44 +372,48 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
                                       ),
                                     ),
                                   ),
-                                )
-                              : widget.tiles
-                                  ? GridView.builder(
-                                      key: const ValueKey('file-browser-tiles'),
-                                      controller: _vertical,
-                                      padding: EdgeInsetsDirectional.fromSTEB(
-                                        _tilePadding,
-                                        _tilePadding,
-                                        _tilePadding + tileRemainder,
-                                        _tilePadding,
-                                      ),
-                                      gridDelegate:
-                                          SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: _tileColumns,
-                                        crossAxisSpacing: _tileSpacing,
-                                        mainAxisSpacing: _tileSpacing,
-                                        mainAxisExtent: height,
-                                      ),
-                                      itemCount: ordered.length,
-                                      findChildIndexCallback: (key) =>
-                                          indices[key],
-                                      itemBuilder: itemBuilder,
-                                    )
-                                  : ListView.builder(
-                                      key: PageStorageKey(
-                                        widget.key ?? 'file-browser-list',
-                                      ),
-                                      controller: _vertical,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 4,
-                                      ),
-                                      itemExtent: height,
-                                      itemCount: ordered.length,
-                                      findChildIndexCallback: (key) =>
-                                          indices[key],
-                                      itemBuilder: itemBuilder,
-                                    ),
-                        ),
+                                ),
+                          )
+                        else if (widget.tiles)
+                          SliverPadding(
+                            padding: EdgeInsetsDirectional.fromSTEB(
+                              widget.horizontalPadding + _tilePadding,
+                              _tilePadding,
+                              widget.horizontalPadding +
+                                  _tilePadding +
+                                  tileRemainder,
+                              _tilePadding,
+                            ),
+                            sliver: SliverGrid(
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: _tileColumns,
+                                crossAxisSpacing: _tileSpacing,
+                                mainAxisSpacing: _tileSpacing,
+                                mainAxisExtent: height,
+                              ),
+                              delegate: SliverChildBuilderDelegate(
+                                itemBuilder,
+                                childCount: ordered.length,
+                                findChildIndexCallback: (key) => indices[key],
+                              ),
+                            ),
+                          )
+                        else
+                          SliverPadding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: widget.horizontalPadding,
+                              vertical: 4,
+                            ),
+                            sliver: SliverFixedExtentList(
+                              itemExtent: height,
+                              delegate: SliverChildBuilderDelegate(
+                                itemBuilder,
+                                childCount: ordered.length,
+                                findChildIndexCallback: (key) => indices[key],
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
@@ -425,9 +465,22 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
     );
   }
 
+  // Native header/draft height is measured from the laid-out sliver origin,
+  // not guessed from typography. Keyboard reveal must include that extent.
+  double get _contentOffset {
+    final origin = _contentOrigin.currentContext?.findRenderObject();
+    if (origin is! RenderBox || !origin.attached) return 0;
+    final scrollable = Scrollable.maybeOf(_contentOrigin.currentContext!);
+    final viewport = scrollable?.context.findRenderObject();
+    if (viewport is! RenderBox || !_vertical.hasClients) return 0;
+    return origin.localToGlobal(Offset.zero, ancestor: viewport).dy +
+        _vertical.offset;
+  }
+
   Widget _heading(BuildContext context, double scale) => Padding(
         key: const ValueKey('file-browser-details-heading'),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding:
+            EdgeInsets.symmetric(horizontal: 12 + widget.horizontalPadding),
         child: Row(
           children: [
             Expanded(child: _sortButton(context, 'Name')),
@@ -531,9 +584,10 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
       }
       _focus.requestFocus();
       if (_vertical.hasClients) {
-        final target = widget.tiles
-            ? _tilePadding + (next ~/ columns) * (height + _tileSpacing)
-            : next * height;
+        final target = _contentOffset +
+            (widget.tiles
+                ? _tilePadding + (next ~/ columns) * (height + _tileSpacing)
+                : 4 + next * height);
         final position = _vertical.position;
         if (target < position.pixels ||
             target + height > position.pixels + position.viewportDimension) {
@@ -556,15 +610,17 @@ class _FileBrowserItemsState extends State<FileBrowserItems> {
         widget.onContextMenu != null) {
       final box = context.findRenderObject() as RenderBox?;
       if (box != null && box.hasSize) {
-        final top = widget.tiles
-            ? _tilePadding + (index ~/ columns) * (height + _tileSpacing)
-            : index * height;
+        final top = _contentOffset +
+            (widget.tiles
+                ? _tilePadding + (index ~/ columns) * (height + _tileSpacing)
+                : 4 + index * height);
         final y =
             (top - (_vertical.hasClients ? _vertical.offset : 0) + height / 2)
                 .clamp(0.0, box.size.height);
         var x = 20.0;
         if (widget.tiles) {
-          x = _tilePadding +
+          x = widget.horizontalPadding +
+              _tilePadding +
               (index % columns) * (_tileWidth + _tileSpacing) +
               _tileWidth / 2;
           if (rtl) x = box.size.width - x;
@@ -937,11 +993,16 @@ class FileBrowserColumn {
     required this.id,
     required this.label,
     required this.child,
+    this.headerInChild = false,
   });
 
   final String id;
   final String label;
   final Widget child;
+
+  /// A coordinated directory can put its caption in its existing lazy list,
+  /// so even a very short remaining page viewport can scroll to every control.
+  final bool headerInChild;
 }
 
 class FileBrowserColumns extends StatefulWidget {
@@ -1008,8 +1069,13 @@ class _FileBrowserColumnsState extends State<FileBrowserColumns> {
                             if (!focused) return;
                             final target =
                                 FocusManager.instance.primaryFocus?.context;
-                            if (target != null) {
-                              unawaited(Scrollable.ensureVisible(target));
+                            final render = target?.findRenderObject();
+                            if (render != null &&
+                                render.attached &&
+                                _scroll.hasClients) {
+                              // Column focus reveals horizontally only. Walking
+                              // every ancestor also collapses the page header.
+                              unawaited(_scroll.position.ensureVisible(render));
                             }
                           },
                           child: DecoratedBox(
@@ -1023,17 +1089,21 @@ class _FileBrowserColumnsState extends State<FileBrowserColumns> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
-                                TextButton(
-                                  onPressed: () => widget.onNavigate(column.id),
-                                  style: WorkspaceChrome.controlStyle(context),
-                                  child: Text(
-                                    column.label,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                if (!column.headerInChild)
+                                  TextButton(
+                                    onPressed: () =>
+                                        widget.onNavigate(column.id),
+                                    style:
+                                        WorkspaceChrome.controlStyle(context),
+                                    child: Text(
+                                      column.label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
                                   ),
-                                ),
                                 Expanded(child: column.child),
-                                const SizedBox(height: 10),
+                                if (!column.headerInChild)
+                                  const SizedBox(height: 10),
                               ],
                             ),
                           ),

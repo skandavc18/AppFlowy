@@ -11,8 +11,14 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/comm
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/image_editor/image_editor_source.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/image_ocr_overlay.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/ocr_service.dart';
+import 'package:appflowy/plugins/workspace_file/workspace_file_view.dart'
+  show workspacePhotoRenderer;
+import 'package:appflowy/shared/document_viewer/file_action_band.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_scope.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
+import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/provider_controller.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
@@ -47,10 +53,8 @@ Future<void> showExternalFile(
           siblings: siblings.where((sibling) => !sibling.isFolder).toList(),
           ocrService: ocrService,
         );
-        return context.getInheritedWidgetOfExactType<ContextualFindScope>() ==
-                null
-            ? ContextualFindScope(child: viewer)
-            : viewer;
+        // A modal owns its own Find fallback, including focused header tools.
+        return ContextualFindScope(findInControls: true, child: viewer);
       },
       transitionBuilder: (context, animation, secondary, child) =>
           FadeTransition(
@@ -81,6 +85,12 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
   String? path;
   bool loading = true;
   bool failed = false;
+  int _generation = 0;
+  bool _closing = false;
+  ModalRoute<dynamic>? _route;
+  StandaloneFileChromeController _chrome = StandaloneFileChromeController();
+  Widget? _renderer;
+  late bool Function() _canRead;
 
   @override
   void initState() {
@@ -89,20 +99,78 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
     unawaited(_fetch());
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+    // Refresh palette-dependent widgets, not their keys, loaded state or IO.
+    _renderer = null;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExternalFileViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller) ||
+        !identical(oldWidget.node, widget.node)) {
+      node = widget.node;
+      unawaited(_fetch());
+    } else if (oldWidget.ocrService != widget.ocrService) {
+      _renderer = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    ++_generation;
+    _closing = true;
+    _chrome.dispose();
+    super.dispose();
+  }
+
+  bool _isCurrent(
+    ProviderController controller,
+    ProviderNode requestedNode,
+    CollectionSource source,
+    int generation,
+  ) =>
+      mounted &&
+      !_closing &&
+      _route?.isActive != false &&
+      generation == _generation &&
+      identical(widget.controller, controller) &&
+      identical(node, requestedNode) &&
+      identical(controller.source, source);
+
   Future<void> _fetch() async {
+    if (!mounted || _closing) return;
+    final controller = widget.controller;
+    final requestedNode = node;
+    final source = controller.source;
+    final generation = ++_generation;
+    bool current() => _isCurrent(controller, requestedNode, source, generation);
+    _canRead = () => current() && !loading && !failed && path != null;
     setState(() {
       loading = true;
       failed = false;
       path = null;
+      _renderer = null;
+      // A retired renderer may still have a queued header publication. It
+      // must never publish into the next file's chrome, even for the same id.
+      _chrome.dispose();
+      _chrome = StandaloneFileChromeController();
     });
-    final resolved = await widget.controller.materialize(node);
-    if (!mounted) {
-      return;
+    String? resolved;
+    try {
+      resolved = await controller.materialize(requestedNode);
+    } catch (_) {
+      // Show only the friendly current-file error; exceptions may contain
+      // signed provider URLs. Neither expose nor log them from this host.
     }
+    if (!current()) return;
     setState(() {
-      path = resolved;
+      path = resolved == null || resolved.isEmpty ? null : resolved;
       loading = false;
-      failed = resolved == null;
+      failed = path == null;
     });
   }
 
@@ -113,47 +181,115 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
   bool get _hasNext => _index >= 0 && _index < widget.siblings.length - 1;
 
   void _step(int delta) {
+    if (!mounted || _closing || _route?.isCurrent != true || _index < 0) return;
     final next = _index + delta;
     if (next < 0 || next >= widget.siblings.length) {
       return;
     }
-    setState(() => node = widget.siblings[next]);
+    node = widget.siblings[next];
     unawaited(_fetch());
+  }
+
+  void _close() {
+    if (!mounted || _closing || _route?.isCurrent != true) return;
+    _closing = true;
+    ++_generation;
+    Navigator.of(context).pop();
+  }
+
+  KeyEventResult _onKey(FocusNode _, KeyEvent event) {
+    if (event is! KeyDownEvent || _closing || _route?.isCurrent != true) {
+      return KeyEventResult.ignored;
+    }
+    final keys = HardwareKeyboard.instance;
+    if (keys.isControlPressed ||
+        keys.isMetaPressed ||
+        keys.isAltPressed ||
+        keys.isShiftPressed) {
+      return KeyEventResult.ignored;
+    }
+    final focused = FocusManager.instance.primaryFocus?.context;
+    if (focused == null ||
+        !focused.mounted ||
+        focused.widget is EditableText ||
+        focused.findAncestorWidgetOfExactType<EditableText>() != null) {
+      return KeyEventResult.ignored;
+    }
+    // This is a bubbling handler, not an ancestor Shortcuts override. Native
+    // text-entry shortcuts and renderer-local navigation get first refusal.
+    if (event.logicalKey == LogicalKeyboardKey.arrowLeft && _hasPrevious) {
+      _step(-1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowRight && _hasNext) {
+      _step(1);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = FolderExplorerPalette.of(context);
-    return Shortcuts(
-      shortcuts: const {
-        SingleActivator(LogicalKeyboardKey.arrowLeft): _PreviousIntent(),
-        SingleActivator(LogicalKeyboardKey.arrowRight): _NextIntent(),
-      },
-      child: Actions(
-        actions: {
-          _PreviousIntent: CallbackAction<_PreviousIntent>(
-            onInvoke: (_) => _hasPrevious ? _step(-1) : null,
-          ),
-          _NextIntent: CallbackAction<_NextIntent>(
-            onInvoke: (_) => _hasNext ? _step(1) : null,
-          ),
-        },
-        child: Focus(
-          autofocus: true,
-          child: Scaffold(
-            backgroundColor: Colors.transparent,
-            body: Padding(
-              padding: const EdgeInsets.all(44),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(18),
-                child: ColoredBox(
-                  color: palette.background,
-                  child: Column(
-                    children: [
-                      _header(palette),
-                      Expanded(child: _body(palette)),
-                    ],
-                  ),
+    return Focus(
+      autofocus: true,
+      onKeyEvent: _onKey,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: SafeArea(
+          child: Padding(
+            padding: EdgeInsets.all(
+              MediaQuery.sizeOf(context).shortestSide < 600 ? 12 : 44,
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: ColoredBox(
+                key: const ValueKey('external-file-canvas'),
+                color: palette.background,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Close belongs to this route, outside both the title
+                    // sliver and the horizontal toolbar overflow viewport.
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        key: const ValueKey('external-file-close'),
+                        tooltip: MaterialLocalizations.of(context)
+                            .closeButtonTooltip,
+                        onPressed: _close,
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        color: palette.textSecondary,
+                      ),
+                    ),
+                    Expanded(
+                      child: StandaloneFileScope(
+                        canvas: palette.background,
+                        rendererName: providerFileNameFor(node),
+                        displayName: node.name,
+                        chrome: _chrome,
+                        canEdit: () => false,
+                        canRead: _canRead,
+                        editable: false,
+                        available: _canRead(),
+                        child: StandaloneFilePage(
+                          key: ObjectKey(_chrome),
+                          nativeBodyGestures:
+                              node.kind == ProviderNodeKind.image ||
+                                  imgExtensionRegex
+                                      .hasMatch(providerFileNameFor(node)),
+                          header: ValueListenableBuilder<StandaloneFileHeader>(
+                            valueListenable: _chrome,
+                            builder: (context, controls, _) =>
+                                _header(palette, controls),
+                          ),
+                          // Do not put this inside the chrome builder:
+                          // publication must never rebuild its publisher.
+                          body: _body(palette),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -163,60 +299,95 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
     );
   }
 
-  Widget _header(FolderExplorerPalette palette) => Container(
-        height: 48,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
+  Widget _header(
+          FolderExplorerPalette palette, StandaloneFileHeader controls) =>
+      Padding(
+        key: const ValueKey('external-file-header'),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            IconButton(
-              onPressed: _hasPrevious ? () => _step(-1) : null,
-              icon: const Icon(Icons.chevron_left_rounded, size: 20),
-              color: palette.textSecondary,
-              splashRadius: 16,
-            ),
-            IconButton(
-              onPressed: _hasNext ? () => _step(1) : null,
-              icon: const Icon(Icons.chevron_right_rounded, size: 20),
-              color: palette.textSecondary,
-              splashRadius: 16,
-            ),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                node.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.textPrimary,
-                  fontSize: 13.5,
-                  fontVariations: const [FontVariation.weight(580)],
-                ),
+            // Provider objects have no workspace ViewPB/cover envelope. Keep
+            // their real identity rather than fabricating a decorated view.
+            Text(
+              key: const ValueKey('external-file-title'),
+              node.name,
+              style: TextStyle(
+                color: palette.textPrimary,
+                fontSize: 24,
+                fontVariations: const [FontVariation.weight(580)],
               ),
             ),
-            if ((node.webUrl ?? '').isNotEmpty)
-              Tooltip(
-                message: LocaleKeys.providers_openInSource.tr(),
-                child: IconButton(
-                  onPressed: () => unawaited(
-                    launchUrl(
-                      Uri.parse(node.webUrl!),
-                      mode: LaunchMode.externalApplication,
-                    ),
-                  ),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 17),
-                  color: palette.textSecondary,
-                  splashRadius: 16,
-                ),
-              ),
-            IconButton(
-              onPressed: () => Navigator.of(context).pop(),
-              icon: const Icon(Icons.close_rounded, size: 18),
-              color: palette.textSecondary,
-              splashRadius: 16,
+            const SizedBox(height: 8),
+            FileActionBand(
+              key: const ValueKey('external-file-actions'),
+              responsive: controls.responsiveToolbar ||
+                  (controls.toolbar == null && controls.toolbarBuilder == null),
+              builder: (context) {
+                final nativeActions = _nativeActions(context, palette);
+                final builder = controls.toolbarBuilder;
+                if (builder != null) return builder(context, nativeActions);
+                return Wrap(
+                  alignment: fileActionRunAlignment(context),
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    if (controls.leading != null) controls.leading!,
+                    if (controls.toolbar != null) controls.toolbar!,
+                    ...controls.actions,
+                    nativeActions,
+                  ],
+                );
+              },
             ),
           ],
         ),
       );
+
+  Widget _nativeActions(BuildContext context, FolderExplorerPalette palette) =>
+      Wrap(
+        key: const ValueKey('external-file-native-actions'),
+        alignment: fileActionRunAlignment(context),
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          IconButton(
+            key: const ValueKey('external-file-previous'),
+            tooltip: MaterialLocalizations.of(context).previousPageTooltip,
+            onPressed: _hasPrevious ? () => _step(-1) : null,
+            icon: const Icon(Icons.chevron_left_rounded, size: 20),
+            color: palette.textSecondary,
+          ),
+          IconButton(
+            key: const ValueKey('external-file-next'),
+            tooltip: MaterialLocalizations.of(context).nextPageTooltip,
+            onPressed: _hasNext ? () => _step(1) : null,
+            icon: const Icon(Icons.chevron_right_rounded, size: 20),
+            color: palette.textSecondary,
+          ),
+          if ((node.webUrl ?? '').isNotEmpty)
+            IconButton(
+              key: const ValueKey('external-file-open-source'),
+              tooltip: LocaleKeys.providers_openInSource.tr(),
+              onPressed: _sourceAction(node, widget.controller, _generation),
+              icon: const Icon(Icons.open_in_new_rounded, size: 17),
+              color: palette.textSecondary,
+              splashRadius: 16,
+            ),
+        ],
+      );
+  VoidCallback _sourceAction(
+      ProviderNode openedNode, ProviderController controller, int generation) {
+    final source = controller.source;
+    return () {
+      if (!_isCurrent(controller, openedNode, source, generation) ||
+          _route?.isCurrent != true) return;
+      final uri = Uri.tryParse(openedNode.webUrl ?? '');
+      if (uri != null) {
+        unawaited(launchUrl(uri, mode: LaunchMode.externalApplication));
+      }
+    };
+  }
 
   Widget _body(FolderExplorerPalette palette) {
     if (loading) {
@@ -230,40 +401,34 @@ class _ExternalFileViewerState extends State<_ExternalFileViewer> {
     }
     if (failed || path == null) {
       return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off_rounded, size: 26, color: palette.textMuted),
-            const SizedBox(height: 12),
-            Text(
-              LocaleKeys.providers_cannotOpen.tr(),
-              style: TextStyle(color: palette.textMuted, fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextButton(
-              onPressed: () => unawaited(_fetch()),
-              child: Text(LocaleKeys.providers_tryAgain.tr()),
-            ),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.cloud_off_rounded, size: 26, color: palette.textMuted),
+              const SizedBox(height: 12),
+              Text(
+                LocaleKeys.providers_cannotOpen.tr(),
+                style: TextStyle(color: palette.textMuted, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => unawaited(_fetch()),
+                child: Text(LocaleKeys.providers_tryAgain.tr()),
+              ),
+            ],
+          ),
         ),
       );
     }
 
-    final openedNode = node;
-    final openedPath = path!;
-    final controller = widget.controller;
-    return externalFileRenderer(
-      node: openedNode,
-      path: openedPath,
+    return _renderer ??= externalFileRenderer(
+      node: node,
+      path: path!,
       palette: palette,
+      bare: false,
       ocrService: widget.ocrService,
-      isAvailable: () =>
-          mounted &&
-          !loading &&
-          !failed &&
-          identical(widget.controller, controller) &&
-          identical(node, openedNode) &&
-          path == openedPath,
+      isAvailable: _canRead,
     );
   }
 }
@@ -293,6 +458,7 @@ Widget externalFileRenderer({
       palette: palette,
       ocrService: ocrService,
       isAvailable: isAvailable,
+      wholePage: !bare,
     );
   }
 
@@ -318,6 +484,7 @@ Widget externalFileRenderer({
       name: name,
       bare: bare,
       editable: false,
+      canReadFile: isAvailable,
       metadata: const {},
       onMetadataChanged: (_) {},
     );
@@ -335,15 +502,25 @@ Widget externalFileRenderer({
   if (kind == null) {
     return _Unsupported(node: node, palette: palette);
   }
-  return FilePreview(
-    key: ValueKey('external-file-${node.id}'),
-    file: file,
-    name: name,
-    kind: kind,
-    bare: bare,
-    editable: false,
-    metadata: const {},
-    onMetadataChanged: (_) {},
+  Widget preview({double? height, bool sourceText = false}) => FilePreview(
+        key: ValueKey('external-file-${node.id}'),
+        file: file,
+        name: name,
+        kind: kind,
+        bare: bare,
+        editable: false,
+        height: height,
+        framed: bare,
+        metadata: sourceText ? const {filePreviewEditModeKey: true} : const {},
+        onMetadataChanged: (_) {},
+      );
+  if (bare) return preview();
+  return LayoutBuilder(
+    builder: (context, constraints) => preview(
+      height: constraints.maxHeight,
+      sourceText: kind == FilePreviewKind.text &&
+          StandaloneFileScope.forName(context, name) != null,
+    ),
   );
 }
 
@@ -357,6 +534,7 @@ class _ExternalImageStage extends StatefulWidget {
     required this.palette,
     this.ocrService,
     this.isAvailable,
+    this.wholePage = false,
   });
 
   final ProviderNode node;
@@ -364,6 +542,7 @@ class _ExternalImageStage extends StatefulWidget {
   final FolderExplorerPalette palette;
   final OcrService? ocrService;
   final bool Function()? isAvailable;
+  final bool wholePage;
 
   @override
   State<_ExternalImageStage> createState() => _ExternalImageStageState();
@@ -372,6 +551,16 @@ class _ExternalImageStage extends StatefulWidget {
 class _ExternalImageStageState extends State<_ExternalImageStage> {
   @override
   Widget build(BuildContext context) {
+    if (widget.wholePage) {
+      // The dialog owns the current-source/read-only scope and renderer cache.
+      // Reuse its workspace counterpart's controls and native fitted pan;
+      // never download again or lend an outer file's chrome to a bare embed.
+      return workspacePhotoRenderer(
+        file: widget.file,
+        name: providerFileNameFor(widget.node),
+        ocrService: widget.ocrService,
+      );
+    }
     final id = widget.node.id;
     final path = widget.file.path;
     return ImageOcrFindRegion(
@@ -435,12 +624,4 @@ class _Unsupported extends StatelessWidget {
           ],
         ),
       );
-}
-
-class _PreviousIntent extends Intent {
-  const _PreviousIntent();
-}
-
-class _NextIntent extends Intent {
-  const _NextIntent();
 }

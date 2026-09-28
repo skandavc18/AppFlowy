@@ -56,6 +56,7 @@ import 'package:google_fonts/src/google_fonts_variant.dart';
 import 'package:pdfrx/pdfrx.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'page_icon_widget_test_support.dart';
 import 'test_asset_bundle.dart';
 
 const _title = ValueKey('workspace-file-name');
@@ -171,6 +172,32 @@ void main() {
             find.byKey(const ValueKey('workspace-file-media-actions')),
             findsNothing,
           );
+          if (extension == 'pdf') {
+            final controls = find.byKey(const ValueKey('pdf-toolbar-controls'));
+            expect(controls, findsOneWidget);
+            expect(
+              find.descendant(of: find.byKey(_row), matching: controls),
+              findsOneWidget,
+              reason: 'PDF navigation belongs to the central file header',
+            );
+            for (final key in [
+              _copy,
+              _share,
+              const ValueKey('workspace-file-rename')
+            ]) {
+              expect(find.descendant(of: controls, matching: find.byKey(key)),
+                  findsOneWidget);
+              expect(
+                tester.getCenter(find.byKey(key)).dy,
+                closeTo(
+                    tester.getCenter(find.byType(PdfPageNumberField)).dy, 1),
+              );
+            }
+            expect(find.byKey(const ValueKey('pdf-fullscreen-media-actions')),
+                findsNothing);
+            expect(
+                find.byKey(const ValueKey('pdf-toolbar-scroll')), findsNothing);
+          }
           final canvasContext = tester.element(find.byType(WorkspaceFileView));
           expect(
             _canvas(tester),
@@ -956,7 +983,10 @@ Future<void> _mount(
               child: body!,
             ),
           ),
-          home: Scaffold(body: SizedBox.expand(child: child)),
+          home: Scaffold(
+            body:
+                PassivePageIconTestScope(child: SizedBox.expand(child: child)),
+          ),
         ),
       ),
     ),

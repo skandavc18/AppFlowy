@@ -98,5 +98,20 @@ namespace flutter_inappwebview_plugin
   WebViewEnvironment::~WebViewEnvironment()
   {
     debugLog("dealloc WebViewEnvironment");
+    failedLog(Dispose());
+  }
+
+  HRESULT WebViewEnvironment::Dispose()
+  {
+    // This environment owns a hidden controller too. Releasing COM pointers
+    // alone is not an acknowledgement that its native controller was closed.
+    if (webViewController_) {
+      const auto hr = webViewController_->Close();
+      if (FAILED(hr)) return hr;
+    }
+    webView_ = nullptr;
+    webViewController_ = nullptr;
+    environment_ = nullptr;
+    return S_OK;
   }
 }

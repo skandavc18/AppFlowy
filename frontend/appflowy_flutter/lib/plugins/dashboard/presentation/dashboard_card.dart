@@ -1,8 +1,11 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_embed_find.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
 import 'package:appflowy/shared/workspace_design.dart';
@@ -168,7 +171,7 @@ class _DashboardCardState extends State<DashboardCard> {
           selected: selected,
           trailing: trailing,
         ),
-        if (!spec.collapsed)
+        if (!spec.collapsed || dashboardFindRevealsWidget(context, spec.id))
           Expanded(
             key: ValueKey('dashboard-card-body-${spec.id}'),
             child: Padding(
@@ -179,7 +182,13 @@ class _DashboardCardState extends State<DashboardCard> {
                     bare ? 0 : 14,
                     bare ? 0 : 12,
                   ),
-              child: body,
+              child: DashboardFindEmbed.supports(spec)
+                  ? DashboardFindEmbed(
+                      dashboard: controller,
+                      spec: spec,
+                      child: body,
+                    )
+                  : body,
             ),
           ),
       ],
@@ -319,13 +328,18 @@ class _DashboardCardState extends State<DashboardCard> {
                     ? GestureDetector(
                         behavior: HitTestBehavior.translucent,
                         onDoubleTap: _editable ? _rename : null,
-                        child: Text(
-                          spec.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: DashboardType.cardTitle(
-                            palette,
-                            color: tone.inkSoft,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SurfaceFindTarget(
+                            id: dashboardFindWidget(spec.id, 'title'),
+                            child: Text(
+                              spec.title,
+                              maxLines: 1,
+                              style: DashboardType.cardTitle(
+                                palette,
+                                color: tone.inkSoft,
+                              ),
+                            ),
                           ),
                         ),
                       )

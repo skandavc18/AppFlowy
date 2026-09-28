@@ -10,6 +10,9 @@ import 'package:appflowy/plugins/database/calendar/presentation/calendar_event_d
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_shell.dart';
 import 'package:appflowy/plugins/database/calendar/presentation/views/month_view.dart';
 import 'package:appflowy/plugins/database/domain/date_cell_service.dart';
+import 'package:appflowy/plugins/database/find/database_find_calendar.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
+import 'package:appflowy/plugins/database/widgets/setting/field_visibility_extension.dart';
 import 'package:appflowy/shared/calendar/calendar_event.dart';
 import 'package:appflowy/shared/calendar/calendar_layout.dart';
 import 'package:appflowy/shared/calendar/calendar_provider.dart';
@@ -152,8 +155,64 @@ class _CalendarStageState extends State<CalendarStage> {
       !event.readOnly &&
       (_workspace.providerFor(event)?.capabilities.canEdit ?? false);
 
+  String? get _primaryFieldId {
+    for (final field in widget.databaseController.fieldController.fieldInfos) {
+      if (field.isPrimary) return field.id;
+    }
+    return null;
+  }
+
+  DatabaseFindViewSnapshot _findSnapshot() {
+    final rows = widget.databaseController.rowCache.rowInfos
+        .map((row) => row.rowId)
+        .toSet();
+    return DatabaseFindViewSnapshot(
+      viewId: widget.view.id,
+      rowIds: {
+        for (final event in _workspace.events)
+          if (event.calendarId == TableCalendarProvider.localCalendarId &&
+              rows.contains(event.rowId))
+            event.rowId,
+      },
+      fieldIds: widget.databaseController.fieldController.fieldInfos
+          .where((field) => field.visibility?.isVisibleState() ?? false)
+          .map((field) => field.id),
+      revision: (
+        _workspace.filter,
+        _table.dateField?.id,
+        widget.databaseController
+      ),
+    );
+  }
+
+  Future<String?> _materializeFindTarget(DatabaseFindRequest request) async {
+    if (!request.isCurrent || request.target.rowId == null) return null;
+    for (final event in _workspace.events) {
+      if (event.calendarId != TableCalendarProvider.localCalendarId ||
+          event.rowId != request.target.rowId) {
+        continue;
+      }
+      if (!request.isCurrent) return null;
+      _shell.currentState?.revealDateForFind(event.startDay);
+      return 'Calendar date reached. Only rendered event titles can be highlighted; other properties, overflow events, and year-view density are not text in this layout. The calendar mode and filters are unchanged.';
+    }
+    return 'The row has no scheduled event allowed by the current calendar filters.';
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DatabaseFindLayout(
+        viewId: widget.view.id,
+        snapshot: _findSnapshot,
+        materialize: _materializeFindTarget,
+        child: DatabaseFindCalendarScope(
+          viewId: widget.view.id,
+          calendarId: TableCalendarProvider.localCalendarId,
+          primaryFieldId: _primaryFieldId,
+          child: _buildCalendar(context),
+        ),
+      );
+
+  Widget _buildCalendar(BuildContext context) {
     // Rebuild action affordances when access or the page lock changes.
     context.watch<PageAccessLevelBloc?>();
     return ValueListenableBuilder<CalendarViewMode?>(

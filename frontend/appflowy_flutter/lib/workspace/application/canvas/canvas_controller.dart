@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show Offset, Rect, Size;
 
+import 'package:appflowy/shared/find_replace/text_find.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_geometry.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_layout.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
@@ -781,53 +782,132 @@ class CanvasController extends ChangeNotifier {
 ///
 /// Pure, so "find on this canvas" behaves the same whether it is asked from the
 /// standalone page or from an embedded one.
-List<CanvasSearchHit> searchCanvas(CanvasDocument document, String query) {
-  final needle = query.trim().toLowerCase();
-  if (needle.isEmpty) {
+List<CanvasSearchHit> searchCanvas(
+  CanvasDocument document,
+  String query, {
+  FindOptions options = const FindOptions(),
+  bool occurrences = false,
+}) {
+  final RegExp? pattern;
+  try {
+    pattern = buildFindPattern(occurrences ? query : query.trim(), options);
+  } on FormatException {
     return const <CanvasSearchHit>[];
   }
+  if (pattern == null) return const <CanvasSearchHit>[];
   final hits = <CanvasSearchHit>[];
 
-  void consider(String id, String? label, String? body, CanvasHitKind kind) {
-    final title = (label ?? '').trim();
-    final text = (body ?? '').trim();
-    final inTitle = title.toLowerCase().contains(needle);
-    final inBody = text.toLowerCase().contains(needle);
-    if (!inTitle && !inBody) {
-      return;
+  void consider(
+    String id,
+    CanvasHitKind kind,
+    CanvasSearchField field,
+    String text,
+    String title,
+  ) {
+    for (final match in matchesOfPattern(text, pattern!)) {
+      final needle = match.group(0)!.toLowerCase();
+      hits.add(
+        CanvasSearchHit(
+          id: id,
+          kind: kind,
+          field: field,
+          source: text,
+          match: match,
+          label:
+              title.trim().isNotEmpty ? title.trim() : _snippet(text, needle),
+          snippet:
+              field == CanvasSearchField.title ? '' : _snippet(text, needle),
+          rank: field == CanvasSearchField.title ? 0 : 1,
+        ),
+      );
     }
-    hits.add(
-      CanvasSearchHit(
-        id: id,
-        kind: kind,
-        // A title match is what somebody is usually looking for, so it leads.
-        label: title.isNotEmpty ? title : _snippet(text, needle),
-        snippet: inBody ? _snippet(text, needle) : '',
-        rank: inTitle ? 0 : 1,
-      ),
-    );
   }
 
   for (final node in document.nodes) {
     consider(
       node.id,
-      node.title,
-      '${node.text}\n${node.url}',
       CanvasHitKind.node,
+      CanvasSearchField.title,
+      node.title,
+      node.title,
     );
+    // A serialized drawing is not prose. Searching it would index JSON keys,
+    // embedded resources and invisible source rather than words on the board.
+    if (!occurrences ||
+        (node.kind != CanvasNodeKind.image &&
+            (node.kind != CanvasNodeKind.diagram ||
+                node.diagramKind == CanvasDiagramKind.mermaid))) {
+      consider(
+        node.id,
+        CanvasHitKind.node,
+        CanvasSearchField.text,
+        node.text,
+        node.title,
+      );
+    }
+    if (!occurrences ||
+        node.kind == CanvasNodeKind.web ||
+        node.kind == CanvasNodeKind.bookmark) {
+      consider(
+        node.id,
+        CanvasHitKind.node,
+        CanvasSearchField.url,
+        node.url,
+        node.title,
+      );
+    }
   }
   for (final frame in document.frames) {
-    consider(frame.id, frame.title, frame.description, CanvasHitKind.frame);
+    consider(
+      frame.id,
+      CanvasHitKind.frame,
+      CanvasSearchField.title,
+      frame.title,
+      frame.title,
+    );
+    consider(
+      frame.id,
+      CanvasHitKind.frame,
+      CanvasSearchField.description,
+      frame.description,
+      frame.title,
+    );
   }
   for (final edge in document.edges) {
-    consider(edge.id, edge.label, edge.relation, CanvasHitKind.edge);
+    consider(
+      edge.id,
+      CanvasHitKind.edge,
+      CanvasSearchField.label,
+      edge.label,
+      edge.label,
+    );
+    consider(
+      edge.id,
+      CanvasHitKind.edge,
+      CanvasSearchField.relation,
+      edge.relation,
+      edge.label,
+    );
   }
 
   hits.sort((a, b) {
     final rank = a.rank.compareTo(b.rank);
-    return rank != 0 ? rank : a.label.compareTo(b.label);
+    if (rank != 0) return rank;
+    final label = a.label.compareTo(b.label);
+    if (label != 0) return label;
+    final id = a.id.compareTo(b.id);
+    if (id != 0) return id;
+    final field = a.field.index.compareTo(b.field.index);
+    return field != 0 ? field : a.match!.start.compareTo(b.match!.start);
   });
-  return hits;
+  if (occurrences) return hits;
+  // Preserve the original one-result-per-object public contract for callers
+  // that use this as a picker/outline rather than word-by-word Find.
+  final objects = <(CanvasHitKind, String), CanvasSearchHit>{};
+  for (final hit in hits) {
+    objects.putIfAbsent((hit.kind, hit.id), () => hit);
+  }
+  return objects.values.toList();
 }
 
 String _snippet(String text, String needle, {int around = 32}) {
@@ -849,6 +929,8 @@ String _snippet(String text, String needle, {int around = 32}) {
 
 enum CanvasHitKind { node, frame, edge }
 
+enum CanvasSearchField { title, text, url, description, label, relation }
+
 @immutable
 class CanvasSearchHit {
   const CanvasSearchHit({
@@ -857,6 +939,9 @@ class CanvasSearchHit {
     required this.label,
     this.snippet = '',
     this.rank = 0,
+    this.field = CanvasSearchField.title,
+    this.source = '',
+    this.match,
   });
 
   final String id;
@@ -864,6 +949,9 @@ class CanvasSearchHit {
   final String label;
   final String snippet;
   final int rank;
+  final CanvasSearchField field;
+  final String source;
+  final RegExpMatch? match;
 
   @override
   bool operator ==(Object other) =>
@@ -871,10 +959,14 @@ class CanvasSearchHit {
       other.id == id &&
       other.kind == kind &&
       other.label == label &&
-      other.snippet == snippet;
+      other.snippet == snippet &&
+      other.field == field &&
+      other.match?.start == match?.start &&
+      other.match?.end == match?.end;
 
   @override
-  int get hashCode => Object.hash(id, kind, label, snippet);
+  int get hashCode =>
+      Object.hash(id, kind, label, snippet, field, match?.start, match?.end);
 }
 
 /// The things worth listing in a canvas outline: its frames, then any card

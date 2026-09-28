@@ -39,6 +39,8 @@ import 'package:google_fonts/src/google_fonts_family_with_variant.dart';
 import 'package:google_fonts/src/google_fonts_variant.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'page_icon_widget_test_support.dart';
+
 const fileControlAppearances = ['light', 'dark', 'paper'];
 
 void fileControlTestSetup() {
@@ -159,7 +161,9 @@ Future<void> mountFileControls(
           ),
           home: Scaffold(
             body: Center(
-              child: SizedBox(width: width, height: height, child: child),
+              child: PassivePageIconTestScope(
+                child: SizedBox(width: width, height: height, child: child),
+              ),
             ),
           ),
         ),

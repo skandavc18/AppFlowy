@@ -2,9 +2,11 @@ import 'package:appflowy/generated/flowy_svgs.g.dart';
 import "package:appflowy/generated/locale_keys.g.dart";
 import 'package:appflowy/plugins/database/application/cell/cell_controller.dart';
 import 'package:appflowy/plugins/database/application/field/field_controller.dart';
+import 'package:appflowy/plugins/database/application/field/property_style.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_service.dart';
 import 'package:appflowy/plugins/database/domain/sort_service.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/grid/application/grid_bloc.dart';
 import 'package:appflowy/plugins/database/grid/application/row/row_bloc.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
@@ -34,6 +36,7 @@ class GridRow extends StatelessWidget {
     required this.index,
     this.shrinkWrap = false,
     required this.editable,
+    this.cellStyleSnapshot,
   });
 
   final FieldController fieldController;
@@ -45,6 +48,7 @@ class GridRow extends StatelessWidget {
   final int index;
   final bool shrinkWrap;
   final bool editable;
+  final PropertyStyles? cellStyleSnapshot;
 
   @override
   Widget build(BuildContext context) {
@@ -52,6 +56,7 @@ class GridRow extends StatelessWidget {
       fieldController: fieldController,
       cellBuilder: cellBuilder,
       onExpand: () => openDetailPage(context),
+      cellStyleSnapshot: cellStyleSnapshot,
     );
 
     if (!shrinkWrap) {
@@ -81,7 +86,10 @@ class GridRow extends StatelessWidget {
       );
     }
 
-    return rowContent;
+    return DatabaseFindAnchor(
+      target: DatabaseFindTarget.row(viewId, rowId),
+      child: rowContent,
+    );
   }
 }
 
@@ -241,11 +249,13 @@ class RowContent extends StatelessWidget {
     required this.fieldController,
     required this.cellBuilder,
     required this.onExpand,
+    this.cellStyleSnapshot,
   });
 
   final FieldController fieldController;
   final VoidCallback onExpand;
   final EditableCellBuilder cellBuilder;
+  final PropertyStyles? cellStyleSnapshot;
 
   @override
   Widget build(BuildContext context) {
@@ -276,11 +286,13 @@ class RowContent extends StatelessWidget {
           EditableCellStyle.desktopGrid,
         );
         return CellContainer(
+          key: ValueKey((cellContext.rowId, cellContext.fieldId)),
           width: fieldInfo.width!.toDouble(),
           isPrimary: fieldInfo.field.isPrimary,
           viewId: cellBuilder.databaseController.viewId,
           fieldId: cellContext.fieldId,
           rowId: cellContext.rowId,
+          styleSnapshot: cellStyleSnapshot,
           accessoryBuilder: (buildContext) {
             final builder = child.accessoryBuilder;
             final List<GridCellAccessoryBuilder> accessories = [];

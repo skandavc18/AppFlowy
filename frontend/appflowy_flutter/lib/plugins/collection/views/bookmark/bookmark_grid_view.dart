@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_host.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_reader.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_toolbar.dart';
 import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -26,18 +27,11 @@ class BookmarkGridView extends StatelessWidget {
           controller: controller,
           theme: theme,
           showDensity: true,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              BookmarkFilterBar(controller: controller, theme: theme),
-              Expanded(
-                child: _Wall(
-                  collection: collection,
-                  controller: controller,
-                  theme: theme,
-                ),
-              ),
-            ],
+          pageFlow: true,
+          child: _Wall(
+            collection: collection,
+            controller: controller,
+            theme: theme,
           ),
         ),
       );
@@ -75,11 +69,19 @@ class _WallState extends State<_Wall> {
     final entries = controller.entries;
 
     if (entries.isEmpty) {
-      return bookmarkEmptyView(
-        context: context,
-        controller: controller,
-        collection: widget.collection,
-        theme: theme,
+      return FileBrowserScrollView(
+        controller: scroll,
+        header: FileBrowserPageHeader.maybeOf(context),
+        slivers: [
+          SliverFillRemaining(
+              hasScrollBody: false,
+              child: bookmarkEmptyView(
+                context: context,
+                controller: controller,
+                collection: widget.collection,
+                theme: theme,
+              ))
+        ],
       );
     }
 
@@ -104,51 +106,57 @@ class _WallState extends State<_Wall> {
             final width =
                 (available - BookmarkMetrics.space4 * (columns - 1)) / columns;
 
-            return SingleChildScrollView(
+            return FileBrowserScrollView(
               controller: scroll,
-              padding: const EdgeInsets.fromLTRB(
-                BookmarkMetrics.gutter,
-                BookmarkMetrics.space1,
-                BookmarkMetrics.gutter,
-                BookmarkMetrics.space8,
-              ),
-              child: Wrap(
-                spacing: BookmarkMetrics.space4,
-                runSpacing: BookmarkMetrics.space4,
-                children: [
-                  for (final entry in entries)
-                    BookmarkCard(
-                      key: ValueKey(entry.id),
-                      entry: entry,
-                      theme: theme,
-                      width: width,
-                      showDescription: controller.settings.showDescriptions,
-                      working: controller.isWorkingOn(entry.id),
-                      onOpen: () => openBookmarkReader(
-                        context: context,
-                        entry: entry,
-                        controller: controller,
-                        collection: widget.collection,
-                        readOnly: bookmarkCollectionReadOnly(
-                          context,
-                          widget.collection,
+              header: FileBrowserPageHeader.maybeOf(context),
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(
+                    BookmarkMetrics.gutter,
+                    BookmarkMetrics.space1,
+                    BookmarkMetrics.gutter,
+                    BookmarkMetrics.space8,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                      child: Wrap(
+                    spacing: BookmarkMetrics.space4,
+                    runSpacing: BookmarkMetrics.space4,
+                    children: [
+                      for (final entry in entries)
+                        BookmarkCard(
+                          key: ValueKey(entry.id),
+                          entry: entry,
+                          theme: theme,
+                          width: width,
+                          showDescription: controller.settings.showDescriptions,
+                          working: controller.isWorkingOn(entry.id),
+                          onOpen: () => openBookmarkReader(
+                            context: context,
+                            entry: entry,
+                            controller: controller,
+                            collection: widget.collection,
+                            readOnly: bookmarkCollectionReadOnly(
+                              context,
+                              widget.collection,
+                            ),
+                          ),
+                          onToggleStar: () => controller.setStarred(
+                            entry,
+                            !entry.metadata.starred,
+                          ),
+                          onTagTapped: controller.toggleTagFilter,
+                          onContextMenu: (position) => showBookmarkMenu(
+                            context: context,
+                            entry: entry,
+                            controller: controller,
+                            collection: widget.collection,
+                            position: position,
+                          ),
                         ),
-                      ),
-                      onToggleStar: () => controller.setStarred(
-                        entry,
-                        !entry.metadata.starred,
-                      ),
-                      onTagTapped: controller.toggleTagFilter,
-                      onContextMenu: (position) => showBookmarkMenu(
-                        context: context,
-                        entry: entry,
-                        controller: controller,
-                        collection: widget.collection,
-                        position: position,
-                      ),
-                    ),
-                ],
-              ),
+                    ],
+                  )),
+                )
+              ],
             );
           },
         ),

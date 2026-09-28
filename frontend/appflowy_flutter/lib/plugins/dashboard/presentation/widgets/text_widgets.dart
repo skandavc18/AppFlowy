@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_field.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
@@ -84,6 +85,7 @@ final _heading = DashboardWidgetDefinition(
         _ => Alignment.centerLeft,
       },
       child: DashboardEditableText(
+        findId: dashboardFindWidget(context.spec.id, _keyText),
         value: context.spec.setting(_keyText),
         hint: LocaleKeys.dashboard_widget_headingHint.tr(),
         palette: context.palette,
@@ -129,6 +131,7 @@ final _text = DashboardWidgetDefinition(
   builder: (context) => Align(
     alignment: Alignment.topLeft,
     child: DashboardEditableText(
+      findId: dashboardFindWidget(context.spec.id, _keyText),
       value: context.spec.setting(_keyText),
       hint: LocaleKeys.dashboard_widget_textHint.tr(),
       palette: context.palette,
@@ -178,6 +181,7 @@ final _quote = DashboardWidgetDefinition(
             children: [
               Flexible(
                 child: DashboardEditableText(
+                  findId: dashboardFindWidget(context.spec.id, _keyText),
                   value: context.spec.setting(_keyText),
                   hint: LocaleKeys.dashboard_widget_quoteHint.tr(),
                   palette: palette,
@@ -192,6 +196,7 @@ final _quote = DashboardWidgetDefinition(
               ),
               const SizedBox(height: 6),
               DashboardEditableText(
+                findId: dashboardFindWidget(context.spec.id, _keyAuthor),
                 value: context.spec.setting(_keyAuthor),
                 hint: LocaleKeys.dashboard_widget_quoteAuthor.tr(),
                 palette: palette,
@@ -241,6 +246,7 @@ final _callout = DashboardWidgetDefinition(
       const SizedBox(width: 10),
       Expanded(
         child: DashboardEditableText(
+          findId: dashboardFindWidget(context.spec.id, _keyText),
           value: context.spec.setting(_keyText),
           hint: LocaleKeys.dashboard_widget_calloutHint.tr(),
           palette: context.palette,
@@ -279,6 +285,7 @@ final _stickyNote = DashboardWidgetDefinition(
   builder: (context) => Align(
     alignment: Alignment.topLeft,
     child: DashboardEditableText(
+      findId: dashboardFindWidget(context.spec.id, _keyText),
       value: context.spec.setting(_keyText),
       hint: LocaleKeys.dashboard_widget_stickyHint.tr(),
       palette: context.palette,

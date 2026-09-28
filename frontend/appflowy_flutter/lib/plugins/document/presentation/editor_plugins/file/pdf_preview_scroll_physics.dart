@@ -19,6 +19,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+import 'dart:async';
+
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -204,6 +206,10 @@ class PdfPreviewScrollPhysics {
 
   final TickerProvider _vsync;
   final double multiplier;
+
+  /// Optional page-level consumption, in screen-space translation units.
+  /// The supplied body callback returns actual clamped matrix movement.
+  Offset Function(Offset delta, Offset Function(Offset) body)? consumePageDelta;
 
   PdfViewerController? _controller;
   final PremiumKineticScrollModel _kineticModel;
@@ -401,14 +407,23 @@ class PdfPreviewScrollPhysics {
       return requestedTranslation;
     }
 
-    final matrix = controller.value.clone()
-      ..setTranslationRaw(
-        requestedTranslation.dx,
-        requestedTranslation.dy,
-        0,
-      );
-    controller.value = controller.makeMatrixInSafeRange(matrix);
-    return _translationOf(controller.value);
+    final before = _translationOf(controller.value);
+    Offset move(Offset delta) {
+      final start = _translationOf(controller.value);
+      final matrix = controller.value.clone()
+        ..setTranslationRaw(start.dx + delta.dx, start.dy + delta.dy, 0);
+      // pdfrx starts a safe-range animation when the nested body resizes.
+      // A plain value assignment leaves that animation alive to overwrite the
+      // next wheel residual. Zero-duration goTo cancels it and applies the
+      // same native safe range synchronously, without a second motion owner.
+      unawaited(controller.goTo(matrix, duration: Duration.zero));
+      return _translationOf(controller.value) - start;
+    }
+
+    final delta = requestedTranslation - before;
+    // Include header consumption in the result so the ONE existing kinetic
+    // owner does not mistake header travel for a body boundary and stop early.
+    return before + (consumePageDelta?.call(delta, move) ?? move(delta));
   }
 
   Offset _translationOf(Matrix4 matrix) {

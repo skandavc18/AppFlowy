@@ -30,7 +30,7 @@ namespace flutter_inappwebview_plugin
     bool is_exact_size;
     EnsureStagingTexture(width, height, is_exact_size);
 
-    auto device_context = graphics_context_->d3d_device_context();
+    auto device_context = graphics_context_.d3d_device_context();
     auto staging_texture = staging_texture_.get();
 
     if (is_exact_size) {
@@ -107,7 +107,7 @@ namespace flutter_inappwebview_plugin
       dstDesc.Usage = D3D11_USAGE_STAGING;
 
       staging_texture_ = nullptr;
-      if (!SUCCEEDED(graphics_context_->d3d_device()->CreateTexture2D(
+      if (!SUCCEEDED(graphics_context_.d3d_device()->CreateTexture2D(
         &dstDesc, nullptr, staging_texture_.put()))) {
         std::cerr << "Creating dst texture failed" << std::endl;
         return;
@@ -129,6 +129,7 @@ namespace flutter_inappwebview_plugin
       return nullptr;
     }
 
+    const auto probe_start = cadence_probe_.BeginWork();
     if (last_frame_) {
       ProcessFrame(last_frame_);
     }
@@ -139,6 +140,7 @@ namespace flutter_inappwebview_plugin
     if (buffer) {
       // Gets unlocked in the FlutterDesktopPixelBuffer's release callback.
       buffer_mutex_.lock();
+      cadence_probe_.EndWork(TextureCadenceProbe::Kind::CpuCallback, probe_start);
     }
     return buffer;
   }

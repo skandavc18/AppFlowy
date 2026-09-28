@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/document_viewer/native_file_page_scroll.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
@@ -63,6 +65,7 @@ class FilePreview extends StatefulWidget {
     this.editable = true,
     this.toolbarTrailing,
     this.pdfMenuBuilder,
+    this.pdfFileActions,
     this.height,
     this.previewScrollController,
     this.bare = false,
@@ -77,6 +80,7 @@ class FilePreview extends StatefulWidget {
   final bool editable;
   final Widget? toolbarTrailing;
   final PdfPreviewMenuBuilder? pdfMenuBuilder;
+  final Widget? pdfFileActions;
   final double? height;
   final PdfPreviewScrollController? previewScrollController;
 
@@ -122,25 +126,29 @@ class _FilePreviewState extends State<FilePreview> {
   Widget build(BuildContext context) {
     final content = _FilePreviewConfiguration(
       configuration: widget,
-      child: FutureBuilder<Widget>(
-        // A new file must not inherit the previous FutureBuilder's last data or
-        // editable renderer while its own IO is pending.
-        key: ObjectKey(preview),
-        future: preview,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return _PreviewError(
-              message: snapshot.error.toString(),
-              onRetry: () {
-                setState(() {
-                  preview = _buildPreview();
-                });
-              },
-            );
-          }
-          return snapshot.data ??
-              const Center(child: CircularProgressIndicator());
-        },
+      child: StandaloneFilePageBoundary(
+        enabled: !widget.bare &&
+            StandaloneFileScope.forName(context, widget.name) != null,
+        child: FutureBuilder<Widget>(
+          // A new file must not inherit the previous FutureBuilder's last data or
+          // editable renderer while its own IO is pending.
+          key: ObjectKey(preview),
+          future: preview,
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
+              return _PreviewError(
+                message: snapshot.error.toString(),
+                onRetry: () {
+                  setState(() {
+                    preview = _buildPreview();
+                  });
+                },
+              );
+            }
+            return snapshot.data ??
+                const Center(child: CircularProgressIndicator());
+          },
+        ),
       ),
     );
 
@@ -233,16 +241,22 @@ class _FilePreviewLoader {
       );
     }
     return switch (widget.kind) {
-      FilePreviewKind.pdf => PdfPreview(
-          key: ValueKey(widget.file.path),
-          file: widget.file,
-          name: widget.name,
-          metadata: widget.metadata,
-          onMetadataChanged: widget.onMetadataChanged,
-          editable: widget.editable,
-          menuBuilder: widget.pdfMenuBuilder,
-          scrollController: widget.previewScrollController,
-          bare: widget.bare,
+      FilePreviewKind.pdf => Builder(
+          builder: (context) {
+            final live = _FilePreviewConfiguration.maybeOf(context) ?? widget;
+            return PdfPreview(
+              key: ValueKey(widget.file.path),
+              file: widget.file,
+              name: widget.name,
+              metadata: live.metadata,
+              onMetadataChanged: live.onMetadataChanged,
+              editable: live.editable,
+              menuBuilder: live.pdfMenuBuilder,
+              fileActions: live.pdfFileActions,
+              scrollController: live.previewScrollController,
+              bare: live.bare,
+            );
+          },
         ),
       FilePreviewKind.html => _buildPreviewScaffold(
           _HtmlPreview(
@@ -1260,34 +1274,37 @@ class _EditableCodeFileState extends State<_EditableCodeFile> {
                     ),
                   ),
                 Expanded(
-                  child: TextField(
-                    key: codeFieldKey,
-                    controller: controller,
-                    focusNode: codeFocusNode,
-                    scrollController: codeScrollController,
-                    readOnly: !widget.editable,
-                    expands: true,
-                    maxLines: null,
-                    keyboardType: TextInputType.multiline,
-                    style: codeStyle,
-                    decoration: const InputDecoration(
-                      contentPadding: EdgeInsets.all(_codeFileContentInset),
-                      border: InputBorder.none,
-                      // The surrounding box already paints the sheet. A filled
-                      // field would blend Material's hover colour over it and
-                      // grey the whole editor out under the pointer.
-                      filled: false,
-                      hoverColor: Colors.transparent,
+                  child: StandaloneFileScrollRegion(
+                    controller: codeScrollController,
+                    child: TextField(
+                      key: codeFieldKey,
+                      controller: controller,
+                      focusNode: codeFocusNode,
+                      scrollController: codeScrollController,
+                      readOnly: !widget.editable,
+                      expands: true,
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      style: codeStyle,
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.all(_codeFileContentInset),
+                        border: InputBorder.none,
+                        // The surrounding box already paints the sheet. A filled
+                        // field would blend Material's hover colour over it and
+                        // grey the whole editor out under the pointer.
+                        filled: false,
+                        hoverColor: Colors.transparent,
+                      ),
+                      onChanged: (value) {
+                        setState(() {});
+                        widget.onChanged(value);
+                        findSession.setText(
+                          value,
+                          caret: controller.selection.start,
+                        );
+                        _scheduleSave(value);
+                      },
                     ),
-                    onChanged: (value) {
-                      setState(() {});
-                      widget.onChanged(value);
-                      findSession.setText(
-                        value,
-                        caret: controller.selection.start,
-                      );
-                      _scheduleSave(value);
-                    },
                   ),
                 ),
               ],
@@ -1508,21 +1525,24 @@ class _TextPreviewState extends State<_TextPreview> {
           onPointerDown: (_) => focusNode.requestFocus(),
           child: Stack(
             children: [
-              SingleChildScrollView(
+              StandaloneFileScrollRegion(
                 controller: scrollController,
-                padding: const EdgeInsets.all(_padding),
-                child: CustomPaint(
-                  painter: _TextPreviewFindPainter(
-                    contentKey: contentKey,
-                    ranges: findVisible ? findSession.ranges : const [],
-                    current: findVisible ? findSession.currentRange : null,
-                    matchColor: FindHighlightColors.match(brightness),
-                    currentColor: FindHighlightColors.current(brightness),
-                  ),
-                  child: SelectableText.rich(
-                    span,
-                    key: contentKey,
-                    focusNode: selectableFocusNode,
+                child: SingleChildScrollView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(_padding),
+                  child: CustomPaint(
+                    painter: _TextPreviewFindPainter(
+                      contentKey: contentKey,
+                      ranges: findVisible ? findSession.ranges : const [],
+                      current: findVisible ? findSession.currentRange : null,
+                      matchColor: FindHighlightColors.match(brightness),
+                      currentColor: FindHighlightColors.current(brightness),
+                    ),
+                    child: SelectableText.rich(
+                      span,
+                      key: contentKey,
+                      focusNode: selectableFocusNode,
+                    ),
                   ),
                 ),
               ),
@@ -1720,6 +1740,7 @@ final htmlPreviewScrollContentWorld =
 
 class _HtmlPreviewState extends State<_HtmlPreview> {
   InAppWebViewController? webViewController;
+  final nativePageScroll = NativeFilePageScrollBridge();
   final List<_PendingWebViewScrollCommand> pendingScrollCommands = [];
   final webViewViewportKey = GlobalKey();
   final findController = TextEditingController();
@@ -1769,6 +1790,8 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         smoothScrollingEnabled && !nextSmoothScrollingEnabled;
     smoothScrollingEnabled = nextSmoothScrollingEnabled;
     physicsConfig = nextPhysicsConfig;
+    nativePageScroll.configure(
+        kinetic: smoothScrollingEnabled, config: physicsConfig);
     if (scrollReady && (shouldReinstallEngine || shouldStopMomentum)) {
       _queueRendererCommand(
         shouldReinstallEngine
@@ -1816,6 +1839,7 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
   }
 
   void _reloadDocument() {
+    nativePageScroll.invalidate();
     preparedHtml = _prepareDocument();
     pendingScrollCommands.clear();
     scrollReady = false;
@@ -1848,6 +1872,7 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     _active = false;
     findDebounce?.cancel();
     findSession.invalidatePending();
+    nativePageScroll.cancel();
     super.deactivate();
   }
 
@@ -1865,6 +1890,7 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
 
   @override
   void dispose() {
+    nativePageScroll.dispose();
     pendingScrollCommands.clear();
     unawaited(resourceHost?.dispose());
     webViewController = null;
@@ -1917,10 +1943,12 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
 
   Widget _buildWebView(Uri? url) {
     final revision = documentRevision;
+    final environment = NativeFileWebViewEnvironment.maybeOf(context);
     final child = SizedBox.expand(
       key: webViewViewportKey,
       child: InAppWebView(
         key: ValueKey(documentRevision),
+        webViewEnvironment: environment?.environment,
         initialUrlRequest:
             url == null ? null : URLRequest(url: WebUri.uri(url)),
         initialData: url != null
@@ -1932,6 +1960,12 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
         onWebViewCreated: (controller) {
           if (!mounted || revision != documentRevision) return;
           webViewController = controller;
+          if (Platform.isWindows) {
+            // The standard request/reply JS bridge is in the page world.
+            // Authored scripts are stripped and CSP-blocked before loading.
+            nativePageScroll.attach(controller);
+          }
+          environment?.onCreated?.call(controller);
           _attachFindController(controller);
           unawaited(_installFindBridge(controller));
           _scheduleScroll();
@@ -1943,6 +1977,7 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
             return;
           }
           findDebounce?.cancel();
+          nativePageScroll.invalidate();
           _attachFindController(controller);
           if (_active) setState(() => findResult = WebViewFindResult.empty);
         },
@@ -1953,13 +1988,24 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
             return;
           }
           // A slow/failed scrolling world must not hold find hostage.
-          unawaited(_prepareScrollAfterLoad(controller));
+          if (Platform.isWindows) {
+            unawaited(
+                nativePageScroll.install(kinetic: smoothScrollingEnabled));
+            unawaited(controller.evaluateJavascript(
+              source: buildHtmlPreviewScrollbarAutoHideScript(),
+              contentWorld: htmlPreviewScrollContentWorld,
+            ));
+          } else {
+            unawaited(_prepareScrollAfterLoad(controller));
+          }
           await _installFindEngine(controller);
         },
         initialSettings: InAppWebViewSettings(
           allowFileAccessFromFileURLs: true,
-          disableHorizontalScroll: Platform.isWindows,
-          disableVerticalScroll: Platform.isWindows,
+          // Native owns gestures, including horizontal/pinch/site-owned hits.
+          // The sanitized file runtime intercepts only ordinary vertical input.
+          disableHorizontalScroll: false,
+          disableVerticalScroll: false,
           javaScriptEnabled: Platform.isWindows,
           transparentBackground: true,
           useShouldOverrideUrlLoading: true,
@@ -1989,11 +2035,15 @@ class _HtmlPreviewState extends State<_HtmlPreview> {
     final guardedChild = HistorySwipeBoundaryFeedback(
       child: PremiumScrollExclusion(
         child: PdfEmbedScrollGuard(
-          onPointerSignal: _handlePointerSignal,
-          onPointerPanZoomStart: _handlePointerPanZoomStart,
-          onPointerPanZoomUpdate: _handlePointerPanZoomUpdate,
-          onPointerPanZoomEnd: _handlePointerPanZoomEnd,
-          child: child,
+          // Never run a second raw owner alongside WebView2's site arbitration.
+          onPointerSignal: Platform.isWindows ? (_) {} : _handlePointerSignal,
+          onPointerPanZoomStart:
+              Platform.isWindows ? null : _handlePointerPanZoomStart,
+          onPointerPanZoomUpdate:
+              Platform.isWindows ? null : _handlePointerPanZoomUpdate,
+          onPointerPanZoomEnd:
+              Platform.isWindows ? null : _handlePointerPanZoomEnd,
+          child: NativeFilePageScroll(bridge: nativePageScroll, child: child),
         ),
       ),
     );

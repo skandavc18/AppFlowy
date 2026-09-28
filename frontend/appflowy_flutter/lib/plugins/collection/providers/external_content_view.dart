@@ -7,7 +7,9 @@ import 'package:appflowy/plugins/collection/providers/external_context_menu.dart
 import 'package:appflowy/plugins/collection/providers/external_file_stage.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
@@ -249,29 +251,37 @@ class _ExternalContentViewState extends State<ExternalContentView> {
             onAllowChanges: widget.onAllowChanges,
           ),
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (widget.header != null) widget.header!,
-            if (_findOpen) _findBar(palette),
-            if (trail.isNotEmpty)
-              _Trail(
-                trail: trail,
-                palette: palette,
-                onSelect: (index) {
-                  _changeFolder(
-                    () => trail.removeRange(index + 1, trail.length),
-                  );
-                },
-                onRoot: () => _changeFolder(trail.clear),
-              ),
-            Expanded(
-              child: nodes.isEmpty
-                  ? _empty(palette, controller)
-                  : widget.layout.isGrid
-                      ? _grid(nodes, palette)
-                      : _list(nodes, palette),
-            ),
+        child: FileBrowserScrollView(
+          controller: CollectionPageScrollScope.maybeOf(context),
+          scrollKey: PageStorageKey('external-content-${widget.layout.name}'),
+          header: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (FileBrowserPageHeader.maybeOf(context) case final header?)
+                header,
+              if (widget.header != null) widget.header!,
+              if (_findOpen) _findBar(palette),
+              if (trail.isNotEmpty)
+                _Trail(
+                  trail: trail,
+                  palette: palette,
+                  onSelect: (index) {
+                    _changeFolder(
+                      () => trail.removeRange(index + 1, trail.length),
+                    );
+                  },
+                  onRoot: () => _changeFolder(trail.clear),
+                ),
+            ],
+          ),
+          slivers: [
+            if (nodes.isEmpty)
+              SliverFillRemaining(
+                  hasScrollBody: false, child: _empty(palette, controller))
+            else if (widget.layout.isGrid)
+              _grid(nodes, palette)
+            else
+              _list(nodes, palette),
           ],
         ),
       ),
@@ -373,11 +383,11 @@ class _ExternalContentViewState extends State<ExternalContentView> {
   }
 
   Widget _grid(List<ProviderNode> nodes, CollectionPalette palette) {
-    return LayoutBuilder(
+    return SliverLayoutBuilder(
       builder: (context, constraints) {
         const spacing = 14.0;
         const padding = 24.0;
-        final available = constraints.maxWidth - padding * 2;
+        final available = constraints.crossAxisExtent - padding * 2;
         // Rounding rather than flooring: a row that fits 2.9 cards becomes 3
         // narrow ones, not 2 that overshoot their target by half again.
         final columns =
@@ -389,22 +399,33 @@ class _ExternalContentViewState extends State<ExternalContentView> {
             ? width
             : width * 1.06 + 44;
 
-        return GridView.builder(
+        return SliverPadding(
           padding: const EdgeInsets.fromLTRB(padding, 4, padding, 28),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: columns,
-            mainAxisSpacing: spacing,
-            crossAxisSpacing: spacing,
-            mainAxisExtent: height,
-          ),
-          itemCount: nodes.length,
-          itemBuilder: (context, index) => _Card(
-            node: nodes[index],
-            controller: widget.controller,
-            palette: palette,
-            showName: widget.layout == ExternalLayout.gallery,
-            onTap: () => _open(nodes[index]),
-            onContextMenu: (position) => _showItemMenu(nodes[index], position),
+          sliver: SliverGrid(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: spacing,
+              crossAxisSpacing: spacing,
+              mainAxisExtent: height,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, index) => _Card(
+                key: ValueKey(nodes[index].id),
+                node: nodes[index],
+                controller: widget.controller,
+                palette: palette,
+                showName: widget.layout == ExternalLayout.gallery,
+                onTap: () => _open(nodes[index]),
+                onContextMenu: (position) =>
+                    _showItemMenu(nodes[index], position),
+              ),
+              childCount: nodes.length,
+              findChildIndexCallback: (key) {
+                final index =
+                    nodes.indexWhere((node) => ValueKey(node.id) == key);
+                return index < 0 ? null : index;
+              },
+            ),
           ),
         );
       },
@@ -413,17 +434,26 @@ class _ExternalContentViewState extends State<ExternalContentView> {
 
   Widget _list(List<ProviderNode> nodes, CollectionPalette palette) {
     final compact = widget.layout == ExternalLayout.compact;
-    return ListView.builder(
+    return SliverPadding(
       padding: const EdgeInsets.fromLTRB(18, 2, 18, 24),
-      itemExtent: widget.layout.rowHeight + 2,
-      itemCount: nodes.length,
-      itemBuilder: (context, index) => _Row(
-        node: nodes[index],
-        controller: widget.controller,
-        palette: palette,
-        compact: compact,
-        onTap: () => _open(nodes[index]),
-        onContextMenu: (position) => _showItemMenu(nodes[index], position),
+      sliver: SliverFixedExtentList(
+        itemExtent: widget.layout.rowHeight + 2,
+        delegate: SliverChildBuilderDelegate(
+          (context, index) => _Row(
+            key: ValueKey(nodes[index].id),
+            node: nodes[index],
+            controller: widget.controller,
+            palette: palette,
+            compact: compact,
+            onTap: () => _open(nodes[index]),
+            onContextMenu: (position) => _showItemMenu(nodes[index], position),
+          ),
+          childCount: nodes.length,
+          findChildIndexCallback: (key) {
+            final index = nodes.indexWhere((node) => ValueKey(node.id) == key);
+            return index < 0 ? null : index;
+          },
+        ),
       ),
     );
   }
@@ -454,6 +484,7 @@ class _ExternalContentViewState extends State<ExternalContentView> {
 
 class _Card extends StatefulWidget {
   const _Card({
+    super.key,
     required this.node,
     required this.controller,
     required this.palette,
@@ -611,6 +642,7 @@ class _PlayBadge extends StatelessWidget {
 
 class _Row extends StatefulWidget {
   const _Row({
+    super.key,
     required this.node,
     required this.controller,
     required this.palette,

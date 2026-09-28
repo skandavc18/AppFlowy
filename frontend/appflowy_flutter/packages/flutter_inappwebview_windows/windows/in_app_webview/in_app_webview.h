@@ -20,6 +20,7 @@
 #include "in_app_webview_settings.h"
 #include "user_content_controller.h"
 #include "webview_channel_delegate.h"
+#include "trackpad_touch_queue.h"
 
 #include <WebView2EnvironmentOptions.h>
 
@@ -112,6 +113,8 @@ namespace flutter_inappwebview_plugin
       wil::com_ptr<ICoreWebView2Controller> webViewController,
       wil::com_ptr<ICoreWebView2CompositionController> webViewCompositionController);
     ~InAppWebView();
+    // Idempotent controller teardown on the creating platform thread.
+    HRESULT Dispose();
 
     static void createInAppWebViewEnv(const HWND parentWindow, const bool& willBeSurface, WebViewEnvironment* webViewEnvironment, const std::shared_ptr<InAppWebViewSettings> initialSettings, std::function<void(wil::com_ptr<ICoreWebView2Environment> webViewEnv,
       wil::com_ptr<ICoreWebView2Controller> webViewController,
@@ -126,7 +129,15 @@ namespace flutter_inappwebview_plugin
     void setPosition(size_t x, size_t y, float scale_factor);
     void setCursorPos(double x, double y);
     void setPointerUpdate(int32_t pointer, InAppWebViewPointerEventKind eventKind,
-      double x, double y, double size, double pressure);
+      double x, double y, double size, double pressure,
+      std::optional<int64_t> sourceMicros = std::nullopt, int64_t inputAgeMicros = 0,
+      std::optional<std::pair<double, double>> secondContact = std::nullopt,
+      std::optional<uint64_t> inputEpoch = std::nullopt);
+    void querySiteGesturePolicy(double x, double y,
+      TrackpadTouchQueue::PolicyStateCompletion completion);
+    std::optional<bool> siteGestureFallbackReady(uint64_t epoch) const;
+    void cancelTrackpadGesture();
+    bool isTrackpadInputIdle() const;
     void setPointerButtonState(InAppWebViewPointerButton button, bool isDown);
     void sendScroll(double offset, bool horizontal);
     void setScrollDelta(double delta_x, double delta_y);
@@ -161,6 +172,7 @@ namespace flutter_inappwebview_plugin
       return isLoading_;
     }
     void stopLoading() const;
+    bool rejectWindow(int64_t windowId);
     void evaluateJavascript(const std::string& source, const std::shared_ptr<ContentWorld> contentWorld, const std::function<void(std::string)> completionHandler) const;
     void callAsyncJavaScript(const std::string& functionBody, const std::string& argumentsAsJson, const std::shared_ptr<ContentWorld> contentWorld, const std::function<void(std::string)> completionHandler) const;
     void getCopyBackForwardList(const std::function<void(std::unique_ptr<WebHistory>)> completionHandler) const;
@@ -186,6 +198,9 @@ namespace flutter_inappwebview_plugin
 
     static bool isSslError(const COREWEBVIEW2_WEB_ERROR_STATUS& webErrorStatus);
   private:
+    bool disposed_ = false;
+    std::shared_ptr<bool> popupOwnerAlive_ = std::make_shared<bool>(true);
+    HRESULT close_result_ = S_OK;
     // custom_platform_view
     winrt::com_ptr<ABI::Windows::UI::Composition::IVisual> surface_;
     SurfaceSizeChangedCallback surfaceSizeChangedCallback_;

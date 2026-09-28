@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/presentation/home/home_sizes.dart';
@@ -8,9 +9,9 @@ import 'package:flutter/material.dart';
 import '../../../../shared/paper_theme.dart';
 
 abstract final class SidebarStyle {
-  static const defaultLightBackground = Color(0xFFFAF9F6);
+  static const defaultLightBackground = PremiumTheme.lightChrome;
   static const lightBackground = PaperTheme.sidebarBackground;
-  static const darkBackground = Color(0xFF1F1F1F);
+  static const darkBackground = PremiumTheme.darkChrome;
   static const lightPrimaryText = Color(0xFF2B2A28);
   static const darkPrimaryText = Color(0xE8FFFFFF);
   static const lightSecondaryText = Color(0xFF6B6963);
@@ -19,8 +20,8 @@ abstract final class SidebarStyle {
   static const darkIcon = Color(0xAEFFFFFF);
   static const lightSearchIcon = Color(0xFF6F6C66);
   static const darkSearchIcon = Color(0xAEFFFFFF);
-  static const lightHover = Color(0x0A16150F);
-  static const darkHover = Color(0x0FFFFFFF);
+  static const lightHover = Color(0x0A675443);
+  static const darkHover = Color(0x0AF8E6CA);
   static const lightSelected = Color(0x1416150F);
   static const darkSelected = Color(0x1FFFFFFF);
   static const lightEdge = Color(0x0F16150F);

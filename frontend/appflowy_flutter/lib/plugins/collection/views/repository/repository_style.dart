@@ -547,15 +547,10 @@ class RepoGlyphIcon extends StatelessWidget {
     return SizedBox(
       width: RepoMetrics.iconSlot,
       child: WorkspaceGlyph(
-        glyph.icon == Icons.balance_rounded
-            ? Icons.description_rounded
-            : glyph.icon == Icons.commit_rounded
-                ? Icons.source_rounded
-                : glyph.icon == Icons.data_array_rounded
-                    ? Icons.data_object_rounded
-                    : glyph.icon,
+        glyph.icon,
         size: size,
         color: muted ?? workspaceGlyphInk(context),
+        role: muted == null ? null : WorkspaceGlyphRole.preserveInk,
       ),
     );
   }
@@ -587,15 +582,27 @@ class RepoAction extends StatelessWidget {
   final IconData? trailingIcon;
 
   @override
-  Widget build(BuildContext context) => CollectionWorkspaceAction(
-        icon: icon == Icons.segment_rounded ? Icons.notes_rounded : icon,
+  Widget build(BuildContext context) {
+    final scope = WorkspaceGlyphScope.maybeOf(context);
+    final hasStateInk = scope?.role == WorkspaceGlyphRole.preserveInk;
+    return WorkspaceGlyphScope(
+      color: hasStateInk
+          ? scope!.color
+          : theme.textSoft.withValues(alpha: onPressed == null ? 0.45 : 1),
+      role: onPressed == null || hasStateInk
+          ? WorkspaceGlyphRole.preserveInk
+          : WorkspaceGlyphRole.standard,
+      child: CollectionWorkspaceAction(
+        icon: icon,
         tooltip: tooltip,
         label: label,
         onPressed: onPressed,
         selected: selected,
         trailingIcon: trailingIcon,
         color: theme.textSoft,
-      );
+      ),
+    );
+  }
 }
 
 /// Related actions, held together by proximity rather than by a box.
@@ -796,7 +803,7 @@ class RepoEmptyState extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               WorkspaceGlyph(
-                icon == Icons.segment_rounded ? Icons.notes_rounded : icon,
+                icon,
                 size: 26,
                 color: theme.textFaint.withValues(alpha: 0.7),
               ),

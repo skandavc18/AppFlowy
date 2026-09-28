@@ -13,6 +13,7 @@ import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/shared/slides/slide_stage.dart';
 import 'package:appflowy/shared/slides/slide_style.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/slides/slide_metadata.dart';
 import 'package:appflowy/workspace/application/slides/slide_spec.dart';
@@ -343,7 +344,11 @@ class _ToggleState extends State<_Toggle> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(widget.icon, size: 15, color: palette.textSecondary),
+              WorkspaceGlyph(
+                widget.icon,
+                size: 15,
+                color: palette.textSecondary,
+              ),
               const SizedBox(width: 7),
               Text(
                 widget.label,

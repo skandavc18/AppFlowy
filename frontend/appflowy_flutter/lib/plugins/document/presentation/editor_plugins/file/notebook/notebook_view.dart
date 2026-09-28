@@ -13,18 +13,26 @@ import 'dart:io';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/document_viewer/standalone_file_scope.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
+import 'package:appflowy/shared/document_viewer/file_action_band.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:path/path.dart' as p;
+import 'package:scroll_to_index/scroll_to_index.dart';
 
 import '../code_block_chrome.dart';
+import '../csv_find.dart';
 import 'notebook_document.dart';
+import 'notebook_find.dart';
 import 'notebook_kernel.dart';
 import 'notebook_markup.dart';
 
@@ -39,6 +47,7 @@ class NotebookView extends StatefulWidget {
     required this.source,
     this.editable = true,
     this.toolbarTrailing,
+    this.createKernel,
   });
 
   final File file;
@@ -52,6 +61,11 @@ class NotebookView extends StatefulWidget {
 
   final Widget? toolbarTrailing;
 
+  /// Allows offline tests to prove that Find never asks a kernel to run.
+  @visibleForTesting
+  final NotebookKernel Function(String language, String workingDirectory)?
+      createKernel;
+
   @override
   State<NotebookView> createState() => _NotebookViewState();
 }
@@ -62,7 +76,29 @@ class _NotebookViewState extends State<NotebookView> {
   NotebookKernel? _kernel;
 
   final Map<String, _CellEditor> _editors = {};
-  final ScrollController _scroll = ScrollController();
+  final _scroll = LocalFileFindScrollController(suggestedRowHeight: 160);
+  late final _find = LocalFileFindController(
+    canRead: () => _canRead,
+    search: _search,
+  );
+  final _outputFields = <(String, int),
+      ({NotebookOutput output, List<NotebookFindField> fields})>{};
+  StandaloneFileScope? _host;
+  String? _loadedPath;
+  String? _loadedSource;
+  int _binding = 0;
+  bool _findOpen = false;
+
+  bool get _canRead =>
+      mounted &&
+      _loadedPath == widget.file.path &&
+      _loadedSource == widget.source &&
+      (_host == null || (_host!.available && _host!.canRead()));
+
+  bool get _canEdit =>
+      _canRead &&
+      widget.editable &&
+      (_host == null || (_host!.editable && _host!.canEdit()));
 
   String? _runningCellId;
   bool _runningAll = false;
@@ -75,6 +111,18 @@ class _NotebookViewState extends State<NotebookView> {
   void initState() {
     super.initState();
     _load();
+    _find.addListener(_findChanged);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _host = StandaloneFileScope.forName(context, widget.name);
+    if (!_canEdit) {
+      _saveTimer?.cancel();
+      _saveTimer = null;
+    }
+    if (!_canRead) _find.close();
   }
 
   @override
@@ -82,38 +130,73 @@ class _NotebookViewState extends State<NotebookView> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.file.path != widget.file.path ||
         oldWidget.source != widget.source) {
-      _flushSave();
+      // widget already refers to the NEW file here. Never flush an old draft
+      // into it (or publish old matches under the new reader's access lease).
+      _saveTimer?.cancel();
+      _saveTimer = null;
+      _find.close();
+      _find.queryController.clear();
       _load();
+    } else if (!_canEdit) {
+      _saveTimer?.cancel();
+      _saveTimer = null;
     }
   }
 
   @override
   void dispose() {
     _flushSave();
+    _binding++;
     _saveTimer?.cancel();
     _outputFlush?.cancel();
     for (final editor in _editors.values) {
       editor.dispose();
     }
     _editors.clear();
+    _find.removeListener(_findChanged);
+    _find.dispose();
+    _kernel?.removeListener(_onKernelChanged);
     _kernel?.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
   void _load() {
+    _binding++;
+    _loadedPath = widget.file.path;
+    _loadedSource = widget.source;
+    _outputFlush?.cancel();
+    _outputFlush = null;
+    _runningCellId = null;
+    _runningAll = false;
+    _selectedCellId = null;
+    _outputFields.clear();
+    for (final editor in _editors.values) {
+      _retire(editor);
+    }
+    _editors.clear();
+    _kernel?.removeListener(_onKernelChanged);
+    _kernel?.dispose();
+    _kernel = null;
     try {
       final document = NotebookDocument.parse(widget.source);
-      _kernel?.dispose();
       _document = document;
       _parseError = null;
-      _kernel = NotebookKernel(
-        language: document.language,
-        workingDirectory: p.dirname(widget.file.path),
-      )..addListener(_onKernelChanged);
+      _kernel = (widget.createKernel?.call(
+            document.language,
+            p.dirname(widget.file.path),
+          ) ??
+          NotebookKernel(
+            language: document.language,
+            workingDirectory: p.dirname(widget.file.path),
+          ))
+        ..addListener(_onKernelChanged);
     } on NotebookFormatException catch (error) {
       _document = null;
       _parseError = error.message;
+    } on TypeError {
+      _document = null;
+      _parseError = 'This file does not hold a valid notebook document.';
     }
     if (mounted) {
       setState(() {});
@@ -121,7 +204,7 @@ class _NotebookViewState extends State<NotebookView> {
   }
 
   void _onKernelChanged() {
-    if (mounted) {
+    if (_canRead) {
       setState(() {});
     }
   }
@@ -129,19 +212,142 @@ class _NotebookViewState extends State<NotebookView> {
   NotebookDocument get _doc => _document!;
 
   _CellEditor _editorFor(NotebookCell cell, String language) =>
-      _editors.putIfAbsent(
-        cell.id,
-        () => _CellEditor(
+      _editors.putIfAbsent(cell.id, () {
+        final editor = _CellEditor(
           controller: NotebookCodeController(
             text: cell.source,
             language: cell.isCode ? language : 'markdown',
           ),
+        );
+        var text = editor.controller.text;
+        editor.controller.addListener(() {
+          if (text == editor.controller.text) return;
+          text = editor.controller.text;
+          if (_canRead && identical(_editors[cell.id], editor)) {
+            // Live drafts are searchable even before onChanged/model saving.
+            // Selection-only notifications and Find never schedule a save.
+            _find.refresh();
+          }
+        });
+        return editor;
+      });
+
+  void _findChanged() {
+    if (mounted && _findOpen != _find.isOpen) {
+      setState(() => _findOpen = _find.isOpen);
+    }
+  }
+
+  List<NotebookFindField> _fieldsFor(
+    NotebookCell cell,
+    int index,
+  ) {
+    final output = cell.outputs[index];
+    final key = (cell.id, index);
+    final cached = _outputFields[key];
+    if (cached != null && identical(cached.output, output)) {
+      return cached.fields;
+    }
+    final fields = notebookOutputFindFields(
+      cell.id,
+      index,
+      output,
+    );
+    _outputFields[key] = (output: output, fields: fields);
+    return fields;
+  }
+
+  List<SurfaceFindMatch> _search(String query, FindOptions options) {
+    final document = _document;
+    if (!_canRead || document == null || query.isEmpty) return const [];
+    return [
+      for (final cell in document.cells) ...[
+        ...searchSurfaceEntries(
+          [
+            SurfaceFindEntry(
+              notebookSourceFindId(cell.id),
+              _editors[cell.id]?.controller.text ?? cell.source,
+            ),
+          ],
+          query,
+          options,
         ),
-      );
+        if (cell.isCode)
+          for (var index = 0; index < cell.outputs.length; index++)
+            for (final field in _fieldsFor(cell, index))
+              ...field.search(query, options),
+      ],
+    ];
+  }
+
+  void _outputParagraphs(
+    int binding,
+    String cellId,
+    int index,
+    NotebookOutput output,
+    List<String> paragraphs,
+  ) {
+    if (!_canRead || binding != _binding || _document == null) return;
+    final cellIndex = _doc.indexOfCell(cellId);
+    if (cellIndex < 0) return;
+    final cell = _doc.cells[cellIndex];
+    if (index >= cell.outputs.length ||
+        !identical(cell.outputs[index], output)) {
+      return;
+    }
+    final fields = _fieldsFor(cell, index);
+    if (fields.length != 1 ||
+        fields.single.id.part != 'markup' ||
+        listEquals(fields.single.paragraphs, paragraphs)) {
+      return;
+    }
+    _outputFields[(cellId, index)] = (
+      output: output,
+      fields: [NotebookFindField(fields.single.id, paragraphs)],
+    );
+    _find.refresh();
+  }
+
+  Future<void> _reveal(SurfaceFindMatch hit) async {
+    final id = hit.id;
+    if (id is! NotebookFindId || _document == null) return;
+    final binding = _binding;
+    final query = _find.query;
+    final options = _find.options;
+    bool current() =>
+        _canRead &&
+        binding == _binding &&
+        _find.isOpen &&
+        query == _find.query &&
+        options == _find.options &&
+        _find.current?.id == id &&
+        _find.current?.range.start == hit.range.start &&
+        TickerMode.of(context) &&
+        ModalRoute.of(context)?.isCurrent != false;
+    if (!current()) return;
+    final index = _doc.indexOfCell(id.cellId);
+    if (index < 0) return;
+    await _scroll.reveal(index, isCurrent: current);
+    // The mounted cell exposes its live source, or unfolds the selected output
+    // without changing the user's editing/folding flags. The shared host then
+    // reveals the actual native word, not an estimated cell rectangle.
+  }
 
   // ---------------------------------------------------------------- editing
 
-  void _updateSource(String cellId, String source) {
+  void _updateSource(
+    int binding,
+    String cellId,
+    _CellEditor editor,
+    String source,
+  ) {
+    if (!_canEdit ||
+        binding != _binding ||
+        _document == null ||
+        !identical(_editors[cellId], editor) ||
+        editor.controller.text != source) {
+      return;
+    }
     final index = _doc.indexOfCell(cellId);
     if (index < 0) {
       return;
@@ -155,11 +361,14 @@ class _NotebookViewState extends State<NotebookView> {
   }
 
   void _mutate(NotebookDocument next) {
+    if (!_canEdit) return;
     setState(() => _document = next);
+    _find.refresh();
     _scheduleSave();
   }
 
   void _insertCell(int index, NotebookCellType type) {
+    if (!_canEdit || _document == null) return;
     final cell = NotebookCell.blank(type);
     _mutate(_doc.withCellInserted(index, cell));
     setState(() => _selectedCellId = cell.id);
@@ -167,16 +376,20 @@ class _NotebookViewState extends State<NotebookView> {
       _editorFor(cell, _doc.language).editingSource = true;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _editors[cell.id]?.focus.requestFocus();
+      if (_canEdit && _doc.indexOfCell(cell.id) >= 0) {
+        _editors[cell.id]?.focus.requestFocus();
+      }
     });
   }
 
   void _removeCell(String cellId) {
+    if (!_canEdit || _document == null) return;
     final index = _doc.indexOfCell(cellId);
     if (index < 0) {
       return;
     }
     _retire(_editors.remove(cellId));
+    _outputFields.removeWhere((key, _) => key.$1 == cellId);
     final next = _doc.withCellRemoved(index);
     _mutate(
       next.cells.isEmpty
@@ -195,6 +408,7 @@ class _NotebookViewState extends State<NotebookView> {
   }
 
   void _duplicateCell(String cellId) {
+    if (!_canEdit || _document == null) return;
     final index = _doc.indexOfCell(cellId);
     if (index < 0) {
       return;
@@ -215,6 +429,7 @@ class _NotebookViewState extends State<NotebookView> {
   }
 
   void _changeCellType(String cellId, NotebookCellType type) {
+    if (!_canEdit || _document == null) return;
     final index = _doc.indexOfCell(cellId);
     if (index < 0 || _doc.cells[index].type == type) {
       return;
@@ -234,6 +449,7 @@ class _NotebookViewState extends State<NotebookView> {
   }
 
   void _clearOutputs(String cellId) {
+    if (!_canEdit || _document == null) return;
     final index = _doc.indexOfCell(cellId);
     if (index < 0) {
       return;
@@ -248,6 +464,7 @@ class _NotebookViewState extends State<NotebookView> {
   }
 
   void _clearAllOutputs() {
+    if (!_canEdit || _document == null) return;
     _mutate(
       _doc.copyWith(
         cells: [
@@ -263,7 +480,7 @@ class _NotebookViewState extends State<NotebookView> {
   // ----------------------------------------------------------------- saving
 
   void _scheduleSave() {
-    if (!widget.editable) {
+    if (!_canEdit) {
       return;
     }
     _saveTimer?.cancel();
@@ -273,7 +490,7 @@ class _NotebookViewState extends State<NotebookView> {
   void _write() {
     _saveTimer = null;
     final document = _document;
-    if (document == null || !widget.editable) {
+    if (document == null || !_canEdit) {
       return;
     }
     try {
@@ -294,6 +511,8 @@ class _NotebookViewState extends State<NotebookView> {
   // ---------------------------------------------------------------- running
 
   Future<bool> _runCell(String cellId, {bool advance = false}) async {
+    if (!_canEdit || _document == null) return false;
+    final binding = _binding;
     final index = _doc.indexOfCell(cellId);
     if (index < 0) {
       return false;
@@ -331,14 +550,19 @@ class _NotebookViewState extends State<NotebookView> {
       );
     });
 
+    _find.refresh();
     final collected = <NotebookOutput>[];
     final execution = await kernel.execute(
       code,
-      onOutput: (output) => _appendOutput(cellId, collected, output),
+      onOutput: (output) {
+        if (_canEdit && binding == _binding && identical(kernel, _kernel)) {
+          _appendOutput(cellId, collected, output);
+        }
+      },
     );
 
-    if (!mounted) {
-      return !execution.failed;
+    if (!_canEdit || binding != _binding || !identical(kernel, _kernel)) {
+      return false;
     }
     _outputFlush?.cancel();
     _outputFlush = null;
@@ -365,6 +589,7 @@ class _NotebookViewState extends State<NotebookView> {
         );
       }
     });
+    _find.refresh();
     _scheduleSave();
 
     if (advance && !execution.failed) {
@@ -401,6 +626,7 @@ class _NotebookViewState extends State<NotebookView> {
 
   void _showOutputs(String cellId, List<NotebookOutput> collected) {
     _outputFlush = null;
+    if (!_canEdit || _document == null) return;
     final index = _doc.indexOfCell(cellId);
     if (index < 0 || !mounted) {
       return;
@@ -411,35 +637,44 @@ class _NotebookViewState extends State<NotebookView> {
         _doc.cells[index].copyWith(outputs: List.of(collected)),
       );
     });
+    _find.refresh();
   }
 
   void _selectNext(int index) {
-    if (index < 0) {
+    if (!_canRead || _document == null || index < 0) {
       return;
     }
     if (index + 1 >= _doc.cells.length) {
-      if (widget.editable) {
+      if (_canEdit) {
         _insertCell(_doc.cells.length, NotebookCellType.code);
       }
       return;
     }
     final next = _doc.cells[index + 1];
+    final binding = _binding;
     setState(() => _selectedCellId = next.id);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _editors[next.id]?.focus.requestFocus();
+      if (_canRead && binding == _binding) {
+        _editors[next.id]?.focus.requestFocus();
+      }
     });
   }
 
   Future<void> _runAll({bool restart = false}) async {
-    if (_runningAll || _runningCellId != null) {
+    if (!_canEdit ||
+        _document == null ||
+        _runningAll ||
+        _runningCellId != null) {
       return;
     }
+    final binding = _binding;
     setState(() => _runningAll = true);
     if (restart) {
       await _kernel?.restart();
     }
+    if (!_canEdit || binding != _binding) return;
     for (final cell in List.of(_doc.cells)) {
-      if (!mounted || !_runningAll) {
+      if (!_canEdit || binding != _binding || !_runningAll) {
         break;
       }
       if (!cell.isCode || cell.source.trim().isEmpty) {
@@ -450,7 +685,7 @@ class _NotebookViewState extends State<NotebookView> {
         break;
       }
     }
-    if (mounted) {
+    if (mounted && binding == _binding) {
       setState(() => _runningAll = false);
     }
   }
@@ -463,8 +698,21 @@ class _NotebookViewState extends State<NotebookView> {
   // ------------------------------------------------------------------ build
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ContextualFindRegion(
+        debugLabel: 'Notebook access',
+        isActive: () => _canRead,
+        onFind: _find.open,
+        child: SurfaceFindHost(
+          controller: _find,
+          debugLabel: 'Notebook',
+          onReveal: _reveal,
+          child: _buildNotebook(context),
+        ),
+      );
+
+  Widget _buildNotebook(BuildContext context) {
     final palette = CodeBlockPalette.resolve(context);
+    if (!_canRead) return const SizedBox.shrink();
     final error = _parseError;
     if (error != null) {
       return _NotebookMessage(palette: palette, message: error);
@@ -474,6 +722,11 @@ class _NotebookViewState extends State<NotebookView> {
       return const Center(child: CircularProgressIndicator());
     }
     final kernel = _kernel!;
+    final editable = _canEdit;
+    final binding = _binding;
+    void edit(VoidCallback action) {
+      if (_canEdit && binding == _binding) action();
+    }
 
     return ColoredBox(
       color: palette.surface,
@@ -485,15 +738,17 @@ class _NotebookViewState extends State<NotebookView> {
             name: widget.name,
             document: document,
             kernel: kernel,
-            editable: widget.editable,
+            editable: editable,
             running: _runningCellId != null || _runningAll,
-            editing: widget.editable && _editing,
-            onRunAll: () => unawaited(_runAll()),
-            onRestartAndRun: () => unawaited(_runAll(restart: true)),
-            onStop: () => unawaited(_stop()),
-            onRestart: () => unawaited(_kernel!.restart()),
-            onClearOutputs: _clearAllOutputs,
-            onAddCell: (type) => _insertCell(document.cells.length, type),
+            editing: editable && _editing,
+            onRunAll: () => edit(() => unawaited(_runAll())),
+            onRestartAndRun: () =>
+                edit(() => unawaited(_runAll(restart: true))),
+            onStop: () => edit(() => unawaited(_stop())),
+            onRestart: () => edit(() => unawaited(kernel.restart())),
+            onClearOutputs: () => edit(_clearAllOutputs),
+            onAddCell: (type) =>
+                edit(() => _insertCell(document.cells.length, type)),
             trailing: widget.toolbarTrailing,
           ),
           if (kernel.blockedReason.isNotEmpty)
@@ -508,67 +763,119 @@ class _NotebookViewState extends State<NotebookView> {
                   setState(() => _editing = value);
                 }
               },
-              child: SelectionArea(
-                child: ListView.builder(
-                  controller: _scroll,
-                  padding: const EdgeInsets.fromLTRB(14, 10, 18, 60),
-                  itemCount: document.cells.length + 1,
-                  itemBuilder: (context, index) {
-                    if (index == document.cells.length) {
-                      return _NotebookInsertStrip(
-                        palette: palette,
-                        visible: widget.editable,
-                        alwaysVisible: true,
-                        onInsert: (type) => _insertCell(index, type),
-                      );
-                    }
-                    final cell = document.cells[index];
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (index > 0)
-                          _NotebookInsertStrip(
+              child: ContextualFindRegion(
+                debugLabel: 'Notebook cells',
+                isActive: () => _canRead,
+                findInEditable: true,
+                onFind: _find.open,
+                child: SelectionArea(
+                  child: StandaloneFileScrollRegion(
+                    controller: _scroll,
+                    enabled: _host != null,
+                    child: ListView.builder(
+                      controller: _scroll,
+                      padding:
+                          EdgeInsets.fromLTRB(14, _findOpen ? 86 : 10, 18, 60),
+                      itemCount: document.cells.length + 1,
+                      findChildIndexCallback: (key) {
+                        if (key is! ValueKey<(int, String)> ||
+                            key.value.$1 != binding) {
+                          return null;
+                        }
+                        final index = document.indexOfCell(key.value.$2);
+                        return index < 0 ? null : index;
+                      },
+                      itemBuilder: (context, index) {
+                        if (index == document.cells.length) {
+                          return _NotebookInsertStrip(
                             palette: palette,
-                            visible: widget.editable,
-                            onInsert: (type) => _insertCell(index, type),
+                            visible: editable,
+                            alwaysVisible: true,
+                            onInsert: (type) =>
+                                edit(() => _insertCell(index, type)),
+                          );
+                        }
+                        final cell = document.cells[index];
+                        final editor = _editorFor(cell, document.language);
+                        return AutoScrollTag(
+                          key: ValueKey((binding, cell.id)),
+                          controller: _scroll,
+                          index: index,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              if (index > 0)
+                                _NotebookInsertStrip(
+                                  palette: palette,
+                                  visible: editable,
+                                  onInsert: (type) =>
+                                      edit(() => _insertCell(index, type)),
+                                ),
+                              _NotebookCellView(
+                                key: ValueKey(cell.id),
+                                cell: cell,
+                                editor: editor,
+                                palette: palette,
+                                language: document.language,
+                                editable: editable,
+                                canRun: editable && kernel.canRun,
+                                running: _runningCellId == cell.id,
+                                selected: _selectedCellId == cell.id,
+                                baseDirectory: p.dirname(widget.file.path),
+                                awaitingInput: _runningCellId == cell.id &&
+                                    kernel.awaitingInput,
+                                inputPrompt: kernel.inputPrompt,
+                                onInputSubmitted: (value) =>
+                                    edit(() => kernel.provideInput(value)),
+                                onSelected: () {
+                                  if (_canRead && binding == _binding) {
+                                    setState(() => _selectedCellId = cell.id);
+                                  }
+                                },
+                                onSourceChanged: (value) => _updateSource(
+                                  binding,
+                                  cell.id,
+                                  editor,
+                                  value,
+                                ),
+                                onOutputParagraphs:
+                                    (index, output, paragraphs) =>
+                                        _outputParagraphs(
+                                  binding,
+                                  cell.id,
+                                  index,
+                                  output,
+                                  paragraphs,
+                                ),
+                                onRun: ({bool advance = false}) => edit(
+                                  () => unawaited(
+                                    _runCell(cell.id, advance: advance),
+                                  ),
+                                ),
+                                onStop: () => edit(() => unawaited(_stop())),
+                                onMove: (delta) => edit(
+                                  () => _mutate(
+                                    _doc.withCellMoved(
+                                      _doc.indexOfCell(cell.id),
+                                      delta,
+                                    ),
+                                  ),
+                                ),
+                                onDuplicate: () =>
+                                    edit(() => _duplicateCell(cell.id)),
+                                onDelete: () =>
+                                    edit(() => _removeCell(cell.id)),
+                                onChangeType: (type) =>
+                                    edit(() => _changeCellType(cell.id, type)),
+                                onClearOutput: () =>
+                                    edit(() => _clearOutputs(cell.id)),
+                              ),
+                            ],
                           ),
-                        _NotebookCellView(
-                          key: ValueKey(cell.id),
-                          cell: cell,
-                          editor: _editorFor(cell, document.language),
-                          palette: palette,
-                          language: document.language,
-                          editable: widget.editable,
-                          canRun: kernel.canRun,
-                          running: _runningCellId == cell.id,
-                          selected: _selectedCellId == cell.id,
-                          baseDirectory: p.dirname(widget.file.path),
-                          awaitingInput:
-                              _runningCellId == cell.id && kernel.awaitingInput,
-                          inputPrompt: kernel.inputPrompt,
-                          onInputSubmitted: kernel.provideInput,
-                          onSelected: () =>
-                              setState(() => _selectedCellId = cell.id),
-                          onSourceChanged: (value) =>
-                              _updateSource(cell.id, value),
-                          onRun: ({bool advance = false}) =>
-                              unawaited(_runCell(cell.id, advance: advance)),
-                          onStop: () => unawaited(_stop()),
-                          onMove: (delta) => _mutate(
-                            _doc.withCellMoved(
-                              _doc.indexOfCell(cell.id),
-                              delta,
-                            ),
-                          ),
-                          onDuplicate: () => _duplicateCell(cell.id),
-                          onDelete: () => _removeCell(cell.id),
-                          onChangeType: (type) =>
-                              _changeCellType(cell.id, type),
-                          onClearOutput: () => _clearOutputs(cell.id),
-                        ),
-                      ],
-                    );
-                  },
+                        );
+                      },
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -659,7 +966,21 @@ class _NotebookToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final host = StandaloneFileScope.forName(context, name);
-    final toolbar = Container(
+    if (host == null) return _buildToolbar(context);
+    return StandaloneFileHeaderSlot(
+      controller: host.chrome,
+      controls: StandaloneFileHeader(
+        responsiveToolbar: true,
+        toolbarBuilder: (context, fileActions) =>
+            _buildToolbar(context, fileActions: fileActions),
+        keepActionsVisible: true,
+      ),
+    );
+  }
+
+  Widget _buildToolbar(BuildContext context, {Widget? fileActions}) {
+    final standalone = fileActions != null;
+    return Container(
       constraints: const BoxConstraints(minHeight: 42),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       color: palette.header,
@@ -668,19 +989,22 @@ class _NotebookToolbar extends StatelessWidget {
           final scale = MediaQuery.textScalerOf(context).scale(12) / 12;
           final available = constraints.maxWidth;
           final stacked = available < 560 * scale;
-          final actionsWidth = stacked ? available : available * 0.52;
+          final actionsWidth =
+              standalone || stacked ? available : available * 0.52;
           final identityWidth =
               stacked ? available : available - actionsWidth - 14;
           return Wrap(
+            alignment: fileActionRunAlignment(context),
             spacing: 14,
             runSpacing: 6,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               SizedBox(
-                width: identityWidth,
+                width: standalone ? null : identityWidth,
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (host == null) ...[
+                    if (!standalone) ...[
                       Icon(
                         Icons.menu_book_rounded,
                         size: 15,
@@ -708,12 +1032,14 @@ class _NotebookToolbar extends StatelessWidget {
               SizedBox(
                 width: actionsWidth,
                 child: PreviewToolbar(
-                  keepVisible: running ||
+                  keepVisible: standalone ||
+                      running ||
                       editing ||
                       kernel.state == NotebookKernelState.unavailable ||
                       (editable && document.cells.isEmpty),
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
+                    reverse: Directionality.of(context) == TextDirection.ltr,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -733,10 +1059,12 @@ class _NotebookToolbar extends StatelessWidget {
                             tooltip: 'Run every cell in order',
                             icon: Icons.play_arrow_rounded,
                             label: 'Run all',
-                            foregroundColor:
-                                kernel.canRun ? palette.accent : null,
+                            foregroundColor: editable && kernel.canRun
+                                ? palette.accent
+                                : null,
                             iconRole: WorkspaceGlyphRole.standard,
-                            onPressed: kernel.canRun ? onRunAll : null,
+                            onPressed:
+                                editable && kernel.canRun ? onRunAll : null,
                           ),
                         if (editable)
                           CodeToolbarButton(
@@ -758,6 +1086,7 @@ class _NotebookToolbar extends StatelessWidget {
                           CodeHeaderDivider(palette: palette),
                           trailing!,
                         ],
+                        if (fileActions != null) fileActions,
                       ],
                     ),
                   ),
@@ -768,15 +1097,6 @@ class _NotebookToolbar extends StatelessWidget {
         },
       ),
     );
-    return host == null
-        ? toolbar
-        : StandaloneFileHeaderSlot(
-            controller: host.chrome,
-            controls: StandaloneFileHeader(
-              toolbar: toolbar,
-              keepActionsVisible: running || editing,
-            ),
-          );
   }
 
   void _showMenu(BuildContext context) {
@@ -787,19 +1107,19 @@ class _NotebookToolbar extends StatelessWidget {
           AppMenuItem(
             label: 'Run all cells',
             icon: Icons.play_arrow_rounded,
-            enabled: kernel.canRun && !running,
+            enabled: editable && kernel.canRun && !running,
             onSelected: onRunAll,
           ),
           AppMenuItem(
             label: 'Restart and run all',
             icon: Icons.restart_alt_rounded,
-            enabled: kernel.canRun && !running,
+            enabled: editable && kernel.canRun && !running,
             onSelected: onRestartAndRun,
           ),
           AppMenuItem(
             label: 'Restart the kernel',
             icon: Icons.power_settings_new_rounded,
-            enabled: kernel.isRunning,
+            enabled: editable && kernel.isRunning,
             onSelected: onRestart,
           ),
           const AppMenuSeparator(),
@@ -1042,6 +1362,7 @@ class _NotebookCellView extends StatefulWidget {
     required this.onInputSubmitted,
     required this.onSelected,
     required this.onSourceChanged,
+    required this.onOutputParagraphs,
     required this.onRun,
     required this.onStop,
     required this.onMove,
@@ -1065,6 +1386,7 @@ class _NotebookCellView extends StatefulWidget {
   final ValueChanged<String> onInputSubmitted;
   final VoidCallback onSelected;
   final ValueChanged<String> onSourceChanged;
+  final void Function(int, NotebookOutput, List<String>) onOutputParagraphs;
   final void Function({bool advance}) onRun;
   final VoidCallback onStop;
   final ValueChanged<int> onMove;
@@ -1079,6 +1401,7 @@ class _NotebookCellView extends StatefulWidget {
 
 class _NotebookCellViewState extends State<_NotebookCellView> {
   bool hovering = false;
+  bool _renderedOnce = false;
   final TextEditingController _input = TextEditingController();
 
   CodeBlockPalette get palette => widget.palette;
@@ -1089,10 +1412,14 @@ class _NotebookCellViewState extends State<_NotebookCellView> {
     super.dispose();
   }
 
-  bool get _showsSource =>
-      widget.cell.isCode ||
-      widget.editor.editingSource ||
-      widget.cell.type == NotebookCellType.raw;
+  bool get _showsSource {
+    final find = SurfaceFindScope.maybeOf(context);
+    return widget.cell.isCode ||
+        widget.editor.editingSource ||
+        widget.cell.type == NotebookCellType.raw ||
+        (find?.isOpen == true &&
+            find!.current?.id == notebookSourceFindId(widget.cell.id));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1152,6 +1479,7 @@ class _NotebookCellViewState extends State<_NotebookCellView> {
                         palette: palette,
                         baseDirectory: widget.baseDirectory,
                         editor: widget.editor,
+                        onParagraphs: widget.onOutputParagraphs,
                         onToggleExpanded: () => setState(
                           () => widget.editor.outputExpanded =
                               !widget.editor.outputExpanded,
@@ -1355,14 +1683,34 @@ class _NotebookCellViewState extends State<_NotebookCellView> {
   }
 
   Widget _body() {
-    if (!_showsSource) {
-      return _rendered();
+    final source = SurfaceFindTarget(
+      id: notebookSourceFindId(widget.cell.id),
+      includeEditable: true,
+      child: _editor(),
+    );
+    if (widget.cell.isCode || widget.cell.type == NotebookCellType.raw) {
+      return source;
     }
-    return _editor();
+    final showsSource = _showsSource;
+    _renderedOnce |= !showsSource;
+    // A Find source hit may temporarily expose the literal markdown. Both
+    // native subtrees keep their positions/state; no editing flag is changed.
+    // Do not create an unseen media renderer just to find a source cell.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Visibility(visible: showsSource, maintainState: true, child: source),
+        Visibility(
+          visible: !showsSource,
+          maintainState: true,
+          child: _renderedOnce ? _rendered() : const SizedBox.shrink(),
+        ),
+      ],
+    );
   }
 
   Widget _rendered() {
-    final source = widget.cell.source.trim();
+    final source = widget.editor.controller.text.trim();
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onDoubleTap: widget.editable
@@ -1380,7 +1728,7 @@ class _NotebookCellViewState extends State<_NotebookCellView> {
                 ),
               )
             : NotebookMarkup(
-                source: widget.cell.source,
+                source: widget.editor.controller.text,
                 palette: palette,
                 baseDirectory: widget.baseDirectory,
                 attachments: widget.cell.attachments,
@@ -1412,6 +1760,7 @@ class _NotebookCellViewState extends State<_NotebookCellView> {
           },
         },
         child: TextField(
+          key: ValueKey(('notebook-source', widget.cell.id)),
           controller: widget.editor.controller,
           focusNode: widget.editor.focus,
           readOnly: !widget.editable,
@@ -1499,6 +1848,7 @@ class _NotebookOutputs extends StatelessWidget {
     required this.baseDirectory,
     required this.editor,
     required this.onToggleExpanded,
+    required this.onParagraphs,
   });
 
   final NotebookCell cell;
@@ -1506,11 +1856,14 @@ class _NotebookOutputs extends StatelessWidget {
   final String baseDirectory;
   final _CellEditor editor;
   final VoidCallback onToggleExpanded;
+  final void Function(int, NotebookOutput, List<String>) onParagraphs;
 
   @override
   Widget build(BuildContext context) {
-    final outputs =
-        cell.outputs.where((output) => !output.isEmpty).toList(growable: false);
+    final outputs = [
+      for (var index = 0; index < cell.outputs.length; index++)
+        if (!cell.outputs[index].isEmpty) index,
+    ];
     if (outputs.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -1527,19 +1880,28 @@ class _NotebookOutputs extends StatelessWidget {
           for (var index = 0; index < outputs.length; index++)
             Padding(
               padding: EdgeInsets.only(top: index == 0 ? 0 : 8),
-              child: _output(outputs[index]),
+              child: _output(
+                context,
+                cell.outputs[outputs[index]],
+                outputs[index],
+              ),
             ),
         ],
       ),
     );
   }
 
-  Widget _output(NotebookOutput output) {
+  Widget _output(BuildContext context, NotebookOutput output, int index) {
     if (output.isError) {
-      return _errorPanel(output);
+      return _errorPanel(output, index);
     }
     if (output.kind == NotebookOutputKind.stream) {
-      return _streamText(output);
+      return _monoText(
+        context,
+        index,
+        output.text.trimRight(),
+        output.isStandardError ? palette.error : palette.textPrimary,
+      );
     }
 
     final image = output.image;
@@ -1573,51 +1935,76 @@ class _NotebookOutputs extends StatelessWidget {
     }
     final html = output.html;
     if (html != null && html.trim().isNotEmpty) {
-      return NotebookMarkup(
-        source: html,
-        palette: palette,
-        isHtml: true,
-        baseDirectory: baseDirectory,
+      return _markup(
+        index,
+        output,
+        NotebookMarkup(
+          source: html,
+          palette: palette,
+          isHtml: true,
+          baseDirectory: baseDirectory,
+        ),
       );
     }
     final markdownText = output.markdown ?? output.latex;
     if (markdownText != null && markdownText.trim().isNotEmpty) {
-      return NotebookMarkup(
-        source: markdownText,
-        palette: palette,
-        baseDirectory: baseDirectory,
+      return _markup(
+        index,
+        output,
+        NotebookMarkup(
+          source: markdownText,
+          palette: palette,
+          baseDirectory: baseDirectory,
+        ),
       );
     }
-    return _monoText(output.plainText ?? '', palette.textPrimary);
+    return _monoText(
+      context,
+      index,
+      output.plainText ?? '',
+      palette.textPrimary,
+    );
   }
 
-  Widget _streamText(NotebookOutput output) => _monoText(
-        output.text.trimRight(),
-        output.isStandardError ? palette.error : palette.textPrimary,
+  Widget _markup(int index, NotebookOutput output, Widget child) =>
+      SurfaceFindTarget(
+        id: notebookOutputFindId(cell.id, index, 'markup'),
+        child: NotebookFindRenderedText(
+          onParagraphs: (paragraphs) => onParagraphs(index, output, paragraphs),
+          child: child,
+        ),
       );
 
-  Widget _monoText(String text, Color color) {
+  Widget _monoText(BuildContext context, int index, String text, Color color) {
     final lines = text.split('\n');
-    final folded =
-        !editor.outputExpanded && lines.length > notebookOutputPreviewLines;
-    final shown =
-        folded ? lines.take(notebookOutputPreviewLines).join('\n') : text;
+    final preview = lines.take(notebookOutputPreviewLines).join('\n');
+    final id = notebookOutputFindId(cell.id, index, 'text');
+    final find = SurfaceFindScope.maybeOf(context);
+    final selected = find?.current;
+    final findExpanded = find?.isOpen == true &&
+        selected?.id == id &&
+        selected!.range.end > preview.length;
+    final expanded = editor.outputExpanded || findExpanded;
+    final folded = !expanded && lines.length > notebookOutputPreviewLines;
+    final shown = folded ? preview : text;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(
           width: double.infinity,
-          child: Text(
-            shown,
-            style: codeUiTextStyle(
-              color: color,
-              fontSize: 12.5,
-              fontWeight: FontWeight.w500,
-            ).copyWith(height: 1.5),
+          child: SurfaceFindTarget(
+            id: id,
+            child: Text(
+              shown,
+              style: codeUiTextStyle(
+                color: color,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ).copyWith(height: 1.5),
+            ),
           ),
         ),
-        if (folded ||
-            editor.outputExpanded && lines.length > notebookOutputPreviewLines)
+        if (folded || expanded && lines.length > notebookOutputPreviewLines)
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: CodeToolbarButton(
@@ -1630,14 +2017,14 @@ class _NotebookOutputs extends StatelessWidget {
               label: folded
                   ? 'Show ${lines.length - notebookOutputPreviewLines} more lines'
                   : 'Show less',
-              onPressed: onToggleExpanded,
+              onPressed: findExpanded ? null : onToggleExpanded,
             ),
           ),
       ],
     );
   }
 
-  Widget _errorPanel(NotebookOutput output) => Container(
+  Widget _errorPanel(NotebookOutput output, int index) => Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
         decoration: BoxDecoration(
@@ -1650,25 +2037,31 @@ class _NotebookOutputs extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              [output.errorName, output.errorValue]
-                  .where((part) => part.isNotEmpty)
-                  .join(': '),
-              style: codeUiTextStyle(
-                color: palette.error,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
+            SurfaceFindTarget(
+              id: notebookOutputFindId(cell.id, index, 'error'),
+              child: Text(
+                [output.errorName, output.errorValue]
+                    .where((part) => part.isNotEmpty)
+                    .join(': '),
+                style: codeUiTextStyle(
+                  color: palette.error,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
             if (output.traceback.isNotEmpty) ...[
               const SizedBox(height: 6),
-              Text(
-                output.errorText,
-                style: codeUiTextStyle(
-                  color: palette.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ).copyWith(height: 1.5),
+              SurfaceFindTarget(
+                id: notebookOutputFindId(cell.id, index, 'traceback'),
+                child: Text(
+                  output.errorText,
+                  style: codeUiTextStyle(
+                    color: palette.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ).copyWith(height: 1.5),
+                ),
               ),
             ],
           ],

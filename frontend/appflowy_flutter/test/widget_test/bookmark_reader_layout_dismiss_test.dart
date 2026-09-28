@@ -7,6 +7,7 @@ import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_reading_session.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_service.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_snapshot.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -26,6 +27,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'bookmark_reader_capture_fixture.dart';
 import 'test_asset_bundle.dart';
 
 // Real BookmarkReader, native buttons/fields, showGeneralDialog and AppMenu.
@@ -95,9 +97,27 @@ void main() {
             of: _key('tools'),
             matching: find.byType(TextButton),
           );
-          expect(tools, findsNWidgets(7));
+          expect(tools, findsNWidgets(8));
+          expect(
+            tester
+                .widgetList<BookmarkAction>(find.descendant(
+                  of: _key('tools'),
+                  matching: find.byType(BookmarkAction),
+                ))
+                .map((action) => action.icon),
+            [
+              Icons.star_outline_rounded,
+              Icons.link_rounded,
+              Icons.language_rounded,
+              Icons.chrome_reader_mode_outlined,
+              Icons.article_rounded,
+              Icons.download_rounded,
+              Icons.open_in_new_rounded,
+              Icons.vertical_split_rounded,
+            ],
+          );
           final toolBounds = [
-            for (var i = 0; i < 7; i++) tester.getRect(tools.at(i)),
+            for (var i = 0; i < 8; i++) tester.getRect(tools.at(i)),
           ];
           final closeState = tester.state(close);
           final leafState = tester.state(_probe('web'));
@@ -150,7 +170,7 @@ void main() {
             expect(tester.getRect(_key('title')), titleBounds);
             expect(tester.state(close), same(closeState));
             expect(tester.state(_probe('web')), same(leafState));
-            for (var i = 0; i < 7; i++) {
+            for (var i = 0; i < 8; i++) {
               final rect = tester.getRect(tools.at(i));
               expect(rect, toolBounds[i]);
               _expectInside(rect, headerBounds);
@@ -297,6 +317,7 @@ void main() {
           expect(fixture.snapshots.reads.length, snapshotReads);
           expect(probe.disposed, isFalse);
           expect(fixture.controller.refreshes, isEmpty);
+          expect(fixture.controller.captureSaves, isEmpty);
           await _click(tester, _button('close'));
           await _settle(tester);
           expect(probe.disposed, isTrue);
@@ -641,6 +662,7 @@ void main() {
       await _pump(tester);
       expect(fixture.controller.progress, isEmpty);
       expect(fixture.controller.refreshes, isEmpty);
+      expect(fixture.controller.captureSaves, isEmpty);
       expect(
         fixture.controller.entryFor('a')!.metadata.readState,
         BookmarkReadState.unread,
@@ -690,6 +712,20 @@ void main() {
       await mouse.addPointer(location: _away);
       await fixture.mount(tester, rebindable: true);
       await _reveal(tester, mouse);
+      // Keep a current capture before Offline so a stale Save callback cannot
+      // pass this guard test merely because no readable content was available.
+      await _click(tester, _button('reader'));
+      await _pump(tester);
+      expect(fixture.capture.captureUrls, [_urlA]);
+      expect(fixture.controller.captureSaves, isEmpty);
+      expect(tester.widget<BookmarkAction>(_key('reader')).active, isTrue);
+      await _click(tester, _button('live'));
+      await _pump(tester);
+      // Save is intentionally disabled in Offline. Retain the writable Live
+      // callback first, then use Offline to exercise guarded progress as well.
+      final download = tester
+          .widget<TextButton>(_actionWithIcon(Icons.download_rounded))
+          .onPressed!;
       await _click(tester, _button('offline'));
       await _pump(tester);
       final leaf = tester.state<_ReadingLeafState>(_probe('offline'));
@@ -698,9 +734,11 @@ void main() {
       final star = tester
           .widget<TextButton>(_actionWithIcon(Icons.star_outline_rounded))
           .onPressed!;
-      final download = tester
-          .widget<TextButton>(_actionWithIcon(Icons.download_rounded))
-          .onPressed!;
+      expect(
+        tester.widget<TextButton>(_actionWithIcon(Icons.download_rounded))
+            .onPressed,
+        isNull,
+      );
       final chips = tester.widgetList<BookmarkChip>(find.byType(BookmarkChip));
       final removeTag =
           chips.firstWhere((chip) => chip.onRemove != null).onRemove!;
@@ -724,6 +762,8 @@ void main() {
       expect(fixture.service.writes, isEmpty);
       expect(fixture.controller.progress, isEmpty);
       expect(fixture.controller.refreshes, isEmpty);
+      expect(fixture.controller.captureSaves, isEmpty);
+      expect(fixture.capture.captureUrls, [_urlA]);
       expect(fixture.controller.entryFor('a')!.view.writeToBuffer(), original);
       expect(notes.controller!.text, 'Pending guarded draft');
       await tester.tapAt(_away, kind: PointerDeviceKind.mouse);
@@ -740,6 +780,8 @@ void main() {
       expect(fixture.readerPops, 1);
       expect(fixture.service.writes, isEmpty);
       expect(fixture.controller.refreshes, isEmpty);
+      expect(fixture.controller.captureSaves, isEmpty);
+      expect(fixture.capture.captureUrls, [_urlA]);
       expect(tester.takeException(), isNull);
     } finally {
       await mouse.removePointer();
@@ -945,13 +987,19 @@ void main() {
     });
   }
 
-  for (final change in ['readOnly', 'canEdit', 'controller', 'dismissed']) {
+  for (final change in [
+    'readOnly', 'canEdit', 'controller', 'entry', 'source', 'dismissed',
+  ]) {
     _test(
         'late download after $change cannot reload or switch the current reader',
         (tester) async {
       var editable = true;
       final fixture = _Fixture(canEdit: () => editable);
-      final gate = fixture.controller.refreshGate = Completer<void>();
+      final gate = fixture.controller.saveGate = Completer<void>();
+      final workStates = <bool>[];
+      fixture.controller.addListener(() {
+        workStates.add(fixture.controller.isWorkingOn('a'));
+      });
       final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
       try {
         await mouse.addPointer(location: _away);
@@ -959,7 +1007,20 @@ void main() {
         await _reveal(tester, mouse);
         await _click(tester, _actionWithIcon(Icons.download_rounded));
         await _pump(tester);
-        expect(fixture.controller.refreshes, ['a']);
+        expect(fixture.capture.captureUrls, [_urlA]);
+        expect(fixture.controller.captureSaves, ['a']);
+        expect(fixture.controller.savedCaptures.single.url, _urlA);
+        expect(
+          fixture.capture.session.isCurrent(
+            fixture.controller.savedCaptures.single,
+          ),
+          isTrue,
+        );
+        expect(fixture.controller.saveStores.single, same(fixture.snapshots));
+        expect(fixture.controller.refreshes, isEmpty);
+        expect(fixture.controller.saveReceipts, isEmpty);
+        expect(fixture.controller.isWorkingOn('a'), isTrue);
+        expect(workStates, [true]);
         if (change == 'readOnly') {
           fixture.binding.value = fixture.reader(readOnly: true);
         } else if (change == 'canEdit') {
@@ -967,6 +1028,10 @@ void main() {
         } else if (change == 'controller') {
           fixture.binding.value =
               fixture.reader(controller: fixture.addController());
+        } else if (change == 'entry') {
+          fixture.binding.value = fixture.reader(entryId: 'b');
+        } else if (change == 'source') {
+          fixture.controller.setViews([_view('a', url: _urlB)]);
         } else {
           await tester.tapAt(_away, kind: PointerDeviceKind.mouse);
           await _settle(tester);
@@ -975,6 +1040,10 @@ void main() {
         final reads = fixture.snapshots.reads.length;
         gate.complete();
         await _pump(tester);
+        expect(fixture.controller.saveReceipts, [false]);
+        expect(fixture.controller.isWorkingOn('a'), isFalse);
+        expect(workStates.last, isFalse);
+        expect(fixture.controller.refreshes, isEmpty);
         expect(fixture.snapshots.reads.length, reads);
         expect(_probe('offline'), findsNothing);
         expect(
@@ -1003,6 +1072,10 @@ void main() {
       final pendingRead = fixture.snapshots.defer('snapshot-a');
       await _click(tester, _actionWithIcon(Icons.download_rounded));
       await _pump(tester);
+      expect(fixture.capture.captureUrls, [_urlA]);
+      expect(fixture.controller.captureSaves, ['a']);
+      expect(fixture.controller.saveReceipts, [true]);
+      expect(fixture.controller.refreshes, isEmpty);
       expect(fixture.snapshots.reads, ['snapshot-a', 'snapshot-a']);
       editable = false;
       pendingRead.complete(_snapshot('snapshot-a'));
@@ -1016,6 +1089,46 @@ void main() {
       await fixture.dispose(tester);
     }
   });
+
+  for (final saved in [false, true]) {
+    _test('capture save receipt=$saved gates snapshot loading and Offline',
+        (tester) async {
+      final fixture = _Fixture();
+      fixture.controller.saveSucceeds = saved;
+      final gate = fixture.controller.saveGate = Completer<void>();
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      try {
+        await mouse.addPointer(location: _away);
+        await fixture.mount(tester, rebindable: true);
+        await _reveal(tester, mouse);
+        await _click(tester, _actionWithIcon(Icons.download_rounded));
+        await _pump(tester);
+        expect(fixture.capture.captureUrls, [_urlA]);
+        expect(fixture.controller.captureSaves, ['a']);
+        expect(fixture.controller.saveReceipts, isEmpty);
+        expect(fixture.snapshots.reads, ['snapshot-a']);
+        expect(_probe('offline'), findsNothing);
+        gate.complete();
+        await _pump(tester);
+        expect(fixture.controller.saveReceipts, [saved]);
+        expect(
+          fixture.snapshots.reads,
+          saved ? ['snapshot-a', 'snapshot-a'] : ['snapshot-a'],
+        );
+        expect(_probe('offline'), saved ? findsOneWidget : findsNothing);
+        expect(_probe('web'), saved ? findsNothing : findsOneWidget);
+        if (!saved) {
+          expect(find.text(BookmarkReaderStrings.saveFailed), findsOneWidget);
+        }
+        expect(fixture.controller.refreshes, isEmpty);
+        expect(fixture.service.writes, isEmpty);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await mouse.removePointer();
+        await fixture.dispose(tester);
+      }
+    });
+  }
 
   _test('standalone retains its non-dismissible, always-visible chrome',
       (tester) async {
@@ -1151,6 +1264,7 @@ class _Fixture {
   final collection = _ReaderCollection();
   final service = _RecordingService();
   final snapshots = _Snapshots();
+  final capture = BookmarkReaderCaptureFixture(_urlA);
   final scale = ValueNotifier(1.0);
   final observer = _PopObserver();
   final controllers = <_ReaderController>[];
@@ -1183,6 +1297,7 @@ class _Fixture {
         entryId: entryId,
         controller: controller ?? this.controller,
         snapshots: snapshots,
+        readingSession: capture.session,
         readOnly: readOnly,
         canEdit: canEdit ?? this.canEdit,
         standalone: standalone,
@@ -1291,8 +1406,6 @@ class _Fixture {
   Future<void> dispose(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox.shrink());
     for (final controller in controllers) {
-      final refresh = controller.refreshGate;
-      if (refresh != null && !refresh.isCompleted) refresh.complete();
       final write = controller.service.writeGate;
       if (write != null && !write.isCompleted) write.complete();
       controller.dispose();
@@ -1300,6 +1413,7 @@ class _Fixture {
     for (final pending in snapshots.pending.values) {
       if (!pending.isCompleted) pending.complete();
     }
+    capture.dispose();
     await _pump(tester);
     binding.dispose();
     scale.dispose();
@@ -1347,25 +1461,13 @@ class _RecordingService extends BookmarkService {
   }
 }
 
-class _ReaderController extends BookmarkController {
+class _ReaderController extends ReaderCaptureTestController {
   _ReaderController(this.service) : super(service: service);
 
   final _RecordingService service;
-  final refreshes = <String>[];
   final progress = <(String, double)>[];
-  Completer<void>? refreshGate;
 
   bool get hasRegisteredListeners => hasListeners;
-
-  @override
-  Future<void> refresh(
-    BookmarkEntry entry, {
-    bool snapshot = false,
-    bool force = true,
-  }) async {
-    refreshes.add(entry.id);
-    await refreshGate?.future;
-  }
 
   @override
   Future<void> recordProgress(BookmarkEntry entry, double value) async {

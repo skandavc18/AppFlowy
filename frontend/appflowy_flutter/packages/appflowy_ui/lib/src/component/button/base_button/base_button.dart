@@ -125,7 +125,7 @@ class _AFBaseButtonState extends State<AFBaseButton> {
                   border: Border.all(
                     color: isFocused && widget.showFocusRing
                         ? ringColor
-                        : Colors.transparent,
+                        : ringColor.withValues(alpha: 0),
                     width: 1.5,
                     strokeAlign: BorderSide.strokeAlignOutside,
                   ),
@@ -183,10 +183,7 @@ class _AFBaseButtonState extends State<AFBaseButton> {
       return widget.ringColor!.call(context, isHovering, isDisabled, isFocused);
     }
 
-    if (isFocused) {
-      return theme.borderColorScheme.themeThick.withAlpha(128);
-    }
-
-    return Colors.transparent;
+    final ring = theme.borderColorScheme.themeThick;
+    return isFocused ? ring : ring.withValues(alpha: 0);
   }
 }

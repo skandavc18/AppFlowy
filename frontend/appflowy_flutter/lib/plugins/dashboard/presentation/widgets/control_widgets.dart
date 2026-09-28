@@ -2,11 +2,13 @@ import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_field.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/interactive/search_block_component.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_action.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_variable.dart';
@@ -167,13 +169,16 @@ final _button = DashboardWidgetDefinition(
             ),
             const SizedBox(width: 8),
             Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: DashboardType.cardTitle(
-                  context.palette,
-                  color: filled ? context.palette.onAccent : context.strong,
+              child: SurfaceFindTarget(
+                id: dashboardFindWidget(context.spec.id, _keyLabel),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: DashboardType.cardTitle(
+                    context.palette,
+                    color: filled ? context.palette.onAccent : context.strong,
+                  ),
                 ),
               ),
             ),
@@ -475,14 +480,17 @@ final _toggle = DashboardWidgetDefinition(
       child: Row(
         children: [
           Expanded(
-            child: Text(
-              context.spec.setting(
-                _keyLabel,
-                fallback: LocaleKeys.dashboard_widget_toggle.tr(),
+            child: SurfaceFindTarget(
+              id: dashboardFindWidget(context.spec.id, _keyLabel),
+              child: Text(
+                context.spec.setting(
+                  _keyLabel,
+                  fallback: LocaleKeys.dashboard_widget_toggle.tr(),
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: DashboardType.body(context.palette),
               ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: DashboardType.body(context.palette),
             ),
           ),
           const SizedBox(width: 10),

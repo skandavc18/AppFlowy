@@ -11,6 +11,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
@@ -128,12 +129,15 @@ class PdfPreview extends StatefulWidget {
     required this.onMetadataChanged,
     required this.editable,
     this.menuBuilder,
+    this.fileActions,
     this.fullscreen = false,
     this.sourceDocumentRef,
     this.scrollController,
     this.bare = false,
     this.mediaActions = const MediaActionService(),
     this.ocrIndexFactory,
+    this.canReadFile,
+    this.canEditFile,
   });
 
   final File file;
@@ -142,17 +146,22 @@ class PdfPreview extends StatefulWidget {
   final ValueChanged<Map<String, dynamic>> onMetadataChanged;
   final bool editable;
   final PdfPreviewMenuBuilder? menuBuilder;
+  final Widget? fileActions;
   final bool fullscreen;
   final PdfDocumentRef? sourceDocumentRef;
   final PdfPreviewScrollController? scrollController;
   final MediaActionService mediaActions;
 
+  /// Live originating-file guards, also carried across the fullscreen route.
+  final bool Function()? canReadFile;
+  final bool Function()? canEditFile;
+
   /// Test boundary only. Normal viewers use the local, native OCR service.
   @visibleForTesting
   final PdfOcrSearchIndex Function()? ocrIndexFactory;
 
-  /// Renders the pages alone — no toolbar, search bar or sidebar — for a host
-  /// that supplies the surface and the navigation, such as the book reader.
+  /// Renders pages without persistent chrome for a host such as the book
+  /// reader. Local Find appears only when requested and uses this same viewer.
   final bool bare;
 
   @override
@@ -203,6 +212,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   late final Listenable searchListenable =
       Listenable.merge([textSearcher, searchController]);
   late final PdfPreviewScrollPhysics wheelScrollPhysics;
+  StandaloneFilePageScroll? _filePage;
+  bool _pagePinching = false;
 
   late Map<String, dynamic> metadata =
       Map<String, dynamic>.from(widget.metadata);
@@ -231,8 +242,14 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
   PdfPageLayoutMode layoutMode = PdfPageLayoutMode.continuous;
   PdfPageTransition pageTransition = PdfPageTransition.slide;
-  late final AnimationController pageTransitionController =
-      AnimationController(vsync: this, duration: _flipHalfDuration);
+  AnimationController? _pageTransitionController;
+  AnimationController get pageTransitionController =>
+      _pageTransitionController ??=
+          AnimationController(vsync: this, duration: _flipHalfDuration);
+  int _pageTurnGeneration = 0;
+  int? _dragGeneration;
+  bool _reducedMotion = false;
+  Map<String, dynamic>? _hostMetadata;
   bool pageTurnInProgress = false;
   Timer? pageTurnBusyWatchdog;
   double pageTurnWheelTravel = 0;
@@ -266,7 +283,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
   bool get _canSearch {
     if (_disposing ||
-        widget.bare ||
+        !(widget.canReadFile?.call() ?? true) ||
         !viewerReady ||
         !viewerController.isReady ||
         document == null ||
@@ -291,7 +308,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
         PdfPageTransition.fromName(metadata[_pageTransitionMetadataKey]);
     autoHideToolbar = metadata[_autoHideToolbarMetadataKey] as bool? ?? false;
     wheelScrollPhysics = PdfPreviewScrollPhysics(vsync: this)
-      ..attach(viewerController);
+      ..attach(viewerController)
+      ..consumePageDelta = _consumeFilePageDelta;
     viewerController.addListener(_handleViewerMoved);
     textSearcher.addListener(_onTextSearchChanged);
     _attachScrollController(widget.scrollController);
@@ -311,29 +329,49 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       passwordAsked = false;
       passwordAccepted = false;
       _resetSearchDocument();
+      _readViewSettings(widget.metadata);
+    } else if (!mapEquals(oldWidget.metadata, widget.metadata)) {
+      // BookChapterStage publishes its reader settings through metadata. They
+      // are live presentation settings, not a reason to reopen the PDF.
+      _readViewSettings(widget.metadata);
     }
-    if (widget.bare && searchVisible) {
-      _closeSearch(restoreFocus: false);
+    if (oldWidget.bare != widget.bare) {
+      _cancelPageTurn();
+      _scheduleLayoutView();
     }
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    devicePixelRatio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
+    final ratio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1;
     final behavior = ScrollConfiguration.of(context);
-    final reducedMotion = MediaQuery.maybeOf(context)?.disableAnimations ??
-        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures
-            .disableAnimations;
+    final media = MediaQuery.maybeOf(context);
+    final reducedMotion = (media?.disableAnimations ??
+            WidgetsBinding.instance.platformDispatcher.accessibilityFeatures
+                .disableAnimations) ||
+        (media?.accessibleNavigation ?? false);
+    if (devicePixelRatio != ratio || _reducedMotion != reducedMotion) {
+      _cancelPageTurn();
+      devicePixelRatio = ratio;
+      _reducedMotion = reducedMotion;
+    }
     wheelScrollPhysics.configure(
       config: behavior is PremiumScrollBehavior
           ? behavior.config
           : const PremiumScrollPhysicsConfig(),
-      kineticEnabled: behavior is PremiumScrollBehavior
-          ? behavior.kineticEnabled
-          : !reducedMotion,
+      kineticEnabled: !reducedMotion &&
+          (behavior is! PremiumScrollBehavior || behavior.kineticEnabled),
     );
     final host = StandaloneFileScope.forName(context, widget.name);
+    final incoming = host?.metadata;
+    _filePage = host == null || widget.fullscreen || widget.bare
+        ? null
+        : StandaloneFilePageScroll.maybeOf(context);
+    if (incoming != null && !mapEquals(_hostMetadata, incoming)) {
+      _hostMetadata = Map<String, dynamic>.from(incoming);
+      _readViewSettings(incoming);
+    }
     if (searchVisible && host != null && (!host.available || !host.canRead())) {
       _closeSearch(restoreFocus: false);
     }
@@ -342,6 +380,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   @override
   void dispose() {
     _disposing = true;
+    ++_pageTurnGeneration;
     ++_findFocusRequest;
     ++_queryRevision;
     ++_ocrRequestRevision;
@@ -352,7 +391,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     pageTurnBusyWatchdog?.cancel();
     viewerController.removeListener(_handleViewerMoved);
     scrollThumbVisible.dispose();
-    pageTransitionController.dispose();
+    _pageTransitionController?.dispose();
+    _disposeSceneImages(pageTurnScene);
     pageRaster.dispose();
     thumbnailScrollController.dispose();
     outlineScrollController.dispose();
@@ -449,6 +489,11 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       findOpen: searchVisible,
       findFocusNode: searchFocusNode,
       enabled: _canSearch,
+      isActive: () => _canSearch,
+      // The bare chapter is the reader's active content. Let it win the
+      // selected-content fallback over collection search, without autofocus
+      // or bypassing the router's editable-field/modal/visibility checks.
+      isSelected: widget.bare ? () => _canSearch : null,
       debugLabel: 'PDF ${widget.name}',
       child: content,
     );
@@ -479,7 +524,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
   Map<ShortcutActivator, VoidCallback> get _shortcutBindings => {
         // The early shared router handles hover. Keep a local fallback for
-        // fields inside this PDF, but never consume find in a bare/unreadable
+        // fields inside this PDF, but never consume find in an unreadable
         // viewer that cannot actually show its search UI.
         if (_canSearch) ...{
           const SingleActivator(LogicalKeyboardKey.keyF, control: true):
@@ -541,13 +586,29 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           onPrint: canPrint ? _print : null,
           onFullscreen: _toggleFullscreen,
           onMenuVisibilityChanged: _setToolbarMenuVisible,
+          fileActions: widget.fullscreen
+              ? Shortcuts(
+                  shortcuts: const {
+                    SingleActivator(LogicalKeyboardKey.space): ActivateIntent(),
+                    SingleActivator(LogicalKeyboardKey.enter): ActivateIntent(),
+                  },
+                  child: MediaActionButtons(
+                    source: MediaActionSource(
+                      source: widget.file.path,
+                      name: widget.name,
+                    ),
+                    actions: widget.mediaActions,
+                    decorated: false,
+                  ),
+                )
+              : widget.fileActions,
           viewMenu: PdfViewOptionsMenu(
             preset: PdfViewPreset.resolve(layoutMode, pageTransition),
             autoHideToolbar: autoHideToolbar,
             enabled: viewerReady,
             onPresetChanged: _setViewPreset,
-            onAutoHideToolbarChanged:
-                widget.fullscreen ? _setAutoHideToolbar : null,
+            // Keep old metadata, but file options must remain discoverable.
+            onAutoHideToolbarChanged: null,
             onMenuVisibilityChanged: _setToolbarMenuVisible,
           ),
           overflow: _buildOverflowMenu(),
@@ -583,6 +644,11 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     if (textSearcher.failure case final failure?) {
       return '$count$failure';
     }
+    if (textSearcher.isSearching) {
+      return '${_searchMatches.length} matches so far · '
+          'Searching all $pageCount pages '
+          '(${textSearcher.searchedPages}/$pageCount)';
+    }
     final index = ocrIndex;
     if (!ocrSearchEnabled || index == null) {
       return null;
@@ -602,16 +668,14 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     return null;
   }
 
-  /// Chrome is measured above the canvas, never over it. Normal file views
-  /// stay pinned even if older metadata requested auto-hide; immersive hiding
-  /// is an explicit full-screen option only.
+  /// File identity and options stay visible, including fullscreen. Preserve
+  /// legacy auto-hide metadata without allowing it to hide the only exit.
   Widget _buildChrome() {
     if (widget.bare) {
-      return const SizedBox.shrink();
+      return _buildSearchBar();
     }
-    final visible = !widget.fullscreen || chromeVisible || !autoHideToolbar;
     return MediaActionReveal(
-      visible: visible,
+      visible: true,
       child: MouseRegion(
         opaque: false,
         onEnter: (_) => _setToolbarHovered(true),
@@ -621,89 +685,56 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildToolbar(),
-            if (widget.fullscreen)
-              Padding(
-                key: const ValueKey('pdf-fullscreen-media-actions'),
-                // Keep file actions and their badge outside navigation,
-                // page selection and the canvas's scroll-thumb hit area.
-                padding: EdgeInsets.fromLTRB(
-                  16,
-                  MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
-                  16,
-                  4,
-                ),
-                child: Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: Shortcuts(
-                    // Space activates these buttons, not the PDF's page turn.
-                    // Ctrl/Cmd+C remains owned by the PDF text selection.
-                    shortcuts: const {
-                      SingleActivator(LogicalKeyboardKey.space):
-                          ActivateIntent(),
-                      SingleActivator(LogicalKeyboardKey.enter):
-                          ActivateIntent(),
-                    },
-                    child: MediaActionButtons(
-                      source: MediaActionSource(
-                        source: widget.file.path,
-                        name: widget.name,
-                      ),
-                      actions: widget.mediaActions,
-                    ),
-                  ),
-                ),
-              ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: searchVisible
-                  ? AnimatedBuilder(
-                      animation: searchListenable,
-                      builder: (_, __) => PdfSearchToolbar(
-                        controller: searchController,
-                        focusNode: searchFocusNode,
-                        currentMatch: _searchMatchIndex + 1,
-                        matchCount: _searchMatches.length,
-                        searchProgress: textSearcher.isSearching
-                            ? textSearcher.searchProgress
-                            : _scanProgress,
-                        isSearching: textSearcher.isSearching ||
-                            (ocrSearchEnabled &&
-                                (ocrIndex?.isScanning ?? false)),
-                        options: searchOptions,
-                        onOptionsChanged: _setSearchOptions,
-                        queryInvalid: searchPatternInvalid,
-                        ocrEnabled: ocrSearchEnabled,
-                        onToggleOcr: _toggleOcrSearch,
-                        onRetryOcr: ocrSearchEnabled &&
-                                ocrIndex != null &&
-                                !ocrIndex!.isScanning &&
-                                !ocrIndex!.isComplete &&
-                                searchController.text.isNotEmpty &&
-                                !searchPatternInvalid
-                            ? _retryOcrSearch
-                            : null,
-                        onCopyMatch: _currentSearchHit?.isOcr == true &&
-                                document?.permissions?.allowsCopying != false
-                            ? _copyOcrMatch
-                            : null,
-                        statusOverride: _searchStatusOverride,
-                        onChanged: _search,
-                        onPrevious:
-                            _hasSearchMatches ? _previousSearchMatch : null,
-                        onNext: _hasSearchMatches ? _nextSearchMatch : null,
-                        onClose: _closeSearch,
-                        onTapOutside: (_) => _closeSearch(restoreFocus: false),
-                      ),
-                    )
-                  : const SizedBox.shrink(),
-            ),
+            _buildSearchBar(),
           ],
         ),
       ),
     );
   }
+
+  // The shared bar animates its entrance. Reserve its full height immediately
+  // instead of also animating the native PDF viewport beneath it. Even a
+  // hidden AnimatedSize can restart on a width change, and a zero-duration
+  // restart dirties its own layout in Flutter 3.27.
+  Widget _buildSearchBar() => searchVisible
+      ? AnimatedBuilder(
+          animation: searchListenable,
+          builder: (_, __) => PdfSearchToolbar(
+            controller: searchController,
+            focusNode: searchFocusNode,
+            currentMatch: _searchMatchIndex + 1,
+            matchCount: _searchMatches.length,
+            searchProgress: textSearcher.isSearching
+                ? textSearcher.searchProgress
+                : _scanProgress,
+            isSearching: textSearcher.isSearching ||
+                (ocrSearchEnabled && (ocrIndex?.isScanning ?? false)),
+            options: searchOptions,
+            onOptionsChanged: _setSearchOptions,
+            queryInvalid: searchPatternInvalid,
+            ocrEnabled: ocrSearchEnabled,
+            onToggleOcr: _toggleOcrSearch,
+            onRetryOcr: ocrSearchEnabled &&
+                    ocrIndex != null &&
+                    !ocrIndex!.isScanning &&
+                    !ocrIndex!.isComplete &&
+                    searchController.text.isNotEmpty &&
+                    !searchPatternInvalid
+                ? _retryOcrSearch
+                : null,
+            onCopyMatch: _currentSearchHit?.isOcr == true &&
+                    document?.permissions?.allowsCopying != false
+                ? _copyOcrMatch
+                : null,
+            statusOverride: _searchStatusOverride,
+            onChanged: _search,
+            onPrevious: _hasSearchMatches ? _previousSearchMatch : null,
+            onNext: _hasSearchMatches ? _nextSearchMatch : null,
+            onClose: _closeSearch,
+            onTapOutside: (_) => _closeSearch(restoreFocus: false),
+          ),
+        )
+      : const SizedBox.shrink();
 
   Widget _buildViewerBody(bool dockSidebar) {
     final viewer = RepaintBoundary(
@@ -827,7 +858,10 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   /// Grab zones on the outer corners of the spread. Dragging inwards peels the
   /// page and the curl follows the pointer.
   List<Widget> _buildPageTurnHandles() {
-    if (!pageTransition.curlsPaper || !viewerReady || quarterTurns != 0) {
+    if (_reducedMotion ||
+        !pageTransition.curlsPaper ||
+        !viewerReady ||
+        quarterTurns != 0) {
       return const [];
     }
     return [
@@ -895,6 +929,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       horizontalCacheExtent: layoutMode.isHorizontal ? 1.25 : 0.65,
       verticalCacheExtent: layoutMode.isHorizontal ? 0.65 : 1.25,
       enableTextSelection: true,
+      selectableRegionInjector: _selectableRegion,
       scrollByMouseWheel: 0,
       onInteractionStart: (_) => wheelScrollPhysics.stop(),
       matchTextColor: palette.searchMatch,
@@ -954,6 +989,14 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
   PdfPageLayout _layoutPages(List<PdfPage> pages, PdfViewerParams params) =>
       buildPdfPageLayout(pages, params, layoutMode);
+
+  Widget _selectableRegion(BuildContext context, Widget child) =>
+      CallbackShortcuts(
+        // pdfrx's own Focus consumes Page Up/Down before an outer shortcut can
+        // see them. Insert below it, keeping native SelectionArea and Ctrl+C.
+        bindings: _shortcutBindings,
+        child: SelectionArea(child: child),
+      );
 
   double _getPageRenderingScale(
     BuildContext context,
@@ -1172,6 +1215,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   /// Text caches and OCR results belong to a loaded handle, not a page number
   /// or filename. Retain the query/options while a replacement PDF is loading.
   void _resetSearchDocument() {
+    _cancelPageTurn(stopViewer: false);
+    pageRaster.clear();
     viewerReady = false;
     document = null;
     pageCount = 0;
@@ -1230,6 +1275,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     if (event is! PointerScrollEvent || !viewerController.isReady) {
       return;
     }
+    _pagePinching = false;
 
     // The side panel is a scroll surface of its own; the embed guard claims
     // wheel signals for the whole preview, so hand them back here.
@@ -1256,9 +1302,11 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
     // A vertical wheel is the only wheel most mice have; in a horizontal
     // layout it has to move the document sideways to be of any use.
-    final delta = layoutMode.isHorizontal && event.scrollDelta.dx == 0
-        ? Offset(event.scrollDelta.dy, 0)
-        : event.scrollDelta;
+    final pageDelta = _consumeNavigationHeader(event.scrollDelta);
+    if (pageDelta == Offset.zero) return;
+    final delta = layoutMode.isHorizontal && pageDelta.dx == 0
+        ? Offset(pageDelta.dy, 0)
+        : pageDelta;
 
     if (_pagedNavigation) {
       final travel = layoutMode.isHorizontal ? delta.dx : delta.dy;
@@ -1271,6 +1319,47 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     }
 
     wheelScrollPhysics.scroll(delta, kind: event.kind);
+  }
+
+  /// Page turns do not pass through the matrix consumption callback. Retire
+  /// the header before accumulating a turn, leaving the existing pager/curl
+  /// owner untouched. Reverse reveals only at the first page's real boundary,
+  /// never merely because a later page happens to fit in the viewport.
+  Offset _consumeNavigationHeader(Offset delta) {
+    final page = _filePage;
+    if (page == null ||
+        !delta.isFinite ||
+        _pagePinching ||
+        quarterTurns != 0 ||
+        !_pagedNavigation ||
+        HardwareKeyboard.instance.isShiftPressed ||
+        delta.dy.abs() <= delta.dx.abs()) {
+      return delta;
+    }
+    if (delta.dy > 0 || (currentPage == 1 && _wholePageIsVisible)) {
+      final header = StandaloneFilePageScroll.move(page.outer, delta.dy);
+      if (header != 0) wheelScrollPhysics.stop();
+      return Offset(delta.dx, delta.dy - header);
+    }
+    return delta;
+  }
+
+  Offset _consumeFilePageDelta(Offset delta, Offset Function(Offset) body) {
+    final page = _filePage;
+    if (page == null ||
+        _disposing ||
+        !mounted ||
+        _pagePinching ||
+        quarterTurns != 0 ||
+        layoutMode != PdfPageLayoutMode.continuous ||
+        delta.dx.abs() > delta.dy.abs()) return body(delta);
+    var horizontal = 0.0;
+    final consumed = page.consume(-delta.dy, (remaining) {
+      final actual = body(Offset(delta.dx, -remaining));
+      horizontal = actual.dx;
+      return -actual.dy;
+    });
+    return Offset(horizontal, -consumed);
   }
 
   bool _pointerOverSidebar(Offset globalPosition) {
@@ -1399,6 +1488,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   }
 
   void _handlePointerPanZoomStart(PointerPanZoomStartEvent event) {
+    _pagePinching = false;
     trackpadScale = 1;
     sidebarPanActive = _pointerOverSidebar(event.position);
     if (sidebarPanActive) {
@@ -1421,14 +1511,17 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       return;
     }
     if (pagedPanActive) {
-      _accumulatePageTurn(
-        layoutMode.isHorizontal
-            ? -event.localPanDelta.dx
-            : -event.localPanDelta.dy,
-      );
-      return;
+      if ((event.scale - 1).abs() <= .001 && event.rotation == 0) {
+        final delta = _consumeNavigationHeader(-event.localPanDelta);
+        _accumulatePageTurn(layoutMode.isHorizontal ? delta.dx : delta.dy);
+        return;
+      }
+      // A stream which becomes a pinch leaves paging and keeps native zoom.
+      pagedPanActive = false;
+      wheelScrollPhysics.stop();
     }
 
+    _pagePinching |= (event.scale - 1).abs() > 0.001;
     wheelScrollPhysics.updateTrackpadPan(event);
     final previousScale = trackpadScale;
     trackpadScale = event.scale;
@@ -1481,15 +1574,18 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   /// pdfrx animate its own matrix, while [fade] and [flip] swap the page while
   /// the canvas is hidden behind the animation.
   Future<void> _navigateToPage(int page) async {
-    if (!viewerReady || pageCount == 0 || pageTurnInProgress) {
+    if (!_turnIsCurrent(_pageTurnGeneration) ||
+        pageCount == 0 ||
+        pageTurnInProgress) {
       return;
     }
     final target = page.clamp(1, pageCount);
     wheelScrollPhysics.stop();
     _revealChrome();
-    _setPageTurnBusy(true);
+    final generation = ++_pageTurnGeneration;
+    _setPageTurnBusy(true, generation);
     try {
-      switch (pageTransition) {
+      switch (_reducedMotion ? PdfPageTransition.none : pageTransition) {
         case PdfPageTransition.none:
           await _moveViewToPage(target, Duration.zero);
           break;
@@ -1497,20 +1593,25 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           await _moveViewToPage(target, const Duration(milliseconds: 300));
           break;
         case PdfPageTransition.fade:
-          if (!await _animatePageTransitionTo(0.5, Curves.easeInCubic)) {
+          if (!await _animatePageTransitionTo(
+            0.5,
+            Curves.easeInCubic,
+            generation,
+          )) {
             return;
           }
           await _moveViewToPage(target, Duration.zero);
-          if (!mounted) {
+          if (!_turnIsCurrent(generation)) {
             return;
           }
-          await _animatePageTransitionTo(1, Curves.easeOutCubic);
-          if (mounted) {
+          await _animatePageTransitionTo(1, Curves.easeOutCubic, generation);
+          if (_turnIsCurrent(generation)) {
             pageTransitionController.value = 0;
           }
           break;
         case PdfPageTransition.flip:
-          if (!await _runPageCurl(target)) {
+          if (!await _runPageCurl(target, generation) &&
+              _turnIsCurrent(generation)) {
             // Nothing to rasterise yet, so fall back to a plain move rather
             // than showing no feedback at all.
             await _moveViewToPage(target, const Duration(milliseconds: 300));
@@ -1518,36 +1619,74 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           break;
       }
     } finally {
-      _setPageTurnBusy(false);
-      if (mounted && !searchFocusNode.hasFocus) {
-        viewerFocusNode.requestFocus();
-      }
+      // A cancelled turn must not unlock a newer turn or steal its focus.
+      _setPageTurnBusy(false, generation);
     }
   }
 
   /// Navigation is gated on this flag, so it must never be able to stick.
   /// A watchdog releases it even if an awaited animation is swallowed.
-  void _setPageTurnBusy(bool busy) {
+  void _setPageTurnBusy(bool busy, int generation) {
+    if (!mounted || _disposing || generation != _pageTurnGeneration) return;
     pageTurnBusyWatchdog?.cancel();
     pageTurnInProgress = busy;
     if (!busy) {
       return;
     }
     pageTurnBusyWatchdog = Timer(_pageTurnWatchdog, () {
-      pageTurnInProgress = false;
+      if (_turnIsCurrent(generation)) setState(_cancelPageTurn);
     });
   }
 
-  /// pdfrx animates every move on a single internal controller: starting a new
-  /// move cancels the previous one, and a cancelled ticker future never
-  /// completes. Waiting on one without a deadline deadlocks the viewer.
+  bool _turnIsCurrent(int generation) =>
+      mounted &&
+      !_disposing &&
+      generation == _pageTurnGeneration &&
+      viewerReady &&
+      viewerController.isReady &&
+      identical(documentRef.resolveListenable().document, document);
+
+  /// Invalidates every suspended render, fade midpoint and curl commit. Merely
+  /// clearing the busy flag lets an old await navigate a replacement document.
+  /// Call inside an existing state update/lifecycle callback when repainting.
+  void _cancelPageTurn({bool stopViewer = true}) {
+    ++_pageTurnGeneration;
+    pageTurnBusyWatchdog?.cancel();
+    pageTurnWheelResetTimer?.cancel();
+    pageTurnInProgress = false;
+    pageTurnWheelTravel = 0;
+    turnDragOrigin = null;
+    turnDragTarget = null;
+    _dragGeneration = null;
+    _disposeSceneImages(pageTurnScene);
+    pageTurnScene = null;
+    _pageTransitionController?.value = 0;
+    wheelScrollPhysics.stop();
+    if (stopViewer && viewerReady && viewerController.isReady) {
+      // pdfrx owns slide motion. A zero-duration move to its current matrix
+      // cancels that ticker too, rather than letting it finish in a new mode.
+      unawaited(
+        viewerController.goTo(
+          viewerController.value,
+          duration: Duration.zero,
+        ),
+      );
+    }
+  }
+
+  /// Bound a native move independently of the raster deadline. Cancellation
+  /// and commit eligibility are guarded by the caller's generation, not time.
   Future<void> _awaitViewerMove(Future<void> move, Duration duration) =>
       move.timeout(
         duration + const Duration(milliseconds: 500),
         onTimeout: () {},
       );
 
-  Future<bool> _animatePageTransitionTo(double target, Curve curve) async {
+  Future<bool> _animatePageTransitionTo(
+    double target,
+    Curve curve,
+    int generation,
+  ) async {
     try {
       await pageTransitionController
           .animateTo(target, duration: _fadeHalfDuration, curve: curve)
@@ -1555,19 +1694,19 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     } on TickerCanceled {
       return false;
     }
-    return mounted;
+    return _turnIsCurrent(generation);
   }
 
   // --- Page turn -----------------------------------------------------------
 
   /// Rasterises what the turn needs, peels the leaf, then commits the page.
-  Future<bool> _runPageCurl(int target) async {
+  Future<bool> _runPageCurl(int target, int generation) async {
     // Rendering runs on pdfium's worker, so it gets a deadline of its own.
     await _rasterisePagesFor(target).timeout(
       _pageRasterDeadline,
       onTimeout: () {},
     );
-    if (!mounted) {
+    if (!_turnIsCurrent(generation)) {
       return true;
     }
     final scene = _buildPageTurnScene(target, leadFromBottom: true);
@@ -1585,24 +1724,25 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           )
           .orCancel;
     } on TickerCanceled {
-      _clearPageTurnScene();
+      if (_turnIsCurrent(generation)) _clearPageTurnScene();
       return true;
     }
-    await _commitPageTurn(target);
+    if (_turnIsCurrent(generation)) await _commitPageTurn(target, generation);
     return true;
   }
 
   /// Swaps the live viewer to [target] and keeps the painted leaf up for one
   /// more frame so pdfrx has the new page on screen before it disappears.
-  Future<void> _commitPageTurn(int target) async {
-    if (!mounted) {
+  Future<void> _commitPageTurn(int target, int generation) async {
+    if (!_turnIsCurrent(generation)) {
       return;
     }
     await _moveViewToPage(target, Duration.zero);
-    if (!mounted) {
+    if (!_turnIsCurrent(generation)) {
       return;
     }
     await WidgetsBinding.instance.endOfFrame;
+    if (!_turnIsCurrent(generation)) return;
     _clearPageTurnScene();
     unawaited(_rasterisePagesFor(target));
   }
@@ -1610,10 +1750,23 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   void _clearPageTurnScene() {
     turnDragOrigin = null;
     turnDragTarget = null;
+    _dragGeneration = null;
     if (mounted && pageTurnScene != null) {
-      setState(() => pageTurnScene = null);
+      setState(() {
+        _disposeSceneImages(pageTurnScene);
+        pageTurnScene = null;
+      });
     }
     pageTransitionController.value = 0;
+  }
+
+  void _disposeSceneImages(PageTurnScene? scene) {
+    if (scene == null) return;
+    scene.leafFront.dispose();
+    scene.leafBack?.dispose();
+    for (final page in scene.underlays) {
+      page.image.dispose();
+    }
   }
 
   /// Every page the turn between [currentPage] and [target] can show.
@@ -1633,38 +1786,63 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     if (doc == null || !viewerController.isReady) {
       return;
     }
-    final width = _rasterWidth();
+    final pages = _pagesForTurn(target);
+    final width = _rasterWidth(pages);
     if (width <= 0) {
       return;
     }
-    await pageRaster.prefetch(doc, _pagesForTurn(target), targetWidth: width);
+    await _prefetchRaster(doc, pages, width);
   }
 
   /// Warms the neighbours so an interactive drag can start on the first frame.
   void _prefetchTurnPages() {
-    if (!pageTransition.curlsPaper || !viewerReady) {
+    if (_reducedMotion || !pageTransition.curlsPaper || !viewerReady) {
       return;
     }
     final doc = document;
     if (doc == null) {
       return;
     }
-    final width = _rasterWidth();
-    if (width <= 0) {
-      return;
-    }
     final pages = <int>{
       ..._pagesForTurn(_forwardPage),
       ..._pagesForTurn(_backwardPage),
     };
-    unawaited(pageRaster.prefetch(doc, pages, targetWidth: width));
+    final width = _rasterWidth(pages);
+    if (width <= 0) return;
+    unawaited(_prefetchRaster(doc, pages, width));
   }
 
-  double _rasterWidth() {
+  Future<void> _prefetchRaster(
+    PdfDocument expected,
+    Iterable<int> pages,
+    double width,
+  ) async {
+    // Retain the loaded handle while pdfium is rendering it. A replaced ref
+    // must not release the native document under an in-flight page render.
+    final ref = documentRef;
+    await ref.resolveListenable().useDocument<void>(
+      (loaded) async {
+        if (!mounted ||
+            _disposing ||
+            !identical(document, expected) ||
+            !identical(loaded, expected)) {
+          return;
+        }
+        await pageRaster.prefetch(loaded, pages, targetWidth: width);
+      },
+      ensureLoaded: false,
+    );
+  }
+
+  double _rasterWidth(Iterable<int> pages) {
     try {
-      final rect = viewerController.layout.pageLayouts[currentPage - 1];
+      final layouts = viewerController.layout.pageLayouts;
+      final width = pages.fold<double>(
+        0,
+        (width, page) => math.max(width, layouts[page - 1].width),
+      );
       return PdfPageRasterCache.rasterWidthFor(
-        onScreenWidth: rect.width * viewerController.currentZoom,
+        onScreenWidth: width * viewerController.currentZoom,
         devicePixelRatio: devicePixelRatio,
       );
     } on Object {
@@ -1736,7 +1914,10 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       return null;
     }
 
-    final minWidth = leafRect.width * devicePixelRatio;
+    final minWidth = PdfPageRasterCache.rasterWidthFor(
+      onScreenWidth: leafRect.width,
+      devicePixelRatio: devicePixelRatio,
+    );
     final front = pageRaster.peek(leafPage, minWidth: minWidth);
     final revealed = pageRaster.peek(revealedPage, minWidth: minWidth);
     if (front == null || revealed == null) {
@@ -1762,19 +1943,21 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       underlays: [
         // The page uncovered by the leaf sits in the leaf's own slot.
         PageTurnStaticPage(
-          image: revealed,
+          image: revealed.clone(),
           rect: leafRect,
           outerOnRight: forward,
         ),
         if (companion != null && companionRect != null)
           PageTurnStaticPage(
-            image: companion,
+            image: companion.clone(),
             rect: companionRect,
             outerOnRight: !forward,
           ),
       ],
-      leafFront: front,
-      leafBack: back,
+      // Cache upgrades/eviction can run during the final commit frame. Own
+      // lightweight handles until the scene is removed, not the cache's ones.
+      leafFront: front.clone(),
+      leafBack: back?.clone(),
       leafRect: leafRect,
       pivotOnLeft: forward,
       leadFromBottom: leadFromBottom,
@@ -1800,7 +1983,10 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     DragStartDetails details, {
     required bool forward,
   }) {
-    if (pageTurnScene != null || pageTurnInProgress || !viewerReady) {
+    if (_reducedMotion ||
+        pageTurnScene != null ||
+        pageTurnInProgress ||
+        !viewerReady) {
       return;
     }
     final target = forward ? _forwardPage : _backwardPage;
@@ -1822,6 +2008,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     turnDragOrigin = details.globalPosition.dx;
     turnDragForward = forward;
     turnDragTarget = target;
+    _dragGeneration = ++_pageTurnGeneration;
+    _setPageTurnBusy(true, _dragGeneration!);
     pageTransitionController.value = 0;
     setState(() => pageTurnScene = scene);
   }
@@ -1831,6 +2019,9 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     final scene = pageTurnScene;
     if (origin == null || scene == null) {
       return;
+    }
+    if (_dragGeneration case final generation?) {
+      _setPageTurnBusy(true, generation);
     }
     final travelled = turnDragForward
         ? origin - details.globalPosition.dx
@@ -1863,6 +2054,8 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     required int target,
     required bool commit,
   }) async {
+    final generation = _dragGeneration;
+    if (generation == null || !_turnIsCurrent(generation)) return;
     turnDragOrigin = null;
     final from = pageTransitionController.value;
     final remaining = commit ? 1 - from : from;
@@ -1871,7 +2064,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           .clamp(90, pageTurnDuration.inMilliseconds)
           .round(),
     );
-    _setPageTurnBusy(true);
+    _setPageTurnBusy(true, generation);
     try {
       await pageTransitionController
           .animateTo(
@@ -1880,16 +2073,16 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
             curve: Curves.easeOutCubic,
           )
           .orCancel;
+      if (!_turnIsCurrent(generation)) return;
+      if (commit) {
+        await _commitPageTurn(target, generation);
+      } else {
+        _clearPageTurnScene();
+      }
     } on TickerCanceled {
-      _clearPageTurnScene();
-      return;
+      if (_turnIsCurrent(generation)) _clearPageTurnScene();
     } finally {
-      _setPageTurnBusy(false);
-    }
-    if (commit) {
-      await _commitPageTurn(target);
-    } else {
-      _clearPageTurnScene();
+      _setPageTurnBusy(false, generation);
     }
   }
 
@@ -1965,7 +2158,10 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
       return;
     }
     wheelScrollPhysics.stop();
-    setState(() => quarterTurns = (quarterTurns + 1) % 4);
+    setState(() {
+      _cancelPageTurn();
+      quarterTurns = (quarterTurns + 1) % 4;
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && viewerController.isReady) {
         _fitPage();
@@ -2034,6 +2230,9 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
   void _scheduleChromeHide() {
     chromeHideTimer?.cancel();
+    // Persistent file options supersede the old immersive preference. Do not
+    // rewrite a stored choice or run a timer for an invisible state change.
+    if (!widget.bare) return;
     if (!autoHideToolbar || _chromePinned) {
       return;
     }
@@ -2057,96 +2256,108 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     }
   }
 
-  void _setAutoHideToolbar(bool value) {
-    if (autoHideToolbar == value) {
-      return;
-    }
-    setState(() {
-      autoHideToolbar = value;
-      if (!value) {
-        chromeVisible = true;
-      }
-    });
-    _save(_autoHideToolbarMetadataKey, value);
-    if (value) {
-      _scheduleChromeHide();
-    } else {
-      chromeHideTimer?.cancel();
-    }
-  }
-
   /// Applies a reading mode: the layout and the animation that goes with it.
   void _setViewPreset(PdfViewPreset preset) {
-    _setPageTransition(preset.transition);
-    _setLayoutMode(preset.layoutMode);
-  }
-
-  void _setLayoutMode(PdfPageLayoutMode mode) {
-    if (mode == layoutMode) {
+    if (!(widget.canReadFile?.call() ?? true)) return;
+    if (layoutMode == preset.layoutMode &&
+        pageTransition == preset.transition) {
       return;
     }
-    wheelScrollPhysics.stop();
-    pageTurnWheelTravel = 0;
-    setState(() => layoutMode = mode);
-    _save(_layoutModeMetadataKey, mode.name);
+    setState(
+      () => _readViewSettings({
+        ...metadata,
+        _layoutModeMetadataKey: preset.layoutMode.name,
+        _pageTransitionMetadataKey: preset.transition.name,
+      }),
+    );
+    // One atomic metadata snapshot, never an intermediate layout/animation
+    // pair and a second serialized backend write for the same selection.
+    widget.onMetadataChanged(Map<String, dynamic>.from(metadata));
+  }
+
+  void _readViewSettings(Map<String, dynamic> value) {
+    final mode = PdfPageLayoutMode.fromName(value[_layoutModeMetadataKey]);
+    final transition =
+        PdfPageTransition.fromName(value[_pageTransitionMetadataKey]);
+    final layoutChanged = mode != layoutMode;
+    final turnChanged = transition != pageTransition;
+    if (layoutChanged || turnChanged) _cancelPageTurn();
+    metadata = Map<String, dynamic>.from(value);
+    layoutMode = mode;
+    pageTransition = transition;
+    autoHideToolbar = value[_autoHideToolbarMetadataKey] as bool? ?? false;
+    if (!autoHideToolbar) {
+      chromeHideTimer?.cancel();
+      chromeVisible = true;
+    }
+    if (layoutChanged) {
+      _scheduleLayoutView();
+    } else if (turnChanged) {
+      _prefetchTurnPages();
+    }
+  }
+
+  void _scheduleLayoutView() {
+    final generation = _pageTurnGeneration;
+    final page = currentPage;
     // pdfrx caches the page rectangles, so a new layout function only takes
     // effect once the viewer is told to lay out again.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !viewerController.isReady) {
-        return;
-      }
+      if (!_turnIsCurrent(generation)) return;
       viewerController.relayout();
-      WidgetsBinding.instance.addPostFrameCallback((_) => _applyLayoutView());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_turnIsCurrent(generation)) return;
+        _applyLayoutView(page);
+        _prefetchTurnPages();
+      });
     });
   }
 
   /// Frames whatever the new layout treats as one unit, so every mode change
   /// lands on a view that actually shows what changed.
-  void _applyLayoutView() {
+  void _applyLayoutView(int page) {
     if (!mounted || !viewerController.isReady) {
       return;
     }
-    if (layoutMode == PdfPageLayoutMode.facing) {
-      final spread = _spreadRectFor(currentPage);
-      if (spread != null) {
-        wheelScrollPhysics.stop();
-        unawaited(
-          viewerController.goTo(
-            viewerController.calcMatrixForArea(
-              rect: spread,
-              anchor: PdfPageAnchor.all,
-            ),
-            duration: Duration.zero,
-          ),
-        );
-        return;
-      }
-    }
-    _fitPage();
+    // A preset change should be visible immediately, not start another slide
+    // while its new geometry is settling.
+    unawaited(
+      _moveViewToPage(page.clamp(1, pageCount), Duration.zero, fitPage: true),
+    );
   }
 
   /// Side by side reading frames the pair, every other layout frames the page.
-  Future<void> _moveViewToPage(int target, Duration duration) async {
-    if (layoutMode == PdfPageLayoutMode.facing) {
-      final spread = _spreadRectFor(target);
-      if (spread != null) {
-        await _awaitViewerMove(
-          viewerController.goTo(
-            viewerController.calcMatrixForArea(
-              rect: spread,
-              anchor: PdfPageAnchor.all,
-            ),
-            duration: duration,
-          ),
-          duration,
-        );
-        return;
-      }
-    }
+  Future<void> _moveViewToPage(
+    int target,
+    Duration duration, {
+    bool fitPage = false,
+  }) async {
+    final generation = _pageTurnGeneration;
+    if (!_turnIsCurrent(generation)) return;
+    final spread =
+        layoutMode == PdfPageLayoutMode.facing ? _spreadRectFor(target) : null;
+    final matrix = spread != null
+        ? viewerController.calcMatrixForArea(
+            rect: spread,
+            anchor: PdfPageAnchor.all,
+          )
+        : viewerController.calcMatrixForPage(
+            pageNumber: target,
+            anchor: fitPage
+                ? PdfPageAnchor.all
+                : target == pageCount
+                    ? viewerController.params.pageAnchorEnd
+                    : null,
+          );
     await _awaitViewerMove(
-      viewerController.goToPage(pageNumber: target, duration: duration),
+      // pdfrx goToPage commits its page number even when goTo was cancelled.
+      // Use its matrix navigation, then commit only our still-current request.
+      viewerController.goTo(matrix, duration: duration),
       duration,
     );
+    if (_turnIsCurrent(generation)) {
+      viewerController.setCurrentPageNumber(target);
+    }
   }
 
   /// The given page together with the page it faces.
@@ -2166,20 +2377,6 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     } on Object {
       return null;
     }
-  }
-
-  void _setPageTransition(PdfPageTransition transition) {
-    if (transition == pageTransition) {
-      return;
-    }
-    pageTransitionController.value = 0;
-    pageTurnWheelTravel = 0;
-    setState(() {
-      pageTransition = transition;
-      pageTurnScene = null;
-    });
-    _save(_pageTransitionMetadataKey, transition.name);
-    _prefetchTurnPages();
   }
 
   Future<void> _copySelectedText() async {
@@ -2473,7 +2670,10 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
     if (selected < 0 && matches.isNotEmpty) {
       selected =
           matches.indexWhere((hit) => hit.pageNumber >= _searchStartPage);
-      if (selected < 0) selected = 0;
+      // Earlier pages arrive first. Do not jump away from the page where Find
+      // opened before its matches have even been read. Explicit navigation
+      // still selects immediately and is preserved by sameOccurrence above.
+      if (selected < 0 && !textSearcher.isSearching) selected = 0;
     }
     setState(() {
       _searchMatches = matches;
@@ -2512,8 +2712,9 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   void _moveToSearchMatch({required bool forward}) {
     if (!_canSearch || _searchMatches.isEmpty) return;
     setState(
-      () => _searchMatchIndex =
-          (_searchMatchIndex + (forward ? 1 : -1) + _searchMatches.length) %
+      () => _searchMatchIndex = _searchMatchIndex < 0
+          ? (forward ? 0 : _searchMatches.length - 1)
+          : (_searchMatchIndex + (forward ? 1 : -1) + _searchMatches.length) %
               _searchMatches.length,
     );
     _invalidateSearch();
@@ -2522,15 +2723,19 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
   void _revealSearchHit(_PdfSearchHit hit) {
     if (!_canSearch || !searchVisible) return;
-    wheelScrollPhysics.stop();
+    setState(_cancelPageTurn);
     final pageRect = viewerController.layout.pageLayouts[hit.pageNumber - 1];
     final rect = hit.rectsIn(pageRect).reduce((a, b) => a.expandToInclude(b));
-    viewerController.setCurrentPageNumber(hit.pageNumber);
-    // No delayed focus/page callback can land after a newer query or an
-    // outside click. Keep the zoom unless the actual match is too large.
-    unawaited(
-      viewerController.ensureVisible(rect, margin: 24, duration: Duration.zero),
+    // Minimal edge reveal can leave only a sliver of this page visible.
+    // pdfrx then discards the requested page number and reports its neighbour
+    // again. Center the actual occurrence, retaining zoom unless it must fit,
+    // and commit synchronously so no old reveal can outlive its query/owner.
+    viewerController.value = viewerController.calcMatrixForRect(
+      rect,
+      zoomMax: viewerController.currentZoom,
+      margin: 24,
     );
+    viewerController.setCurrentPageNumber(hit.pageNumber);
   }
 
   Future<void> _copyOcrMatch() async {
@@ -2582,37 +2787,51 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   }
 
   void _handleEscape() {
+    if (!mounted || ModalRoute.of(context)?.isCurrent == false) return;
     if (searchVisible) {
       _closeSearch();
     } else if (sidebarMode != PdfSidebarMode.none) {
       _closeSidebar();
     } else if (widget.fullscreen) {
-      unawaited(Navigator.of(context).maybePop());
+      _closeFullscreen();
+    }
+  }
+
+  void _closeFullscreen() {
+    if (!mounted || !widget.fullscreen) return;
+    final route = ModalRoute.of(context);
+    if (route?.isCurrent == true && route!.navigator!.canPop()) {
+      route.navigator!.pop();
     }
   }
 
   void _toggleFullscreen() {
     if (widget.fullscreen) {
-      unawaited(Navigator.of(context).maybePop());
+      _closeFullscreen();
       return;
     }
     final host = StandaloneFileScope.forName(context, widget.name);
+    if (!(widget.canReadFile?.call() ?? true)) return;
     if (host != null && !host.canRead()) return;
     final name = host?.displayName ?? widget.name;
+    final reducedMotion = MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.accessibleNavigationOf(context);
     unawaited(
       showGeneralDialog<void>(
         context: context,
         barrierColor: Colors.black.withValues(alpha: 0.68),
-        transitionBuilder: (_, animation, __, child) => FadeTransition(
-          opacity: CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOutCubic,
-          ),
-          child: ScaleTransition(
-            scale: Tween(begin: 0.985, end: 1.0).animate(animation),
-            child: child,
-          ),
-        ),
+        transitionDuration:
+            reducedMotion ? Duration.zero : const Duration(milliseconds: 200),
+        transitionBuilder: (_, animation, __, child) => reducedMotion
+            ? child
+            : FadeTransition(
+                opacity:
+                    animation.drive(CurveTween(curve: Curves.easeOutCubic)),
+                child: ScaleTransition(
+                  scale: Tween(begin: 0.985, end: 1.0).animate(animation),
+                  child: child,
+                ),
+              ),
         pageBuilder: (_, __, ___) => _PdfFullscreenView(
           file: widget.file,
           name: name,
@@ -2622,12 +2841,15 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
           onMetadataChanged: widget.onMetadataChanged,
           mediaActions: widget.mediaActions,
           ocrIndexFactory: widget.ocrIndexFactory,
+          canReadFile: widget.canReadFile,
+          canEditFile: widget.canEditFile,
         ),
       ),
     );
   }
 
   Future<void> _download() async {
+    if (!mounted || !(widget.canReadFile?.call() ?? true)) return;
     final host = StandaloneFileScope.forName(context, widget.name);
     if (host != null && !host.canRead()) return;
     final name = host?.displayName ?? widget.name;
@@ -2647,7 +2869,7 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
   }
 
   Future<void> _print() async {
-    if (!canPrint) {
+    if (!canPrint || !(widget.canReadFile?.call() ?? true)) {
       return;
     }
     final host = StandaloneFileScope.forName(context, widget.name);
@@ -2679,7 +2901,10 @@ class _PdfPreviewState extends State<PdfPreview> with TickerProviderStateMixin {
 
   void _highlightSelection() {
     final selected = selection;
-    if (!widget.editable || selected == null || selected.isEmpty) {
+    if (!widget.editable ||
+        !(widget.canEditFile?.call() ?? true) ||
+        selected == null ||
+        selected.isEmpty) {
       return;
     }
     for (final ranges in selected) {
@@ -2766,6 +2991,7 @@ class _PdfPreviewTextSearch extends ChangeNotifier {
   bool isSearching = false;
   bool completed = false;
   double? searchProgress;
+  int searchedPages = 0;
   String? failure;
   List<_PdfSearchHit> matches = const [];
   Set<int> emptyPages = {};
@@ -2789,6 +3015,7 @@ class _PdfPreviewTextSearch extends ChangeNotifier {
     completed = false;
     isSearching = true; // Includes debounce and the first pending page.
     searchProgress = null;
+    searchedPages = 0;
     notifyListeners();
     void run() => unawaited(_search(document, ref, pattern, generation));
     if (immediately) {
@@ -2829,7 +3056,8 @@ class _PdfPreviewTextSearch extends ChangeNotifier {
             // again before publishing even an empty page's result.
             if (!current()) return;
             matches = List.unmodifiable(found);
-            searchProgress = page.pageNumber / document.pages.length;
+            searchedPages++;
+            searchProgress = searchedPages / document.pages.length;
             notifyListeners();
           }
           if (!current()) return;
@@ -2858,6 +3086,7 @@ class _PdfPreviewTextSearch extends ChangeNotifier {
     completed = false;
     failure = null;
     searchProgress = null;
+    searchedPages = 0;
     notifyListeners();
   }
 
@@ -3215,6 +3444,8 @@ class _PdfFullscreenView extends StatelessWidget {
     required this.onMetadataChanged,
     required this.mediaActions,
     this.ocrIndexFactory,
+    this.canReadFile,
+    this.canEditFile,
   });
 
   final File file;
@@ -3225,6 +3456,8 @@ class _PdfFullscreenView extends StatelessWidget {
   final ValueChanged<Map<String, dynamic>> onMetadataChanged;
   final MediaActionService mediaActions;
   final PdfOcrSearchIndex Function()? ocrIndexFactory;
+  final bool Function()? canReadFile;
+  final bool Function()? canEditFile;
 
   @override
   Widget build(BuildContext context) {
@@ -3232,17 +3465,22 @@ class _PdfFullscreenView extends StatelessWidget {
     return Scaffold(
       backgroundColor: palette.canvas,
       body: SafeArea(
-        child: PdfPreview(
-          key: ValueKey('fullscreen-${file.path}'),
-          file: file,
-          name: name,
-          metadata: metadata,
-          editable: editable,
-          fullscreen: true,
-          sourceDocumentRef: sourceDocumentRef,
-          onMetadataChanged: onMetadataChanged,
-          mediaActions: mediaActions,
-          ocrIndexFactory: ocrIndexFactory,
+        child: ContextualFindScope(
+          findInControls: true,
+          child: PdfPreview(
+            key: ValueKey('fullscreen-${file.path}'),
+            file: file,
+            name: name,
+            metadata: metadata,
+            editable: editable,
+            fullscreen: true,
+            sourceDocumentRef: sourceDocumentRef,
+            onMetadataChanged: onMetadataChanged,
+            mediaActions: mediaActions,
+            ocrIndexFactory: ocrIndexFactory,
+            canReadFile: canReadFile,
+            canEditFile: canEditFile,
+          ),
         ),
       ),
     );

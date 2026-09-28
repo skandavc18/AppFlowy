@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/gestures.dart';
@@ -7,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flowy_infra_ui/widget/history_swipe.dart';
 import '_static_channel.dart';
+import 'windows_webview_gesture_scope.dart';
+import 'windows_webview_wheel_scope.dart';
 
 const Map<String, SystemMouseCursor> _cursors = {
   'none': SystemMouseCursors.none,
@@ -153,6 +156,12 @@ class CustomPlatformViewController
   int _textureId = 0;
   bool _isDisposed = false;
   bool _hasPlatformView = false;
+  Future<void>? _disposeFuture;
+  Map<String, dynamic>? _disposalDiagnostics;
+
+  /// Numeric native lifecycle stages, only when the private fixture probe was
+  /// explicitly armed. Normal views return no diagnostic payload.
+  Map<String, dynamic>? get disposalDiagnostics => _disposalDiagnostics;
 
   Future<void> get ready => _creatingCompleter.future;
 
@@ -177,8 +186,15 @@ class CustomPlatformViewController
       _creatingCompleter.complete();
       return;
     }
-    _textureId = (await _pluginChannel.invokeMethod<int>(
-        'createInAppWebView', arguments))!;
+    try {
+      _textureId = (await _pluginChannel.invokeMethod<int>(
+          'createInAppWebView', arguments))!;
+    } catch (_) {
+      // Creation failed without a native view. Do not strand a disposal waiter;
+      // the initialization error still propagates to its original caller.
+      _creatingCompleter.complete();
+      rethrow;
+    }
     _hasPlatformView = true;
     if (_isDisposed) {
       _creatingCompleter.complete();
@@ -216,19 +232,32 @@ class CustomPlatformViewController
   }
 
   @override
-  Future<void> dispose() async {
-    if (_isDisposed) {
-      return;
-    }
+  Future<void> dispose() {
+    final pending = _disposeFuture;
+    if (pending != null) return pending;
     _isDisposed = true;
     super.dispose();
+    return _disposeFuture = _dispose();
+  }
+
+  Future<void> _dispose() async {
     await _creatingCompleter.future;
     await _eventStreamSubscription?.cancel();
-    if (_hasPlatformView) {
-      await _pluginChannel.invokeMethod('dispose', {"id": _textureId});
+    try {
+      if (_hasPlatformView) {
+        // The native reply follows actual texture unregister completion, not
+        // removal from the manager map. Repeated dispose calls await this same
+        // future, including callers joining the widget's unawaited teardown.
+        final reply =
+            await _pluginChannel.invokeMethod('dispose', {"id": _textureId});
+        if (reply is Map) {
+          _disposalDiagnostics = Map<String, dynamic>.from(reply);
+        }
+      }
+    } finally {
+      await _cursorStreamController.close();
+      await _historyEvents.close();
     }
-    await _cursorStreamController.close();
-    await _historyEvents.close();
   }
 
   /// Limits the number of frames per second to the given value.
@@ -242,13 +271,46 @@ class CustomPlatformViewController
 
   /// Sends a Pointer (Touch) update
   Future<void> _setPointerUpdate(InAppWebViewPointerEventKind kind, int pointer,
-      Offset position, double size, double pressure) async {
+      Offset position, double size, double pressure,
+      {Duration? timeStamp,
+      Duration inputAge = Duration.zero,
+      Offset? secondContact,
+      int? inputEpoch}) async {
     if (_isDisposed) {
       return;
     }
     assert(value.isInitialized);
-    return _methodChannel.invokeMethod('setPointerUpdate',
-        [pointer, kind.index, position.dx, position.dy, size, pressure]);
+    return _methodChannel.invokeMethod('setPointerUpdate', [
+      pointer, kind.index, position.dx, position.dy, size, pressure,
+      // Only synthetic trackpad contacts use CDP. Real touchscreen packets
+      // retain their original six-value SendPointerInput path.
+      if (timeStamp != null) ...[
+        timeStamp.inMicroseconds,
+        inputAge.inMicroseconds
+      ],
+      if (secondContact != null) ...[secondContact.dx, secondContact.dy],
+      if (inputEpoch != null) inputEpoch,
+    ]);
+  }
+
+  Future<dynamic> _querySiteGesturePolicy(Offset position) async {
+    if (_isDisposed || !value.isInitialized) return null;
+    return _methodChannel.invokeMethod<dynamic>(
+        'querySiteGesturePolicyState', [position.dx, position.dy]);
+  }
+
+  Future<bool?> _siteGestureFallbackReady(int epoch) async {
+    if (_isDisposed || !value.isInitialized) return null;
+    return _methodChannel.invokeMethod<bool>('siteGestureFallbackReady', epoch);
+  }
+
+  Future<void> _cancelTrackpadGesture() async {
+    if (_isDisposed || !value.isInitialized) return;
+    try {
+      await _methodChannel.invokeMethod<void>('cancelTrackpadGesture');
+    } on MissingPluginException {
+      // A stale bundle has no policy query or synthetic contact to cancel.
+    }
   }
 
   /// Moves the virtual cursor to [position].
@@ -344,11 +406,15 @@ class CustomPlatformView extends StatefulWidget {
       this.filterQuality = FilterQuality.none});
 
   @override
-  _CustomPlatformViewState createState() => _CustomPlatformViewState();
+  CustomPlatformViewState createState() => CustomPlatformViewState();
 }
 
-class _CustomPlatformViewState extends State<CustomPlatformView>
+class CustomPlatformViewState extends State<CustomPlatformView>
     with WidgetsBindingObserver {
+  /// Retain before unmount, then await [CustomPlatformViewController.dispose]
+  /// before disposing an environment or closing the native window.
+  CustomPlatformViewController get controller => _controller;
+
   final GlobalKey _key = GlobalKey();
   final _downButtons = <int, PointerButton>{};
 
@@ -360,10 +426,16 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   final _controller = CustomPlatformViewController();
   final _focusNode = FocusNode();
   Offset? _trackpadPointerPosition;
+  Duration? _trackpadStartTime;
+  Duration? _trackpadLastTime;
+  Duration? _trackpadLastContactTime;
+  int? _trackpadGesturePointer;
   Offset? _mousePosition;
   double _trackpadScale = 1;
   bool _panning = false;
   bool _disposing = false;
+  bool _attached = true;
+  bool _historyResetPending = false;
   bool _trackpadTouchStarted = false;
   _TrackpadIntent _trackpadIntent = _TrackpadIntent.direct;
   Offset _historyPan = Offset.zero;
@@ -375,6 +447,30 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   int _gestureRevision = 0;
   bool _historyLoading = false;
   StreamSubscription<String>? _historySubscription;
+  int _policyGeneration = 0;
+  bool _awaitingPolicy = false;
+  Timer? _policyTimer;
+  bool _policyTimedOut = false;
+  bool _recoveringPolicy = false;
+  bool _fallbackReady = false;
+  bool _fallbackProbePending = false;
+  int? _fallbackEpoch;
+  double _siteScaleOrigin = 1;
+  double _siteRotationOrigin = 0;
+  bool _websiteGesture = false;
+  bool _scopeEnabled = false;
+  bool _preferWebsiteGestures = false;
+  bool _sitePinching = false;
+  bool _browserPinching = false;
+  double _pinchBaseScale = 1;
+  double _pinchBaseRotation = 0;
+  double _trackpadRotation = 0;
+  Offset _pendingPolicyPan = Offset.zero;
+  PointerPanZoomUpdateEvent? _pendingPolicyUpdate;
+  Stopwatch? _pendingPolicyAge;
+  Offset _directPendingPan = Offset.zero;
+  Size? _reportedSurfaceSize;
+  double? _reportedScaleFactor;
 
   bool get _allowsHistorySwipes {
     final params = widget.creationParams;
@@ -390,22 +486,86 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   StreamSubscription? _cursorSubscription;
 
   @override
+  void deactivate() {
+    _attached = false;
+    // Fence a settling history completion even if this State is reparented and
+    // active again before its asynchronous isValid check runs.
+    ++_historyRevision;
+    _endTrackpadPointer(cancelled: true);
+    super.deactivate();
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    _attached = true;
+    if (_historyResetPending) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_attached || _disposing || !_historyResetPending)
+          return;
+        _historyResetPending = false;
+        _historySwipe.cancel();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant CustomPlatformView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final before = oldWidget.creationParams;
+    final after = widget.creationParams;
+    final oldSettings = before is Map ? before['initialSettings'] : null;
+    final newSettings = after is Map ? after['initialSettings'] : null;
+    if (filterScrollDeltaForSettings(const Offset(1, 1), before) !=
+            filterScrollDeltaForSettings(const Offset(1, 1), after) ||
+        (oldSettings is Map
+                ? oldSettings['allowsBackForwardNavigationGestures']
+                : null) !=
+            (newSettings is Map
+                ? newSettings['allowsBackForwardNavigationGestures']
+                : null) ||
+        (before is Map ? before['windowId'] : null) !=
+            (after is Map ? after['windowId'] : null) ||
+        (before is Map ? before['keepAliveId'] : null) !=
+            (after is Map ? after['keepAliveId'] : null)) {
+      _endTrackpadPointer(cancelled: true);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final scope = WindowsWebViewGestureScope.maybeOf(context);
+    final enabled = scope != null;
+    final prefer = scope?.preferWebsiteGestures ?? false;
+    if (enabled != _scopeEnabled || prefer != _preferWebsiteGestures) {
+      _endTrackpadPointer(cancelled: true);
+      _scopeEnabled = enabled;
+      _preferWebsiteGestures = prefer;
+    }
+  }
+
+  @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _historySubscription = _controller._historyEvents.stream.listen((event) {
-      if (!_allowsHistorySwipes || !mounted || _disposing) return;
+      if (!mounted || _disposing) return;
       if (event == 'navigationStarting') {
-        if (!_historySwipe.isActive) _historySwipe.captureCurrent();
-        _historyRevision++;
-        _historyLoading = true;
+        if (_allowsHistorySwipes) {
+          if (!_historySwipe.isActive) _historySwipe.captureCurrent();
+          _historyRevision++;
+          _historyLoading = true;
+        }
+        // Native navigation already fences its queue. Also retire the Dart
+        // gesture, including on surfaces that do not offer history swipes.
         _endTrackpadPointer(
             cancelled: true,
             preserveHistoryAnimation: _historySwipe.isSettling);
       } else if (event == 'navigationCompleted') {
         _historyLoading = false;
       }
-      unawaited(_refreshHistory());
+      if (_allowsHistorySwipes) unawaited(_refreshHistory());
     });
 
     _controller.initialize(
@@ -550,17 +710,7 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
           if (!_panning) _controller._setCursorPos(ev.localPosition);
         }
       },
-      onPointerSignal: (signal) {
-        if (signal is PointerScrollEvent) {
-          _endTrackpadPointer();
-          _sendScrollDelta(
-            filterScrollDeltaForSettings(
-              -signal.scrollDelta,
-              widget.creationParams,
-            ),
-          );
-        }
-      },
+      onPointerSignal: _onPointerSignal,
       child: MouseRegion(
           cursor: _cursor,
           child: Texture(
@@ -569,7 +719,8 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
           )),
     );
     if (!hasEnabledWebViewScrollAxis(widget.creationParams) &&
-        !_allowsHistorySwipes) {
+        !_allowsHistorySwipes &&
+        !_scopeEnabled) {
       return listener;
     }
     return RawGestureDetector(
@@ -580,7 +731,11 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
             _WebViewTrackpadGestureRecognizer>(
           _WebViewTrackpadGestureRecognizer.new,
           (recognizer) => recognizer
-            ..canStart = (() => !_historySwipe.isSettling && !_disposing)
+            ..canStart = (() =>
+                _attached &&
+                !_historyResetPending &&
+                !_historySwipe.isSettling &&
+                !_disposing)
             ..onStart = _handleTrackpadStart
             ..onUpdate = _handleTrackpadUpdate
             ..onEnd = _handleTrackpadEnd
@@ -589,6 +744,28 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
       },
       child: listener,
     );
+  }
+
+  void _onPointerSignal(PointerSignalEvent signal) {
+    if (signal is! PointerScrollEvent || !mounted || !_attached || _disposing)
+      return;
+    final scope = WindowsWebViewWheelScope.maybeOf(context);
+    if (scope == null &&
+        filterScrollDeltaForSettings(
+                signal.scrollDelta, widget.creationParams) ==
+            Offset.zero) {
+      return;
+    }
+    // Register only when this listener actually receives the event. An inactive
+    // host's ScrollGestureGate can still suppress delivery and let Flutter win.
+    GestureBinding.instance.pointerSignalResolver.register(signal, (_) {
+      if (!mounted || !_attached || _disposing) return;
+      _endTrackpadPointer();
+      final remaining = scope?.transform(signal) ?? signal.scrollDelta;
+      if (!mounted || !_attached || _disposing || !remaining.isFinite) return;
+      _sendScrollDelta(
+          filterScrollDeltaForSettings(-remaining, widget.creationParams));
+    });
   }
 
   void _sendScrollDelta(Offset delta) {
@@ -603,7 +780,16 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     _trackpadScale = 1;
     final position = _boundTrackpadPosition(event.localPosition);
     _trackpadPointerPosition = position;
+    _trackpadStartTime = _trackpadLastTime = event.timeStamp;
+    _trackpadLastContactTime = null;
+    _trackpadGesturePointer = event.pointer;
     _trackpadTouchStarted = false;
+    _sitePinching = _browserPinching = false;
+    _siteScaleOrigin = 1;
+    _siteRotationOrigin = 0;
+    _trackpadRotation = 0;
+    _directPendingPan = Offset.zero;
+    _websiteGesture = _preferWebsiteGestures;
     _trackpadIntent = _allowsHistorySwipes
         ? _TrackpadIntent.undecided
         : _TrackpadIntent.direct;
@@ -613,12 +799,108 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     // Keep the real mouse visible and anchored. Cursor changes caused by the
     // renderer's scrolling touch contact must not replace its shape.
     setState(() => _panning = true);
-    if (_trackpadIntent == _TrackpadIntent.direct) _beginTrackpadTouch();
+    if (_websiteGesture) {
+      _trackpadIntent = _TrackpadIntent.direct;
+    } else {
+      _awaitingPolicy = true;
+      final generation = _policyGeneration;
+      _policyTimer = Timer(const Duration(milliseconds: 150), () {
+        _policyTimer = null;
+        if (!mounted || _disposing || generation != _policyGeneration) return;
+        _policyTimedOut = true;
+        _clearPendingPolicy();
+        // Keep the actual native reply outstanding. A deadline is not a CDP
+        // completion or authority to send input to an unverified document.
+      });
+      unawaited(_resolveSitePolicy(event, _policyGeneration));
+    }
   }
 
-  void _beginTrackpadTouch() {
+  Future<void> _resolveSitePolicy(
+      PointerPanZoomStartEvent start, int generation) async {
+    dynamic policy;
+    try {
+      policy = await _controller._querySiteGesturePolicy(start.localPosition);
+    } on PlatformException {
+      // Unknown policy must not navigate away from an interactive page.
+    } on MissingPluginException {
+      // A stale native bundle cannot safely arbitrate this gesture.
+    }
+    if (!mounted || _disposing || generation != _policyGeneration) return;
+    _policyTimer?.cancel();
+    _policyTimer = null;
+    final status = policy is Map ? policy['status'] : null;
+    final epoch = policy is Map ? policy['epoch'] : null;
+    final website = policy is bool
+        ? policy
+        : status == 'site'
+            ? true
+            : status == 'browser'
+                ? false
+                : null;
+    if (!_isCurrentHistoryTarget(start) ||
+        (website == null && status != 'indeterminate') ||
+        ((_policyTimedOut || website == null) &&
+            (epoch is! int || epoch < 0))) {
+      _endTrackpadPointer(cancelled: true);
+      return;
+    }
+    _awaitingPolicy = false;
+    if (_policyTimedOut || website == null) {
+      // No history/browser zoom for an unknown region. Drop old motion; after
+      // the shared slot settles, rebase on a genuinely new sample at this hit.
+      _clearPendingPolicy();
+      _fallbackEpoch = epoch as int;
+      _recoveringPolicy = true;
+      _websiteGesture = true;
+      _trackpadIntent = _TrackpadIntent.direct;
+      return;
+    }
+    _websiteGesture = website;
+    if (website) _trackpadIntent = _TrackpadIntent.direct;
+    final update = _pendingPolicyUpdate;
+    final pan = _pendingPolicyPan;
+    final age = _pendingPolicyAge?.elapsed ?? Duration.zero;
+    _clearPendingPolicy();
+    if (update != null) {
+      _handleTrackpadUpdate(update, accumulatedPan: pan, inputAge: age);
+    }
+  }
+
+  void _clearPendingPolicy() {
+    _pendingPolicyUpdate = null;
+    _pendingPolicyPan = Offset.zero;
+    _pendingPolicyAge?.stop();
+    _pendingPolicyAge = null;
+  }
+
+  Future<void> _probeFallbackReady(int generation, int epoch) async {
+    _fallbackProbePending = true;
+    bool? ready;
+    try {
+      ready = await _controller._siteGestureFallbackReady(epoch);
+    } on PlatformException {
+      // An unavailable/retired channel is not an indeterminate hit region.
+    } on MissingPluginException {
+      // Do not recover through a legacy bundle with no native epoch fence.
+    } finally {
+      // Do not release a pending state read early, even on cancellation. There
+      // is at most one actual probe per view; future samples can retry it.
+      _fallbackProbePending = false;
+    }
+    if (!mounted || _disposing || generation != _policyGeneration) return;
+    if (ready == null) {
+      _endTrackpadPointer(cancelled: true);
+    } else {
+      _fallbackReady = ready;
+    }
+  }
+
+  void _beginTrackpadTouch(Duration latestSampleTime,
+      {Duration inputAge = Duration.zero}) {
     final position = _trackpadPointerPosition;
-    if (_trackpadTouchStarted || position == null) return;
+    final startTime = _trackpadStartTime;
+    if (_trackpadTouchStarted || position == null || startTime == null) return;
     _trackpadTouchStarted = true;
     _controller._setPointerUpdate(
       InAppWebViewPointerEventKind.down,
@@ -626,16 +908,69 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
       position,
       1,
       1,
+      timeStamp: startTime,
+      inputEpoch: _fallbackEpoch,
+      // Classification can defer touchStart until the first vertical update.
+      // Carry that known age so native time mapping doesn't move the start to
+      // the update's arrival. Both values share Flutter's original time origin.
+      inputAge: latestSampleTime > startTime
+          ? latestSampleTime - startTime + inputAge
+          : inputAge,
     );
   }
 
-  void _handleTrackpadUpdate(PointerPanZoomUpdateEvent event) {
-    if (_trackpadPointerPosition == null) return;
-    var panDelta = event.localPanDelta;
+  void _handleTrackpadUpdate(PointerPanZoomUpdateEvent event,
+      {Offset? accumulatedPan, Duration inputAge = Duration.zero}) {
+    if (_trackpadPointerPosition == null ||
+        _trackpadGesturePointer != event.pointer) return;
+    if (!_isCurrentHistoryTarget(event)) {
+      _endTrackpadPointer(cancelled: true);
+      return;
+    }
+    var panDelta = accumulatedPan ?? event.localPanDelta;
     if (!panDelta.isFinite ||
         !event.scale.isFinite ||
+        event.scale <= 0 ||
         !event.rotation.isFinite) {
       _endTrackpadPointer(cancelled: true);
+      return;
+    }
+    if (_awaitingPolicy) {
+      if (_policyTimedOut) return;
+      _pendingPolicyPan += panDelta;
+      _pendingPolicyUpdate = event;
+      _pendingPolicyAge?.stop();
+      _pendingPolicyAge = Stopwatch()..start();
+      return;
+    }
+    final previousTime = _trackpadLastTime ?? event.timeStamp;
+    if (event.timeStamp <= previousTime) {
+      _endTrackpadPointer(cancelled: true);
+      return;
+    }
+    if (_recoveringPolicy) {
+      if (!_fallbackReady) {
+        if (!_fallbackProbePending) {
+          unawaited(_probeFallbackReady(_policyGeneration, _fallbackEpoch!));
+        }
+        return;
+      }
+      // This sample arrived AFTER readiness, rather than being retained by an
+      // async callback. Discard accumulated displacement and cumulative scale.
+      _recoveringPolicy = false;
+      _trackpadStartTime = _trackpadLastTime = event.timeStamp;
+      _trackpadScale = _siteScaleOrigin = event.scale;
+      _trackpadRotation = _siteRotationOrigin = event.rotation;
+      _directPendingPan = Offset.zero;
+      return;
+    }
+    _trackpadLastTime = event.timeStamp;
+    if (_websiteGesture &&
+        (_sitePinching ||
+            (event.scale / _siteScaleOrigin - 1).abs() >
+                _trackpadZoomThreshold ||
+            (event.rotation - _siteRotationOrigin).abs() > 0.01)) {
+      _sendSitePinch(event, panDelta, previousTime, inputAge);
       return;
     }
     if (_trackpadIntent != _TrackpadIntent.direct) {
@@ -672,24 +1007,44 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     }
     // `scale` is cumulative from the start of the gesture, so the renderer is
     // sent the step since the last update.
-    if ((event.scale - _trackpadScale).abs() > _trackpadZoomThreshold) {
+    if (!_websiteGesture &&
+        (event.scale - _trackpadScale).abs() > _trackpadZoomThreshold) {
+      // Once an article pan becomes browser zoom, cancel its old touch stream
+      // rather than ending it into a click/fling underneath the pinch.
+      if (_trackpadTouchStarted) {
+        _controller._setPointerUpdate(InAppWebViewPointerEventKind.leave,
+            _trackpadPointerId, _trackpadPointerPosition!, 1, 0,
+            timeStamp: previousTime);
+        _trackpadTouchStarted = false;
+      }
+      _browserPinching = true;
       final step = event.scale / _trackpadScale;
       _trackpadScale = event.scale;
       _controller._setZoomScale(step);
       return;
     }
+    if (_browserPinching) return;
+
+    if (!_trackpadTouchStarted) {
+      _directPendingPan += panDelta;
+      if (_directPendingPan.distance < 12) return;
+      panDelta = _directPendingPan;
+      _directPendingPan = Offset.zero;
+    }
 
     final delta = webViewTrackpadDirectDelta(
-      filterScrollDeltaForSettings(
-        panDelta,
-        widget.creationParams,
-      ),
+      _websiteGesture
+          ? panDelta
+          : filterScrollDeltaForSettings(
+              panDelta,
+              widget.creationParams,
+            ),
     );
     final currentPosition = _trackpadPointerPosition;
     if (currentPosition == null || delta == Offset.zero) {
       return;
     }
-    _beginTrackpadTouch();
+    _beginTrackpadTouch(event.timeStamp, inputAge: inputAge);
     final position = _boundTrackpadPosition(currentPosition + delta);
     _trackpadPointerPosition = position;
     _controller._setPointerUpdate(
@@ -698,10 +1053,60 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
       position,
       1,
       1,
+      timeStamp: event.timeStamp,
+      inputAge: inputAge,
+      inputEpoch: _fallbackEpoch,
     );
+    _trackpadLastContactTime = event.timeStamp;
+    _trackpadScale = event.scale;
+    _trackpadRotation = event.rotation;
+  }
+
+  void _sendSitePinch(PointerPanZoomUpdateEvent event, Offset panDelta,
+      Duration previousTime, Duration inputAge) {
+    var center = _trackpadPointerPosition!;
+    if (!_sitePinching) {
+      // Late pinch starts at the last actual contact sample, not the original
+      // gesture start (which can predate a dispatched one-contact move).
+      final startTime = _trackpadTouchStarted
+          ? _trackpadLastContactTime!
+          : _trackpadStartTime!;
+      // Native Start atomically fences the old contact with touchCancel, then
+      // starts the pair using the existing source-clock mapping. A separate
+      // Dart cancel here would discard that clock before it can be preserved.
+      _sitePinching = true;
+      _trackpadTouchStarted = true;
+      _pinchBaseScale = _trackpadScale;
+      _pinchBaseRotation = _trackpadRotation;
+      final offset = const Offset(0, 24);
+      _controller._setPointerUpdate(InAppWebViewPointerEventKind.down,
+          _trackpadPointerId, _boundTrackpadPosition(center - offset), 1, 1,
+          secondContact: _boundTrackpadPosition(center + offset),
+          timeStamp: startTime,
+          inputEpoch: _fallbackEpoch,
+          inputAge: event.timeStamp - startTime + inputAge);
+      panDelta += _directPendingPan;
+      _directPendingPan = Offset.zero;
+    }
+    center =
+        _boundTrackpadPosition(center + webViewTrackpadDirectDelta(panDelta));
+    _trackpadPointerPosition = center;
+    final angle = event.rotation - _pinchBaseRotation;
+    final radius = (24 * event.scale / _pinchBaseScale).clamp(1.0, 240.0);
+    final offset = Offset(math.sin(angle) * radius, math.cos(angle) * radius);
+    _controller._setPointerUpdate(InAppWebViewPointerEventKind.update,
+        _trackpadPointerId, _boundTrackpadPosition(center - offset), 1, 1,
+        secondContact: _boundTrackpadPosition(center + offset),
+        inputEpoch: _fallbackEpoch,
+        timeStamp: event.timeStamp,
+        inputAge: inputAge);
+    _trackpadLastContactTime = event.timeStamp;
+    _trackpadScale = event.scale;
+    _trackpadRotation = event.rotation;
   }
 
   void _handleTrackpadEnd(PointerPanZoomEndEvent event) {
+    if (_trackpadGesturePointer != event.pointer) return;
     final history = _trackpadIntent == _TrackpadIntent.history;
     final revision = _gestureRevision;
     final navigate = _trackpadIntent == _TrackpadIntent.history &&
@@ -711,7 +1116,11 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
         revision == _historyRevision;
     final forward = _historyDirection < 0;
     _trackpadScale = 1;
-    _endTrackpadPointer(preserveHistoryAnimation: history);
+    _endTrackpadPointer(
+      cancelled: !_isCurrentHistoryTarget(event),
+      preserveHistoryAnimation: history,
+      timeStamp: event.timeStamp,
+    );
     if (history && !_disposing) {
       unawaited(_historySwipe.finish(
         commit: navigate,
@@ -753,8 +1162,12 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     }
   }
 
-  bool _isCurrentHistoryTarget(PointerPanZoomEndEvent event) {
-    if (!mounted || _disposing || ModalRoute.of(context)?.isCurrent == false) {
+  bool _isCurrentHistoryTarget(PointerEvent event) {
+    if (!mounted ||
+        !_attached ||
+        _historyResetPending ||
+        _disposing ||
+        ModalRoute.of(context)?.isCurrent == false) {
       return false;
     }
     // IndexedStack keeps background tabs alive. Only the currently hit-tested
@@ -778,16 +1191,43 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
   }
 
   void _endTrackpadPointer(
-      {bool cancelled = false, bool preserveHistoryAnimation = false}) {
-    if (!preserveHistoryAnimation) _historySwipe.cancel();
+      {bool cancelled = true,
+      bool preserveHistoryAnimation = false,
+      Duration? timeStamp}) {
+    ++_policyGeneration;
+    _policyTimer?.cancel();
+    _policyTimer = null;
+    if (_awaitingPolicy || _recoveringPolicy) {
+      unawaited(_controller._cancelTrackpadGesture());
+    }
+    _awaitingPolicy = false;
+    _policyTimedOut = false;
+    _recoveringPolicy = _fallbackReady = false;
+    final epoch = _fallbackEpoch;
+    _fallbackEpoch = null;
+    _clearPendingPolicy();
+    if (!preserveHistoryAnimation && !_disposing) {
+      // cancel() writes AnimationController.value and notifies descendants.
+      // During deactivate those descendants are still active, but cannot be
+      // dirtied in the unrelated ancestor's build scope. Native input and all
+      // policy generations are retired now; only the visual reset is deferred.
+      if (!_attached || _historyResetPending) {
+        _historyResetPending = true;
+      } else {
+        _historySwipe.cancel();
+      }
+    }
     _trackpadIntent = _TrackpadIntent.direct;
     _historyPan = Offset.zero;
     _historyDirection = 0;
     if (_panning) {
       _panning = false;
       _cursor = _rendererCursor;
-      if (mounted && !_disposing) setState(() {});
+      if (mounted && _attached && !_disposing) setState(() {});
     }
+    final sampleTime = timeStamp ?? _trackpadLastTime ?? _trackpadStartTime;
+    _trackpadStartTime = _trackpadLastTime = null;
+    _trackpadGesturePointer = null;
     final position = _trackpadPointerPosition;
     if (position == null) {
       return;
@@ -802,10 +1242,12 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
         position,
         1,
         0,
+        timeStamp: sampleTime,
+        inputEpoch: epoch,
       );
     _trackpadTouchStarted = false;
     final mousePosition = _mousePosition;
-    if (mounted && !_disposing && mousePosition != null) {
+    if (mounted && _attached && !_disposing && mousePosition != null) {
       _controller._setCursorPos(mousePosition);
     }
   }
@@ -819,8 +1261,14 @@ class _CustomPlatformViewState extends State<CustomPlatformView>
     if (box == null || !box.attached) {
       return;
     }
-    unawaited(_controller._setSize(
-        box.size, widget.scaleFactor ?? window.devicePixelRatio));
+    final scale = widget.scaleFactor ?? window.devicePixelRatio;
+    if (_reportedSurfaceSize != null &&
+        (_reportedSurfaceSize != box.size || _reportedScaleFactor != scale)) {
+      _endTrackpadPointer(cancelled: true);
+    }
+    _reportedSurfaceSize = box.size;
+    _reportedScaleFactor = scale;
+    unawaited(_controller._setSize(box.size, scale));
   }
 
   void _reportWidgetPosition() async {

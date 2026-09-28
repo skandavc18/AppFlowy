@@ -5,6 +5,19 @@ import 'package:appflowy/shared/icon_emoji_picker/default_icon_artwork.dart';
 
 part 'vivid_extra_artwork.dart';
 
+/// Explicit illustrations only; generated utility variants are not a catalogue.
+/// Chrome additions do not add, rename or replace persisted picker choices.
+Iterable<String> get vividIllustrationNames sync* {
+  yield* _illustrations.keys;
+  yield* _extraIllustrations.keys;
+  yield* _actionIllustrations.keys;
+}
+
+bool hasVividIllustration(String name) =>
+    _illustrations.containsKey(name) ||
+    _extraIllustrations.containsKey(name) ||
+    _actionIllustrations.containsKey(name);
+
 /// Rounded illustrations on a consistent 32px grid. Gradients, inset highlights
 /// and contrasting faces supply depth without filters or embedded raster data.
 /// The canvas is transparent: pale fills are object details, not UI surfaces.
@@ -12,8 +25,14 @@ String? vividIconSvg(String name) {
   if (name.startsWith('utility-')) {
     return _vividUtilitySvg(name.substring('utility-'.length));
   }
-  final art = _illustrations[name] ?? _extraIllustrations[name];
+  final art = _illustrations[name] ??
+      _extraIllustrations[name] ??
+      _actionIllustrations[name];
   if (art == null) return null;
+  // Do not change the serialized SVG bytes of existing saved illustrations.
+  final body = art.strokeWidth == null
+      ? art.body
+      : '<g stroke-width="${art.strokeWidth}">${art.body}</g>';
   return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" '
       'fill="none" stroke-linecap="round" stroke-linejoin="round">'
       '<defs>'
@@ -27,7 +46,7 @@ String? vividIconSvg(String name) {
       '<stop stop-color="${art.accentLight}"/>'
       '<stop offset="1" stop-color="${art.accentShade}"/>'
       '</linearGradient>'
-      '</defs>${art.body}</svg>';
+      '</defs>$body</svg>';
 }
 
 /// Utility marks retain their precise geometry instead of borrowing an
@@ -84,13 +103,23 @@ class _Illustration {
     this.accentLight,
     this.accentShade,
     this.body,
-  );
+  ) : strokeWidth = null;
+
+  /// A compact blue/violet action palette, not a filter over default outlines.
+  const _Illustration.action(
+    this.body, {
+    this.light = '#65BFF2',
+    this.shade = '#397FC4',
+    this.accentLight = '#B79AEE',
+    this.accentShade = '#8251BD',
+  }) : strokeWidth = 2.2;
 
   final String light;
   final String shade;
   final String accentLight;
   final String accentShade;
   final String body;
+  final double? strokeWidth;
 }
 
 // Reusable object faces, not UI backgrounds. Every illustration remains

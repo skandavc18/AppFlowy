@@ -18,7 +18,9 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/ocr/
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_identity.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_migrator.dart';
+import 'package:appflowy/plugins/workspace_file/workspace_image_wheel_gate.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
@@ -37,6 +39,8 @@ import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
+import 'package:appflowy/workspace/presentation/widgets/image_viewer/image_provider.dart';
+import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -46,6 +50,8 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:path/path.dart' as p;
 
@@ -563,43 +569,41 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
               child: ColoredBox(
                 key: const ValueKey('workspace-file-canvas'),
                 color: canvas,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ValueListenableBuilder<StandaloneFileHeader>(
-                      valueListenable: _chrome,
-                      builder: (context, controls, _) =>
-                          ValueListenableBuilder<bool>(
-                        valueListenable: _focused,
-                        builder: (context, focused, _) =>
-                            WorkspaceFileIdentityRow(
-                          key: const ValueKey('workspace-file-identity'),
-                          view: _view,
-                          binding: binding,
-                          summary: [
-                            p
-                                .extension(_name)
-                                .replaceFirst('.', '')
-                                .toUpperCase(),
-                            if (_size != null) _describeSize(_size!),
-                          ].where((part) => part.isNotEmpty).join(' · '),
-                          canRename: () => binding == _binding && _canRename,
-                          onViewChanged: _accept,
-                          repository: widget.repository,
-                          coverBackend: _guardedCoverBackend,
-                          updateIcon: widget.updateIcon,
-                          userProfile: profile,
-                          source: source,
-                          mediaActions: _guardedActions,
-                          fileAvailable: file != null && _available,
-                          actionsVisible: focused,
-                          controls: controls,
-                        ),
+                child: StandaloneFilePage(
+                  nativeBodyGestures: _isImage,
+                  header: ValueListenableBuilder<StandaloneFileHeader>(
+                    valueListenable: _chrome,
+                    builder: (context, controls, _) =>
+                        ValueListenableBuilder<bool>(
+                      valueListenable: _focused,
+                      builder: (context, focused, _) =>
+                          WorkspaceFileIdentityRow(
+                        key: const ValueKey('workspace-file-identity'),
+                        view: _view,
+                        binding: binding,
+                        summary: [
+                          p
+                              .extension(_name)
+                              .replaceFirst('.', '')
+                              .toUpperCase(),
+                          if (_size != null) _describeSize(_size!),
+                        ].where((part) => part.isNotEmpty).join(' · '),
+                        canRename: () => binding == _binding && _canRename,
+                        onViewChanged: _accept,
+                        repository: widget.repository,
+                        coverBackend: _guardedCoverBackend,
+                        updateIcon: widget.updateIcon,
+                        userProfile: profile,
+                        source: source,
+                        mediaActions: _guardedActions,
+                        fileAvailable: file != null && _available,
+                        actionsVisible: focused,
+                        controls: controls,
                       ),
                     ),
-                    // Hover only rebuilds chrome, not the retained renderer.
-                    Expanded(child: body),
-                  ],
+                  ),
+                  // The future/key and renderer stay owned by this State.
+                  body: body,
                 ),
               ),
             ),
@@ -629,9 +633,10 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
     }
 
     if (_isImage) {
-      return _WorkspaceImageStage(
+      return workspacePhotoRenderer(
         file: file,
         name: _rendererName,
+        mediaActions: _guardedActions,
         ocrService: widget.ocrService,
         ocrSourceBuilder: widget.ocrSourceBuilder,
       );
@@ -692,7 +697,9 @@ class _WorkspaceFileViewState extends State<WorkspaceFileView> {
         metadata: metadata,
         onMetadataChanged: saveMetadata,
         editable: _isEditable,
-        mediaActions: widget.mediaActions,
+        mediaActions: _guardedActions,
+        canReadFile: _canReadBinding,
+        canEditFile: _canEditBinding,
       );
     }
 
@@ -868,16 +875,38 @@ class _WorkspaceMediaStage extends StatelessWidget {
   }
 }
 
+/// The existing bounded photo stage for standalone file hosts. [file] must
+/// already be materialized; [name] must match the host's rendererName so its
+/// controls use that host's live read/edit guards and shared header slot.
+/// Hosts retain this widget and key source rebindings; bare embeds must keep
+/// their own viewer rather than adopting an enclosing standalone scope.
+Widget workspacePhotoRenderer({
+  required File file,
+  required String name,
+  MediaActionService mediaActions = const MediaActionService(),
+  OcrService? ocrService,
+  ImageOcrSourceBuilder? ocrSourceBuilder,
+}) =>
+    _WorkspaceImageStage(
+      file: file,
+      name: name,
+      mediaActions: mediaActions,
+      ocrService: ocrService,
+      ocrSourceBuilder: ocrSourceBuilder,
+    );
+
 class _WorkspaceImageStage extends StatefulWidget {
   const _WorkspaceImageStage({
     required this.file,
     required this.name,
+    required this.mediaActions,
     this.ocrService,
     this.ocrSourceBuilder,
   });
 
   final File file;
   final String name;
+  final MediaActionService mediaActions;
   final OcrService? ocrService;
   final ImageOcrSourceBuilder? ocrSourceBuilder;
 
@@ -887,7 +916,7 @@ class _WorkspaceImageStage extends StatefulWidget {
 
 class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
     with SingleTickerProviderStateMixin {
-  final TransformationController _transformation = TransformationController();
+  final TransformationController _transformation = _WorkspacePhotoTransform();
   AnimationController? _fitController;
   AnimationController get _fitAnimation =>
       _fitController ??= (AnimationController(
@@ -899,11 +928,86 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
   int _fitRevision = 0;
   String? _subtitle;
   StandaloneFileScope? _host;
+  StandaloneFilePageScroll? _page;
+  int? _panPointer;
+  Offset _pendingPagePan = Offset.zero;
+  bool _fittedPagePan = false;
+  bool _verticalPagePan = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     _host = StandaloneFileScope.forName(context, widget.name);
+    _page = StandaloneFilePageScroll.maybeOf(context);
+  }
+
+  bool get _unmodifiedPan {
+    final keys = HardwareKeyboard.instance;
+    return !keys.isControlPressed &&
+        !keys.isMetaPressed &&
+        !keys.isShiftPressed;
+  }
+
+  void _beginPagePan(PointerPanZoomStartEvent event) {
+    _fitController?.stop();
+    _panPointer = event.pointer;
+    _pendingPagePan = Offset.zero;
+    _verticalPagePan = false;
+    _fittedPagePan = _canRead() &&
+        _page != null &&
+        _unmodifiedPan &&
+        _transformation.value.isIdentity();
+  }
+
+  void _recordPagePan(PointerPanZoomUpdateEvent event) {
+    if (event.pointer != _panPointer || !_fittedPagePan) return;
+    // Native ScaleGestureRecognizer keeps ownership throughout, including a
+    // pan that later becomes a pinch. Never race it with an eager recognizer.
+    if (!_unmodifiedPan ||
+        !_canRead() ||
+        !event.localPanDelta.isFinite ||
+        !event.scale.isFinite ||
+        !event.rotation.isFinite ||
+        event.scale != 1 ||
+        event.rotation != 0) {
+      _fittedPagePan = false;
+      _pendingPagePan = Offset.zero;
+      return;
+    }
+    _pendingPagePan += event.localPanDelta;
+  }
+
+  void _routeFittedPagePan(ScaleUpdateDetails details) {
+    if (!_fittedPagePan || _panPointer == null) return;
+    // Native scale recognition owns the stream. Only a still-fitted transform
+    // can hand pan to the header; genuine zoom/translation is never rolled back.
+    if (!_transformation.value.isIdentity() ||
+        details.scale != 1 ||
+        details.rotation != 0 ||
+        !_unmodifiedPan ||
+        !_canRead()) {
+      _fittedPagePan = false;
+      return;
+    }
+    if (!_verticalPagePan) {
+      if (_pendingPagePan.distance < 8) return;
+      if (_pendingPagePan.dy.abs() < _pendingPagePan.dx.abs() * 2) {
+        _fittedPagePan = false;
+        return;
+      }
+      _verticalPagePan = true;
+    }
+    _page?.consume(-_pendingPagePan.dy, (_) => 0);
+    _pendingPagePan = Offset.zero;
+  }
+
+  void _endPagePan(PointerEvent event) {
+    if (event.pointer != _panPointer) return;
+    _panPointer = null;
+    _fittedPagePan = false;
+    _pendingPagePan = Offset.zero;
+    // No second fling: native inertia is bounded at Fit; zoomed/pinch streams
+    // keep InteractiveViewer's own release behavior.
   }
 
   ImageEditorSource get _source => ImageEditorSource(
@@ -918,6 +1022,33 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
       _source;
 
   bool _canRead() => mounted && _host?.canRead() == true;
+
+  void _openFullscreen() {
+    final host = _host;
+    if (!_canRead() || host == null) return;
+    final name = host.displayName;
+    bool current() =>
+        mounted &&
+        _host?.chrome == host.chrome &&
+        _host?.displayName == name &&
+        host.canRead();
+    unawaited(
+      showInteractiveImageViewer(
+        context,
+        viewer: InteractiveImageViewer(
+          imageProvider: _WorkspaceFullscreenImageProvider(
+            file: widget.file,
+            name: name,
+          ),
+          actions: widget.mediaActions,
+          canReadImage: current,
+          onEditImage: host.canEdit() ? _edit : null,
+          ocrService: widget.ocrService,
+          ocrSourceBuilder: widget.ocrSourceBuilder,
+        ),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -977,7 +1108,8 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
     // so an earlier fling cannot overwrite the requested fit on a later frame.
     setState(() => _fitRevision++);
     if (_transformation.value.isIdentity()) return;
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if (MediaQuery.disableAnimationsOf(context) ||
+        MediaQuery.accessibleNavigationOf(context)) {
       _transformation.value = Matrix4.identity();
       return;
     }
@@ -1040,22 +1172,40 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
         DocumentViewportFitButton(
           onPressed: _fitToView,
         ),
+        DocumentViewportButton(
+          key: const ValueKey('workspace-image-fullscreen'),
+          icon: Icons.open_in_full_rounded,
+          tooltip: 'Open in full screen',
+          onPressed: host?.canRead() == true ? _openFullscreen : null,
+        ),
       ],
       child: HistorySwipeExclusion(
         child: Listener(
           // A new gesture takes over immediately, rather than fighting a reset.
-          onPointerDown: (_) => _fitAnimation.stop(),
-          onPointerSignal: (_) => _fitAnimation.stop(),
-          child: ClipRect(
-            child: InteractiveViewer(
-              key: ValueKey(_fitRevision),
-              transformationController: _transformation,
-              onInteractionStart: (_) => _fitAnimation.stop(),
-              minScale: 0.4,
-              maxScale: 8,
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Center(
+          onPointerDown: (_) => _fitController?.stop(),
+          onPointerSignal: (_) => _fitController?.stop(),
+          onPointerPanZoomStart: _beginPagePan,
+          onPointerPanZoomUpdate: _recordPagePan,
+          onPointerPanZoomEnd: _endPagePan,
+          onPointerCancel: _endPagePan,
+          child: StandaloneFileScrollRegion(
+            // A fitted photo is a bounded stage, not a vertical document.
+            // Native scale callbacks route fitted trackpad pan; this adapter
+            // owns wheel only. Modified wheel and zoomed pan stay native.
+            trackpad: false,
+            stopWheelOnNativePan: true,
+            consumeBody: (_) => 0,
+            child: WorkspaceImageWheelGate(
+                child: ClipRect(
+              child: InteractiveViewer(
+                key: ValueKey(_fitRevision),
+                transformationController: _transformation,
+                onInteractionStart: (_) => _fitController?.stop(),
+                onInteractionUpdate: _routeFittedPagePan,
+                minScale: 0.4,
+                maxScale: 8,
+                child: _WorkspacePhotoFitFrame(
+                  page: _page,
                   // The card hugs the picture instead of filling the window, so
                   // nothing sits behind it but the page.
                   child: ViewerCard(
@@ -1087,12 +1237,93 @@ class _WorkspaceImageStageState extends State<_WorkspaceImageStage>
                   ),
                 ),
               ),
-            ),
+            )),
           ),
         ),
       ),
     );
   }
+}
+
+/// Flutter's native pan boundary rounds to 1e-9; inertia can leave a smaller
+/// translation on an otherwise exact identity matrix. Canonicalize that noise
+/// at the assignment boundary, before notifying the viewer once. No listener,
+/// frame callback or layout read is needed; real zoom/pan remains untouched.
+class _WorkspacePhotoTransform extends TransformationController {
+  @override
+  set value(Matrix4 next) {
+    final entries = next.storage;
+    if (entries[12].abs() < 1e-9 && entries[13].abs() < 1e-9) {
+      var identity = true;
+      for (var i = 0; i < 16; i++) {
+        if (i == 12 || i == 13) continue;
+        if (entries[i] != (i % 5 == 0 ? 1.0 : 0.0)) {
+          identity = false;
+          break;
+        }
+      }
+      if (identity && (entries[12] != 0 || entries[13] != 0)) {
+        next = next.clone()..setTranslationRaw(0, 0, 0);
+      }
+    }
+    super.value = next;
+  }
+}
+
+/// NestedScrollView increases body height by the retired header distance.
+/// Keep the fitted artwork's original measure, not just its transform matrix.
+/// InteractiveViewer's outer child still fills the viewport (so native safe
+/// bounds and input work everywhere); only the artwork's fit box stays fixed.
+class _WorkspacePhotoFitFrame extends StatelessWidget {
+  const _WorkspacePhotoFitFrame({required this.page, required this.child});
+
+  final StandaloneFilePageScroll? page;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final outer = page?.outer;
+          final retired = outer != null && outer.positions.length == 1
+              ? outer.offset
+                  .clamp(0.0, outer.position.maxScrollExtent)
+                  .toDouble()
+              : 0.0;
+          final coveredHeight = constraints.maxHeight - retired;
+          // If the header initially covered the entire window, there was no
+          // visible fit frame to retain. Let the newly revealed body fit rather
+          // than pinning its artwork to zero height forever.
+          final fitHeight =
+              ((coveredHeight > 48 ? coveredHeight : constraints.maxHeight) -
+                      48)
+                  .clamp(0.0, double.infinity)
+                  .toDouble();
+          return Padding(
+            padding: const EdgeInsets.all(24),
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                height: fitHeight,
+                child: Center(child: child),
+              ),
+            ),
+          );
+        },
+      );
+}
+
+/// Reuse the live image provider/renderer while retaining the workspace name,
+/// which can differ from the materialized storage basename.
+class _WorkspaceFullscreenImageProvider extends AFBlockImageProvider {
+  _WorkspaceFullscreenImageProvider({required File file, required this.name})
+      : super(images: [
+          ImageBlockData(url: file.path, type: CustomImageType.local),
+        ]);
+
+  final String name;
+
+  @override
+  String getImageName(int index) => name;
 }
 
 String _describeSize(int bytes) {

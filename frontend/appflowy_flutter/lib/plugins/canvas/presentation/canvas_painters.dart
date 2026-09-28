@@ -1,7 +1,12 @@
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:appflowy/plugins/canvas/presentation/canvas_find.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
+import 'package:appflowy/shared/find_replace/find_highlight.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
+import 'package:appflowy/shared/find_replace/text_find.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_geometry.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
 import 'package:flutter/material.dart';
@@ -128,6 +133,9 @@ class CanvasEdgePainter extends CustomPainter {
     required this.edges,
     this.pending,
     this.labelStyle,
+    this.findQuery = '',
+    this.findOptions = const FindOptions(),
+    this.currentFind,
   });
 
   final CanvasCamera camera;
@@ -138,11 +146,24 @@ class CanvasEdgePainter extends CustomPainter {
   final ({Offset from, Offset to})? pending;
 
   final TextStyle? labelStyle;
+  final String findQuery;
+  final FindOptions findOptions;
+  final SurfaceFindMatch? currentFind;
+
+  /// Word boxes painted on this frame, in board/screen coordinates.
+  @visibleForTesting
+  final List<Rect> findHighlightRects = [];
+  Rect? _currentFindRect;
+
+  /// Exact active-word geometry for the native camera reveal.
+  Rect? get currentFindRect => _currentFindRect;
 
   final Map<String, TextPainter> _labels = <String, TextPainter>{};
 
   @override
   void paint(Canvas canvas, Size size) {
+    findHighlightRects.clear();
+    _currentFindRect = null;
     canvas.save();
     canvas.translate(camera.offset.dx, camera.offset.dy);
     canvas.scale(camera.zoom);
@@ -238,7 +259,8 @@ class CanvasEdgePainter extends CustomPainter {
       emphasis,
     );
 
-    if (drawing.edge.label.trim().isNotEmpty) {
+    if (drawing.edge.label.trim().isNotEmpty ||
+        drawing.edge.relation.isNotEmpty) {
       _paintLabel(canvas, drawing);
     }
   }
@@ -283,7 +305,22 @@ class CanvasEdgePainter extends CustomPainter {
   }
 
   void _paintLabel(Canvas canvas, CanvasEdgeDrawing drawing) {
-    final label = drawing.edge.label.trim();
+    final edge = drawing.edge;
+    final separator =
+        edge.label.isNotEmpty && edge.relation.isNotEmpty ? ' · ' : '';
+    final label = '${edge.label}$separator${edge.relation}';
+    // Match each model field independently, as searchCanvas does. Joining
+    // before searching would break ^/$ and invent cross-field regex hits.
+    final matches = <(RegExpMatch, int, CanvasSearchField)>[
+      for (final match in findMatches(edge.label, findQuery, findOptions))
+        (match, 0, CanvasSearchField.label),
+      for (final match in findMatches(edge.relation, findQuery, findOptions))
+        (
+          match,
+          edge.label.length + separator.length,
+          CanvasSearchField.relation
+        ),
+    ];
     final painter = _labels.putIfAbsent(
       '${drawing.edge.id}|$label',
       () => TextPainter(
@@ -297,8 +334,8 @@ class CanvasEdgePainter extends CustomPainter {
           ),
         ),
         textDirection: ui.TextDirection.ltr,
-        maxLines: 1,
-        ellipsis: '…',
+        maxLines: matches.isEmpty ? 1 : null,
+        ellipsis: matches.isEmpty ? '…' : null,
       )..layout(maxWidth: 190),
     );
 
@@ -318,6 +355,48 @@ class CanvasEdgePainter extends CustomPainter {
     canvas.save();
     canvas.translate(box.left, box.top);
     canvas.scale(scale);
+    final target = currentFind?.id;
+    final isCurrentEdge = target is CanvasFindId &&
+        target.$1 == CanvasHitKind.edge &&
+        target.$2 == edge.id;
+    for (final entry in matches) {
+      final (match, offset, field) = entry;
+      final current = isCurrentEdge &&
+          target.$3 == field &&
+          match.start == currentFind?.range.start;
+      for (final word in painter.getBoxesForSelection(
+        TextSelection(
+          baseOffset: match.start + offset,
+          extentOffset: match.end + offset,
+        ),
+      )) {
+        final rect = word.toRect().shift(const Offset(6, 3));
+        canvas.drawRect(
+          rect,
+          Paint()
+            ..color = current
+                ? FindHighlightColors.current(
+                    palette.isDark ? Brightness.dark : Brightness.light,
+                  )
+                : FindHighlightColors.match(
+                    palette.isDark ? Brightness.dark : Brightness.light,
+                  ),
+        );
+        final screenRect = camera.sceneToScreen(
+          Rect.fromLTWH(
+            box.left + rect.left * scale,
+            box.top + rect.top * scale,
+            rect.width * scale,
+            rect.height * scale,
+          ),
+        );
+        findHighlightRects.add(screenRect);
+        if (current) {
+          _currentFindRect =
+              _currentFindRect?.expandToInclude(screenRect) ?? screenRect;
+        }
+      }
+    }
     painter.paint(canvas, const Offset(6, 3));
     canvas.restore();
   }

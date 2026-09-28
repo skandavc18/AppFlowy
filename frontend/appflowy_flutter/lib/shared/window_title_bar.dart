@@ -81,7 +81,7 @@ class _WindowTitleBarState extends State<WindowTitleBar> {
     final brightness = Theme.of(context).brightness;
 
     return ColoredBox(
-      color: widget.backgroundColor ?? WorkspacePalette.of(context).background,
+      color: widget.backgroundColor ?? WorkspacePalette.of(context).chrome,
       child: SizedBox(
         height: widget.height,
         child: Row(

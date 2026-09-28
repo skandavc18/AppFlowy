@@ -94,6 +94,17 @@ ReadableArticle parseReadableArticle(String html, {Uri? baseUrl}) {
   final pageTitle = _documentTitle(document);
   final byline = _byline(document);
 
+  // Hidden payloads are not reading content, even if they score highly.
+  for (final element in document.querySelectorAll('*').toList()) {
+    if (element.attributes.containsKey('hidden') ||
+        element.attributes['aria-hidden'] == 'true' ||
+        RegExp(r'display\s*:\s*none|visibility\s*:\s*hidden',
+                caseSensitive: false)
+            .hasMatch(element.attributes['style'] ?? '')) {
+      element.remove();
+    }
+  }
+
   for (final element in document.querySelectorAll(_strippedTags.join(','))) {
     element.remove();
   }
@@ -510,13 +521,15 @@ class _MarkdownWriter {
       return null;
     }
     final trimmed = url.trim();
-    if (trimmed.isEmpty || trimmed.startsWith('data:')) {
-      return null;
-    }
-    if (base == null || trimmed.startsWith('http')) {
-      return trimmed;
-    }
-    return base!.resolve(trimmed).toString();
+    if (trimmed.isEmpty) return null;
+    final parsed = Uri.tryParse(trimmed);
+    if (parsed == null) return null;
+    final resolved = base?.resolveUri(parsed) ?? parsed;
+    if (!const {'http', 'https'}.contains(resolved.scheme) ||
+        resolved.host.isEmpty ||
+        resolved.userInfo.isNotEmpty) return null;
+    // Encode Markdown URL delimiters rather than permitting injected markup.
+    return resolved.toString().replaceAll('(', '%28').replaceAll(')', '%29');
   }
 
   static String? _firstSourceOf(String? srcset) {

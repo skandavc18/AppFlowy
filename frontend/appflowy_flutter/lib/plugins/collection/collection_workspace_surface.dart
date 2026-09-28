@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/document_viewer/file_action_band.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_design.dart';
@@ -228,7 +229,7 @@ class CollectionWorkspaceToolbar extends StatelessWidget {
                         child: Wrap(
                           spacing: WorkspaceTokens.space1,
                           runSpacing: WorkspaceTokens.space1,
-                          alignment: WrapAlignment.end,
+                          alignment: fileActionRunAlignment(context),
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: actions,
                         ),
@@ -299,16 +300,18 @@ class CollectionWorkspaceAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = WorkspacePalette.of(context);
-    final hover = WorkspaceChrome.hoverColor(context);
-    final ink = (color ?? palette.secondaryText)
-        .withValues(alpha: onPressed == null ? 0.45 : 1);
+    final baseInk = color ?? palette.secondaryText;
+    final ink = onPressed == null
+        ? baseInk.withValues(alpha: baseInk.a * 0.45)
+        : baseInk;
     return Tooltip(
       message: tooltip,
       excludeFromSemantics: true,
       waitDuration: const Duration(milliseconds: 500),
       child: TextButton(
         onPressed: onPressed,
-        style: ButtonStyle(
+        style:
+            WorkspaceChrome.controlStyle(context, selected: selected).copyWith(
           minimumSize: WidgetStatePropertyAll(Size(size, size)),
           padding: WidgetStatePropertyAll(
             EdgeInsets.symmetric(
@@ -319,31 +322,6 @@ class CollectionWorkspaceAction extends StatelessWidget {
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           foregroundColor: WidgetStatePropertyAll(ink),
           iconColor: WidgetStatePropertyAll(ink),
-          backgroundColor: WidgetStatePropertyAll(
-            palette.hover.withValues(alpha: selected ? 0.35 : 0),
-          ),
-          overlayColor: WidgetStateProperty.resolveWith((states) {
-            if (states.contains(WidgetState.disabled)) {
-              return hover.withValues(alpha: 0);
-            }
-            // These are existing focus/press surfaces, not pointer washes.
-            if (states.contains(WidgetState.focused) ||
-                states.contains(WidgetState.pressed)) {
-              return palette.hover.withValues(alpha: 0.4);
-            }
-            return states.contains(WidgetState.hovered)
-                ? hover
-                : hover.withValues(alpha: 0);
-          }),
-          side: WidgetStateProperty.resolveWith(
-            (states) => BorderSide(
-              color: states.contains(WidgetState.focused)
-                  ? palette.focus
-                  : selected || states.contains(WidgetState.hovered)
-                      ? palette.border
-                      : palette.border.withValues(alpha: 0),
-            ),
-          ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
               borderRadius:
@@ -419,6 +397,7 @@ class _CollectionWorkspaceNavRowState extends State<CollectionWorkspaceNavRow> {
   Widget build(BuildContext context) {
     final palette = WorkspacePalette.of(context);
     final hover = WorkspaceChrome.hoverColor(context);
+    final selected = WorkspaceChrome.selectedColor(context);
     final engaged = hovered || focused;
     final radius = BorderRadius.circular(WorkspaceTokens.controlRadius);
     return Semantics(
@@ -438,7 +417,7 @@ class _CollectionWorkspaceNavRowState extends State<CollectionWorkspaceNavRow> {
           splashFactory: NoSplash.splashFactory,
           hoverColor: Colors.transparent,
           focusColor: Colors.transparent,
-          highlightColor: palette.hover.withValues(alpha: 0.3),
+          highlightColor: WorkspaceChrome.pressedColor(context),
           child: AnimatedContainer(
             duration:
                 WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
@@ -446,14 +425,15 @@ class _CollectionWorkspaceNavRowState extends State<CollectionWorkspaceNavRow> {
             constraints: BoxConstraints(minHeight: widget.minHeight),
             padding: widget.padding,
             decoration: BoxDecoration(
-              // Selection and keyboard focus keep their existing surfaces.
+              // A semantic selection survives hover; keyboard focus has its
+              // own full-contrast stroke, rather than a stronger grey wash.
               color: widget.selected
-                  ? palette.hover.withValues(alpha: 0.35)
-                  : focused
-                      ? palette.hover.withValues(alpha: 0.2)
-                      : hovered
-                          ? hover
-                          : hover.withValues(alpha: 0),
+                  ? engaged
+                      ? Color.alphaBlend(hover, selected)
+                      : selected
+                  : engaged
+                      ? hover
+                      : hover.withValues(alpha: 0),
               borderRadius: radius,
               border: Border.all(
                 color: focused

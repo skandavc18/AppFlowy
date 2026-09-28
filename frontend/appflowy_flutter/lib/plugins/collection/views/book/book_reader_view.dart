@@ -11,6 +11,7 @@ import 'package:appflowy/plugins/collection/views/book/book_reader_palette.dart'
 import 'package:appflowy/plugins/collection/views/book/book_reader_settings_panel.dart';
 import 'package:appflowy/plugins/collection/views/book/book_views.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/book/book_chapter.dart';
@@ -895,12 +896,15 @@ class _BookFullscreenReader extends StatelessWidget {
     return Scaffold(
       backgroundColor: palette.canvas,
       body: SafeArea(
-        child: BookReaderView(
-          key: ValueKey('book-fullscreen-${collection.collectionView.id}'),
-          collection: collection,
-          reading: reading,
-          chapterBuilder: chapterBuilder,
-          fullscreen: true,
+        child: ContextualFindScope(
+          findInControls: true,
+          child: BookReaderView(
+            key: ValueKey('book-fullscreen-${collection.collectionView.id}'),
+            collection: collection,
+            reading: reading,
+            chapterBuilder: chapterBuilder,
+            fullscreen: true,
+          ),
         ),
       ),
     );

@@ -1,11 +1,15 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/album/album_chrome.dart';
 import 'package:appflowy/plugins/collection/views/album/album_context_menu.dart';
 import 'package:appflowy/plugins/collection/views/album/album_host.dart';
 import 'package:appflowy/plugins/collection/views/album/album_thumbnail.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_media_player.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -23,26 +27,41 @@ class AlbumPlaylistView extends StatelessWidget {
     return AlbumHost(
       collection: collection,
       needsDates: false,
-      builder: (context, controller, palette) {
-        final playable = controller.playable;
-        return AlbumScaffold(
-          controller: controller,
-          palette: palette,
-          padded: false,
-          leading: albumArrangementControls(
+      pageControlsBuilder: (context, controller, palette) =>
+          PreviewToolbarRegion(
+        child: CollectionWorkspaceToolbar(
+          keepVisible: true,
+          identity: Text(albumContentsSummary(controller),
+              style: collectionWorkspaceLabel(context, size: 12)),
+          actions: albumArrangementControls(
             context: context,
             controller: controller,
             palette: palette,
             showTileSize: false,
           ),
+        ),
+      ),
+      builder: (context, controller, palette) {
+        final playable = controller.playable;
+        return CollectionWorkspaceSurface(
+          padding: EdgeInsets.zero,
           child: playable.isEmpty
-              ? AlbumEmptyState(
-                  palette: palette,
-                  icon: Icons.queue_music_rounded,
-                  title: LocaleKeys.collections_album_nothingToPlay.tr(),
-                  description: LocaleKeys
-                      .collections_album_nothingToPlayDescription
-                      .tr(),
+              ? FileBrowserScrollView(
+                  controller: CollectionPageScrollScope.maybeOf(context),
+                  header: FileBrowserPageHeader.maybeOf(context),
+                  slivers: [
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: AlbumEmptyState(
+                        palette: palette,
+                        icon: Icons.queue_music_rounded,
+                        title: LocaleKeys.collections_album_nothingToPlay.tr(),
+                        description: LocaleKeys
+                            .collections_album_nothingToPlayDescription
+                            .tr(),
+                      ),
+                    )
+                  ],
                 )
               : _Playlist(
                   controller: controller,
@@ -249,17 +268,26 @@ class _PlaylistState extends State<_Playlist> {
                 _backgroundMenu(details.globalPosition),
             child: PremiumScrollScope(
               enabled: true,
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                itemCount: widget.items.length,
-                itemBuilder: (context, position) => _QueueRow(
-                  item: widget.items[position],
-                  palette: palette,
-                  number: position + 1,
-                  playing: position == index,
-                  onTap: () => _play(position),
-                  onContextMenu: _itemMenu,
-                ),
+              child: FileBrowserScrollView(
+                controller: CollectionPageScrollScope.maybeOf(context),
+                header: FileBrowserPageHeader.maybeOf(context),
+                slivers: [
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                      (context, position) => _QueueRow(
+                        item: widget.items[position],
+                        palette: palette,
+                        number: position + 1,
+                        playing: position == index,
+                        onTap: () => _play(position),
+                        onContextMenu: _itemMenu,
+                      ),
+                      childCount: widget.items.length,
+                    )),
+                  )
+                ],
               ),
             ),
           ),

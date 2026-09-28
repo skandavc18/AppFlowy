@@ -10,6 +10,8 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/file_browser/file_browser_view.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/page_icon.dart';
+import 'package:appflowy/shared/page_cover.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_action_row.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
@@ -60,6 +62,7 @@ class FolderGalleryHeader extends StatefulWidget {
     this.searchFocusNode,
     this.showHeader = true,
     this.showControls = true,
+    this.showStatistics = true,
     this.contentInset,
     this.contentPolicy,
     this.onNewFolder,
@@ -88,6 +91,10 @@ class FolderGalleryHeader extends StatefulWidget {
   final FocusNode? searchFocusNode;
   final bool showHeader;
   final bool showControls;
+
+  /// Provider-backed folders own their counts in the provider toolbar, not
+  /// in this controller's native workspace-child snapshot.
+  final bool showStatistics;
   final double? contentInset;
   final CollectionContentPolicy? contentPolicy;
   final VoidCallback? onNewFolder;
@@ -328,6 +335,27 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
               maxWidth: double.infinity,
               contentInset: horizontal,
               overlapIcon: rootWorkspace != null || folderView != null,
+              coverView: rootWorkspace == null ? folderView : null,
+              coverBinding: (controller, folder.id),
+              coverEditable: rootWorkspace == null && canEditIdentity,
+              canResizeCover: () =>
+                  mounted &&
+                  widget.controller == controller &&
+                  controller.currentFolder.id == folder.id &&
+                  _canEditCurrentFolder(identity: true),
+              isSameCoverTarget: (fresh) =>
+                  fresh.pluginType == folderView?.pluginType,
+              onCoverHeightChanged: (height) {
+                final latest = controller.viewForId(folder.id);
+                if (mounted &&
+                    widget.controller == controller &&
+                    controller.currentFolder.id == folder.id &&
+                    latest != null &&
+                    _canEditCurrentFolder(identity: true)) {
+                  controller
+                      .updateView(PageCoverHeight.applyTo(latest, height));
+                }
+              },
               leading: widget.showControls && controller.breadcrumbs.length > 1
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -355,7 +383,7 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
                 folder: folder,
                 view: folderView,
                 workspace: rootWorkspace,
-                stats: stats,
+                stats: widget.showStatistics ? stats : const [],
                 compact: constraints.maxWidth < 600,
                 canEdit: canEditIdentity,
                 editing: controller.editingId == folder.id,
@@ -374,6 +402,22 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
                 },
                 onCancelled: controller.cancelEditing,
                 onViewChanged: controller.updateView,
+                resizeBinding: controller,
+                canResizeIcon: () =>
+                    mounted &&
+                    widget.controller == controller &&
+                    controller.currentFolder.id == folder.id &&
+                    _canEditCurrentFolder(identity: true),
+                onIconSizeChanged: (size) {
+                  final latest = controller.viewForId(folder.id);
+                  if (mounted &&
+                      widget.controller == controller &&
+                      controller.currentFolder.id == folder.id &&
+                      latest != null &&
+                      _canEditCurrentFolder(identity: true)) {
+                    controller.updateView(IconSize.applyTo(latest, size));
+                  }
+                },
                 iconActions: iconActions,
                 actions: actionStrip,
               ),
@@ -798,6 +842,9 @@ class _GalleryHeading extends StatelessWidget {
     required this.onSubmitted,
     required this.onCancelled,
     required this.onViewChanged,
+    required this.resizeBinding,
+    required this.canResizeIcon,
+    required this.onIconSizeChanged,
     required this.iconActions,
     required this.actions,
     required this.canEdit,
@@ -813,6 +860,9 @@ class _GalleryHeading extends StatelessWidget {
   final Future<bool> Function(String name) onSubmitted;
   final VoidCallback onCancelled;
   final ValueChanged<ViewPB> onViewChanged;
+  final Object resizeBinding;
+  final bool Function() canResizeIcon;
+  final ValueChanged<double?> onIconSizeChanged;
   final Widget? iconActions;
   final Widget? actions;
   final bool canEdit;
@@ -862,30 +912,43 @@ class _GalleryHeading extends StatelessWidget {
         ),
       );
     } else if (view case final currentView?) {
-      titleIcon = ViewIconPicker(
+      final slotSize = opticalRole != null
+          ? IconOpticalSize.resolve(
+              role: opticalRole,
+              baseSize: WorkspaceTokens.pageIconSize,
+            ).slotSize
+          : WorkspaceTokens.pageIconSize;
+      titleIcon = ResizablePageIcon(
         view: currentView,
-        onViewChanged: onViewChanged,
-        child: SizedBox.square(
-          key: const ValueKey('folder-gallery-title-icon'),
-          dimension: opticalRole != null
-              ? IconOpticalSize.resolve(
-                  role: opticalRole,
-                  baseSize: WorkspaceTokens.pageIconSize,
-                ).slotSize
-              : WorkspaceTokens.pageIconSize,
-          child: Center(
-            child: MediaQuery.withNoTextScaling(
-              child: icon != null && icon.isNotEmpty
-                  ? RawEmojiIconWidget(
-                      emoji: icon,
-                      emojiSize: WorkspaceTokens.pageIconSize,
-                      opticalRole: opticalRole,
-                      lineHeight: 1,
-                    )
-                  : const WorkspaceGlyph(
-                      Icons.folder_rounded,
-                      size: WorkspaceTokens.pageIconSize,
-                    ),
+        binding: resizeBinding,
+        editable: canEdit,
+        canResize: canResizeIcon,
+        isSameTarget: (fresh) => fresh.pluginType == currentView.pluginType,
+        defaultSize: slotSize,
+        onSizeChanged: onIconSizeChanged,
+        builder: (size, _) => ViewIconPicker(
+          view: currentView,
+          onViewChanged: onViewChanged,
+          child: PageIconArtwork(
+            size: size,
+            child: SizedBox.square(
+              key: const ValueKey('folder-gallery-title-icon'),
+              dimension: slotSize,
+              child: Center(
+                child: MediaQuery.withNoTextScaling(
+                  child: icon != null && icon.isNotEmpty
+                      ? RawEmojiIconWidget(
+                          emoji: icon,
+                          emojiSize: WorkspaceTokens.pageIconSize,
+                          opticalRole: opticalRole,
+                          lineHeight: 1,
+                        )
+                      : const WorkspaceGlyph(
+                          Icons.folder_rounded,
+                          size: WorkspaceTokens.pageIconSize,
+                        ),
+                ),
+              ),
             ),
           ),
         ),

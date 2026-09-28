@@ -22,6 +22,7 @@ import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/shared_w
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/_sidebar_workspace_icon.dart';
 import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/settings/pages/default_icon_style_setting.dart';
+import 'package:appflowy/workspace/presentation/settings/pages/cover_appearance_setting.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/af_dropdown_menu_entry.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/document_color_setting_button.dart';
 import 'package:appflowy/workspace/presentation/settings/shared/setting_action.dart';
@@ -128,6 +129,8 @@ class SettingsWorkspaceView extends StatelessWidget {
                   const AppearanceSelector(),
                   const VSpace(16),
                   const DefaultIconStyleSetting(),
+                  const VSpace(16),
+                  const CoverAppearanceSetting(),
                   const VSpace(16),
                   const KineticScrollingSwitcher(),
                   const VSpace(16),

@@ -15,6 +15,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'page_icon_widget_test_support.dart';
 import 'test_asset_bundle.dart';
 
 const vividIconTestGroup = 'appflowy_vivid_essentials';
@@ -121,7 +122,9 @@ Widget vividIconTestApp(String appearance, Widget child) => EasyLocalization(
           localizationsDelegates: context.localizationDelegates,
           theme: vividIconTestTheme(appearance),
           themeAnimationDuration: Duration.zero,
-          home: Scaffold(body: Center(child: child)),
+          home: Scaffold(
+            body: Center(child: PassivePageIconTestScope(child: child)),
+          ),
         ),
       ),
     );

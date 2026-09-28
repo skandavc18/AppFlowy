@@ -1,15 +1,18 @@
 import 'dart:io';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/canvas/presentation/canvas_find.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_view_resolver.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/drawing/drawing_block_component.dart';
 import 'package:appflowy/shared/drawing/excalidraw_scene.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/mermaid/mermaid_view.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
@@ -53,6 +56,33 @@ class CanvasNodeBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final body = _buildBody(context);
+    // Reference/link cards already show their title in their native body.
+    if (node.kind.referencesWorkspaceObject ||
+        node.kind == CanvasNodeKind.web ||
+        node.kind == CanvasNodeKind.bookmark) {
+      return body;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (node.title.isNotEmpty) ...[
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SurfaceFindTarget(
+              id: canvasFindNode(node.id, CanvasSearchField.title),
+              child:
+                  Text(node.title, style: canvasLabelStyle(palette, size: 13)),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
+        Expanded(key: const ValueKey('canvas-node-body'), child: body),
+      ],
+    );
+  }
+
+  Widget _buildBody(BuildContext context) {
     switch (node.kind) {
       case CanvasNodeKind.text:
         return _CanvasTextBody(
@@ -131,6 +161,13 @@ class _CanvasTextBodyState extends State<_CanvasTextBody> {
   late final TextEditingController _controller =
       TextEditingController(text: widget.node.text);
   final FocusNode _focus = FocusNode(debugLabel: 'canvas_text_card');
+  SurfaceFindController? _find;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _find = SurfaceFindScope.maybeOf(context);
+  }
 
   @override
   void initState() {
@@ -155,7 +192,10 @@ class _CanvasTextBodyState extends State<_CanvasTextBody> {
   }
 
   void _claimFocus() {
-    if (mounted && !_focus.hasFocus) {
+    if (mounted &&
+        widget.editing &&
+        _find?.isOpen != true &&
+        !_focus.hasFocus) {
       _focus.requestFocus();
       _controller.selection = TextSelection(
         baseOffset: 0,
@@ -165,7 +205,7 @@ class _CanvasTextBodyState extends State<_CanvasTextBody> {
   }
 
   void _onFocusChanged() {
-    if (!_focus.hasFocus && widget.editing) {
+    if (!_focus.hasFocus && widget.editing && _find?.isOpen != true) {
       widget.onFinished();
     }
   }
@@ -190,41 +230,50 @@ class _CanvasTextBodyState extends State<_CanvasTextBody> {
     );
 
     if (!widget.editing) {
-      final text = widget.node.text.trim();
-      return Align(
-        alignment: Alignment.topLeft,
-        child: text.isEmpty
-            ? Text(
-                LocaleKeys.canvas_card_textHint.tr(),
-                style: style.copyWith(color: palette.textMuted),
-              )
-            : Text(text, style: style),
+      final text = widget.node.text;
+      return SingleChildScrollView(
+        child: SurfaceFindTarget(
+          id: canvasFindNode(widget.node.id, CanvasSearchField.text),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: text.isEmpty
+                ? Text(
+                    LocaleKeys.canvas_card_textHint.tr(),
+                    style: style.copyWith(color: palette.textMuted),
+                  )
+                : Text(text, style: style),
+          ),
+        ),
       );
     }
 
     // The editing keys have to be restated right around the field: on a canvas
     // the surface above it binds Delete, Escape and the arrows for itself.
-    return TextEntryShortcuts(
-      child: TextField(
-        controller: _controller,
-        focusNode: _focus,
-        maxLines: null,
-        expands: true,
-        readOnly: !widget.editable,
-        textAlignVertical: TextAlignVertical.top,
-        style: style,
-        cursorColor: palette.accent,
-        cursorWidth: 1.6,
-        onChanged: widget.onChanged,
-        decoration: InputDecoration(
-          isCollapsed: true,
-          filled: false,
-          hoverColor: Colors.transparent,
-          border: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          hintText: LocaleKeys.canvas_card_textHint.tr(),
-          hintStyle: style.copyWith(color: palette.textMuted),
+    return SurfaceFindTarget(
+      id: canvasFindNode(widget.node.id, CanvasSearchField.text),
+      includeEditable: true,
+      child: TextEntryShortcuts(
+        child: TextField(
+          controller: _controller,
+          focusNode: _focus,
+          maxLines: null,
+          expands: true,
+          readOnly: !widget.editable,
+          textAlignVertical: TextAlignVertical.top,
+          style: style,
+          cursorColor: palette.accent,
+          cursorWidth: 1.6,
+          onChanged: widget.onChanged,
+          decoration: InputDecoration(
+            isCollapsed: true,
+            filled: false,
+            hoverColor: Colors.transparent,
+            border: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            hintText: LocaleKeys.canvas_card_textHint.tr(),
+            hintStyle: style.copyWith(color: palette.textMuted),
+          ),
         ),
       ),
     );
@@ -259,6 +308,13 @@ class _CanvasCodeBodyState extends State<_CanvasCodeBody> {
   late final TextEditingController _controller =
       TextEditingController(text: widget.node.text);
   final FocusNode _focus = FocusNode(debugLabel: 'canvas_code_card');
+  SurfaceFindController? _find;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _find = SurfaceFindScope.maybeOf(context);
+  }
 
   @override
   void initState() {
@@ -274,7 +330,10 @@ class _CanvasCodeBodyState extends State<_CanvasCodeBody> {
     }
     if (widget.editing && !oldWidget.editing) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_focus.hasFocus) {
+        if (mounted &&
+            widget.editing &&
+            _find?.isOpen != true &&
+            !_focus.hasFocus) {
           _focus.requestFocus();
         }
       });
@@ -282,7 +341,7 @@ class _CanvasCodeBodyState extends State<_CanvasCodeBody> {
   }
 
   void _onFocusChanged() {
-    if (!_focus.hasFocus && widget.editing) {
+    if (!_focus.hasFocus && widget.editing && _find?.isOpen != true) {
       widget.onFinished();
     }
   }
@@ -359,7 +418,13 @@ class _CanvasCodeBodyState extends State<_CanvasCodeBody> {
       children: [
         header,
         const SizedBox(height: CanvasMetrics.space1),
-        Expanded(child: body),
+        Expanded(
+          child: SurfaceFindTarget(
+            id: canvasFindNode(widget.node.id, CanvasSearchField.text),
+            includeEditable: true,
+            child: body,
+          ),
+        ),
       ],
     );
   }
@@ -428,10 +493,32 @@ class _CanvasDiagramBody extends StatelessWidget {
             label: LocaleKeys.canvas_diagram_mermaidHint.tr(),
           );
         }
-        return MermaidView(
-          render: renderMermaid(context, source),
-          interactive: false,
-          padding: const EdgeInsets.all(4),
+        final revealSource = SurfaceFindScope.maybeOf(context)?.current?.id ==
+            canvasFindNode(node.id, CanvasSearchField.text);
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            MermaidView(
+              render: renderMermaid(context, source),
+              interactive: false,
+              padding: const EdgeInsets.all(4),
+            ),
+            if (revealSource)
+              ColoredBox(
+                color: palette.surface,
+                child: SingleChildScrollView(
+                  child: SurfaceFindTarget(
+                    id: canvasFindNode(node.id, CanvasSearchField.text),
+                    child: Text(
+                      node.text,
+                      style: canvasLabelStyle(palette, size: 12.5).copyWith(
+                        fontFamily: 'RobotoMono',
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
         );
     }
   }
@@ -463,20 +550,27 @@ class _CanvasSourceFieldState extends State<_CanvasSourceField> {
   late final TextEditingController _controller =
       TextEditingController(text: widget.node.text);
   final FocusNode _focus = FocusNode(debugLabel: 'canvas_diagram_source');
+  SurfaceFindController? _find;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _find = SurfaceFindScope.maybeOf(context);
+  }
 
   @override
   void initState() {
     super.initState();
     _focus.addListener(_onFocusChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && !_focus.hasFocus) {
+      if (mounted && _find?.isOpen != true && !_focus.hasFocus) {
         _focus.requestFocus();
       }
     });
   }
 
   void _onFocusChanged() {
-    if (!_focus.hasFocus) {
+    if (!_focus.hasFocus && _find?.isOpen != true) {
       widget.onFinished();
     }
   }
@@ -500,24 +594,28 @@ class _CanvasSourceFieldState extends State<_CanvasSourceField> {
       height: 1.5,
       color: palette.textPrimary,
     );
-    return TextEntryShortcuts(
-      child: TextField(
-        controller: _controller,
-        focusNode: _focus,
-        maxLines: null,
-        expands: true,
-        readOnly: !widget.editable,
-        textAlignVertical: TextAlignVertical.top,
-        style: style,
-        cursorColor: palette.accent,
-        onChanged: widget.onChanged,
-        decoration: InputDecoration(
-          isCollapsed: true,
-          filled: false,
-          hoverColor: Colors.transparent,
-          border: InputBorder.none,
-          hintText: widget.hint,
-          hintStyle: style.copyWith(color: palette.textMuted),
+    return SurfaceFindTarget(
+      id: canvasFindNode(widget.node.id, CanvasSearchField.text),
+      includeEditable: true,
+      child: TextEntryShortcuts(
+        child: TextField(
+          controller: _controller,
+          focusNode: _focus,
+          maxLines: null,
+          expands: true,
+          readOnly: !widget.editable,
+          textAlignVertical: TextAlignVertical.top,
+          style: style,
+          cursorColor: palette.accent,
+          onChanged: widget.onChanged,
+          decoration: InputDecoration(
+            isCollapsed: true,
+            filled: false,
+            hoverColor: Colors.transparent,
+            border: InputBorder.none,
+            hintText: widget.hint,
+            hintStyle: style.copyWith(color: palette.textMuted),
+          ),
         ),
       ),
     );
@@ -607,32 +705,33 @@ class _CanvasLinkBody extends StatelessWidget {
     final host = uri?.host ?? address;
     final title = node.title.trim().isNotEmpty ? node.title.trim() : host;
     final preview = node.stringData('preview');
+    final revealDescription = SurfaceFindScope.maybeOf(context)?.current?.id ==
+        canvasFindNode(node.id, CanvasSearchField.text);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (preview != null)
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                preview,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-              ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    preview,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                ),
+                if (revealDescription)
+                  ColoredBox(color: palette.surface, child: _description()),
+              ],
             ),
           )
         else
           Expanded(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Text(
-                node.text.trim(),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: canvasLabelStyle(palette, size: 12.5),
-              ),
-            ),
+            child: _description(),
           ),
         const SizedBox(height: CanvasMetrics.space2),
         Row(
@@ -644,25 +743,35 @@ class _CanvasLinkBody extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: canvasLabelStyle(
-                      palette,
-                      size: 13,
-                      weight: FontWeight.w600,
-                      color: palette.textPrimary,
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SurfaceFindTarget(
+                      id: canvasFindNode(node.id, CanvasSearchField.title),
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        style: canvasLabelStyle(
+                          palette,
+                          size: 13,
+                          weight: FontWeight.w600,
+                          color: palette.textPrimary,
+                        ),
+                      ),
                     ),
                   ),
-                  Text(
-                    host,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: canvasLabelStyle(
-                      palette,
-                      size: 11,
-                      color: palette.textMuted,
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SurfaceFindTarget(
+                      id: canvasFindNode(node.id, CanvasSearchField.url),
+                      child: Text(
+                        address,
+                        maxLines: 1,
+                        style: canvasLabelStyle(
+                          palette,
+                          size: 11,
+                          color: palette.textMuted,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -673,6 +782,13 @@ class _CanvasLinkBody extends StatelessWidget {
       ],
     );
   }
+
+  Widget _description() => SingleChildScrollView(
+        child: SurfaceFindTarget(
+          id: canvasFindNode(node.id, CanvasSearchField.text),
+          child: Text(node.text, style: canvasLabelStyle(palette, size: 12.5)),
+        ),
+      );
 }
 
 /// A favicon, with the site's initial as a coloured tile while it loads and if
@@ -760,6 +876,14 @@ class _CanvasReferenceBody extends StatelessWidget {
       builder: (context, _) {
         final view = resolver.peek(reference);
         if (view == null) {
+          if (node.title.isNotEmpty || node.text.isNotEmpty) {
+            return _CanvasObjectCard(
+              view: null,
+              node: node,
+              palette: palette,
+              onOpen: onOpen,
+            );
+          }
           return resolver.isMissing(reference)
               ? _CanvasPlaceholder(
                   palette: palette,
@@ -787,17 +911,19 @@ class _CanvasObjectCard extends StatelessWidget {
     required this.onOpen,
   });
 
-  final ViewPB view;
+  final ViewPB? view;
   final CanvasNode node;
   final CanvasPalette palette;
   final VoidCallback onOpen;
 
   @override
   Widget build(BuildContext context) {
-    final title = view.name.trim().isEmpty
+    final view = this.view;
+    final savedTitle = node.title.isNotEmpty ? node.title : view?.name ?? '';
+    final title = savedTitle.trim().isEmpty
         ? LocaleKeys.canvas_node_untitled.tr()
-        : view.name.trim();
-    final subtitle = _subtitleFor(node.kind, view);
+        : savedTitle;
+    final subtitle = view == null ? '' : _subtitleFor(node.kind, view);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -809,7 +935,7 @@ class _CanvasObjectCard extends StatelessWidget {
               width: 22,
               height: 22,
               child: Center(
-                child: view.isWorkspaceItem
+                child: view != null && view.isWorkspaceItem
                     ? WorkspaceItemIcon.fromView(view: view)
                     : Icon(
                         _iconFor(node.kind),
@@ -824,15 +950,20 @@ class _CanvasObjectCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: canvasLabelStyle(
-                      palette,
-                      size: 13.5,
-                      weight: FontWeight.w600,
-                      color: palette.textPrimary,
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SurfaceFindTarget(
+                      id: canvasFindNode(node.id, CanvasSearchField.title),
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        style: canvasLabelStyle(
+                          palette,
+                          size: 13.5,
+                          weight: FontWeight.w600,
+                          color: palette.textPrimary,
+                        ),
+                      ),
                     ),
                   ),
                   if (subtitle.isNotEmpty)
@@ -854,12 +985,17 @@ class _CanvasObjectCard extends StatelessWidget {
         if (node.text.trim().isNotEmpty) ...[
           const SizedBox(height: CanvasMetrics.space2),
           Expanded(
-            child: Align(
-              alignment: Alignment.topLeft,
-              child: Text(
-                node.text.trim(),
-                overflow: TextOverflow.fade,
-                style: canvasLabelStyle(palette, size: 12.5),
+            child: SingleChildScrollView(
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SurfaceFindTarget(
+                  id: canvasFindNode(node.id, CanvasSearchField.text),
+                  child: Text(
+                    node.text,
+                    overflow: TextOverflow.fade,
+                    style: canvasLabelStyle(palette, size: 12.5),
+                  ),
+                ),
               ),
             ),
           ),

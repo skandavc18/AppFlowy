@@ -1,4 +1,6 @@
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/page_cover.dart';
+import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
@@ -13,6 +15,7 @@ export 'workspace_tokens.dart';
 class WorkspacePalette {
   const WorkspacePalette._({
     required this.background,
+    required this.chrome,
     required this.surface,
     required this.elevatedSurface,
     required this.secondarySurface,
@@ -41,6 +44,7 @@ class WorkspacePalette {
         premium?.canvas ?? theme.scaffoldBackgroundColor,
         isPaper: paper,
       ),
+      chrome: EditorSurfaceStyle.chromeBackground(context),
       surface: EditorSurfaceStyle.previewBackgroundFor(
         theme.brightness,
         premium?.surface ?? theme.colorScheme.surface,
@@ -70,6 +74,9 @@ class WorkspacePalette {
   }
 
   final Color background;
+
+  /// A single opaque caption/sidebar surface, independent of a page's canvas.
+  final Color chrome;
   final Color surface;
   final Color elevatedSurface;
   final Color secondarySurface;
@@ -365,6 +372,12 @@ class WorkspacePageHeader extends StatelessWidget {
     this.maxWidth = WorkspaceTokens.pageMaxWidth,
     this.contentInset,
     this.coverHeight = WorkspaceTokens.coverHeight,
+    this.coverView,
+    this.coverEditable = false,
+    this.coverBinding,
+    this.canResizeCover,
+    this.isSameCoverTarget,
+    this.onCoverHeightChanged,
   });
 
   final Widget identity;
@@ -381,6 +394,12 @@ class WorkspacePageHeader extends StatelessWidget {
   final double maxWidth;
   final double? contentInset;
   final double coverHeight;
+  final ViewPB? coverView;
+  final bool coverEditable;
+  final Object? coverBinding;
+  final bool Function()? canResizeCover;
+  final bool Function(ViewPB)? isSameCoverTarget;
+  final ValueChanged<double?>? onCoverHeightChanged;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
@@ -389,93 +408,114 @@ class WorkspacePageHeader extends StatelessWidget {
               ? constraints.maxWidth
               : WorkspaceTokens.pageMaxWidth;
           final inset = contentInset ?? WorkspaceTokens.pageInset(width);
-          final imageHeight =
-              width < 600 ? WorkspaceTokens.compactCoverHeight : coverHeight;
-          final hasIcon = overlapIcon ??
-              (identity is WorkspacePageIdentity &&
-                  (identity as WorkspacePageIdentity).icon != null);
-          final overlap = cover != null && hasIcon
-              ? WorkspaceTokens.pageIconCoverOverlap
-                  .clamp(0.0, imageHeight)
-                  .toDouble()
-              : 0.0;
-          final identityTop = cover == null
-              ? (leading == null ? WorkspaceTokens.pageTopWithoutCover : 0.0)
-              : WorkspaceTokens.space2 +
-                  imageHeight +
-                  (overlap > 0 ? -overlap : WorkspaceTokens.pageTopWithCover);
-          return PreviewToolbarRegion(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (leading != null)
-                  Center(
-                    key: const ValueKey('workspace-page-leading'),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(maxWidth: maxWidth),
-                      child: Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          inset,
-                          WorkspaceTokens.pageTopWithoutCover,
-                          inset,
-                          0,
+          return PageCoverLayout(
+            width: (width - WorkspaceTokens.coverInset * 2)
+                .clamp(0.0, double.infinity)
+                .toDouble(),
+            fallbackHeight:
+                width < 600 ? WorkspaceTokens.compactCoverHeight : coverHeight,
+            view: coverView,
+            editable: cover != null && coverEditable,
+            binding: coverBinding,
+            canResize: canResizeCover,
+            isSameTarget: isSameCoverTarget,
+            onHeightChanged: onCoverHeightChanged,
+            builder: (context, imageHeight, grip) {
+              final hasIcon = overlapIcon ??
+                  (identity is WorkspacePageIdentity &&
+                      (identity as WorkspacePageIdentity).icon != null);
+              final overlap = cover != null && hasIcon
+                  ? WorkspaceTokens.pageIconCoverOverlap
+                      .clamp(0.0, imageHeight)
+                      .toDouble()
+                  : 0.0;
+              final identityTop = cover == null
+                  ? (leading == null
+                      ? WorkspaceTokens.pageTopWithoutCover
+                      : 0.0)
+                  : WorkspaceTokens.space2 +
+                      imageHeight +
+                      (overlap > 0
+                          ? -overlap
+                          : WorkspaceTokens.pageTopWithCover);
+              return PreviewToolbarRegion(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (leading != null)
+                      Center(
+                        key: const ValueKey('workspace-page-leading'),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxWidth),
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              inset,
+                              WorkspaceTokens.pageTopWithoutCover,
+                              inset,
+                              0,
+                            ),
+                            child: SizedBox(
+                                width: double.infinity, child: leading),
+                          ),
                         ),
-                        child: SizedBox(width: double.infinity, child: leading),
+                      ),
+                    _WorkspacePageHeaderGeometry(
+                      key: const ValueKey('workspace-page-header-body'),
+                      overlap: overlap,
+                      // The non-positioned identity determines the actual extent.
+                      // Its top padding reserves the cover minus the overlap, so
+                      // the entire icon is inside this Stack's hit-test bounds.
+                      child: Stack(
+                        children: [
+                          if (cover != null)
+                            Positioned(
+                              key: const ValueKey('workspace-page-cover'),
+                              top: WorkspaceTokens.space2,
+                              left: WorkspaceTokens.coverInset,
+                              right: WorkspaceTokens.coverInset,
+                              height: imageHeight,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(
+                                  PageCoverPresentation.maybeOf(context)!
+                                      .appearance
+                                      .radius,
+                                ),
+                                child: WorkspacePageCover(
+                                  image: cover!,
+                                  actions: coverActions,
+                                  resizeGrip: grip,
+                                ),
+                              ),
+                            ),
+                          Padding(
+                            key: const ValueKey('workspace-page-identity'),
+                            padding: EdgeInsets.only(top: identityTop),
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(maxWidth: maxWidth),
+                                child: Padding(
+                                  padding: EdgeInsets.fromLTRB(
+                                    inset,
+                                    0,
+                                    inset,
+                                    WorkspaceTokens.pageHeaderBottom,
+                                  ),
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: identity,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                _WorkspacePageHeaderGeometry(
-                  key: const ValueKey('workspace-page-header-body'),
-                  overlap: overlap,
-                  // The non-positioned identity determines the actual extent.
-                  // Its top padding reserves the cover minus the overlap, so
-                  // the entire icon is inside this Stack's hit-test bounds.
-                  child: Stack(
-                    children: [
-                      if (cover != null)
-                        Positioned(
-                          key: const ValueKey('workspace-page-cover'),
-                          top: WorkspaceTokens.space2,
-                          left: WorkspaceTokens.coverInset,
-                          right: WorkspaceTokens.coverInset,
-                          height: imageHeight,
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              WorkspaceTokens.heroRadius,
-                            ),
-                            child: WorkspacePageCover(
-                              image: cover!,
-                              actions: coverActions,
-                            ),
-                          ),
-                        ),
-                      Padding(
-                        key: const ValueKey('workspace-page-identity'),
-                        padding: EdgeInsets.only(top: identityTop),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(maxWidth: maxWidth),
-                            child: Padding(
-                              padding: EdgeInsets.fromLTRB(
-                                inset,
-                                0,
-                                inset,
-                                WorkspaceTokens.pageHeaderBottom,
-                              ),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: identity,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              );
+            },
           );
         },
       );
@@ -505,48 +545,72 @@ class WorkspacePageCover extends StatelessWidget {
     super.key,
     required this.image,
     this.actions,
+    this.resizeGrip,
   });
 
   final Widget image;
   final Widget? actions;
+  final Widget? resizeGrip;
 
   @override
   Widget build(BuildContext context) {
     final palette = WorkspacePalette.of(context);
-    return PreviewToolbarRegion(
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          image,
-          if (actions != null)
-            PositionedDirectional(
-              bottom: WorkspaceTokens.space2,
-              start: WorkspaceTokens.space2,
-              end: WorkspaceTokens.space2,
-              child: Align(
-                alignment: AlignmentDirectional.bottomEnd,
-                child: PreviewToolbar(
-                  child: DecoratedBox(
-                    key: const ValueKey('workspace-cover-action-surface'),
-                    decoration: BoxDecoration(
-                      // Nearly opaque floating ink/paper stays legible even
-                      // on a high-contrast photograph, without tinting it.
-                      color: palette.elevatedSurface.withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(
-                        WorkspaceTokens.controlRadius,
+    final inherited = PageCoverPresentation.maybeOf(context);
+    final appearance =
+        inherited?.appearance ?? CoverAppearanceScope.of(context);
+    return PageCoverPresentation(
+      appearance: appearance,
+      alignment: inherited?.alignment ?? appearance.alignment,
+      child: PreviewToolbarRegion(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(
+            (PageCoverPresentation.maybeOf(context)?.appearance ??
+                    CoverAppearanceScope.of(context))
+                .radius,
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              image,
+              if (actions != null)
+                PositionedDirectional(
+                  bottom: resizeGrip == null ? WorkspaceTokens.space2 : 28,
+                  start: WorkspaceTokens.space2,
+                  end: WorkspaceTokens.space2,
+                  child: Align(
+                    alignment: AlignmentDirectional.bottomEnd,
+                    child: PreviewToolbar(
+                      child: DecoratedBox(
+                        key: const ValueKey('workspace-cover-action-surface'),
+                        decoration: BoxDecoration(
+                          // Nearly opaque floating ink/paper stays legible even
+                          // on a high-contrast photograph, without tinting it.
+                          color:
+                              palette.elevatedSurface.withValues(alpha: 0.96),
+                          borderRadius: BorderRadius.circular(
+                            WorkspaceTokens.controlRadius,
+                          ),
+                          border: Border.all(color: palette.border),
+                          boxShadow: palette.elevation(floating: true),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(2),
+                          child: actions!,
+                        ),
                       ),
-                      border: Border.all(color: palette.border),
-                      boxShadow: palette.elevation(floating: true),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(2),
-                      child: actions!,
                     ),
                   ),
                 ),
-              ),
-            ),
-        ],
+              if (resizeGrip != null)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Center(child: resizeGrip),
+                ),
+            ],
+          ),
+        ),
       ),
     );
   }

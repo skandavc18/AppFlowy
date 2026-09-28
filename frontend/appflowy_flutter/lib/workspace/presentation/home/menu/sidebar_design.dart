@@ -3,6 +3,7 @@ import 'package:appflowy/shared/icon_emoji_picker/icon_pack.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/scrolling/scroll_hover_suppression.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
@@ -229,67 +230,44 @@ class SidebarPalette {
   static SidebarPalette of(BuildContext context) {
     final theme = Theme.of(context);
     final premium = PremiumThemeExtension.maybeOf(context);
-    final isPaper = PaperTheme.isEnabled(context);
-    if (theme.brightness == Brightness.dark) {
-      return _dark(premium);
-    }
-    if (isPaper) {
-      return _paper(premium);
-    }
-    return _light(premium);
+    final dark = theme.brightness == Brightness.dark;
+    final paper = !dark && PaperTheme.isEnabled(context);
+    final hover = WorkspaceChrome.hoverColor(context);
+    final selected = paper
+        ? PaperTheme.selectedOverlay
+        : WorkspaceChrome.selectedColor(context);
+    final accent = premium?.accent ??
+        (paper ? PaperTheme.accent : theme.colorScheme.primary);
+    final secondary = premium?.textSecondary ??
+        (paper ? PaperTheme.textSecondary : theme.colorScheme.onSurfaceVariant);
+
+    return SidebarPalette(
+      brightness: theme.brightness,
+      isPaper: paper,
+      background: WorkspacePalette.of(context).chrome,
+      textPrimary: premium?.textPrimary ??
+          (paper ? PaperTheme.textPrimary : theme.colorScheme.onSurface),
+      textSecondary: secondary,
+      textTertiary: premium?.textMuted ??
+          (paper ? PaperTheme.textMuted : theme.hintColor),
+      icon: secondary,
+      hover: hover,
+      selected: selected,
+      selectedHover: Color.alphaBlend(hover, selected),
+      accent: accent,
+      edge: paper
+          ? const Color(0x146A5947)
+          : dark
+              ? const Color(0x14FFFFFF)
+              : const Color(0x0F16150F),
+      dropIndicator: accent,
+      scrollThumb: paper
+          ? const Color(0x306A5947)
+          : dark
+              ? const Color(0x33FFFFFF)
+              : const Color(0x2416150F),
+    );
   }
-
-  static SidebarPalette _light(PremiumThemeExtension? premium) =>
-      SidebarPalette(
-        brightness: Brightness.light,
-        isPaper: false,
-        background: premium?.sidebar ?? const Color(0xFFFAF9F6),
-        textPrimary: const Color(0xFF2B2A28),
-        textSecondary: const Color(0xFF6B6963),
-        textTertiary: const Color(0xFF96938C),
-        icon: premium?.textSecondary ?? const Color(0xFF6F6C66),
-        hover: const Color(0x0A16150F),
-        selected: const Color(0x1416150F),
-        selectedHover: const Color(0x1C16150F),
-        accent: premium?.accent ?? const Color(0xFF2F6FE4),
-        edge: const Color(0x0F16150F),
-        dropIndicator: premium?.accent ?? const Color(0xFF2F6FE4),
-        scrollThumb: const Color(0x2416150F),
-      );
-  static SidebarPalette _paper(PremiumThemeExtension? premium) =>
-      SidebarPalette(
-        brightness: Brightness.light,
-        isPaper: true,
-        background: PaperTheme.sidebarBackground,
-        textPrimary: PaperTheme.textPrimary,
-        textSecondary: PaperTheme.textSecondary,
-        textTertiary: PaperTheme.textMuted,
-        icon: PaperTheme.textSecondary,
-        hover: const Color(0x0F6A5947),
-        selected: const Color(0x1F6A5947),
-        selectedHover: const Color(0x2A6A5947),
-        accent: premium?.accent ?? PaperTheme.accent,
-        edge: const Color(0x146A5947),
-        dropIndicator: PaperTheme.accent,
-        scrollThumb: const Color(0x306A5947),
-      );
-
-  static SidebarPalette _dark(PremiumThemeExtension? premium) => SidebarPalette(
-        brightness: Brightness.dark,
-        isPaper: false,
-        background: premium?.sidebar ?? const Color(0xFF1F1F1F),
-        textPrimary: const Color(0xE8FFFFFF),
-        textSecondary: const Color(0x9EFFFFFF),
-        textTertiary: const Color(0x70FFFFFF),
-        icon: premium?.textSecondary ?? const Color(0xAEFFFFFF),
-        hover: const Color(0x0FFFFFFF),
-        selected: const Color(0x1FFFFFFF),
-        selectedHover: const Color(0x29FFFFFF),
-        accent: premium?.accent ?? const Color(0xFF6E9BF5),
-        edge: const Color(0x14FFFFFF),
-        dropIndicator: premium?.accent ?? const Color(0xFF6E9BF5),
-        scrollThumb: const Color(0x33FFFFFF),
-      );
 
   /// The colour a hover wash should animate *from*.
   ///
@@ -442,6 +420,16 @@ class _SidebarRowState extends State<SidebarRow> {
         color: background,
         borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
       ),
+      // Foreground-only: keyboard focus must not add padding or move a title.
+      // Keep this decorator mounted even while the ring is transparent.
+      foregroundDecoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
+        border: Border.all(
+          color:
+              _focused ? palette.accent : palette.accent.withValues(alpha: 0),
+          width: 1.5,
+        ),
+      ),
       child: reserve == 0
           ? content
           : Stack(
@@ -515,8 +503,8 @@ class _SidebarRowState extends State<SidebarRow> {
   }
 }
 
-/// Fades contextual actions in and lets them settle a couple of pixels to the
-/// left, without ever changing the space they occupy.
+/// Fades contextual actions inside their reserved targets. Hover never moves
+/// either a glyph or its hit area.
 class SidebarActionReveal extends StatelessWidget {
   const SidebarActionReveal({
     super.key,
@@ -541,13 +529,7 @@ class SidebarActionReveal extends StatelessWidget {
             switchOutCurve: SidebarMetrics.curve,
             transitionBuilder: (child, animation) => FadeTransition(
               opacity: animation,
-              child: SlideTransition(
-                position: Tween<Offset>(
-                  begin: const Offset(0.18, 0),
-                  end: Offset.zero,
-                ).animate(animation),
-                child: child,
-              ),
+              child: child,
             ),
             child: revealed && builder != null
                 ? Row(
@@ -607,8 +589,12 @@ class SidebarDisclosure extends StatelessWidget {
             width: SidebarMetrics.disclosureSlot,
             height: SidebarMetrics.iconSlot,
           ),
-          hoverColor: palette.hover,
-          focusColor: palette.selected,
+          style: WorkspaceChrome.controlStyle(context).copyWith(
+            padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+            minimumSize: const WidgetStatePropertyAll(
+              Size(SidebarMetrics.disclosureSlot, SidebarMetrics.iconSlot),
+            ),
+          ),
           icon: Semantics(label: label, excludeSemantics: true, child: child),
         ),
       ),
@@ -655,21 +641,11 @@ class SidebarIconButton extends StatelessWidget {
         child: IconButton(
           focusNode: focusNode,
           onPressed: onPressed,
-          style: IconButton.styleFrom(
-            foregroundColor: palette.icon,
-            backgroundColor: palette.hoverAtRest,
-            hoverColor: palette.hover,
-            focusColor: palette.selected,
-            highlightColor: palette.selected,
-            padding: EdgeInsets.zero,
-            minimumSize: Size.square(dimension),
-            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(SidebarMetrics.rowRadius),
-            ),
-          ).copyWith(
-            animationDuration:
-                WorkspaceTokens.motion(context, SidebarMetrics.hover),
+          style: WorkspaceChrome.controlStyle(context).copyWith(
+            foregroundColor: WidgetStatePropertyAll(palette.icon),
+            iconColor: WidgetStatePropertyAll(palette.icon),
+            padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+            minimumSize: WidgetStatePropertyAll(Size.square(dimension)),
           ),
           icon: Semantics(
             label: label,

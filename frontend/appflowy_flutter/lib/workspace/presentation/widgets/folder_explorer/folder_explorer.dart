@@ -7,6 +7,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_kind_menu.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/file_browser/file_browser_view.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
@@ -108,6 +109,13 @@ class _FolderExplorerState extends State<FolderExplorer> {
   late FileBrowserViewMode presentation;
   Future<void> _presentationWrites = Future.value();
   Timer? searchDebounce;
+  final _headerKey = GlobalKey(debugLabel: 'folder-page-header');
+  final _scrollControllers = <FileBrowserViewMode, ScrollController>{};
+
+  ScrollController get _pageScroll => _scrollControllers.putIfAbsent(
+        presentation,
+        () => FileBrowserScrollController(),
+      );
 
   bool _canEditView(ViewPB view, {bool identity = false}) {
     if (!active || !mounted) return false;
@@ -234,6 +242,9 @@ class _FolderExplorerState extends State<FolderExplorer> {
       ..removeListener(_searchFocusChanged)
       ..dispose();
     searchController.dispose();
+    for (final scroll in _scrollControllers.values) {
+      scroll.dispose();
+    }
     if (ownsController) {
       controller.dispose();
     }
@@ -287,116 +298,114 @@ class _FolderExplorerState extends State<FolderExplorer> {
             constraints.maxWidth,
             embedded: widget.embedded,
           );
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (widget.showHeader || widget.showControls)
-                // Do not move this header between presentation scrollables.
-                // Capping its own scrollport keeps covers/2x text usable in
-                // short embeds without replacing native list/column scrollers.
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: constraints.maxHeight * 0.6,
-                  ),
-                  child: SingleChildScrollView(
-                    key: const ValueKey('folder-explorer-header-scroll'),
-                    primary: false,
-                    child: FolderGalleryHeader(
-                      key: const ValueKey('folder-explorer-header'),
-                      controller: controller,
-                      viewMode: presentation,
-                      onViewModeChanged: _setPresentation,
-                      showHeader: widget.showHeader,
-                      showControls: widget.showControls,
-                      contentInset: horizontal,
-                      contentPolicy: widget.contentPolicy,
-                      userProfile:
-                          context.read<UserWorkspaceBloc?>()?.state.userProfile,
-                      workspace: context
-                          .read<UserWorkspaceBloc?>()
-                          ?.state
-                          .currentWorkspace,
-                      searchController: searchController,
-                      searchFocusNode: searchFocusNode,
-                      onSearchChanged: _scheduleSearch,
-                      onNavigate: (id) => unawaited(_navigateTo(id)),
-                      onAddFile: (action) => unawaited(
-                        _createFileOfKind(
-                          action,
-                          parentId: presentation == FileBrowserViewMode.tree
-                              ? null
-                              : controller.currentFolder.id,
-                        ),
-                      ),
-                      onCreateCollection: (kind) => unawaited(
-                        _createCollection(
-                          kind,
-                          parentId: controller.currentFolder.id,
-                        ),
-                      ),
-                      onCreateDatabase: (kind) => unawaited(
-                        _createDatabase(
-                          kind,
-                          parentId: controller.currentFolder.id,
-                        ),
-                      ),
-                      onNewFolder: () => _beginGalleryCreate(
-                        WorkspaceExplorerDraftKind.folder,
+          final header = KeyedSubtree(
+            key: _headerKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (FileBrowserPageHeader.maybeOf(context) case final header?)
+                  header,
+                if (widget.showHeader || widget.showControls)
+                  FolderGalleryHeader(
+                    key: const ValueKey('folder-explorer-header'),
+                    controller: controller,
+                    viewMode: presentation,
+                    onViewModeChanged: _setPresentation,
+                    showHeader: widget.showHeader,
+                    showControls: widget.showControls,
+                    contentInset: horizontal,
+                    contentPolicy: widget.contentPolicy,
+                    userProfile:
+                        context.read<UserWorkspaceBloc?>()?.state.userProfile,
+                    workspace: context
+                        .read<UserWorkspaceBloc?>()
+                        ?.state
+                        .currentWorkspace,
+                    searchController: searchController,
+                    searchFocusNode: searchFocusNode,
+                    onSearchChanged: _scheduleSearch,
+                    onNavigate: (id) => unawaited(_navigateTo(id)),
+                    onAddFile: (action) => unawaited(
+                      _createFileOfKind(
+                        action,
                         parentId: presentation == FileBrowserViewMode.tree
-                            ? controller.selectedOrCurrentFolderId
+                            ? null
                             : controller.currentFolder.id,
                       ),
-                      onPaste: controller.canPaste
-                          ? () => unawaited(controller.paste())
-                          : null,
-                      onRefresh: () {
-                        previewCache.clear();
-                        unawaited(controller.refresh());
-                      },
-                      onConnectSource: widget.onConnectSource != null &&
-                              controller.canRename(controller.root.id)
-                          ? _connectSource
-                          : null,
-                      onMore: (position) =>
-                          unawaited(_showBackgroundMenu(position)),
+                    ),
+                    onCreateCollection: (kind) => unawaited(
+                      _createCollection(
+                        kind,
+                        parentId: controller.currentFolder.id,
+                      ),
+                    ),
+                    onCreateDatabase: (kind) => unawaited(
+                      _createDatabase(
+                        kind,
+                        parentId: controller.currentFolder.id,
+                      ),
+                    ),
+                    onNewFolder: () => _beginGalleryCreate(
+                      WorkspaceExplorerDraftKind.folder,
+                      parentId: presentation == FileBrowserViewMode.tree
+                          ? controller.selectedOrCurrentFolderId
+                          : controller.currentFolder.id,
+                    ),
+                    onPaste: controller.canPaste
+                        ? () => unawaited(controller.paste())
+                        : null,
+                    onRefresh: () {
+                      previewCache.clear();
+                      unawaited(controller.refresh());
+                    },
+                    onConnectSource: widget.onConnectSource != null &&
+                            controller.canRename(controller.root.id)
+                        ? _connectSource
+                        : null,
+                    onMore: (position) =>
+                        unawaited(_showBackgroundMenu(position)),
+                  ),
+                if (controller.errorMessage case final message?)
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: horizontal),
+                    child: _ExplorerErrorBanner(
+                      message: message,
+                      onDismiss: controller.clearError,
                     ),
                   ),
-                ),
-              if (controller.errorMessage case final message?)
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: horizontal),
-                  child: _ExplorerErrorBanner(
-                    message: message,
-                    onDismiss: controller.clearError,
-                  ),
-                ),
-              Expanded(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: horizontal),
-                  child: SizedBox.expand(
-                    key: const ValueKey('folder-explorer-content'),
-                    child: PremiumScrollScope(
-                      enabled: true,
-                      child: _buildPresentation(context),
-                    ),
-                  ),
-                ),
-              ),
-              if (widget.showFooter)
-                Padding(
+              ],
+            ),
+          );
+          final footer = widget.showFooter
+              ? Padding(
                   padding: EdgeInsets.symmetric(horizontal: horizontal),
                   child: _buildFooter(context),
-                ),
-            ],
+                )
+              : null;
+          return SizedBox.expand(
+            key: const ValueKey('folder-explorer-content'),
+            child: PremiumScrollScope(
+              enabled: true,
+              child: _buildPresentation(context, header, footer, horizontal),
+            ),
           );
         },
       ),
     );
   }
 
-  Widget _buildPresentation(BuildContext context) {
+  Widget _buildPresentation(
+    BuildContext context,
+    Widget header,
+    Widget? footer,
+    double horizontal,
+  ) {
     if (presentation == FileBrowserViewMode.tree) {
       return ExplorerTree(
+        header: header,
+        footer: footer,
+        scrollController: _pageScroll,
+        horizontalPadding: horizontal,
         controller: controller,
         onOpen: _openView,
         onNavigate: (id) => unawaited(_navigateTo(id)),
@@ -409,6 +418,10 @@ class _FolderExplorerState extends State<FolderExplorer> {
     if (presentation != FileBrowserViewMode.gallery &&
         presentation != FileBrowserViewMode.thumbnails) {
       return FolderBrowserPresentation(
+        header: header,
+        footer: footer,
+        scrollController: _pageScroll,
+        horizontalPadding: horizontal,
         controller: controller,
         mode: presentation,
         onOpen: _openView,
@@ -419,7 +432,7 @@ class _FolderExplorerState extends State<FolderExplorer> {
         onRequestDelete: _confirmDelete,
       );
     }
-    return _buildGallery(context);
+    return _buildGallery(context, header, footer, horizontal);
   }
 
   void _setPresentation(FileBrowserViewMode mode) {
@@ -477,11 +490,19 @@ class _FolderExplorerState extends State<FolderExplorer> {
     }
   }
 
-  Widget _buildGallery(BuildContext context) {
+  Widget _buildGallery(
+    BuildContext context,
+    Widget header,
+    Widget? footer,
+    double horizontal,
+  ) {
     return FolderGallery(
+      header: header,
+      footer: footer,
+      scrollController: _pageScroll,
       controller: controller,
       thumbnails: presentation == FileBrowserViewMode.thumbnails,
-      horizontalPadding: 0,
+      horizontalPadding: horizontal,
       previewCache: previewCache,
       userProfile: context.read<UserWorkspaceBloc?>()?.state.userProfile,
       onOpen: _openView,

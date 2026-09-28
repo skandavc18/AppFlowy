@@ -15,6 +15,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/cov
 import 'package:appflowy/plugins/document/presentation/editor_plugins/shared_context/shared_context.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/file_browser/file_browser_view.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/find_replace/find_replace.dart';
 import 'package:appflowy/shared/paper_theme.dart';
@@ -50,7 +51,6 @@ const _navigationKey = ValueKey('active-find-sidebar');
 const _documentTitleKey = ValueKey('active-find-document-title');
 const _folderSearchKey = ValueKey('folder-explorer-search-field');
 const _collectionSearchKey = ValueKey('collection-search');
-const _collectionScrollKey = ValueKey('collection-page-scroll-view');
 const _queryKey = ValueKey('findTextField');
 
 void main() => runActivePageFindHostRegressions();
@@ -308,19 +308,22 @@ void _browserTest({
         final folderElement = tester.element(find.byType(FolderExplorer));
         final treeState = tester.state(find.byType(ExplorerTree));
         final collectionScroll = collection
-            ? tester.state<NestedScrollViewState>(
-                find.byKey(_collectionScrollKey),
+            ? tester.state<ScrollableState>(
+                find.descendant(
+                  of: find.byType(FileBrowserScrollView),
+                  matching: find.byType(Scrollable),
+                ),
               )
             : null;
-        final outerPosition = collectionScroll?.outerController.position;
-        final innerPosition = collectionScroll?.innerController.position;
+        final listingPosition = collectionScroll?.position;
+        if (collection) expect(find.byType(NestedScrollView), findsNothing);
         final title = find.byKey(
           ValueKey(collection ? 'collection-title' : 'folder-gallery-title'),
         );
         final titleElement = tester.element(title);
         final listing = controller.rows;
         final ids = listing.map((row) => row.item.id).toList();
-        expect(ids, ['folder', 'first', 'second']);
+        expect(ids, ['folder', 'first', 'second', ...repository.tailIds]);
         expect(controller.canWrite, isTrue);
         expect(
           tester.widget<ExplorerTree>(find.byType(ExplorerTree)).controller,
@@ -377,7 +380,7 @@ void _browserTest({
         if (collectionScroll != null) {
           _expectCollectionSearchVisible(tester, search, collectionScroll);
           expect(
-            collectionScroll.outerController.offset,
+            collectionScroll.position.pixels,
             0,
             reason: 'Opening an already-visible field must not scroll it',
           );
@@ -405,7 +408,8 @@ void _browserTest({
         await settleFileControls(tester);
         expect(controller.query, 'needle');
         expect(controller.isSearching, isFalse);
-        expect(controller.rows.map((row) => row.item.id), ['first']);
+        expect(controller.rows.map((row) => row.item.id),
+            ['first', ...repository.tailIds]);
         expect(
           find.text('Needle notes.bin', findRichText: true),
           findsOneWidget,
@@ -420,9 +424,16 @@ void _browserTest({
         if (collectionScroll != null) {
           // Make the existing header genuinely offscreen without hovering or
           // focusing content. Only the next real Ctrl+F may reveal it again.
-          collectionScroll.outerController.jumpTo(
-            collectionScroll.outerController.position.maxScrollExtent,
+          final header = find.byKey(
+            const ValueKey('collection-page-identity'),
+            skipOffstage: false,
           );
+          final distance = tester.getBottomLeft(header).dy -
+              tester.getTopLeft(find.byType(CustomScrollView)).dy +
+              40;
+          expect(
+              collectionScroll.position.maxScrollExtent, greaterThan(distance));
+          collectionScroll.position.jumpTo(distance);
           await settleFileControls(tester);
           final hiddenSearch = _collectionSearch(skipOffstage: false);
           expect(find.byKey(_collectionSearchKey), findsNothing);
@@ -439,12 +450,8 @@ void _browserTest({
         if (collectionScroll != null) {
           _expectCollectionSearchVisible(tester, search, collectionScroll);
           expect(
-            collectionScroll.outerController.position,
-            same(outerPosition),
-          );
-          expect(
-            collectionScroll.innerController.position,
-            same(innerPosition),
+            collectionScroll.position,
+            same(listingPosition),
           );
           expect(
             tester
@@ -597,10 +604,11 @@ Finder _collectionSearch({bool skipOffstage = true}) => find.descendant(
 void _expectCollectionSearchVisible(
   WidgetTester tester,
   Finder search,
-  NestedScrollViewState originalScroll,
+  ScrollableState originalScroll,
 ) {
-  final scroll = find.byKey(_collectionScrollKey);
-  expect(tester.state<NestedScrollViewState>(scroll), same(originalScroll));
+  final scroll = find.byType(CustomScrollView);
+  expect(scroll, findsOneWidget);
+  expect(Scrollable.of(tester.element(search)), same(originalScroll));
   final viewport = tester.getRect(scroll);
   final field = tester.getRect(search);
   expect(field.left, greaterThanOrEqualTo(viewport.left));
@@ -608,7 +616,7 @@ void _expectCollectionSearchVisible(
   expect(field.right, lessThanOrEqualTo(viewport.right));
   expect(field.bottom, lessThanOrEqualTo(viewport.bottom));
   expect(
-    originalScroll.outerController.position.isScrollingNotifier.value,
+    originalScroll.position.isScrollingNotifier.value,
     isFalse,
     reason: 'Reveal must not leave a corrective caret scroll in flight',
   );
@@ -856,8 +864,17 @@ class _BrowserRepository extends ExplorerPermissionRepository {
     views[root.id] = ViewPB.fromBuffer(root.writeToBuffer());
     views['first']!.name = 'Needle notes.bin';
     views['second']!.name = 'Other notes.bin';
+    if (collection) {
+      for (var index = 0; index < 40; index++) {
+        final id = 'tail-$index';
+        tailIds.add(id);
+        views[id] = permissionFile(
+            id, root.id, 'Tail needle ${index.toString().padLeft(2, '0')}.bin');
+      }
+    }
   }
 
+  final tailIds = <String>[];
   final childrenReads = <String>[];
   int indexReads = 0;
 

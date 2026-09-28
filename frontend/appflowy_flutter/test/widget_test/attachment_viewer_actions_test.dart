@@ -16,6 +16,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/image/comm
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/shared/af_image.dart';
+import 'package:appflowy/shared/document_viewer/document_viewer.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
@@ -199,8 +200,7 @@ void main() {
         ),
       );
       await _openDialog(tester);
-      final point = tester.getTopLeft(find.byType(InteractiveImageViewer)) +
-          const Offset(80, 80);
+      final point = tester.getCenter(find.byType(InteractiveViewer));
       await tester.tapAt(point);
       // Let the double-tap recognizer decline a single click. The modal
       // barrier must not win that abandoned arena and close the viewer.
@@ -221,7 +221,7 @@ void main() {
 
   for (final mode in ['light', 'dark', 'paper']) {
     testWidgets(
-        '$mode: image actions fade without autofocus pinning or remounts',
+        '$mode: image actions stay visible without remounting the renderer',
         (tester) async {
       final actions = _Actions();
       final provider = _Images(_images());
@@ -233,22 +233,15 @@ void main() {
         final state = tester.state(find.byType(MediaActionButtons));
         final scene = tester.state(find.byType(InteractiveViewer));
         final before = tester.getRect(find.byType(InteractiveImageToolbar));
-        expect(_reveal(tester).opacity, 0);
-        expect(find.byKey(_copy).hitTestable(), findsNothing);
+        expect(find.byKey(_copy).hitTestable(), findsOneWidget);
         expect(find.byType(InteractiveImageToolbar), findsOneWidget);
-        expect(actions.calls, isEmpty);
-        // A hidden action is inert, rather than an invisible native operation.
-        await tester.tapAt(tester.getCenter(find.byKey(_copy)));
-        await tester.pump();
         expect(actions.calls, isEmpty);
 
         await mouse.moveTo(tester.getCenter(find.byKey(_viewerHost)));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 70));
-        expect(_paintedOpacity(tester), greaterThan(0));
-        expect(_paintedOpacity(tester), lessThan(1));
+        expect(find.byKey(_copy).hitTestable(), findsOneWidget);
         await tester.pump(const Duration(milliseconds: 70));
-        expect(_paintedOpacity(tester), 1);
         expect(tester.getRect(find.byType(InteractiveImageToolbar)), before);
 
         await tester.tap(find.byKey(_copy));
@@ -266,10 +259,8 @@ void main() {
         await tester.pump();
         await mouse.moveTo(Offset.zero);
         await tester.pump();
-        expect(_reveal(tester).opacity, 0);
-        expect(find.byKey(_share).hitTestable(), findsNothing);
+        expect(find.byKey(_share).hitTestable(), findsOneWidget);
         await tester.pump(_fade);
-        expect(_paintedOpacity(tester), 0);
         expect(tester.state(find.byType(MediaActionButtons)), same(state));
         expect(tester.state(find.byType(InteractiveViewer)), same(scene));
         await _hover(tester, mouse, find.byKey(_viewerHost));
@@ -279,18 +270,15 @@ void main() {
             find.byKey(const ValueKey('media-action-surface')),
           );
           expect((surface.decoration as BoxDecoration).color, isNull);
-          expect(_buttons(tester).onDarkSurface, isTrue);
-          final group = tester.widget<DecoratedBox>(
-            find
-                .ancestor(
-                  of: find.byType(MediaActionButtons),
-                  matching: find.byType(DecoratedBox),
-                )
-                .first,
+          expect(_buttons(tester).onDarkSurface, isFalse);
+          final group = tester.widget<DocumentViewportBar>(
+            find.byKey(const ValueKey('photo-fullscreen-chrome')),
           );
           expect(
-            (group.decoration as BoxDecoration).color,
-            Colors.black.withValues(alpha: 0.6),
+            group.background,
+            DocumentViewportStyle.of(
+                    tester.element(find.byType(InteractiveImageToolbar)))
+                .canvas,
           );
         }
         expect(tester.takeException(), isNull);
@@ -549,7 +537,7 @@ void main() {
         ),
         textScale: 2,
       );
-      expect(_reveal(tester).opacity, 0);
+      expect(find.byKey(_copy).hitTestable(), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.numpadAdd);
       await tester.pump();
       expect(_toolbar(tester).currentScale, greaterThan(100));
@@ -560,6 +548,7 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.numpadSubtract);
       await tester.sendKeyEvent(LogicalKeyboardKey.digit0);
       await tester.pump();
+      await tester.pump(const Duration(milliseconds: 201));
       expect(_toolbar(tester).currentScale, 100);
       await tester.sendKeyEvent(LogicalKeyboardKey.backspace);
       await tester.sendKeyEvent(LogicalKeyboardKey.delete);
@@ -573,21 +562,28 @@ void main() {
   });
 
   testWidgets(
-    'keyboard can reveal hidden copy/share without pinning viewer autofocus',
+    'keyboard reaches persistent copy/share after the native viewer controls',
     (tester) async {
       final actions = _Actions();
       try {
         await _pump(tester, _imageHost(_Images(_images()), actions));
-        expect(_reveal(tester).opacity, 0);
-        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-        await tester.pump();
-        await tester.pump();
-        await tester.pump(_fade);
+        expect(find.byKey(_copy).hitTestable(), findsOneWidget);
+        for (var i = 0;
+            i < 30 &&
+                !tester
+                    .widget<IconButton>(find.byKey(_copy))
+                    .focusNode!
+                    .hasFocus;
+            i++) {
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.pump();
+          await tester.pump(_fade);
+        }
         expect(
           tester.widget<IconButton>(find.byKey(_copy)).focusNode!.hasFocus,
           isTrue,
         );
-        expect(_reveal(tester).opacity, 1);
+        expect(find.byKey(_copy).hitTestable(), findsOneWidget);
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
         await tester.pump();
         expect(actions.calls.single.kind, 'copy');
@@ -1190,17 +1186,6 @@ InteractiveImageToolbar _toolbar(WidgetTester tester) => tester
     .widget<InteractiveImageToolbar>(find.byType(InteractiveImageToolbar));
 AnimatedOpacity _reveal(WidgetTester tester) => tester
     .widget<AnimatedOpacity>(find.byKey(const ValueKey('media-action-reveal')));
-double _paintedOpacity(WidgetTester tester) => tester
-    .widget<FadeTransition>(
-      find
-          .descendant(
-            of: find.byKey(const ValueKey('media-action-reveal')),
-            matching: find.byType(FadeTransition),
-          )
-          .first,
-    )
-    .opacity
-    .value;
 FocusNode _viewerFocus(WidgetTester tester) => tester
     .widget<Focus>(
       find.descendant(

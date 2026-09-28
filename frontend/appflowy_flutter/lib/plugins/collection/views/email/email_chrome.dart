@@ -266,22 +266,28 @@ class EmailAction extends StatelessWidget {
   final double size;
 
   @override
-  Widget build(BuildContext context) => CollectionWorkspaceAction(
-        icon: icon == Icons.file_download_outlined
-            ? Icons.file_download_rounded
-            : icon == Icons.segment_rounded ||
-                    icon == Icons.view_headline_rounded
-                ? Icons.notes_rounded
-                : icon == Icons.all_inbox_rounded
-                    ? Icons.inbox_rounded
-                    : icon,
+  Widget build(BuildContext context) {
+    final scope = WorkspaceGlyphScope.maybeOf(context);
+    final hasStateInk = scope?.role == WorkspaceGlyphRole.preserveInk;
+    return WorkspaceGlyphScope(
+      color: hasStateInk
+          ? scope!.color
+          : (tint ?? theme.textSoft)
+              .withValues(alpha: onPressed == null ? 0.45 : 1),
+      role: onPressed == null || tint != null || hasStateInk
+          ? WorkspaceGlyphRole.preserveInk
+          : WorkspaceGlyphRole.standard,
+      child: CollectionWorkspaceAction(
+        icon: icon,
         tooltip: tooltip,
         label: label,
         onPressed: onPressed,
         selected: active,
         color: tint ?? theme.textSoft,
         size: size,
-      );
+      ),
+    );
+  }
 }
 
 /// A label or a state, shown as a soft pill.
@@ -318,11 +324,12 @@ class EmailChip extends StatelessWidget {
         children: [
           if (icon != null) ...[
             WorkspaceGlyph(
-              icon == Icons.hourglass_empty_rounded
-                  ? Icons.hourglass_bottom_rounded
-                  : icon!,
+              icon!,
               size: 11,
               color: colour,
+              role: tone != null || onTap == null
+                  ? WorkspaceGlyphRole.preserveInk
+                  : null,
             ),
             const SizedBox(width: EmailMetrics.space1 + 1),
           ],

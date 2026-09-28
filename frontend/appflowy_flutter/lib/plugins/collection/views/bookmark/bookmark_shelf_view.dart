@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_host.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_reader.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_toolbar.dart';
 import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_state.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -28,18 +29,11 @@ class BookmarkShelfView extends StatelessWidget {
           controller: controller,
           theme: theme,
           showGrouping: true,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              BookmarkFilterBar(controller: controller, theme: theme),
-              Expanded(
-                child: _Shelves(
-                  collection: collection,
-                  controller: controller,
-                  theme: theme,
-                ),
-              ),
-            ],
+          pageFlow: true,
+          child: _Shelves(
+            collection: collection,
+            controller: controller,
+            theme: theme,
           ),
         ),
       );
@@ -74,11 +68,19 @@ class _ShelvesState extends State<_Shelves> {
     final controller = widget.controller;
     final scroll = CollectionPageScrollScope.maybeOf(context) ?? _scroll;
     if (controller.entries.isEmpty) {
-      return bookmarkEmptyView(
-        context: context,
-        controller: controller,
-        collection: widget.collection,
-        theme: widget.theme,
+      return FileBrowserScrollView(
+        controller: scroll,
+        header: FileBrowserPageHeader.maybeOf(context),
+        slivers: [
+          SliverFillRemaining(
+              hasScrollBody: false,
+              child: bookmarkEmptyView(
+                context: context,
+                controller: controller,
+                collection: widget.collection,
+                theme: widget.theme,
+              ))
+        ],
       );
     }
 
@@ -98,17 +100,25 @@ class _ShelvesState extends State<_Shelves> {
       ),
       child: BookmarkScrollArea(
         controller: scroll,
-        child: ListView.builder(
+        child: FileBrowserScrollView(
           controller: scroll,
-          padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
-          itemCount: groups.length,
-          itemBuilder: (context, index) => _Shelf(
-            group: groups[index],
-            controller: controller,
-            collection: widget.collection,
-            theme: widget.theme,
-            grouping: grouping,
-          ),
+          header: FileBrowserPageHeader.maybeOf(context),
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
+              sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                (context, index) => _Shelf(
+                  group: groups[index],
+                  controller: controller,
+                  collection: widget.collection,
+                  theme: widget.theme,
+                  grouping: grouping,
+                ),
+                childCount: groups.length,
+              )),
+            )
+          ],
         ),
       ),
     );

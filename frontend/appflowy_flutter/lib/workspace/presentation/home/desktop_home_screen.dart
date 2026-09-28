@@ -1,6 +1,7 @@
 import 'package:appflowy/features/workspace/data/repositories/rust_workspace_repository_impl.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
 import 'package:appflowy/shared/scrolling/trackpad_history_navigation.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/startup/startup_profile.dart';
@@ -244,7 +245,17 @@ class DesktopHomeScreen extends StatelessWidget {
       userProfile: userProfile,
       workspaceSetting: workspaceSetting,
     );
-    return FocusTraversalGroup(child: RepaintBoundary(child: homeMenu));
+    return ContextualFindRegion(
+      debugLabel: 'Sidebar workspace search',
+      navigation: true,
+      findInEditable: true,
+      enabled: CommandPalette.maybeOf(context) != null,
+      onFind: () => CommandPalette.maybeOf(context)?.show(
+        workspaceBloc: context.read<UserWorkspaceBloc?>(),
+        spaceBloc: context.read<SpaceBloc?>(),
+      ),
+      child: FocusTraversalGroup(child: RepaintBoundary(child: homeMenu)),
+    );
   }
 
   Widget _buildEditPanel(

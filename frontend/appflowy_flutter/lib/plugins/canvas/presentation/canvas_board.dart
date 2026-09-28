@@ -5,6 +5,7 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_card.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_chrome.dart';
+import 'package:appflowy/plugins/canvas/presentation/canvas_find.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_menus.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_node_body.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_painters.dart';
@@ -13,6 +14,7 @@ import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_view_resolver.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
@@ -118,10 +120,10 @@ class CanvasBoardState extends State<CanvasBoard> {
   bool _panning = false;
 
   // Find
-  bool _searching = false;
-  String _query = '';
-  List<CanvasSearchHit> _hits = const <CanvasSearchHit>[];
-  int _hitIndex = 0;
+  late CanvasFindController _find;
+  CanvasEdgePainter? _edgePainter;
+  int _findReveal = 0;
+  bool get _searching => _find.isOpen;
 
   /// What was last copied on this canvas. Kept in the widget rather than on the
   /// system clipboard because a card is a structure, not text.
@@ -130,6 +132,10 @@ class CanvasBoardState extends State<CanvasBoard> {
   @override
   void initState() {
     super.initState();
+    _find = CanvasFindController(
+      canvas: _controller,
+      editable: () => widget.editable,
+    );
     _controller.addListener(_onDocumentChanged);
     _resolver.addListener(_onResolved);
   }
@@ -140,6 +146,15 @@ class CanvasBoardState extends State<CanvasBoard> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onDocumentChanged);
       widget.controller.addListener(_onDocumentChanged);
+      final previous = _find;
+      _find = CanvasFindController(
+        canvas: _controller,
+        editable: () => widget.editable,
+      );
+      _findReveal++;
+      // The mounted host must first detach its query listener from the old
+      // session. It is not the owner of either canvas controller.
+      WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
       _readViewport = false;
     }
   }
@@ -147,6 +162,8 @@ class CanvasBoardState extends State<CanvasBoard> {
   @override
   void dispose() {
     _controller.removeListener(_onDocumentChanged);
+    _findReveal++;
+    _find.dispose();
     _resolver
       ..removeListener(_onResolved)
       ..dispose();
@@ -156,11 +173,7 @@ class CanvasBoardState extends State<CanvasBoard> {
 
   void _onDocumentChanged() {
     if (mounted) {
-      setState(() {
-        if (_query.trim().isNotEmpty) {
-          _hits = searchCanvas(_controller.document, _query);
-        }
-      });
+      setState(() {});
     }
   }
 
@@ -179,7 +192,7 @@ class CanvasBoardState extends State<CanvasBoard> {
       return;
     }
     setState(() => _camera = camera);
-    if (remember) {
+    if (remember && widget.editable) {
       _controller.rememberViewport(camera);
     }
   }
@@ -215,11 +228,14 @@ class CanvasBoardState extends State<CanvasBoard> {
       );
 
   /// Move the camera so [sceneRect] is in the middle, without changing zoom.
-  void revealSceneRect(Rect rect, {double? atZoom}) {
+  void revealSceneRect(Rect rect, {double? atZoom, bool remember = true}) {
     if (_viewport.width < 2) {
       return;
     }
-    _setCamera(_camera.centeredOn(rect.center, _viewport, atZoom: atZoom));
+    _setCamera(
+      _camera.centeredOn(rect.center, _viewport, atZoom: atZoom),
+      remember: remember,
+    );
   }
 
   void revealObject(String id) {
@@ -626,6 +642,10 @@ class CanvasBoardState extends State<CanvasBoard> {
   }
 
   void _backgroundStart(Offset globalPosition) {
+    if (!widget.editable) {
+      _panning = true;
+      return;
+    }
     final scene = _toScene(globalPosition);
     switch (_controller.tool) {
       case CanvasTool.hand:
@@ -657,7 +677,7 @@ class CanvasBoardState extends State<CanvasBoard> {
   }
 
   void _backgroundUpdate(Offset globalPosition, Offset delta) {
-    if (_panning) {
+    if (_panning || !widget.editable) {
       _pan(delta);
       return;
     }
@@ -687,6 +707,17 @@ class CanvasBoardState extends State<CanvasBoard> {
   }
 
   void _backgroundEnd() {
+    if (!widget.editable) {
+      setState(() {
+        _panning = false;
+        _stroke = null;
+        _framing = null;
+        _frameAnchor = null;
+        _marquee = null;
+        _marqueeAnchor = null;
+      });
+      return;
+    }
     if (_panning) {
       setState(() => _panning = false);
       return;
@@ -1022,10 +1053,8 @@ class CanvasBoardState extends State<CanvasBoard> {
             _controller.selectAll,
         const SingleActivator(LogicalKeyboardKey.keyA, meta: true):
             _controller.selectAll,
-        const SingleActivator(LogicalKeyboardKey.delete):
-            _controller.deleteSelection,
-        const SingleActivator(LogicalKeyboardKey.backspace):
-            _controller.deleteSelection,
+        const SingleActivator(LogicalKeyboardKey.delete): _deleteSelection,
+        const SingleActivator(LogicalKeyboardKey.backspace): _deleteSelection,
         const SingleActivator(LogicalKeyboardKey.keyZ, control: true):
             _controller.undo,
         const SingleActivator(LogicalKeyboardKey.keyZ, meta: true):
@@ -1052,9 +1081,6 @@ class CanvasBoardState extends State<CanvasBoard> {
             _controller.groupSelection(),
         const SingleActivator(LogicalKeyboardKey.keyG, meta: true): () =>
             _controller.groupSelection(),
-        const SingleActivator(LogicalKeyboardKey.keyF, control: true):
-            _openSearch,
-        const SingleActivator(LogicalKeyboardKey.keyF, meta: true): _openSearch,
         const SingleActivator(LogicalKeyboardKey.escape): _escape,
         const SingleActivator(LogicalKeyboardKey.tab): _addBranch,
         const SingleActivator(LogicalKeyboardKey.enter): _addSibling,
@@ -1075,6 +1101,19 @@ class CanvasBoardState extends State<CanvasBoard> {
         const SingleActivator(LogicalKeyboardKey.arrowDown): () =>
             _nudge(const Offset(0, 1)),
       };
+
+  void _deleteSelection() {
+    if (!widget.editable) return;
+    final locked = {
+      for (final node in _controller.document.nodes)
+        if (node.locked && _controller.isSelected(node.id)) node.id,
+    };
+    final deletable = _controller.selection.difference(locked);
+    if (deletable.isEmpty) return;
+    _controller.select(deletable);
+    _controller.deleteSelection();
+    if (locked.isNotEmpty) _controller.select(locked);
+  }
 
   void _nudge(Offset direction) {
     if (!_controller.hasSelection) {
@@ -1300,43 +1339,54 @@ class CanvasBoardState extends State<CanvasBoard> {
   // Find
   // ---------------------------------------------------------------------
 
-  void _openSearch() => setState(() => _searching = true);
+  void _openSearch() => _find.open();
 
-  void _closeSearch() => setState(() {
-        _searching = false;
-        _query = '';
-        _hits = const <CanvasSearchHit>[];
-        _hitIndex = 0;
-      });
+  void _closeSearch() => _find.close();
 
-  void _onQueryChanged(String query) {
-    setState(() {
-      _query = query;
-      _hits = searchCanvas(_controller.document, query);
-      _hitIndex = 0;
-    });
-    _goToHit();
-  }
-
-  void _stepHit(int step) {
-    if (_hits.isEmpty) {
-      return;
-    }
-    setState(() => _hitIndex = (_hitIndex + step) % _hits.length);
-    _goToHit();
-  }
-
-  void _goToHit() {
-    if (_hits.isEmpty || _hitIndex >= _hits.length) {
-      return;
-    }
-    final hit = _hits[_hitIndex];
+  Future<void> _goToHit(SurfaceFindMatch hit) async {
+    final target = hit.id;
+    if (target is! CanvasFindId) return;
+    final generation = ++_findReveal;
     final document = _controller.document;
-    final rect = document.nodeById(hit.id)?.rect ??
-        document.frameById(hit.id)?.rect ??
-        _edgeRect(hit.id);
+    final rect = document.nodeById(target.$2)?.rect ??
+        document.frameById(target.$2)?.rect ??
+        _edgeRect(target.$2);
     if (rect != null) {
-      revealSceneRect(rect, atZoom: math.max(_camera.zoom, 0.6));
+      revealSceneRect(
+        rect,
+        atZoom: math.max(_camera.zoom, 0.6),
+        remember: false,
+      );
+    }
+    // Camera movement materializes culled cards. Reveal the actual word only
+    // after their native text/scroll geometry exists, without selecting a card.
+    await WidgetsBinding.instance.endOfFrame;
+    bool live() =>
+        mounted &&
+        generation == _findReveal &&
+        _find.isOpen &&
+        TickerMode.of(context) &&
+        ModalRoute.of(context)?.isCurrent != false &&
+        _find.current?.id == hit.id &&
+        _find.current?.range.start == hit.range.start;
+    if (!live()) return;
+    _find.revealCurrentTarget();
+    await WidgetsBinding.instance.endOfFrame;
+    if (!live()) return;
+    final word = _find.currentTargetRect;
+    final surface =
+        _surfaceKey.currentContext?.findRenderObject() as RenderBox?;
+    final local = word != null && surface != null && surface.attached
+        ? surface.globalToLocal(word.center)
+        : target.$1 == CanvasHitKind.edge
+            ? _edgePainter?.currentFindRect?.center
+            : null;
+    if (local != null) {
+      final room =
+          Rect.fromLTRB(24, 110, _viewport.width - 24, _viewport.height - 90);
+      if (!room.contains(local)) {
+        _setCamera(_camera.panned(room.center - local), remember: false);
+      }
     }
   }
 
@@ -1351,10 +1401,40 @@ class CanvasBoardState extends State<CanvasBoard> {
     if (from == null || to == null) {
       return null;
     }
-    return from.rect.expandToInclude(to.rect);
+    final geometry = canvasEdgeGeometry(
+      from: from.rect,
+      to: to.rect,
+      fromSide: edge.fromSide,
+      toSide: edge.toSide,
+    );
+    return Rect.fromCenter(center: geometry.midpoint, width: 1, height: 1);
   }
 
-  Set<String> get _hitIds => {for (final hit in _hits) hit.id};
+  Set<String> get _hitIds => {
+        for (final hit in _find.matches)
+          if (hit.id is CanvasFindId) (hit.id as CanvasFindId).$2,
+      };
+
+  Set<String> get _findExpandedFrames {
+    final target = _find.current?.id;
+    if (target is! CanvasFindId) return const {};
+    final document = _controller.document;
+    final seeds = <String?>[
+      document.nodeById(target.$2)?.frameId,
+      if (target.$1 == CanvasHitKind.frame) target.$2,
+      if (target.$1 == CanvasHitKind.edge) ...[
+        document.nodeById(document.edgeById(target.$2)?.from ?? '')?.frameId,
+        document.nodeById(document.edgeById(target.$2)?.to ?? '')?.frameId,
+      ],
+    ];
+    final result = <String>{};
+    for (var id in seeds) {
+      while (id != null && result.add(id)) {
+        id = document.frameById(id)?.parentId;
+      }
+    }
+    return result;
+  }
 
   // ---------------------------------------------------------------------
   // Menus
@@ -1707,74 +1787,96 @@ class CanvasBoardState extends State<CanvasBoard> {
   Widget build(BuildContext context) {
     final palette = canvasPaletteOf(context, theme: _controller.settings.theme);
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final size = Size(constraints.maxWidth, constraints.maxHeight);
-        if (size != _viewport) {
-          _viewport = size;
-          // The canvas opens where it was left. Reading it once, after the
-          // first real layout, is what stops a stored viewport being applied
-          // against a zero-sized box.
-          if (!_readViewport && size.width > 2 && size.height > 2) {
-            _readViewport = true;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!mounted) {
-                return;
+    return SurfaceFindHost(
+      controller: _find,
+      debugLabel: 'Canvas find',
+      findInEditable: true,
+      onReveal: _goToHit,
+      child: ListenableBuilder(
+        listenable: _find,
+        builder: (context, _) => LayoutBuilder(
+          builder: (context, constraints) {
+            final size = Size(constraints.maxWidth, constraints.maxHeight);
+            if (size != _viewport || !_readViewport) {
+              _viewport = size;
+              // The canvas opens where it was left. Reading it once, after the
+              // first real layout, is what stops a stored viewport being applied
+              // against a zero-sized box.
+              if (!_readViewport && size.width > 2 && size.height > 2) {
+                _readViewport = true;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) {
+                    return;
+                  }
+                  final stored = _controller.settings.viewport;
+                  if (stored.offset == Offset.zero && stored.zoom == 1) {
+                    zoomToFit();
+                  } else {
+                    _setCamera(
+                      CanvasCamera(offset: stored.offset, zoom: stored.zoom),
+                      remember: false,
+                    );
+                  }
+                });
               }
-              final stored = _controller.settings.viewport;
-              if (stored.offset == Offset.zero && stored.zoom == 1) {
-                zoomToFit();
-              } else {
-                _setCamera(
-                  CanvasCamera(offset: stored.offset, zoom: stored.zoom),
-                  remember: false,
-                );
-              }
-            });
-          }
-        }
+            }
 
-        return PremiumScrollExclusion(
-          child: Focus(
-            focusNode: _focus,
-            autofocus: !widget.embedded,
-            child: CallbackShortcuts(
-              bindings: widget.editable ? _shortcuts : const {},
-              child: Listener(
-                onPointerSignal: _onPointerSignal,
-                onPointerPanZoomStart: _onPanZoomStart,
-                onPointerPanZoomUpdate: _onPanZoomUpdate,
-                onPointerPanZoomEnd: _onPanZoomEnd,
-                child: MouseRegion(
-                  cursor: _handMode
-                      ? SystemMouseCursors.grab
-                      : switch (_controller.tool) {
-                          CanvasTool.draw ||
-                          CanvasTool.erase =>
-                            SystemMouseCursors.precise,
-                          CanvasTool.text ||
-                          CanvasTool.frame =>
-                            SystemMouseCursors.cell,
-                          _ => MouseCursor.defer,
-                        },
-                  child: ClipRect(
-                    child: Stack(
-                      key: _surfaceKey,
-                      children: [
-                        _background(palette),
-                        _surface(palette, size),
-                        _content(palette, size),
-                        _overlay(palette),
-                        if (widget.showChrome) ..._chrome(palette, size),
-                      ],
+            return PremiumScrollExclusion(
+              child: CallbackShortcuts(
+                bindings: widget.editable
+                    ? _shortcuts
+                    : {
+                        const SingleActivator(LogicalKeyboardKey.escape):
+                            _escape,
+                        const SingleActivator(
+                          LogicalKeyboardKey.keyC,
+                          control: true,
+                        ): _copy,
+                        const SingleActivator(
+                          LogicalKeyboardKey.keyC,
+                          meta: true,
+                        ): _copy,
+                      },
+                child: Focus(
+                  focusNode: _focus,
+                  autofocus: !widget.embedded,
+                  child: Listener(
+                    onPointerSignal: _onPointerSignal,
+                    onPointerPanZoomStart: _onPanZoomStart,
+                    onPointerPanZoomUpdate: _onPanZoomUpdate,
+                    onPointerPanZoomEnd: _onPanZoomEnd,
+                    child: MouseRegion(
+                      cursor: _handMode
+                          ? SystemMouseCursors.grab
+                          : switch (_controller.tool) {
+                              CanvasTool.draw ||
+                              CanvasTool.erase =>
+                                SystemMouseCursors.precise,
+                              CanvasTool.text ||
+                              CanvasTool.frame =>
+                                SystemMouseCursors.cell,
+                              _ => MouseCursor.defer,
+                            },
+                      child: ClipRect(
+                        child: Stack(
+                          key: _surfaceKey,
+                          children: [
+                            _background(palette),
+                            _surface(palette, size),
+                            _content(palette, size),
+                            _overlay(palette),
+                            if (widget.showChrome) ..._chrome(palette, size),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-        );
-      },
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -1854,9 +1956,10 @@ class CanvasBoardState extends State<CanvasBoard> {
     // it is reached, so panning does not flicker things into existence.
     final visible = _camera.visibleScene(size).inflate(280 / _camera.zoom);
 
+    final expandedForFind = _findExpandedFrames;
     final collapsedFrames = <String>{
       for (final frame in document.frames)
-        if (frame.collapsed) ...[
+        if (frame.collapsed && !expandedForFind.contains(frame.id)) ...[
           frame.id,
           ...document.descendantFrames(frame.id),
         ],
@@ -1913,7 +2016,7 @@ class CanvasBoardState extends State<CanvasBoard> {
           Positioned.fill(
             child: RepaintBoundary(
               child: CustomPaint(
-                painter: CanvasEdgePainter(
+                painter: _edgePainter = CanvasEdgePainter(
                   camera: _camera,
                   palette: palette,
                   edges: drawings,
@@ -1925,6 +2028,9 @@ class CanvasBoardState extends State<CanvasBoard> {
                           to: _connectPoint!,
                         ),
                   labelStyle: DefaultTextStyle.of(context).style,
+                  findQuery: _find.isOpen ? _find.query : '',
+                  findOptions: _find.options,
+                  currentFind: _find.current,
                 ),
               ),
             ),
@@ -1974,18 +2080,27 @@ class CanvasBoardState extends State<CanvasBoard> {
                     for (final frame in document.frames)
                       if (frame.rect.overlaps(visible))
                         Positioned(
+                          key: ValueKey(('canvas-frame', frame.id)),
                           left: frame.position.dx - layer.left,
                           top: frame.position.dy - layer.top,
                           width: frame.size.width,
-                          height: frame.collapsed
+                          height: frame.collapsed &&
+                                  !expandedForFind.contains(frame.id)
                               ? CanvasMetrics.frameHeaderHeight
                               : frame.size.height,
-                          child: _frameBox(frame, palette),
+                          child: _frameBox(
+                            expandedForFind.contains(frame.id)
+                                ? frame.copyWith(collapsed: false)
+                                : frame,
+                            palette,
+                          ),
                         ),
                     for (final node in document.nodes)
-                      if (node.rect.overlaps(visible) &&
+                      if ((node.rect.overlaps(visible) ||
+                              _controller.editing == node.id) &&
                           !collapsedFrames.contains(node.frameId))
                         Positioned(
+                          key: ValueKey(('canvas-node', node.id)),
                           left: node.position.dx - layer.left,
                           top: node.position.dy - layer.top,
                           width: node.size.width,
@@ -2038,13 +2153,14 @@ class CanvasBoardState extends State<CanvasBoard> {
       resolver: _resolver,
       zoom: _camera.zoom,
       selected: _controller.isSelected(node.id),
-      editing: _controller.editing == node.id,
+      editing:
+          widget.editable && !node.locked && _controller.editing == node.id,
       editable: widget.editable && _controller.tool != CanvasTool.hand,
-      searchHit: _query.trim().isNotEmpty && _hitIds.contains(node.id),
+      searchHit: _find.isOpen && _hitIds.contains(node.id),
       connectingFrom: _connectFrom == node.id,
       connectTarget: _connectTarget == node.id,
       onTap: (shift) {
-        if (_controller.tool == CanvasTool.connect) {
+        if (widget.editable && _controller.tool == CanvasTool.connect) {
           final from = _connectFrom;
           if (from == null) {
             setState(() => _connectFrom = node.id);
@@ -2080,11 +2196,14 @@ class CanvasBoardState extends State<CanvasBoard> {
       onConnectStart: (side) => _beginConnect(node.id, side),
       onConnectUpdate: _updateConnect,
       onConnectEnd: _endConnect,
-      onTextChanged: (text) => _controller.updateNode(
-        node.id,
-        (current) => current.copyWith(text: text),
-        transient: true,
-      ),
+      onTextChanged: (text) {
+        if (!widget.editable) return;
+        _controller.updateNode(
+          node.id,
+          (current) => current.locked ? current : current.copyWith(text: text),
+          transient: true,
+        );
+      },
       onEditingFinished: () {
         // Commit once when typing stops, so an edit is one thing to undo
         // rather than one per keystroke.
@@ -2259,21 +2378,6 @@ class CanvasBoardState extends State<CanvasBoard> {
             onHide: () => _controller.updateSettings(
               (current) => current.copyWith(showOutline: false),
             ),
-          ),
-        ),
-      if (_searching)
-        Positioned(
-          right: CanvasMetrics.space4,
-          top: CanvasMetrics.space4,
-          child: CanvasSearchBar(
-            palette: palette,
-            query: _query,
-            hits: _hits,
-            index: _hitIndex,
-            onQueryChanged: _onQueryChanged,
-            onNext: () => _stepHit(1),
-            onPrevious: () => _stepHit(-1),
-            onClose: _closeSearch,
           ),
         ),
       if (_controller.tool == CanvasTool.connect ||

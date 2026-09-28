@@ -43,6 +43,72 @@ import 'package:path/path.dart' as p;
 // undo, spreadsheet values, query fields and scroll services are real.
 // These tests deliberately do not initialize FFI or touch workspace/user data.
 void main() {
+  _test(
+      'incremental native document query retains client and reuses source until invalidation',
+      (tester, page) async {
+    const query = 'native documentation';
+    await page.insert(pagePreviewNode(viewId: 'linked'));
+    page.backend.addDocument('linked', [paragraphNode(text: query)]);
+    await page.mount(tester);
+    page.open();
+    await tester.pump();
+    await tester.pump();
+    final field = find.descendant(
+        of: find.byKey(const ValueKey('findTextField')),
+        matching: find.byType(EditableText));
+    final element = tester.element(field);
+    final state = tester.state<EditableTextState>(field);
+    for (var i = 1; i <= query.length; i++) {
+      expect(state.widget.focusNode.hasPrimaryFocus, isTrue);
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      if (i > 1)
+        expect(state.widget.controller.selection,
+            TextSelection.collapsed(offset: i - 1));
+      tester.testTextInput.updateEditingValue(TextEditingValue(
+          text: query.substring(0, i),
+          selection: TextSelection.collapsed(offset: i)));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.pump();
+      expect(tester.element(field), same(element));
+      expect(tester.state(field), same(state));
+      expect(state.widget.controller.text, query.substring(0, i));
+      expect(state.widget.controller.selection,
+          TextSelection.collapsed(offset: i));
+      expect(state.widget.controller.value.composing, TextRange.empty);
+    }
+    expect(_bar(tester).matchCount, 1);
+    expect(page.backend.documentReads, ['linked']);
+    expect(page.backend.viewReads, hasLength(4));
+    page.backend.denied.add('linked');
+    page.backend.access.value++;
+    await tester.pump();
+    expect(_bar(tester).matchCount, 0);
+    expect(state.widget.focusNode.hasPrimaryFocus, isTrue);
+  });
+
+  _test('held prefix read recovers latest document query without retyping',
+      (tester, page) async {
+    await page.insert(pagePreviewNode(viewId: 'linked'));
+    page.backend
+        .addDocument('linked', [paragraphNode(text: 'native documentation')]);
+    final held = page.backend.hold('linked');
+    final session = page.find()..search('nat', const FindOptions());
+    await _until(tester, () => page.backend.documentReads.isNotEmpty);
+    session.search('native documentation', const FindOptions());
+    await tester.pump(const Duration(seconds: 3));
+    expect(session.referencesTimedOut, isTrue);
+    expect(session.matches, isEmpty);
+    held.complete(page.backend.documents['linked']);
+    await tester.pump();
+    await tester.pump();
+    await _until(tester, () => !session.loadingReferences);
+    expect(session.matches.single.match.group(0), 'native documentation');
+    expect(page.backend.maximumConcurrentReads, 1);
+    page.backend.denied.add('linked');
+    page.backend.access.value++;
+    expect(session.matches, isEmpty, reason: 'Revocation is synchronous');
+  });
+
   _test('ViewPB.name is case-insensitive and never a synthetic node selection',
       (tester, page) async {
     page.rename('A NEEDLE title');

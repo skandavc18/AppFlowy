@@ -8,6 +8,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/materialized_file_builder.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/paper_theme.dart';
@@ -65,10 +66,8 @@ void main() {
         await _mount(tester, fixture, mode: mode);
         expect(find.byKey(_previewIcon), findsNothing);
         expect(find.byType(FileBlockIconButton), findsNothing);
-        expect(
-          find.byKey(const ValueKey('file-preview-media-actions')),
-          findsOneWidget,
-        );
+        _expectPdfFileActions(tester, pdf);
+        final mediaState = tester.state(_pdfFileActions);
         final previewState = tester.state(find.byType(FilePreview));
         final materializer = tester.state(find.byType(MaterializedFileBuilder));
         final pdfState = tester.state(find.byType(PdfPreview));
@@ -156,6 +155,8 @@ void main() {
         expect(tester.state(find.byType(PdfViewer)), same(viewerState));
         expect(_previewFuture(tester), same(future));
         expect(tester.getRect(find.byKey(_frame)), bounds);
+        _expectPdfFileActions(tester, pdf);
+        expect(tester.state(_pdfFileActions), same(mediaState));
         expect(factory.opened, [pdf.path]);
         expect(await tester.runAsync(pdf.readAsString), _pdfBytes);
 
@@ -289,6 +290,44 @@ void _test(String name, Future<void> Function(WidgetTester) body) =>
       timeout: const Timeout(Duration(seconds: 30)),
     );
 
+Finder get _pdfFileActions => find.descendant(
+      of: find.byKey(const ValueKey('pdf-toolbar-controls')),
+      matching: find.byType(MediaActionButtons),
+    );
+
+void _expectPdfFileActions(WidgetTester tester, File file) {
+  expect(
+    find.byKey(const ValueKey('file-preview-media-actions')),
+    findsNothing,
+    reason: 'PDF file actions belong to its toolbar, not a canvas overlay',
+  );
+  expect(_pdfFileActions, findsOneWidget);
+  expect(
+    find.descendant(
+      of: find.byType(PdfPreview),
+      matching: find.byType(MediaActionButtons),
+    ),
+    findsOneWidget,
+  );
+  final preview = tester.widget<FilePreview>(find.byType(FilePreview));
+  expect(preview.pdfFileActions, isNotNull);
+  expect(
+    tester.widget<PdfPreview>(find.byType(PdfPreview)).fileActions,
+    same(preview.pdfFileActions),
+    reason: 'The retained loader must forward the live action configuration',
+  );
+  final actions = tester.widget<MediaActionButtons>(_pdfFileActions);
+  expect(actions.source.source, file.path);
+  expect(actions.source.name, preview.name);
+  expect(actions.decorated, isFalse);
+  for (final key in ['media-copy', 'media-share']) {
+    expect(
+      find.descendant(of: _pdfFileActions, matching: find.byKey(ValueKey(key))),
+      findsOneWidget,
+    );
+  }
+}
+
 FileIdentityGlyph _glyph(WidgetTester tester) =>
     tester.widget<FileIdentityGlyph>(
       find.descendant(
@@ -309,6 +348,8 @@ Future<Widget>? _previewFuture(WidgetTester tester) => tester
     .future;
 
 Future<void> _openPdfMenu(WidgetTester tester) async {
+  await tester.ensureVisible(find.byKey(const ValueKey('pdf-overflow-menu')));
+  await settleFileControls(tester);
   await clickFileControl(
     tester,
     find.byKey(const ValueKey('pdf-overflow-menu')),

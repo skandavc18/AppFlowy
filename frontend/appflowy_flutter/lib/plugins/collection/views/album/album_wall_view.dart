@@ -6,7 +6,6 @@ import 'package:appflowy/plugins/collection/views/album/album_chrome.dart';
 import 'package:appflowy/plugins/collection/views/album/album_context_menu.dart';
 import 'package:appflowy/plugins/collection/views/album/album_host.dart';
 import 'package:appflowy/plugins/collection/views/album/album_lightbox.dart';
-import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
@@ -44,76 +43,73 @@ class AlbumWallView extends StatelessWidget {
   Widget build(BuildContext context) {
     return AlbumHost(
       collection: collection,
-      builder: (context, controller, palette) => AlbumScaffold(
-        controller: controller,
-        palette: palette,
-        leading: albumArrangementControls(
-          context: context,
-          controller: controller,
-          palette: palette,
-          showGrouping: layout == AlbumWallLayout.timeline,
-        ),
-        trailing: [
-          if (controller.isReadingMetadata)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.5,
-                  color: palette.textMuted,
-                ),
-              ),
-            ),
-          AlbumToolbarButton(
+      builder: (context, controller, palette) => _background(
+          context,
+          controller,
+          palette,
+          AlbumScaffold(
+            sliverBody: true,
+            scrollKey: PageStorageKey(
+                'album-wall-${collection.collectionView.id}-${layout.name}'),
+            controller: controller,
             palette: palette,
-            icon: Icons.title_rounded,
-            tooltip: LocaleKeys.collections_album_showNames.tr(),
-            selected: controller.settings.showNames,
-            onPressed: () => controller.updateSettings(
-              controller.settings
-                  .copyWith(showNames: !controller.settings.showNames),
+            leading: albumArrangementControls(
+              context: context,
+              controller: controller,
+              palette: palette,
+              showGrouping: layout == AlbumWallLayout.timeline,
             ),
-          ),
-          AlbumToolbarButton(
-            palette: palette,
-            icon: Icons.slideshow_rounded,
-            tooltip: LocaleKeys.collections_album_playSlideshow.tr(),
-            onPressed: controller.visual.isEmpty
-                ? null
-                : () => _open(
-                      context,
-                      controller,
-                      palette,
-                      controller.visual.first.id,
-                      slideshow: true,
+            trailing: [
+              if (controller.isReadingMetadata)
+                Padding(
+                  padding: const EdgeInsets.only(right: 10),
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: palette.textMuted,
                     ),
-          ),
-        ],
-        child: controller.isEmpty
-            ? _background(
-                context,
-                controller,
-                palette,
-                AlbumEmptyState(
-                  palette: palette,
-                  icon: Icons.photo_library_rounded,
-                  title: LocaleKeys.collections_album_emptyTitle.tr(),
-                  description:
-                      LocaleKeys.collections_album_emptyDescription.tr(),
+                  ),
                 ),
-              )
-            : PremiumScrollScope(
-                enabled: true,
-                child: _background(
-                  context,
-                  controller,
-                  palette,
-                  _buildWall(context, controller, palette),
+              AlbumToolbarButton(
+                palette: palette,
+                icon: Icons.title_rounded,
+                tooltip: LocaleKeys.collections_album_showNames.tr(),
+                selected: controller.settings.showNames,
+                onPressed: () => controller.updateSettings(
+                  controller.settings
+                      .copyWith(showNames: !controller.settings.showNames),
                 ),
               ),
-      ),
+              AlbumToolbarButton(
+                palette: palette,
+                icon: Icons.slideshow_rounded,
+                tooltip: LocaleKeys.collections_album_playSlideshow.tr(),
+                onPressed: controller.visual.isEmpty
+                    ? null
+                    : () => _open(
+                          context,
+                          controller,
+                          palette,
+                          controller.visual.first.id,
+                          slideshow: true,
+                        ),
+              ),
+            ],
+            child: controller.isEmpty
+                ? SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: AlbumEmptyState(
+                      palette: palette,
+                      icon: Icons.photo_library_rounded,
+                      title: LocaleKeys.collections_album_emptyTitle.tr(),
+                      description:
+                          LocaleKeys.collections_album_emptyDescription.tr(),
+                    ),
+                  )
+                : _buildWall(context, controller, palette),
+          )),
     );
   }
 
@@ -250,31 +246,34 @@ class _AlbumGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
+    return SliverLayoutBuilder(
       builder: (context, constraints) {
         final columns = albumColumnsFor(
-          constraints.maxWidth,
+          constraints.crossAxisExtent,
           controller.settings.tileSize.targetWidth,
         );
-        final tileWidth =
-            (constraints.maxWidth - AlbumMetrics.spacing * (columns - 1)) /
-                columns;
-        return GridView.builder(
-          padding: EdgeInsets.zero,
+        final tileWidth = (constraints.crossAxisExtent -
+                AlbumMetrics.spacing * (columns - 1)) /
+            columns;
+        return SliverGrid(
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
             mainAxisSpacing: AlbumMetrics.spacing,
             crossAxisSpacing: AlbumMetrics.spacing,
           ),
-          itemCount: items.length,
-          itemBuilder: (context, index) => AlbumTile(
-            item: items[index],
-            palette: palette,
-            controller: controller,
-            decodeWidth: tileWidth,
-            showName: controller.settings.showNames,
-            onOpen: () => onOpen(items[index].id),
-            onContextMenu: onContextMenu,
+          delegate: SliverChildBuilderDelegate(
+            (context, index) => AlbumTile(
+              key: ValueKey(items[index].id),
+              item: items[index],
+              palette: palette,
+              controller: controller,
+              decodeWidth: tileWidth,
+              showName: controller.settings.showNames,
+              onOpen: () => onOpen(items[index].id),
+              onContextMenu: onContextMenu,
+            ),
+            childCount: items.length,
+            findChildIndexCallback: (key) => _albumIndex(items, key),
           ),
         );
       },
@@ -299,42 +298,46 @@ class _AlbumMasonry extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
+    return SliverLayoutBuilder(
       builder: (context, constraints) {
         final columns = albumColumnsFor(
-          constraints.maxWidth,
+          constraints.crossAxisExtent,
           controller.settings.tileSize.targetWidth,
         );
-        final tileWidth =
-            (constraints.maxWidth - AlbumMetrics.spacing * (columns - 1)) /
-                columns;
-        return MasonryGridView.count(
-          padding: EdgeInsets.zero,
-          crossAxisCount: columns,
+        final tileWidth = (constraints.crossAxisExtent -
+                AlbumMetrics.spacing * (columns - 1)) /
+            columns;
+        return SliverMasonryGrid(
+          gridDelegate: SliverSimpleGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns),
           mainAxisSpacing: AlbumMetrics.spacing,
           crossAxisSpacing: AlbumMetrics.spacing,
-          itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-            final metadata = controller.metadataFor(item);
-            // The shape comes from the header, so the wall settles as soon as
-            // the metadata pass reaches each picture.
-            final ratio = item.kind == AlbumMediaKind.audio
-                ? 1.0
-                : metadata.aspectRatio.clamp(0.5, 2.2);
-            return SizedBox(
-              height: tileWidth / ratio,
-              child: AlbumTile(
-                item: item,
-                palette: palette,
-                controller: controller,
-                decodeWidth: tileWidth,
-                showName: controller.settings.showNames,
-                onOpen: () => onOpen(item.id),
-                onContextMenu: onContextMenu,
-              ),
-            );
-          },
+          delegate: SliverChildBuilderDelegate(
+            (context, index) {
+              final item = items[index];
+              final metadata = controller.metadataFor(item);
+              // The shape comes from the header, so the wall settles as soon as
+              // the metadata pass reaches each picture.
+              final ratio = item.kind == AlbumMediaKind.audio
+                  ? 1.0
+                  : metadata.aspectRatio.clamp(0.5, 2.2);
+              return SizedBox(
+                key: ValueKey(item.id),
+                height: tileWidth / ratio,
+                child: AlbumTile(
+                  item: item,
+                  palette: palette,
+                  controller: controller,
+                  decodeWidth: tileWidth,
+                  showName: controller.settings.showNames,
+                  onOpen: () => onOpen(item.id),
+                  onContextMenu: onContextMenu,
+                ),
+              );
+            },
+            childCount: items.length,
+            findChildIndexCallback: (key) => _albumIndex(items, key),
+          ),
         );
       },
     );
@@ -357,16 +360,16 @@ class _AlbumTimeline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final groups = controller.groups();
-    return LayoutBuilder(
+    return SliverLayoutBuilder(
       builder: (context, constraints) {
         final columns = albumColumnsFor(
-          constraints.maxWidth,
+          constraints.crossAxisExtent,
           controller.settings.tileSize.targetWidth,
         );
-        final tileWidth =
-            (constraints.maxWidth - AlbumMetrics.spacing * (columns - 1)) /
-                columns;
-        return CustomScrollView(
+        final tileWidth = (constraints.crossAxisExtent -
+                AlbumMetrics.spacing * (columns - 1)) /
+            columns;
+        return SliverMainAxisGroup(
           slivers: [
             for (final group in groups) ...[
               SliverToBoxAdapter(
@@ -412,6 +415,7 @@ class _AlbumTimeline extends StatelessWidget {
                   (context, index) {
                     final item = group.items[index];
                     return AlbumTile(
+                      key: ValueKey(item.id),
                       item: item,
                       palette: palette,
                       controller: controller,
@@ -422,6 +426,8 @@ class _AlbumTimeline extends StatelessWidget {
                     );
                   },
                   childCount: group.items.length,
+                  findChildIndexCallback: (key) =>
+                      _albumIndex(group.items, key),
                 ),
               ),
             ],
@@ -431,4 +437,9 @@ class _AlbumTimeline extends StatelessWidget {
       },
     );
   }
+}
+
+int? _albumIndex(List<AlbumMediaItem> items, Key key) {
+  final index = items.indexWhere((item) => ValueKey(item.id) == key);
+  return index < 0 ? null : index;
 }

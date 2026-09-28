@@ -4,7 +4,10 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/plugins/collection/views/album/album_thumbnail.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
+import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/shared/workspace_tokens.dart';
@@ -124,6 +127,8 @@ class AlbumScaffold extends StatelessWidget {
     this.leading = const <Widget>[],
     this.trailing = const <Widget>[],
     this.padded = true,
+    this.sliverBody = false,
+    this.scrollKey,
   });
 
   final AlbumController controller;
@@ -132,31 +137,82 @@ class AlbumScaffold extends StatelessWidget {
   final List<Widget> leading;
   final List<Widget> trailing;
   final bool padded;
+  final bool sliverBody;
+  final Key? scrollKey;
 
   @override
   Widget build(BuildContext context) {
+    final toolbar = CollectionWorkspaceToolbar(
+      identity: Text(
+        albumContentsSummary(controller),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: collectionWorkspaceLabel(context, size: 12),
+      ),
+      keepVisible: true,
+      actions: [...leading, ...trailing],
+    );
+    if (sliverBody) {
+      return PreviewToolbarRegion(
+        child: CollectionWorkspaceSurface(
+          padding: EdgeInsets.zero,
+          child: PremiumScrollScope(
+            enabled: true,
+            child: FileBrowserScrollView(
+              controller: CollectionPageScrollScope.maybeOf(context),
+              scrollKey: scrollKey,
+              header: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (FileBrowserPageHeader.maybeOf(context) case final header?)
+                    header,
+                  const SizedBox(height: CollectionWorkspaceMetrics.topGap),
+                  toolbar,
+                ],
+              ),
+              slivers: [
+                SliverPadding(
+                  padding: padded
+                      ? CollectionWorkspaceMetrics.bodyInsets
+                      : EdgeInsets.zero,
+                  sliver: child,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return PreviewToolbarRegion(
       child: CollectionWorkspaceSurface(
-        padding: const EdgeInsets.only(top: CollectionWorkspaceMetrics.topGap),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            CollectionWorkspaceToolbar(
-              identity: Text(
-                albumContentsSummary(controller),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: collectionWorkspaceLabel(context, size: 12),
-              ),
-              keepVisible: controller.isReadingMetadata,
-              actions: [...leading, ...trailing],
-            ),
-            Expanded(
-              child: Padding(
-                padding: padded
-                    ? CollectionWorkspaceMetrics.bodyInsets
-                    : EdgeInsets.zero,
-                child: child,
+        padding: EdgeInsets.zero,
+        child: FileBrowserScrollView(
+          controller: CollectionPageScrollScope.maybeOf(context),
+          scrollKey: scrollKey,
+          header: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (FileBrowserPageHeader.maybeOf(context) case final header?)
+                header,
+              const SizedBox(height: CollectionWorkspaceMetrics.topGap),
+              toolbar,
+            ],
+          ),
+          slivers: [
+            // Filmstrip and Places remain finite stages. Only their chrome
+            // scrolls away; neither images nor the horizontal shelf become
+            // unbounded or borrow the primary vertical controller.
+            SliverLayoutBuilder(
+              builder: (context, constraints) => SliverToBoxAdapter(
+                child: SizedBox(
+                  height: constraints.viewportMainAxisExtent,
+                  child: Padding(
+                    padding: padded
+                        ? CollectionWorkspaceMetrics.bodyInsets
+                        : EdgeInsets.zero,
+                    child: child,
+                  ),
+                ),
               ),
             ),
           ],

@@ -12,16 +12,21 @@ import 'package:appflowy/plugins/collection/views/album/album_lightbox.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_explorer.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_theme.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/workspace_file/workspace_file_view.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/document_viewer/document_viewer.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/viewer_card.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/workspace/presentation/widgets/image_viewer/interactive_image_viewer.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/collections/album/album_controller.dart';
 import 'package:appflowy/workspace/application/collections/album/album_media.dart';
@@ -37,6 +42,7 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:archive/archive.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme.dart';
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -59,12 +65,14 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:super_clipboard/super_clipboard.dart';
 
+import 'page_icon_widget_test_support.dart';
 import 'test_asset_bundle.dart';
 
 const _copy = ValueKey('media-copy');
 const _share = ValueKey('media-share');
 const _copied = ValueKey('media-copied');
 const _capture = ValueKey('fullscreen-action-capture');
+const _fileHeaderScroll = ValueKey('workspace-file-page-scroll');
 const _fade = Duration(milliseconds: 141);
 const _cloud = 'https://workspace.example.test/api/file_storage/w/v1/blob/a';
 const _pdfText = 'Selected PDF text stays text';
@@ -216,31 +224,77 @@ void main() {
                 () =>
                     tester
                         .widget<DocumentViewportHeader>(
-                          find.byType(DocumentViewportHeader),
+                          find.byType(DocumentViewportHeader,
+                              skipOffstage: false),
                         )
                         .identity
                         .subtitle !=
                     null,
               );
             }
-            final renderer = image
-                ? find.byType(InteractiveViewer)
-                : find.text('AppFlowy has no viewer for this file type yet.');
-            final originalRenderer = tester.widget(renderer);
-            final beforeBounds = tester.getRect(renderer);
-            expect(_revealFor(tester, _copy).opacity, 0);
-            expect(find.byKey(_copy).hitTestable(), findsNothing);
-            await tester.tapAt(
-              tester.getCenter(find.byKey(_copy)),
-              kind: ui.PointerDeviceKind.mouse,
+            final pane = tester.getRect(
+              find.byKey(const ValueKey('workspace-file-canvas')),
             );
+            final header = tester.getRect(find.byKey(_fileHeaderScroll));
+            final naturalHeader = tester.getRect(
+              find.byKey(const ValueKey('workspace-file-header-region')),
+            );
+            // The page viewport stays bounded; its natural identity may retire
+            // completely instead of reserving a separate header/body split.
+            expect(pane.size, const Size(320, 260));
+            expect(header, pane);
+            expect(naturalHeader.height, greaterThan(0));
+            expect(
+              tester
+                  .state<NestedScrollViewState>(find.byKey(_fileHeaderScroll))
+                  .outerController
+                  .position
+                  .maxScrollExtent,
+              closeTo(naturalHeader.height, 0.01),
+            );
+            final renderer = image
+                ? find.byType(InteractiveViewer, skipOffstage: false)
+                : find.text('AppFlowy has no viewer for this file type yet.',
+                    skipOffstage: false);
+            final originalRenderer = tester.element(renderer);
+            _expectWorkspaceBody(tester, renderer);
+            expect(_revealFor(tester, _copy).opacity, 1);
             expect(actions.calls, isEmpty);
-            await mouse.moveTo(const Offset(40, 180));
+            await mouse.moveTo(header.topLeft + const Offset(2, 2));
             await _motion(tester);
             expect(_revealFor(tester, _copy).opacity, 1);
+            // Native wheel can retire the entire header. Native reveal then
+            // brings its retained actions back without remounting the file.
+            await _scrollWorkspaceFileHeader(tester, toEnd: true);
+            expect(find.byKey(_copy).hitTestable(), findsNothing);
+            await _ensureToolbarTargetVisible(
+              tester,
+              find.byType(MediaActionButtons, skipOffstage: false),
+            );
             expect(find.byKey(_copy).hitTestable(), findsOneWidget);
-            expect(tester.widget(renderer), same(originalRenderer));
-            expect(tester.getRect(renderer), beforeBounds);
+            expect(find.byKey(_share).hitTestable(), findsOneWidget);
+            expect(tester.element(renderer), same(originalRenderer));
+            final revealedBounds = tester.getRect(renderer);
+            final page = tester
+                .widget<StandaloneFilePage>(find.byType(StandaloneFilePage));
+            final bodyFinder = find.byKey(page.body.key!, skipOffstage: false);
+            final bodyElement = tester.element(bodyFinder);
+            final revealedBody = tester.getRect(bodyFinder);
+            final messageViewport =
+                image ? null : _toolbarViewportRect(tester, renderer);
+            final messageContent = image
+                ? null
+                : tester.getSize(find
+                    .ancestor(
+                      of: renderer,
+                      matching: find.byType(ViewerCard, skipOffstage: false),
+                    )
+                    .first);
+            final revealedOffset = tester
+                .state<NestedScrollViewState>(find.byKey(_fileHeaderScroll))
+                .outerController
+                .offset;
+            _expectWorkspaceBody(tester, renderer);
             expect(loader.requests, [(source: _cloud, name: name)]);
             expect(_target(tester).source, materialized.path);
             expect(_target(tester).name, name);
@@ -257,8 +311,51 @@ void main() {
             expect(_button(tester, _share).onPressed, isNull);
             actions.calls.single.succeed();
             await _motion(tester);
-            final badge = _expectBadge(tester);
-            expect(tester.getRect(renderer), beforeBounds);
+            final badge = _expectBadge(
+              tester,
+              viewport: _toolbarViewportRect(
+                tester,
+                find.byType(MediaActionButtons),
+              ),
+            );
+            final badgeBounds = tester.getRect(find.byKey(_copied));
+            expect(header.inflate(0.01).intersect(badgeBounds), badgeBounds);
+            final feedbackOffset = tester
+                .state<NestedScrollViewState>(find.byKey(_fileHeaderScroll))
+                .outerController
+                .offset;
+            final travel = revealedOffset - feedbackOffset;
+            final body = tester.getRect(bodyFinder);
+            expect(tester.element(bodyFinder), same(bodyElement));
+            expect(
+                body,
+                Rect.fromLTRB(revealedBody.left, revealedBody.top + travel,
+                    revealedBody.right, header.bottom));
+            expect(
+                tester
+                    .getRect(find
+                        .byKey(const ValueKey('workspace-file-header-region')))
+                    .height,
+                naturalHeader.height);
+            if (image) {
+              expect(tester.getRect(renderer), body);
+            } else {
+              final nativeViewport = _toolbarViewportRect(tester, renderer);
+              expect(
+                  nativeViewport,
+                  Rect.fromCenter(
+                    center: body.center,
+                    width: messageViewport!.width,
+                    height: messageContent!.height.clamp(0.0, body.height),
+                  ));
+              expect(
+                  tester.getRect(renderer),
+                  revealedBounds.shift(
+                    nativeViewport.topLeft - messageViewport.topLeft,
+                  ));
+            }
+            expect(tester.element(renderer), same(originalRenderer));
+            _expectWorkspaceBody(tester, renderer);
             expect(
               _changedPixels(before, await _pixels(tester), badge),
               greaterThan(4),
@@ -343,7 +440,7 @@ void main() {
               ) +
               const Offset(2, 2);
           expect(header.contains(rendererBounds.center), isFalse);
-          expect(_revealFor(tester, _copy).opacity, 0);
+          expect(_revealFor(tester, _copy).opacity, 1);
           expect(_revealFor(tester, coverKey).opacity, 0);
 
           await mouse.moveTo(rendererBounds.center);
@@ -360,7 +457,7 @@ void main() {
           expect(find.byKey(coverKey).hitTestable(), findsOneWidget);
           await mouse.moveTo(away);
           await _motion(tester);
-          expect(_revealFor(tester, _copy).opacity, 0);
+          expect(_revealFor(tester, _copy).opacity, 1);
           expect(_revealFor(tester, coverKey).opacity, 0);
 
           // Quiet header space still reveals on first touch without invoking
@@ -372,7 +469,7 @@ void main() {
           await mouse.moveTo(headerPoint);
           await mouse.moveTo(away);
           await _motion(tester);
-          expect(_revealFor(tester, _copy).opacity, 0);
+          expect(_revealFor(tester, _copy).opacity, 1);
           expect(_revealFor(tester, coverKey).opacity, 0);
 
           // Renderer callbacks retain their original context even when their
@@ -408,7 +505,7 @@ void main() {
             await _motion(tester);
             await menu;
             expect(find.byType(AppMenuRow), findsNothing);
-            expect(_revealFor(tester, _copy).opacity, 0);
+            expect(_revealFor(tester, _copy).opacity, 1);
             expect(_revealFor(tester, coverKey).opacity, 0);
           }
 
@@ -439,6 +536,244 @@ void main() {
         }
       });
     }
+
+    testWidgets(
+        'workspace $mode: short-tall-short retains image, title draft and action holds',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      final actions = _Actions();
+      const name = 'Retained photo.PNG';
+      final view = _view('short-pane-retention', name, _cloud)..freeze();
+      final model = view.writeToBuffer();
+      final loader = _Files({name: photo});
+      final mouse =
+          await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+      final renderer = find.byType(InteractiveViewer, skipOffstage: false);
+      final content = find.byKey(const ValueKey('workspace-file-header-region'),
+          skipOffstage: false);
+      final titleInput = find.byKey(
+          const ValueKey('workspace-inline-name-editor'),
+          skipOffstage: false);
+      try {
+        await mouse.addPointer(location: const Offset(-20, -20));
+        await _warmPhoto(tester, photo);
+        await _mount(
+          tester,
+          mode: mode,
+          scale: 2,
+          size: const Size(320, 260),
+          child: WorkspaceFileView(
+            view: view,
+            mediaActions: actions,
+            resolveStorageUrl: _storedUrl,
+            materializeFile: loader.load,
+          ),
+        );
+        await _pumpUntil(
+          tester,
+          () =>
+              renderer.evaluate().isNotEmpty &&
+              tester
+                  .widgetList<RawImage>(find.descendant(
+                    of: renderer,
+                    matching: find.byType(RawImage, skipOffstage: false),
+                    skipOffstage: false,
+                  ))
+                  .any((image) => image.image != null) &&
+              tester
+                      .widget<DocumentViewportHeader>(
+                        find.byType(DocumentViewportHeader,
+                            skipOffstage: false),
+                      )
+                      .identity
+                      .subtitle !=
+                  null,
+        );
+        final rendererElement = tester.element(renderer);
+        final rendererState = tester.state(renderer);
+        final rendererWidget = tester.widget<InteractiveViewer>(renderer);
+        final transform = rendererWidget.transformationController!;
+        final matrix = Matrix4.identity()..scale(2.0);
+        transform.value = matrix;
+        final rawImage = find.descendant(
+          of: renderer,
+          matching: find.byType(RawImage, skipOffstage: false),
+          skipOffstage: false,
+        );
+        final frame = tester.widget<RawImage>(rawImage).image!;
+        final identity = find.byKey(const ValueKey('workspace-file-identity'),
+            skipOffstage: false);
+        final identityState = tester.state(identity);
+        final mediaState =
+            tester.state(find.byType(MediaActionButtons, skipOffstage: false));
+        final host = StandaloneFileScope.maybeOf(rendererElement)!;
+        final scroll =
+            tester.widget<NestedScrollView>(find.byKey(_fileHeaderScroll));
+        final position = tester
+            .state<NestedScrollViewState>(find.byKey(_fileHeaderScroll))
+            .outerController
+            .position;
+        expect(scroll.scrollDirection, Axis.vertical);
+        expect(scroll.clipBehavior, Clip.hardEdge);
+        _expectWorkspaceBody(tester, renderer);
+        expect(
+            tester.getSize(
+                find.byKey(const ValueKey('workspace-file-identity-icon'))),
+            const Size.square(56));
+        expect(
+            tester
+                    .getRect(find
+                        .byKey(const ValueKey('workspace-file-identity-icon')))
+                    .top -
+                tester.getRect(content).top,
+            closeTo(44, 0.01));
+
+        await mouse.moveTo(const Offset(8, 8));
+        await _motion(tester);
+        expect(_revealFor(tester, _copy).opacity, 1);
+        expect(find.byKey(_copy).hitTestable(), findsNothing);
+        await _scrollWorkspaceFileHeader(tester, toEnd: true);
+        await _ensureToolbarTargetVisible(
+            tester, find.byType(MediaActionButtons, skipOffstage: false));
+        expect(find.byKey(_copy).hitTestable(), findsOneWidget);
+        await tester.tap(find.byKey(_copy), kind: ui.PointerDeviceKind.mouse);
+        await tester.pump();
+        expect(actions.calls.single.kind, 'copy');
+
+        final titleFocus = tester
+            .widget<Focus>(find.byWidgetPredicate(
+              (widget) =>
+                  widget is Focus &&
+                  widget.focusNode?.debugLabel == 'workspace-file-title',
+            ))
+            .focusNode!;
+        await _tabTo(tester, titleFocus);
+        await tester.sendKeyEvent(LogicalKeyboardKey.f2);
+        await _motion(tester);
+        await tester.enterText(titleInput, 'Unfinished photo.PNG');
+        final field = tester.widget<EditableText>(titleInput);
+        field.controller.selection =
+            const TextSelection(baseOffset: 2, extentOffset: 9);
+        final draft = field.controller.value;
+        final titleState = tester.state(titleInput);
+        await _motion(tester);
+        final naturalHeight = tester.getSize(content).height;
+
+        for (final size in const [Size(320, 760), Size(320, 260)]) {
+          await tester.binding.setSurfaceSize(size);
+          await _motion(tester);
+          final viewport = tester.getRect(find.byKey(_fileHeaderScroll));
+          expect(_toolbarViewportRect(tester, content).size, viewport.size);
+          expect(tester.getSize(content).height, naturalHeight);
+          expect(viewport.height, closeTo(size.height, 0.01));
+          expect(tester.getRect(renderer).top,
+              closeTo(viewport.top + naturalHeight - position.pixels, 0.01));
+          _expectWorkspaceBody(tester, renderer);
+          expect(position.maxScrollExtent, closeTo(naturalHeight, 0.01));
+          expect(tester.element(renderer), same(rendererElement));
+          expect(tester.state(renderer), same(rendererState));
+          expect(
+              tester
+                  .widget<InteractiveViewer>(renderer)
+                  .transformationController,
+              same(transform));
+          expect(transform.value, matrix);
+          expect(tester.widget<RawImage>(rawImage).image!.isCloneOf(frame),
+              isTrue);
+          expect(tester.state(identity), same(identityState));
+          expect(
+              tester
+                  .state(find.byType(MediaActionButtons, skipOffstage: false)),
+              same(mediaState));
+          expect(
+              tester
+                  .state<NestedScrollViewState>(find.byKey(_fileHeaderScroll))
+                  .outerController
+                  .position,
+              same(position));
+          final currentHost = StandaloneFileScope.maybeOf(rendererElement)!;
+          expect(currentHost.chrome, same(host.chrome));
+          expect(currentHost.metadata, same(host.metadata));
+          expect(tester.state(titleInput), same(titleState));
+          expect(tester.widget<EditableText>(titleInput).controller,
+              same(field.controller));
+          expect(field.controller.value, draft);
+          expect(field.focusNode.hasFocus, isTrue);
+          expect(MediaQuery.textScalerOf(rendererElement).scale(10), 20);
+          expect(_button(tester, _share).onPressed, isNull);
+          expect(actions.calls, hasLength(1));
+          expect(view.writeToBuffer(), model);
+          expect(loader.requests, [(source: _cloud, name: name)]);
+          expect(tester.takeException(), isNull);
+        }
+
+        // The return to the original allocation still clips, rather than
+        // shrinking content. Native scrolling reaches its retained actions.
+        await _scrollWorkspaceFileHeader(tester, toEnd: false);
+        expect(field.controller.value, draft);
+        expect(field.focusNode.hasFocus, isTrue);
+        expect(tester.state(titleInput), same(titleState));
+        expect(find.byKey(_copy).hitTestable(), findsNothing);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await _motion(tester);
+        expect(titleInput, findsNothing);
+        expect(find.text(name), findsOneWidget);
+        await _scrollWorkspaceFileHeader(tester, toEnd: true);
+        actions.calls.single.succeed();
+        await _motion(tester);
+        await _ensureToolbarTargetVisible(
+            tester, find.byType(MediaActionButtons, skipOffstage: false));
+        await _tabTo(tester, _button(tester, _share).focusNode!);
+        _expectBadge(tester,
+            viewport: tester.getRect(find.byKey(_fileHeaderScroll)));
+        FocusManager.instance.primaryFocus?.unfocus();
+        await mouse.moveTo(const Offset(-20, -20));
+        await tester.pump(const Duration(seconds: 2));
+        await _motion(tester);
+        expect(_revealFor(tester, _copy).opacity, 1);
+
+        final menu = showAppMenu<void>(
+          context: rendererElement,
+          globalPosition: const Offset(8, 190),
+          entries: [AppMenuItem(label: 'File view options', onSelected: () {})],
+        );
+        await _motion(tester);
+        expect(find.byType(AppMenuRow), findsOneWidget);
+        expect(_revealFor(tester, _copy).opacity, 1);
+        expect(_revealFor(tester, _share).opacity, 1);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await _motion(tester);
+        await menu;
+        expect(_revealFor(tester, _copy).opacity, 1);
+        await _tabTo(tester, _button(tester, _share).focusNode!);
+        expect(find.byKey(_share).hitTestable(), findsOneWidget);
+        final shareNode = tester.getSemantics(find.byKey(_share));
+        expect(shareNode.attached, isTrue);
+        expect(shareNode.getSemanticsData().hasFlag(ui.SemanticsFlag.isButton),
+            isTrue);
+        final anchor = tester.getRect(find.byKey(_share));
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.pump();
+        expect(actions.calls.last.kind, 'share');
+        expect(actions.calls.last.source.source, photo.path);
+        expect(actions.calls.last.source.name, name);
+        expect(actions.calls.last.origin, anchor);
+        actions.calls.last.succeed();
+        await _motion(tester);
+        expect(tester.getRect(find.byKey(_fileHeaderScroll)).size,
+            const Size(320, 260));
+        _expectWorkspaceBody(tester, renderer);
+        expect(
+            tester.widget<RawImage>(rawImage).image!.isCloneOf(frame), isTrue);
+        expect(view.writeToBuffer(), model);
+        expect(loader.requests, hasLength(1));
+        expect(tester.takeException(), isNull);
+      } finally {
+        semantics.dispose();
+        await mouse.removePointer();
+        await _unmount(tester, actions);
+      }
+    });
 
     for (final kind in ['text', 'json', 'archive']) {
       testWidgets(
@@ -526,8 +861,75 @@ void main() {
     }
   }
 
+  for (final scenario in ['keyboard', 'visible', 'scrolled-away', 'stale']) {
+    testWidgets('workspace: Copy feedback reveal $scenario', (tester) async {
+      final actions = _Actions();
+      final view =
+          ValueNotifier(_view('feedback', 'file.unknown', unknown.path));
+      final loader = _Files({'file.unknown': unknown, 'next.unknown': unknown});
+      try {
+        await _mount(
+          tester,
+          size: scenario == 'visible'
+              ? const Size(760, 540)
+              : const Size(320, 260),
+          child: ValueListenableBuilder<ViewPB>(
+            valueListenable: view,
+            builder: (_, value, __) => WorkspaceFileView(
+              view: value,
+              mediaActions: actions,
+              resolveStorageUrl: _storedUrl,
+              materializeFile: loader.load,
+            ),
+          ),
+        );
+        await _pumpUntil(tester, () => _target(tester).source.isNotEmpty);
+        final page =
+            tester.state<NestedScrollViewState>(find.byKey(_fileHeaderScroll));
+        if (scenario != 'visible') {
+          await _scrollWorkspaceFileHeader(tester, toEnd: true);
+          await _ensureToolbarTargetVisible(
+            tester,
+            find.byType(MediaActionButtons, skipOffstage: false),
+          );
+        }
+        final copyFocus = _button(tester, _copy).focusNode!;
+        await _tabTo(tester, copyFocus);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump();
+        expect(actions.calls.single.kind, 'copy');
+        if (scenario == 'scrolled-away') {
+          await _scrollWorkspaceFileHeader(tester, toEnd: true);
+          expect(find.byKey(_copy).hitTestable(), findsNothing);
+        } else if (scenario == 'stale') {
+          view.value = _view('feedback', 'next.unknown', unknown.path);
+          await _motion(tester);
+        }
+        final offset = page.outerController.offset;
+        actions.calls.single.succeed();
+        await _motion(tester);
+        if (scenario == 'keyboard' || scenario == 'visible') {
+          _expectBadge(tester,
+              viewport: tester.getRect(find.byKey(_fileHeaderScroll)));
+          expect(copyFocus.hasFocus, isTrue);
+          final settled = page.outerController.offset;
+          // Native repeated focus/reveal and ordinary paints must not drift.
+          tester.renderObject(find.byKey(_copy)).showOnScreen();
+          await _motion(tester);
+          expect(page.outerController.offset, settled);
+        }
+        if (scenario != 'keyboard') expect(page.outerController.offset, offset);
+        if (scenario == 'stale') expect(find.byKey(_copied), findsNothing);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await _unmount(tester, actions);
+        view.dispose();
+      }
+    });
+  }
+
   testWidgets(
-      'workspace: Tab reveals hidden actions and pending focus survives',
+      'workspace: persistent actions remain keyboard accessible and retain pending focus',
       (tester) async {
     final semantics = tester.ensureSemantics();
     final actions = _Actions();
@@ -544,7 +946,7 @@ void main() {
         ),
       );
       await _pumpUntil(tester, () => _target(tester).source.isNotEmpty);
-      expect(find.semantics.byLabel('Copy'), findsNothing);
+      expect(find.semantics.byLabel('Copy'), findsOneWidget);
       await _tabTo(tester, _button(tester, _copy).focusNode!);
       expect(find.semantics.byLabel('Copy'), findsOneWidget);
       expect(_revealFor(tester, _copy).duration, Duration.zero);
@@ -572,9 +974,9 @@ void main() {
       await _motion(tester);
       FocusManager.instance.primaryFocus?.unfocus();
       await _motion(tester);
-      expect(find.semantics.byLabel('Copy'), findsNothing);
-      expect(find.semantics.byLabel('Share'), findsNothing);
-      expect(find.byKey(_share).hitTestable(), findsNothing);
+      expect(find.semantics.byLabel('Copy'), findsOneWidget);
+      expect(find.semantics.byLabel('Share'), findsOneWidget);
+      expect(find.byKey(_share).hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
     } finally {
       semantics.dispose();
@@ -1738,7 +2140,24 @@ void main() {
           expect(_target(tester).requireAuthentication, isFalse);
           expect(_target(tester).httpHeaders, isEmpty);
           expect(pdfFactory.opened, [pdf.file.path]);
-          _expectSurface(tester, mode);
+          _expectPdfToolbarSurface(tester, mode);
+          final actionsViewport = _toolbarViewportRect(
+            tester,
+            find.byType(MediaActionButtons),
+          );
+          expect(
+            tester
+                .getSize(
+                  find.descendant(
+                    of: _fullscreenPdf(),
+                    matching:
+                        find.byKey(const ValueKey('pdf-toolbar-controls')),
+                  ),
+                )
+                .width,
+            greaterThan(actionsViewport.width),
+            reason: 'The tight pane must exercise real horizontal overflow.',
+          );
           final viewer = find.descendant(
             of: _fullscreenPdf(),
             matching: find.byType(PdfViewer),
@@ -1751,7 +2170,7 @@ void main() {
           expect(find.byKey(_copied), findsNothing);
           actions.calls.single.succeed();
           await _motion(tester);
-          final badge = _expectBadge(tester);
+          final badge = _expectBadge(tester, viewport: actionsViewport);
           expect(badge.bottom, lessThan(viewerBounds.top));
           expect(
             _changedPixels(before, await _pixels(tester), badge),
@@ -1826,7 +2245,8 @@ void main() {
   });
 
   for (final reduced in [false, true]) {
-    testWidgets('PDF fullscreen auto-hide is focus-safe (reduced=$reduced)',
+    testWidgets(
+        'PDF legacy auto-hide cannot hide file controls (reduced=$reduced)',
         (tester) async {
       final semantics = tester.ensureSemantics();
       final actions = _Actions();
@@ -1841,8 +2261,10 @@ void main() {
         await _openPdfFullscreen(tester);
         await tester.pump(const Duration(seconds: 4));
         await _motion(tester);
-        expect(_revealFor(tester, _copy).opacity, 0);
-        expect(find.semantics.byLabel('Copy'), findsNothing);
+        expect(_revealFor(tester, _copy).opacity, 1);
+        expect(find.semantics.byLabel('Copy'), findsOneWidget);
+        expect(find.byKey(const ValueKey('pdf-fullscreen-close')).hitTestable(),
+            findsOneWidget);
         await _tabTo(tester, _button(tester, _copy).focusNode!);
         await tester.pump(const Duration(seconds: 4));
         expect(_revealFor(tester, _copy).opacity, 1);
@@ -1954,6 +2376,99 @@ void main() {
         album.dispose();
       }
     });
+  }
+
+  for (final mode in ['light', 'dark', 'paper']) {
+    for (final isPdf in [false, true]) {
+      testWidgets(
+          '$mode ${isPdf ? 'PDF' : 'photo'}: X stays pinned outside overflow and owns its route',
+          (tester) async {
+        final semantics = tester.ensureSemantics();
+        final actions = _Actions();
+        final pdf =
+            isPdf ? await _PdfFixture.prepare(pdfFactory, 'close-$mode') : null;
+        final closeKey =
+            ValueKey(isPdf ? 'pdf-fullscreen-close' : 'photo-fullscreen-close');
+        final routeFinder =
+            isPdf ? _fullscreenPdf() : find.byType(InteractiveImageViewer);
+        try {
+          await _warmPhoto(tester, photo);
+          await _mount(
+            tester,
+            mode: mode,
+            size: const Size(320, 380),
+            scale: 2,
+            child: pdf?.preview(actions, autoHide: true) ??
+                WorkspaceFileView(
+                  view: _view(
+                      'fullscreen-photo', 'Original photo.PNG', photo.path),
+                  resolveStorageUrl: _storedUrl,
+                  materializeFile: ({required source, required name}) async =>
+                      photo,
+                  mediaActions: actions,
+                ),
+          );
+          if (pdf != null) {
+            await _pumpUntil(tester, () => _pdfToolbar(tester).ready);
+            await _openPdfFullscreen(tester);
+          } else {
+            final entry =
+                find.byKey(const ValueKey('workspace-image-fullscreen'));
+            await _pumpUntil(tester, () => entry.evaluate().isNotEmpty);
+            await tester.ensureVisible(entry);
+            await _motion(tester);
+            await tester.tap(entry);
+            await tester.pumpAndSettle();
+            final viewer = tester.widget<InteractiveImageViewer>(routeFinder);
+            expect(viewer.imageProvider.getImage(0).url, photo.path);
+            expect(viewer.imageProvider.getImageName(0), 'Original photo.PNG');
+          }
+          final control = find.byKey(closeKey);
+          expect(control, findsOneWidget);
+          expect(
+              find.ancestor(
+                  of: control, matching: find.byType(SingleChildScrollView)),
+              findsNothing);
+          final ownedContext = tester.element(routeFinder);
+          final ownedRoute = ModalRoute.of(ownedContext)!;
+          final close =
+              tester.widget<WorkspaceControlButton>(control).onPressed!;
+          await tester.binding.setSurfaceSize(const Size(180, 220));
+          await tester.pump(const Duration(seconds: 5));
+          await _motion(tester);
+          expect(control.hitTestable(), findsOneWidget);
+          final button =
+              find.descendant(of: control, matching: find.byType(TextButton));
+          final node = tester.getSemantics(button);
+          expect(node.attached, isTrue);
+          expect(node.getSemanticsData().hasFlag(ui.SemanticsFlag.isButton),
+              isTrue);
+          expect(node.getSemanticsData().hasAction(ui.SemanticsAction.tap),
+              isTrue);
+          final newer = showDialog<void>(
+              context: ownedContext,
+              barrierDismissible: false,
+              builder: (_) => const AlertDialog(content: Text('Newer dialog')));
+          await tester.pumpAndSettle();
+          close(); // A callback retained before the dialog cannot pop it.
+          await _motion(tester);
+          expect(find.text('Newer dialog'), findsOneWidget);
+          expect(ownedRoute.isActive, isTrue);
+          Navigator.of(tester.element(find.text('Newer dialog'))).pop();
+          await tester.pumpAndSettle();
+          await newer;
+          await tester.tap(control);
+          await tester.pumpAndSettle();
+          expect(routeFinder, findsNothing);
+          expect(actions.calls, isEmpty);
+          expect(tester.takeException(), isNull);
+        } finally {
+          semantics.dispose();
+          await _unmount(tester, actions);
+          pdf?.release();
+        }
+      });
+    }
   }
 
   testWidgets(
@@ -2333,7 +2848,7 @@ Future<void> _mount(
   if (workspace != null) {
     app = BlocProvider<UserWorkspaceBloc>.value(value: workspace, child: app);
   }
-  await tester.pumpWidget(app);
+  await tester.pumpWidget(PassivePageIconTestScope(child: app));
   await tester.pump();
   await tester.pump();
 }
@@ -2388,18 +2903,21 @@ Future<void> _controlKey(WidgetTester tester, LogicalKeyboardKey key) async {
   await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
 }
 
-MediaActionSource _target(WidgetTester tester) =>
-    tester.widget<MediaActionButtons>(find.byType(MediaActionButtons)).source;
+MediaActionSource _target(WidgetTester tester) => tester
+    .widget<MediaActionButtons>(
+        find.byType(MediaActionButtons, skipOffstage: false))
+    .source;
 
 IconButton _button(WidgetTester tester, Key key) =>
-    tester.widget<IconButton>(find.byKey(key));
+    tester.widget<IconButton>(find.byKey(key, skipOffstage: false));
 
 ({double opacity, Duration duration}) _revealFor(WidgetTester tester, Key key) {
-  final control = find.byKey(key);
+  final control = find.byKey(key, skipOffstage: false);
   final reveals = find.ancestor(
     of: control,
     matching: find.byWidgetPredicate(
       (widget) => widget is PreviewToolbar || widget is MediaActionReveal,
+      skipOffstage: false,
     ),
   );
   expect(reveals, findsWidgets);
@@ -2407,9 +2925,11 @@ IconButton _button(WidgetTester tester, Key key) =>
   for (final element in reveals.evaluate()) {
     final fade = find
         .descendant(
-          of: find
-              .byElementPredicate((candidate) => identical(candidate, element)),
-          matching: find.byType(AnimatedOpacity),
+          of: find.byElementPredicate(
+              (candidate) => identical(candidate, element),
+              skipOffstage: false),
+          matching: find.byType(AnimatedOpacity, skipOffstage: false),
+          skipOffstage: false,
         )
         .first;
     durations.add(tester.widget<AnimatedOpacity>(fade).duration);
@@ -2428,13 +2948,30 @@ IconButton _button(WidgetTester tester, Key key) =>
   return (opacity: opacity, duration: durations.single);
 }
 
-Rect _expectBadge(WidgetTester tester) {
+Rect _expectBadge(WidgetTester tester, {Rect? viewport}) {
   final badge = tester.getRect(find.byKey(_copied));
+  final surface = tester.getRect(find
+      .ancestor(
+        of: find.byKey(_copied),
+        matching: find.byType(DecoratedBox),
+      )
+      .first);
   final bounds = tester.getRect(find.byKey(_capture));
+  expect(bounds.intersect(surface), surface,
+      reason:
+          'The complete feedback surface, including padding, must be visible.');
   expect(badge.top, greaterThanOrEqualTo(bounds.top));
   expect(badge.left, greaterThanOrEqualTo(bounds.left));
   expect(badge.right, lessThanOrEqualTo(bounds.right));
   expect(badge.bottom, lessThan(tester.getRect(find.byKey(_copy)).top));
+  if (viewport != null) {
+    expect(viewport.inflate(0.01).intersect(surface), surface);
+    expect(
+      viewport.inflate(0.01).intersect(badge),
+      badge,
+      reason: 'The toolbar scroll clip must contain the painted Copied badge.',
+    );
+  }
   return badge.shift(-bounds.topLeft);
 }
 
@@ -2465,6 +3002,145 @@ void _expectSurface(
   expect(
     decoration.boxShadow,
     decorated ? EditorSurfaceStyle.embedShadow(context) : null,
+  );
+}
+
+void _expectPdfToolbarSurface(WidgetTester tester, String mode) {
+  // Fullscreen PDF actions now share the surrounding navigation group. Check
+  // that host's actual fill/border as well as the unframed media controls.
+  _expectSurface(tester, mode, decorated: false);
+  final actions = find.byType(MediaActionButtons);
+  final palette = PdfPreviewPalette.of(tester.element(actions));
+  final group = tester.widget<Container>(
+    find.ancestor(of: actions, matching: find.byType(Container)).first,
+  );
+  final decoration = group.decoration! as BoxDecoration;
+  expect(
+    decoration.color,
+    Color.alphaBlend(palette.accent.withValues(alpha: 0.045), palette.chrome),
+  );
+  expect(
+    decoration.border,
+    Border.all(color: palette.accent.withValues(alpha: 0.08)),
+  );
+  expect(
+    decoration.borderRadius,
+    BorderRadius.circular(PdfPreviewGeometry.toolbarRadius),
+  );
+  expect(decoration.boxShadow, isNull);
+  expect(
+    tester
+        .widget<DocumentViewportBar>(
+          find.ancestor(
+              of: actions, matching: find.byType(DocumentViewportBar)),
+        )
+        .background,
+    palette.canvas,
+  );
+}
+
+Rect _toolbarViewportRect(WidgetTester tester, Finder target) {
+  final viewport =
+      RenderAbstractViewport.of(tester.renderObject(target)) as RenderBox;
+  return MatrixUtils.transformRect(
+    viewport.getTransformTo(null),
+    Offset.zero & viewport.size,
+  );
+}
+
+Future<void> _scrollWorkspaceFileHeader(
+  WidgetTester tester, {
+  required bool toEnd,
+}) async {
+  final header = find.byKey(_fileHeaderScroll);
+  final scroll = tester.state<NestedScrollViewState>(header).outerController;
+  final position = scroll.position;
+  expect(position.maxScrollExtent, greaterThan(0));
+  final target = toEnd ? position.maxScrollExtent : position.minScrollExtent;
+  // The kinetic adapter clamps wheel impulses; one oversized packet is not
+  // a jump-to-end command. Exercise bounded real wheel notches to the edge.
+  for (var i = 0; i < 20 && (position.pixels - target).abs() > .01; i++) {
+    await tester.sendEventToBinding(PointerScrollEvent(
+      position: tester.getTopLeft(header) + const Offset(8, 40),
+      scrollDelta: Offset(0, toEnd ? 120 : -120),
+    ));
+    await _motion(tester);
+    // Copy may intentionally remain pending, with a repeating progress ticker.
+    // A focused title also owns its caret. Neither is scroll activity. Require
+    // stable offsets as well as idle positions: the photo's kinetic adapter
+    // updates an idle ScrollPosition itself, outside ScrollActivity.
+    final positions = [
+      position,
+      ...tester.state<NestedScrollViewState>(header).innerController.positions,
+    ];
+    var previous = positions.map((p) => p.pixels).toList();
+    var stableFrames = 0;
+    for (var frame = 0; frame < 120 && stableFrames < 3; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      final current = positions.map((p) => p.pixels).toList();
+      final stable =
+          List.generate(current.length, (i) => current[i] == previous[i])
+              .every((same) => same);
+      stableFrames =
+          stable && positions.every((p) => !p.isScrollingNotifier.value)
+              ? stableFrames + 1
+              : 0;
+      previous = current;
+    }
+    expect(stableFrames, 3,
+        reason: 'Actual file scroll must finish within 120 frames');
+  }
+  expect(position.pixels, closeTo(target, 0.01));
+}
+
+void _expectWorkspaceBody(WidgetTester tester, Finder renderer) {
+  final viewport = tester.getRect(find.byKey(_fileHeaderScroll));
+  final page =
+      tester.widget<StandaloneFilePage>(find.byType(StandaloneFilePage));
+  final body = tester.getRect(find.byWidget(page.body, skipOffstage: false));
+  final remaining = (viewport.bottom - body.top).clamp(0.0, viewport.height);
+  expect(body.height, greaterThanOrEqualTo(remaining));
+  if (remaining == 0) {
+    expect(renderer.hitTestable(), findsNothing);
+  } else {
+    // Use the visible renderer allocation, not a retired sliver's cache size.
+    expect(body.intersect(viewport).height, closeTo(remaining, .01));
+  }
+}
+
+Future<void> _ensureToolbarTargetVisible(
+  WidgetTester tester,
+  Finder target,
+) async {
+  final element = tester.element(target);
+  final size = tester.getSize(target);
+  final viewport = _toolbarViewportRect(tester, target);
+  final scrollable = find
+      .ancestor(
+        of: target,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              (widget.axisDirection == AxisDirection.left ||
+                  widget.axisDirection == AxisDirection.right),
+          skipOffstage: false,
+        ),
+      )
+      .first;
+  final position = tester.state<ScrollableState>(scrollable).position;
+  expect(viewport.width, greaterThan(0));
+  expect(position.viewportDimension, closeTo(viewport.width, 0.01));
+  if (target.hitTestable().evaluate().isEmpty)
+    await tester.ensureVisible(target);
+  await _motion(tester);
+  expect(tester.element(target), same(element));
+  expect(tester.getSize(target), size);
+  expect(_toolbarViewportRect(tester, target).size, viewport.size);
+  final bounds = tester.getRect(target);
+  expect(
+    _toolbarViewportRect(tester, target).inflate(0.01).intersect(bounds),
+    bounds,
+    reason: 'Reveal the actual toolbar viewport, not a wider test surface.',
   );
 }
 
@@ -2537,13 +3213,35 @@ PdfPreviewToolbar _pdfToolbar(WidgetTester tester) =>
     tester.widget<PdfPreviewToolbar>(find.byType(PdfPreviewToolbar).last);
 
 Future<void> _openPdfFullscreen(WidgetTester tester) async {
-  final open = find.byTooltip('Open in full screen');
+  // Standalone hosts portal this control into their identity header, outside
+  // the PdfPreview subtree. Its exact tooltip still owns one native button.
+  final open = find.descendant(
+    of: find.byTooltip('Open in full screen'),
+    matching: find.byType(TextButton),
+  );
+  expect(open, findsOneWidget);
   await tester.ensureVisible(open);
   await tester.pumpAndSettle();
+  expect(open.hitTestable(), findsOneWidget);
   await tester.tap(open);
   await tester.pumpAndSettle();
   expect(_fullscreenPdf(), findsOneWidget);
   expect(_pdfToolbar(tester).ready, isTrue);
+  await _ensureToolbarTargetVisible(
+    tester,
+    find.descendant(
+      of: _fullscreenPdf(),
+      matching: find.byType(MediaActionButtons),
+    ),
+  );
+  for (final key in [_copy, _share]) {
+    expect(
+      find
+          .descendant(of: _fullscreenPdf(), matching: find.byKey(key))
+          .hitTestable(),
+      findsOneWidget,
+    );
+  }
 }
 
 /// A one-page PDF supplied through pdfrx's public IO boundary. PdfPreview,

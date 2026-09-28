@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
 import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer.dart';
@@ -16,10 +17,12 @@ class CollectionContentsView extends StatelessWidget {
     required this.collection,
     required this.presentation,
     this.onOpenObject,
+    this.viewMode,
   });
 
   final CollectionViewContext collection;
   final FolderExplorerPresentation presentation;
+  final FileBrowserViewMode? viewMode;
 
   /// What clicking an object means for this collection type. A repository
   /// hands the file to its own viewer rather than opening a workspace tab.
@@ -30,11 +33,15 @@ class CollectionContentsView extends StatelessWidget {
   Widget build(BuildContext context) {
     return FolderExplorer(
       key: ValueKey(
-        'collection-contents-${collection.collectionView.id}-${presentation.name}',
+        'collection-contents-${collection.collectionView.id}',
       ),
       rootView: collection.collectionView,
       controller: collection.explorer,
       initialPresentation: presentation,
+      initialViewMode: viewMode ??
+          (presentation == FolderExplorerPresentation.gallery
+              ? FileBrowserViewMode.gallery
+              : FileBrowserViewMode.tree),
       showHeader: false,
       showControls: false,
       showFooter: false,

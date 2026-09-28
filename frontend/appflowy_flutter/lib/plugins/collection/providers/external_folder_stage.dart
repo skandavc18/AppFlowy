@@ -6,6 +6,10 @@ import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_content_view.dart';
 import 'package:appflowy/plugins/collection/providers/external_context_menu.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
+import 'package:appflowy/plugins/collection/providers/provider_page_flow.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
+import 'package:appflowy/shared/document_viewer/file_action_band.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/provider_controller.dart';
@@ -27,6 +31,8 @@ class ExternalFolderStage extends StatefulWidget {
     required this.onSourceChanged,
     this.onChangeSource,
     this.onDisconnect,
+    this.canEditSource,
+    this.controllerFactory,
     this.kind = CollectionKind.folder,
   });
 
@@ -38,6 +44,9 @@ class ExternalFolderStage extends StatefulWidget {
 
   final VoidCallback? onChangeSource;
   final VoidCallback? onDisconnect;
+  final bool Function()? canEditSource;
+  final ProviderController Function(String, CollectionSource)?
+      controllerFactory;
   final CollectionKind kind;
 
   @override
@@ -46,6 +55,7 @@ class ExternalFolderStage extends StatefulWidget {
 
 class _ExternalFolderStageState extends State<ExternalFolderStage> {
   ProviderController? controller;
+  bool get _canManage => mounted && (widget.canEditSource?.call() ?? true);
 
   /// The binding the model was actually built against.
   CollectionSource? boundSource;
@@ -74,6 +84,8 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
     // change this widget already applied does not read the folder twice.
     final bound = boundSource;
     if (bound == null ||
+        oldWidget.collectionId != widget.collectionId ||
+        oldWidget.controllerFactory != widget.controllerFactory ||
         bound.cacheKey != widget.source.cacheKey ||
         bound.readOnly != widget.source.readOnly) {
       _rebind(widget.source);
@@ -90,10 +102,12 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
   void _rebind(CollectionSource source) {
     controller?.dispose();
     boundSource = source;
-    final created = ProviderController(
-      collectionId: widget.collectionId,
-      source: source,
-    );
+    final created =
+        widget.controllerFactory?.call(widget.collectionId, source) ??
+            ProviderController(
+              collectionId: widget.collectionId,
+              source: source,
+            );
     controller = created;
     unawaited(created.load());
   }
@@ -110,7 +124,7 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
       context,
       info: widget.source.info,
     );
-    if (signedIn && mounted) {
+    if (signedIn && mounted && identical(controller, live)) {
       await live.refresh();
     }
   }
@@ -121,6 +135,9 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
   /// reads what the account may do once, in `probe`, so the model is built
   /// again afterwards rather than left believing the old answer.
   Future<void> _setWritable(bool writable) async {
+    if (!_canManage) return;
+    final live = controller;
+    final original = widget.source;
     if (!writable) {
       final next = widget.source.copyWith(readOnly: true);
       widget.onSourceChanged(next);
@@ -132,7 +149,11 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
       context,
       source: widget.source,
     );
-    if (!granted || !mounted) {
+    if (!granted ||
+        !_canManage ||
+        !identical(controller, live) ||
+        widget.source.cacheKey != original.cacheKey ||
+        widget.source.readOnly != original.readOnly) {
       return;
     }
     final next = widget.source.copyWith(readOnly: false);
@@ -149,7 +170,10 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
       live.capabilities.canUpload || live.capabilities.canCreateFolder;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ProviderPageFlow(builder: _buildContent);
+
+  Widget _buildContent(BuildContext context) {
     final palette = CollectionPalette.of(context, widget.kind);
     final live = controller;
     if (live == null) {
@@ -160,39 +184,45 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
       listenable: live,
       builder: (context, _) {
         if (live.hasFailed && live.nodes.isEmpty) {
-          return ProviderStateView(
-            status: live.status,
-            info: widget.source.info,
-            palette: palette,
-            retryAfter: live.failure?.retryAfter,
-            onRetry: () => unawaited(live.refresh()),
-            onReconnect: () => unawaited(_reconnect(live)),
+          return FileBrowserScrollView(
+            controller: CollectionPageScrollScope.maybeOf(context),
+            header: _header(palette, live),
+            slivers: [
+              SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: ProviderStateView(
+                    status: live.status,
+                    info: widget.source.info,
+                    palette: palette,
+                    retryAfter: live.failure?.retryAfter,
+                    onRetry: () => unawaited(live.refresh()),
+                    onReconnect: () => unawaited(_reconnect(live)),
+                  ))
+            ],
           );
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(palette, live),
-            if (live.hasFailed)
-              ProviderStaleBanner(
-                status: live.status,
-                info: widget.source.info,
-                palette: palette,
-                onRetry: () => unawaited(live.refresh(silent: true)),
-                onReconnect: () => unawaited(_reconnect(live)),
-              ),
-            Expanded(
-              child: ExternalContentView(
-                controller: live,
-                palette: palette,
-                layout: layout,
-                onAllowChanges: _canWrite(live)
-                    ? null
-                    : () => unawaited(_setWritable(true)),
-              ),
-            ),
-          ],
+        return ExternalContentView(
+          controller: live,
+          palette: palette,
+          layout: layout,
+          onAllowChanges: _canWrite(live) || !_canManage
+              ? null
+              : () => unawaited(_setWritable(true)),
+          header: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(palette, live),
+              if (live.hasFailed)
+                ProviderStaleBanner(
+                  status: live.status,
+                  info: widget.source.info,
+                  palette: palette,
+                  onRetry: () => unawaited(live.refresh(silent: true)),
+                  onReconnect: () => unawaited(_reconnect(live)),
+                ),
+            ],
+          ),
         );
       },
     );
@@ -200,124 +230,142 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
 
   Widget _header(CollectionPalette palette, ProviderController live) => Padding(
         padding: const EdgeInsets.fromLTRB(24, 0, 20, 12),
-        child: Row(
-          children: [
-            ProviderBadge(
-              source: widget.source,
-              palette: palette,
-              detail: live.originLabel,
-              onTap: widget.onChangeSource,
-            ),
-            const Spacer(),
-            Builder(
-              builder: (buttonContext) => IconButton(
-                tooltip: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
-                onPressed: () {
-                  final box = buttonContext.findRenderObject() as RenderBox?;
-                  if (box == null) {
-                    return;
-                  }
-                  unawaited(
-                    showExternalBackgroundMenu(
-                      buttonContext,
-                      controller: live,
-                      containerId: null,
-                      position: box.localToGlobal(
-                        Offset(0, box.size.height),
-                      ),
-                      onAllowChanges: _canWrite(live)
-                          ? null
-                          : () => unawaited(_setWritable(true)),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.add_rounded, size: 17),
-                color: palette.textSecondary,
-                splashRadius: 15,
-                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
-                padding: EdgeInsets.zero,
-              ),
-            ),
-            const SizedBox(width: 6),
-            if (!_canWrite(live)) ...[
-              Icon(Icons.lock_rounded, size: 13, color: palette.textMuted),
-              const SizedBox(width: 5),
-              Text(
-                LocaleKeys.providers_mount_readOnly.tr(),
-                style: TextStyle(color: palette.textMuted, fontSize: 11.5),
-              ),
-              const SizedBox(width: 12),
-            ],
-            for (final option in ExternalLayout.values) ...[
-              _LayoutButton(
+        child: FileActionBand(
+          responsive: true,
+          builder: (context) => Wrap(
+            alignment: fileActionRunAlignment(context),
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              ProviderBadge(
+                source: widget.source,
                 palette: palette,
-                option: option,
-                selected: option == layout,
-                onTap: () => widget.onSourceChanged(
-                  widget.source.withOption('layout', option.name),
+                detail: live.originLabel,
+                onTap: _canManage ? widget.onChangeSource : null,
+              ),
+              Builder(
+                builder: (buttonContext) => IconButton(
+                  tooltip: LocaleKeys.workspaceFolderExplorer_addFile.tr(),
+                  onPressed: () {
+                    final box = buttonContext.findRenderObject() as RenderBox?;
+                    if (box == null) {
+                      return;
+                    }
+                    unawaited(
+                      showExternalBackgroundMenu(
+                        buttonContext,
+                        controller: live,
+                        containerId: null,
+                        position: box.localToGlobal(
+                          Offset(0, box.size.height),
+                        ),
+                        onAllowChanges: _canWrite(live) || !_canManage
+                            ? null
+                            : () => unawaited(_setWritable(true)),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.add_rounded, size: 17),
+                  color: palette.textSecondary,
+                  splashRadius: 15,
+                  constraints:
+                      const BoxConstraints(minWidth: 28, minHeight: 28),
+                  padding: EdgeInsets.zero,
                 ),
               ),
-              const SizedBox(width: 2),
-            ],
-            const SizedBox(width: 8),
-            ProviderSyncStrip(
-              palette: palette,
-              status: live.status,
-              lastSyncedAt: live.lastSyncedAt,
-              canSync: live.capabilities.canSync,
-              onSync: () => unawaited(live.resync()),
-            ),
-            if (widget.onChangeSource != null ||
-                widget.onDisconnect != null) ...[
-              const SizedBox(width: 4),
-              PopupMenuButton<int>(
-                tooltip: LocaleKeys.providers_changeSource.tr(),
-                position: PopupMenuPosition.under,
-                onSelected: (value) => switch (value) {
-                  0 => widget.onChangeSource?.call(),
-                  1 => widget.onDisconnect?.call(),
-                  _ => unawaited(_setWritable(!_canWrite(live))),
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem<int>(
-                    value: 2,
-                    height: 34,
-                    child: _MenuRow(
-                      icon: _canWrite(live)
-                          ? Icons.lock_rounded
-                          : Icons.lock_open_rounded,
-                      label: _canWrite(live)
-                          ? LocaleKeys.providers_mount_readOnly.tr()
-                          : LocaleKeys.providers_mount_allowChanges.tr(),
+              const SizedBox(width: 6),
+              if (!_canWrite(live)) ...[
+                Icon(Icons.lock_rounded, size: 13, color: palette.textMuted),
+                const SizedBox(width: 5),
+                Text(
+                  LocaleKeys.providers_mount_readOnly.tr(),
+                  style: TextStyle(color: palette.textMuted, fontSize: 11.5),
+                ),
+                const SizedBox(width: 12),
+              ],
+              for (final option in ExternalLayout.values) ...[
+                _LayoutButton(
+                  palette: palette,
+                  option: option,
+                  selected: option == layout,
+                  onTap: () {
+                    if (_canManage && identical(controller, live)) {
+                      widget.onSourceChanged(
+                        widget.source.withOption('layout', option.name),
+                      );
+                    }
+                  },
+                ),
+                const SizedBox(width: 2),
+              ],
+              const SizedBox(width: 8),
+              ProviderSyncStrip(
+                palette: palette,
+                status: live.status,
+                lastSyncedAt: live.lastSyncedAt,
+                canSync: live.capabilities.canSync,
+                onSync: () => unawaited(live.resync()),
+              ),
+              if (_canManage &&
+                  (widget.onChangeSource != null ||
+                      widget.onDisconnect != null)) ...[
+                const SizedBox(width: 4),
+                PopupMenuButton<int>(
+                  tooltip: LocaleKeys.providers_changeSource.tr(),
+                  position: PopupMenuPosition.under,
+                  onSelected: (value) {
+                    if (!_canManage || !identical(controller, live)) return;
+                    switch (value) {
+                      case 0:
+                        widget.onChangeSource?.call();
+                      case 1:
+                        widget.onDisconnect?.call();
+                      default:
+                        unawaited(_setWritable(!_canWrite(live)));
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem<int>(
+                      value: 2,
+                      height: 34,
+                      child: _MenuRow(
+                        icon: _canWrite(live)
+                            ? Icons.lock_rounded
+                            : Icons.lock_open_rounded,
+                        label: _canWrite(live)
+                            ? LocaleKeys.providers_mount_readOnly.tr()
+                            : LocaleKeys.providers_mount_allowChanges.tr(),
+                      ),
                     ),
+                    if (widget.onChangeSource != null)
+                      PopupMenuItem<int>(
+                        value: 0,
+                        height: 34,
+                        child: _MenuRow(
+                          icon: Icons.swap_horiz_rounded,
+                          label: LocaleKeys.providers_changeSource.tr(),
+                        ),
+                      ),
+                    if (widget.onDisconnect != null)
+                      PopupMenuItem<int>(
+                        value: 1,
+                        height: 34,
+                        child: _MenuRow(
+                          icon: Icons.link_off_rounded,
+                          label: LocaleKeys.providers_disconnectFolder.tr(),
+                        ),
+                      ),
+                  ],
+                  child: Icon(
+                    Icons.more_horiz_rounded,
+                    size: 17,
+                    color: palette.textMuted,
                   ),
-                  if (widget.onChangeSource != null)
-                    PopupMenuItem<int>(
-                      value: 0,
-                      height: 34,
-                      child: _MenuRow(
-                        icon: Icons.swap_horiz_rounded,
-                        label: LocaleKeys.providers_changeSource.tr(),
-                      ),
-                    ),
-                  if (widget.onDisconnect != null)
-                    PopupMenuItem<int>(
-                      value: 1,
-                      height: 34,
-                      child: _MenuRow(
-                        icon: Icons.link_off_rounded,
-                        label: LocaleKeys.providers_disconnectFolder.tr(),
-                      ),
-                    ),
-                ],
-                child: Icon(
-                  Icons.more_horiz_rounded,
-                  size: 17,
-                  color: palette.textMuted,
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       );
 }

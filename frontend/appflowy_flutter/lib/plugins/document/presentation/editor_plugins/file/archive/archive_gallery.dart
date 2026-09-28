@@ -1,6 +1,10 @@
 import 'dart:async';
 
+import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/document_viewer/standalone_file_scope.dart';
+import 'package:appflowy/shared/document_viewer/file_action_band.dart';
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/file_browser/file_browser_view.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
@@ -39,6 +43,8 @@ class ArchiveGallery extends StatelessWidget {
     this.compact = false,
     this.thumbnails = false,
     this.emptyMessage = 'This archive is empty',
+    this.scrollController,
+    this.searching = false,
   });
 
   final List<ArchiveEntryView> entries;
@@ -66,6 +72,8 @@ class ArchiveGallery extends StatelessWidget {
   final bool thumbnails;
 
   final String emptyMessage;
+  final ScrollController? scrollController;
+  final bool searching;
 
   /// An embed has a fraction of the window's width, so the same setting asks
   /// for cards a step smaller there.
@@ -87,100 +95,115 @@ class ArchiveGallery extends StatelessWidget {
       onSecondaryTapDown: onBackgroundContextMenu == null
           ? null
           : (details) => onBackgroundContextMenu!(details.globalPosition),
-      child: CustomScrollView(
-        key: const ValueKey('archive-gallery-scroll-view'),
-        cacheExtent: 900,
-        slivers: [
-          if (header != null) SliverToBoxAdapter(child: header),
-          SliverLayoutBuilder(
-            builder: (context, constraints) {
-              final horizontal = compact
-                  ? 18.0
-                  : KnowledgeGalleryLayout.horizontalPadding(
-                      constraints.crossAxisExtent,
-                    );
-              if (entries.isEmpty) {
-                return SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _ArchiveGalleryEmptyState(message: emptyMessage),
-                );
-              }
-              final contentWidth = constraints.crossAxisExtent - horizontal * 2;
-              final metrics = thumbnails
-                  ? GalleryCardMetrics.thumbnails(
-                      available: contentWidth,
-                      compact: compact,
-                      textScale:
-                          MediaQuery.textScalerOf(context).scale(13) / 13,
-                    )
-                  : GalleryCardMetrics.resolve(
-                      available: contentWidth,
-                      size: cardSize,
-                      spacing: _spacing,
-                      scale: _scale,
-                      maximumColumns: null,
-                      fillRow: false,
-                      textScale:
-                          MediaQuery.textScalerOf(context).scale(15) / 15,
-                    );
-              return SliverPadding(
-                padding: EdgeInsetsDirectional.fromSTEB(
-                  horizontal,
-                  compact ? 4 : 8,
-                  horizontal +
-                      (contentWidth - metrics.gridWidth)
-                          .clamp(0.0, double.infinity),
-                  compact ? 20 : 84,
-                ),
-                sliver: SliverGrid(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: metrics.columns,
-                    mainAxisSpacing: metrics.spacing,
-                    crossAxisSpacing: metrics.spacing,
-                    mainAxisExtent: metrics.height,
-                  ),
-                  delegate: SliverChildBuilderDelegate(
-                    (context, index) {
-                      final entry = entries[index];
-                      return FolderGalleryCard(
-                        key: ValueKey('archive-card-${entry.entry.path}'),
-                        thumbnail: thumbnails,
-                        item: entry.item,
-                        view: entry.view,
-                        preview: previewCache.previewFor(
-                          view: entry.view,
-                          item: entry.item,
-                        ),
-                        userProfile: null,
-                        selected: selectedPath == entry.entry.path,
-                        editing: renamingPath == entry.entry.path,
-                        canRename: editable,
-                        onTap: () {
-                          onSelect(entry);
-                          onOpen(entry);
-                        },
-                        onRename: () =>
-                            editable ? onRenameRequested(entry) : null,
-                        onRenameSubmitted: (name) =>
-                            onRenameSubmitted(entry, name),
-                        onRenameCancelled: onRenameCancelled,
-                        onMore: (position) {
-                          onSelect(entry);
-                          onMore(entry, position);
-                        },
-                        onContextMenu: (position) {
-                          onSelect(entry);
-                          onMore(entry, position);
-                        },
+      child: StandaloneFileScrollRegion(
+        controller: scrollController,
+        enabled: scrollController != null,
+        child: FileBrowserScrollView(
+          scrollKey: const ValueKey('archive-gallery-scroll-view'),
+          controller: scrollController,
+          header: header,
+          cacheExtent: 900,
+          slivers: [
+            SliverLayoutBuilder(
+              builder: (context, constraints) {
+                final horizontal = compact
+                    ? 18.0
+                    : KnowledgeGalleryLayout.horizontalPadding(
+                        constraints.crossAxisExtent,
                       );
-                    },
-                    childCount: entries.length,
+                if (entries.isEmpty) {
+                  return SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _ArchiveGalleryEmptyState(message: emptyMessage),
+                  );
+                }
+                final contentWidth =
+                    constraints.crossAxisExtent - horizontal * 2;
+                final metrics = thumbnails
+                    ? GalleryCardMetrics.thumbnails(
+                        available: contentWidth,
+                        compact: compact,
+                        textScale:
+                            MediaQuery.textScalerOf(context).scale(13) / 13,
+                      )
+                    : GalleryCardMetrics.resolve(
+                        available: contentWidth,
+                        size: cardSize,
+                        spacing: _spacing,
+                        scale: _scale,
+                        maximumColumns: null,
+                        fillRow: false,
+                        textScale:
+                            MediaQuery.textScalerOf(context).scale(15) / 15,
+                      );
+                return SliverPadding(
+                  padding: EdgeInsetsDirectional.fromSTEB(
+                    horizontal,
+                    compact ? 4 : 8,
+                    horizontal +
+                        (contentWidth - metrics.gridWidth)
+                            .clamp(0.0, double.infinity),
+                    compact ? 20 : 84,
                   ),
-                ),
-              );
-            },
-          ),
-        ],
+                  sliver: SliverGrid(
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: metrics.columns,
+                      mainAxisSpacing: metrics.spacing,
+                      crossAxisSpacing: metrics.spacing,
+                      mainAxisExtent: metrics.height,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final entry = entries[index];
+                        return FolderGalleryCard(
+                          key: ValueKey('archive-card-${entry.entry.path}'),
+                          thumbnail: thumbnails,
+                          item: entry.item,
+                          view: entry.view,
+                          preview: previewCache.previewFor(
+                            view: entry.view,
+                            item: entry.item,
+                          ),
+                          userProfile: null,
+                          selected: selectedPath == entry.entry.path,
+                          editing: renamingPath == entry.entry.path,
+                          canRename: editable,
+                          searchPath: searching ? entry.entry.path : null,
+                          onTap: () {
+                            onSelect(entry);
+                            onOpen(entry);
+                          },
+                          onRename: () =>
+                              editable ? onRenameRequested(entry) : null,
+                          onRenameSubmitted: (name) =>
+                              onRenameSubmitted(entry, name),
+                          onRenameCancelled: onRenameCancelled,
+                          onMore: (position) {
+                            onSelect(entry);
+                            onMore(entry, position);
+                          },
+                          onContextMenu: (position) {
+                            onSelect(entry);
+                            onMore(entry, position);
+                          },
+                        );
+                      },
+                      childCount: entries.length,
+                      findChildIndexCallback: (key) {
+                        final index = entries.indexWhere(
+                          (entry) =>
+                              key ==
+                              ValueKey('archive-card-${entry.entry.path}'),
+                        );
+                        return index < 0 ? null : index;
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -290,6 +313,7 @@ class ArchiveGalleryHeader extends StatelessWidget {
     return StandaloneFileHeaderSlot(
       controller: host.chrome,
       controls: StandaloneFileHeader(
+        responsiveToolbar: true,
         toolbarBuilder: (context, fileActions) => CallbackShortcuts(
           // Published controls are siblings of the renderer, so they no
           // longer inherit the explorer body's keyboard shortcuts.
@@ -405,12 +429,15 @@ class ArchiveGalleryHeader extends StatelessWidget {
                     SizedBox(
                       width: actionsWidth,
                       child: PreviewToolbar(
-                        keepVisible: searching || busy || keepActionsVisible,
+                        keepVisible: fileActions != null ||
+                            searching ||
+                            busy ||
+                            keepActionsVisible,
                         child: Wrap(
                           key: const ValueKey('archive-controls'),
                           spacing: 4,
                           runSpacing: 6,
-                          alignment: WrapAlignment.end,
+                          alignment: fileActionRunAlignment(context),
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
                             if (onViewModeChanged != null)
@@ -548,54 +575,61 @@ class _ArchiveSearchField extends StatelessWidget {
         bindings: {
           const SingleActivator(LogicalKeyboardKey.escape): onDismissed,
         },
-        child: TextField(
-          controller: controller,
-          focusNode: focusNode,
-          onChanged: onChanged,
-          style: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 13,
-            color: palette.textPrimary,
-          ),
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: 'Search this archive',
-            hintStyle: TextStyle(
+        child: TextEntryShortcuts(
+          child: TextField(
+            key: const ValueKey('archive-search-field'),
+            controller: controller,
+            focusNode: focusNode,
+            onChanged: onChanged,
+            textInputAction: TextInputAction.search,
+            onEditingComplete: () {},
+            autocorrect: false,
+            enableSuggestions: false,
+            style: TextStyle(
               fontFamily: 'Inter',
-              color: palette.textMuted,
               fontSize: 13,
+              color: palette.textPrimary,
             ),
-            prefixIcon: WorkspaceGlyph(
-              Icons.search_rounded,
-              size: 17,
-              color: palette.textMuted,
-            ),
-            prefixIconConstraints: const BoxConstraints(minWidth: 34),
-            suffixIcon: IconButton(
-              tooltip: 'Close search',
-              icon: const WorkspaceGlyph(Icons.close_rounded, size: 15),
-              color: palette.textMuted,
-              splashRadius: 13,
-              onPressed: onDismissed,
-            ),
-            suffixIconConstraints: const BoxConstraints(minWidth: 32),
-            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            filled: true,
-            fillColor: palette.surface,
-            border: OutlineInputBorder(
-              borderRadius:
-                  BorderRadius.circular(WorkspaceChrome.controlRadius),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius:
-                  BorderRadius.circular(WorkspaceChrome.controlRadius),
-              borderSide: BorderSide.none,
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius:
-                  BorderRadius.circular(WorkspaceChrome.controlRadius),
-              borderSide: BorderSide(color: palette.accent, width: 1.2),
+            decoration: InputDecoration(
+              isDense: true,
+              hintText: 'Filename or path · all folders',
+              hintStyle: TextStyle(
+                fontFamily: 'Inter',
+                color: palette.textMuted,
+                fontSize: 13,
+              ),
+              prefixIcon: WorkspaceGlyph(
+                Icons.search_rounded,
+                size: 17,
+                color: palette.textMuted,
+              ),
+              prefixIconConstraints: const BoxConstraints(minWidth: 34),
+              suffixIcon: IconButton(
+                tooltip: 'Close search',
+                icon: const WorkspaceGlyph(Icons.close_rounded, size: 15),
+                color: palette.textMuted,
+                splashRadius: 13,
+                onPressed: onDismissed,
+              ),
+              suffixIconConstraints: const BoxConstraints(minWidth: 32),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              filled: true,
+              fillColor: palette.surface,
+              border: OutlineInputBorder(
+                borderRadius:
+                    BorderRadius.circular(WorkspaceChrome.controlRadius),
+                borderSide: BorderSide.none,
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius:
+                    BorderRadius.circular(WorkspaceChrome.controlRadius),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius:
+                    BorderRadius.circular(WorkspaceChrome.controlRadius),
+                borderSide: BorderSide(color: palette.accent, width: 1.2),
+              ),
             ),
           ),
         ),

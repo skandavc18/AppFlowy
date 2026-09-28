@@ -422,14 +422,15 @@ void main() {
         final workspace = WorkspacePalette.of(context);
         final visual = VisualBlockPalette.of(context);
         final action = _textButton(tester, 'action').style!;
-        expect(action.overlayColor!.resolve({WidgetState.hovered}), hover);
+        expect(action.backgroundColor!.resolve({WidgetState.hovered}), hover);
+        expect(action.overlayColor!.resolve({WidgetState.hovered})!.a, 0);
         expect(
-          action.overlayColor!.resolve({WidgetState.focused}),
-          workspace.hover.withValues(alpha: 0.4),
+          action.backgroundColor!.resolve({WidgetState.focused}),
+          hover,
         );
         expect(
-          action.overlayColor!.resolve({WidgetState.pressed}),
-          workspace.hover.withValues(alpha: 0.4),
+          action.backgroundColor!.resolve({WidgetState.pressed}),
+          WorkspaceChrome.pressedColor(context),
         );
         expect(
           action.side!.resolve({WidgetState.focused})!.color,
@@ -440,7 +441,7 @@ void main() {
               .style!
               .backgroundColor!
               .resolve({WidgetState.hovered}),
-          workspace.hover.withValues(alpha: 0.35),
+          Color.alphaBlend(hover, WorkspaceChrome.selectedColor(context)),
         );
         final disabled = _textButton(tester, 'disabled-action');
         expect(disabled.onPressed, isNull);

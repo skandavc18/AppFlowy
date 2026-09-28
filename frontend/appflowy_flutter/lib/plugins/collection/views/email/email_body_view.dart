@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/plugins/collection/views/email/email_chrome.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_scroll_physics.dart';
+import 'package:appflowy/shared/document_viewer/native_file_page_scroll.dart';
+import 'package:appflowy/shared/find_replace/webview_find.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:flutter/gestures.dart';
@@ -49,6 +51,7 @@ class _EmailBodyViewState extends State<EmailBodyView> {
   static const _minimumSurface = 64.0;
 
   final _viewportKey = GlobalKey();
+  final _nativePageScroll = NativeFilePageScrollBridge();
   final _pending = <String>[];
 
   InAppWebViewController? _controller;
@@ -88,6 +91,7 @@ class _EmailBodyViewState extends State<EmailBodyView> {
     final stop = _kinetic && !kinetic;
     _kinetic = kinetic;
     _physics = physics;
+    _nativePageScroll.configure(kinetic: kinetic, config: physics);
     if (_engineInstalled && (reinstall || stop)) {
       _queue(
         reinstall
@@ -110,6 +114,7 @@ class _EmailBodyViewState extends State<EmailBodyView> {
     // Every callback checks this: a platform call that lands after the native
     // view is gone is what takes the renderer down.
     _closing = true;
+    _nativePageScroll.dispose();
     _pending.clear();
     _routeAnimation?.removeStatusListener(_onRouteStatus);
     _controller = null;
@@ -140,6 +145,7 @@ class _EmailBodyViewState extends State<EmailBodyView> {
     }
     // Tear the renderer down before the closing fade rather than during it.
     if (status == AnimationStatus.reverse && _alive && _ready) {
+      _nativePageScroll.invalidate();
       _controller = null;
       _loaded = null;
       _engineInstalled = false;
@@ -159,6 +165,7 @@ class _EmailBodyViewState extends State<EmailBodyView> {
       return;
     }
     _loaded = widget.html;
+    _nativePageScroll.invalidate();
     _engineInstalled = false;
     _pending.clear();
     try {
@@ -303,6 +310,7 @@ ${batch.join('\n')}
   @override
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
+          final environment = NativeFileWebViewEnvironment.maybeOf(context);
           if (!_ready ||
               constraints.maxWidth < _minimumSurface ||
               constraints.maxHeight < _minimumSurface) {
@@ -310,63 +318,80 @@ ${batch.join('\n')}
           }
           return PremiumScrollExclusion(
             child: PdfEmbedScrollGuard(
-              onPointerSignal: _onPointerSignal,
-              onPointerPanZoomStart: _onPanZoomStart,
-              onPointerPanZoomUpdate: _onPanZoomUpdate,
-              onPointerPanZoomEnd: _onPanZoomEnd,
-              child: SizedBox.expand(
-                key: _viewportKey,
-                child: InAppWebView(
-                  initialData: InAppWebViewInitialData(data: widget.html),
-                  initialSettings: InAppWebViewSettings(
-                    // The message's own scripts are stripped out and forbidden
-                    // by its policy; this is what lets AppFlowy's scrolling run
-                    // beside the document.
-                    javaScriptEnabled: _drivesScrolling,
-                    supportZoom: false,
-                    transparentBackground: true,
-                    useShouldOverrideUrlLoading: true,
-                    // The page is moved by the engine, not by the platform.
-                    disableHorizontalScroll: _drivesScrolling,
-                    disableVerticalScroll: _drivesScrolling,
-                  ),
-                  onWebViewCreated: (controller) {
-                    if (!_alive) {
-                      return;
-                    }
-                    _controller = controller;
-                    _loaded = widget.html;
-                  },
-                  onLoadStop: (controller, _) async {
-                    if (!_alive || controller != _controller) {
-                      return;
-                    }
-                    _engineInstalled = false;
-                    await _installEngine(controller);
-                  },
-                  shouldOverrideUrlLoading: (controller, action) async {
-                    final uri = action.request.url;
-                    if (uri == null) {
-                      return NavigationActionPolicy.ALLOW;
-                    }
-                    // The document itself is the only thing that renders here;
-                    // following a link is the browser's job.
-                    if (uri.scheme == 'about' || uri.scheme == 'data') {
-                      return NavigationActionPolicy.ALLOW;
-                    }
-                    unawaited(afLaunchUrlString(uri.toString()));
-                    return NavigationActionPolicy.CANCEL;
-                  },
-                  onCreateWindow: (controller, action) async {
-                    final uri = action.request.url;
-                    if (uri != null) {
+              onPointerSignal: _drivesScrolling ? (_) {} : _onPointerSignal,
+              onPointerPanZoomStart: _drivesScrolling ? null : _onPanZoomStart,
+              onPointerPanZoomUpdate:
+                  _drivesScrolling ? null : _onPanZoomUpdate,
+              onPointerPanZoomEnd: _drivesScrolling ? null : _onPanZoomEnd,
+              child: NativeFilePageScroll(
+                bridge: _nativePageScroll,
+                child: SizedBox.expand(
+                  key: _viewportKey,
+                  child: InAppWebView(
+                    webViewEnvironment: environment?.environment,
+                    initialData: InAppWebViewInitialData(data: widget.html),
+                    initialSettings: InAppWebViewSettings(
+                      // The message's own scripts are stripped out and forbidden
+                      // by its policy; this is what lets AppFlowy's scrolling run
+                      // beside the document.
+                      javaScriptEnabled: _drivesScrolling,
+                      supportZoom: false,
+                      transparentBackground: true,
+                      useShouldOverrideUrlLoading: true,
+                      // One native owner; the file runtime intercepts only
+                      // ordinary vertical reading, never editing/map/pinch hits.
+                      disableHorizontalScroll: false,
+                      disableVerticalScroll: false,
+                    ),
+                    onWebViewCreated: (controller) {
+                      if (!_alive) {
+                        return;
+                      }
+                      _controller = controller;
+                      if (_drivesScrolling)
+                        _nativePageScroll.attach(controller);
+                      environment?.onCreated?.call(controller);
+                      _loaded = widget.html;
+                    },
+                    onLoadStart: (controller, _) {
+                      if (_alive &&
+                          sameWebViewController(controller, _controller)) {
+                        _nativePageScroll.invalidate();
+                      }
+                    },
+                    onLoadStop: (controller, _) async {
+                      if (!_alive ||
+                          !sameWebViewController(controller, _controller)) {
+                        return;
+                      }
+                      if (_drivesScrolling) {
+                        await _nativePageScroll.install(kinetic: _kinetic);
+                      }
+                    },
+                    shouldOverrideUrlLoading: (controller, action) async {
+                      final uri = action.request.url;
+                      if (uri == null) {
+                        return NavigationActionPolicy.ALLOW;
+                      }
+                      // The document itself is the only thing that renders here;
+                      // following a link is the browser's job.
+                      if (uri.scheme == 'about' || uri.scheme == 'data') {
+                        return NavigationActionPolicy.ALLOW;
+                      }
                       unawaited(afLaunchUrlString(uri.toString()));
-                    }
-                    return true;
-                  },
-                  // Nothing in a message may ask for a camera or a location:
-                  // the default response denies every resource.
-                  onPermissionRequest: (_, __) async => PermissionResponse(),
+                      return NavigationActionPolicy.CANCEL;
+                    },
+                    onCreateWindow: (controller, action) async {
+                      final uri = action.request.url;
+                      if (uri != null) {
+                        unawaited(afLaunchUrlString(uri.toString()));
+                      }
+                      return true;
+                    },
+                    // Nothing in a message may ask for a camera or a location:
+                    // the default response denies every resource.
+                    onPermissionRequest: (_, __) async => PermissionResponse(),
+                  ),
                 ),
               ),
             ),

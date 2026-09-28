@@ -285,12 +285,11 @@ class _RenderMediaState extends State<RenderMedia> {
         onEnter: (_) => setState(() => isHovering = true),
         onExit: (_) => setState(() => isHovering = false),
         cursor: SystemMouseCursors.click,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
+        child: FlowyHoverContainer(
+          applyStyle: isHovering,
+          style: HoverStyle(
             borderRadius: BorderRadius.circular(4),
-            color: isHovering
-                ? AFThemeExtension.of(context).greyHover
-                : Colors.transparent,
+            hoverColor: AFThemeExtension.of(context).greyHover,
           ),
           child: Row(
             crossAxisAlignment: widget.file.isImage

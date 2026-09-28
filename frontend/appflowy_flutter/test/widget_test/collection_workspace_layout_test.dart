@@ -93,7 +93,8 @@ void main() {
           tester.getTopLeft(find.byType(DatabaseTableRail)),
           paneRect.topLeft + const Offset(24, 16),
         );
-        expect(tester.getTopLeft(find.byKey(_stage)).dy, paneRect.top + 16);
+        expect(tester.getTopLeft(find.byKey(_stage)).dy,
+            greaterThan(paneRect.top + 16));
         expect(find.byType(CollectionWorkspacePicker), findsNothing);
         expect(find.byType(ViewerCard), findsNothing);
         _expectQuietSurfaces(tester);
@@ -108,6 +109,26 @@ void main() {
 
         final editor = await _draft(tester);
         final element = tester.element(find.byType(_NativeBoundary));
+        final toggle = find.byKey(
+          const ValueKey('database-workbench-tables-toggle'),
+        );
+        // The pinned control is available without a toolbar hover or picker.
+        expect(toggle.hitTestable(), findsOneWidget);
+        expect(tester.widget<DatabaseAction>(toggle).active, isTrue);
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(controller.state.showRail, isFalse);
+        expect(toggle.hitTestable(), findsOneWidget);
+        expect(tester.widget<DatabaseAction>(toggle).active, isFalse);
+        expect(find.byType(CollectionWorkspacePicker), findsOneWidget);
+        expect(tester.element(find.byType(_NativeBoundary)), same(element));
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(controller.state.showRail, isTrue);
+        expect(toggle.hitTestable(), findsOneWidget);
+        expect(tester.element(find.byType(_NativeBoundary)), same(element));
+        editor.focus.requestFocus();
+        await tester.pump();
         for (final (width, scale) in [
           (760.0, 1.0),
           (1020.0, 2.0),
@@ -125,6 +146,8 @@ void main() {
             reason: 'Responsive collapse is not a saved preference.',
           );
           final compact = width < 1200;
+          expect(toggle.hitTestable(), findsOneWidget);
+          expect(tester.widget<DatabaseAction>(toggle).active, !compact);
           expect(
             tester
                 .widget<Offstage>(

@@ -29,10 +29,13 @@ class WorkspaceExplorerItem {
 
   factory WorkspaceExplorerItem.fromView(ViewPB view) {
     final metadata = view.workspaceItem;
-    final kind = switch ((metadata?.kind, view.layout)) {
-      (WorkspaceItemKind.folder, _) => WorkspaceExplorerItemKind.folder,
-      (WorkspaceItemKind.file, _) => WorkspaceExplorerItemKind.file,
-      (_, ViewLayoutPB.Document) => WorkspaceExplorerItemKind.document,
+    // Document is the protobuf default for folders AND files. Use the same
+    // canonical flags as workspace navigation, never infer from the layout.
+    final kind = switch (view) {
+      _ when view.isWorkspaceFolder => WorkspaceExplorerItemKind.folder,
+      _ when view.isWorkspaceFile => WorkspaceExplorerItemKind.file,
+      _ when view.layout == ViewLayoutPB.Document =>
+        WorkspaceExplorerItemKind.document,
       _ => WorkspaceExplorerItemKind.database,
     };
     final backendLastEdited = view.lastEdited.toInt();

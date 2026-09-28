@@ -52,7 +52,6 @@ const _titleKey = ValueKey('folder-gallery-title');
 const _contentKey = ValueKey('folder-explorer-content');
 const _actionsKey = ValueKey('folder-explorer-actions');
 const _renameKey = ValueKey('workspace-inline-name-editor');
-const _headerScrollKey = ValueKey('folder-explorer-header-scroll');
 const _captureFolderShell = bool.fromEnvironment('FOLDER_SHELL_CAPTURE');
 const _captureKey = ValueKey('folder-shell-capture');
 const _captureSize = Size(1200, 800);
@@ -101,7 +100,8 @@ void main() {
             );
             await tester.binding.setSurfaceSize(Size(width, 1000));
             await settleFileControls(tester);
-            final header = find.byType(FolderGalleryHeader);
+            final header =
+                find.byType(FolderGalleryHeader, skipOffstage: false);
             final initial = tester.widget<FolderGalleryHeader>(header);
             initial.searchFocusNode!.requestFocus();
             await settleFileControls(tester);
@@ -114,7 +114,8 @@ void main() {
             await settleFileControls(tester);
 
             final headerElement = tester.element(header);
-            final titleElement = tester.element(find.byKey(_titleKey));
+            final titleElement =
+                tester.element(find.byKey(_titleKey, skipOffstage: false));
             final searchElement = tester.element(search);
             final editable = find.descendant(
               of: search,
@@ -123,9 +124,17 @@ void main() {
             final editorState = tester.state(editable);
             final actionsElement = tester.element(find.byKey(_actionsKey));
             final value = initial.searchController.value;
-            final contentBounds = tester.getRect(find.byKey(_contentKey));
-            final titleBounds = tester.getRect(find.byKey(_titleKey));
-            final searchBounds = tester.getRect(search);
+            final viewportBounds = tester.getRect(find.byKey(_contentKey));
+            final inset =
+                FolderExplorerLayout.horizontalPadding(viewportBounds.width);
+            final contentBounds = Rect.fromLTRB(
+                viewportBounds.left + inset,
+                viewportBounds.top,
+                viewportBounds.right - inset,
+                viewportBounds.bottom);
+            final titleBounds = _documentRect(
+                tester, find.byKey(_titleKey, skipOffstage: false));
+            final searchBounds = _documentRect(tester, search);
             final cache = tester
                 .widget<FolderGallery>(
                   find.byType(FolderGallery),
@@ -149,7 +158,8 @@ void main() {
                   .onViewModeChanged!(mode);
               await settleFileControls(tester);
               expect(tester.element(header), same(headerElement));
-              expect(tester.element(find.byKey(_titleKey)), same(titleElement));
+              expect(tester.element(find.byKey(_titleKey, skipOffstage: false)),
+                  same(titleElement));
               expect(tester.element(search), same(searchElement));
               expect(tester.state(editable), same(editorState));
               expect(
@@ -166,9 +176,12 @@ void main() {
               expect(controller.selection.ids, {'first'});
               expect(controller.currentFolder.id, 'root');
               expect(controller.breadcrumbs.map((item) => item.id), ['root']);
-              expect(tester.getRect(find.byKey(_contentKey)), contentBounds);
-              expect(tester.getRect(find.byKey(_titleKey)), titleBounds);
-              expect(tester.getRect(search), searchBounds);
+              expect(tester.getRect(find.byKey(_contentKey)), viewportBounds);
+              expect(
+                  _documentRect(
+                      tester, find.byKey(_titleKey, skipOffstage: false)),
+                  titleBounds);
+              expect(_documentRect(tester, search), searchBounds);
               expect(
                 contentBounds.width,
                 lessThanOrEqualTo(
@@ -203,7 +216,7 @@ void main() {
                   lessThanOrEqualTo((72 + 200 * scale) * 1.2),
                 );
               }
-              expect(find.text('Master'), findsOneWidget);
+              expect(find.text('Master', skipOffstage: false), findsOneWidget);
               expect(find.byType(ExplorerToolbar), findsNothing);
               expect(
                 PaperTheme.isEnabled(tester.element(header)),
@@ -595,7 +608,7 @@ void main() {
         final title = tester.element(find.byKey(_titleKey));
         final header = tester.state(find.byType(FolderGalleryHeader));
         final actions = tester.element(find.byKey(_actionsKey));
-        final bounds = tester.getRect(find.byKey(_actionsKey));
+        final bounds = _documentRect(tester, find.byKey(_actionsKey));
         for (final mode in FileBrowserViewMode.values) {
           final button = find.byKey(const ValueKey('file-browser-view-button'));
           await tester.ensureVisible(button);
@@ -641,7 +654,7 @@ void main() {
           expect(tester.element(find.byType(ViewCoverImage)), same(cover));
           expect(tester.element(find.byKey(_titleKey)), same(title));
           expect(tester.element(find.byKey(_actionsKey)), same(actions));
-          expect(tester.getRect(find.byKey(_actionsKey)), bounds);
+          expect(_documentRect(tester, find.byKey(_actionsKey)), bounds);
           expect(_header(tester).viewMode, mode);
           expect(repository.writes, isEmpty);
           expect(tester.takeException(), isNull);
@@ -1117,7 +1130,12 @@ void main() {
 }
 
 FolderGalleryHeader _header(WidgetTester tester) =>
-    tester.widget<FolderGalleryHeader>(find.byType(FolderGalleryHeader));
+    tester.widget<FolderGalleryHeader>(
+        find.byType(FolderGalleryHeader, skipOffstage: false));
+
+Rect _documentRect(WidgetTester tester, Finder finder) => tester
+    .getRect(finder)
+    .shift(Offset(0, Scrollable.of(tester.element(finder)).position.pixels));
 
 double _actionOpacity(WidgetTester tester) => tester
     .widget<AnimatedOpacity>(
@@ -1133,8 +1151,9 @@ double _actionOpacity(WidgetTester tester) => tester
     .opacity;
 
 Finder _decorationButton(Key key) => find.descendant(
-      of: find.byKey(key),
-      matching: find.byType(TextButton),
+      of: find.byKey(key, skipOffstage: false),
+      matching: find.byType(TextButton, skipOffstage: false),
+      skipOffstage: false,
     );
 
 Future<void> _revealNativeDecoration(
@@ -1144,12 +1163,18 @@ Future<void> _revealNativeDecoration(
 ) async {
   expect(button, findsOneWidget);
   expect(
-    find.ancestor(of: button, matching: find.byKey(_headerScrollKey)),
+    find.ancestor(
+      of: button,
+      matching: find.byWidgetPredicate(
+        (widget) => widget is CustomScrollView,
+        skipOffstage: false,
+      ),
+    ),
     findsOneWidget,
   );
   await mouse.moveTo(const Offset(-20, -20));
   // The cover and identity have separate reveal regions. Center the actual
-  // control in the capped header scrollport before hovering its new position;
+  // control in the unified page viewport before hovering its new position;
   // a previous cover-button pointer position is not an identity hover.
   await Scrollable.ensureVisible(tester.element(button), alignment: 0.5);
   await settleFileControls(tester);
@@ -1160,7 +1185,7 @@ Future<void> _revealNativeDecoration(
 
 void _expectDecorationInViewport(WidgetTester tester, Finder button) {
   final bounds = tester.getRect(button);
-  final viewport = tester.getRect(find.byKey(_headerScrollKey));
+  final viewport = tester.getRect(find.byKey(_contentKey));
   final screen = tester.getRect(find.byType(Scaffold));
   final position = Scrollable.of(tester.element(button)).position;
   final reason = '${_header(tester).viewMode.name}: action=$bounds, '

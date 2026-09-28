@@ -25,6 +25,14 @@ namespace flutter_inappwebview_plugin
       return device_context_.get();
     }
 
+    // Called on the platform thread after capture shutdown. The retired copy
+    // keeps shared D3D device/context references, but no factory/apartment access.
+    void DetachFactories()
+    {
+      rohelper_ = nullptr;
+      device_winrt_ = nullptr;
+    }
+
     winrt::com_ptr<ABI::Windows::UI::Composition::ICompositor> CreateCompositor();
 
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IGraphicsCaptureItem>

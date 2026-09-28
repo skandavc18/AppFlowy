@@ -13,7 +13,9 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/materialized_file_builder.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_document_view.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_scroll_physics.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_actions.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
@@ -38,6 +40,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdfrx/pdfrx.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -1005,7 +1008,9 @@ void main() {
     'ipynb',
   ]) {
     _test(
-        '$extension: deferred preview exposes one bar without replacing its renderer or menu',
+        extension == 'pdf'
+            ? 'pdf: deferred preview configures its sole toolbar without mounting it'
+            : '$extension: deferred preview exposes one bar without replacing its renderer or menu',
         (tester) async {
       final fixture = _Fixture(
         url: '${temporary.path}/unopened.$extension',
@@ -1017,7 +1022,7 @@ void main() {
       try {
         await mouse.addPointer(location: Offset.zero);
         await _mount(tester, fixture, mode: 'paper', deferPreview: true);
-        // Exercise the real block's chrome, but never start a native PDF,
+        // Inspect the real block's configuration without starting a native PDF,
         // browser, Office connection, code runner or archive materialization.
         expect(find.byType(MaterializedFileBuilder), findsNothing);
         final frame =
@@ -1041,13 +1046,34 @@ void main() {
         );
         if (extension == 'pdf') {
           final preview = renderer as FilePreview;
+          expect(preview.kind, FilePreviewKind.pdf);
           expect(preview.toolbarTrailing, isNull);
           expect(preview.pdfMenuBuilder, isNotNull);
+          expect(preview.pdfFileActions, isA<Builder>());
+          final configured =
+              (preview.pdfFileActions! as Builder).builder(context);
+          expect(configured, isA<MediaActionButtons>());
+          final actions = configured as MediaActionButtons;
+          expect(actions.decorated, isFalse);
+          expect(actions.actions, same(fixture.actions));
+          expect(actions.source.source, loader.source);
+          expect(actions.source.name, loader.name);
+          expect(actions.source.requireAuthentication, isFalse);
+          expect(actions.source.httpHeaders, isEmpty);
+          expect(actions.source.isImage, isFalse);
+          expect(actions.source.shareAsLink, isFalse);
           expect(
             preview.previewScrollController,
             same(_blockState(tester).previewScrollController),
           );
-          final menu = preview.pdfMenuBuilder!(context, () {}) as FileBlockMenu;
+          // PDF More now keeps its icon-picker anchor beside the unchanged
+          // file menu. Inspect that composition without mounting a renderer.
+          final composition = preview.pdfMenuBuilder!(context, () {});
+          expect(composition, isA<Column>());
+          final menus =
+              (composition as Column).children.whereType<FileBlockMenu>();
+          expect(menus, hasLength(1));
+          final menu = menus.single;
           expect(menu.showDownload, isFalse);
           expect(menu.node, same(fixture.file));
           expect(find.byType(PdfEmbedScrollGuard), findsOneWidget);
@@ -1074,38 +1100,67 @@ void main() {
         final document = fixture.json;
         final frameState = tester.state(find.byType(ResizableMedia));
         final bounds = tester.getRect(find.byKey(_frameKey));
-        expect(find.byKey(_previewActionsKey), findsOneWidget);
-        expect(find.byType(MediaActionButtons), findsOneWidget);
-        _expectReveal(tester, visible: false);
-        await _hover(tester, mouse, find.byKey(_frameKey));
-        expect(_buttons(tester).decorated, isTrue);
-        final actions = tester.getRect(find.byType(MediaActionButtons));
-        expect(actions.right, lessThanOrEqualTo(bounds.right - 42));
-        expect(actions.bottom, lessThanOrEqualTo(bounds.bottom - 14));
-        expect(find.byKey(_copyKey).hitTestable(), findsOneWidget);
-        // Touch taps start a Scrollable hold and clear the synthetic busy
-        // flag used by this fixture. Keep the hover mouse for both actions.
-        final copyPoint = tester.getCenter(find.byKey(_copyKey));
-        await mouse.moveTo(copyPoint);
-        await mouse.down(copyPoint);
-        await mouse.up();
-        await tester.pump();
-        expect(fixture.actions.calls.single.source.source, loader.source);
-        expect(fixture.actions.calls.single.source.name, loader.name);
-        expect(find.byKey(_copiedKey), findsNothing);
-        fixture.actions.calls.single.succeed();
-        await tester.pump();
-        await tester.pump(_fade);
-        _expectBadgeUnclipped(tester);
-        final sharePoint = tester.getCenter(find.byKey(_shareKey));
-        await mouse.moveTo(sharePoint);
-        await mouse.down(sharePoint);
-        await mouse.up();
-        await tester.pump();
-        fixture.actions.calls.last.succeed();
-        await tester.pump();
-        await tester.pump(_fade);
-        expect(find.byKey(_copiedKey), findsNothing);
+        if (extension == 'pdf') {
+          // These controls belong to the deferred viewer, not its placeholder.
+          // Hover must neither mount that viewer nor invent a canvas overlay.
+          for (final type in [
+            FilePreview,
+            PdfPreview,
+            PdfViewer,
+            PdfPreviewToolbar,
+            MediaActionButtons,
+          ]) {
+            expect(find.byType(type, skipOffstage: false), findsNothing);
+          }
+          expect(find.byKey(_previewActionsKey), findsNothing);
+          expect(find.byKey(_copyKey), findsNothing);
+          expect(find.byKey(_shareKey), findsNothing);
+          await _hover(tester, mouse, find.byKey(_frameKey));
+          for (final type in [
+            FilePreview,
+            PdfPreview,
+            PdfViewer,
+            PdfPreviewToolbar,
+            MediaActionButtons,
+          ]) {
+            expect(find.byType(type, skipOffstage: false), findsNothing);
+          }
+          expect(find.byKey(_previewActionsKey), findsNothing);
+          expect(fixture.actions.calls, isEmpty);
+        } else {
+          expect(find.byKey(_previewActionsKey), findsOneWidget);
+          expect(find.byType(MediaActionButtons), findsOneWidget);
+          _expectReveal(tester, visible: false);
+          await _hover(tester, mouse, find.byKey(_frameKey));
+          expect(_buttons(tester).decorated, isTrue);
+          final actions = tester.getRect(find.byType(MediaActionButtons));
+          expect(actions.right, lessThanOrEqualTo(bounds.right - 42));
+          expect(actions.bottom, lessThanOrEqualTo(bounds.bottom - 14));
+          expect(find.byKey(_copyKey).hitTestable(), findsOneWidget);
+          // Touch taps start a Scrollable hold and clear the synthetic busy
+          // flag used by this fixture. Keep the hover mouse for both actions.
+          final copyPoint = tester.getCenter(find.byKey(_copyKey));
+          await mouse.moveTo(copyPoint);
+          await mouse.down(copyPoint);
+          await mouse.up();
+          await tester.pump();
+          expect(fixture.actions.calls.single.source.source, loader.source);
+          expect(fixture.actions.calls.single.source.name, loader.name);
+          expect(find.byKey(_copiedKey), findsNothing);
+          fixture.actions.calls.single.succeed();
+          await tester.pump();
+          await tester.pump(_fade);
+          _expectBadgeUnclipped(tester);
+          final sharePoint = tester.getCenter(find.byKey(_shareKey));
+          await mouse.moveTo(sharePoint);
+          await mouse.down(sharePoint);
+          await mouse.up();
+          await tester.pump();
+          fixture.actions.calls.last.succeed();
+          await tester.pump();
+          await tester.pump(_fade);
+          expect(find.byKey(_copiedKey), findsNothing);
+        }
         await mouse.moveTo(Offset.zero);
         await tester.pump();
         await tester.pump(_fade);
@@ -1126,6 +1181,240 @@ void main() {
       }
     });
   }
+
+  _test(
+      'PDF: configured file actions share the native toolbar without admitting the viewer',
+      (tester) async {
+    final fixture = _Fixture(
+      url: 'https://files.example.invalid/original.pdf?signature=fixture',
+      name: 'original.pdf',
+      type: FileUrlType.cloud,
+      preview: true,
+      documentProfile: _profile('pdf-document-token'),
+      workspaceProfile: _profile('must-not-replace-document-token'),
+    );
+    final mouse = await tester.createGesture(kind: ui.PointerDeviceKind.mouse);
+    OverlayEntry? projection;
+    try {
+      await mouse.addPointer(location: Offset.zero);
+      await _mount(tester, fixture, mode: 'paper', deferPreview: true);
+      final context = tester.element(find.byType(FileBlockComponent));
+      final blockState = _blockState(tester);
+      final frameState = tester.state(find.byType(ResizableMedia));
+      final frame = tester.widget<ResizableMedia>(find.byType(ResizableMedia));
+      final loader = frame.child as MaterializedFileBuilder;
+      final bounds = tester.getRect(find.byKey(_frameKey));
+      final pagePosition = Scrollable.of(context).position;
+      final pageOffset = pagePosition.pixels;
+      final document = fixture.json;
+      final selection = Selection.collapsed(Position(path: [1], offset: 3));
+      fixture.editor.selection = selection;
+      await tester.pump();
+
+      // Construct only the real loader's configuration, with a distinct cache
+      // path. Neither this FilePreview nor its materializer may be mounted.
+      final materialized = File('${temporary.path}/cached-preview.pdf');
+      final preview = loader.builder(
+        context,
+        AsyncSnapshot<File>.withData(ConnectionState.done, materialized),
+      ) as FilePreview;
+      expect(preview.file, same(materialized));
+      expect(preview.kind, FilePreviewKind.pdf);
+      expect(preview.toolbarTrailing, isNull);
+      expect(preview.pdfFileActions, isA<Builder>());
+      expect(find.byType(MaterializedFileBuilder), findsNothing);
+      expect(find.byType(PdfPreviewToolbar), findsNothing);
+      expect(find.byType(MediaActionButtons), findsNothing);
+      expect(pagePosition.isScrollingNotifier.value, isTrue);
+
+      // Project the configured widget, not reconstructed buttons or a second
+      // renderer. The Navigator retains the fixture's theme/providers; the
+      // toolbar and file actions share one production reveal region here.
+      const projectionKey = ValueKey('pdf-file-actions-projection');
+      final entry = OverlayEntry(
+        builder: (_) => Positioned(
+          left: 40,
+          right: 40,
+          bottom: 16,
+          child: Material(
+            type: MaterialType.transparency,
+            child: PreviewToolbarRegion(
+              key: projectionKey,
+              child: PdfPreviewToolbar(
+                title: preview.name,
+                currentPage: 1,
+                pageCount: 0,
+                zoom: 1,
+                ready: false,
+                showThumbnails: false,
+                showOutline: false,
+                searchVisible: false,
+                isFullscreen: false,
+                onToggleThumbnails: () {},
+                onToggleOutline: () {},
+                onPreviousPage: null,
+                onNextPage: null,
+                onPageSubmitted: (_) {},
+                onZoomOut: null,
+                onZoomIn: null,
+                onFitWidth: null,
+                onFitPage: null,
+                onToggleSearch: () {},
+                onRotate: null,
+                onDownload: null,
+                onPrint: null,
+                onFullscreen: () {},
+                overflow: const SizedBox.shrink(),
+                fileActions: preview.pdfFileActions,
+              ),
+            ),
+          ),
+        ),
+      );
+      projection = entry;
+      Overlay.of(context).insert(entry);
+      await tester.pump();
+      final projectedRegion = find.byKey(projectionKey);
+      final toolbar = find.byType(PdfPreviewToolbar);
+      final row = find.byKey(const ValueKey('pdf-toolbar-controls'));
+      expect(toolbar, findsOneWidget);
+      expect(row, findsOneWidget);
+      expect(
+        tester.getRect(projectedRegion).overlaps(bounds),
+        isFalse,
+        reason: 'Projection clicks must never activate the deferred body',
+      );
+      expect(
+        tester.widget<PdfPreviewToolbar>(toolbar).fileActions,
+        same(preview.pdfFileActions),
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.byWidget(preview.pdfFileActions!),
+        ),
+        findsOneWidget,
+      );
+      expect(find.byType(MediaActionButtons), findsOneWidget);
+      expect(
+        find.descendant(of: row, matching: find.byType(MediaActionButtons)),
+        findsOneWidget,
+      );
+      expect(
+          find.descendant(of: row, matching: find.byType(Wrap)), findsNothing);
+      final controlsState = tester.state(find.byType(MediaActionButtons));
+      final controls = _buttons(tester);
+      expect(controls.actions, same(fixture.actions));
+      expect(controls.decorated, isFalse);
+      expect(controls.source.source, loader.source);
+      expect(
+          controls.source.source, fixture.file.attributes[FileBlockKeys.url]);
+      expect(controls.source.source, isNot(materialized.path));
+      expect(controls.source.name, 'original.pdf');
+      expect(controls.source.requireAuthentication, isTrue);
+      expect(
+        controls.source.httpHeaders,
+        {'Authorization': 'Bearer pdf-document-token'},
+      );
+      expect(controls.source.isImage, isFalse);
+      expect(controls.source.shareAsLink, isFalse);
+      expect(
+        PaperTheme.isEnabled(tester.element(find.byType(MediaActionButtons))),
+        isTrue,
+      );
+      final pageCenter = tester.getCenter(find.byType(PdfPageNumberField)).dy;
+      for (final key in [_copyKey, _shareKey]) {
+        expect(find.descendant(of: row, matching: find.byKey(key)),
+            findsOneWidget);
+        expect(tester.getCenter(find.byKey(key)).dy, closeTo(pageCenter, 1));
+        expect(
+          find.ancestor(of: find.byKey(key), matching: projectedRegion),
+          findsOneWidget,
+        );
+        expect(find.byKey(key).hitTestable(), findsNothing);
+      }
+      expect(find.byKey(_previewActionsKey), findsNothing);
+      expect(fixture.actions.calls, isEmpty);
+      _expectReveal(tester, visible: false);
+      await _hover(tester, mouse, projectedRegion);
+      _expectReveal(tester, visible: true);
+      await mouse.moveTo(Offset.zero);
+      await tester.pump();
+      await tester.pump(_fade);
+      _expectReveal(tester, visible: false);
+
+      for (final key in [_copyKey, _shareKey]) {
+        final action = find.byKey(key);
+        await tester.ensureVisible(action);
+        await tester.pump();
+        await mouse.moveTo(tester.getCenter(action));
+        await tester.pump();
+        await tester.pump(_fade);
+        _expectReveal(tester, visible: true);
+        expect(action.hitTestable(), findsOneWidget);
+        final anchor = tester.getRect(action);
+        await tester.tap(action, kind: ui.PointerDeviceKind.mouse);
+        await tester.pump();
+        expect(fixture.actions.calls, hasLength(key == _copyKey ? 1 : 2));
+        final call = fixture.actions.calls.last;
+        expect(call.kind, key == _copyKey ? 'copy' : 'share');
+        expect(call.source, controls.source);
+        expect(call.origin, key == _copyKey ? isNull : anchor);
+        expect(_button(tester, _copyKey).onPressed, isNull);
+        expect(_button(tester, _shareKey).onPressed, isNull);
+        expect(find.byKey(_copiedKey), findsNothing);
+        expect(pagePosition.isScrollingNotifier.value, isTrue);
+        expect(find.byType(MaterializedFileBuilder), findsNothing);
+        call.succeed();
+        await tester.pump();
+        await tester.pump(_fade);
+        expect(_button(tester, _copyKey).onPressed, isNotNull);
+        expect(_button(tester, _shareKey).onPressed, isNotNull);
+        if (key == _copyKey) {
+          expect(_button(tester, _copyKey).tooltip, 'Copied');
+          _expectBadgeUnclipped(tester);
+        } else {
+          expect(find.byKey(_copiedKey), findsNothing);
+          expect(_button(tester, _copyKey).tooltip, 'Copy');
+        }
+        expect(
+            tester.state(find.byType(MediaActionButtons)), same(controlsState));
+      }
+
+      await mouse.moveTo(Offset.zero);
+      fixture.outsideFocus.requestFocus();
+      await tester.pump();
+      await tester.pump(_fade);
+      _expectReveal(tester, visible: false);
+      for (final type in [
+        MaterializedFileBuilder,
+        FilePreview,
+        PdfPreview,
+        PdfViewer
+      ]) {
+        expect(find.byType(type, skipOffstage: false), findsNothing);
+      }
+      expect(find.byKey(_previewActionsKey), findsNothing);
+      expect(_blockState(tester), same(blockState));
+      expect(tester.state(find.byType(ResizableMedia)), same(frameState));
+      expect(
+        tester.widget<ResizableMedia>(find.byType(ResizableMedia)).child,
+        same(loader),
+      );
+      expect(tester.getRect(find.byKey(_frameKey)), bounds);
+      expect(pagePosition.isScrollingNotifier.value, isTrue);
+      expect(pagePosition.pixels, pageOffset);
+      expect(fixture.editor.selection, selection);
+      expect(fixture.json, document);
+      expect(fixture.writes, 0);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await mouse.removePointer();
+      projection?.remove();
+      projection?.dispose();
+      await fixture.dispose(tester);
+    }
+  });
 }
 
 void _test(String name, Future<void> Function(WidgetTester) body) =>

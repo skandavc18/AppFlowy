@@ -17,6 +17,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/size.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -385,52 +386,56 @@ class _RowListItem extends StatelessWidget {
     return Container(
       height: 28,
       margin: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 2.0),
-      decoration: BoxDecoration(
-        color: isHovered ? AFThemeExtension.of(context).lightGreyHover : null,
-        borderRadius: const BorderRadius.all(Radius.circular(6)),
-      ),
-      child: GestureDetector(
-        onTap: () {
-          if (isSelected) {
-            showRelatedRowDetailPage(
-              context,
-              databaseId: databaseId,
-              rowId: row.rowId,
-            );
-            PopoverContainer.of(context).close();
-          } else {
-            context
-                .read<RelationCellBloc>()
-                .add(RelationCellEvent.selectRow(row.rowId));
-          }
-        },
-        child: MouseRegion(
-          cursor: SystemMouseCursors.click,
-          onHover: (_) => context
-              .read<RelationRowSearchBloc>()
-              .add(RelationRowSearchEvent.updateFocusedOption(row.rowId)),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6.0, vertical: 4.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: FlowyText(
-                    row.name.trim().isEmpty
-                        ? LocaleKeys.grid_title_placeholder.tr()
-                        : row.name,
-                    color: row.name.trim().isEmpty
-                        ? Theme.of(context).hintColor
-                        : null,
-                    overflow: TextOverflow.ellipsis,
+      child: FlowyHoverContainer(
+        applyStyle: isHovered,
+        style: HoverStyle(
+          hoverColor: AFThemeExtension.of(context).lightGreyHover,
+          borderRadius: const BorderRadius.all(Radius.circular(6)),
+        ),
+        child: GestureDetector(
+          onTap: () {
+            if (isSelected) {
+              showRelatedRowDetailPage(
+                context,
+                databaseId: databaseId,
+                rowId: row.rowId,
+              );
+              PopoverContainer.of(context).close();
+            } else {
+              context
+                  .read<RelationCellBloc>()
+                  .add(RelationCellEvent.selectRow(row.rowId));
+            }
+          },
+          child: MouseRegion(
+            cursor: SystemMouseCursors.click,
+            onHover: (_) => context
+                .read<RelationRowSearchBloc>()
+                .add(RelationRowSearchEvent.updateFocusedOption(row.rowId)),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6.0, vertical: 4.0),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: FlowyText(
+                      row.name.trim().isEmpty
+                          ? LocaleKeys.grid_title_placeholder.tr()
+                          : row.name,
+                      color: row.name.trim().isEmpty
+                          ? Theme.of(context).hintColor
+                          : null,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                ),
-                if (isSelected && isHovered)
-                  _UnselectRowButton(
-                    onPressed: () => context
-                        .read<RelationCellBloc>()
-                        .add(RelationCellEvent.selectRow(row.rowId)),
-                  ),
-              ],
+                  if (isSelected && isHovered)
+                    _UnselectRowButton(
+                      onPressed: () => context
+                          .read<RelationCellBloc>()
+                          .add(RelationCellEvent.selectRow(row.rowId)),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

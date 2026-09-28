@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
@@ -156,6 +159,7 @@ class DashboardEditableText extends StatefulWidget {
     this.commitDelay = const Duration(milliseconds: 400),
     this.onEdited,
     this.onSubmitted,
+    this.findId,
   });
 
   final String value;
@@ -172,6 +176,9 @@ class DashboardEditableText extends StatefulWidget {
   final ValueChanged<String>? onEdited;
   final ValueChanged<String>? onSubmitted;
 
+  /// Only explicit dashboard content opts in, never query/configuration fields.
+  final Object? findId;
+
   @override
   State<DashboardEditableText> createState() => _DashboardEditableTextState();
 }
@@ -184,6 +191,8 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
   bool _dirty = false;
   String? _submitted;
   DashboardController? _dashboard;
+  DashboardFindController? _find;
+  Object? _findId;
 
   bool get _canWrite => widget.enabled && (_dashboard?.isEditable ?? true);
 
@@ -201,12 +210,14 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _dashboard = DashboardEditingScope.maybeOf(context);
+    _bindFind();
     _suspendIfBlocked();
   }
 
   @override
   void didUpdateWidget(DashboardEditableText oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.findId != oldWidget.findId) _bindFind();
     _suspendIfBlocked();
     // onChanged is a synchronous command with no acceptance result. Only the
     // supplied value acknowledges it; a rejected command must stay dirty.
@@ -222,6 +233,16 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
     }
   }
 
+  void _bindFind() {
+    final owner = SurfaceFindScope.maybeOf(context);
+    final find = owner is DashboardFindController ? owner : null;
+    if (_find == find && _findId == widget.findId) return;
+    if (_findId != null) _find?.unwatchDraft(_findId!, _controller);
+    _find = find;
+    _findId = widget.findId;
+    if (_findId != null) _find?.watchDraft(_findId!, _controller);
+  }
+
   void _suspendIfBlocked() {
     if (_canWrite) return;
     _commit?.cancel();
@@ -231,6 +252,7 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
 
   @override
   void dispose() {
+    if (_findId != null) _find?.unwatchDraft(_findId!, _controller);
     _flush();
     _commit?.cancel();
     _controller.dispose();
@@ -267,7 +289,7 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
     final palette = widget.palette;
     final style = widget.style ?? DashboardType.body(palette);
     final writable = _canWrite;
-    return TextEntryShortcuts(
+    final field = TextEntryShortcuts(
       child: TextField(
         controller: _controller,
         focusNode: _focus,
@@ -303,6 +325,20 @@ class _DashboardEditableTextState extends State<DashboardEditableText> {
                 widget.onSubmitted?.call(value);
               }
             : null,
+      ),
+    );
+    final id = widget.findId;
+    if (id == null) return field;
+    return ContextualFindRegion(
+      enabled: _find != null,
+      findInEditable: true,
+      onFind: () => _find?.open(),
+      onReplace: _canWrite ? () => _find?.open(replace: true) : null,
+      debugLabel: 'Dashboard owned text',
+      child: SurfaceFindTarget(
+        id: id,
+        includeEditable: true,
+        child: field,
       ),
     );
   }

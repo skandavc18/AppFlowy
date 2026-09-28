@@ -12,12 +12,14 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/materialized_file_builder.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/pdf_preview_toolbar.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/media/media_action_buttons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/recent_icons.dart';
 import 'package:appflowy/shared/icon_emoji_picker/tab.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
@@ -234,6 +236,40 @@ void main() {
         } else {
           expect(find.byKey(_previewIcon, skipOffstage: false), findsNothing);
           expect(find.byType(FileBlockIconButton), findsNothing);
+          expect(
+            find.byKey(const ValueKey('file-preview-media-actions')),
+            findsNothing,
+            reason: 'PDF file actions share its toolbar, not a canvas overlay',
+          );
+          final configuredActions = tester
+              .widget<FilePreview>(find.byType(FilePreview))
+              .pdfFileActions;
+          expect(configuredActions, isNotNull);
+          expect(
+            tester
+                .widget<PdfPreviewToolbar>(find.byType(PdfPreviewToolbar))
+                .fileActions,
+            same(configuredActions),
+          );
+          final fileActions = find.descendant(
+            of: find.byKey(const ValueKey('pdf-toolbar-controls')),
+            matching: find.byType(MediaActionButtons),
+          );
+          expect(fileActions, findsOneWidget);
+          expect(find.byType(MediaActionButtons), findsOneWidget);
+          final buttons = tester.widget<MediaActionButtons>(fileActions);
+          expect(buttons.decorated, isFalse);
+          expect(buttons.source.source, pdfFile.path);
+          expect(buttons.source.name, 'report.pdf');
+          for (final key in ['media-copy', 'media-share']) {
+            expect(
+              find.descendant(
+                of: fileActions,
+                matching: find.byKey(ValueKey(key)),
+              ),
+              findsOneWidget,
+            );
+          }
           pdfState = tester.state(find.byType(PdfViewer));
           pdfController =
               tester.widget<PdfViewer>(find.byType(PdfViewer)).controller!;
@@ -249,6 +285,15 @@ void main() {
         final more = kind == 'text'
             ? find.byTooltip('More actions')
             : find.byKey(const ValueKey('pdf-overflow-menu'));
+        if (kind == 'PDF') {
+          // The 620px card clips the natural-width row. Scroll its native
+          // viewport, then reveal the actual target with a real pointer.
+          await tester.ensureVisible(more);
+          await tester.pumpAndSettle();
+          await mouse.moveTo(tester.getCenter(more));
+          await tester.pumpAndSettle();
+        }
+        expect(more.hitTestable(), findsOneWidget);
         await tester.tap(more, kind: ui.PointerDeviceKind.mouse);
         await tester.pumpAndSettle();
         expect(find.byType(FileBlockMenu), findsOneWidget);
@@ -294,8 +339,26 @@ void main() {
         }
         await mouse.moveTo(Offset.zero);
         await tester.pump(const Duration(milliseconds: 150));
-        final actions =
-            find.byKey(const ValueKey('file-preview-media-actions'));
+        final actions = kind == 'text'
+            ? find.byKey(const ValueKey('file-preview-media-actions'))
+            : find.ancestor(
+                of: find.byKey(const ValueKey('pdf-toolbar-controls')),
+                matching: find.byType(PreviewToolbar),
+              );
+        expect(actions, findsOneWidget);
+        if (kind == 'PDF') {
+          expect(
+            find.ancestor(
+              of: actions,
+              matching: find.byType(PdfPreviewToolbar),
+            ),
+            findsOneWidget,
+          );
+          final toolbar =
+              tester.widget<PdfPreviewToolbar>(find.byType(PdfPreviewToolbar));
+          expect(toolbar.ready, isTrue);
+          expect(toolbar.zoom, closeTo(2, 0.001));
+        }
         expect(
           tester
               .widget<AnimatedOpacity>(

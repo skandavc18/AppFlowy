@@ -25,9 +25,14 @@ namespace flutter_inappwebview_plugin
     auto& methodName = method_call.method_name();
 
     if (string_equals(methodName, "dispose")) {
+      const auto close_result = webViewEnvironment->Dispose();
+      if (FAILED(close_result)) {
+        return result->Error("environmentCloseFailed", "Native environment controller close failed.",
+          flutter::EncodableValue(static_cast<int32_t>(close_result)));
+      }
       if (webViewEnvironment->plugin && webViewEnvironment->plugin->webViewEnvironmentManager) {
         std::map<std::string, std::unique_ptr<WebViewEnvironment>>& webViewEnvironments = webViewEnvironment->plugin->webViewEnvironmentManager->webViewEnvironments;
-        auto& id = webViewEnvironment->id;
+        const auto id = webViewEnvironment->id;
         if (map_contains(webViewEnvironments, id)) {
           webViewEnvironments.erase(id);
         }

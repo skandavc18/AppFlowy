@@ -10,6 +10,8 @@
 #include <optional>
 
 #include "graphics_context.h"
+#include "texture_cadence_probe.h"
+#include "texture_retirement.h"
 
 namespace flutter_inappwebview_plugin
 {
@@ -30,6 +32,8 @@ namespace flutter_inappwebview_plugin
 
     bool Start();
     void Stop();
+    // Permanent teardown on the owning platform thread, before unregister.
+    void Shutdown();
 
     void SetOnFrameAvailable(FrameAvailableCallback callback)
     {
@@ -44,10 +48,17 @@ namespace flutter_inappwebview_plugin
     void NotifySurfaceSizeChanged();
     void SetFpsLimit(std::optional<int> max_fps);
 
+    void StartCadenceProbe();
+    TextureCadenceProbe::Snapshot StopCadenceProbe();
+
   protected:
     bool is_running_ = false;
+    TextureCadenceProbe cadence_probe_;
 
-    const GraphicsContext* graphics_context_;
+    // Copy GPU references, not the manager's lifetime. Shutdown removes factory
+    // access before this copy can be retired on a different thread.
+    GraphicsContext graphics_context_;
+    std::shared_ptr<PlatformCallbackTarget<TextureBridge>> capture_callback_target_;
     std::mutex mutex_;
     std::optional<FrameDuration> frame_duration_ = std::nullopt;
 

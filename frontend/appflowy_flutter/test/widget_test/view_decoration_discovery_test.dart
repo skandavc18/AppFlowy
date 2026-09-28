@@ -532,17 +532,23 @@ class _Listener extends ViewListener {
 
 class _Access extends Cubit<PageAccessLevelState>
     implements PageAccessLevelBloc {
-  _Access(this.view) : super(_AccessState(true));
+  _Access(this.view) : super(_AccessState(view, true));
   @override
   final ViewPB view;
-  void setEditable(bool editable) => emit(_AccessState(editable));
+  void setEditable(bool editable) => emit(_AccessState(view, editable));
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 // Permission is an injected boundary, not a global feature/preference write.
 class _AccessState extends Fake implements PageAccessLevelState {
-  _AccessState(this.isEditable);
+  _AccessState(this.view, this.isEditable);
+  @override
+  final ViewPB view;
+  @override
+  bool get isLoadingLockStatus => false;
+  @override
+  bool get isReadOnly => !isEditable;
   @override
   final bool isEditable;
 }

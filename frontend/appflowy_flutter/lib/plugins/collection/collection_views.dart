@@ -94,6 +94,7 @@ CollectionViewDefinition _sourceAware(
       id: definition.id,
       labelKey: definition.labelKey,
       icon: definition.icon,
+      supportsPageHeader: true,
       builder: (context, collection) {
         if (collection.collectionView.source.isLocal) {
           return definition.builder(context, collection);

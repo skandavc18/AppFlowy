@@ -1035,14 +1035,114 @@ void main() {
     final editorElement = tester.element(find.byType(AppFlowyEditor));
     await _control(tester, LogicalKeyboardKey.keyF);
     await _query(tester, 'needle');
+    final original = _bar(tester);
+    final menuElement = tester.element(find.byType(FindAndReplaceMenuWidget));
+    final scope = DocumentFindMenu.findFocusNode;
+    var queryValue = original.findController.value;
+    final queryField = find.byKey(const ValueKey('findTextField'));
+    final replacementField = find.byKey(
+      const ValueKey('replaceTextField'),
+      skipOffstage: false,
+    );
+    final fieldStates = [
+      for (final field in [queryField, replacementField])
+        tester.state<EditableTextState>(
+          find.descendant(
+            of: field,
+            matching: find.byType(EditableText, skipOffstage: false),
+            skipOffstage: false,
+          ),
+        ),
+    ];
+    var replacementText = '';
+    void expectRetained() {
+      final current = _bar(tester);
+      expect(find.byType(FindAndReplaceMenuWidget), findsOneWidget);
+      expect(
+        tester.element(find.byType(FindAndReplaceMenuWidget)),
+        same(menuElement),
+      );
+      expect(DocumentFindMenu.findFocusNode, same(scope));
+      expect(current.findFocusNode, same(original.findFocusNode));
+      expect(current.replaceFocusNode, same(original.replaceFocusNode));
+      expect(current.findController, same(original.findController));
+      expect(current.findController.text, 'needle');
+      expect(current.findController.value, queryValue);
+      expect(current.replaceController, same(original.replaceController));
+      expect(current.replaceController!.text, replacementText);
+      expect(current.matchCount, 1);
+      for (var index = 0; index < fieldStates.length; index++) {
+        final field = index == 0 ? queryField : replacementField;
+        expect(
+          tester.state<EditableTextState>(
+            find.descendant(
+              of: field,
+              matching: find.byType(EditableText, skipOffstage: false),
+              skipOffstage: false,
+            ),
+          ),
+          same(fieldStates[index]),
+        );
+      }
+      expect(tester.element(find.byType(AppFlowyEditor)), same(editorElement));
+      expect(doc.writes, 0);
+    }
+
     await _control(tester, LogicalKeyboardKey.keyH);
     expect(find.byKey(const ValueKey('replaceTextField')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('replaceTextField')));
+    expectRetained();
+    expect(original.replaceFocusNode!.hasPrimaryFocus, isTrue);
+    // At animation time zero the retained replacement is clipped, not a mouse
+    // target. The old test tapped through it, dismissed Find, then opened a new
+    // empty session. Immediate keyboard switching must still retain this owner.
+    expect(replacementField.hitTestable(), findsNothing);
     await _control(tester, LogicalKeyboardKey.keyF);
-    expect(find.byType(FindAndReplaceMenuWidget), findsOneWidget);
-    expect(_bar(tester).findController.text, 'needle');
-    expect(tester.element(find.byType(AppFlowyEditor)), same(editorElement));
-    expect(doc.writes, 0);
+    // EditableText._adjustedSelectionWhenFocused selects all in a single-line
+    // desktop field on keyboard focus. This is native behavior, not reseeding.
+    queryValue = queryValue.copyWith(
+      selection: const TextSelection(baseOffset: 0, extentOffset: 6),
+    );
+    expectRetained();
+    expect(original.findFocusNode.hasPrimaryFocus, isTrue);
+    await _control(tester, LogicalKeyboardKey.keyH);
+    expectRetained();
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(
+      tester
+          .widget<Opacity>(
+            find
+                .ancestor(of: replacementField, matching: find.byType(Opacity))
+                .first,
+          )
+          .opacity,
+      1,
+    );
+    await tester.pump(const Duration(microseconds: 1));
+    expect(replacementField.hitTestable(), findsOneWidget);
+    await tester.tap(replacementField, kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    expect(original.replaceFocusNode!.hasPrimaryFocus, isTrue);
+    expectRetained();
+    replacementText = 'replacement draft';
+    tester.testTextInput.enterText(replacementText);
+    await tester.pump();
+    for (final key in [
+      LogicalKeyboardKey.keyH,
+      LogicalKeyboardKey.keyF,
+      LogicalKeyboardKey.keyF,
+      LogicalKeyboardKey.keyH,
+      LogicalKeyboardKey.keyF,
+    ]) {
+      await _control(tester, key);
+      expectRetained();
+      expect(
+        (key == LogicalKeyboardKey.keyH
+                ? original.replaceFocusNode!
+                : original.findFocusNode)
+            .hasPrimaryFocus,
+        isTrue,
+      );
+    }
   });
 }
 

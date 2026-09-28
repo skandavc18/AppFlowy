@@ -111,18 +111,12 @@ class DatabaseWorkbenchBody extends StatelessWidget {
           compactNavigation: const SizedBox.shrink(),
           headerBuilder: (context, railVisible) => active == null
               ? const SizedBox.shrink()
-              : Offstage(
-                  offstage: railVisible,
-                  child: ExcludeFocus(
-                    excluding: railVisible,
-                    child: _StageHeader(
-                      table: active,
-                      collection: collection,
-                      controller: controller,
-                      theme: theme,
-                      railVisible: railVisible,
-                    ),
-                  ),
+              : _StageHeader(
+                  table: active,
+                  collection: collection,
+                  controller: controller,
+                  theme: theme,
+                  railVisible: railVisible,
                 ),
           child: active == null
               ? const SizedBox.shrink()
@@ -257,7 +251,23 @@ class _StageHeader extends StatelessWidget {
         GridSize.horizontalHeaderPadding,
         DatabaseMetrics.space2,
       ),
-      identity: railVisible
+      // Navigation must not depend on hovering the stage or opening a picker.
+      // Keep this identity slot at the same depth across responsive collapse.
+      identity: Row(
+        children: [
+          DatabaseAction(
+            key: const ValueKey('database-workbench-tables-toggle'),
+            icon: Icons.table_chart_rounded,
+            tooltip: railVisible
+                ? LocaleKeys.collections_database_hideTables.tr()
+                : LocaleKeys.collections_database_showTables.tr(),
+            theme: theme,
+            active: railVisible,
+            onPressed: () => controller.setRailVisible(!railVisible),
+          ),
+          const SizedBox(width: DatabaseMetrics.space1),
+          Expanded(
+            child: railVisible
           ? Text(
               summary == null
                   ? ''
@@ -289,6 +299,9 @@ class _StageHeader extends StatelessWidget {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
       keepVisible: showSchema,
       actions: [
         DatabaseAction(

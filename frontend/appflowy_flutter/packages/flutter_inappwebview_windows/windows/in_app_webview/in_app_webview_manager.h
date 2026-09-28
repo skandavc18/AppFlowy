@@ -11,6 +11,7 @@
 
 #include "../custom_platform_view/custom_platform_view.h"
 #include "../custom_platform_view/graphics_context.h"
+#include "../custom_platform_view/platform_resource_owner.h"
 #include "../custom_platform_view/util/rohelper.h"
 #include "../flutter_inappwebview_windows_plugin.h"
 #include "../types/channel_delegate.h"
@@ -30,16 +31,16 @@ namespace flutter_inappwebview_plugin
     std::map<int64_t, std::unique_ptr<NewWindowRequestedArgs>> windowWebViews;
     int64_t windowAutoincrementId = 0;
 
-    bool isSupported() const { return valid_; }
+    bool isSupported() const { return resources_->valid; }
     bool isGraphicsCaptureSessionSupported();
     GraphicsContext* graphics_context() const
     {
-      return graphics_context_.get();
+      return resources_->graphics.get();
     };
-    rx::RoHelper* rohelper() const { return rohelper_.get(); }
+    rx::RoHelper* rohelper() const { return resources_->runtime.get(); }
     winrt::com_ptr<ABI::Windows::UI::Composition::ICompositor> compositor() const
     {
-      return compositor_;
+      return resources_->composition;
     }
 
     InAppWebViewManager(const FlutterInappwebviewWindowsPlugin* plugin);
@@ -50,15 +51,16 @@ namespace flutter_inappwebview_plugin
       std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
 
     void createInAppWebView(const flutter::EncodableMap* arguments, std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result);
-    void disposeKeepAlive(const std::string& keepAliveId);
+    void disposeKeepAlive(const std::string& keepAliveId,
+      std::function<void(HRESULT)> completion = nullptr);
   private:
-    inline static std::shared_ptr<rx::RoHelper> rohelper_ = nullptr;
-    inline static winrt::com_ptr<ABI::Windows::System::IDispatcherQueueController>
-      dispatcher_queue_controller_ = nullptr;
-    inline static std::unique_ptr<GraphicsContext> graphics_context_ = nullptr;
-    inline static winrt::com_ptr<ABI::Windows::UI::Composition::ICompositor> compositor_ = nullptr;
+    using CompositionResources = PlatformResourceOwner<
+      std::unique_ptr<rx::RoHelper>,
+      winrt::com_ptr<ABI::Windows::System::IDispatcherQueueController>,
+      std::unique_ptr<GraphicsContext>,
+      winrt::com_ptr<ABI::Windows::UI::Composition::ICompositor>>;
+    std::shared_ptr<CompositionResources> resources_ = CompositionResources::Acquire();
     WNDCLASS windowClass_ = {};
-    inline static bool valid_ = false;
   };
 }
 #endif //FLUTTER_INAPPWEBVIEW_PLUGIN_IN_APP_WEBVIEW_MANAGER_H_

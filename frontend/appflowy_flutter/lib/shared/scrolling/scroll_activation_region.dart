@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/scrolling/scroll_gesture_gate.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -5,9 +6,9 @@ import 'package:flutter/services.dart';
 
 /// Lets the enclosing page scroll over an embedded card until it is clicked.
 ///
-/// Only scroll physics are gated: the first click still reaches buttons, text
-/// fields and chart gestures. Keyboard focus and accessibility activation also
-/// engage the card. An outside press, focus leaving, or an unhandled Escape
+/// Both scroll physics and custom scroll gestures are gated: the first click
+/// still reaches buttons, text fields and chart gestures. Keyboard traversal and
+/// accessibility activation also engage the card. An outside press or Escape
 /// disengages it. Hover and trackpad pan/zoom never activate it.
 ///
 /// Descendants must inherit the local ScrollConfiguration (possibly through a
@@ -20,7 +21,8 @@ class ScrollActivationRegion extends StatefulWidget {
     required this.child,
     this.active,
     this.onActiveChanged,
-    this.gateScrollGestures = false,
+    this.gateScrollGestures = true,
+    this.activateOnFocus = true,
   });
 
   final Widget child;
@@ -28,6 +30,11 @@ class ScrollActivationRegion extends StatefulWidget {
   /// Also gates custom PDF/canvas/platform-view gesture handlers, not just
   /// Flutter scroll physics. Ordinary clicks and touch editing are unaffected.
   final bool gateScrollGestures;
+
+  /// An embedded native renderer can autofocus itself while loading. Such
+  /// focus is not user intent: document embeds disable this, while retaining
+  /// explicit clicks, Tab traversal and accessibility activation.
+  final bool activateOnFocus;
 
   /// When supplied, the host's visible selection is the only source of truth.
   /// Focus alone cannot enable scrolling in controlled mode; a completed click
@@ -56,6 +63,25 @@ class _ScrollActivationRegionState extends State<ScrollActivationRegion> {
   }
 
   bool _onGlobalKeyEvent(KeyEvent event) {
+    if (!widget.activateOnFocus &&
+        widget.active == null &&
+        event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.tab &&
+        !HardwareKeyboard.instance.isAltPressed &&
+        !HardwareKeyboard.instance.isControlPressed &&
+        !HardwareKeyboard.instance.isMetaPressed) {
+      // Focus traversal is applied after key dispatch. This is one callback
+      // per explicit Tab, not a timer or a per-frame focus observer.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        FocusManager.instance.applyFocusChangesIfNeeded();
+        if (mounted &&
+            _focus.hasFocus &&
+            (ModalRoute.isCurrentOf(context) ?? true)) {
+          _activate();
+        }
+      });
+    }
     // The document's keyboard service can retain focus after an embed header
     // click. Escape must still release that embed; don't steal the key or
     // change focus, and let an open dialog/menu handle its own Escape first.
@@ -112,6 +138,9 @@ class _ScrollActivationRegionState extends State<ScrollActivationRegion> {
     // Cancel only descendant activities, never the enclosing page. Changing
     // physics alone can leave an already-running wheel/fling activity alive.
     void stop(Element element) {
+      if (element is RenderObjectElement) {
+        StandaloneFileScrollRegion.cancelMotion(element.renderObject);
+      }
       if (element is StatefulElement && element.state is ScrollableState) {
         final position = (element.state as ScrollableState).position;
         if (position.hasPixels && position.isScrollingNotifier.value) {
@@ -185,7 +214,7 @@ class _ScrollActivationRegionState extends State<ScrollActivationRegion> {
             onFocusChange: (focused) {
               if (!focused) {
                 _deactivate();
-              } else if (widget.active == null) {
+              } else if (widget.active == null && widget.activateOnFocus) {
                 _activate();
               }
             },

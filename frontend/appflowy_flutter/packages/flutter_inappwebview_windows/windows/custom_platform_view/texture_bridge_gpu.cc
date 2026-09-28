@@ -27,7 +27,7 @@ namespace flutter_inappwebview_plugin
 
     EnsureSurface(width, height);
 
-    auto device_context = graphics_context_->d3d_device_context();
+    auto device_context = graphics_context_.d3d_device_context();
 
     device_context->CopyResource(surface_.get(), src_texture.get());
     device_context->Flush();
@@ -51,7 +51,7 @@ namespace flutter_inappwebview_plugin
       dstDesc.Usage = D3D11_USAGE_DEFAULT;
 
       surface_ = nullptr;
-      if (!SUCCEEDED(graphics_context_->d3d_device()->CreateTexture2D(
+      if (!SUCCEEDED(graphics_context_.d3d_device()->CreateTexture2D(
         &dstDesc, nullptr, surface_.put()))) {
         std::cerr << "Creating intermediate texture failed" << std::endl;
         return;
@@ -85,6 +85,7 @@ namespace flutter_inappwebview_plugin
       return nullptr;
     }
 
+    const auto probe_start = cadence_probe_.BeginWork();
     if (last_frame_) {
       ProcessFrame(last_frame_);
     }
@@ -92,6 +93,7 @@ namespace flutter_inappwebview_plugin
     if (surface_) {
       // Gets released in the SurfaceDescriptor's release callback.
       surface_->AddRef();
+      cadence_probe_.EndWork(TextureCadenceProbe::Kind::GpuCallback, probe_start);
     }
 
     return &surface_descriptor_;

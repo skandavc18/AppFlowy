@@ -12,6 +12,7 @@ import 'package:appflowy/shared/table_views/gallery_stage.dart';
 import 'package:appflowy/shared/table_views/mailbox_stage.dart';
 import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:appflowy/shared/table_views/timeline_stage.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/workspace/application/table_views/feed_spec.dart';
 import 'package:appflowy/workspace/application/table_views/form_spec.dart';
@@ -400,7 +401,11 @@ class _BackToViewState extends State<_BackToView> {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(widget.icon, size: 15, color: palette.textSecondary),
+              WorkspaceGlyph(
+                widget.icon,
+                size: 15,
+                color: palette.textSecondary,
+              ),
               const SizedBox(width: 7),
               Text(
                 widget.label,

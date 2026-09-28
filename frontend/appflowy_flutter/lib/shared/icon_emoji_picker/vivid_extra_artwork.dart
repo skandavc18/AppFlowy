@@ -782,3 +782,619 @@ const _extraIllustrations = <String, _Illustration>{
           '<path d="m9 14 4 4-4 4m8 0h6" stroke="url(#accent)" stroke-width="2.5"/>'
           '<path d="M6 7h1m3 0h1m3 0h1" stroke="#F6D4A4" stroke-width="1.5"/>'),
 };
+
+// Chrome-only, original 32px artwork. Never mutate the saved illustrations
+// above to fix a similarly named action (notably nature/tree and ZIP/archive).
+// Open silhouettes and two independently colored parts remain readable at 16px.
+const _actionLens = '<circle cx="13" cy="13" r="8" stroke="url(#main)"/>'
+    '<path d="m19 19 8 8" stroke="url(#main)"/>';
+const _actionFolder = '<path d="M4 8a2 2 0 0 1 2-2h7l3 4h10'
+    'a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" '
+    'stroke="url(#main)"/>';
+const _actionSheet = '<path d="M8 3h11l7 7v18H8V3Z" stroke="url(#main)"/>'
+    '<path d="M19 3v7h7" stroke="url(#main)"/>';
+const _actionCalendar = '<rect x="4" y="7" width="24" height="22" rx="3" '
+    'stroke="url(#main)"/>'
+    '<path d="M10 3v7M22 3v7M4 14h24" stroke="url(#main)"/>';
+const _actionCloud = '<path d="M9 24a6 6 0 0 1-1-12 8 8 0 0 1 15-2'
+    ' 7 7 0 0 1 1 14" stroke="url(#main)"/>';
+const _actionSpeaker = '<path d="M3 12h6l8-7v22l-8-7H3Z" fill="url(#main)"/>';
+const _actionIllustrations = <String, _Illustration>{
+  // Find/replace, view transforms and document/image toolbars.
+  'find-replace': _Illustration.action(
+    '<circle cx="11" cy="10" r="6" stroke="url(#main)"/>'
+    '<path d="m15.5 14.5 4 4" stroke="url(#main)"/>'
+    '<path d="M5 25h21m-5-5 5 5-5 5" stroke="url(#accent)"/>',
+  ),
+  'replace-all': _Illustration.action(
+    '<path d="M5 12a12 12 0 0 1 20-5l2 3m0-6v6h-6" stroke="url(#main)"/>'
+    '<path d="M27 20a12 12 0 0 1-20 5l-2-3m0 6v-6h6" '
+    'stroke="url(#accent)"/>'
+    '<path d="M12 13h8m-8 6h8" stroke="url(#accent)"/>',
+  ),
+  'fit': _Illustration.action(
+    '<path d="M10 4H4v6m18-6h6v6M4 22v6h6m12 0h6v-6" '
+    'stroke="url(#main)"/>'
+    '<rect x="8" y="11" width="16" height="10" rx="2" fill="url(#accent)"/>',
+  ),
+  'fit-page': _Illustration.action(
+    '<path d="M9 3H3v6m20-6h6v6M3 23v6h6m14 0h6v-6" '
+    'stroke="url(#accent)"/>'
+    '<rect x="10" y="6" width="12" height="20" rx="2" fill="url(#main)"/>'
+    '<path d="M13 12h6m-6 5h6m-6 5h4" stroke="#F1F7FF" stroke-width="1.5"/>',
+  ),
+  'actual-size': _Illustration.action(
+    '<path d="M10 4H4v6m18-6h6v6M4 22v6h6m12 0h6v-6" '
+    'stroke="url(#main)"/>'
+    '<path d="m8 13 3-2v10m10-8 3-2v10M16 13h.01M16 19h.01" '
+    'stroke="url(#accent)"/>',
+  ),
+  'width': _Illustration.action(
+    '<path d="M4 6v20M28 6v20" stroke="url(#main)"/>'
+    '<path d="M8 16h16m-4-4 4 4-4 4M12 12l-4 4 4 4" '
+    'stroke="url(#accent)"/>',
+  ),
+  'rotate': _Illustration.action(
+    '<rect x="10" y="15" width="14" height="14" rx="2" fill="url(#main)"/>'
+    '<path d="M5 13A12 12 0 0 1 25 6l3 4m0-7v7h-7" '
+    'stroke="url(#accent)"/>',
+  ),
+  'rotate-ccw': _Illustration.action(
+    '<rect x="8" y="15" width="14" height="14" rx="2" fill="url(#main)"/>'
+    '<path d="M27 13A12 12 0 0 0 7 6l-3 4m0-7v7h7" '
+    'stroke="url(#accent)"/>',
+  ),
+  'print': _Illustration.action(
+    '<path d="M9 12V3h14v9" stroke="url(#accent)"/>'
+    '<rect x="3" y="11" width="26" height="13" rx="3" fill="url(#main)"/>'
+    '<path d="M9 20h14v9H9Z" fill="url(#accent)"/>'
+    '<path d="M12 24h8M24 15h.01" stroke="#F4F7FF" stroke-width="1.8"/>',
+  ),
+  'zoom-in': _Illustration.action(
+    '$_actionLens<path d="M9 13h8M13 9v8" stroke="url(#accent)"/>',
+  ),
+  'zoom-out': _Illustration.action(
+    '$_actionLens<path d="M9 13h8" stroke="url(#accent)"/>',
+  ),
+  'crop': _Illustration.action(
+    '<rect x="10" y="10" width="12" height="12" rx="1" '
+    'fill="url(#main)" fill-opacity=".3"/>'
+    '<path d="M8 3v21h21" stroke="url(#main)"/>'
+    '<path d="M3 8h21v21" stroke="url(#accent)"/>',
+  ),
+  'flip-horizontal': _Illustration.action(
+    '<path d="M16 3v5m0 5v6m0 5v5" stroke="url(#main)"/>'
+    '<path d="M4 7l8 9-8 9Z" fill="url(#main)"/>'
+    '<path d="m28 7-8 9 8 9Z" stroke="url(#accent)"/>',
+  ),
+  'flip-vertical': _Illustration.action(
+    '<path d="M3 16h5m5 0h6m5 0h5" stroke="url(#main)"/>'
+    '<path d="m7 4 9 8 9-8Z" fill="url(#main)"/>'
+    '<path d="m7 28 9-8 9 8Z" stroke="url(#accent)"/>',
+  ),
+  'fullscreen': _Illustration.action(
+    '<path d="M11 4H4v7m17-7h7v7" stroke="url(#main)"/>'
+    '<path d="M4 21v7h7m10 0h7v-7" stroke="url(#accent)"/>',
+  ),
+  'fullscreen-exit': _Illustration.action(
+    '<path d="M4 11h7V4m10 0v7h7" stroke="url(#main)"/>'
+    '<path d="M4 21h7v7m10 0v-7h7" stroke="url(#accent)"/>',
+  ),
+  'highlight': _Illustration.action(
+    '<path d="m9 20 13-16 6 5-14 15Z" fill="url(#main)"/>'
+    '<path d="m9 20-4 7h12M3 30h26m-12-18 6 5" stroke="url(#accent)"/>',
+  ),
+  'marker-number': _Illustration.action(
+    '<rect x="5" y="3" width="22" height="26" rx="4" stroke="url(#main)"/>'
+    '<path d="m12 12 4-3v14m-4 0h8" stroke="url(#accent)"/>',
+  ),
+  'scan-document': _Illustration.action(
+    '<path d="M9 3H3v6m20-6h6v6M3 23v6h6m14 0h6v-6" '
+    'stroke="url(#accent)"/>'
+    '<rect x="9" y="6" width="14" height="20" rx="2" stroke="url(#main)"/>'
+    '<path d="M12 11h8m-8 5h8m-8 5h5" stroke="url(#main)"/>',
+  ),
+  'hierarchy': _Illustration.action(
+    '<path d="M16 10v7M7 23v-6h18v6" stroke="url(#main)"/>'
+    '<rect x="11" y="2" width="10" height="9" rx="2" fill="url(#main)"/>'
+    '<rect x="2" y="22" width="10" height="8" rx="2" fill="url(#accent)"/>'
+    '<rect x="20" y="22" width="10" height="8" rx="2" fill="url(#accent)"/>',
+  ),
+  // Common file, page, collection and context-menu actions.
+  'share': _Illustration.action(
+    '<path d="M9 13H5v15h22V13h-4" stroke="url(#main)"/>'
+    '<path d="M16 21V3m-5 5 5-5 5 5" stroke="url(#accent)"/>',
+  ),
+  'external-link': _Illustration.action(
+    '<path d="M14 6H5v22h22v-9" stroke="url(#main)"/>'
+    '<path d="M19 3h10v10m0-10L15 17" stroke="url(#accent)"/>',
+  ),
+  'duplicate': _Illustration.action(
+    '<path d="M21 8V3H3v18h5" stroke="url(#main)"/>'
+    '<rect x="10" y="10" width="19" height="19" rx="3" '
+    'stroke="url(#accent)"/>'
+    '<path d="M15 19h9m-4.5-4.5v9" stroke="url(#main)"/>',
+  ),
+  'paste-go': _Illustration.action(
+    '<path d="M10 7H5v22h10M21 7h6v7" stroke="url(#main)"/>'
+    '<rect x="10" y="3" width="11" height="7" rx="2" fill="url(#main)"/>'
+    '<path d="M16 23h13m-5-5 5 5-5 5" stroke="url(#accent)"/>',
+  ),
+  'file-plus': _Illustration.action(
+    '$_actionSheet<path d="M12 19h10m-5-5v10" stroke="url(#accent)"/>',
+  ),
+  'folder-plus': _Illustration.action(
+    '$_actionFolder<path d="M10 19h12m-6-6v12" stroke="url(#accent)"/>',
+  ),
+  'folder-upload': _Illustration.action(
+    '$_actionFolder<path d="M16 24V14m-5 5 5-5 5 5" stroke="url(#accent)"/>',
+  ),
+  'folder-move': _Illustration.action(
+    '$_actionFolder<path d="M10 19h12m-5-5 5 5-5 5" stroke="url(#accent)"/>',
+  ),
+  'folder-off': _Illustration.action(
+    '<path d="M10 6h3l3 4h12v12M4 10v18h20" stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'archive-box': _Illustration.action(
+    '<path d="M6 10h20v19H6Z" fill="url(#main)"/>'
+    '<rect x="3" y="3" width="26" height="8" rx="2" fill="url(#accent)"/>'
+    '<path d="M12 17h8" stroke="#F4F7FF"/>',
+  ),
+  'unarchive': _Illustration.action(
+    '<path d="M6 11v18h20V11M3 4h26v7H3Z" stroke="url(#main)"/>'
+    '<path d="M16 25V15m-4 4 4-4 4 4" stroke="url(#accent)"/>',
+  ),
+  'eye': _Illustration.action(
+    '<path d="M2 16S7 7 16 7s14 9 14 9-5 9-14 9S2 16 2 16Z" '
+    'stroke="url(#main)"/>'
+    '<circle cx="16" cy="16" r="5" fill="url(#accent)"/>',
+  ),
+  'eye-off': _Illustration.action(
+    '<path d="M12 7.5a15 15 0 0 1 4-.5c9 0 14 9 14 9l-4 5'
+    'M6 10l-4 6s5 9 14 9a17 17 0 0 0 6-1" stroke="url(#main)"/>'
+    '<path d="M4 4l24 24M12 13a5 5 0 0 0 7 7" stroke="url(#accent)"/>',
+  ),
+  'search-list': _Illustration.action(
+    '<path d="M4 5h24M4 11h10M4 17h6M4 23h6" stroke="url(#main)"/>'
+    '<circle cx="21" cy="20" r="6" stroke="url(#accent)"/>'
+    '<path d="m25.5 24.5 4 4" stroke="url(#accent)"/>',
+  ),
+  'search-off': _Illustration.action(
+    '$_actionLens<path d="m10 10 6 6m-6 0 6-6" stroke="url(#accent)"/>',
+  ),
+  'filter-off': _Illustration.action(
+    '<path d="M12 5h16l-9 13v8l-6 3V18L4 5" stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'sliders': _Illustration.action(
+    '<path d="M4 7h24M4 16h24M4 25h24" stroke="url(#main)"/>'
+    '<g fill="url(#accent)"><circle cx="11" cy="7" r="3.5"/>'
+    '<circle cx="22" cy="16" r="3.5"/><circle cx="14" cy="25" r="3.5"/></g>',
+  ),
+  'lock-open': _Illustration.action(
+    '<rect x="6" y="14" width="20" height="15" rx="3" stroke="url(#main)"/>'
+    '<path d="M11 14V8a6 6 0 0 1 11-3M16 20v4" stroke="url(#accent)"/>',
+  ),
+  'lock-off': _Illustration.action(
+    '<path d="M12 4a6 6 0 0 1 10 4v6h4v8M6 14v15h16" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 3l26 26M16 21v3" stroke="url(#accent)"/>',
+  ),
+  'info': _Illustration.action(
+    '<circle cx="16" cy="16" r="12" stroke="url(#main)"/>'
+    '<path d="M16 14v9M16 9h.01" stroke="url(#accent)" stroke-width="3"/>',
+  ),
+  'help': _Illustration.action(
+    '<circle cx="16" cy="16" r="12" stroke="url(#main)"/>'
+    '<path d="M12 11a4 4 0 1 1 5 4c-1 .5-1 1.5-1 3M16 23h.01" '
+    'stroke="url(#accent)"/>',
+  ),
+  'warning': _Illustration.action(
+    '<path d="m16 3 14 25H2Z" stroke="url(#main)"/>'
+    '<path d="M16 11v8M16 23h.01" stroke="url(#accent)" stroke-width="3"/>',
+    light: '#F0C568',
+    shade: '#CD9035',
+    accentLight: '#E8986C',
+    accentShade: '#BC6559',
+  ),
+  'error': _Illustration.action(
+    '<path d="M11 3h10l8 8v10l-8 8H11l-8-8V11Z" stroke="url(#main)"/>'
+    '<path d="M16 9v9M16 23h.01" stroke="url(#accent)" stroke-width="3"/>',
+    light: '#ED93A8',
+    shade: '#BA526F',
+  ),
+  'star': _Illustration.action(
+    '<path d="m16 2 4 9 10 1-7 7 2 10-9-5-9 5 2-10-7-7 10-1Z" '
+    'fill="url(#main)"/>'
+    '<path d="m16 8 2 6 6 1" stroke="url(#accent)"/>',
+    light: '#FFE298',
+    shade: '#E9AB45',
+    accentLight: '#FFF3C3',
+    accentShade: '#F7C871',
+  ),
+  'bookmark-plus': _Illustration.action(
+    '<path d="M17 4H6v25l10-5 10 5V16" stroke="url(#main)"/>'
+    '<path d="M25 2v10m-5-5h10" stroke="url(#accent)"/>',
+  ),
+  'star-off': _Illustration.action(
+    '<path d="m13 9 3-7 4 9 10 1-7 7 1 4M8 11l-6 1 7 7-2 10 9-5 9 5" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'pin-off': _Illustration.action(
+    '<path d="M15 3h7l-2 10 5 6v2h-6M9 10l1 4-4 7h10v8" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'tag': _Illustration.action(
+    '<path d="M3 4h12l15 15-11 11L3 15Z" fill="url(#main)"/>'
+    '<circle cx="9" cy="10" r="3" fill="url(#accent)"/>',
+  ),
+  'tag-off': _Illustration.action(
+    '<path d="M13 4h3l14 15-5 5M3 10v6l16 14 2-2" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'link-add': _Illustration.action(
+    '<path d="m13 10 4-4a7 7 0 0 1 10 10M13 26A7 7 0 0 1 3 16l4-4" '
+    'stroke="url(#main)"/>'
+    '<path d="m11 20 10-10M24 19v10m-5-5h10" stroke="url(#accent)"/>',
+  ),
+  'unlink': _Illustration.action(
+    '<path d="m18 6 1-1a7 7 0 0 1 10 10l-4 4M14 26l-1 1'
+    'A7 7 0 0 1 3 17l4-4" stroke="url(#main)"/>'
+    '<path d="m12 20 8-8M8 3v5H3m21 21v-5h5" stroke="url(#accent)"/>',
+  ),
+  'image-plus': _Illustration.action(
+    '<path d="M17 4H4v24h24V16M4 21l8-9 8 10 4-4 4 3" '
+    'stroke="url(#main)"/>'
+    '<path d="M25 2v10m-5-5h10" stroke="url(#accent)"/>',
+  ),
+  'image-broken': _Illustration.action(
+    '<rect x="4" y="4" width="24" height="24" rx="3" stroke="url(#main)"/>'
+    '<path d="m4 20 6-6 7 7 5-6 6 5M18 4l-5 8 6 3-5 9 3 4" '
+    'stroke="url(#accent)"/>',
+  ),
+  'image-off': _Illustration.action(
+    '<path d="M12 4h16v16M4 10v18h19M4 22l7-8 10 10" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'location': _Illustration.action(
+    '<path d="M26 12c0 7-10 18-10 18S6 19 6 12a10 10 0 0 1 20 0Z" '
+    'fill="url(#main)"/>'
+    '<circle cx="16" cy="12" r="4" fill="url(#accent)"/>',
+  ),
+  'location-plus': _Illustration.action(
+    '<path d="M26 12c0 7-10 18-10 18S6 19 6 12a10 10 0 0 1 20 0Z" '
+    'stroke="url(#main)"/>'
+    '<path d="M11 12h10m-5-5v10" stroke="url(#accent)"/>',
+  ),
+  'location-off': _Illustration.action(
+    '<path d="M10 4a10 10 0 0 1 16 8c0 3-2 7-4 10M6 11'
+    'c0 8 10 19 10 19l4-5" stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  // Calendar, mail, sync and security retain their state marks, not just nouns.
+  'calendar-edit': _Illustration.action(
+    '<path d="M16 29H4V7h24v9M10 3v7M22 3v7M4 14h24" '
+    'stroke="url(#main)"/>'
+    '<path d="m18 24 8-8 4 4-8 8-6 2Z" fill="url(#accent)"/>',
+  ),
+  'calendar-check': _Illustration.action(
+    '$_actionCalendar<path d="m10 21 4 4 9-8" stroke="url(#accent)"/>',
+  ),
+  'calendar-off': _Illustration.action(
+    '$_actionCalendar<path d="m12 18 8 8m-8 0 8-8" stroke="url(#accent)"/>',
+  ),
+  'bell-ringing': _Illustration.action(
+    '<path d="M9 14a7 7 0 0 1 14 0v7l3 4H6l3-4Z" '
+    'stroke="url(#main)"/>'
+    '<path d="M13 29h6M3 10l3-5m23 5-3-5M16 3v4" '
+    'stroke="url(#accent)"/>',
+  ),
+  'bell-off': _Illustration.action(
+    '<path d="M12 6a7 7 0 0 1 11 6v7M9 12v8l-3 5h17M13 29h6" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'cloud-upload': _Illustration.action(
+    '$_actionCloud<path d="M16 29V16m-5 5 5-5 5 5" stroke="url(#accent)"/>',
+  ),
+  'cloud-download': _Illustration.action(
+    '$_actionCloud<path d="M16 16v13m-5-5 5 5 5-5" stroke="url(#accent)"/>',
+  ),
+  'cloud-sync': _Illustration.action(
+    '$_actionCloud<path d="M11 20a6 6 0 0 1 10-2l2 2m0-5v5h-5'
+    'M23 25a6 6 0 0 1-10 2l-2-2m0 5v-5h5" stroke="url(#accent)"/>',
+  ),
+  'cloud-check': _Illustration.action(
+    '$_actionCloud<path d="m12 24 5 5 10-12" stroke="url(#accent)"/>',
+  ),
+  'cloud-off': _Illustration.action(
+    '<path d="M12 5a8 8 0 0 1 11 5 7 7 0 0 1 5 11M5 12'
+    'a6 6 0 0 0 4 12h14" stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'shield-info': _Illustration.action(
+    '<path d="m16 3 11 4v10c0 6-6 10-11 13C11 27 5 23 5 17V7Z" '
+    'stroke="url(#main)"/>'
+    '<path d="M16 15v8M16 10h.01" stroke="url(#accent)"/>',
+  ),
+  'user-plus': _Illustration.action(
+    '<circle cx="12" cy="9" r="6" fill="url(#main)"/>'
+    '<path d="M2 29v-3c0-7 12-10 17-5" stroke="url(#main)"/>'
+    '<path d="M25 17v12m-6-6h12" stroke="url(#accent)"/>',
+  ),
+  'inbox': _Illustration.action(
+    '<path d="M4 18 8 4h16l4 14v11H4Z" stroke="url(#main)"/>'
+    '<path d="M4 18h7l3 5h4l3-5h7" stroke="url(#accent)"/>',
+  ),
+  'inboxes': _Illustration.action(
+    '<path d="M7 3h18v5M4 16l4-6h16l4 6v13H4Z" stroke="url(#main)"/>'
+    '<path d="M4 16h7l3 5h4l3-5h7" stroke="url(#accent)"/>',
+  ),
+  'mail-read': _Illustration.action(
+    '<path d="m3 13 13-10 13 10v16H3Z" stroke="url(#main)"/>'
+    '<path d="m3 13 13 9 13-9M3 29l10-9m6 0 10 9" '
+    'stroke="url(#accent)"/>',
+  ),
+  'mail-unread': _Illustration.action(
+    '<path d="M18 7H3v22h26V17M3 9l13 11 7-5" stroke="url(#main)"/>'
+    '<circle cx="26" cy="7" r="5" fill="url(#accent)"/>',
+  ),
+  'mail-forward': _Illustration.action(
+    '<path d="M15 27H3V7h26v10M3 7l13 11L29 7" stroke="url(#main)"/>'
+    '<path d="M19 25h11m-5-5 5 5-5 5" stroke="url(#accent)"/>',
+  ),
+  'send': _Illustration.action(
+    '<path d="m3 4 27 12L3 28l5-12Z" stroke="url(#main)"/>'
+    '<path d="M8 16h22" stroke="url(#accent)"/>',
+  ),
+  'alarm': _Illustration.action(
+    '<circle cx="16" cy="17" r="11" stroke="url(#main)"/>'
+    '<path d="M16 11v7l5 3M3 6l5-3m16 0 5 3M8 27l-3 3m19-3 3 3" '
+    'stroke="url(#accent)"/>',
+  ),
+  // Playback and directional edits are separate, including both five-second steps.
+  'undo': _Illustration.action(
+    '<path d="M6 12h13a8 8 0 0 1 0 16" stroke="url(#main)"/>'
+    '<path d="m12 5-7 7 7 7" stroke="url(#accent)"/>',
+  ),
+  'redo': _Illustration.action(
+    '<path d="M26 12H13a8 8 0 0 0 0 16" stroke="url(#main)"/>'
+    '<path d="m20 5 7 7-7 7" stroke="url(#accent)"/>',
+  ),
+  'replay': _Illustration.action(
+    '<path d="M8 7A12 12 0 1 1 4 20" stroke="url(#main)"/>'
+    '<path d="M8 2v6h6" stroke="url(#accent)"/>',
+  ),
+  'rewind-5': _Illustration.action(
+    '<path d="M8 7A12 12 0 1 1 4 20M8 2v6h6" stroke="url(#main)"/>'
+    '<path d="M20 12h-7v5h4a3.5 3.5 0 0 1 0 7h-4" '
+    'stroke="url(#accent)"/>',
+  ),
+  'forward-5': _Illustration.action(
+    '<path d="M24 7A12 12 0 1 0 28 20M24 2v6h-6" stroke="url(#main)"/>'
+    '<path d="M20 12h-7v5h4a3.5 3.5 0 0 1 0 7h-4" '
+    'stroke="url(#accent)"/>',
+  ),
+  'play': _Illustration.action(
+    '<path d="m8 4 21 12L8 28Z" fill="url(#main)"/>'
+    '<path d="m12 10 9 6-9 6Z" fill="url(#accent)"/>',
+  ),
+  'pause': _Illustration.action(
+    '<rect x="5" y="4" width="8" height="24" rx="2" fill="url(#main)"/>'
+    '<rect x="19" y="4" width="8" height="24" rx="2" fill="url(#accent)"/>',
+  ),
+  'stop': _Illustration.action(
+    '<rect x="5" y="5" width="22" height="22" rx="3" fill="url(#main)"/>'
+    '<path d="M9 20v3h14" stroke="url(#accent)"/>',
+  ),
+  'skip-next': _Illustration.action(
+    '<path d="m4 5 18 11L4 27Z" fill="url(#main)"/>'
+    '<path d="M27 5v22" stroke="url(#accent)" stroke-width="4"/>',
+  ),
+  'skip-previous': _Illustration.action(
+    '<path d="M28 5 10 16l18 11Z" fill="url(#main)"/>'
+    '<path d="M5 5v22" stroke="url(#accent)" stroke-width="4"/>',
+  ),
+  'shuffle': _Illustration.action(
+    '<path d="M3 7h5l17 19h5m-5-5 5 5-5 5" stroke="url(#main)"/>'
+    '<path d="M3 26h5L25 7h5m-5-5 5 5-5 5" stroke="url(#accent)"/>',
+  ),
+  'volume': _Illustration.action(
+    '$_actionSpeaker<path d="M22 11a7 7 0 0 1 0 10m4-15a13 13 0 0 1 0 20" '
+    'stroke="url(#accent)"/>',
+  ),
+  'volume-off': _Illustration.action(
+    '$_actionSpeaker<path d="m22 12 8 8m-8 0 8-8" stroke="url(#accent)"/>',
+  ),
+  'playback-speed': _Illustration.action(
+    '<path d="M16 3a13 13 0 1 1-13 13M4 10h.01M7 6h.01M11 3h.01" '
+    'stroke="url(#main)"/>'
+    '<path d="m13 10 10 6-10 6Z" fill="url(#accent)"/>',
+  ),
+  // Data/tool metaphors: never substitute a tree, key or page for a different action.
+  'broom': _Illustration.action(
+    '<path d="m21 3-7 13" stroke="url(#accent)" stroke-width="3"/>'
+    '<path d="m10 13 12 6-6 12-13-6Z" fill="url(#main)"/>'
+    '<path d="m9 26 4-8m2 11 4-8" stroke="url(#accent)"/>',
+  ),
+  'brush': _Illustration.action(
+    '<path d="m13 20 11-16a3 3 0 0 1 5 3L16 23Z" fill="url(#main)"/>'
+    '<path d="M13 20c-8-3-5 8-11 7 8 7 16-1 11-7Z" fill="url(#accent)"/>',
+  ),
+  'measure': _Illustration.action(
+    '<path d="m3 23 20-20 6 6L9 29Z" fill="url(#main)"/>'
+    '<path d="m8 18 3 3m2-8 3 3m2-8 3 3" stroke="url(#accent)"/>',
+  ),
+  'commit': _Illustration.action(
+    '<path d="M2 16h8m12 0h8" stroke="url(#main)"/>'
+    '<circle cx="16" cy="16" r="6" stroke="url(#accent)"/>',
+  ),
+  'rebase': _Illustration.action(
+    '<path d="M7 8v16" stroke="url(#main)"/>'
+    '<g fill="url(#main)"><circle cx="7" cy="5" r="3"/>'
+    '<circle cx="7" cy="27" r="3"/></g>'
+    '<path d="M14 23h11V5m-5 5 5-5 5 5" stroke="url(#accent)"/>',
+  ),
+  'server': _Illustration.action(
+    '<rect x="3" y="3" width="26" height="10" rx="3" fill="url(#main)"/>'
+    '<rect x="3" y="19" width="26" height="10" rx="3" fill="url(#accent)"/>'
+    '<path d="M8 8h.01M8 24h.01M15 8h8M15 24h8" stroke="#EFF7FF"/>',
+  ),
+  'computer': _Illustration.action(
+    '<rect x="3" y="3" width="26" height="20" rx="3" fill="url(#main)"/>'
+    '<path d="M12 23v6m8-6v6M8 29h16" stroke="url(#accent)"/>'
+    '<path d="M8 18h16" stroke="#F3F7FF"/>',
+  ),
+  'brain': _Illustration.action(
+    '<path d="M16 6C12-1 3 4 6 11c-7 1-6 11 0 12-2 8 8 9 10 4V6Z" '
+    'stroke="url(#main)"/>'
+    '<path d="M16 6c4-7 13-2 10 5 7 1 6 11 0 12 2 8-8 9-10 4'
+    'M6 11l5 3m15-3-5 3M6 23l5-5m15 5-5-5" stroke="url(#accent)"/>',
+  ),
+  'puzzle-off': _Illustration.action(
+    '<path d="M13 5h3a4 4 0 0 1 8 0h5v8a4 4 0 0 0 0 8'
+    'M5 12v4a4 4 0 0 0 0 8v5h8a4 4 0 0 1 8 0h8" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+  'cursor': _Illustration.action(
+    '<path d="m5 3 22 15-11 2-5 10Z" fill="url(#main)"/>'
+    '<path d="m16 19 8 10" stroke="url(#accent)" stroke-width="3"/>',
+  ),
+  'hand-pan': _Illustration.action(
+    '<path d="M11 17V4a2.5 2.5 0 0 1 5 0v10-7a2.5 2.5 0 0 1 5 0v7-3'
+    'a2.5 2.5 0 0 1 5 0v11l-4 8H11L3 20a2.5 2.5 0 0 1 4-3l4 4" '
+    'stroke="url(#main)"/>'
+    '<path d="M13 25h8" stroke="url(#accent)"/>',
+  ),
+  'polyline': _Illustration.action(
+    '<path d="m6 6 20 5-9 16L6 6Z" stroke="url(#main)"/>'
+    '<g fill="url(#accent)"><rect x="3" y="3" width="6" height="6" rx="1"/>'
+    '<rect x="23" y="8" width="6" height="6" rx="1"/>'
+    '<rect x="14" y="24" width="6" height="6" rx="1"/></g>',
+  ),
+  'time-progress': _Illustration.action(
+    '<circle cx="16" cy="16" r="12" stroke="url(#main)"/>'
+    '<path d="M16 4v12l8 8a12 12 0 0 0-8-20Z" fill="url(#accent)"/>',
+  ),
+  'signal': _Illustration.action(
+    '<path d="M6 4a15 15 0 0 0 0 24M26 4a15 15 0 0 1 0 24" '
+    'stroke="url(#main)"/>'
+    '<path d="M11 9a9 9 0 0 0 0 14m10-14a9 9 0 0 1 0 14" '
+    'stroke="url(#accent)"/>'
+    '<circle cx="16" cy="16" r="3" fill="url(#accent)"/>',
+  ),
+  'check-off': _Illustration.action(
+    '<path d="m3 16 7 7 4-4m4-4L28 5" stroke="url(#main)"/>'
+    '<path d="M4 4l24 24" stroke="url(#accent)"/>',
+  ),
+  'clipboard-check': _Illustration.action(
+    '<path d="M10 6H5v24h22V6h-5" stroke="url(#main)"/>'
+    '<rect x="10" y="2" width="12" height="7" rx="2" fill="url(#main)"/>'
+    '<path d="m10 19 4 5 9-12" stroke="url(#accent)"/>',
+  ),
+  'scales': _Illustration.action(
+    '<path d="M16 2v27M9 30h14M4 8h24" stroke="url(#main)"/>'
+    '<path d="m7 8-5 12h10L7 8Zm18 0-5 12h10L25 8Z" '
+    'stroke="url(#accent)"/>',
+  ),
+  'fog': _Illustration.action(
+    '<path d="M8 17a5 5 0 1 1 1-10 7 7 0 0 1 13 2 4 4 0 1 1 1 8" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 23h26M7 29h18" stroke="url(#accent)"/>',
+  ),
+  'snowflake': _Illustration.action(
+    '<path d="M16 2v28M4 9l24 14M4 23 28 9" stroke="url(#main)"/>'
+    '<path d="m12 3 4 5 4-5m-8 26 4-5 4 5M3 13l6-1-1-6'
+    'm16 20-1-6 6-1M3 19l6 1-1 6M24 6l-1 6 6 1" '
+    'stroke="url(#accent)"/>',
+  ),
+  'storm': _Illustration.action(
+    '<path d="M8 19a6 6 0 0 1 0-12 8 8 0 0 1 15-2 7 7 0 0 1 2 14" '
+    'stroke="url(#main)"/>'
+    '<path d="m17 13-9 10h8l-1 8 9-12h-8Z" fill="url(#accent)"/>',
+  ),
+  'bank': _Illustration.action(
+    '<path d="m3 11 13-8 13 8ZM3 29h26" stroke="url(#main)"/>'
+    '<path d="M7 15v10m9-10v10m9-10v10" stroke="url(#accent)" '
+    'stroke-width="4"/>',
+  ),
+  'receipt': _Illustration.action(
+    '<path d="m6 3 5 3 5-3 5 3 5-3v27l-5-3-5 3-5-3-5 3Z" '
+    'stroke="url(#main)"/>'
+    '<path d="M11 11h10M11 17h10M11 23h6" stroke="url(#accent)"/>',
+  ),
+  'cutlery': _Illustration.action(
+    '<path d="M3 3v8a4 4 0 0 0 8 0V3M7 3v27" stroke="url(#main)"/>'
+    '<path d="M26 3c-6 4-7 10-7 16h7V3Zm0 16v11" '
+    'stroke="url(#accent)"/>',
+  ),
+  'badge': _Illustration.action(
+    '<rect x="3" y="7" width="26" height="23" rx="3" stroke="url(#main)"/>'
+    '<path d="M12 2v8h8V2M19 16h6m-6 7h6M6 26c0-6 10-6 10 0" '
+    'stroke="url(#accent)"/>'
+    '<circle cx="11" cy="17" r="3" fill="url(#accent)"/>',
+  ),
+  'bug': _Illustration.action(
+    '<path d="m10 3 3 5m9-5-3 5M3 12h6m14 0h6M3 19h6m14 0h6'
+    'M3 28l6-4m14 0 6 4" stroke="url(#main)"/>'
+    '<rect x="9" y="7" width="14" height="23" rx="7" fill="url(#accent)"/>'
+    '<path d="M16 13v12" stroke="url(#main)"/>',
+  ),
+  'tab': _Illustration.action(
+    '<path d="M4 10h13V4h11v25H4Z" stroke="url(#main)"/>'
+    '<path d="M4 10V4h13M17 10h11" stroke="url(#accent)"/>',
+  ),
+  'history-search': _Illustration.action(
+    '<path d="M5 13a12 12 0 1 1 2 11M5 5v8h8" stroke="url(#main)"/>'
+    '<circle cx="17" cy="14" r="4" stroke="url(#accent)"/>'
+    '<path d="m20 17 4 4" stroke="url(#accent)"/>',
+  ),
+  'paw': _Illustration.action(
+    '<path d="M16 15c-5 0-4 4-9 6-6 5-1 10 4 7 3-2 7-2 10 0'
+    ' 5 3 10-2 4-7-5-2-4-6-9-6Z" fill="url(#main)"/>'
+    '<g fill="url(#accent)"><ellipse cx="5" cy="11" rx="3" ry="4"/>'
+    '<ellipse cx="12" cy="6" rx="3" ry="4"/>'
+    '<ellipse cx="20" cy="6" rx="3" ry="4"/>'
+    '<ellipse cx="27" cy="11" rx="3" ry="4"/></g>',
+  ),
+  'food': _Illustration.action(
+    '<path d="M2 20a8 8 0 0 1 16 0H2Zm0 5h16m-16 4h16" '
+    'stroke="url(#main)"/>'
+    '<path d="M21 9h9l-2 21h-5L21 9Zm3 0V3h6" stroke="url(#accent)"/>',
+  ),
+  'city': _Illustration.action(
+    '<path d="M2 30V11h12v19M14 30V3h16v27" stroke="url(#main)"/>'
+    '<path d="M6 17h4m-4 7h4M19 9h6m-6 7h6m-6 7h6" '
+    'stroke="url(#accent)"/>',
+  ),
+  'workspace-home': _Illustration.action(
+    '<path d="M4 18V3h14v8M8 8h5m-5 5h5" stroke="url(#main)"/>'
+    '<path d="m5 20 12-11 13 11M9 17v13h16V17M14 30v-9h6v9" '
+    'stroke="url(#accent)"/>',
+  ),
+  'text-image': _Illustration.action(
+    '<rect x="3" y="3" width="26" height="26" rx="3" stroke="url(#main)"/>'
+    '<path d="M8 9h16M8 14h10m-13 11 6-7 7 7 5-4 6 4" '
+    'stroke="url(#accent)"/>',
+  ),
+  'thumb-up': _Illustration.action(
+    '<path d="m11 14 7-11 4 1-2 9h9l-3 17H11Z" stroke="url(#main)"/>'
+    '<path d="M3 14h8v16H3Z" fill="url(#accent)"/>',
+  ),
+  'thumb-down': _Illustration.action(
+    '<path d="m11 18 7 11 4-1-2-9h9L26 2H11Z" stroke="url(#main)"/>'
+    '<path d="M3 2h8v16H3Z" fill="url(#accent)"/>',
+  ),
+  'globe-off': _Illustration.action(
+    '<path d="M12 4a12 12 0 0 1 16 16M4 10a12 12 0 0 0 15 18'
+    'M16 4c4 4 5 10 4 13M10 10c-1 6 1 12 6 18M4 16h12m7 0h5" '
+    'stroke="url(#main)"/>'
+    '<path d="M3 3l26 26" stroke="url(#accent)"/>',
+  ),
+};

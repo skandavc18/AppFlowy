@@ -20,15 +20,15 @@ namespace flutter_inappwebview_plugin
     : plugin(plugin),
     ChannelDelegate(plugin->registrar->messenger(), InAppWebViewManager::METHOD_CHANNEL_NAME)
   {
-    if (!rohelper_) {
-      rohelper_ = std::make_unique<rx::RoHelper>(RO_INIT_SINGLETHREADED);
+    if (!resources_->runtime) {
+      resources_->runtime = std::make_unique<rx::RoHelper>(RO_INIT_SINGLETHREADED);
 
-      if (rohelper_->WinRtAvailable()) {
+      if (rohelper()->WinRtAvailable()) {
         DispatcherQueueOptions options{ sizeof(DispatcherQueueOptions),
                                        DQTYPE_THREAD_CURRENT, DQTAT_COM_STA };
 
-        if (FAILED(rohelper_->CreateDispatcherQueueController(
-          options, dispatcher_queue_controller_.put()))) {
+        if (FAILED(rohelper()->CreateDispatcherQueueController(
+          options, resources_->dispatcher.put()))) {
           std::cerr << "Creating DispatcherQueueController failed." << std::endl;
           return;
         }
@@ -40,9 +40,9 @@ namespace flutter_inappwebview_plugin
           return;
         }
 
-        graphics_context_ = std::make_unique<GraphicsContext>(rohelper_.get());
-        compositor_ = graphics_context_->CreateCompositor();
-        valid_ = graphics_context_->IsValid();
+        resources_->graphics = std::make_unique<GraphicsContext>(rohelper());
+        resources_->composition = graphics_context()->CreateCompositor();
+        resources_->valid = graphics_context()->IsValid() && resources_->composition;
       }
     }
 
@@ -69,18 +69,35 @@ namespace flutter_inappwebview_plugin
     else if (string_equals(methodName, "dispose")) {
       auto id = get_fl_map_value<int64_t>(*arguments, "id");
       if (map_contains(webViews, (uint64_t)id)) {
-        auto platformView = webViews.at(id).get();
-        if (platformView) {
-          platformView->UnregisterMethodCallHandler();
-        }
+        auto platformView = std::move(webViews.at(id));
         webViews.erase(id);
+        auto events = platformView->lifecycle_events();
+        auto reply = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
+        platformView->Dispose([reply, events](HRESULT close_result) {
+          if (FAILED(close_result)) {
+            return reply->Error("controllerCloseFailed", "Native controller close failed.",
+              flutter::EncodableValue(static_cast<int32_t>(close_result)));
+          }
+          if (events) {
+            flutter::EncodableList stages;
+            for (auto stage : *events) stages.emplace_back(stage);
+            return reply->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("schema"), flutter::EncodableValue(1)},
+              {flutter::EncodableValue("stages"), flutter::EncodableValue(std::move(stages))} }));
+          }
+          reply->Success();
+        });
+        return;
       }
       result->Success();
     }
     else if (string_equals(methodName, "disposeKeepAlive")) {
       auto keepAliveId = get_fl_map_value<std::string>(*arguments, "keepAliveId");
-      disposeKeepAlive(keepAliveId);
-      result->Success();
+      auto reply = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
+      disposeKeepAlive(keepAliveId, [reply](HRESULT close_result) {
+        if (FAILED(close_result)) return reply->Error("controllerCloseFailed");
+        reply->Success();
+      });
     }
     else {
       result->NotImplemented();
@@ -115,7 +132,7 @@ namespace flutter_inappwebview_plugin
       windowClass_.hInstance, nullptr);
 
     if (keepAliveId.has_value() && map_contains(keepAliveWebViews, keepAliveId.value())) {
-      auto webView = std::move(keepAliveWebViews.at(keepAliveId.value())->view);
+      auto webView = keepAliveWebViews.at(keepAliveId.value())->DetachView();
       keepAliveWebViews.erase(keepAliveId.value());
       auto customPlatformView = std::make_unique<CustomPlatformView>(plugin->registrar->messenger(),
         plugin->registrar->texture_registrar(),
@@ -162,12 +179,9 @@ namespace flutter_inappwebview_plugin
             inAppWebView->loadData(get_fl_map_value<std::string>(initialDataMap.value(), "data"));
           }
 
-          if (windowId.has_value() && map_contains(windowWebViews, windowId.value())) {
-            auto windowWebViewArgs = windowWebViews.at(windowId.value()).get();
-            windowWebViewArgs->args->put_NewWindow(inAppWebView->webView.get());
-            windowWebViewArgs->args->put_Handled(TRUE);
-            windowWebViewArgs->deferral->Complete();
-            windowWebViews.erase(windowId.value());
+          if (windowId.has_value()) {
+            auto request = takePendingWindow(windowWebViews, windowId.value());
+            if (request) request->finish(inAppWebView->webView.get());
           }
 
           auto customPlatformView = std::make_unique<CustomPlatformView>(plugin->registrar->messenger(),
@@ -195,15 +209,15 @@ namespace flutter_inappwebview_plugin
     );
   }
 
-  void InAppWebViewManager::disposeKeepAlive(const std::string& keepAliveId)
+  void InAppWebViewManager::disposeKeepAlive(const std::string& keepAliveId,
+    std::function<void(HRESULT)> completion)
   {
     if (map_contains(keepAliveWebViews, keepAliveId)) {
-      auto platformView = keepAliveWebViews.at(keepAliveId).get();
-      if (platformView) {
-        platformView->UnregisterMethodCallHandler();
-      }
+      auto platformView = std::move(keepAliveWebViews.at(keepAliveId));
       keepAliveWebViews.erase(keepAliveId);
+      platformView->Dispose(std::move(completion));
     }
+    else if (completion) completion(S_OK);
   }
 
   bool InAppWebViewManager::isGraphicsCaptureSessionSupported()
@@ -211,7 +225,7 @@ namespace flutter_inappwebview_plugin
     HSTRING className;
     HSTRING_HEADER classNameHeader;
 
-    if (FAILED(rohelper_->GetStringReference(
+    if (FAILED(rohelper()->GetStringReference(
       RuntimeClass_Windows_Graphics_Capture_GraphicsCaptureSession,
       &className, &classNameHeader))) {
       return false;
@@ -219,7 +233,7 @@ namespace flutter_inappwebview_plugin
 
     ABI::Windows::Graphics::Capture::IGraphicsCaptureSessionStatics*
       capture_session_statics;
-    if (FAILED(rohelper_->GetActivationFactory(
+    if (FAILED(rohelper()->GetActivationFactory(
       className,
       __uuidof(
         ABI::Windows::Graphics::Capture::IGraphicsCaptureSessionStatics),
@@ -241,6 +255,10 @@ namespace flutter_inappwebview_plugin
     webViews.clear();
     keepAliveWebViews.clear();
     windowWebViews.clear();
+    // All views have detached capture/controllers on this platform thread.
+    // Pending texture unregister callbacks retain only their copied GPU refs.
+    // A second manager on this thread keeps the resource group alive.
+    resources_.reset();
     UnregisterClass(windowClass_.lpszClassName, nullptr);
     plugin = nullptr;
   }

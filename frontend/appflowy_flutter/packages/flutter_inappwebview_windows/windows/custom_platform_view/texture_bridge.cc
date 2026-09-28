@@ -15,10 +15,11 @@ namespace flutter_inappwebview_plugin
 
   TextureBridge::TextureBridge(GraphicsContext* graphics_context,
     ABI::Windows::UI::Composition::IVisual* visual)
-    : graphics_context_(graphics_context)
+    : graphics_context_(*graphics_context),
+    capture_callback_target_(std::make_shared<PlatformCallbackTarget<TextureBridge>>(this))
   {
     capture_item_ =
-      graphics_context_->CreateGraphicsCaptureItemFromVisual(visual);
+      graphics_context_.CreateGraphicsCaptureItemFromVisual(visual);
     assert(capture_item_);
 
     capture_item_->add_Closed(
@@ -37,11 +38,25 @@ namespace flutter_inappwebview_plugin
 
   TextureBridge::~TextureBridge()
   {
+    Shutdown();
+  }
+
+  void TextureBridge::Shutdown()
+  {
     const std::lock_guard<std::mutex> lock(mutex_);
-    StopInternal();
-    if (capture_item_) {
-      capture_item_->remove_Closed(on_closed_token_);
+    // After explicit Shutdown, destruction may occur on the unregister thread.
+    // Do not touch the platform-thread target or WinRT objects a second time.
+    if (!capture_item_) {
+      graphics_context_.DetachFactories();
+      return;
     }
+    capture_callback_target_->Detach();
+    frame_available_ = nullptr;
+    surface_size_changed_ = nullptr;
+    StopInternal();
+    capture_item_->remove_Closed(on_closed_token_);
+    capture_item_ = nullptr;
+    graphics_context_.DetachFactories();
   }
 
   bool TextureBridge::Start()
@@ -54,8 +69,8 @@ namespace flutter_inappwebview_plugin
     ABI::Windows::Graphics::SizeInt32 size;
     capture_item_->get_Size(&size);
 
-    frame_pool_ = graphics_context_->CreateCaptureFramePool(
-      graphics_context_->device(),
+    frame_pool_ = graphics_context_.CreateCaptureFramePool(
+      graphics_context_.device(),
       static_cast<ABI::Windows::Graphics::DirectX::DirectXPixelFormat>(
         kPixelFormat),
       kNumBuffers, size);
@@ -65,11 +80,11 @@ namespace flutter_inappwebview_plugin
       Microsoft::WRL::Callback<ABI::Windows::Foundation::ITypedEventHandler<
       ABI::Windows::Graphics::Capture::Direct3D11CaptureFramePool*,
       IInspectable*>>(
-        [this](ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool*
+        [target = capture_callback_target_](ABI::Windows::Graphics::Capture::IDirect3D11CaptureFramePool*
           pool,
           IInspectable* args) -> HRESULT
         {
-          OnFrameArrived();
+          if (auto bridge = target->get()) bridge->OnFrameArrived();
           return S_OK;
         })
       .Get(),
@@ -97,14 +112,23 @@ namespace flutter_inappwebview_plugin
 
   void TextureBridge::StopInternal()
   {
-    if (is_running_) {
-      is_running_ = false;
+    is_running_ = false;
+    // Also retire a partially started capture session. Keep all WinRT Close
+    // and event unsubscription on the same dispatcher that created the pool.
+    if (frame_pool_) {
       frame_pool_->remove_FrameArrived(on_frame_arrived_token_);
+    }
+    if (capture_session_) {
       auto closable =
         capture_session_.try_as<ABI::Windows::Foundation::IClosable>();
       assert(closable);
       closable->Close();
       capture_session_ = nullptr;
+    }
+    if (frame_pool_) {
+      auto closable = frame_pool_.try_as<ABI::Windows::Foundation::IClosable>();
+      if (closable) closable->Close();
+      frame_pool_ = nullptr;
     }
   }
 
@@ -115,6 +139,7 @@ namespace flutter_inappwebview_plugin
       return;
     }
 
+    cadence_probe_.Record(TextureCadenceProbe::Kind::Arrival);
     bool has_frame = false;
 
     winrt::com_ptr<ABI::Windows::Graphics::Capture::IDirect3D11CaptureFrame>
@@ -128,15 +153,18 @@ namespace flutter_inappwebview_plugin
       if (SUCCEEDED(frame->get_Surface(frame_surface.put()))) {
         last_frame_ =
           TryGetDXGIInterfaceFromObject<ID3D11Texture2D>(frame_surface);
+        if (last_frame_) cadence_probe_.Record(TextureCadenceProbe::Kind::Capture);
         has_frame = !ShouldDropFrame();
+        if (!has_frame) cadence_probe_.Record(TextureCadenceProbe::Kind::CapDrop);
       }
     }
 
     if (needs_update_) {
+      cadence_probe_.Record(TextureCadenceProbe::Kind::Resize);
       ABI::Windows::Graphics::SizeInt32 size;
       capture_item_->get_Size(&size);
       frame_pool_->Recreate(
-        graphics_context_->device(),
+        graphics_context_.device(),
         static_cast<ABI::Windows::Graphics::DirectX::DirectXPixelFormat>(
           kPixelFormat),
         kNumBuffers, size);
@@ -144,8 +172,23 @@ namespace flutter_inappwebview_plugin
     }
 
     if (has_frame && frame_available_) {
+      cadence_probe_.Record(TextureCadenceProbe::Kind::Notify);
       frame_available_();
     }
+  }
+
+  void TextureBridge::StartCadenceProbe()
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    cadence_probe_.Start();
+  }
+
+  TextureCadenceProbe::Snapshot TextureBridge::StopCadenceProbe()
+  {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    auto snapshot = cadence_probe_.Stop();
+    snapshot.limit_ms = frame_duration_ ? frame_duration_->count() : 0;
+    return snapshot;
   }
 
   bool TextureBridge::ShouldDropFrame()

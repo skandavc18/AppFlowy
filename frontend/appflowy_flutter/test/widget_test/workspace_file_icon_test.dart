@@ -36,6 +36,7 @@ import 'package:google_fonts/src/google_fonts_family_with_variant.dart';
 // ignore: implementation_imports
 import 'package:google_fonts/src/google_fonts_variant.dart';
 
+import 'page_icon_widget_test_support.dart';
 import 'test_asset_bundle.dart';
 import 'vivid_icon_test_support.dart';
 
@@ -131,9 +132,11 @@ void main() {
             .widget<MediaActionButtons>(find.byType(MediaActionButtons))
             .source;
         expect(_glyph(tester).icon.isEmpty, isTrue);
-        expect(find.byType(ViewIconPicker), findsOneWidget);
+        expect(_identityPicker, findsOneWidget);
+        expect(find.byKey(const ValueKey('workspace-file-change-icon')),
+            findsOneWidget);
 
-        await tester.tap(find.byType(ViewIconPicker));
+        await tester.tap(_identityPicker);
         await tester.pumpAndSettle();
         final picker = tester
             .widget<FlowyIconEmojiPicker>(find.byType(FlowyIconEmojiPicker));
@@ -173,9 +176,8 @@ void main() {
         );
         // ViewIconPicker's static native save is outside this scope. Exercise
         // its real callback with a serialized fake-backend result instead.
-        final changed = tester
-            .widget<ViewIconPicker>(find.byType(ViewIconPicker))
-            .onViewChanged!;
+        final changed =
+            tester.widget<ViewIconPicker>(_identityPicker).onViewChanged!;
         _closePicker(tester);
         await tester.pumpAndSettle();
         changed(backend.persist(_vivid('rocket')));
@@ -372,9 +374,8 @@ void main() {
         tester,
         () => find.byType(ViewIconPicker).evaluate().isNotEmpty,
       );
-      final oldCallback = tester
-          .widget<ViewIconPicker>(find.byType(ViewIconPicker))
-          .onViewChanged!;
+      final oldCallback =
+          tester.widget<ViewIconPicker>(_identityPicker).onViewChanged!;
       editable.value = false;
       await tester.pumpAndSettle();
       oldCallback(
@@ -424,9 +425,8 @@ void main() {
             .isNotEmpty,
       );
       final first = backend.listeners.single;
-      final oldCallback = tester
-          .widget<ViewIconPicker>(find.byType(ViewIconPicker))
-          .onViewChanged!;
+      final oldCallback =
+          tester.widget<ViewIconPicker>(_identityPicker).onViewChanged!;
       view.value = _view(
         'file-b',
         'attachment.bin',
@@ -454,7 +454,7 @@ void main() {
       await tester.pumpAndSettle();
       _expectIcon(_glyph(tester).icon, _vivid('coffee'));
       expect(
-        tester.widget<ViewIconPicker>(find.byType(ViewIconPicker)).view.id,
+        tester.widget<ViewIconPicker>(_identityPicker).view.id,
         'file-b',
       );
       expect(io.loads, 2);
@@ -496,10 +496,9 @@ void main() {
       );
       final renderer = tester
           .element(find.text('AppFlowy has no viewer for this file type yet.'));
-      final changed = tester
-          .widget<ViewIconPicker>(find.byType(ViewIconPicker))
-          .onViewChanged!;
-      await tester.tap(find.byType(ViewIconPicker));
+      final changed =
+          tester.widget<ViewIconPicker>(_identityPicker).onViewChanged!;
+      await tester.tap(_identityPicker);
       await tester.pumpAndSettle();
       backend.listeners.single.deleted!(FlowyResult.success(backend.stored));
       await tester.pumpAndSettle();
@@ -552,10 +551,15 @@ FileIdentityGlyph _glyph(WidgetTester tester) =>
       ),
     );
 
+Finder get _identityPicker => find.descendant(
+      of: find.byKey(_identity),
+      matching: find.byType(ViewIconPicker),
+    );
+
 void _closePicker(WidgetTester tester) => tester
     .widget<AppFlowyPopover>(
       find.descendant(
-        of: find.byType(ViewIconPicker),
+        of: _identityPicker,
         matching: find.byType(AppFlowyPopover),
       ),
     )
@@ -735,7 +739,9 @@ Future<void> _mount(
           ),
           home: Scaffold(
             body: Center(
-              child: SizedBox(width: 760, height: 660, child: child),
+              child: PassivePageIconTestScope(
+                child: SizedBox(width: 760, height: 660, child: child),
+              ),
             ),
           ),
         ),

@@ -242,6 +242,7 @@ class _PageStackState extends State<PageStack>
       color: WorkspacePalette.of(context).background,
       child: FocusTraversalGroup(
         child: ContextualFindScope(
+          findInControls: true,
           child: widget.pageManager.stackWidget(
             userProfile: widget.userProfile,
             onDeleted: (view, index) {
@@ -884,9 +885,13 @@ class PageManager {
         child: Selector<PageNotifier, PluginWidgetBuilder>(
           selector: (context, notifier) => notifier.plugin.widgetBuilder,
           builder: (_, widgetBuilder, __) {
-            return widgetBuilder.buildWidget(
-              context: PluginContext(),
-              shrinkWrap: false,
+            return ContextualFindScope(
+              enabled: false,
+              findInControls: true,
+              child: widgetBuilder.buildWidget(
+                context: PluginContext(),
+                shrinkWrap: false,
+              ),
             );
           },
         ),

@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/database/application/field/field_cell_bloc.dart
 import 'package:appflowy/plugins/database/application/field/field_controller.dart';
 import 'package:appflowy/plugins/database/application/field/field_info.dart';
 import 'package:appflowy/plugins/database/application/field/property_style.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/header/column_heading_menu.dart';
 import 'package:appflowy/plugins/database/widgets/field/field_editor.dart';
 import 'package:appflowy/plugins/database/widgets/field/property_type_picker.dart';
@@ -284,14 +285,18 @@ class FieldCellButton extends StatelessWidget {
             )
           : null,
       radius: radius,
-      text: FlowyText(
-        field.name,
-        lineHeight: 1.0,
-        maxLines: maxLines,
-        overflow: TextOverflow.ellipsis,
-        color: textColor ?? AFThemeExtension.of(context).textColor,
-        fontSize: fontSize,
-        fontWeight: fontWeight,
+      text: DatabaseFindAnchor(
+        target: DatabaseFindTarget.field(viewId ?? '', field.id),
+        enabled: viewId != null,
+        child: FlowyText(
+          field.name,
+          lineHeight: 1.0,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          color: textColor ?? AFThemeExtension.of(context).textColor,
+          fontSize: fontSize,
+          fontWeight: fontWeight,
+        ),
       ),
       margin: margin ?? GridSize.cellContentInsets,
     );

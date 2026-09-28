@@ -6,6 +6,7 @@ import 'dart:isolate';
 import 'package:appflowy/ai/service/ai_entities.dart';
 import 'package:appflowy/plugins/ai_chat/application/chat_message_service.dart';
 import 'package:appflowy_backend/log.dart';
+import 'package:flutter/foundation.dart';
 import 'package:json_annotation/json_annotation.dart';
 
 part 'chat_message_stream.g.dart';
@@ -31,6 +32,8 @@ class AnswerStream {
   bool _aiImageLimitReached = false;
   String? _error;
   String _text = "";
+  final ValueNotifier<String> _textChanges = ValueNotifier('');
+  bool _disposed = false;
 
   // Callbacks
   void Function(String text)? _onData;
@@ -53,12 +56,17 @@ class AnswerStream {
   bool get aiImageLimitReached => _aiImageLimitReached;
   String? get error => _error;
   String get text => _text;
+  ValueListenable<String> get textListenable => _textChanges;
+  bool get isDisposed => _disposed;
 
   /// Releases the resources used by the AnswerStream.
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     await _controller.close();
     await _subscription.cancel();
     _port.close();
+    _textChanges.dispose();
   }
 
   /// Feeds one event in from Dart rather than from the native port.
@@ -80,6 +88,9 @@ class AnswerStream {
       final newText = event.substring(AIStreamEventPrefix.data.length);
       _text += newText;
       _onData?.call(_text);
+      // Observers must not call listen(): that API belongs to the message
+      // renderer and replacing its callback would stop the visible stream.
+      _textChanges.value = _text;
     } else if (event.startsWith(AIStreamEventPrefix.error)) {
       _error = event.substring(AIStreamEventPrefix.error.length);
       _onError?.call(_error!);
@@ -182,6 +193,7 @@ class QuestionStream {
           if (_onData != null) {
             _onData!(_text);
           }
+          _textChanges.value = _text;
         } else if (event.startsWith("message_id:")) {
           final messageId = event.substring(11);
           _onMessageId?.call(messageId);
@@ -221,6 +233,8 @@ class QuestionStream {
   bool _hasStarted = false;
   String? _error;
   String _text = "";
+  final ValueNotifier<String> _textChanges = ValueNotifier('');
+  bool _disposed = false;
 
   // Callbacks
   void Function(String text)? _onData;
@@ -236,11 +250,16 @@ class QuestionStream {
   bool get hasStarted => _hasStarted;
   String? get error => _error;
   String get text => _text;
+  ValueListenable<String> get textListenable => _textChanges;
+  bool get isDisposed => _disposed;
 
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     await _controller.close();
     await _subscription.cancel();
     _port.close();
+    _textChanges.dispose();
   }
 
   void listen({

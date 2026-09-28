@@ -393,7 +393,7 @@ class _RailRow extends StatelessWidget {
         children: [
           if (icon != null)
             WorkspaceGlyph(
-              icon == Icons.all_inbox_rounded ? Icons.inbox_rounded : icon!,
+              icon!,
               size: 15,
               color: theme.iconRest,
             )

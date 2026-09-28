@@ -28,6 +28,15 @@ namespace flutter_inappwebview_plugin
   constexpr auto kEventType = "type";
   constexpr auto kEventValue = "value";
 
+  static std::optional<int64_t> GetTimestampFromArg(const flutter::EncodableValue& value)
+  {
+    // StandardMessageCodec chooses int32 or int64 by magnitude. A fresh engine
+    // and a long-running one must both preserve every original microsecond.
+    if (const auto narrowValue = std::get_if<int32_t>(&value)) return *narrowValue;
+    if (const auto wideValue = std::get_if<int64_t>(&value)) return *wideValue;
+    return std::nullopt;
+  }
+
   static const std::optional<std::pair<double, double>> GetPointFromArgs(
     const flutter::EncodableValue* args)
   {
@@ -137,7 +146,7 @@ namespace flutter_inappwebview_plugin
         }));
 #else
     texture_bridge_ = std::make_unique<TextureBridgeFallback>(
-      graphics_context, webview_->surface());
+      graphics_context, view->surface());
 
     flutter_texture_ =
       std::make_unique<flutter::TextureVariant>(flutter::PixelBufferTexture(
@@ -202,13 +211,55 @@ namespace flutter_inappwebview_plugin
   CustomPlatformView::~CustomPlatformView()
   {
     debugLog("dealloc CustomPlatformView");
+    Dispose();
+  }
+
+  void CustomPlatformView::DetachViewCallbacks()
+  {
+    if (view) {
+      view->onSurfaceSizeChanged(nullptr);
+      view->onCursorChanged(nullptr);
+    }
     if (history_handlers_registered_ && view && view->webView) {
       view->webView->remove_HistoryChanged(history_changed_token_);
       view->webView->remove_NavigationStarting(navigation_starting_token_);
       view->webView->remove_NavigationCompleted(navigation_completed_token_);
     }
+    history_handlers_registered_ = false;
+  }
+
+  std::shared_ptr<InAppWebView> CustomPlatformView::DetachView()
+  {
+    if (view) view->cancelTrackpadGesture();
+    DetachViewCallbacks();
+    return std::exchange(view, nullptr);
+  }
+
+  void CustomPlatformView::Dispose(std::function<void(HRESULT)> completion)
+  {
+    // The manager removes ownership before calling Dispose; the destructor's
+    // second call must not acknowledge an unregister which is still pending.
+    if (disposed_) return;
+    disposed_ = true;
+    UnregisterMethodCallHandler();
+    if (event_channel_) event_channel_->SetStreamHandler(nullptr);
     event_sink_ = nullptr;
-    texture_registrar_->UnregisterTexture(texture_id_, nullptr);
+    DetachViewCallbacks();
+    RecordTextureLifecycle(lifecycle_events_, 0); // owner callbacks detached
+    texture_bridge_->Shutdown();
+    RecordTextureLifecycle(lifecycle_events_, 1); // capture shutdown returned
+    // Close on the platform thread even if an outstanding history reply holds
+    // a shared renderer. Never retain a WebView/COM apartment in the raster ack.
+    const auto close_result = view ? view->Dispose() : S_OK;
+    view.reset();
+    RecordTextureLifecycle(lifecycle_events_, 2); // controller dispose returned
+    RetireTexture(std::move(texture_bridge_), std::move(flutter_texture_),
+      [registrar = texture_registrar_, id = texture_id_](std::function<void()> done) {
+        registrar->UnregisterTexture(id, std::move(done));
+      },
+      [completion = std::move(completion), close_result]() {
+        if (completion) completion(close_result);
+      }, lifecycle_events_);
   }
 
   void CustomPlatformView::RegisterEventHandlers()
@@ -266,6 +317,69 @@ namespace flutter_inappwebview_plugin
   {
     const auto& method_name = method_call.method_name();
 
+    if (method_name == "_getSiteGestureDiagnostics") {
+      const auto token = std::get_if<std::string>(method_call.arguments());
+      if (!token || *token != "offline-fixture-v1" || !view || !view->webViewController) {
+        return result->Error(kErrorInvalidArgs);
+      }
+      double zoom = 1.0;
+      POINT cursor{};
+      CURSORINFO info{};
+      info.cbSize = sizeof(info);
+      if (FAILED(view->webViewController->get_ZoomFactor(&zoom)) ||
+        !GetPhysicalCursorPos(&cursor) || !GetCursorInfo(&info)) {
+        return result->Error("fixtureDiagnosticsUnavailable");
+      }
+      return result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("zoomFactor"), flutter::EncodableValue(zoom)},
+        {flutter::EncodableValue("idle"), flutter::EncodableValue(view->isTrackpadInputIdle())},
+        {flutter::EncodableValue("cursorX"), flutter::EncodableValue(static_cast<int32_t>(cursor.x))},
+        {flutter::EncodableValue("cursorY"), flutter::EncodableValue(static_cast<int32_t>(cursor.y))},
+        {flutter::EncodableValue("cursorVisible"), flutter::EncodableValue((info.flags & CURSOR_SHOWING) != 0)} }));
+    }
+
+    if (method_name == "_startTextureLifecycleProbe") {
+      const auto token = std::get_if<std::string>(method_call.arguments());
+      if (!token || *token != "offline-fixture-v1") return result->Error(kErrorInvalidArgs);
+      lifecycle_events_ = std::make_shared<TextureLifecycleEvents>();
+      lifecycle_events_->reserve(6);
+      return result->Success();
+    }
+
+    // Private fixture protocol: no production caller, per-view explicit opt-in,
+    // 12-second/8192-event bound. Never streams events across the Dart channel.
+    if (method_name == "_startTextureCadenceProbe") {
+      const auto token = std::get_if<std::string>(method_call.arguments());
+      if (!token || *token != "offline-fixture-v1") return result->Error(kErrorInvalidArgs);
+      texture_bridge_->StartCadenceProbe();
+      return result->Success();
+    }
+    if (method_name == "_stopTextureCadenceProbe") {
+      const auto snapshot = texture_bridge_->StopCadenceProbe();
+      flutter::EncodableList events;
+      events.reserve(snapshot.events.size());
+      for (const auto& event : snapshot.events) {
+        events.emplace_back(flutter::EncodableList{
+          flutter::EncodableValue(static_cast<int32_t>(event.kind)),
+          flutter::EncodableValue(event.milliseconds),
+          flutter::EncodableValue(event.sequence),
+          flutter::EncodableValue(event.work_milliseconds) });
+      }
+#ifdef HAVE_FLUTTER_D3D_TEXTURE
+      const char* backend = "dxgi_shared_handle";
+#else
+      const char* backend = "cpu_pixel_buffer";
+#endif
+      return result->Success(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue("schema"), flutter::EncodableValue(1)},
+        {flutter::EncodableValue("backend"), flutter::EncodableValue(backend)},
+        {flutter::EncodableValue("elapsed_ms"), flutter::EncodableValue(snapshot.elapsed_ms)},
+        {flutter::EncodableValue("limit_ms"), flutter::EncodableValue(snapshot.limit_ms)},
+        {flutter::EncodableValue("expired"), flutter::EncodableValue(snapshot.expired)},
+        {flutter::EncodableValue("truncated"), flutter::EncodableValue(snapshot.truncated)},
+        {flutter::EncodableValue("events"), flutter::EncodableValue(std::move(events))} }));
+    }
+
     if (method_name == kMethodGetHistoryState) {
       if (!view) return result->Error(kErrorInvalidArgs);
       // Keep the reply and renderer alive, never a raw CustomPlatformView
@@ -308,6 +422,37 @@ namespace flutter_inappwebview_plugin
       return result->Success(flutter::EncodableValue(available));
     }
 
+    if (method_name == "querySiteGesturePolicy" || method_name == "querySiteGesturePolicyState") {
+      const auto point = GetPointFromArgs(method_call.arguments());
+      if (!point || !view) return result->Error(kErrorInvalidArgs);
+      auto reply = std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>(std::move(result));
+      view->querySiteGesturePolicy(point->first, point->second,
+        [reply, detailed = method_name == "querySiteGesturePolicyState"](TrackpadTouchQueue::PolicyResult policy) {
+          if (!detailed) {
+            if (policy.valid && policy.website) return reply->Success(flutter::EncodableValue(*policy.website));
+            return reply->Success();
+          }
+          reply->Success(flutter::EncodableValue(flutter::EncodableMap{
+            {flutter::EncodableValue("status"), flutter::EncodableValue(
+              !policy.valid ? "invalidated" : !policy.website ? "indeterminate" :
+              *policy.website ? "site" : "browser")},
+            {flutter::EncodableValue("epoch"), flutter::EncodableValue(static_cast<int64_t>(policy.epoch))} }));
+        });
+      return;
+    }
+    if (method_name == "siteGestureFallbackReady") {
+      if (!method_call.arguments()) return result->Error(kErrorInvalidArgs);
+      const auto epoch = GetTimestampFromArg(*method_call.arguments());
+      if (!epoch || *epoch < 0 || !view) return result->Error(kErrorInvalidArgs);
+      const auto ready = view->siteGestureFallbackReady(static_cast<uint64_t>(*epoch));
+      if (ready) return result->Success(flutter::EncodableValue(*ready));
+      return result->Success(); // Invalidated, not merely busy.
+    }
+    if (method_name == "cancelTrackpadGesture") {
+      if (view) view->cancelTrackpadGesture();
+      return result->Success();
+    }
+
     // setCursorPos: [double x, double y]
     if (method_name.compare(kMethodSetCursorPos) == 0) {
       const auto point = GetPointFromArgs(method_call.arguments());
@@ -320,10 +465,14 @@ namespace flutter_inappwebview_plugin
 
     // setPointerUpdate:
     // [int pointer, int event, double x, double y, double size, double pressure]
+    // Trackpad only appends [int originalTimestampMicros, int knownInputAgeMicros]
+    // and optionally [double secondX, double secondY] for an atomic contact pair.
+    // Epoch-fenced recovery additionally appends [int inputEpoch] (9/11 values).
     if (method_name.compare(kMethodSetPointerUpdate) == 0) {
       const flutter::EncodableList* list =
         std::get_if<flutter::EncodableList>(method_call.arguments());
-      if (!list || list->size() != 6) {
+      if (!list || (list->size() != 6 && list->size() != 8 && list->size() != 9 &&
+        list->size() != 10 && list->size() != 11)) {
         return result->Error(kErrorInvalidArgs);
       }
 
@@ -333,11 +482,36 @@ namespace flutter_inappwebview_plugin
       const auto y = std::get_if<double>(&(*list)[3]);
       const auto size = std::get_if<double>(&(*list)[4]);
       const auto pressure = std::get_if<double>(&(*list)[5]);
+      std::optional<int64_t> sourceMicros;
+      int64_t inputAgeMicros = 0;
+      if (list->size() >= 8) {
+        sourceMicros = GetTimestampFromArg((*list)[6]);
+        const auto age = GetTimestampFromArg((*list)[7]);
+        if (!sourceMicros || !age) return result->Error(kErrorInvalidArgs);
+        inputAgeMicros = *age;
+      }
+      std::optional<std::pair<double, double>> second;
+      if (list->size() >= 10) {
+        const auto secondX = std::get_if<double>(&(*list)[8]);
+        const auto secondY = std::get_if<double>(&(*list)[9]);
+        if (!pointer || *pointer != 0x3ffffffe || !secondX || !secondY) {
+          return result->Error(kErrorInvalidArgs);
+        }
+        second = std::make_pair(*secondX, *secondY);
+      }
+      std::optional<uint64_t> epoch;
+      if (list->size() == 9 || list->size() == 11) {
+        const auto value = GetTimestampFromArg(list->back());
+        if (!pointer || *pointer != 0x3ffffffe || !value || *value < 0) {
+          return result->Error(kErrorInvalidArgs);
+        }
+        epoch = static_cast<uint64_t>(*value);
+      }
 
       if (pointer && event && x && y && size && pressure && view) {
         view->setPointerUpdate(*pointer,
           static_cast<flutter_inappwebview_plugin::InAppWebViewPointerEventKind>(*event),
-          *x, *y, *size, *pressure);
+          *x, *y, *size, *pressure, sourceMicros, inputAgeMicros, second, epoch);
         return result->Success();
       }
       return result->Error(kErrorInvalidArgs);

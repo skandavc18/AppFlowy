@@ -14,7 +14,11 @@ import 'package:appflowy/plugins/collection/providers/source_picker.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
 import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
+import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/icon_emoji_picker/icon_optical_size.dart';
+import 'package:appflowy/shared/page_cover.dart';
+import 'package:appflowy/shared/page_icon.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
@@ -88,6 +92,7 @@ class _CollectionPageState extends State<CollectionPage> {
   bool searchExpanded = false;
   bool _ancestorsRequested = false;
   bool _metadataRebuildScheduled = false;
+  final _pageHeaderKey = GlobalKey(debugLabel: 'collection-page-header');
 
   bool get _shellOwnsBreadcrumbs =>
       widget.shellOwnsBreadcrumbs ??
@@ -187,27 +192,44 @@ class _CollectionPageState extends State<CollectionPage> {
               onChanged: (source) => unawaited(_persistSource(source)),
               child: ProviderReconnectRequest(
                 onReconnect: (source) => unawaited(_reconnect(source)),
-                child: PremiumCoordinatedScrollScope(
-                  child: NestedScrollView(
-                    key: const ValueKey('collection-page-scroll-view'),
-                    headerSliverBuilder: (context, innerBoxIsScrolled) => [
-                      SliverToBoxAdapter(
-                        child: _buildHeader(context, palette, definition, view),
-                      ),
-                    ],
-                    body: Builder(
-                      // Resolve BELOW NestedScrollView, not from the page's own
-                      // context. Only opted-in main scrollers borrow this owner.
-                      builder: (context) => CollectionPageScrollScope(
-                        controller: PrimaryScrollController.of(context),
+                child: view.supportsPageHeader
+                    ? FileBrowserPageHeader(
+                        header: KeyedSubtree(
+                          key: _pageHeaderKey,
+                          child:
+                              _buildHeader(context, palette, definition, view),
+                        ),
                         child: Builder(
                           builder: (context) =>
                               view.builder(context, _viewContext(view)),
                         ),
+                      )
+                    : PremiumCoordinatedScrollScope(
+                        child: NestedScrollView(
+                          key: const ValueKey('collection-page-scroll-view'),
+                          headerSliverBuilder: (context, innerBoxIsScrolled) =>
+                              [
+                            SliverToBoxAdapter(
+                              child: KeyedSubtree(
+                                key: _pageHeaderKey,
+                                child: _buildHeader(
+                                    context, palette, definition, view),
+                              ),
+                            ),
+                          ],
+                          body: Builder(
+                            // Resolve BELOW NestedScrollView, not from the page's own
+                            // context. Only opted-in main scrollers borrow this owner.
+                            builder: (context) => CollectionPageScrollScope(
+                              controller: PrimaryScrollController.of(context),
+                              child: Builder(
+                                builder: (context) =>
+                                    view.builder(context, _viewContext(view)),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ),
               ),
             ),
           ),
@@ -302,21 +324,77 @@ class _CollectionPageState extends State<CollectionPage> {
                   )
                 : null,
             coverActions: coverActions,
+            coverView: current,
+            coverBinding: (
+              controller,
+              current.collection?.kind,
+              current.source.cacheKey,
+              current.source.readOnly,
+            ),
+            coverEditable: canEdit,
+            canResizeCover: () =>
+                mounted &&
+                _canEdit &&
+                samePageCoverSource(current, _currentView),
+            isSameCoverTarget: (fresh) =>
+                fresh.collection?.kind == current.collection?.kind &&
+                fresh.source.cacheKey == current.source.cacheKey,
+            onCoverHeightChanged: (height) {
+              if (mounted &&
+                  _canEdit &&
+                  samePageCoverSource(current, _currentView)) {
+                controller.updateView(
+                  PageCoverHeight.applyTo(_currentView, height),
+                );
+              }
+            },
             identity: WorkspacePageIdentity(
               key: const ValueKey('collection-page-identity'),
               icon: ExcludeFocus(
                 excluding: !canEdit,
                 child: IgnorePointer(
                   ignoring: !canEdit,
-                  child: CollectionIconButton(
-                    key: const ValueKey('collection-header-icon'),
+                  child: ResizablePageIcon(
                     view: current,
-                    iconSize: CollectionMetrics.pageIconSize,
-                    opticalRole: IconOpticalRole.header,
-                    onViewChanged: (updated) => controller.updateView(
-                      ViewPB()
-                        ..mergeFromMessage(_currentView)
-                        ..icon = updated.icon,
+                    binding: (
+                      controller,
+                      current.collection?.kind,
+                      current.source.cacheKey,
+                    ),
+                    editable: canEdit,
+                    canResize: () =>
+                        mounted &&
+                        _canEdit &&
+                        _currentView.id == current.id &&
+                        _currentView.source.cacheKey == current.source.cacheKey,
+                    isSameTarget: (fresh) =>
+                        fresh.collection?.kind == current.collection?.kind &&
+                        fresh.source.cacheKey == current.source.cacheKey,
+                    defaultSize: isColorfulViewIcon(
+                      current.icon.toEmojiIconData(),
+                    )
+                        ? IconOpticalSize.resolve(
+                            role: IconOpticalRole.header,
+                            baseSize: CollectionMetrics.pageIconSize,
+                          ).slotSize
+                        : CollectionMetrics.pageIconSize,
+                    onSizeChanged: (size) {
+                      if (mounted && _canEdit) {
+                        controller.updateView(
+                          IconSize.applyTo(_currentView, size),
+                        );
+                      }
+                    },
+                    builder: (_, scale) => CollectionIconButton(
+                      key: const ValueKey('collection-header-icon'),
+                      view: current,
+                      iconSize: CollectionMetrics.pageIconSize * scale,
+                      opticalRole: IconOpticalRole.header,
+                      onViewChanged: (updated) => controller.updateView(
+                        ViewPB()
+                          ..mergeFromMessage(_currentView)
+                          ..icon = updated.icon,
+                      ),
                     ),
                   ),
                 ),

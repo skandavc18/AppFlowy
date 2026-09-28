@@ -5,9 +5,11 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_add_menu.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_board.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_card.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_placement.dart';
@@ -53,6 +55,8 @@ class _DashboardSectionViewState extends State<DashboardSectionView> {
     if (!visible && !editable) {
       return const SizedBox.shrink();
     }
+    final finding = dashboardFindRevealsSection(context, section);
+    final collapsed = section.collapsed && !finding;
 
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -69,14 +73,14 @@ class _DashboardSectionViewState extends State<DashboardSectionView> {
                 padding: const EdgeInsets.only(bottom: 12),
                 child: Container(height: 1, color: palette.gridLine),
               ),
-            AnimatedCrossFade(
-              duration: DashboardMetrics.settle,
-              sizeCurve: DashboardMetrics.curve,
-              crossFadeState: section.collapsed
-                  ? CrossFadeState.showFirst
-                  : CrossFadeState.showSecond,
-              firstChild: const SizedBox(width: double.infinity, height: 0),
-              secondChild: DashboardCanvas(
+            _DashboardSectionReveal(
+              expanded: !collapsed,
+              duration: finding ||
+                      controller.document.settings.reduceMotion ||
+                      MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : DashboardMetrics.settle,
+              child: DashboardCanvas(
                 controller: controller,
                 section: section,
                 palette: palette,
@@ -106,48 +110,51 @@ class _DashboardSectionViewState extends State<DashboardSectionView> {
             ),
           Flexible(
             // A section is named the way a page is named: double click it.
-            child: editable
-                ? WorkspaceInlineEditableText(
-                    text: title,
-                    editingValue: title,
-                    editing: _renaming,
-                    style: DashboardType.sectionLabel(palette).copyWith(
-                      color: title.isEmpty
-                          ? palette.textMuted
-                          : palette.textSecondary,
-                    ),
-                    display: Text(
-                      title.isEmpty
-                          ? LocaleKeys.dashboard_section_untitled.tr()
-                          : title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+            child: SurfaceFindTarget(
+              id: dashboardFindSection(section.id),
+              child: editable
+                  ? WorkspaceInlineEditableText(
+                      text: title,
+                      editingValue: title,
+                      editing: _renaming,
                       style: DashboardType.sectionLabel(palette).copyWith(
                         color: title.isEmpty
                             ? palette.textMuted
                             : palette.textSecondary,
                       ),
-                    ),
-                    onDoubleTap: () => setState(() => _renaming = true),
-                    onCancelled: () => setState(() => _renaming = false),
-                    onSubmitted: (name) async {
-                      setState(() => _renaming = false);
-                      controller.edit(
-                        (document) => document.withSection(
-                          section.copyWith(title: name.trim()),
+                      display: Text(
+                        title.isEmpty
+                            ? LocaleKeys.dashboard_section_untitled.tr()
+                            : title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: DashboardType.sectionLabel(palette).copyWith(
+                          color: title.isEmpty
+                              ? palette.textMuted
+                              : palette.textSecondary,
                         ),
-                      );
-                      return true;
-                    },
-                  )
-                : Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: DashboardType.sectionLabel(palette).copyWith(
-                      color: palette.textSecondary,
+                      ),
+                      onDoubleTap: () => setState(() => _renaming = true),
+                      onCancelled: () => setState(() => _renaming = false),
+                      onSubmitted: (name) async {
+                        setState(() => _renaming = false);
+                        controller.edit(
+                          (document) => document.withSection(
+                            section.copyWith(title: name.trim()),
+                          ),
+                        );
+                        return true;
+                      },
+                    )
+                  : Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: DashboardType.sectionLabel(palette).copyWith(
+                        color: palette.textSecondary,
+                      ),
                     ),
-                  ),
+            ),
           ),
           if (editable) ...[
             const SizedBox(width: 6),
@@ -288,6 +295,49 @@ class _DashboardSectionViewState extends State<DashboardSectionView> {
       ],
     );
   }
+}
+
+/// Animate an explicit height factor, not a size measured during layout.
+/// AnimatedCrossFade's RenderAnimatedSize re-dirties its own layout at zero
+/// duration. Keeping one child path also preserves drafts when Find or reduced
+/// motion changes the duration, including while the section is collapsed.
+class _DashboardSectionReveal extends StatelessWidget {
+  const _DashboardSectionReveal({
+    required this.expanded,
+    required this.duration,
+    required this.child,
+  });
+
+  final bool expanded;
+  final Duration duration;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: expanded ? 1 : 0),
+        duration: duration,
+        curve: DashboardMetrics.curve,
+        child: IgnorePointer(
+          ignoring: !expanded,
+          child: ExcludeFocus(
+            excluding: !expanded,
+            child: ExcludeSemantics(excluding: !expanded, child: child),
+          ),
+        ),
+        builder: (context, value, child) => ClipRect(
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: value,
+            child: Offstage(
+              offstage: value == 0,
+              child: TickerMode(
+                enabled: value > 0,
+                child: Opacity(opacity: value, child: child),
+              ),
+            ),
+          ),
+        ),
+      );
 }
 
 /// The responsive grid one section's widgets are arranged on.

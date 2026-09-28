@@ -67,12 +67,17 @@ class CollectionViewDefinition {
     required this.icon,
     required this.builder,
     this.isAvailable,
+    this.supportsPageHeader = false,
   });
 
   final String id;
   final String labelKey;
   final IconData icon;
   final CollectionViewBuilder builder;
+
+  /// The audited main listing consumes FileBrowserPageHeader in its own native
+  /// sliver viewport. Specialized multi-pane/native viewers keep their owners.
+  final bool supportsPageHeader;
 
   /// Whether this view has anything to show for a given collection.
   ///

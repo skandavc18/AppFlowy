@@ -112,11 +112,16 @@ class FolderGalleryDatabaseSnapshot {
     required this.columns,
     required this.rows,
     required this.totalRowCount,
+    this.fieldTypes = const [],
   });
 
   final List<String> columns;
   final List<List<String>> rows;
   final int totalRowCount;
+
+  /// Native types for the displayed columns. Missing type information is not
+  /// authority to index a cell (in particular a URL or opaque provider value).
+  final List<FieldType> fieldTypes;
 }
 
 class FolderGalleryPreviewLoader {
@@ -621,6 +626,9 @@ class FolderGalleryDatabasePreviewLoader {
               rows.map((row) => List<String>.unmodifiable(row)),
             ),
             totalRowCount: database.rows.length,
+            fieldTypes: List.unmodifiable(
+              visibleFields.map((field) => field.fieldType),
+            ),
           ),
         );
       },

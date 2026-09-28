@@ -125,6 +125,7 @@ class DocumentFindContent {
 class DocumentFindReadScheduler {
   static final shared = DocumentFindReadScheduler();
   final _pending = <Object, (bool Function(), Future<void> Function())>{};
+  final _available = <Object, (bool Function(), VoidCallback)>{};
   bool _running = false;
 
   void schedule(
@@ -141,7 +142,27 @@ class DocumentFindReadScheduler {
     scheduleMicrotask(_drain);
   }
 
-  void cancel(Object owner) => _pending.remove(owner);
+  void cancel(Object owner) {
+    _pending.remove(owner);
+    _available.remove(owner);
+  }
+
+  /// One-shot, data-free recovery after the actual occupied slot completes.
+  /// A deadline may remove queued I/O without making the latest query inert.
+  /// Callers bound retries; close/rebind cancels this alongside queued work.
+  void whenAvailable(
+      Object owner, bool Function() isCurrent, VoidCallback retry) {
+    _available[owner] = (isCurrent, retry);
+    if (!_running) scheduleMicrotask(_publishAvailable);
+  }
+
+  void _publishAvailable() {
+    final callbacks = _available.values.toList();
+    _available.clear();
+    for (final callback in callbacks) {
+      if (callback.$1()) callback.$2();
+    }
+  }
 
   @visibleForTesting
   int get pendingCount => _pending.length;
@@ -154,6 +175,7 @@ class DocumentFindReadScheduler {
         // _scan catches failures and publishes a partial result. Do NOT race
         // this future with a timeout: that would release a still-occupied slot.
         await request.$2();
+        _publishAvailable();
       }
     } finally {
       _running = false;

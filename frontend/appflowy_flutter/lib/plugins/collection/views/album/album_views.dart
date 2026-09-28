@@ -18,6 +18,7 @@ abstract final class AlbumViewIds {
 List<CollectionViewDefinition> albumCollectionViews() => [
       CollectionViewDefinition(
         id: AlbumViewIds.gallery,
+        supportsPageHeader: true,
         labelKey: LocaleKeys.collections_album_gallery,
         icon: Icons.grid_view_rounded,
         builder: (context, collection) => AlbumWallView(
@@ -27,6 +28,7 @@ List<CollectionViewDefinition> albumCollectionViews() => [
       ),
       CollectionViewDefinition(
         id: AlbumViewIds.masonry,
+        supportsPageHeader: true,
         labelKey: LocaleKeys.collections_album_masonry,
         icon: Icons.dashboard_rounded,
         builder: (context, collection) => AlbumWallView(
@@ -36,6 +38,7 @@ List<CollectionViewDefinition> albumCollectionViews() => [
       ),
       CollectionViewDefinition(
         id: AlbumViewIds.timeline,
+        supportsPageHeader: true,
         labelKey: LocaleKeys.collections_album_timeline,
         icon: Icons.calendar_month_rounded,
         builder: (context, collection) => AlbumWallView(
@@ -45,6 +48,7 @@ List<CollectionViewDefinition> albumCollectionViews() => [
       ),
       CollectionViewDefinition(
         id: AlbumViewIds.filmstrip,
+        supportsPageHeader: true,
         labelKey: LocaleKeys.collections_album_filmstrip,
         icon: Icons.view_carousel_rounded,
         builder: (context, collection) =>
@@ -52,6 +56,7 @@ List<CollectionViewDefinition> albumCollectionViews() => [
       ),
       CollectionViewDefinition(
         id: AlbumViewIds.playlist,
+        supportsPageHeader: true,
         labelKey: LocaleKeys.collections_album_playlist,
         icon: Icons.queue_music_rounded,
         builder: (context, collection) =>
@@ -59,6 +64,7 @@ List<CollectionViewDefinition> albumCollectionViews() => [
       ),
       CollectionViewDefinition(
         id: AlbumViewIds.map,
+        supportsPageHeader: true,
         labelKey: LocaleKeys.collections_album_map,
         icon: Icons.place_rounded,
         builder: (context, collection) => AlbumMapView(collection: collection),

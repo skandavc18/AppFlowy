@@ -889,21 +889,45 @@ void main() {
           ),
         ),
       );
-      final refresh = find.byWidgetPredicate(
-        (widget) =>
-            widget is ChartIconAction && widget.icon == Icons.refresh_rounded,
+      // The same recovery action changes its glyph and tooltip on failure.
+      // Its stable identity, not the success-state icon, owns the toolbar.
+      final refresh = find.byKey(const ValueKey('chart-refresh'));
+      expect(refresh, findsOneWidget);
+      expect(
+        tester.widget<ChartIconAction>(refresh).icon,
+        Icons.refresh_rounded,
       );
+      final refreshElement = tester.element(refresh);
+      final chart = tester.state(find.byType(AppChart));
       final toolbar = _toolbarFor(refresh);
       _expectToolbar(tester, toolbar, visible: false);
       failing = true;
       await source.load();
       await tester.pumpAndSettle();
       expect(source.table, same(_table));
+      expect(source.error, isNotNull);
+      expect(tester.element(refresh), same(refreshElement));
+      expect(tester.state(find.byType(AppChart)), same(chart));
+      expect(
+        tester.widget<ChartIconAction>(refresh).icon,
+        Icons.error_outline_rounded,
+      );
+      expect(
+        tester.widget<ChartIconAction>(refresh).tooltip,
+        contains(source.error!),
+      );
       _expectToolbar(tester, toolbar, visible: true);
       expect(refresh.hitTestable(), findsOneWidget);
       failing = false;
       await source.load();
       await tester.pumpAndSettle();
+      expect(source.error, isNull);
+      expect(tester.element(refresh), same(refreshElement));
+      expect(tester.state(find.byType(AppChart)), same(chart));
+      expect(
+        tester.widget<ChartIconAction>(refresh).icon,
+        Icons.refresh_rounded,
+      );
       _expectToolbar(tester, toolbar, visible: false);
       expect(tester.takeException(), isNull);
     } finally {

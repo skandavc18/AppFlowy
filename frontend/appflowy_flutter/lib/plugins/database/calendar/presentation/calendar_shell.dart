@@ -297,6 +297,23 @@ class CalendarShellState extends State<CalendarShell> {
     _loadWindow();
   }
 
+  /// Find navigation changes only the date being read, not the saved layout,
+  /// filters, focus, selection in an editor, or an event's typed date value.
+  void revealDateForFind(DateTime day) {
+    if (!mounted) return;
+    final date = startOfDay(day);
+    if (!date.isBefore(_windowStart) &&
+        date.isBefore(_windowEnd) &&
+        (!_mode.hasMonthAgenda || _selectedDay == date)) {
+      return;
+    }
+    setState(() {
+      _anchor = date;
+      _selectedDay = date;
+    });
+    _loadWindow();
+  }
+
   /// Open a month — what clicking a month in the year reading does.
   void showMonth(DateTime month) {
     setState(() {

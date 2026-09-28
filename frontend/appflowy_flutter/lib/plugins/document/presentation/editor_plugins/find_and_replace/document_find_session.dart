@@ -87,18 +87,21 @@ class DocumentFindSession extends ChangeNotifier {
     Stream<ViewPB>? viewChanges,
     DocumentFindReadProvider? referenceProvider,
     this.limits = const DocumentFindLimits(),
+    this.readOnlyProjection = false,
   }) {
     if (!editorState.isDisposed) {
       _pageId = documentId ?? currentView?.call()?.id;
-      _title = DocumentFindTitle.of(editorState)..addListener(_titleChanged);
-      _viewSubscription = viewChanges?.listen((_) => _titleChanged());
-      if (_pageId?.isNotEmpty ?? false) {
+      if (!readOnlyProjection) {
+        _title = DocumentFindTitle.of(editorState)..addListener(_titleChanged);
+        _viewSubscription = viewChanges?.listen((_) => _titleChanged());
+      }
+      if (!readOnlyProjection && (_pageId?.isNotEmpty ?? false)) {
         _references = DocumentFindReferenceIndex(
           pageId: _pageId!,
           provider: referenceProvider ?? DocumentFindReadProvider.native(),
           isOwnerActive: () => isActive,
           limits: limits,
-        )..addListener(_queueRefresh);
+        )..addListener(_referencesChanged);
       }
       _origin = editorState.selection?.normalized.start;
       editorState.onDispose.addListener(_editorDisposed);
@@ -116,7 +119,14 @@ class DocumentFindSession extends ChangeNotifier {
   final String? documentId;
   final Rect? Function()? titleObstruction;
   final DocumentFindLimits limits;
+
+  /// Independent root-query projection for an authorized mounted embed.
+  /// Only mounted native delta nodes participate. The parent paints their real
+  /// render objects; this session never borrows a child's query/highlight owner,
+  /// changes selection, follows references, or permits Replace.
+  final bool readOnlyProjection;
   final Map<Node, _FindNodeWatch> _watches = Map.identity();
+  List<Node>? _projectionNodes;
   final Map<Node, _FindSheetWatch> _sheets = Map.identity();
   DocumentFindReferenceIndex? _references;
   DocumentFindTitle? _title;
@@ -135,6 +145,8 @@ class DocumentFindSession extends ChangeNotifier {
   int _revision = 0;
   int _modelRevision = 0;
   int _navigationRevision = 0;
+  int _projectionRevision = -1;
+  int _projectionModelRevision = -1;
   bool _invalidPattern = false;
   bool _refreshQueued = false;
   bool _disposed = false;
@@ -155,8 +167,10 @@ class DocumentFindSession extends ChangeNotifier {
   bool get truncated => _localTruncated || (_references?.truncated ?? false);
   int get unavailableCount =>
       _localUnavailable + (_references?.unavailable ?? 0);
-  bool get hasWritableMatches => _matches.any((result) => result.isWritable);
-  bool get currentIsWritable => _current?.isWritable ?? false;
+  bool get hasWritableMatches =>
+      !readOnlyProjection && _matches.any((result) => result.isWritable);
+  bool get currentIsWritable =>
+      !readOnlyProjection && (_current?.isWritable ?? false);
   DocumentFindResult? get current => _current;
   bool get isActive =>
       !_disposed &&
@@ -166,6 +180,7 @@ class DocumentFindSession extends ChangeNotifier {
           currentView?.call()?.id == _pageId ||
           (documentId != null && currentView?.call() == null));
   bool get replaceAllowed =>
+      !readOnlyProjection &&
       isActive &&
       editorState.editable &&
       (canReplace?.call() ?? true) &&
@@ -187,9 +202,15 @@ class DocumentFindSession extends ChangeNotifier {
           : null;
 
   void search(String query, FindOptions options) {
-    if (!isActive || (_query == query && _options == options)) {
+    if (!isActive) return;
+    if (_query == query && _options == options) {
+      // Lazy native blocks can mount without changing the document model.
+      // Projection refreshes notify only when membership/query really changes.
+      if (readOnlyProjection) _refreshProjection();
       return;
     }
+    final incremental = _query.isNotEmpty &&
+      (query.startsWith(_query) || _query.startsWith(query));
     _query = query;
     _options = options;
     _revision++;
@@ -197,7 +218,9 @@ class DocumentFindSession extends ChangeNotifier {
     _refresh(
       select: true,
       anchor: editorState.selection?.normalized.start ?? _origin,
-      refreshReferences: true,
+      // The bounded content cache is reusable, but native metadata and
+      // unversioned imported files still need their existing fresh gates.
+      refreshReferences: !incremental || _references?.canRefineQuery != true,
     );
     _asyncSelection = editorState.selection;
     _asyncNavigation = _navigationRevision;
@@ -355,6 +378,10 @@ class DocumentFindSession extends ChangeNotifier {
     if (!isActive) {
       return;
     }
+    if (readOnlyProjection) {
+      _refreshProjection();
+      return;
+    }
     final current = _current;
     final keepCurrent = anchor == null && current != null;
     anchor ??= current == null
@@ -382,6 +409,7 @@ class DocumentFindSession extends ChangeNotifier {
       roots,
       enabled: pattern != null,
       force: refreshReferences,
+      queryRevision: _revision,
     );
     final byNode = <Node, List<DocumentFindExternalText>>{};
     for (final part
@@ -491,6 +519,53 @@ class DocumentFindSession extends ChangeNotifier {
     _publish(select: select || revealLoaded);
   }
 
+  void _refreshProjection() {
+    RegExp? pattern;
+    _invalidPattern = false;
+    try {
+      pattern = buildFindPattern(_query, _options);
+    } on FormatException {
+      _invalidPattern = true;
+    }
+    final results = <DocumentFindResult>[];
+    var bytes = 0;
+    _localTruncated = false;
+    for (final node in pattern == null ? const <Node>[] : _readDocument()) {
+      if (pattern == null) break;
+      final context = node.context;
+      final text = _watches[node]?._text;
+      if (context == null ||
+          !context.mounted ||
+          text == null ||
+          node.type == 'encrypted_block' ||
+          looksSealed(text.trimLeft())) continue;
+      if (text.length > limits.maxBytes ||
+          (bytes += utf8.encode(text).length) > limits.maxBytes) {
+        _localTruncated = true;
+        break;
+      }
+      for (final match in matchesOfPattern(text, pattern)) {
+        if (results.length == limits.maxEntries) {
+          _localTruncated = true;
+          break;
+        }
+        results.add(DocumentFindResult(node, match));
+      }
+      if (_localTruncated) break;
+    }
+    if (_projectionRevision == _revision &&
+      _projectionModelRevision == _modelRevision &&
+        results.length == _matches.length &&
+        List.generate(results.length,
+                (index) => results[index].sameLocation(_matches[index]))
+            .every((same) => same)) return;
+    _projectionRevision = _revision;
+    _projectionModelRevision = _modelRevision;
+    _matches = List.unmodifiable(results);
+    _selectedIndex = results.isEmpty ? -1 : 0;
+    notifyListeners();
+  }
+
   int _indexFrom(Position? anchor) {
     if (anchor != null) {
       for (var index = 0; index < _matches.length; index++) {
@@ -508,6 +583,10 @@ class DocumentFindSession extends ChangeNotifier {
 
   void _publish({bool select = false}) {
     if (!isActive) {
+      return;
+    }
+    if (readOnlyProjection) {
+      notifyListeners();
       return;
     }
     final writable = _matches.where((result) => result.isWritable).toList();
@@ -618,13 +697,28 @@ class DocumentFindSession extends ChangeNotifier {
           editorState.selection != result.selection) {
         return;
       }
-      final viewport = editorState.renderBox;
+      // The installed shrink-wrap renderer owns a SingleChildScrollView but
+      // does not attach EditorScrollController.scrollController to it.
+      // Resolve the mounted node's real viewport instead of animating that
+      // unattached controller (for example in a dashboard's read-only editor).
+      final nodeContext = result.node?.key.currentContext;
+      final nativeScrollable = nodeContext != null &&
+              nodeContext.mounted &&
+              nodeContext
+                      .findAncestorWidgetOfExactType<AppFlowyEditor>()
+                      ?.shrinkWrap ==
+                  true
+          ? Scrollable.maybeOf(nodeContext, axis: Axis.vertical)
+          : null;
+      final viewport = nativeScrollable == null
+          ? editorState.renderBox
+          : nativeScrollable.context.findRenderObject() as RenderBox?;
       final scroll = editorState.scrollService;
       final rects = editorState.selectionRects();
       if (viewport == null ||
           !viewport.attached ||
           !viewport.hasSize ||
-          scroll == null ||
+          (scroll == null && nativeScrollable == null) ||
           rects.isEmpty) {
         return;
       }
@@ -637,14 +731,25 @@ class DocumentFindSession extends ChangeNotifier {
               ? rect.bottom - bottom
               : 0.0;
       if (adjustment != 0) {
-        scroll.scrollTo(scroll.dy + adjustment, duration: Duration.zero);
+        if (nativeScrollable != null) {
+          final position = nativeScrollable.position;
+          position.jumpTo(
+            (position.pixels + adjustment)
+                .clamp(position.minScrollExtent, position.maxScrollExtent),
+          );
+        } else {
+          scroll!.scrollTo(scroll.dy + adjustment, duration: Duration.zero);
+        }
       }
     });
   }
 
   List<Node> _readDocument() {
+    if (readOnlyProjection && _projectionNodes != null)
+      return _projectionNodes!;
     final nodes = <Node>[];
     void visit(Node node) {
+      if (readOnlyProjection && nodes.length >= limits.maxEntries) return;
       nodes.add(node);
       if (node.type == 'encrypted_block') return;
       for (final child in node.children) {
@@ -668,18 +773,20 @@ class DocumentFindSession extends ChangeNotifier {
       late final _FindNodeWatch watch;
       watch = _FindNodeWatch(node, () {
         if (!_disposed && !editorState.isDisposed && watch.capture()) {
+          _projectionNodes = null;
           _modelRevision++;
           _waitingToReveal = false;
           _queueRefresh();
         }
-      });
+      }, projection: readOnlyProjection);
       _watches[node] = watch;
       node.addListener(watch.onChanged);
     }
     for (final node in _sheets.keys.toList()) {
       if (!current.contains(node)) _sheets.remove(node)!.detach();
     }
-    for (final node in nodes.where((node) => node.type == 'spreadsheet')) {
+    for (final node in nodes
+        .where((node) => !readOnlyProjection && node.type == 'spreadsheet')) {
       final controller = _mountedSheet(node);
       if (identical(_sheets[node]?.controller, controller)) continue;
       _sheets.remove(node)?.detach();
@@ -691,6 +798,7 @@ class DocumentFindSession extends ChangeNotifier {
         });
       }
     }
+    if (readOnlyProjection) _projectionNodes = nodes;
     return nodes;
   }
 
@@ -722,6 +830,23 @@ class DocumentFindSession extends ChangeNotifier {
         _refresh();
       }
     });
+  }
+
+  void _referencesChanged() {
+    // Clear protected external snippets synchronously, not in the coalesced
+    // model refresh. Local body/title results keep their existing ownership.
+    if (_references?.texts.isEmpty == true &&
+        _matches.any((hit) => hit.viewId != null)) {
+      final previous = _current;
+      _matches = List.unmodifiable(_matches.where((hit) => hit.viewId == null));
+      _selectedIndex = _matches.isEmpty ? -1 : 0;
+      if (previous != null) {
+        final same = _matches.indexOf(previous);
+        if (same >= 0) _selectedIndex = same;
+      }
+      notifyListeners();
+    }
+    _queueRefresh();
   }
 
   void _permissionsChanged() {
@@ -757,12 +882,13 @@ class DocumentFindSession extends ChangeNotifier {
 
   void _detach() {
     _revision++;
+    _projectionNodes = null;
     _navigationRevision++;
     _title?.removeListener(_titleChanged);
     unawaited(_viewSubscription?.cancel());
     _viewSubscription = null;
     _references
-      ?..removeListener(_queueRefresh)
+      ?..removeListener(_referencesChanged)
       ..dispose();
     _references = null;
     for (final sheet in _sheets.values) {
@@ -775,11 +901,13 @@ class DocumentFindSession extends ChangeNotifier {
     _watches.clear();
     editorState.onDispose.removeListener(_editorDisposed);
     editorState.editableNotifier.removeListener(_permissionsChanged);
-    DocumentSearchHighlight.instance.clear(
-      editorState,
-      owner: this,
-      deferNotification: true,
-    );
+    if (!readOnlyProjection) {
+      DocumentSearchHighlight.instance.clear(
+        editorState,
+        owner: this,
+        deferNotification: true,
+      );
+    }
   }
 
   @override
@@ -799,12 +927,13 @@ class DocumentFindSession extends ChangeNotifier {
 }
 
 class _FindNodeWatch {
-  _FindNodeWatch(this.node, this.onChanged) {
+  _FindNodeWatch(this.node, this.onChanged, {this.projection = false}) {
     capture();
   }
 
   final Node node;
   final VoidCallback onChanged;
+  final bool projection;
   String? _text;
   String? _sheet;
   Object? _sourceIdentity;
@@ -815,11 +944,16 @@ class _FindNodeWatch {
   bool capture() {
     final text = node.delta?.toPlainText();
     final children = node.children;
-    final references = documentFindReferences(node).toList();
-    final scalars = documentFindNodeScalars(node).toList();
+    final references = projection
+        ? const <DocumentFindReference>[]
+        : documentFindReferences(node).toList();
+    final scalars = projection
+        ? const <(String, String)>[]
+        : documentFindNodeScalars(node).toList();
     final sourceIdentity = documentFindSourceIdentity(node);
-    final sheet =
-        node.type == 'spreadsheet' ? jsonEncode(node.attributes['data']) : null;
+    final sheet = !projection && node.type == 'spreadsheet'
+        ? jsonEncode(node.attributes['data'])
+        : null;
     final changed = text != _text ||
         sourceIdentity != _sourceIdentity ||
         !listEquals(scalars, _scalars) ||

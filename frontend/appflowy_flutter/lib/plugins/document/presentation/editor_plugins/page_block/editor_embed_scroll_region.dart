@@ -44,6 +44,7 @@ Widget editorEmbedScrollRegion(Node node, Widget child) =>
         ? ScrollActivationRegion(
             key: ValueKey('embed-scroll-${node.id}'),
             gateScrollGestures: true,
+            activateOnFocus: false,
             child: PageEmbedPreviewScope(
               // The code editor has its own idle highlighting and must remain
               // available for selection/editing immediately. Other previews

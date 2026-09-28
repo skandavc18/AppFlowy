@@ -13,6 +13,19 @@ abstract final class EditorSurfaceStyle {
   static const lightCodeBlockBorder = PaperTheme.codeBlockBorder;
   static const lightCalloutBackground = PaperTheme.calloutBackground;
 
+  /// Navigation and the caption share one opaque surface. Do not use the
+  /// canvas scope here: an embedded/colored page must not recolor the shell.
+  static Color chromeBackground(BuildContext context) {
+    final theme = Theme.of(context);
+    if (theme.brightness == Brightness.light && PaperTheme.isEnabled(context)) {
+      return PaperTheme.chromeBackground;
+    }
+    return PremiumThemeExtension.maybeOf(context)?.sidebar ??
+        (theme.brightness == Brightness.dark
+            ? PremiumTheme.darkChrome
+            : PremiumTheme.lightChrome);
+  }
+
   /// The actual writing canvas, including documents hosted in another pane.
   /// Prefer the active semantic palette over a legacy caller's white surface;
   /// never infer the default Light palette from brightness alone.

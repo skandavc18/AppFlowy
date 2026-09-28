@@ -69,7 +69,7 @@ void main() {
           field.scrollController!.jumpTo(80);
           await tester.pump();
 
-          expect(find.byKey(_lineNumbers).hitTestable(), findsNothing);
+          expect(find.byKey(_lineNumbers).hitTestable(), findsOneWidget);
           await mouse.moveTo(tester.getCenter(find.byKey(_lineNumbers)));
           await settleFileControls(tester);
           final numberedGlyph = tester
@@ -157,13 +157,13 @@ void main() {
           expect(file.reads, 1);
           expect(file.writes, 0);
 
-          // No blanket always-visible workaround: leaving an idle file hides
-          // actions; keyboard traversal still reveals and activates them.
+          // Standalone file options are persistent; decoration hover remains
+          // separate. Idle controls retain semantics and native activation.
           FocusManager.instance.primaryFocus?.unfocus();
           await mouse.moveTo(const Offset(1080, 880));
           await settleFileControls(tester);
-          expect(find.byKey(_lineNumbers).hitTestable(), findsNothing);
-          expect(find.semantics.byLabel('Hide line numbers'), findsNothing);
+          expect(find.byKey(_lineNumbers).hitTestable(), findsOneWidget);
+          expect(find.semantics.byLabel('Hide line numbers'), findsOneWidget);
           await _tabTo(tester, find.byKey(_lineNumbers));
           expectFileControlPainted(tester, find.byKey(_lineNumbers));
           await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -263,8 +263,14 @@ void main() {
             textScale: 2,
             accessible: true,
           );
-          final bounds =
-              tester.getRect(find.byKey(const ValueKey('code-controls')));
+          final before = tester.state(find.byType(SandboxedCodeRunner));
+          final renderer = tester.state(find.byType(FilePreview));
+          final field = tester.widget<TextField>(_sourceField);
+          final scrollView =
+              find.byKey(const ValueKey('workspace-file-toolbar-scroll'));
+          final scroll =
+              tester.widget<SingleChildScrollView>(scrollView).controller!;
+          final position = scroll.position;
           for (final key in [
             _language,
             _lineNumbers,
@@ -275,16 +281,52 @@ void main() {
             _copy,
           ]) {
             final finder = find.byKey(key);
+            expect(finder, findsOneWidget);
+            final element = tester.element(finder);
+            // The retained one-row toolbar scrolls at narrow widths. Every
+            // action must be reachable, not simultaneously inside the clip.
+            await tester.ensureVisible(finder);
+            await settleFileControls(tester);
             expect(finder.hitTestable(), findsOneWidget);
+            expectFileControlPainted(tester, finder);
             final rect = tester.getRect(finder);
+            final bounds =
+                tester.getRect(find.byKey(const ValueKey('code-controls')));
+            final viewport = tester.getRect(scrollView).intersect(
+                  tester.getRect(
+                    find.byKey(const ValueKey('workspace-file-identity-row')),
+                  ),
+                );
+            expect(rect.isEmpty, isFalse);
             expect(rect.left, greaterThanOrEqualTo(bounds.left));
             expect(rect.right, lessThanOrEqualTo(bounds.right + 0.01));
+            expect(rect.left, greaterThanOrEqualTo(viewport.left - 0.01));
+            expect(rect.right, lessThanOrEqualTo(viewport.right + 0.01));
+            expect(rect.top, greaterThanOrEqualTo(viewport.top - 0.01));
+            expect(rect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+            expect(tester.element(finder), same(element));
+            expect(
+              tester.widget<SingleChildScrollView>(scrollView).controller,
+              same(scroll),
+            );
+            expect(scroll.position, same(position));
+            expect(
+                tester.state(find.byType(SandboxedCodeRunner)), same(before));
+            expect(tester.state(find.byType(FilePreview)), same(renderer));
           }
-          final before = tester.state(find.byType(SandboxedCodeRunner));
+          await tester.ensureVisible(find.byKey(_lineNumbers));
+          await settleFileControls(tester);
           await clickFileControl(tester, find.byKey(_lineNumbers));
           await clickFileControl(tester, find.byKey(_lineNumbers));
           expect(tester.state(find.byType(SandboxedCodeRunner)), same(before));
+          expect(
+            tester.widget<TextField>(_sourceField).controller,
+            same(field.controller),
+          );
+          expect(field.controller!.text, _source);
+          expect(backend.loads, 1);
           expect(file.reads, 1);
+          expect(file.writes, 0);
           expect(tester.takeException(), isNull);
         } finally {
           await unmountFileControls(tester);
@@ -471,7 +513,7 @@ void main() {
     TargetPlatform.iOS,
   ]) {
     testWidgets(
-        '$platform: touch reveals file controls without needing a mouse',
+        '$platform: persistent file controls work with touch without a mouse',
         (tester) async {
       final file = MemoryCodeFile(_source);
       final backend = FileControlBackend(
@@ -488,7 +530,7 @@ void main() {
         );
         final renderer = tester.state(find.byType(FilePreview));
         if (platform == TargetPlatform.windows) {
-          expect(find.byKey(_lineNumbers).hitTestable(), findsNothing);
+          expect(find.byKey(_lineNumbers).hitTestable(), findsOneWidget);
           await tester.tapAt(tester.getCenter(_sourceField));
           await settleFileControls(tester);
         }
@@ -511,7 +553,7 @@ void main() {
     });
   }
 
-  testWidgets('plain text body focus reveals the retained standalone actions',
+  testWidgets('plain text focus and blur retain persistent standalone actions',
       (tester) async {
     final file = MemoryCodeFile(_source, path: '/fixture/notes.txt');
     final backend = FileControlBackend(
@@ -526,15 +568,41 @@ void main() {
         reduced: true,
       );
       expect(find.byType(SandboxedCodeRunner), findsNothing);
-      expect(find.byKey(_copy).hitTestable(), findsNothing);
+      expect(find.byKey(_copy).hitTestable(), findsOneWidget);
       final field = tester.widget<TextField>(_sourceField);
       final renderer = tester.state(find.byType(FilePreview));
+      final copy = find.byKey(_copy, skipOffstage: false);
+      final copyElement = tester.element(copy);
+      final header = find.byKey(const ValueKey('workspace-file-identity'),
+          skipOffstage: false);
+      final headerTop = tester.getTopLeft(header).dy;
+      final outer = tester
+          .state<NestedScrollViewState>(find.byType(NestedScrollView))
+          .outerController;
       field.focusNode!.requestFocus();
       await settleFileControls(tester);
-      expectFileControlPainted(tester, find.byKey(_copy));
+      expect(outer.offset, greaterThan(0));
+      expect(
+          tester.getTopLeft(header).dy, closeTo(headerTop - outer.offset, .01));
+      expect(copy.hitTestable(), findsNothing);
+      expect(tester.element(copy), same(copyElement));
+      expect(tester.renderObject(copy).attached, isTrue);
+      final fades = find.ancestor(
+          of: copy,
+          matching: find.byType(AnimatedOpacity, skipOffstage: false));
+      expect(fades, findsWidgets);
+      for (final fade in tester.widgetList<AnimatedOpacity>(fades)) {
+        expect(fade.opacity, 1);
+      }
       field.focusNode!.unfocus();
       await settleFileControls(tester);
-      expect(find.byKey(_copy).hitTestable(), findsNothing);
+      await tester.ensureVisible(copy);
+      await settleFileControls(tester);
+      expect(find.byKey(_copy).hitTestable(), findsOneWidget);
+      expect(tester.element(copy), same(copyElement));
+      final viewport = tester.getRect(find.byType(NestedScrollView));
+      final bounds = tester.getRect(copy);
+      expect(viewport.inflate(.01).intersect(bounds), bounds);
       expect(tester.state(find.byType(FilePreview)), same(renderer));
       expect(file.reads, 1);
       expect(tester.takeException(), isNull);

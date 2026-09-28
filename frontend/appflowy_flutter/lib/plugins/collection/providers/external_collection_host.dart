@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
+import 'package:appflowy/plugins/collection/providers/provider_page_flow.dart';
+import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
@@ -43,6 +46,7 @@ class ExternalCollectionHost extends StatefulWidget {
 
 class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
   ProviderController? controller;
+  int _binding = 0;
 
   @override
   void initState() {
@@ -66,6 +70,7 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
   }
 
   void _bind() {
+    final binding = ++_binding;
     final source = widget.collection.collectionView.source;
     if (source.isLocal) {
       return;
@@ -76,7 +81,7 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
     // nothing at startup.
     unawaited(
       ProviderConnections.instance.ensureLoaded().then((_) {
-        if (!mounted) {
+        if (!mounted || binding != _binding) {
           return;
         }
         final created = ProviderController(
@@ -91,12 +96,16 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
 
   @override
   void dispose() {
+    _binding++;
     controller?.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      ProviderPageFlow(builder: _buildContent);
+
+  Widget _buildContent(BuildContext context) {
     final palette = CollectionPalette.of(context, widget.collection.kind);
     final source = widget.collection.collectionView.source;
     final live = controller;
@@ -106,11 +115,13 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
     }
 
     if (live == null) {
-      return ProviderStateView(
-        status: ProviderStatus.loading,
-        info: source.info,
-        palette: palette,
-      );
+      return _withPageHeader(
+          context,
+          ProviderStateView(
+            status: ProviderStatus.loading,
+            info: source.info,
+            palette: palette,
+          ));
     }
 
     return ListenableBuilder(
@@ -118,37 +129,54 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
       builder: (context, _) {
         // Nothing read yet and something went wrong: the whole panel says so.
         if (live.hasFailed && live.nodes.isEmpty) {
-          return ProviderStateView(
-            status: live.status,
-            info: source.info,
-            palette: palette,
-            retryAfter: live.failure?.retryAfter,
-            onRetry: () => unawaited(live.refresh()),
-            onReconnect: () => _reconnect(context),
-          );
+          return _withPageHeader(
+              context,
+              ProviderStateView(
+                status: live.status,
+                info: source.info,
+                palette: palette,
+                retryAfter: live.failure?.retryAfter,
+                onRetry: () => unawaited(live.refresh()),
+                onReconnect: () => _reconnect(context),
+              ));
         }
 
         if (live.status == ProviderStatus.loading && live.nodes.isEmpty) {
-          return ProviderStateView(
-            status: ProviderStatus.loading,
-            info: source.info,
-            palette: palette,
-          );
+          return _withPageHeader(
+              context,
+              ProviderStateView(
+                status: ProviderStatus.loading,
+                info: source.info,
+                palette: palette,
+              ));
         }
 
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Content already on screen keeps its place; a failed refresh is a
-            // strip above it, never a replacement for it.
-            if (live.hasFailed)
-              ProviderStaleBanner(
+        final banner = live.hasFailed
+            ? ProviderStaleBanner(
                 status: live.status,
                 info: source.info,
                 palette: palette,
                 onRetry: () => unawaited(live.refresh(silent: true)),
                 onReconnect: () => _reconnect(context),
-              ),
+              )
+            : null;
+        final header = FileBrowserPageHeader.maybeOf(context);
+        if (header != null) {
+          return FileBrowserPageHeader(
+            header: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [header, if (banner != null) banner],
+            ),
+            child: Builder(
+                builder: (context) => widget.builder(context, live, palette)),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Content already on screen keeps its place; a failed refresh is a
+            // strip above it, never a replacement for it.
+            if (banner != null) banner,
             Expanded(child: widget.builder(context, live, palette)),
           ],
         );
@@ -161,6 +189,16 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
     // collection that uses it, so it is mended in one place.
     ProviderReconnectRequest.of(context)?.call(
       widget.collection.collectionView.source,
+    );
+  }
+
+  Widget _withPageHeader(BuildContext context, Widget state) {
+    final header = FileBrowserPageHeader.maybeOf(context);
+    if (header == null) return state;
+    return FileBrowserScrollView(
+      controller: CollectionPageScrollScope.maybeOf(context),
+      header: header,
+      slivers: [SliverFillRemaining(hasScrollBody: false, child: state)],
     );
   }
 }

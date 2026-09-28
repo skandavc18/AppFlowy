@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/code_test_case_panel.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/local_code_runner.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/notebook/notebook_document.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/notebook/notebook_kernel.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/notebook/notebook_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandboxed_code_runner.dart';
 import 'package:appflowy/shared/icon_emoji_picker/default_icon_artwork.dart';
@@ -16,6 +18,7 @@ import 'package:appflowy/workspace/application/settings/default_icon_style.dart'
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -615,6 +618,22 @@ void main() {
           (tester) async {
         _viewport(tester);
         final styles = ValueNotifier(DefaultIconStyle.monochrome);
+        final editable = ValueNotifier(true);
+        final file = _NotebookFile();
+        final kernels = <_IdleNotebookKernel>[];
+        final source = NotebookDocument(
+          cells: [
+            NotebookCell(
+              id: 'notebook-code',
+              type: NotebookCellType.code,
+              source: '1 + 1',
+              metadata: {'language': language},
+            ),
+          ],
+          metadata: {
+            'language_info': {'name': language},
+          },
+        ).encode();
         final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
         try {
           await mouse.addPointer(location: const Offset(-10, -10));
@@ -622,24 +641,22 @@ void main() {
             _app(
               appearance,
               styles,
-              NotebookView(
-                // Only the supplied source is read: no disk write or kernel run.
-                file: File('vivid-code-controls.ipynb'),
-                name: 'vivid-code-controls.ipynb',
-                editable: false,
-                source: NotebookDocument(
-                  cells: [
-                    NotebookCell(
-                      id: 'notebook-code',
-                      type: NotebookCellType.code,
-                      source: '1 + 1',
-                      metadata: {'language': language},
-                    ),
-                  ],
-                  metadata: {
-                    'language_info': {'name': language},
+              ValueListenableBuilder<bool>(
+                valueListenable: editable,
+                builder: (_, canEdit, __) => NotebookView(
+                  file: file,
+                  name: file.path,
+                  editable: canEdit,
+                  source: source,
+                  createKernel: (language, directory) {
+                    final kernel = _IdleNotebookKernel(
+                      language: language,
+                      workingDirectory: directory,
+                    );
+                    kernels.add(kernel);
+                    return kernel;
                   },
-                ).encode(),
+                ),
               ),
             ),
           );
@@ -651,40 +668,81 @@ void main() {
           final palette = CodeBlockPalette.resolve(tester.element(runAll));
           final state = tester.state(find.byType(NotebookView));
           final editor = tester.widget<TextField>(find.byType(TextField));
-          final enabled = language == 'python';
-          await _cycleStyles(tester, styles, (style) {
-            _expectControl(
-              tester,
-              runAll,
-              style,
-              name: 'play',
-              iconRole: WorkspaceGlyphRole.standard,
-              foregroundColor: enabled ? palette.accent : null,
-              ink: enabled ? palette.accent : _disabledInk(tester, runAll),
-              enabled: enabled,
-            );
-            _expectControl(
-              tester,
-              runCell,
-              style,
-              name: 'play',
-              iconRole: WorkspaceGlyphRole.standard,
-              foregroundColor: palette.accent,
-              ink: enabled ? palette.accent : _disabledInk(tester, runCell),
-              enabled: enabled,
-            );
-            expect(tester.state(find.byType(NotebookView)), same(state));
-            expect(
-              tester.widget<TextField>(find.byType(TextField)).controller,
-              same(editor.controller),
-            );
-            expect(editor.controller!.text, '1 + 1');
-            expect(find.text('Idle'), findsOneWidget);
-          });
+          final runAllElement = tester.element(_native(runAll));
+          final runCellElement = tester.element(_native(runCell));
+          final retainedRunAll =
+              tester.widget<CodeToolbarButton>(runAll).onPressed;
+          final retainedRunCell =
+              tester.widget<CodeToolbarButton>(runCell).onPressed;
+          editor.focusNode!.requestFocus();
+          await tester.pump();
+          editor.controller!.selection =
+              const TextSelection(baseOffset: 0, extentOffset: 3);
+          final draft = editor.controller!.value;
+          // Language support is not edit authority. Keep the enabled-role
+          // coverage, then revoke/grant access without replacing the notebook.
+          for (final canEdit in [true, false, true]) {
+            editable.value = canEdit;
+            final enabled = canEdit && language == 'python';
+            await _cycleStyles(tester, styles, (style) {
+              _expectControl(
+                tester,
+                runAll,
+                style,
+                name: 'play',
+                iconRole: WorkspaceGlyphRole.standard,
+                foregroundColor: enabled ? palette.accent : null,
+                ink: enabled ? palette.accent : _disabledInk(tester, runAll),
+                enabled: enabled,
+              );
+              _expectControl(
+                tester,
+                runCell,
+                style,
+                name: 'play',
+                iconRole: WorkspaceGlyphRole.standard,
+                foregroundColor: palette.accent,
+                ink: enabled ? palette.accent : _disabledInk(tester, runCell),
+                enabled: enabled,
+              );
+              expect(tester.state(find.byType(NotebookView)), same(state));
+              expect(tester.element(_native(runAll)), same(runAllElement));
+              expect(tester.element(_native(runCell)), same(runCellElement));
+              final field = tester.widget<TextField>(find.byType(TextField));
+              expect(field.controller, same(editor.controller));
+              expect(field.readOnly, !canEdit);
+              expect(editor.controller!.value, draft);
+              expect(find.text('Idle'), findsOneWidget);
+            });
+            if (!enabled) {
+              await tester.tap(_native(runAll));
+              await tester.tap(_native(runCell));
+              editor.focusNode!.requestFocus();
+              await tester.pump();
+              await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+              await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+              await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+              if (!canEdit && language == 'python') {
+                // A callback retained while editable must also fail closed.
+                expect(retainedRunAll, isNotNull);
+                expect(retainedRunCell, isNotNull);
+                retainedRunAll!();
+                retainedRunCell!();
+              }
+              await tester.pump();
+            }
+            expect(kernels, hasLength(1));
+            expect(kernels.single.starts, 0);
+            expect(kernels.single.executions, isEmpty);
+            expect(editor.controller!.value, draft);
+            expect(file.writes, isEmpty);
+          }
           expect(tester.takeException(), isNull);
         } finally {
           await mouse.removePointer();
           await tester.pumpWidget(const SizedBox());
+          expect(file.writes, isEmpty);
+          editable.dispose();
           styles.dispose();
         }
       });
@@ -831,6 +889,47 @@ class _Translations extends AssetLoader {
   @override
   Future<Map<String, dynamic>> load(String path, Locale locale) =>
       Future.value(english);
+}
+
+/// Keep the real kernel's language/idle state, but never start a process even
+/// if an access regression accidentally reaches an execution callback.
+class _IdleNotebookKernel extends NotebookKernel {
+  _IdleNotebookKernel(
+      {required super.language, required super.workingDirectory});
+
+  int starts = 0;
+  final executions = <String>[];
+
+  @override
+  Future<bool> ensureStarted() async {
+    starts++;
+    return false;
+  }
+
+  @override
+  Future<NotebookExecution> execute(
+    String code, {
+    required void Function(NotebookOutput output) onOutput,
+  }) async {
+    executions.add(code);
+    return const NotebookExecution(failed: true);
+  }
+}
+
+class _NotebookFile extends Fake implements File {
+  @override
+  String get path => 'vivid-code-controls.ipynb';
+
+  final writes = <String>[];
+
+  @override
+  void writeAsStringSync(
+    String contents, {
+    FileMode mode = FileMode.write,
+    Encoding encoding = utf8,
+    bool flush = false,
+  }) =>
+      writes.add(contents);
 }
 
 /// Only the execution boundary is held/faked; all controls and states are real.

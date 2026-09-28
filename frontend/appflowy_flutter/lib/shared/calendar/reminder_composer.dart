@@ -8,6 +8,7 @@ import 'package:appflowy/shared/calendar/calendar_reminder.dart';
 import 'package:appflowy/shared/calendar/reminder_parser.dart';
 import 'package:appflowy/shared/calendar/reminder_google_sync.dart';
 import 'package:appflowy/shared/calendar/reminder_store.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -223,6 +224,7 @@ class _ReminderComposerState extends State<_ReminderComposer> {
                   Expanded(
                     child: _ChoiceButton<ReminderPriority>(
                       icon: Icons.flag_rounded,
+                      iconRole: WorkspaceGlyphRole.preserveInk,
                       value: _priority,
                       label: _priorityLabel(_priority),
                       options: ReminderPriority.values,
@@ -527,7 +529,7 @@ class _PickerButton extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(icon, size: 14, color: palette.textMuted),
+              WorkspaceGlyph(icon, size: 14, color: palette.textMuted),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -557,9 +559,11 @@ class _ChoiceButton<T> extends StatelessWidget {
     required this.options,
     required this.labelOf,
     required this.onChanged,
+    this.iconRole,
   });
 
   final IconData icon;
+  final WorkspaceGlyphRole? iconRole;
   final T value;
   final String label;
   final List<T> options;
@@ -594,7 +598,12 @@ class _ChoiceButton<T> extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 14, color: palette.textMuted),
+            WorkspaceGlyph(
+              icon,
+              size: 14,
+              color: palette.textMuted,
+              role: iconRole,
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -608,7 +617,7 @@ class _ChoiceButton<T> extends StatelessWidget {
                 ),
               ),
             ),
-            Icon(
+            WorkspaceGlyph(
               Icons.expand_more_rounded,
               size: 15,
               color: palette.textMuted,
@@ -653,7 +662,13 @@ class _ToggleRow extends StatelessWidget {
     final palette = calendarPaletteOf(context);
     return Row(
       children: [
-        Icon(icon, size: 15, color: palette.textMuted),
+        WorkspaceGlyph(
+          icon,
+          size: 15,
+          color: palette.textMuted,
+          // The glyph reports the switch state rather than a separate action.
+          role: WorkspaceGlyphRole.preserveInk,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Text(

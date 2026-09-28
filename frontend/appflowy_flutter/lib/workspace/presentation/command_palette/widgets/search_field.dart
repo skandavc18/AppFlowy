@@ -1,6 +1,7 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -16,10 +17,15 @@ class SearchField extends StatefulWidget {
     this.query,
     this.isLoading = false,
     this.onSubmit,
+    this.onChanged,
   });
 
   final String? query;
   final bool isLoading;
+
+  /// When supplied, the modal owns dispatch (local contents or metadata).
+  /// Backend state is not written back into this field's live draft.
+  final ValueChanged<String>? onChanged;
 
   /// Called when Enter is pressed while the box still has the caret, so the
   /// palette can run whatever it is offering first.
@@ -41,6 +47,7 @@ class _SearchFieldState extends State<SearchField> {
     focusNode.requestFocus();
     // Update the text selection after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       controller.selection = TextSelection(
         baseOffset: 0,
         extentOffset: controller.text.length,
@@ -82,15 +89,16 @@ class _SearchFieldState extends State<SearchField> {
         child: MouseRegion(
           cursor: SystemMouseCursors.click,
           child: GestureDetector(
+            key: const ValueKey('command-palette-clear-search'),
             behavior: HitTestBehavior.opaque,
             onTap: _clearSearch,
             child: SizedBox.square(
               dimension: 28,
               child: Center(
-                child: FlowySvg(
+                child: WorkspaceGlyph.svg(
                   FlowySvgs.search_clear_m,
                   color: AppFlowyTheme.of(context).iconColorScheme.tertiary,
-                  size: const Size.square(20),
+                  size: 20,
                 ),
               ),
             ),
@@ -141,10 +149,10 @@ class _SearchFieldState extends State<SearchField> {
               ),
               prefixIcon: Padding(
                 padding: const EdgeInsets.only(left: 12, right: 8),
-                child: FlowySvg(
+                child: WorkspaceGlyph.svg(
                   FlowySvgs.search_icon_m,
                   color: theme.iconColorScheme.secondary,
-                  size: Size.square(20),
+                  size: 20,
                 ),
               ),
               prefixIconConstraints: BoxConstraints.loose(Size(40, 20)),
@@ -152,9 +160,10 @@ class _SearchFieldState extends State<SearchField> {
                   hasText ? BoxConstraints.loose(Size(48, 28)) : null,
               suffixIcon: hasText ? _buildSuffixIcon(context) : null,
             ),
-            onChanged: (value) => context
-                .read<CommandPaletteBloc>()
-                .add(CommandPaletteEvent.searchChanged(search: value)),
+            onChanged: widget.onChanged ??
+                (value) => context
+                    .read<CommandPaletteBloc>()
+                    .add(CommandPaletteEvent.searchChanged(search: value)),
           );
         },
       ),
@@ -163,9 +172,14 @@ class _SearchFieldState extends State<SearchField> {
 
   void _clearSearch() {
     controller.clear();
-    context
-        .read<CommandPaletteBloc>()
-        .add(const CommandPaletteEvent.clearSearch());
+    final onChanged = widget.onChanged;
+    if (onChanged != null) {
+      onChanged('');
+    } else {
+      context
+          .read<CommandPaletteBloc>()
+          .add(const CommandPaletteEvent.clearSearch());
+    }
     focusNode.requestFocus();
   }
 }

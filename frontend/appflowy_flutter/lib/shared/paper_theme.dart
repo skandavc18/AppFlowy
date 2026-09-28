@@ -28,7 +28,9 @@ abstract final class PaperTheme {
   static const codeBlockBorder = Color(0x24675443);
   static const strongBorder = Color(0x3D675443);
   static const calloutBackground = Color(0xFFF5ECDC);
-  static const sidebarBackground = Color(0xFFF0E6D4);
+  // The caption and navigation are one sheet of cream, not separate greys.
+  static const chromeBackground = Color(0xFFF0E6D4);
+  static const sidebarBackground = chromeBackground;
   static const popupBackground = Color(0xFFFFFAF0);
   static const controlBackground = Color(0xFFF4EAD9);
   static const controlHover = Color(0xFFF0E7D9);

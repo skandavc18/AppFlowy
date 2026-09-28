@@ -9,6 +9,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import 'database_find_navigation.dart';
 import 'database_find_session.dart';
 
 /// Adds read-only Find to the actual database surface, without owning its
@@ -42,11 +43,14 @@ class DatabaseFindHost extends StatefulWidget {
 
 class _DatabaseFindHostState extends State<DatabaseFindHost> {
   final _surfaceKey = GlobalKey();
+  final _panelKey = GlobalKey();
   final _portal = OverlayPortalController();
   final _query = TextEditingController();
   final _findFocus = FocusNode(debugLabel: 'Database find');
   final _findScope = FocusScopeNode(debugLabel: 'Database find controls');
   DatabaseFindSession? _session;
+  late final DatabaseFindController _navigation;
+  DatabaseFindController? _drivenNavigation;
   _DatabaseFindHostState? _parent;
   _DatabaseFindHostState? _delegate;
   FocusNode? _previousFocus;
@@ -68,6 +72,11 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
     super.initState();
     _boundViewId = widget.view.id;
     _metadata = _viewMetadata(widget.view);
+    _navigation = DatabaseFindController(
+      viewId: () => _boundViewId,
+      isActive: () => _locallyActive && _visibleOwner(context),
+      ownerBounds: _globalOwnerBounds,
+    );
     _query.addListener(_queryChanged);
   }
 
@@ -151,6 +160,7 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
         viewId: id,
         provider: target.widget.readProvider ?? widget.readProvider,
         limits: target.widget.limits,
+        viewSnapshot: target._navigation.snapshot,
         isOwnerActive: () =>
             identical(_session, session) &&
             identical(_target, target) &&
@@ -158,6 +168,13 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
             _available,
       );
       _session = session;
+      _drivenNavigation = target._navigation
+        ..addListener(_refresh)
+        ..bind(
+          session,
+          avoidBounds: _panelBounds,
+          ownsFocus: () => _findScope.hasFocus,
+        );
       final epoch = ++_epoch;
       _lastBounds = _ownerBounds();
       _portal.show();
@@ -208,6 +225,9 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
     ++_epoch;
     _session = null;
     _previousFocus = null;
+    _drivenNavigation?.removeListener(_refresh);
+    _drivenNavigation?.bind(null);
+    _drivenNavigation = null;
     session.dispose();
     _refresh();
     if (restore &&
@@ -257,8 +277,12 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
     _elementActive = false;
     ++_epoch;
     _parent?._detach(this);
+    _drivenNavigation?.removeListener(_refresh);
+    _drivenNavigation?.bind(null);
+    _drivenNavigation = null;
     _session?.dispose();
     _session = null;
+    _navigation.dispose();
     _query.dispose();
     _findFocus.dispose();
     _findScope.dispose();
@@ -269,7 +293,10 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
   Widget build(BuildContext context) {
     final child = _DatabaseFindDelegation(
       owner: widget.delegateToNativeChild ? this : null,
-      child: KeyedSubtree(key: _surfaceKey, child: widget.child),
+      child: DatabaseFindScope(
+        controller: _navigation,
+        child: KeyedSubtree(key: _surfaceKey, child: widget.child),
+      ),
     );
     // The outer decoration remains the owner even while its native child
     // changes tabs. Do not install a second region/overlay for that child.
@@ -281,10 +308,20 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
       findOpen: _session != null,
       findFocusNode: _findScope,
       isActive: () => _available,
-      child: OverlayPortal.targetsRootOverlay(
-        controller: _portal,
-        overlayChildBuilder: _buildOverlay,
-        child: child,
+      child: CallbackShortcuts(
+        bindings: {
+          if (_session != null) ...{
+            const SingleActivator(LogicalKeyboardKey.f3): () =>
+                _session?.navigate(),
+            const SingleActivator(LogicalKeyboardKey.f3, shift: true): () =>
+                _session?.navigate(forward: false),
+          },
+        },
+        child: OverlayPortal.targetsRootOverlay(
+          controller: _portal,
+          overlayChildBuilder: _buildOverlay,
+          child: child,
+        ),
       ),
     );
   }
@@ -298,16 +335,51 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
     final margin = math.min(8.0, bounds.shortestSide / 4);
     final horizontalMargin =
         math.min(margin, math.max(0.0, (bounds.width - 180) / 2));
-    final width = math.min(560.0, bounds.width - horizontalMargin * 2);
-    final top = bounds.top + margin;
+    final width =
+        math.min(FindBarMetrics.maxWidth, bounds.width - horizontalMargin * 2);
+    final navigation = _drivenNavigation!;
+    final globalMatch = navigation.currentBounds;
+    final overlay =
+        Overlay.of(context, rootOverlay: true).context.findRenderObject();
+    final match = globalMatch != null && overlay is RenderBox
+        ? Rect.fromPoints(
+            overlay.globalToLocal(globalMatch.topLeft),
+            overlay.globalToLocal(globalMatch.bottomRight),
+          )
+        : null;
+    // The overlay may move, but never the database/editor subtree. Limiting
+    // the scrolling details panel leaves an unobscured corner for the match.
+    final maxHeight = math.max(
+      0.0,
+      math.min(bounds.height - margin * 2, bounds.height * 0.45),
+    );
+    final panel = _panelKey.currentContext?.findRenderObject();
+    final height = panel is RenderBox && panel.hasSize
+        ? math.min(panel.size.height, maxHeight)
+        : maxHeight;
+    final candidates = [
+      Offset(bounds.right - horizontalMargin - width, bounds.top + margin),
+      Offset(
+        bounds.right - horizontalMargin - width,
+        bounds.bottom - margin - height,
+      ),
+      Offset(bounds.left + horizontalMargin, bounds.top + margin),
+      Offset(bounds.left + horizontalMargin, bounds.bottom - margin - height),
+    ];
+    final position = match == null
+        ? candidates.first
+        : candidates.firstWhere(
+            (offset) =>
+                !(offset & Size(width, height)).overlaps(match.inflate(4)),
+            orElse: () => candidates.first,
+          );
     return Positioned(
-      top: top,
-      left: bounds.right - horizontalMargin - width,
+      top: position.dy,
+      left: position.dx,
       width: width,
       child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: math.max(0.0, bounds.bottom - top - margin),
-        ),
+        key: _panelKey,
+        constraints: BoxConstraints(maxHeight: maxHeight),
         child: SingleChildScrollView(
           primary: false,
           child: SingleChildScrollView(
@@ -338,6 +410,7 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
                           listenable: session,
                           builder: (context, _) => _DatabaseFindPanel(
                             session: session,
+                            navigation: navigation,
                             query: _query,
                             focus: _findFocus,
                             onClose: () => _dismiss(restoreFocus: true),
@@ -354,6 +427,26 @@ class _DatabaseFindHostState extends State<DatabaseFindHost> {
         ),
       ),
     );
+  }
+
+  Rect? _panelBounds() {
+    final box = _panelKey.currentContext?.findRenderObject();
+    return box is RenderBox && box.attached && box.hasSize
+        ? MatrixUtils.transformRect(
+            box.getTransformTo(null),
+            Offset.zero & box.size,
+          )
+        : null;
+  }
+
+  Rect? _globalOwnerBounds() {
+    final bounds = _ownerBounds();
+    if (bounds == null) return null;
+    final overlay =
+        Overlay.maybeOf(context, rootOverlay: true)?.context.findRenderObject();
+    return overlay is RenderBox
+        ? MatrixUtils.transformRect(overlay.getTransformTo(null), bounds)
+        : null;
   }
 
   Rect? _ownerBounds() {
@@ -455,6 +548,7 @@ class _DatabaseFindDelegation extends InheritedWidget {
 class _DatabaseFindPanel extends StatelessWidget {
   const _DatabaseFindPanel({
     required this.session,
+    required this.navigation,
     required this.query,
     required this.focus,
     required this.onClose,
@@ -462,6 +556,7 @@ class _DatabaseFindPanel extends StatelessWidget {
   });
 
   final DatabaseFindSession session;
+  final DatabaseFindController navigation;
   final TextEditingController query;
   final FocusNode focus;
   final VoidCallback onClose;
@@ -516,6 +611,15 @@ class _DatabaseFindPanel extends StatelessWidget {
                 ),
               ),
               if (current != null) ...[
+                if (navigation.message != null) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    navigation.message!,
+                    key: const ValueKey('databaseFindNavigationStatus'),
+                    style:
+                        TextStyle(fontSize: 12, color: palette.textSecondary),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Text(
                   current.part.location,

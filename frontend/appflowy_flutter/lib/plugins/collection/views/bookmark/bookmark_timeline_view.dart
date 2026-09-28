@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_host.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_reader.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_toolbar.dart';
 import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
@@ -27,18 +28,11 @@ class BookmarkTimelineView extends StatelessWidget {
           collection: collection,
           controller: controller,
           theme: theme,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              BookmarkFilterBar(controller: controller, theme: theme),
-              Expanded(
-                child: _Timeline(
-                  collection: collection,
-                  controller: controller,
-                  theme: theme,
-                ),
-              ),
-            ],
+          pageFlow: true,
+          child: _Timeline(
+            collection: collection,
+            controller: controller,
+            theme: theme,
           ),
         ),
       );
@@ -90,15 +84,6 @@ class _TimelineState extends State<_Timeline> {
   Widget build(BuildContext context) {
     final controller = widget.controller;
     final scroll = CollectionPageScrollScope.maybeOf(context) ?? _scroll;
-    if (controller.entries.isEmpty) {
-      return bookmarkEmptyView(
-        context: context,
-        controller: controller,
-        collection: widget.collection,
-        theme: widget.theme,
-      );
-    }
-
     final lines = _buildLines(controller.entries);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -110,26 +95,45 @@ class _TimelineState extends State<_Timeline> {
       ),
       child: BookmarkScrollArea(
         controller: scroll,
-        child: ListView.builder(
+        child: FileBrowserScrollView(
           controller: scroll,
-          padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
-          itemCount: lines.length,
-          itemBuilder: (context, index) => Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 880),
-              child: switch (lines[index]) {
-                final _DateLine line =>
-                  _Heading(date: line.date, theme: widget.theme),
-                final _EntryLine line => _Row(
-                    entry: line.entry,
-                    last: line.last,
-                    controller: controller,
-                    collection: widget.collection,
-                    theme: widget.theme,
+          header: FileBrowserPageHeader.maybeOf(context),
+          slivers: [
+            if (controller.entries.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: bookmarkEmptyView(
+                  context: context,
+                  controller: controller,
+                  collection: widget.collection,
+                  theme: widget.theme,
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.only(bottom: BookmarkMetrics.space8),
+                sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                  (context, index) => Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 880),
+                      child: switch (lines[index]) {
+                        final _DateLine line =>
+                          _Heading(date: line.date, theme: widget.theme),
+                        final _EntryLine line => _Row(
+                            entry: line.entry,
+                            last: line.last,
+                            controller: controller,
+                            collection: widget.collection,
+                            theme: widget.theme,
+                          ),
+                      },
+                    ),
                   ),
-              },
-            ),
-          ),
+                  childCount: lines.length,
+                )),
+              )
+          ],
         ),
       ),
     );

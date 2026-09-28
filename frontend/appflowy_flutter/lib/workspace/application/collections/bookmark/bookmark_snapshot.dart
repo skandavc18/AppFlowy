@@ -1,13 +1,18 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_article_document.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_fetcher.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_reading_session.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/readable_article.dart';
 import 'package:appflowy/workspace/application/settings/application_data_storage.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:markdown/markdown.dart' as markdown;
 
 /// An offline copy of a saved page.
 @immutable
@@ -29,7 +34,7 @@ class BookmarkSnapshot {
   /// viewer renders it.
   final String? articlePath;
 
-  /// The page exactly as it was served.
+  /// Passive archival markup, never the original executable website.
   final String? pagePath;
 
   final String? heroPath;
@@ -91,12 +96,25 @@ class BookmarkSnapshotStore {
     String? html,
     Uint8List? heroBytes,
     String heroExtension = 'jpg',
+    bool isolated = false,
   }) async {
     if (article == null && html == null) {
       return null;
     }
+    if ((html != null && utf8.encode(html).length > maxBookmarkPageBytes) ||
+        (article != null &&
+            utf8.encode(article.markdown).length > maxBookmarkPageBytes) ||
+        (heroBytes != null && heroBytes.length > maxBookmarkImageBytes) ||
+        !RegExp(r'^[a-zA-Z0-9]{1,5}$').hasMatch(heroExtension)) return null;
     try {
-      final directory = await directoryFor(url);
+      final Directory directory;
+      if (isolated) {
+        final root = Directory(await resolveRoot());
+        await root.create(recursive: true);
+        directory = await root.createTemp('reader-');
+      } else {
+        directory = await directoryFor(url);
+      }
       await directory.create(recursive: true);
 
       String? articlePath;
@@ -109,7 +127,7 @@ class BookmarkSnapshotStore {
       String? pagePath;
       if (html != null && html.trim().isNotEmpty) {
         final file = File(p.join(directory.path, pageFileName));
-        await file.writeAsString(html, flush: true);
+        await file.writeAsString(passiveBookmarkHtml(html), flush: true);
         pagePath = file.path;
       }
 
@@ -124,7 +142,7 @@ class BookmarkSnapshotStore {
       final bytes = await _sizeOf(directory);
       await File(p.join(directory.path, metaFileName)).writeAsString(
         jsonEncode({
-          'url': url,
+          'url': bookmarkPublicSource(url),
           'saved_at': savedAt.millisecondsSinceEpoch,
           'words': article?.wordCount ?? 0,
         }),
@@ -145,6 +163,14 @@ class BookmarkSnapshotStore {
 
   /// Reads a snapshot back, or null when it is gone from disk.
   Future<BookmarkSnapshot?> read(String? directoryPath) async {
+    try {
+      return await _read(directoryPath).timeout(bookmarkReaderDeadline);
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<BookmarkSnapshot?> _read(String? directoryPath) async {
     if (directoryPath == null || directoryPath.isEmpty) {
       return null;
     }
@@ -162,6 +188,7 @@ class BookmarkSnapshotStore {
     var savedAt = DateTime.fromMillisecondsSinceEpoch(0);
     final meta = File(p.join(directoryPath, metaFileName));
     if (meta.existsSync()) {
+      if (await meta.length() > 64 * 1024) return null;
       final value = jsonDecode(await meta.readAsString());
       if (value is Map && value['saved_at'] is int) {
         savedAt = DateTime.fromMillisecondsSinceEpoch(value['saved_at'] as int);
@@ -178,6 +205,24 @@ class BookmarkSnapshotStore {
     );
   }
 
+  /// Bounded local read, including legacy snapshots; never opens a browser.
+  Future<String?> readArticleText(BookmarkSnapshot snapshot) async {
+    final path = snapshot.articlePath;
+    if (path == null) return null;
+    try {
+      final bytes = BytesBuilder(copy: false);
+      await File(path).openRead().forEach((chunk) {
+        if (bytes.length + chunk.length > maxBookmarkPageBytes) {
+          throw const FormatException('Offline article exceeds size budget');
+        }
+        bytes.add(chunk);
+      }).timeout(bookmarkReaderDeadline);
+      return bookmarkArticleText(utf8.decode(bytes.takeBytes()));
+    } on Object {
+      return null;
+    }
+  }
+
   Future<void> delete(String? directoryPath) async {
     if (directoryPath == null || directoryPath.isEmpty) {
       return;
@@ -191,28 +236,37 @@ class BookmarkSnapshotStore {
   /// The Markdown document written to disk: a title and source line above the
   /// article, so the offline copy stands on its own.
   static String _articleDocument(ReadableArticle article, String url) {
+    // Lower through the same parser after removing active/remote markup.
+    // Reader captures are already passive; this also protects HTTP snapshots.
+    final safe = parseReadableArticle(
+      passiveBookmarkHtml(markdown.markdownToHtml(article.markdown)),
+    );
     final buffer = StringBuffer();
     final title = article.title?.trim();
     // The article usually opens with its own heading; a second one above it
     // would read as a repeated title.
     if (title != null &&
         title.isNotEmpty &&
-        !article.markdown.trimLeft().startsWith('# ')) {
-      buffer.writeln('# $title');
+        !safe.markdown.trimLeft().startsWith('# ')) {
+      buffer.writeln('# ${_escapeMetadata(title)}');
       buffer.writeln();
     }
     final byline = article.byline?.trim();
     if (byline != null && byline.isNotEmpty) {
-      buffer.writeln('*$byline*');
+      buffer.writeln('*${_escapeMetadata(byline)}*');
       buffer.writeln();
     }
-    buffer.writeln('[$url]($url)');
+    buffer.writeln(bookmarkPublicSource(url));
     buffer.writeln();
     buffer.writeln('---');
     buffer.writeln();
-    buffer.write(article.markdown);
+    buffer.write(safe.markdown);
     return buffer.toString();
   }
+
+  static String _escapeMetadata(String value) => value
+      .replaceAll(RegExp(r'[\r\n]'), ' ')
+      .replaceAllMapped(RegExp(r'([\\`*_\[\]<>])'), (m) => '\\${m[1]}');
 
   static Future<int> _sizeOf(Directory directory) async {
     var total = 0;

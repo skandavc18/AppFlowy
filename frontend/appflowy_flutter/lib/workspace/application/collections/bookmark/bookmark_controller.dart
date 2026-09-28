@@ -6,6 +6,7 @@ import 'package:appflowy/workspace/application/collections/bookmark/bookmark_lin
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_service.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_snapshot.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_state.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_reading_session.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
 
@@ -189,6 +190,95 @@ class BookmarkController extends ChangeNotifier {
       '${date.year}-${date.month.toString().padLeft(2, '0')}';
 
   // ---------------------------------------------------------------- writes
+
+  /// Normal HTTP only when the caller has no live renderer. No challenge
+  /// fallback, hidden WebView, browser cookie export or paywall workaround.
+  Future<BookmarkReaderCapture?> readArticleForReader(
+      BookmarkEntry entry) async {
+    final fetcher = BookmarkFetcher();
+    try {
+      final result = await fetcher
+          .fetch(
+            entry.url,
+            allowBrowserFallback: false,
+            readerOnly: true,
+          )
+          .timeout(const Duration(seconds: 15));
+      final article = result.article;
+      if (_disposed ||
+          entryFor(entry.id)?.url != entry.url ||
+          article == null ||
+          article.isEmpty) return null;
+      return BookmarkReaderCapture(
+          url: entry.url, generation: 0, article: article);
+    } on Object {
+      return null;
+    } finally {
+      fetcher.close();
+    }
+  }
+
+  /// Saves the captured page without another HTTP request or hidden browser.
+  /// The caller owns live navigation/permission checks; this controller also
+  /// checks its current bookmark before and after disk IO. Isolated directories
+  /// ensure a revoked/stale save cannot overwrite an existing offline copy.
+  Future<bool> saveReaderCapture(
+    BookmarkEntry entry,
+    BookmarkReaderCapture capture, {
+    required bool Function() isCurrent,
+    BookmarkSnapshotStore? store,
+  }) async {
+    bool allowed() =>
+        !_disposed &&
+        capture.url == entry.url &&
+        isCurrent() &&
+        entryFor(entry.id)?.url == entry.url;
+    if (!allowed() || _working.contains(entry.id)) return false;
+    _working.add(entry.id);
+    notifyListeners();
+    final snapshots = store ?? _snapshots;
+    BookmarkSnapshot? saved;
+    var published = false;
+    try {
+      if (!allowed()) return false;
+      saved = await snapshots.save(
+        url: capture.url,
+        article: capture.article,
+        isolated: true,
+      );
+      if (saved == null || !allowed()) return false;
+      final current = entryFor(entry.id)!;
+      final metadata = current.metadata.copyWith(
+        snapshotPath: saved.directory,
+        snapshotAt: saved.savedAt,
+        snapshotBytes: saved.bytes,
+      );
+      final result =
+          await _service.updateMetadata(view: current.view, metadata: metadata);
+      final succeeded = result.fold((_) => true, (_) => false);
+      if (!succeeded) return false;
+      // Persistence has committed; don't delete a published snapshot even if
+      // the owner disappeared while the backend acknowledged the write.
+      published = true;
+      if (allowed()) {
+        final latest = entryFor(entry.id)!;
+        _applyLocally(
+            entry.id,
+            latest.metadata.copyWith(
+              snapshotPath: saved.directory,
+              snapshotAt: saved.savedAt,
+              snapshotBytes: saved.bytes,
+            ));
+      }
+      return allowed();
+    } on Object {
+      return false;
+    } finally {
+      if (saved != null && !published) await snapshots.delete(saved.directory);
+      _working.remove(entry.id);
+      if (!_disposed) notifyListeners();
+    }
+  }
 
   /// Reads a page and writes what it says about itself back onto the view.
   Future<void> refresh(

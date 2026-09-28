@@ -1,6 +1,4 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/mobile/presentation/search/mobile_search_cell.dart';
-import 'package:appflowy/mobile/presentation/search/mobile_view_ancestors.dart';
 import 'package:appflowy/util/string_extension.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/search_result_list_bloc.dart';
@@ -18,6 +16,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import 'page_preview.dart';
+import 'content_search_widgets.dart';
 
 class SearchResultCell extends StatefulWidget {
   const SearchResultCell({
@@ -25,17 +24,23 @@ class SearchResultCell extends StatefulWidget {
     required this.item,
     required this.isNarrowWindow,
     this.view,
+    this.cachedViews = const {},
     this.query,
     this.isHovered = false,
     this.onFolderSelected,
+    this.contentSearch = false,
+    this.onPreviewSelected,
   });
 
   final SearchResultItem item;
   final ViewPB? view;
+  final Map<String, ViewPB> cachedViews;
   final String? query;
   final bool isHovered;
   final bool isNarrowWindow;
   final ValueChanged<ViewPB>? onFolderSelected;
+  final bool contentSearch;
+  final VoidCallback? onPreviewSelected;
 
   @override
   State<SearchResultCell> createState() => _SearchResultCellState();
@@ -56,6 +61,10 @@ class _SearchResultCellState extends State<SearchResultCell> {
 
   /// Helper to handle the selection action.
   void _handleSelection() {
+    if (widget.onPreviewSelected != null) {
+      widget.onPreviewSelected!();
+      return;
+    }
     final view = widget.view;
     if (view?.isWorkspaceFolder ?? false) {
       if (widget.isNarrowWindow && widget.onFolderSelected != null) {
@@ -78,11 +87,11 @@ class _SearchResultCellState extends State<SearchResultCell> {
 
   @override
   Widget build(BuildContext context) {
-    final title = item.displayName.orDefault(
+    final title = (widget.view?.name.trim().isNotEmpty == true
+      ? widget.view!.name : item.displayName).orDefault(
       LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
     );
     final searchResultBloc = context.read<SearchResultListBloc>();
-    final hasHovered = searchResultBloc.state.hoveredResult != null;
 
     final theme = AppFlowyTheme.of(context);
     final titleStyle = theme.textStyle.body
@@ -140,30 +149,23 @@ class _SearchResultCellState extends State<SearchResultCell> {
                       child: Center(child: buildIcon(theme)),
                     ),
                     HSpace(8),
-                    Container(
-                      constraints: BoxConstraints(
-                        maxWidth: (!widget.isNarrowWindow && hasHovered)
-                            ? 480.0
-                            : 680.0,
-                      ),
+                    Expanded(
                       child: RichText(
                         maxLines: 1,
-                        textAlign: TextAlign.center,
                         overflow: TextOverflow.ellipsis,
                         text: buildHighLightSpan(
                           content: title,
                           normal: titleStyle,
-                          highlight: titleStyle.copyWith(
-                            backgroundColor: theme.fillColorScheme.themeSelect,
-                          ),
                         ),
                       ),
                     ),
-                    Flexible(child: buildPath(theme)),
-                    PaletteDeleteButton(
-                      view: widget.view,
-                      visible: _hasFocus || widget.isHovered,
-                    ),
+                    if (!widget.contentSearch) ...[
+                      Flexible(child: buildPath(theme)),
+                      PaletteDeleteButton(
+                        view: widget.view,
+                        visible: _hasFocus || widget.isHovered,
+                      ),
+                    ],
                   ],
                 ),
                 ...buildSummary(theme),
@@ -182,14 +184,21 @@ class _SearchResultCellState extends State<SearchResultCell> {
   }
 
   Widget buildPath(AppFlowyThemeData theme) {
-    return BlocProvider(
-      key: ValueKey(item.id),
-      create: (context) => ViewAncestorBloc(item.id),
-      child: BlocBuilder<ViewAncestorBloc, ViewAncestorState>(
-        builder: (context, state) {
-          if (state.ancestor.ancestors.isEmpty) return const SizedBox.shrink();
-          return state.buildOnelinePath(context);
-        },
+    final names = <String>[];
+    final visited = <String>{item.id};
+    var parent = widget.view?.parentViewId;
+    while (parent != null && visited.length < 64 && visited.add(parent)) {
+      final view = widget.cachedViews[parent];
+      if (view == null) break;
+      names.add(view.name);
+      parent = view.parentViewId;
+    }
+    return Text(
+      names.reversed.join(' / '),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: theme.textStyle.caption.standard(
+        color: theme.textColorScheme.secondary,
       ),
     );
   }
@@ -197,24 +206,13 @@ class _SearchResultCellState extends State<SearchResultCell> {
   TextSpan buildHighLightSpan({
     required String content,
     required TextStyle normal,
-    required TextStyle highlight,
-  }) {
-    final queryText = (widget.query ?? '').trim();
-    if (queryText.isEmpty) {
-      return TextSpan(text: content, style: normal);
-    }
-    final contents = content.splitIncludeSeparator(queryText);
-    return TextSpan(
-      children: List.generate(contents.length, (index) {
-        final content = contents[index];
-        final isHighlight = content.toLowerCase() == queryText.toLowerCase();
-        return TextSpan(
-          text: content,
-          style: isHighlight ? highlight : normal,
-        );
-      }),
-    );
-  }
+  }) =>
+      paletteMatchTextSpan(
+        context: context,
+        text: content,
+        query: widget.query ?? '',
+        style: normal,
+      );
 
   List<Widget> buildSummary(AppFlowyThemeData theme) {
     if (item.content.isEmpty) return [];
@@ -231,10 +229,6 @@ class _SearchResultCellState extends State<SearchResultCell> {
           text: buildHighLightSpan(
             content: item.content,
             normal: style,
-            highlight: style.copyWith(
-              backgroundColor: theme.fillColorScheme.themeSelect,
-              color: theme.textColorScheme.primary,
-            ),
           ),
         ),
       ),
@@ -246,15 +240,24 @@ class SearchResultPreview extends StatelessWidget {
   const SearchResultPreview({
     super.key,
     required this.view,
+    this.query,
+    this.matchingSnippet,
+    this.contentSearch = false,
   });
 
   final ViewPB view;
+  final String? query;
+  final String? matchingSnippet;
+  final bool contentSearch;
 
   @override
   Widget build(BuildContext context) {
     return PagePreview(
       view: view,
       key: ValueKey(view.id),
+      query: query,
+      matchingSnippet: matchingSnippet,
+      contentSearch: contentSearch,
       onViewOpened: () {
         context
             .read<SearchResultListBloc?>()

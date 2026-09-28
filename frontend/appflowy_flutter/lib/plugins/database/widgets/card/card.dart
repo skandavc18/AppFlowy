@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/plugins/database/application/field/field_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_cache.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
+import 'package:appflowy/plugins/database/find/database_find_navigation.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/row/action.dart';
 import 'package:appflowy/shared/af_image.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
@@ -287,13 +288,19 @@ class _RowCardContentState extends State<RowCardContent> {
               ),
       ],
     );
-    return style.hoverStyle == null
-        ? child
-        : FlowyHover(
-            style: style.hoverStyle,
-            buildWhenOnHover: () => !context.read<CardBloc>().state.isEditing,
-            child: child,
-          );
+    return DatabaseFindAnchor(
+      target: DatabaseFindTarget.row(
+        context.read<CardBloc>().viewId,
+        widget.rowMeta.id,
+      ),
+      child: style.hoverStyle == null
+          ? child
+          : FlowyHover(
+              style: style.hoverStyle,
+              buildWhenOnHover: () => !context.read<CardBloc>().state.isEditing,
+              child: child,
+            ),
+    );
   }
 }
 
@@ -544,7 +551,16 @@ class _CardContentCellState extends State<_CardContentCell> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => DatabaseFindAnchor(
+        target: DatabaseFindTarget.cell(
+          context.read<CardBloc>().viewId,
+          widget.cellMeta.rowId,
+          widget.cellMeta.fieldId,
+        ),
+        child: _buildCell(context),
+      );
+
+  Widget _buildCell(BuildContext context) {
     return BlocListener<CardBloc, CardState>(
       listenWhen: (previous, current) =>
           previous.isEditing != current.isEditing,

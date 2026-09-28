@@ -1,4 +1,5 @@
 import 'package:appflowy/plugins/database/calendar/presentation/calendar_style.dart';
+import 'package:appflowy/plugins/database/find/database_find_calendar.dart';
 import 'package:appflowy/shared/calendar/calendar_event.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -62,7 +63,10 @@ class _CalendarEventChipState extends State<CalendarEventChip> {
 
   @override
   Widget build(BuildContext context) {
-    final chip = _buildChip(context);
+    final chip = DatabaseFindCalendarEvent(
+      event: widget.event,
+      child: _buildChip(context),
+    );
     if (widget.density != CalendarChipDensity.compact) {
       return chip;
     }

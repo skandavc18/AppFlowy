@@ -1576,6 +1576,19 @@ class WindowsInAppWebViewController extends PlatformInAppWebViewController
     return url != null ? WebUri(url) : null;
   }
 
+  /// Denies this opener's pending Windows new-window request without navigation.
+  /// Await inside onCreateWindow, then return true (never false on rejection).
+  /// Returns false if already adopted/rejected/disposed or owned by another view.
+  /// Returning true from onCreateWindow alone still reserves windowId adoption.
+  Future<bool> rejectWindow(int windowId) async {
+    if (windowId < 0) throw ArgumentError.value(windowId, 'windowId');
+    return await channel?.invokeMethod<bool>(
+          'rejectWindow',
+          <String, dynamic>{'windowId': windowId},
+        ) ??
+        false;
+  }
+
   @override
   Future<String?> getTitle() async {
     Map<String, dynamic> args = <String, dynamic>{};

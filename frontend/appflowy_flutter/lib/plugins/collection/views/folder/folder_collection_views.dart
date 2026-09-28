@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/file_browser/file_browser_view.dart';
 import 'package:appflowy/plugins/collection/providers/external_collection_host.dart';
 import 'package:appflowy/plugins/collection/providers/external_content_view.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
@@ -66,6 +67,7 @@ CollectionViewDefinition _view({
       id: id,
       labelKey: labelKey,
       icon: icon,
+      supportsPageHeader: true,
       builder: (context, collection) => ExternalCollectionHost(
         collection: collection,
         builder: (context, controller, palette) {
@@ -73,6 +75,13 @@ CollectionViewDefinition _view({
             return CollectionContentsView(
               collection: collection,
               presentation: presentation,
+              viewMode: switch (layout) {
+                ExternalLayout.gallery => FileBrowserViewMode.gallery,
+                ExternalLayout.thumbnail => FileBrowserViewMode.thumbnails,
+                ExternalLayout.list ||
+                ExternalLayout.compact =>
+                  FileBrowserViewMode.list,
+              },
             );
           }
           return ExternalContentView(

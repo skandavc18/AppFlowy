@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_file_kind.dart';
@@ -27,9 +28,17 @@ class ExplorerTree extends StatefulWidget {
     required this.onContextMenu,
     required this.onRequestDelete,
     this.onBackgroundContextMenu,
+    this.header,
+    this.footer,
+    this.scrollController,
+    this.horizontalPadding = 0,
   });
 
   final WorkspaceExplorerController controller;
+  final Widget? header;
+  final Widget? footer;
+  final ScrollController? scrollController;
+  final double horizontalPadding;
   final ValueChanged<ViewPB> onOpen;
   final ValueChanged<String> onNavigate;
   final void Function(WorkspaceExplorerItem item, Offset position)
@@ -79,122 +88,160 @@ class _ExplorerTreeState extends State<ExplorerTree> {
                 controller.selection.clear();
                 widget.onBackgroundContextMenu!(details.globalPosition);
               },
-        child: itemCount == 0
-            ? Center(
-                child: Text(
-                  controller.query.isEmpty
-                      ? LocaleKeys.workspaceFolderExplorer_emptyFolder.tr()
-                      : LocaleKeys.workspaceFolderExplorer_noMatchingItems.tr(),
-                  style: TextStyle(fontSize: 13, color: palette.textMuted),
+        child: FileBrowserScrollView(
+          scrollKey: const ValueKey('folder-tree-scroll-view'),
+          controller: widget.scrollController,
+          header: widget.header,
+          footer: widget.footer,
+          slivers: [
+            if (itemCount == 0)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Text(
+                    controller.query.isEmpty
+                        ? LocaleKeys.workspaceFolderExplorer_emptyFolder.tr()
+                        : LocaleKeys.workspaceFolderExplorer_noMatchingItems
+                            .tr(),
+                    style: TextStyle(fontSize: 13, color: palette.textMuted),
+                  ),
                 ),
               )
-            : ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                itemExtent:
-                    (MediaQuery.textScalerOf(context).scale(14) * 1.3 + 8)
-                        .clamp(38.0, double.infinity),
-                itemCount: itemCount,
-                itemBuilder: (context, index) {
-                  if (draft != null && index == insertIndex) {
-                    final depth = draft.parentId == controller.currentFolder.id
-                        ? 0
-                        : _depthForParent(rows, draft.parentId);
-                    return _ExplorerDraftRow(
-                      key: ValueKey('draft-${draft.kind}-${draft.parentId}'),
-                      draft: draft,
-                      depth: depth,
-                      onCancel: controller.cancelEditing,
-                      onSubmitted: controller.commitDraft,
-                    );
-                  }
-                  final rowIndex =
-                      draft != null && index > insertIndex ? index - 1 : index;
-                  final row = rows[rowIndex];
-                  final view = controller.viewForId(row.item.id);
-                  if (view == null) {
-                    return const SizedBox.shrink();
-                  }
-                  return _ExplorerTreeRow(
-                    key: ValueKey(row.item.id),
-                    row: row,
-                    query: controller.query,
-                    selected: controller.selection.contains(row.item.id),
-                    editing: controller.editingId == row.item.id,
-                    view: view,
-                    dragEnabled: controller.query.isEmpty &&
-                        controller.canWriteTo(row.item.id),
-                    onTap: () {
-                      focusNode.requestFocus();
-                      controller.selectRow(
-                        row.item.id,
-                        toggle: HardwareKeyboard.instance.isControlPressed ||
-                            HardwareKeyboard.instance.isMetaPressed,
-                        range: HardwareKeyboard.instance.isShiftPressed,
-                      );
-                    },
-                    onDoubleTap: () => _open(row.item),
-                    onRename: controller.canRename(row.item.id)
-                        ? () => controller.beginRename(row.item.id)
-                        : null,
-                    onToggle: () => controller.toggleFolder(row.item.id),
-                    onContextMenu: (position) {
-                      if (controller.query.isNotEmpty &&
-                          !row.item.name
-                              .toLowerCase()
-                              .contains(controller.query.toLowerCase())) {
-                        return;
-                      }
-                      if (!controller.selection.contains(row.item.id)) {
-                        controller.selectRow(
-                          row.item.id,
-                          toggle: false,
-                          range: false,
+            else
+              SliverPadding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.horizontalPadding,
+                  vertical: 4,
+                ),
+                sliver: SliverFixedExtentList(
+                  itemExtent:
+                      (MediaQuery.textScalerOf(context).scale(14) * 1.3 + 8)
+                          .clamp(38.0, double.infinity),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      if (draft != null && index == insertIndex) {
+                        final depth =
+                            draft.parentId == controller.currentFolder.id
+                                ? 0
+                                : _depthForParent(rows, draft.parentId);
+                        return _ExplorerDraftRow(
+                          key:
+                              ValueKey('draft-${draft.kind}-${draft.parentId}'),
+                          draft: draft,
+                          depth: depth,
+                          onCancel: controller.cancelEditing,
+                          onSubmitted: controller.commitDraft,
                         );
                       }
-                      widget.onContextMenu(row.item, position);
-                    },
-                    onRenameSubmitted: controller.commitRename,
-                    onRenameCancelled: controller.cancelEditing,
-                    onMove: (view, position) {
-                      switch (position) {
-                        case _ExplorerDropPosition.before:
-                          unawaited(
-                            controller.moveItem(
-                              itemId: view.id,
-                              parentId: row.item.parentId,
-                              previousViewId: controller.previousSiblingId(
-                                row.item.id,
-                                excludingId: view.id,
-                              ),
-                            ),
+                      final rowIndex = draft != null && index > insertIndex
+                          ? index - 1
+                          : index;
+                      final row = rows[rowIndex];
+                      final view = controller.viewForId(row.item.id);
+                      if (view == null) {
+                        return const SizedBox.shrink();
+                      }
+                      return _ExplorerTreeRow(
+                        key: ValueKey(row.item.id),
+                        row: row,
+                        query: controller.query,
+                        selected: controller.selection.contains(row.item.id),
+                        editing: controller.editingId == row.item.id,
+                        view: view,
+                        dragEnabled: controller.query.isEmpty &&
+                            controller.canWriteTo(row.item.id),
+                        onTap: () {
+                          focusNode.requestFocus();
+                          controller.selectRow(
+                            row.item.id,
+                            toggle:
+                                HardwareKeyboard.instance.isControlPressed ||
+                                    HardwareKeyboard.instance.isMetaPressed,
+                            range: HardwareKeyboard.instance.isShiftPressed,
                           );
-                        case _ExplorerDropPosition.inside:
-                          if (view.parentViewId != row.item.id) {
-                            unawaited(
-                              controller.moveItem(
-                                itemId: view.id,
-                                parentId: row.item.id,
-                              ),
+                        },
+                        onDoubleTap: () => _open(row.item),
+                        onRename: controller.canRename(row.item.id)
+                            ? () => controller.beginRename(row.item.id)
+                            : null,
+                        onToggle: () => controller.toggleFolder(row.item.id),
+                        onContextMenu: (position) {
+                          if (controller.query.isNotEmpty &&
+                              !row.item.name
+                                  .toLowerCase()
+                                  .contains(controller.query.toLowerCase())) {
+                            return;
+                          }
+                          if (!controller.selection.contains(row.item.id)) {
+                            controller.selectRow(
+                              row.item.id,
+                              toggle: false,
+                              range: false,
                             );
                           }
-                        case _ExplorerDropPosition.after:
-                          unawaited(
-                            controller.moveItem(
-                              itemId: view.id,
-                              parentId: row.item.parentId,
-                              previousViewId: row.item.id,
-                            ),
-                          );
-                      }
+                          widget.onContextMenu(row.item, position);
+                        },
+                        onRenameSubmitted: controller.commitRename,
+                        onRenameCancelled: controller.cancelEditing,
+                        onMove: (view, position) {
+                          switch (position) {
+                            case _ExplorerDropPosition.before:
+                              unawaited(
+                                controller.moveItem(
+                                  itemId: view.id,
+                                  parentId: row.item.parentId,
+                                  previousViewId: controller.previousSiblingId(
+                                    row.item.id,
+                                    excludingId: view.id,
+                                  ),
+                                ),
+                              );
+                            case _ExplorerDropPosition.inside:
+                              if (view.parentViewId != row.item.id) {
+                                unawaited(
+                                  controller.moveItem(
+                                    itemId: view.id,
+                                    parentId: row.item.id,
+                                  ),
+                                );
+                              }
+                            case _ExplorerDropPosition.after:
+                              unawaited(
+                                controller.moveItem(
+                                  itemId: view.id,
+                                  parentId: row.item.parentId,
+                                  previousViewId: row.item.id,
+                                ),
+                              );
+                          }
+                        },
+                        onAutoExpand: () {
+                          if (!row.isExpanded) {
+                            controller.toggleFolder(row.item.id);
+                          }
+                        },
+                      );
                     },
-                    onAutoExpand: () {
-                      if (!row.isExpanded) {
-                        controller.toggleFolder(row.item.id);
+                    childCount: itemCount,
+                    findChildIndexCallback: (key) {
+                      if (draft != null &&
+                          key ==
+                              ValueKey(
+                                  'draft-${draft.kind}-${draft.parentId}')) {
+                        return insertIndex;
                       }
+                      final index = rows
+                          .indexWhere((row) => ValueKey(row.item.id) == key);
+                      return index < 0
+                          ? null
+                          : index +
+                              (draft != null && index >= insertIndex ? 1 : 0);
                     },
-                  );
-                },
+                  ),
+                ),
               ),
+          ],
+        ),
       ),
     );
   }

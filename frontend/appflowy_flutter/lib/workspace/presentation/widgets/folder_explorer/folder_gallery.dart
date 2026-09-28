@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emo
 import 'package:appflowy/shared/af_user_profile_extension.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/file_browser/file_browser_scroll_view.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
@@ -20,12 +21,15 @@ import 'package:appflowy/workspace/application/workspace_item/workspace_explorer
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_explorer_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery_find_projection.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_size.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/gallery_card_surface.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart'
+    show FieldType;
 import 'package:appflowy_backend/protobuf/flowy-user/user_profile.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/gestures.dart';
@@ -128,12 +132,16 @@ class FolderGalleryPreviewThumbnail extends StatelessWidget {
                               preview: data,
                               userProfile: userProfile,
                             )
-                          : _GalleryPreviewStage(
-                              item: item,
+                          : FolderGalleryFindScope(
                               view: view,
                               preview: data,
-                              userProfile: userProfile,
-                              compact: compact,
+                              child: _GalleryPreviewStage(
+                                item: item,
+                                view: view,
+                                preview: data,
+                                userProfile: userProfile,
+                                compact: compact,
+                              ),
                             ),
                     );
                   },
@@ -188,6 +196,8 @@ class FolderGallery extends StatefulWidget {
     this.errorBanner,
     this.thumbnails = false,
     this.horizontalPadding,
+    this.scrollController,
+    this.footer,
   });
 
   final WorkspaceExplorerController controller;
@@ -210,6 +220,8 @@ class FolderGallery extends StatefulWidget {
   /// A folder shell already provides the shared reading inset. Standalone
   /// gallery callers can continue to use the existing gallery geometry.
   final double? horizontalPadding;
+  final ScrollController? scrollController;
+  final Widget? footer;
 
   @override
   State<FolderGallery> createState() => _FolderGalleryState();
@@ -273,11 +285,13 @@ class _FolderGalleryState extends State<FolderGallery> {
                 controller.selection.clear();
                 widget.onBackgroundContextMenu!(details.globalPosition);
               },
-        child: CustomScrollView(
-          key: const ValueKey('folder-gallery-scroll-view'),
+        child: FileBrowserScrollView(
+          scrollKey: const ValueKey('folder-gallery-scroll-view'),
+          controller: widget.scrollController,
+          header: widget.header,
+          footer: widget.footer,
           cacheExtent: 900,
           slivers: [
-            if (widget.header != null) SliverToBoxAdapter(child: widget.header),
             if (widget.errorBanner != null)
               SliverToBoxAdapter(child: widget.errorBanner),
             SliverLayoutBuilder(
@@ -772,24 +786,41 @@ class _FolderGalleryCardState extends State<FolderGalleryCard> {
         borderRadius: BorderRadius.zero,
         onRetry: widget.onRetry,
       ),
-      name: Tooltip(
-        message: [title, if (widget.searchPath != null) widget.searchPath!]
-            .join('\n'),
-        excludeFromSemantics: true,
-        child: WorkspaceInlineEditableText(
-          key: const ValueKey('folder-thumbnail-name'),
-          text: title,
-          editingValue: widget.item.name,
-          editing: widget.editing,
-          onSubmitted: widget.onRenameSubmitted,
-          onCancelled: widget.onRenameCancelled,
-          onTap: widget.onTap,
-          onDoubleTap: widget.canRename ? widget.onRename : null,
-          maxLines: 2,
-          selectFileStem: widget.item.isFile,
-          style: WorkspaceTypography.style(context, WorkspaceTextRole.body)
-              .copyWith(fontSize: 13, height: 1.4),
-        ),
+      name: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          WorkspaceItemIcon(
+            item: widget.item,
+            view: widget.view,
+            size: 14,
+            showThumbnail: false,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Tooltip(
+              message: [
+                title,
+                if (widget.searchPath != null) widget.searchPath!
+              ].join('\n'),
+              excludeFromSemantics: true,
+              child: WorkspaceInlineEditableText(
+                key: const ValueKey('folder-thumbnail-name'),
+                text: title,
+                editingValue: widget.item.name,
+                editing: widget.editing,
+                onSubmitted: widget.onRenameSubmitted,
+                onCancelled: widget.onRenameCancelled,
+                onTap: widget.onTap,
+                onDoubleTap: widget.canRename ? widget.onRename : null,
+                maxLines: 2,
+                selectFileStem: widget.item.isFile,
+                style:
+                    WorkspaceTypography.style(context, WorkspaceTextRole.body)
+                        .copyWith(fontSize: 13, height: 1.4),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1125,23 +1156,22 @@ class _GalleryCardTitle extends StatelessWidget {
     final title = item.name.isEmpty
         ? LocaleKeys.workspaceFolderExplorer_untitled.tr()
         : item.name;
-    final icon = view?.icon.toEmojiIconData();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (icon != null && icon.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 1),
-                child: RawEmojiIconWidget(
-                  emoji: icon,
-                  emojiSize: density.emojiSize,
-                ),
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: WorkspaceItemIcon(
+                item: item,
+                view: view,
+                size: density.emojiSize,
+                showThumbnail: false,
               ),
-              const SizedBox(width: 8),
-            ],
+            ),
+            const SizedBox(width: 8),
             Expanded(
               child: Tooltip(
                 message: title,
@@ -1305,15 +1335,19 @@ class _GalleryDocumentBlock extends StatelessWidget {
           ),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(
-          'ƒ  ${block.plainText}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: palette.textSecondary,
-            fontFamily: 'serif',
-            fontSize: 12,
-            fontStyle: FontStyle.italic,
+        child: FolderGalleryFindText(
+          text: 'ƒ  ${block.plainText}',
+          contentStart: 3,
+          child: Text(
+            'ƒ  ${block.plainText}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: palette.textSecondary,
+              fontFamily: 'serif',
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+            ),
           ),
         ),
       );
@@ -1391,7 +1425,9 @@ class _GalleryDocumentBlock extends StatelessWidget {
               ),
             ),
           ],
-          Expanded(child: body),
+          Expanded(
+            child: FolderGalleryFindText(text: block.plainText, child: body),
+          ),
         ],
       ),
     );
@@ -1498,18 +1534,21 @@ class _MiniCodeBlock extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(10, 8, 10, 9),
               child: ClipRect(
-                child: RichText(
-                  maxLines: expanded ? 11 : 4,
-                  overflow: TextOverflow.ellipsis,
-                  text: buildSyntaxHighlightedTextSpan(
-                    code: code,
-                    language: language,
-                    brightness: theme.brightness,
-                    isPaper: isPaper,
-                    style: const TextStyle(
-                      fontFamily: 'RobotoMono',
-                      fontSize: 9.7,
-                      height: 1.42,
+                child: FolderGalleryFindText(
+                  text: code,
+                  child: RichText(
+                    maxLines: expanded ? 11 : 4,
+                    overflow: TextOverflow.ellipsis,
+                    text: buildSyntaxHighlightedTextSpan(
+                      code: code,
+                      language: language,
+                      brightness: theme.brightness,
+                      isPaper: isPaper,
+                      style: const TextStyle(
+                        fontFamily: 'RobotoMono',
+                        fontSize: 9.7,
+                        height: 1.42,
+                      ),
                     ),
                   ),
                 ),
@@ -2092,6 +2131,7 @@ class _GalleryDatabasePreview extends StatelessWidget {
                     Expanded(
                       child: _GalleryDatabaseRow(
                         values: database.rows[index],
+                        fieldTypes: database.fieldTypes,
                         backgroundColor:
                             index.isOdd ? stripeSurface : Colors.transparent,
                       ),
@@ -2111,11 +2151,29 @@ class _GalleryDatabaseRow extends StatelessWidget {
     required this.values,
     this.header = false,
     this.backgroundColor = Colors.transparent,
+    this.fieldTypes = const [],
   });
 
   final List<String> values;
   final bool header;
   final Color backgroundColor;
+  final List<FieldType> fieldTypes;
+
+  bool _findable(int index) =>
+      header ||
+      (index < fieldTypes.length &&
+          const {
+            FieldType.RichText,
+            FieldType.Number,
+            FieldType.Summary,
+            FieldType.Translate,
+            FieldType.SingleSelect,
+            FieldType.MultiSelect,
+            FieldType.Checklist,
+            FieldType.DateTime,
+            FieldType.CreatedTime,
+            FieldType.LastEditedTime,
+          }.contains(fieldTypes[index]));
 
   @override
   Widget build(BuildContext context) {
@@ -2134,25 +2192,29 @@ class _GalleryDatabaseRow extends StatelessWidget {
                 if (index > 0) const SizedBox(width: 10),
                 Expanded(
                   flex: index == 0 ? 5 : 4,
-                  child: Text(
-                    values[index].isEmpty ? '-' : values[index],
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: header
-                          ? palette.textPrimary.withValues(
-                              alpha: isDark ? 0.88 : 0.72,
-                            )
-                          : values[index].isEmpty
-                              ? palette.textMuted.withValues(alpha: 0.48)
-                              : palette.textPrimary.withValues(
-                                  alpha: isDark ? 0.92 : 0.84,
-                                ),
-                      fontFamily: 'Inter',
-                      fontSize: header ? 10 : 10.5,
-                      height: 1.2,
-                      fontWeight: header ? FontWeight.w600 : null,
-                      letterSpacing: header ? 0.08 : -0.06,
+                  child: FolderGalleryFindText(
+                    text: values[index],
+                    enabled: values[index].isNotEmpty && _findable(index),
+                    child: Text(
+                      values[index].isEmpty ? '-' : values[index],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: header
+                            ? palette.textPrimary.withValues(
+                                alpha: isDark ? 0.88 : 0.72,
+                              )
+                            : values[index].isEmpty
+                                ? palette.textMuted.withValues(alpha: 0.48)
+                                : palette.textPrimary.withValues(
+                                    alpha: isDark ? 0.92 : 0.84,
+                                  ),
+                        fontFamily: 'Inter',
+                        fontSize: header ? 10 : 10.5,
+                        height: 1.2,
+                        fontWeight: header ? FontWeight.w600 : null,
+                        letterSpacing: header ? 0.08 : -0.06,
+                      ),
                     ),
                   ),
                 ),

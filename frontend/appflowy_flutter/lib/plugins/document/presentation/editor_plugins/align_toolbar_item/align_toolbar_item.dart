@@ -1,5 +1,6 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -14,7 +15,7 @@ final alignToolbarItem = ToolbarItem(
   id: kAlignToolbarItemId,
   group: 4,
   isActive: onlyShowInTextType,
-  builder: (context, editorState, highlightColor, _, tooltipBuilder) {
+  builder: (context, editorState, highlightColor, iconColor, tooltipBuilder) {
     final selection = editorState.selection!;
     final nodes = editorState.getNodesInSelection(selection);
 
@@ -40,7 +41,7 @@ final alignToolbarItem = ToolbarItem(
     Widget child = FlowySvg(
       data,
       size: const Size.square(16),
-      color: isHighlight ? highlightColor : Colors.white,
+      color: isHighlight ? highlightColor : iconColor,
     );
 
     child = _AlignmentButtons(
@@ -94,7 +95,9 @@ class _AlignmentButtonsState extends State<_AlignmentButtons> {
       margin: const EdgeInsets.symmetric(vertical: 2.0),
       direction: PopoverDirection.bottomWithCenterAligned,
       offset: const Offset(0, 10),
-      decorationColor: Theme.of(context).colorScheme.onTertiary,
+      decorationColor:
+          PremiumThemeExtension.maybeOf(context)?.floatingSurface ??
+              Theme.of(context).cardColor,
       borderRadius: BorderRadius.circular(6.0),
       popupBuilder: (_) {
         keepEditorFocusNotifier.increase();
@@ -106,7 +109,6 @@ class _AlignmentButtonsState extends State<_AlignmentButtons> {
       child: FlowyButton(
         useIntrinsicWidth: true,
         text: widget.child,
-        hoverColor: Colors.grey.withValues(alpha: 0.3),
         onTap: () => controller.show(),
       ),
     );
@@ -167,14 +169,14 @@ class _AlignButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return FlowyButton(
       useIntrinsicWidth: true,
-      hoverColor: Colors.grey.withValues(alpha: 0.3),
       onTap: onTap,
       text: FlowyTooltip(
         message: tooltips,
         child: FlowySvg(
           icon,
           size: const Size.square(16),
-          color: Colors.white,
+          color: PremiumThemeExtension.maybeOf(context)?.textPrimary ??
+              Theme.of(context).colorScheme.onSurface,
         ),
       ),
     );
@@ -190,7 +192,7 @@ class _Divider extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       child: Container(
         width: 1,
-        color: Colors.grey,
+        color: Theme.of(context).dividerColor,
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/shared/document_viewer/native_file_page_scroll.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
@@ -663,31 +664,33 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       key: kOfficeEditorScrollExclusionKey,
       child: ViewerCard(
         color: background,
-        child: widget.editorBuilder?.call(context, hostedEditor) ??
-            InAppWebView(
-              key: ValueKey(hostedEditor.token),
-              initialUrlRequest: URLRequest(
-                url: WebUri(hostedEditor.url),
-              ),
-              initialUserScripts: UnmodifiableListView([
-                buildOfficeThemeStorageUserScript(
-                  documentServerUrl: documentServerUrl,
-                  isDark: _editorIsDark ?? _currentIsDark(),
+        child: NativeFilePageHeaderWheel(
+          child: widget.editorBuilder?.call(context, hostedEditor) ??
+              InAppWebView(
+                key: ValueKey(hostedEditor.token),
+                initialUrlRequest: URLRequest(
+                  url: WebUri(hostedEditor.url),
                 ),
-              ]),
-              // The editor is a JavaScript application, so scripting stays on
-              // (the default) unlike sandboxed markdown and HTML previews.
-              initialSettings: InAppWebViewSettings(
-                supportZoom: false,
-                transparentBackground: true,
-                mediaPlaybackRequiresUserGesture: false,
+                initialUserScripts: UnmodifiableListView([
+                  buildOfficeThemeStorageUserScript(
+                    documentServerUrl: documentServerUrl,
+                    isDark: _editorIsDark ?? _currentIsDark(),
+                  ),
+                ]),
+                // The editor is a JavaScript application, so scripting stays on
+                // (the default) unlike sandboxed markdown and HTML previews.
+                initialSettings: InAppWebViewSettings(
+                  supportZoom: false,
+                  transparentBackground: true,
+                  mediaPlaybackRequiresUserGesture: false,
+                ),
+                onConsoleMessage: (_, message) {
+                  if (message.messageLevel == ConsoleMessageLevel.ERROR) {
+                    Log.error('ONLYOFFICE: ${message.message}');
+                  }
+                },
               ),
-              onConsoleMessage: (_, message) {
-                if (message.messageLevel == ConsoleMessageLevel.ERROR) {
-                  Log.error('ONLYOFFICE: ${message.message}');
-                }
-              },
-            ),
+        ),
       ),
     );
   }

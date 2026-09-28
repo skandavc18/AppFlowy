@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'document_viewport_style.dart';
+import 'file_action_band.dart';
 import 'standalone_file_scope.dart';
 
 /// What the fixed header says about the open document.
@@ -232,110 +233,78 @@ class DocumentViewportHeader extends StatelessWidget {
 
     return DocumentViewportBar(
       background: background,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final available = constraints.maxWidth;
-          final stacked = available < DocumentViewportStyle.toolbarBreakpoint ||
-              MediaQuery.textScalerOf(context).scale(14) > 20;
-          final toolbarWidth =
-              stacked ? available : (available * 0.68).clamp(0.0, 780.0);
-          final identityWidth = toolbar == null || stacked
-              ? available
-              : available - toolbarWidth - 16;
-
-          return Wrap(
-            spacing: 16,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              SizedBox(
-                width: identityWidth,
-                child: Row(
-                  children: [
-                    if (leading != null) ...[
-                      leading!,
-                      const SizedBox(width: 4),
-                    ],
-                    WorkspaceGlyph(identity.icon, color: style.icon),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Tooltip(
-                            message: identity.title,
-                            child: Text(
-                              identity.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: face.copyWith(
-                                fontSize: 13,
-                                height: 1.25,
-                                fontWeight: FontWeight.w600,
-                                fontVariations: const [
-                                  FontVariation.weight(600),
-                                ],
-                                letterSpacing: -0.1,
-                                color: style.textPrimary,
-                              ),
-                            ),
-                          ),
-                          if (subtitle != null && subtitle.isNotEmpty)
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: face.copyWith(
-                                fontSize: 11,
-                                height: 1.3,
-                                fontWeight: FontWeight.w400,
-                                fontVariations: const [
-                                  FontVariation.weight(450),
-                                ],
-                                color: style.textMuted,
-                              ),
-                            ),
+      child: StandaloneFileHeaderLayout(
+        identity: Row(
+          children: [
+            if (leading != null) ...[
+              leading!,
+              const SizedBox(width: 4),
+            ],
+            WorkspaceGlyph(identity.icon, color: style.icon),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Tooltip(
+                    message: identity.title,
+                    child: Text(
+                      identity.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: face.copyWith(
+                        fontSize: 13,
+                        height: 1.25,
+                        fontWeight: FontWeight.w600,
+                        fontVariations: const [
+                          FontVariation.weight(600),
                         ],
+                        letterSpacing: -0.1,
+                        color: style.textPrimary,
                       ),
                     ),
-                    if (actions.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Visibility(
-                        visible: showActions,
-                        maintainState: true,
-                        maintainAnimation: true,
-                        maintainSize: true,
-                        child: PreviewToolbar(
-                          keepVisible: keepActionsVisible,
-                          child: ConstrainedBox(
-                            constraints:
-                                BoxConstraints(maxWidth: identityWidth * 0.55),
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: actions,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (toolbar != null)
-                SizedBox(
-                  width: toolbarWidth,
-                  child: PreviewToolbar(
-                    keepVisible: keepActionsVisible,
-                    child: toolbar!,
                   ),
+                  if (subtitle != null && subtitle.isNotEmpty)
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: face.copyWith(
+                        fontSize: 11,
+                        height: 1.3,
+                        fontWeight: FontWeight.w400,
+                        fontVariations: const [
+                          FontVariation.weight(450),
+                        ],
+                        color: style.textMuted,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        tools: PreviewToolbar(
+          keepVisible: keepActionsVisible,
+          child: Wrap(
+            alignment: fileActionRunAlignment(context),
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              if (toolbar != null) toolbar!,
+              for (final action in actions)
+                Visibility(
+                  visible: showActions,
+                  maintainState: true,
+                  maintainAnimation: true,
+                  maintainSize: true,
+                  child: action,
                 ),
             ],
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -407,11 +376,13 @@ class DocumentViewportFitButton extends StatelessWidget {
     required this.onPressed,
     this.tooltip = 'Fit to view',
     this.options,
+    this.glyphName = 'fit',
   });
 
   final VoidCallback? onPressed;
   final String tooltip;
   final Widget? options;
+  final String glyphName;
 
   @override
   Widget build(BuildContext context) {
@@ -441,12 +412,13 @@ class DocumentViewportFitButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Builder(
-                  builder: (context) => CustomPaint(
+                  builder: (context) => WorkspaceGlyph.named(
+                    glyphName,
                     key: const ValueKey('document-fit-glyph'),
-                    size: const Size.square(18),
-                    painter: _FitViewGlyph(
-                      IconTheme.of(context).color ?? style.icon,
-                    ),
+                    color: IconTheme.of(context).color ?? style.icon,
+                    role: onPressed == null
+                        ? WorkspaceGlyphRole.preserveInk
+                        : WorkspaceGlyphRole.standard,
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -459,54 +431,6 @@ class DocumentViewportFitButton extends StatelessWidget {
       ],
     );
   }
-}
-
-/// Rounded viewport corners and a light content outline, not a filled monitor.
-class _FitViewGlyph extends CustomPainter {
-  const _FitViewGlyph(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round
-      ..strokeJoin = StrokeJoin.round;
-    canvas.save();
-    canvas.scale(size.width / 20, size.height / 20);
-    final corners = Path()
-      ..moveTo(2, 6)
-      ..lineTo(2, 3.5)
-      ..quadraticBezierTo(2, 2, 3.5, 2)
-      ..lineTo(6, 2)
-      ..moveTo(14, 2)
-      ..lineTo(16.5, 2)
-      ..quadraticBezierTo(18, 2, 18, 3.5)
-      ..lineTo(18, 6)
-      ..moveTo(18, 14)
-      ..lineTo(18, 16.5)
-      ..quadraticBezierTo(18, 18, 16.5, 18)
-      ..lineTo(14, 18)
-      ..moveTo(6, 18)
-      ..lineTo(3.5, 18)
-      ..quadraticBezierTo(2, 18, 2, 16.5)
-      ..lineTo(2, 14);
-    canvas.drawPath(corners, paint);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(6, 6, 8, 8),
-        const Radius.circular(1.5),
-      ),
-      paint,
-    );
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_FitViewGlyph oldDelegate) => oldDelegate.color != color;
 }
 
 /// The icon button used everywhere in the viewer chrome.

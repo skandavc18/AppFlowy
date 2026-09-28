@@ -10,6 +10,7 @@ import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:archive/archive.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -18,6 +19,8 @@ import 'file_controls_test_support.dart';
 const _copy = ValueKey('media-copy');
 const _share = ValueKey('media-share');
 const _controls = ValueKey('archive-controls');
+const _header = ValueKey('workspace-file-identity-row');
+const _toolbarScroll = ValueKey('workspace-file-toolbar-scroll');
 const _name = 'Original archive # 100%.zip';
 
 void main() {
@@ -139,31 +142,52 @@ void main() {
             reduced: reduced,
           );
           final explorer = tester.state(find.byType(ArchiveExplorer));
+          final actions = tester.state(find.byType(MediaActionButtons));
+          final controlsElement = tester.element(find.byKey(_controls));
+          final scroll = tester
+              .widget<SingleChildScrollView>(find.byKey(_toolbarScroll))
+              .controller!;
+          final scrollPosition = scroll.position;
+          void expectRetainedToolbar() {
+            expect(tester.state(find.byType(ArchiveExplorer)), same(explorer));
+            expect(
+                tester.state(find.byType(MediaActionButtons)), same(actions));
+            expect(
+                tester.element(find.byKey(_controls)), same(controlsElement));
+            expect(
+              tester
+                  .widget<SingleChildScrollView>(find.byKey(_toolbarScroll))
+                  .controller,
+              same(scroll),
+            );
+            expect(scroll.position, same(scrollPosition));
+            expect(backend.loads, 1);
+          }
+
           // The existing standalone archive root requests focus for Ctrl+F.
-          // Blur it before checking the genuinely idle state.
+          // Blur it before checking the persistent standalone options.
           FocusManager.instance.primaryFocus?.unfocus();
           await settleFileControls(tester);
-          expect(find.byKey(_copy).hitTestable(), findsNothing);
-          await mouse.moveTo(tester.getCenter(find.byKey(_controls)));
-          await settleFileControls(tester);
-          await clickFileControl(tester, find.byTooltip('Card size'));
+          expect(find.byKey(_copy).hitTestable(), findsOneWidget);
+          final cardSize = find.byTooltip('Card size');
+          await _revealArchiveControl(tester, mouse, cardSize);
+          await clickFileControl(tester, cardSize);
           expect(find.byType(AppMenuRow), findsWidgets);
           await mouse.moveTo(const Offset(1080, 880));
           await settleFileControls(tester);
           expectFileControlPainted(tester, find.byKey(_copy));
+          expectRetainedToolbar();
           // Dismiss, do not change the shared card-size preference in a test.
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await settleFileControls(tester);
-          await mouse.moveTo(tester.getCenter(find.byKey(_controls)));
-          await settleFileControls(tester);
-          await clickFileControl(
-            tester,
-            find.byTooltip('Search this archive  ·  Ctrl+F'),
-          );
+          final archiveSearch =
+              find.byTooltip('Search this archive  ·  Ctrl+F');
+          await _revealArchiveControl(tester, mouse, archiveSearch);
+          await clickFileControl(tester, archiveSearch);
           final search = find.byWidgetPredicate(
             (widget) =>
                 widget is TextField &&
-                widget.decoration?.hintText == 'Search this archive',
+                widget.decoration?.hintText == 'Filename or path · all folders',
           );
           final controller = tester.widget<TextField>(search).controller!;
           await tester.enterText(search, 'retained query');
@@ -172,11 +196,12 @@ void main() {
           await settleFileControls(tester);
           expect(controller.text, 'retained query');
           expectFileControlPainted(tester, find.byKey(_copy));
+          expectRetainedToolbar();
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await settleFileControls(tester);
           FocusManager.instance.primaryFocus?.unfocus();
           await settleFileControls(tester);
-          expect(find.byKey(_copy).hitTestable(), findsNothing);
+          expect(find.byKey(_copy).hitTestable(), findsOneWidget);
 
           final focus = tester.widget<IconButton>(find.byKey(_copy)).focusNode!;
           for (var i = 0; i < 30 && !focus.hasFocus; i++) {
@@ -184,6 +209,10 @@ void main() {
             await settleFileControls(tester);
           }
           expect(focus.hasFocus, isTrue);
+          // Native focus traversal must reveal the scrolled-away action; do
+          // not manually scroll or request focus on this keyboard-only path.
+          _archiveControlPoint(tester, find.byKey(_copy));
+          expect(find.byKey(_copy).hitTestable(), findsOneWidget);
           expectFileControlPainted(tester, find.byKey(_copy));
           expect(find.semantics.byLabel('Copy'), findsOneWidget);
           await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -217,7 +246,7 @@ void main() {
               );
             }
           }
-          expect(tester.state(find.byType(ArchiveExplorer)), same(explorer));
+          expectRetainedToolbar();
           expect(tester.takeException(), isNull);
         } finally {
           semantics.dispose();
@@ -271,6 +300,77 @@ void main() {
       await unmountFileControls(tester);
     }
   });
+}
+
+Offset _archiveControlPoint(WidgetTester tester, Finder control) {
+  expect(control, findsOneWidget);
+  final viewport = tester
+      .getRect(find.byKey(_toolbarScroll))
+      .intersect(tester.getRect(find.byKey(_header)))
+      .intersect(tester.getRect(find.byType(NestedScrollView)));
+  final rect = tester.getRect(control);
+  expect(viewport.isEmpty, isFalse);
+  expect(rect.isEmpty, isFalse);
+  expect(rect.left, greaterThanOrEqualTo(viewport.left - 0.01));
+  expect(rect.right, lessThanOrEqualTo(viewport.right + 0.01));
+  expect(rect.top, greaterThanOrEqualTo(viewport.top - 0.01));
+  expect(rect.bottom, lessThanOrEqualTo(viewport.bottom + 0.01));
+  expect(viewport.contains(rect.center), isTrue);
+  return rect.center;
+}
+
+Future<void> _revealArchiveControl(
+  WidgetTester tester,
+  TestGesture mouse,
+  Finder control,
+) async {
+  expect(control, findsOneWidget);
+  final element = tester.element(control);
+  final scroller = find.byKey(_toolbarScroll);
+  final scrollView = tester.widget<SingleChildScrollView>(scroller);
+  final controller = scrollView.controller!;
+  final position = controller.position;
+  final headerBounds = tester.getRect(find.byKey(_header));
+  final outer = tester
+      .state<NestedScrollViewState>(find.byType(NestedScrollView))
+      .outerController;
+  final beforeOffset = outer.offset;
+  expect(scrollView.scrollDirection, Axis.horizontal);
+  expect(scrollView.reverse, isTrue);
+
+  // The standalone header initially shows the trailing media actions. Reveal
+  // earlier archive tools through their real scroll owner before hovering;
+  // the unclipped controls Wrap can have its center outside the header.
+  await tester.ensureVisible(control);
+  await settleFileControls(tester);
+  final point = _archiveControlPoint(tester, control);
+  await mouse.moveTo(point);
+  await settleFileControls(tester);
+
+  expect(tester.element(control), same(element));
+  expect(
+    tester.widget<SingleChildScrollView>(scroller).controller,
+    same(controller),
+  );
+  expect(controller.position, same(position));
+  final currentHeader = tester.getRect(find.byKey(_header));
+  expect(currentHeader.size, headerBounds.size);
+  expect(currentHeader.left, headerBounds.left);
+  expect(currentHeader.top,
+      closeTo(headerBounds.top + beforeOffset - outer.offset, .01));
+  expect(_archiveControlPoint(tester, control), point);
+  expect(control.hitTestable(), findsOneWidget);
+  expectFileControlPainted(tester, control);
+  final fades = find.ancestor(
+    of: control,
+    matching: find.byType(AnimatedOpacity),
+  );
+  for (final fade in fades.evaluate()) {
+    expect(
+      (fade.findRenderObject()! as RenderAnimatedOpacity).opacity.value,
+      1,
+    );
+  }
 }
 
 Future<void> _mountArchive(

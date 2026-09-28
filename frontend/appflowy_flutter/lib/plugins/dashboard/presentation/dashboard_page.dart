@@ -6,6 +6,7 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_add_menu.dart'
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_board.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_canvas.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_panel.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_template_gallery.dart';
@@ -14,7 +15,11 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registr
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/find_replace/contextual_find.dart';
+import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/shared/page_cover.dart';
+import 'package:appflowy/shared/page_icon.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
@@ -67,6 +72,7 @@ class DashboardPage extends StatefulWidget {
 
 class _DashboardPageState extends State<DashboardPage> {
   late DashboardController _controller;
+  late DashboardFindController _find;
   bool _ownsController = false;
   ViewListener? _listener;
   String _name = '';
@@ -91,20 +97,59 @@ class _DashboardPageState extends State<DashboardPage> {
         viewId: widget.view.id,
         document: widget.view.dashboard?.document ?? DashboardDocument.blank(),
       );
+    }
+    _find = DashboardFindController(_controller, title: () => _name);
+    if (_ownsController) {
       _listener = ViewListener(viewId: widget.view.id)
         ..start(
           onViewUpdated: (view) {
-            if (mounted) {
+            if (mounted && view.id == _view.id) {
               setState(() {
                 _view = view;
                 _name = view.name;
               });
               _controller.adoptFromView(view);
+              _find.refresh();
             }
           },
         );
     }
     _controller.addListener(_onChanged);
+  }
+
+  @override
+  void didUpdateWidget(DashboardPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.view != widget.view) {
+      _view = widget.view;
+      _name = widget.view.name;
+    }
+    final borrowed = widget.controller;
+    if (borrowed != null && borrowed != _controller) {
+      final previousController = _controller;
+      final previousFind = _find;
+      final owned = _ownsController;
+      previousController.removeListener(_onChanged);
+      unawaited(_listener?.stop());
+      _listener = null;
+      _controller = borrowed;
+      _ownsController = false;
+      _find = DashboardFindController(_controller, title: () => _name);
+      _controller.addListener(_onChanged);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        previousFind.dispose();
+        if (owned) previousController.dispose();
+      });
+    }
+    final access = context.read<PageAccessLevelBloc?>();
+    _controller.setReadOnly(
+      _view.isLocked || (access != null && !access.state.isEditable),
+      notify: false,
+    );
+    final find = _find;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && identical(find, _find)) find.refresh();
+    });
   }
 
   @override
@@ -119,6 +164,7 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   void dispose() {
     _controller.removeListener(_onChanged);
+    _find.dispose();
     unawaited(_listener?.stop());
     if (_ownsController) {
       _controller.dispose();
@@ -183,12 +229,21 @@ class _DashboardPageState extends State<DashboardPage> {
     // The modal and configuration fields need the same live access check as
     // cards, including while an outgoing borrowed page is being disposed.
     page = DashboardEditingScope(controller: _controller, child: page);
+    page = SurfaceFindHost(
+      controller: _find,
+      debugLabel: 'Dashboard find',
+      hintText: 'Find dashboard and loaded embeds',
+      coverageText: _find.coverageLabel,
+      child: page,
+    );
 
     return CallbackShortcuts(
       bindings: {
         const SingleActivator(LogicalKeyboardKey.f11): _toggleFullscreen,
         const SingleActivator(LogicalKeyboardKey.escape): () {
-          if (_controller.modalWidgetId != null) {
+          if (_find.isOpen) {
+            _find.close();
+          } else if (_controller.modalWidgetId != null) {
             _controller.openModal(null);
           } else if (_controller.configuringWidgetId != null) {
             _controller.closeSettings();
@@ -339,66 +394,101 @@ class _DashboardPageState extends State<DashboardPage> {
                 )
               : null,
           coverActions: coverActions,
+          coverView: _view,
+          coverBinding: _controller,
+          coverEditable: editable && !immersive,
+          canResizeCover: () =>
+              mounted &&
+              !widget.immersive &&
+              _controller.isEditable &&
+              !_controller.mode.isImmersive,
+          isSameCoverTarget: (fresh) => fresh.dashboard != null,
+          onCoverHeightChanged: (height) =>
+              _adoptDecoration(PageCoverHeight.applyTo(_view, height)),
           identity: WorkspacePageIdentity(
-            icon: editable
-                ? ViewIconPicker(
-                    view: _view,
-                    onViewChanged: _adoptDecoration,
-                    child: glyph,
-                  )
-                : glyph,
+            icon: ResizablePageIcon(
+              view: _view,
+              binding: _controller,
+              editable: editable,
+              canResize: () =>
+                  mounted &&
+                  _controller.isEditable &&
+                  _controller.mode != DashboardMode.presentation,
+              isSameTarget: (fresh) => fresh.dashboard != null,
+              defaultSize: icon.isNotEmpty
+                  ? IconOpticalSize.resolve(
+                      role: IconOpticalRole.header,
+                      baseSize: WorkspaceTokens.pageIconSize,
+                    ).slotSize
+                  : WorkspaceTokens.pageIconSize,
+              onSizeChanged: (size) =>
+                  _adoptDecoration(IconSize.applyTo(_view, size)),
+              builder: (size, _) => editable
+                  ? ViewIconPicker(
+                      view: _view,
+                      onViewChanged: _adoptDecoration,
+                      child: PageIconArtwork(size: size, child: glyph),
+                    )
+                  : PageIconArtwork(size: size, child: glyph),
+            ),
             iconActions: iconActions,
-            title: ExcludeFocus(
-              excluding: !editable,
-              child: IgnorePointer(
-                ignoring: !editable,
-                child: WorkspaceInlineEditableText(
-                  key: const ValueKey('dashboard-page-title'),
-                  text: _name.isEmpty
-                      ? LocaleKeys.dashboard_untitled.tr()
-                      : _name,
-                  editingValue: _name,
-                  editing: _renaming,
-                  style: WorkspaceTypography.style(
-                    context,
-                    WorkspaceTextRole.pageTitle,
+            title: SurfaceFindTarget(
+              id: dashboardFindTitle,
+              child: ExcludeFocus(
+                excluding: !editable,
+                child: IgnorePointer(
+                  ignoring: !editable,
+                  child: WorkspaceInlineEditableText(
+                    key: const ValueKey('dashboard-page-title'),
+                    text: _name.isEmpty
+                        ? LocaleKeys.dashboard_untitled.tr()
+                        : _name,
+                    editingValue: _name,
+                    editing: _renaming,
+                    style: WorkspaceTypography.style(
+                      context,
+                      WorkspaceTextRole.pageTitle,
+                    ),
+                    onTap: editable ? _beginRename : null,
+                    onSubmitted: _rename,
+                    onCancelled: () => setState(() => _renaming = false),
                   ),
-                  onTap: editable ? _beginRename : null,
-                  onSubmitted: _rename,
-                  onCancelled: () => setState(() => _renaming = false),
                 ),
               ),
             ),
             description: document.subtitle.isNotEmpty || _editingSubtitle
-                ? ExcludeFocus(
-                    excluding: !editable,
-                    child: IgnorePointer(
-                      ignoring: !editable,
-                      child: WorkspaceInlineEditableText(
-                        text: document.subtitle.isEmpty
-                            ? LocaleKeys.dashboard_addDescription.tr()
-                            : document.subtitle,
-                        editingValue: document.subtitle,
-                        editing: _editingSubtitle,
-                        style: WorkspaceTypography.style(
-                          context,
-                          WorkspaceTextRole.body,
-                          color: palette.textSecondary,
+                ? SurfaceFindTarget(
+                    id: dashboardFindSubtitle,
+                    child: ExcludeFocus(
+                      excluding: !editable,
+                      child: IgnorePointer(
+                        ignoring: !editable,
+                        child: WorkspaceInlineEditableText(
+                          text: document.subtitle.isEmpty
+                              ? LocaleKeys.dashboard_addDescription.tr()
+                              : document.subtitle,
+                          editingValue: document.subtitle,
+                          editing: _editingSubtitle,
+                          style: WorkspaceTypography.style(
+                            context,
+                            WorkspaceTextRole.body,
+                            color: palette.textSecondary,
+                          ),
+                          onTap: editable
+                              ? () => setState(() => _editingSubtitle = true)
+                              : null,
+                          onSubmitted: (value) async {
+                            if (!_controller.isEditable) return false;
+                            setState(() => _editingSubtitle = false);
+                            _controller.edit(
+                              (document) =>
+                                  document.copyWith(subtitle: value.trim()),
+                            );
+                            return true;
+                          },
+                          onCancelled: () =>
+                              setState(() => _editingSubtitle = false),
                         ),
-                        onTap: editable
-                            ? () => setState(() => _editingSubtitle = true)
-                            : null,
-                        onSubmitted: (value) async {
-                          if (!_controller.isEditable) return false;
-                          setState(() => _editingSubtitle = false);
-                          _controller.edit(
-                            (document) =>
-                                document.copyWith(subtitle: value.trim()),
-                          );
-                          return true;
-                        },
-                        onCancelled: () =>
-                            setState(() => _editingSubtitle = false),
                       ),
                     ),
                   )
@@ -707,6 +797,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _renaming = false;
       _name = name.trim();
     });
+    _find.refresh();
     final result = await ViewBackendService.updateView(
       viewId: widget.view.id,
       name: name.trim(),
@@ -742,11 +833,13 @@ class _DashboardPageState extends State<DashboardPage> {
                 controller: _controller,
                 userProfile: widget.userProfile,
               );
+              final scoped =
+                  ContextualFindScope(findInControls: true, child: page);
               return access == null
-                  ? page
+                  ? scoped
                   : BlocProvider<PageAccessLevelBloc>.value(
                       value: access,
-                      child: page,
+                      child: scoped,
                     );
             },
           ),

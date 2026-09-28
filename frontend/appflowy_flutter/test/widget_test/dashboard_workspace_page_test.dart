@@ -52,6 +52,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -2084,6 +2085,7 @@ DashboardController _controller({DashboardDocument document = _document}) =>
 
 ViewPB _view({bool hasCover = false, bool locked = false}) => ViewPB.fromBuffer(
       ViewPB(
+        id: 'dashboard-workspace-fixture',
         name: _title,
         layout: ViewLayoutPB.Document,
         icon: EmojiIconData.emoji('📘').toViewIcon(),
@@ -2297,9 +2299,20 @@ void _expectCoveredHeaderGeometry(WidgetTester tester) {
   ]) {
     expect(header.contains(point), isTrue);
     expect(cover.contains(point), overCover);
+    final buttonRoot = tester.renderObject(button);
     expect(
-      tester.hitTestOnBinding(point).path.map((entry) => entry.target),
-      contains(tester.renderObject(button)),
+      tester.hitTestOnBinding(point).path.any((entry) {
+        for (RenderObject? target = entry.target is RenderObject
+                ? entry.target as RenderObject
+                : null;
+            target != null;
+            target = target.parent) {
+          if (identical(target, buttonRoot)) return true;
+        }
+        return false;
+      }),
+      isTrue,
+      reason: 'Both icon ends must hit the actual native button subtree.',
     );
   }
   for (final element
@@ -2510,7 +2523,11 @@ void _expectHeaderMutationAccess(
 }
 
 Future<void> _focusPage(WidgetTester tester) async {
-  final node = Focus.of(tester.element(find.byKey(_scrollKey)));
+  // Find wrappers observe focus but deliberately cannot own it. Select the
+  // page's nearest requestable ancestor, not those passive wrappers.
+  final nearest = Focus.of(tester.element(find.byKey(_scrollKey)));
+  final node = [nearest, ...nearest.ancestors]
+      .firstWhere((node) => node.canRequestFocus && node is! FocusScopeNode);
   node.requestFocus();
   await _settle(tester);
   expect(node.hasPrimaryFocus, isTrue);

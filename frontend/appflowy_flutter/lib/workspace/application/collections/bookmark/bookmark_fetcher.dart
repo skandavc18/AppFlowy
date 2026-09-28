@@ -6,6 +6,7 @@ import 'package:appflowy/workspace/application/collections/bookmark/link_metadat
 import 'package:appflowy/workspace/application/collections/bookmark/readable_article.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:html/parser.dart' as html_parser;
 
 /// The most of a page that is ever read.
 ///
@@ -106,6 +107,8 @@ class BookmarkFetcher {
     String url, {
     bool readArticle = true,
     bool keepHtml = false,
+    bool allowBrowserFallback = true,
+    bool readerOnly = false,
   }) async {
     final uri = Uri.tryParse(url);
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
@@ -136,7 +139,28 @@ class BookmarkFetcher {
       }
 
       final metadata = parseLinkMetadata(body, resolved);
-      if (looksLikeChallenge(metadata, statusCode) && browserFallback != null) {
+      if (readerOnly) {
+        if (statusCode < 200 ||
+            statusCode >= 300 ||
+            looksLikeChallenge(metadata, statusCode)) {
+          return BookmarkFetchResult.failed(url, 'Reader unavailable');
+        }
+        // Without a browser there is no computed visibility. Conservatively
+        // refuse styled/gated pages rather than exposing CSS-hidden prose.
+        final document = html_parser.parse(body);
+        if (document.querySelector('style,link[rel="stylesheet"],[style],'
+                    '[hidden],[aria-hidden="true"],[aria-modal="true"],dialog') !=
+                null ||
+            RegExp(r'paywall|access-gate|subscription-wall|regwall',
+                    caseSensitive: false)
+                .hasMatch(body)) {
+          return BookmarkFetchResult.failed(url, 'Reader unavailable');
+        }
+      }
+      if (!readerOnly &&
+          allowBrowserFallback &&
+          looksLikeChallenge(metadata, statusCode) &&
+          browserFallback != null) {
         final rendered = await browserFallback!(resolved);
         if (rendered != null) {
           final second = parseLinkMetadata(rendered, resolved);
@@ -187,7 +211,8 @@ class BookmarkFetcher {
       if (response.statusCode != 200) {
         return null;
       }
-      final bytes = await _readCapped(response.stream, maxBookmarkImageBytes);
+      final bytes = await _readCapped(response.stream, maxBookmarkImageBytes)
+          .timeout(_requestTimeout);
       return bytes.isEmpty ? null : bytes;
     } on Object {
       return null;
@@ -228,10 +253,10 @@ class BookmarkFetcher {
   ) async {
     final builder = BytesBuilder(copy: false);
     await for (final chunk in stream) {
-      builder.add(chunk);
-      if (builder.length >= limit) {
-        break;
+      if (builder.length + chunk.length > limit) {
+        throw const FormatException('Bookmark response exceeds size budget');
       }
+      builder.add(chunk);
     }
     return builder.takeBytes();
   }

@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 
 import 'image_editor_theme.dart';
@@ -67,10 +68,25 @@ class _ImageEditorIconButtonState extends State<ImageEditorIconButton> {
               color: background,
               borderRadius: BorderRadius.circular(9),
             ),
-            child: Icon(
-              widget.icon,
-              size: widget.iconSize,
-              color: foreground,
+            child: Center(
+              child: widget.icon == Icons.crop_free_rounded ||
+                      widget.icon == Icons.fit_screen_rounded
+                  // These icons mean pixel size / image fit in this editor,
+                  // not fullscreen or a generic frame. Keep caller transforms.
+                  ? WorkspaceGlyph.named(
+                      widget.icon == Icons.crop_free_rounded
+                          ? 'actual-size'
+                          : 'fit-page',
+                      size: widget.iconSize,
+                      color: foreground,
+                      role: enabled ? null : WorkspaceGlyphRole.preserveInk,
+                    )
+                  : WorkspaceGlyph(
+                      widget.icon,
+                      size: widget.iconSize,
+                      color: foreground,
+                      role: enabled ? null : WorkspaceGlyphRole.preserveInk,
+                    ),
             ),
           ),
         ),
@@ -155,7 +171,12 @@ class _ImageEditorTextButtonState extends State<ImageEditorTextButton> {
                   ),
                 )
               else if (widget.icon != null)
-                Icon(widget.icon, size: 15, color: foreground),
+                WorkspaceGlyph(
+                  widget.icon!,
+                  size: 15,
+                  color: foreground,
+                  role: enabled ? null : WorkspaceGlyphRole.preserveInk,
+                ),
               if (widget.busy || widget.icon != null) const SizedBox(width: 7),
               Text(
                 widget.label,
@@ -231,7 +252,7 @@ class _ImageEditorChipState extends State<ImageEditorChip> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (widget.icon != null) ...[
-                Icon(widget.icon, size: 15, color: foreground),
+                WorkspaceGlyph(widget.icon!, size: 15, color: foreground),
                 const SizedBox(width: 6),
               ],
               Text(

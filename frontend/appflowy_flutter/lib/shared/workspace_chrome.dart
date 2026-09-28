@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
@@ -20,9 +21,24 @@ abstract final class WorkspaceChrome {
     );
   }
 
-  static Color hoverColor(BuildContext context) =>
-      PremiumThemeExtension.maybeOf(context)?.subtleHover ??
-      Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.04);
+  static Color hoverColor(BuildContext context) {
+    final premium = PremiumThemeExtension.maybeOf(context);
+    if (premium != null) return premium.subtleHover;
+    final source = Theme.of(context).brightness == Brightness.dark
+        ? PremiumTheme.darkHoverOverlay
+        : PaperTheme.isEnabled(context)
+            ? PaperTheme.hoverOverlay
+            : PremiumTheme.lightHoverOverlay;
+    return source.withValues(alpha: source.a * 0.65);
+  }
+
+  static Color pressedColor(BuildContext context) =>
+      PremiumThemeExtension.maybeOf(context)?.subtlePressed ??
+      hoverColor(context).withValues(alpha: hoverColor(context).a * 1.6);
+
+  static Color selectedColor(BuildContext context) =>
+      PremiumThemeExtension.maybeOf(context)?.selectedOverlay ??
+      Theme.of(context).colorScheme.primary.withValues(alpha: 0.14);
 
   static ButtonStyle controlStyle(
     BuildContext context, {
@@ -35,10 +51,8 @@ abstract final class WorkspaceChrome {
         accent ?? palette?.textSecondary ?? theme.colorScheme.onSurfaceVariant;
     final focus = palette?.accent ?? theme.colorScheme.primary;
     final hover = hoverColor(context);
-    final pressed =
-        palette?.subtlePressed ?? hover.withValues(alpha: hover.a * 1.6);
-    final selectedFill =
-        palette?.selectedOverlay ?? focus.withValues(alpha: focus.a * 0.12);
+    final pressed = pressedColor(context);
+    final selectedFill = selectedColor(context);
     final disabled = palette?.textMuted ?? theme.disabledColor;
     final foreground = WidgetStateProperty.resolveWith<Color>(
       (states) => states.contains(WidgetState.disabled) ? disabled : ink,
@@ -55,18 +69,20 @@ abstract final class WorkspaceChrome {
       ),
       foregroundColor: foreground,
       iconColor: foreground,
-      backgroundColor: WidgetStateProperty.resolveWith(
-        (states) => states.contains(WidgetState.disabled)
-            ? hover.withValues(alpha: 0)
-            : states.contains(WidgetState.pressed)
-                ? pressed
-                : selected
-                    ? selectedFill
-                    : states.contains(WidgetState.hovered) ||
-                            states.contains(WidgetState.focused)
-                        ? hover
-                        : hover.withValues(alpha: 0),
-      ),
+      backgroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) {
+          return hover.withValues(alpha: 0);
+        }
+        final base = selected ? selectedFill : hover.withValues(alpha: 0);
+        if (states.contains(WidgetState.pressed)) {
+          return selected ? Color.alphaBlend(pressed, base) : pressed;
+        }
+        if (states.contains(WidgetState.hovered) ||
+            states.contains(WidgetState.focused)) {
+          return selected ? Color.alphaBlend(hover, base) : hover;
+        }
+        return base;
+      }),
       overlayColor: WidgetStatePropertyAll(hover.withValues(alpha: 0)),
       splashFactory: NoSplash.splashFactory,
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
