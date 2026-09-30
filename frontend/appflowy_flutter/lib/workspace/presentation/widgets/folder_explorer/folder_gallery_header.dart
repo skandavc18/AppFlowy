@@ -350,8 +350,7 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
                   mounted &&
                   widget.controller == controller &&
                   controller.currentFolder.id == folder.id &&
-                  (rootCover != null ||
-                      _canEditCurrentFolder(identity: true)),
+                  (rootCover != null || _canEditCurrentFolder(identity: true)),
               isSameCoverTarget: rootCover != null
                   ? null
                   : (fresh) => fresh.pluginType == folderView?.pluginType,
