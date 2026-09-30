@@ -111,16 +111,24 @@ void main() {
             code,
           );
           final lastPaintedEdge = tester.getRect(find.byKey(_rename)).right;
-          // Finite publishers use their compact padding and wrap when needed.
+          // Finite publishers pick their compact padding from the width they
+          // are offered, hug their controls and wrap when needed.
           expect(
             lastPaintedEdge,
-            closeTo(pane.right - inset - (tools.width < 520 ? 4 : 6), 0.01),
+            closeTo(
+              pane.right -
+                  inset -
+                  (fileToolsOfferedWidth(tester) < 520 ? 4 : 6),
+              0.01,
+            ),
           );
-          expect(
-            tools.top,
-            greaterThanOrEqualTo(tester
-                .getRect(find.byKey(const ValueKey('workspace-file-metadata')))
-                .bottom),
+          expectFileToolsBesideOrBelowTitle(
+            tester,
+            beside: scale == 1
+                ? true
+                : width <= 320
+                    ? false
+                    : null,
           );
           expect(rects, hasLength(_codeActions.length));
           _expectAddCoverAboveTitle(tester);

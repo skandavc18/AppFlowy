@@ -14,6 +14,10 @@ import 'package:flutter/rendering.dart';
 const _feedbackDuration = Duration(milliseconds: 1600);
 const _transitionDuration = Duration(milliseconds: 140);
 
+/// The widest the Copied badge paints, measured back from the buttons' end.
+/// A host that clips a short toolbar leaves at least this much room.
+const double mediaActionFeedbackExtent = 144;
+
 enum _MediaAction { copy, share }
 
 /// Compact, native copy/share controls for either floating or inline chrome.
@@ -297,7 +301,7 @@ class _MediaActionButtonsState extends State<MediaActionButtons> {
                   Positioned(
                     bottom: height + 4,
                     right: 0,
-                    width: 144,
+                    width: mediaActionFeedbackExtent,
                     child: IgnorePointer(
                       child: ExcludeSemantics(
                         // The button's live region announces the same feedback.

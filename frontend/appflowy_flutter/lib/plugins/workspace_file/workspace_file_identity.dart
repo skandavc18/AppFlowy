@@ -350,6 +350,9 @@ class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
     Widget header(Widget? coverAction) => LayoutBuilder(
           builder: (context, constraints) {
             final inset = WorkspaceTokens.pageInset(constraints.maxWidth);
+            // Copy's badge sits above the controls, inside the band's clip.
+            final feedback =
+                MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10;
             return DocumentViewportBar(
               key: const ValueKey('workspace-file-identity-row'),
               background: style.canvas,
@@ -515,7 +518,9 @@ class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
                       ),
                   ],
                 ),
-                actions: PreviewToolbar(
+                metadataSpacing: WorkspaceTokens.space1,
+                trailingTopInset: feedback,
+                trailing: PreviewToolbar(
                   key: const ValueKey('workspace-file-tools'),
                   // Standalone file tools are persistent, unlike inline
                   // editing overlays. Keep the retained subtree and clipping.
@@ -523,26 +528,26 @@ class _WorkspaceFileIdentityRowState extends State<WorkspaceFileIdentityRow> {
                   child: FileActionBand(
                     scrollKey: const ValueKey('workspace-file-toolbar-scroll'),
                     controller: _toolsScroll,
+                    hug: true,
                     responsive: toolbarBuilder == null ||
                         widget.controls.responsiveToolbar,
-                    // Reserve feedback ABOVE the action row, not above the
-                    // page icon. The scroll clip must not crop Copy's badge.
-                    padding: EdgeInsets.only(
-                      top:
-                          MediaQuery.textScalerOf(context).scale(10) * 1.2 + 10,
-                    ),
-                    builder: (context) => Column(
-                      key: const ValueKey('workspace-file-toolbar-content'),
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: toolbarBuilder == null ||
-                              widget.controls.responsiveToolbar
-                          ? CrossAxisAlignment.stretch
-                          : CrossAxisAlignment.end,
-                      children: [
-                        if (widget.controls.leading != null)
-                          widget.controls.leading!,
-                        toolbar,
-                      ],
+                    padding: EdgeInsets.only(top: feedback),
+                    builder: (context) => ConstrainedBox(
+                      // The band hugs its controls and clips; keep room for
+                      // Copy's badge when the toolbar is shorter than it.
+                      constraints: const BoxConstraints(
+                        minWidth: mediaActionFeedbackExtent,
+                      ),
+                      child: Column(
+                        key: const ValueKey('workspace-file-toolbar-content'),
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (widget.controls.leading != null)
+                            widget.controls.leading!,
+                          toolbar,
+                        ],
+                      ),
                     ),
                   ),
                 ),

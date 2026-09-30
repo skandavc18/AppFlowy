@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/page_cover.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -6,6 +8,7 @@ import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 export 'workspace_tokens.dart';
 
@@ -263,6 +266,9 @@ class WorkspacePageIdentity extends StatelessWidget {
     this.description,
     this.metadata,
     this.actions,
+    this.trailing,
+    this.trailingTopInset = 0,
+    this.metadataSpacing = WorkspaceTokens.space3,
   });
 
   final Widget title;
@@ -272,9 +278,50 @@ class WorkspacePageIdentity extends StatelessWidget {
   final Widget? metadata;
   final Widget? actions;
 
+  /// Tools that share the title block's row when both fit, and otherwise
+  /// wrap below it at the physical right. The subtree is never reparented.
+  final Widget? trailing;
+
+  /// Transparent space [trailing] reserves above its controls (for example
+  /// action feedback); it may overlap the icon row instead of adding height.
+  final double trailingTopInset;
+  final double metadataSpacing;
+
   @override
   Widget build(BuildContext context) {
     final overlap = _WorkspacePageHeaderGeometry.maybeOf(context)?.overlap ?? 0;
+    final heading = <Widget>[
+      Semantics(
+        key: const ValueKey('workspace-page-title'),
+        header: true,
+        child: title,
+      ),
+      if (description != null)
+        Padding(
+          key: const ValueKey('workspace-page-description'),
+          padding: const EdgeInsets.only(top: WorkspaceTokens.space2),
+          child: DefaultTextStyle(
+            style: WorkspaceTypography.style(
+              context,
+              WorkspaceTextRole.body,
+              color: WorkspacePalette.of(context).secondaryText,
+            ),
+            child: description!,
+          ),
+        ),
+      if (metadata != null)
+        Padding(
+          key: const ValueKey('workspace-page-metadata'),
+          padding: EdgeInsets.only(top: metadataSpacing),
+          child: DefaultTextStyle(
+            style: WorkspaceTypography.style(
+              context,
+              WorkspaceTextRole.metadata,
+            ),
+            child: metadata!,
+          ),
+        ),
+    ];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -316,34 +363,22 @@ class WorkspacePageIdentity extends StatelessWidget {
               ),
             ),
           ),
-        Semantics(
-          key: const ValueKey('workspace-page-title'),
-          header: true,
-          child: title,
-        ),
-        if (description != null)
-          Padding(
-            key: const ValueKey('workspace-page-description'),
-            padding: const EdgeInsets.only(top: WorkspaceTokens.space2),
-            child: DefaultTextStyle(
-              style: WorkspaceTypography.style(
-                context,
-                WorkspaceTextRole.body,
-                color: WorkspacePalette.of(context).secondaryText,
-              ),
-              child: description!,
+        if (trailing == null)
+          ...heading
+        else
+          _WorkspaceIdentityTrailingLayout(
+            key: const ValueKey('workspace-page-title-row'),
+            topInset: trailingTopInset,
+            // A readable, text-scaled title allowance before tools wrap.
+            minimumIdentityWidth: MediaQuery.textScalerOf(context).scale(200),
+            identity: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: heading,
             ),
-          ),
-        if (metadata != null)
-          Padding(
-            key: const ValueKey('workspace-page-metadata'),
-            padding: const EdgeInsets.only(top: WorkspaceTokens.space3),
-            child: DefaultTextStyle(
-              style: WorkspaceTypography.style(
-                context,
-                WorkspaceTextRole.metadata,
-              ),
-              child: metadata!,
+            trailing: KeyedSubtree(
+              key: const ValueKey('workspace-page-trailing'),
+              child: trailing!,
             ),
           ),
         if (actions != null)
@@ -357,6 +392,125 @@ class WorkspacePageIdentity extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Places [trailing] beside the identity block, centring its controls (below
+/// any reserved top inset) on that block, or wraps it below at the right when
+/// the identity would drop under its minimum width.
+class _WorkspaceIdentityTrailingLayout extends MultiChildRenderObjectWidget {
+  _WorkspaceIdentityTrailingLayout({
+    super.key,
+    required Widget identity,
+    required Widget trailing,
+    required this.topInset,
+    required this.minimumIdentityWidth,
+  }) : super(children: [identity, trailing]);
+
+  final double topInset;
+  final double minimumIdentityWidth;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderWorkspaceIdentityTrailing(
+        topInset: topInset,
+        minimumIdentityWidth: minimumIdentityWidth,
+      );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderWorkspaceIdentityTrailing renderObject,
+  ) {
+    renderObject
+      ..topInset = topInset
+      ..minimumIdentityWidth = minimumIdentityWidth;
+  }
+}
+
+class _WorkspaceIdentityTrailingParentData
+    extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderWorkspaceIdentityTrailing extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox,
+            _WorkspaceIdentityTrailingParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox,
+            _WorkspaceIdentityTrailingParentData> {
+  _RenderWorkspaceIdentityTrailing({
+    required double topInset,
+    required double minimumIdentityWidth,
+  })  : _topInset = topInset,
+        _minimumIdentityWidth = minimumIdentityWidth;
+
+  static const _spacing = WorkspaceTokens.space4;
+
+  double _topInset;
+  set topInset(double value) {
+    if (_topInset == value) return;
+    _topInset = value;
+    markNeedsLayout();
+  }
+
+  double _minimumIdentityWidth;
+  set minimumIdentityWidth(double value) {
+    if (_minimumIdentityWidth == value) return;
+    _minimumIdentityWidth = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _WorkspaceIdentityTrailingParentData) {
+      child.parentData = _WorkspaceIdentityTrailingParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    assert(constraints.hasBoundedWidth);
+    final identity = firstChild!;
+    final trailing = lastChild!;
+    final width = constraints.maxWidth;
+    // Measure the real tools once; LayoutBuilder publishers have no intrinsics.
+    trailing.layout(BoxConstraints(maxWidth: width), parentUsesSize: true);
+    final remaining = width - trailing.size.width - _spacing;
+    final stacked = remaining < _minimumIdentityWidth;
+    identity.layout(
+      BoxConstraints.tightFor(width: stacked ? width : remaining),
+      parentUsesSize: true,
+    );
+    final identityData =
+        identity.parentData! as _WorkspaceIdentityTrailingParentData;
+    final trailingData =
+        trailing.parentData! as _WorkspaceIdentityTrailingParentData;
+    if (stacked) {
+      identityData.offset = Offset.zero;
+      trailingData.offset = Offset(
+        width - trailing.size.width,
+        identity.size.height,
+      );
+      size = constraints.constrain(
+        Size(width, identity.size.height + trailing.size.height),
+      );
+      return;
+    }
+    final controls = math.max(0.0, trailing.size.height - _topInset);
+    final height = math.max(identity.size.height, controls);
+    identityData.offset = Offset(0, (height - identity.size.height) / 2);
+    trailingData.offset = Offset(
+      width - trailing.size.width,
+      (height - controls) / 2 - _topInset,
+    );
+    size = constraints.constrain(Size(width, height));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
 }
 
 /// A broad cover and a quieter reading measure are intentionally independent.

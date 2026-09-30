@@ -114,10 +114,14 @@ void main() {
                     .widget<FileActionBand>(find.byType(FileActionBand))
                     .responsive,
                 isTrue);
-            final metadata =
-                find.byKey(const ValueKey('workspace-file-metadata'));
-            expect(tester.getRect(band).top,
-                greaterThanOrEqualTo(tester.getRect(metadata).bottom));
+            expectFileToolsBesideOrBelowTitle(
+              tester,
+              beside: width == 300
+                  ? false
+                  : scale == 1
+                      ? true
+                      : null,
+            );
             final nativeButtons = find.descendant(
                 of: band,
                 matching: find.byWidgetPredicate(
@@ -142,8 +146,13 @@ void main() {
                 closeTo(pane.right - WorkspaceTokens.pageInset(width), .01));
             // The actual controls, not an allocated 620px shell, end at the
             // toolbar's intentional 4/6px inner padding.
-            expect(runs.values.reduce((a, b) => a > b ? a : b),
-                closeTo(bounds.right - (bounds.width < 520 ? 4 : 6), .01));
+            expect(
+              runs.values.reduce((a, b) => a > b ? a : b),
+              closeTo(
+                bounds.right - (fileToolsOfferedWidth(tester) < 520 ? 4 : 6),
+                .01,
+              ),
+            );
             expect(find.byKey(const ValueKey('workspace-file-rename')),
                 findsNothing);
             expect(file.reads, 1);

@@ -200,6 +200,35 @@ void expectFileControlPainted(WidgetTester tester, Finder control) {
   }
 }
 
+/// Standalone file tools share the title block's row while the title keeps a
+/// readable width, with their controls centred on that block; otherwise they
+/// wrap below it. Returns whether the tools sit beside the title.
+bool expectFileToolsBesideOrBelowTitle(WidgetTester tester, {bool? beside}) {
+  final title =
+      tester.getRect(find.byKey(const ValueKey('workspace-file-name')));
+  final metadata =
+      tester.getRect(find.byKey(const ValueKey('workspace-file-metadata')));
+  final tools =
+      tester.getRect(find.byKey(const ValueKey('workspace-file-tools')));
+  final controls = tester
+      .getRect(find.byKey(const ValueKey('workspace-file-toolbar-content')));
+  final actual = controls.top < metadata.bottom;
+  if (beside != null) expect(actual, beside);
+  if (actual) {
+    final heading = title.right > metadata.right ? title.right : metadata.right;
+    expect(tools.left, greaterThanOrEqualTo(heading + 16 - .01));
+    expect(controls.center.dy, closeTo((title.top + metadata.bottom) / 2, .01));
+  } else {
+    expect(controls.top, greaterThanOrEqualTo(metadata.bottom));
+  }
+  return actual;
+}
+
+/// The width publishers were offered, which picks their compact padding.
+double fileToolsOfferedWidth(WidgetTester tester) => tester
+    .getSize(find.byKey(const ValueKey('workspace-page-title-row')))
+    .width;
+
 Future<void> unmountFileControls(WidgetTester tester) async {
   for (final state
       in tester.stateList<EditableTextState>(find.byType(EditableText))) {
