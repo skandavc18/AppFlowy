@@ -98,6 +98,20 @@ const _trackpadDirectManipulationScale = 1.0;
 const _trackpadMaximumDirectDelta = 48.0;
 const _trackpadPointerId = 0x3ffffffe;
 
+/// Native `InAppWebView::sendScroll` multiplies every wheel delta by this gain.
+const _nativeWheelGain = 6.0;
+
+/// Chromium's pixel scale for wheel input: a 120-unit notch is 100 pixels.
+const _pixelWheelUnitsPerLogicalPixel = 1.2;
+
+/// Channel delta that makes the native wheel carry exact logical pixels. The
+/// multiplication comes first so whole wheel units survive native truncation.
+@visibleForTesting
+Offset webViewWheelChannelDelta(Offset delta, {required bool pixelWheel}) =>
+    pixelWheel
+        ? delta * _pixelWheelUnitsPerLogicalPixel / _nativeWheelGain
+        : delta;
+
 /// How far a pinch has to travel before it counts as a zoom rather than the
 /// scale noise a two-finger scroll carries.
 const _trackpadZoomThreshold = 0.01;
@@ -471,6 +485,12 @@ class CustomPlatformViewState extends State<CustomPlatformView>
   Offset _directPendingPan = Offset.zero;
   Size? _reportedSurfaceSize;
   double? _reportedScaleFactor;
+  WindowsWebViewTrackpadWheel? _hostedTrackpad;
+  int? _hostedTrackpadPointer;
+  bool _hostedPixelWheel = false;
+  _RecentPanVelocity? _hostedTrackpadVelocity;
+  Offset _hostedTrackpadTotal = Offset.zero;
+  Duration? _hostedTrackpadLastTime;
 
   bool get _allowsHistorySwipes {
     final params = widget.creationParams;
@@ -720,7 +740,8 @@ class CustomPlatformViewState extends State<CustomPlatformView>
     );
     if (!hasEnabledWebViewScrollAxis(widget.creationParams) &&
         !_allowsHistorySwipes &&
-        !_scopeEnabled) {
+        !_scopeEnabled &&
+        WindowsWebViewWheelScope.maybeOf(context)?.trackpad == null) {
       return listener;
     }
     return RawGestureDetector(
@@ -747,6 +768,17 @@ class CustomPlatformViewState extends State<CustomPlatformView>
   }
 
   void _onPointerSignal(PointerSignalEvent signal) {
+    if (signal is PointerScrollInertiaCancelEvent) {
+      // A new touch stopped the platform's release inertia; a host that
+      // coasts after a hosted pan must stop too.
+      if (mounted && _attached && !_disposing) {
+        WindowsWebViewWheelScope.maybeOf(context)
+            ?.trackpad
+            ?.onInertiaCancel
+            ?.call();
+      }
+      return;
+    }
     if (signal is! PointerScrollEvent || !mounted || !_attached || _disposing)
       return;
     final scope = WindowsWebViewWheelScope.maybeOf(context);
@@ -763,8 +795,9 @@ class CustomPlatformViewState extends State<CustomPlatformView>
       _endTrackpadPointer();
       final remaining = scope?.transform(signal) ?? signal.scrollDelta;
       if (!mounted || !_attached || _disposing || !remaining.isFinite) return;
-      _sendScrollDelta(
-          filterScrollDeltaForSettings(-remaining, widget.creationParams));
+      _sendScrollDelta(webViewWheelChannelDelta(
+          filterScrollDeltaForSettings(-remaining, widget.creationParams),
+          pixelWheel: scope?.pixelWheel ?? false));
     });
   }
 
@@ -776,6 +809,12 @@ class CustomPlatformViewState extends State<CustomPlatformView>
 
   void _handleTrackpadStart(PointerPanZoomStartEvent event) {
     _endTrackpadPointer();
+    final scope = WindowsWebViewWheelScope.maybeOf(context);
+    final hosted = scope?.trackpad;
+    if (hosted != null) {
+      _beginHostedTrackpad(event, hosted, pixelWheel: scope!.pixelWheel);
+      return;
+    }
     _gestureRevision = _historyRevision;
     _trackpadScale = 1;
     final position = _boundTrackpadPosition(event.localPosition);
@@ -919,8 +958,67 @@ class CustomPlatformViewState extends State<CustomPlatformView>
     );
   }
 
+  /// A hosted pan never becomes a touch contact: the host takes its share and
+  /// the rest reaches the page as ordinary wheel input under the cursor.
+  void _beginHostedTrackpad(
+    PointerPanZoomStartEvent event,
+    WindowsWebViewTrackpadWheel trackpad, {
+    required bool pixelWheel,
+  }) {
+    _hostedTrackpad = trackpad;
+    _hostedTrackpadPointer = event.pointer;
+    _hostedPixelWheel = pixelWheel;
+    _hostedTrackpadTotal = Offset.zero;
+    _hostedTrackpadLastTime = event.timeStamp;
+    _hostedTrackpadVelocity = _RecentPanVelocity()
+      ..add(event.timeStamp, Offset.zero);
+    _mousePosition = event.localPosition;
+    _controller._setCursorPos(event.localPosition);
+    trackpad.onStart?.call();
+  }
+
+  void _updateHostedTrackpad(PointerPanZoomUpdateEvent event) {
+    final trackpad = _hostedTrackpad!;
+    if (event.pointer != _hostedTrackpadPointer) return;
+    final pan = event.localPanDelta;
+    if (!pan.isFinite) {
+      _endHostedTrackpad(Offset.zero);
+      return;
+    }
+    _hostedTrackpadTotal += pan;
+    _hostedTrackpadLastTime = event.timeStamp;
+    _hostedTrackpadVelocity?.add(event.timeStamp, _hostedTrackpadTotal);
+    if (pan == Offset.zero) return;
+    final remaining = trackpad.onUpdate(-pan);
+    if (!mounted ||
+        !_attached ||
+        _disposing ||
+        !identical(_hostedTrackpad, trackpad) ||
+        !remaining.isFinite) {
+      return;
+    }
+    _sendScrollDelta(webViewWheelChannelDelta(
+        filterScrollDeltaForSettings(-remaining, widget.creationParams),
+        pixelWheel: _hostedPixelWheel));
+  }
+
+  void _endHostedTrackpad(Offset velocity) {
+    final trackpad = _hostedTrackpad;
+    if (trackpad == null) return;
+    _hostedTrackpad = null;
+    _hostedTrackpadPointer = null;
+    _hostedTrackpadVelocity = null;
+    _hostedTrackpadLastTime = null;
+    _hostedTrackpadTotal = Offset.zero;
+    trackpad.onEnd?.call(velocity.isFinite ? velocity : Offset.zero);
+  }
+
   void _handleTrackpadUpdate(PointerPanZoomUpdateEvent event,
       {Offset? accumulatedPan, Duration inputAge = Duration.zero}) {
+    if (_hostedTrackpad != null) {
+      _updateHostedTrackpad(event);
+      return;
+    }
     if (_trackpadPointerPosition == null ||
         _trackpadGesturePointer != event.pointer) return;
     if (!_isCurrentHistoryTarget(event)) {
@@ -1106,6 +1204,17 @@ class CustomPlatformViewState extends State<CustomPlatformView>
   }
 
   void _handleTrackpadEnd(PointerPanZoomEndEvent event) {
+    if (_hostedTrackpad != null) {
+      if (event.pointer != _hostedTrackpadPointer) return;
+      final last = _hostedTrackpadLastTime;
+      // A pause before lifting the fingers is a stop, not a fling.
+      final velocity = last != null &&
+              event.timeStamp - last <= const Duration(milliseconds: 100)
+          ? -(_hostedTrackpadVelocity?.velocity ?? Offset.zero)
+          : Offset.zero;
+      _endHostedTrackpad(velocity);
+      return;
+    }
     if (_trackpadGesturePointer != event.pointer) return;
     final history = _trackpadIntent == _TrackpadIntent.history;
     final revision = _gestureRevision;
@@ -1194,6 +1303,7 @@ class CustomPlatformViewState extends State<CustomPlatformView>
       {bool cancelled = true,
       bool preserveHistoryAnimation = false,
       Duration? timeStamp}) {
+    _endHostedTrackpad(Offset.zero);
     ++_policyGeneration;
     _policyTimer?.cancel();
     _policyTimer = null;
@@ -1263,7 +1373,10 @@ class CustomPlatformViewState extends State<CustomPlatformView>
     }
     final scale = widget.scaleFactor ?? window.devicePixelRatio;
     if (_reportedSurfaceSize != null &&
-        (_reportedSurfaceSize != box.size || _reportedScaleFactor != scale)) {
+        (_reportedScaleFactor != scale ||
+            // A hosted pan has no native contact for a resize to strand, and
+            // its own host may be resizing this view (a collapsing header).
+            (_reportedSurfaceSize != box.size && _hostedTrackpad == null))) {
       _endTrackpadPointer(cancelled: true);
     }
     _reportedSurfaceSize = box.size;
@@ -1296,6 +1409,39 @@ class CustomPlatformViewState extends State<CustomPlatformView>
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+}
+
+/// Release velocity from the most recent motion of a hosted pan.
+///
+/// A quick touchpad flick reaches Flutter as only two or three pan updates
+/// before the platform takes over with inertia. A least-squares fit needs more
+/// samples than that and reports no velocity, so the flick would stop dead.
+/// This averages the displacement over the last [window] instead.
+class _RecentPanVelocity {
+  static const window = Duration(milliseconds: 60);
+
+  final _samples = <(Duration, Offset)>[];
+
+  void add(Duration time, Offset position) {
+    _samples.add((time, position));
+    while (_samples.length > 2 && time - _samples[1].$1 > window) {
+      _samples.removeAt(0);
+    }
+  }
+
+  Offset get velocity {
+    if (_samples.length < 2) return Offset.zero;
+    final (lastTime, lastPosition) = _samples.last;
+    var anchor = _samples.length - 2;
+    while (anchor > 0 && lastTime - _samples[anchor - 1].$1 <= window) {
+      anchor--;
+    }
+    final (time, position) = _samples[anchor];
+    final micros = (lastTime - time).inMicroseconds;
+    if (micros <= 0) return Offset.zero;
+    return (lastPosition - position) *
+        (Duration.microsecondsPerSecond / micros);
   }
 }
 

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_editor_scroll.dart';
 import 'package:appflowy/shared/document_viewer/native_file_page_scroll.dart';
 import 'package:appflowy/shared/document_viewer/standalone_file_page.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/scrolling/scroll_gesture_gate.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -236,168 +238,331 @@ void main() {
   });
 
   for (final mode in fileControlAppearances) {
-    testWidgets(
-        '$mode Office wheel hook preserves targets and gated parent scrolling',
-        (tester) async {
-      final received = <Offset>[];
-      final originals = <PointerScrollEvent>[];
-      final resolved = <PointerScrollEvent>[];
-      final targetKey = GlobalKey();
-      final gate = ValueNotifier(false);
-      var clicks = 0;
-      var panStarts = 0;
-      var panUpdates = 0;
-      try {
-        await mountFileControls(
+    for (final reduced in [true, false]) {
+      testWidgets(
+          '$mode/reduced=$reduced Office header retires and returns around the editor',
+          (tester) async {
+        final received = <Offset>[];
+        final originals = <PointerScrollEvent>[];
+        final resolved = <PointerScrollEvent>[];
+        final targetKey = GlobalKey();
+        final gate = ValueNotifier(false);
+        final controller = OfficeEditorScrollController();
+        var clicks = 0;
+        var panStarts = 0;
+        var panUpdates = 0;
+        try {
+          await mountFileControls(
             tester,
             PremiumScrollScope(
-                enabled: true,
-                child: StandaloneFilePage(
-                  header: const SizedBox(height: 100),
-                  body: ValueListenableBuilder<bool>(
-                    valueListenable: gate,
-                    builder: (_, blocked, child) =>
-                        ScrollGestureGate(blocked: blocked, child: child!),
-                    child: PremiumScrollExclusion(
-                        child: NativeFilePageHeaderWheel(
+              enabled: true,
+              child: StandaloneFilePage(
+                header: const SizedBox(height: 100),
+                body: ValueListenableBuilder<bool>(
+                  valueListenable: gate,
+                  builder: (_, blocked, child) =>
+                      ScrollGestureGate(blocked: blocked, child: child!),
+                  child: PremiumScrollExclusion(
+                    child: OfficeEditorScroll(
+                      controller: controller,
                       child: StandaloneFilePageBoundary(
                         enabled: true,
                         child: Builder(
-                            builder: (context) => Listener(
-                                  key: targetKey,
-                                  behavior: HitTestBehavior.opaque,
-                                  // Faithful input seam: the real Windows native widget's
-                                  // resolver/channel path is verified in wheel_scope_test.
-                                  // Never simulate the old hit proxy by changing this event.
-                                  onPointerSignal: (signal) {
-                                    if (signal is! PointerScrollEvent) return;
-                                    originals.add(signal);
-                                    final scope =
-                                        WindowsWebViewWheelScope.maybeOf(
-                                            context);
-                                    GestureBinding
-                                        .instance.pointerSignalResolver
-                                        .register(signal, (_) {
-                                      resolved.add(signal);
-                                      received.add(scope?.transform(signal) ??
-                                          signal.scrollDelta);
-                                    });
-                                  },
-                                  onPointerDown: (_) => clicks++,
-                                  onPointerPanZoomStart: (_) => panStarts++,
-                                  onPointerPanZoomUpdate: (_) => panUpdates++,
-                                  child: const SizedBox.expand(key: _body),
-                                )),
+                          builder: (context) => Listener(
+                            key: targetKey,
+                            behavior: HitTestBehavior.opaque,
+                            // Faithful input seam: the real Windows native
+                            // widget's resolver/channel path is verified in
+                            // wheel_scope_test.
+                            onPointerSignal: (signal) {
+                              if (signal is! PointerScrollEvent) return;
+                              originals.add(signal);
+                              final scope =
+                                  WindowsWebViewWheelScope.maybeOf(context)!;
+                              expect(scope.pixelWheel, isTrue);
+                              GestureBinding.instance.pointerSignalResolver
+                                  .register(signal, (_) {
+                                resolved.add(signal);
+                                received.add(scope.transform(signal));
+                              });
+                            },
+                            onPointerDown: (_) => clicks++,
+                            onPointerPanZoomStart: (_) => panStarts++,
+                            onPointerPanZoomUpdate: (_) => panUpdates++,
+                            child: const SizedBox.expand(key: _body),
+                          ),
+                        ),
                       ),
-                    )),
+                    ),
                   ),
-                )),
-            mode: mode);
-        final page =
-            tester.state<NestedScrollViewState>(find.byType(NestedScrollView));
-        final point =
-            tester.getRect(find.byType(StandaloneFilePage)).bottomCenter -
-                const Offset(0, 30);
-        final target = targetKey.currentContext!.findRenderObject();
-        void expectOriginalTarget() {
-          final hit = tester.hitTestOnBinding(point);
-          expect(hit.path.where((entry) => identical(entry.target, target)),
-              hasLength(1));
-          expect(targetKey.currentContext!.findRenderObject(), same(target));
-        }
+                ),
+              ),
+            ),
+            mode: mode,
+            reduced: reduced,
+          );
+          final page = tester
+              .state<NestedScrollViewState>(find.byType(NestedScrollView));
+          final outer = page.outerController;
+          final point =
+              tester.getRect(find.byType(StandaloneFilePage)).bottomCenter -
+                  const Offset(0, 30);
+          final target = targetKey.currentContext!.findRenderObject();
+          void expectOriginalTarget() {
+            final hit = tester.hitTestOnBinding(point);
+            expect(
+              hit.path.where((entry) => identical(entry.target, target)),
+              hasLength(1),
+            );
+            expect(targetKey.currentContext!.findRenderObject(), same(target));
+          }
 
-        Future<void> wheel(Offset delta) async {
-          await tester.sendEventToBinding(PointerScrollEvent(
-            position: point,
-            scrollDelta: delta,
-            device: 19,
-            timeStamp: const Duration(seconds: 7),
-          ));
+          Future<void> wheel(Offset delta) async {
+            await tester.sendEventToBinding(
+              PointerScrollEvent(
+                position: point,
+                scrollDelta: delta,
+                device: 19,
+                timeStamp: const Duration(seconds: 7),
+              ),
+            );
+            await tester.pumpAndSettle();
+          }
+
+          expectOriginalTarget();
+          await wheel(const Offset(0, 40));
+          expect(
+            outer.offset,
+            closeTo(40, 0.01),
+            reason:
+                'Unsaturated header proves the parent did not consume twice',
+          );
+          expect(received, [Offset.zero]);
+          await wheel(const Offset(3.25, 140));
+          expect(outer.offset, closeTo(100, 0.01));
+          expect(received.last.dx, 3.25);
+          expect(received.last.dy, closeTo(80, 0.01));
+          expect(originals.last.scrollDelta, const Offset(3.25, 140));
+          expect(resolved.last, same(originals.last));
+          expect(resolved.last.device, 19);
+          expect(resolved.last.position, point);
+          expectOriginalTarget();
+
+          // Before the editor reports, reverse motion restores the header.
+          expect(controller.editorAtTop, isNull);
+          await wheel(const Offset(0, -50));
+          expect(outer.offset, closeTo(50, 0.01));
+          expect(received.last, Offset.zero);
+          // A scrolled document takes reverse motion first...
+          controller.handleMessage([
+            {'t': 'state', 'atTop': false},
+          ]);
+          await wheel(const Offset(0, -30));
+          expect(outer.offset, closeTo(50, 0.01));
+          expect(received.last, const Offset(0, -30));
+          // ...and its overscroll at the top continues into the header.
+          controller.handleMessage([
+            {'t': 'over', 'dy': -20.0},
+          ]);
+          await tester.pumpAndSettle();
+          expect(controller.editorAtTop, isTrue);
+          expect(outer.offset, closeTo(30, 0.01));
+          await wheel(const Offset(0, -80));
+          expect(outer.offset, closeTo(0, 0.01));
+          expect(received.last.dy, closeTo(-50, 0.01));
+          controller.handleMessage([
+            {'t': 'over', 'dy': 'bad'},
+            {'t': 'state'},
+          ]);
+          expect(outer.offset, closeTo(0, 0.01));
+
+          // Trackpad pans share the routing without easing.
+          final platform = defaultTargetPlatform;
+          final scale = platform == TargetPlatform.windows ||
+                  platform == TargetPlatform.linux
+              ? const PremiumScrollPhysicsConfig()
+                  .desktopDirectManipulationScale
+              : 1.0;
+          final trackpad = WindowsWebViewWheelScope.maybeOf(
+            tester.element(find.byKey(_body)),
+          )!
+              .trackpad!;
+          trackpad.onStart!();
+          expect(
+            trackpad.onUpdate(Offset(0, 30 / scale)).dy,
+            closeTo(0, 0.001),
+          );
+          expect(outer.offset, closeTo(30, 0.01));
+          final rest = trackpad.onUpdate(Offset(2 / scale, 90 / scale));
+          // A mostly vertical pan keeps to the vertical rail.
+          expect(rest.dx, 0);
+          expect(rest.dy, closeTo(20, 0.001));
+          expect(outer.offset, closeTo(100, 0.01));
+          final sideways = trackpad.onUpdate(const Offset(30, 5));
+          expect(sideways.dx, 0);
+          expect(sideways.dy, closeTo(5 * scale, 0.001));
+          trackpad.onEnd!(Offset.zero);
+          await tester.pumpAndSettle();
+          expect(outer.offset, closeTo(100, 0.01));
+          // A mostly horizontal gesture keeps to its rail...
+          trackpad.onStart!();
+          expect(trackpad.onUpdate(const Offset(20, 3)), Offset(20 * scale, 0));
+          expect(
+            trackpad.onUpdate(const Offset(10, 30)),
+            Offset(10 * scale, 0),
+          );
+          trackpad.onEnd!(Offset.zero);
+          // ...and a diagonal one moves freely.
+          trackpad.onStart!();
+          final free = trackpad.onUpdate(const Offset(10, 12));
+          expect(free.dx, closeTo(10 * scale, 0.001));
+          expect(free.dy, closeTo(12 * scale, 0.001));
+          trackpad.onEnd!(Offset.zero);
+          await tester.pumpAndSettle();
+          expect(outer.offset, closeTo(100, 0.01));
+
+          // Release inertia coasts the header first, then hands the speed that
+          // is left to the document.
+          final commands = <Map<String, Object>>[];
+          controller.debugOnCommand = commands.add;
+          Iterable<Map<String, Object>> flings() =>
+              commands.where((command) => command['c'] == 'fling');
+          outer.jumpTo(40);
           await tester.pump();
-        }
+          trackpad.onStart!();
+          trackpad.onEnd!(Offset(0, 1000 / scale));
+          await tester.pumpAndSettle();
+          if (reduced) {
+            expect(outer.offset, closeTo(40, 0.01));
+            expect(flings(), isEmpty);
+          } else {
+            expect(outer.offset, closeTo(100, 0.01));
+            expect(flings().single['vx'], 0.0);
+            expect(
+              flings().single['vy']! as double,
+              inExclusiveRange(0, 1000 - 4.4 * 60 + 1),
+            );
+          }
+          // At the document's top, upward inertia brings the header back.
+          commands.clear();
+          trackpad.onStart!();
+          trackpad.onEnd!(Offset(0, -1000 / scale));
+          await tester.pumpAndSettle();
+          expect(outer.offset, closeTo(reduced ? 40 : 0, 0.01));
+          expect(flings(), isEmpty);
+          // A scrolled document takes upward inertia itself.
+          outer.jumpTo(100);
+          await tester.pump();
+          controller.handleMessage([
+            {'t': 'state', 'atTop': false},
+          ]);
+          commands.clear();
+          trackpad.onStart!();
+          trackpad.onEnd!(Offset(0, -1000 / scale));
+          await tester.pumpAndSettle();
+          expect(outer.offset, closeTo(100, 0.01));
+          if (reduced) {
+            expect(flings(), isEmpty);
+          } else {
+            expect(flings().single['vy']! as double, closeTo(-1000, 0.01));
+          }
+          // A touch that interrupts the inertia stops the header as well.
+          outer.jumpTo(0);
+          await tester.pump();
+          controller.handleMessage([
+            {'t': 'state', 'atTop': true},
+          ]);
+          commands.clear();
+          trackpad.onStart!();
+          trackpad.onEnd!(Offset(0, 3000 / scale));
+          await tester.pump();
+          await tester.pump(const Duration(milliseconds: 16));
+          final stoppedAt = outer.offset;
+          expect(stoppedAt, reduced ? 0 : greaterThan(0));
+          trackpad.onInertiaCancel!();
+          await tester.pumpAndSettle();
+          expect(outer.offset, stoppedAt);
+          expect(commands.last, {'c': 'stop'});
+          controller.debugOnCommand = null;
+          outer.jumpTo(100);
+          await tester.pump();
 
-        expectOriginalTarget();
-        await wheel(const Offset(0, 40));
-        expect(page.outerController.offset, 40,
-            reason:
-                'Unsaturated header proves the parent did not consume twice');
-        expect(received, [Offset.zero]);
-        page.outerController.jumpTo(0);
-        await tester.pump();
-        received.clear();
-        originals.clear();
-        resolved.clear();
-        await wheel(const Offset(3.25, 140));
-        expect(page.outerController.offset, 100);
-        expect(received, [const Offset(3.25, 40)]);
-        expect(originals.single.scrollDelta, const Offset(3.25, 140));
-        expect(resolved.single, same(originals.single));
-        expect(resolved.single.device, 19);
-        expect(resolved.single.timeStamp, const Duration(seconds: 7));
-        expect(resolved.single.position, point);
-        expectOriginalTarget();
-        await wheel(const Offset(0, -50));
-        expect(page.outerController.offset, 100,
-            reason:
-                'Opaque Office cannot acknowledge actual reverse canvas travel');
-        expect(received.last, const Offset(0, -50));
-        await wheel(const Offset(30, 0));
-        expect(received.last, const Offset(30, 0));
-        for (final keys in [
-          (LogicalKeyboardKey.controlLeft, PhysicalKeyboardKey.controlLeft),
-          (LogicalKeyboardKey.metaLeft, PhysicalKeyboardKey.metaLeft),
-          (LogicalKeyboardKey.shiftLeft, PhysicalKeyboardKey.shiftLeft),
-        ]) {
-          await tester.sendKeyDownEvent(keys.$1, physicalKey: keys.$2);
+          await wheel(const Offset(30, 0));
+          expect(received.last, const Offset(30, 0));
+          for (final keys in [
+            (LogicalKeyboardKey.controlLeft, PhysicalKeyboardKey.controlLeft),
+            (LogicalKeyboardKey.metaLeft, PhysicalKeyboardKey.metaLeft),
+            (LogicalKeyboardKey.shiftLeft, PhysicalKeyboardKey.shiftLeft),
+          ]) {
+            await tester.sendKeyDownEvent(keys.$1, physicalKey: keys.$2);
+            try {
+              await wheel(const Offset(0, -25));
+              expect(received.last, const Offset(0, -25));
+            } finally {
+              await tester.sendKeyUpEvent(keys.$1, physicalKey: keys.$2);
+            }
+          }
+          expect(outer.offset, closeTo(100, 0.01));
+          await tester.tapAt(point, kind: PointerDeviceKind.mouse);
+          expect(clicks, 1);
+          final gesture =
+              await tester.createGesture(kind: PointerDeviceKind.trackpad);
+          await gesture.panZoomStart(point);
           try {
-            await wheel(const Offset(0, 25));
-            expect(received.last, const Offset(0, 25));
+            await gesture.panZoomUpdate(
+              point,
+              pan: const Offset(0, -20),
+              scale: 1.2,
+              rotation: 0.1,
+            );
+            expect(panStarts, 1);
+            expect(panUpdates, 1);
           } finally {
-            await tester.sendKeyUpEvent(keys.$1, physicalKey: keys.$2);
+            await gesture.panZoomEnd();
+          }
+          expectOriginalTarget();
+          expect(
+            received,
+            hasLength(9),
+            reason: 'pan/pinch/click never enter the wheel hook',
+          );
+
+          outer.jumpTo(0);
+          gate.value = true;
+          await tester.pump();
+          final count = received.length;
+          await wheel(const Offset(0, 40));
+          await tester.pump(const Duration(seconds: 1));
+          expect(
+            received,
+            hasLength(count),
+            reason: 'gate prevents the hook callback',
+          );
+          expect(
+            originals,
+            hasLength(count),
+            reason: 'native listener is also filtered',
+          );
+          expect(
+            outer.offset,
+            greaterThan(0),
+            reason: 'parent owns gated input',
+          );
+          expect(targetKey.currentContext!.findRenderObject(), same(target));
+          gate.value = false;
+          await tester.pump();
+          expectOriginalTarget();
+          expect(tester.takeException(), isNull);
+        } finally {
+          try {
+            await unmountFileControls(tester);
+          } finally {
+            gate.dispose();
+            controller.detach();
           }
         }
-        await tester.tapAt(point, kind: PointerDeviceKind.mouse);
-        expect(clicks, 1);
-        final gesture =
-            await tester.createGesture(kind: PointerDeviceKind.trackpad);
-        await gesture.panZoomStart(point);
-        try {
-          await gesture.panZoomUpdate(point,
-              pan: const Offset(0, -20), scale: 1.2, rotation: 0.1);
-          expect(panStarts, 1);
-          expect(panUpdates, 1);
-        } finally {
-          await gesture.panZoomEnd();
-        }
-        expectOriginalTarget();
-        expect(received, hasLength(6),
-            reason: 'pan/pinch/click never enter the wheel hook');
-
-        page.outerController.jumpTo(0);
-        gate.value = true;
-        await tester.pump();
-        final count = received.length;
-        await wheel(const Offset(0, 40));
-        await tester.pump(const Duration(seconds: 1));
-        expect(received, hasLength(count),
-            reason: 'gate prevents the hook callback');
-        expect(originals, hasLength(count),
-            reason: 'native listener is also filtered');
-        expect(page.outerController.offset, greaterThan(0),
-            reason: 'parent owns gated input');
-        expect(targetKey.currentContext!.findRenderObject(), same(target));
-        gate.value = false;
-        await tester.pump();
-        expectOriginalTarget();
-        expect(tester.takeException(), isNull);
-      } finally {
-        try {
-          await unmountFileControls(tester);
-        } finally {
-          gate.dispose();
-        }
-      }
-    });
+      });
+    }
   }
 }
 

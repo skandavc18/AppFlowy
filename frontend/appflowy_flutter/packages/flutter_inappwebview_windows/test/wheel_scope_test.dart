@@ -143,12 +143,232 @@ void main() {
     expect(f.parent.offset, 0);
     await f.dispose();
   }, timeout: platformViewTestTimeout);
+
+  testWidgets('pixel wheel scope sends exact logical pixels at 1.2 units/px',
+      (tester) async {
+    final f = await _WheelFixture.mount(tester,
+        pixelWheel: true, transform: (event) => event.scrollDelta);
+    await f.wheel(const Offset(0, 80));
+    await f.wheel(const Offset(0, -12.5));
+    // The native gain multiplies by 6: 80px -> 16 * 6 = 96 wheel units.
+    expect(f.scrolls, [
+      [0.0, -16.0],
+      [0.0, 2.5]
+    ]);
+    expect(webViewWheelChannelDelta(const Offset(3, 4), pixelWheel: false),
+        const Offset(3, 4));
+    expect(f.parent.offset, 0);
+    await f.dispose();
+  }, timeout: platformViewTestTimeout);
+
+  testWidgets('hosted trackpad pans become wheel input, never touch contacts',
+      (tester) async {
+    final starts = <int>[];
+    final updates = <Offset>[];
+    final ends = <Offset>[];
+    var inertiaCancels = 0;
+    final f = await _WheelFixture.mount(
+      tester,
+      pixelWheel: true,
+      transform: (event) => event.scrollDelta,
+      trackpad: WindowsWebViewTrackpadWheel(
+        onStart: () => starts.add(starts.length),
+        onUpdate: (delta) {
+          updates.add(delta);
+          return delta / 2;
+        },
+        onEnd: ends.add,
+        onInertiaCancel: () => inertiaCancels++,
+      ),
+    );
+    Future<void> pan(PointerEvent event) async {
+      await tester.sendEventToBinding(event);
+      await tester.pump();
+    }
+
+    await pan(PointerPanZoomStartEvent(
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        timeStamp: const Duration(seconds: 2)));
+    for (final (ms, dy) in const [(2010, -20.0), (2020, -10.0)]) {
+      await pan(PointerPanZoomUpdateEvent(
+          pointer: 7,
+          device: 7,
+          position: f.point,
+          pan: Offset(0, dy),
+          panDelta: Offset(0, dy),
+          timeStamp: Duration(milliseconds: ms)));
+    }
+    await pan(PointerPanZoomEndEvent(
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        timeStamp: const Duration(milliseconds: 2030)));
+    expect(starts, [0]);
+    // Fingers moving up scroll the page down: scroll-delta sign.
+    expect(updates, const [Offset(0, 20), Offset(0, 10)]);
+    expect(f.scrolls, [
+      [0.0, -2.0],
+      [0.0, -1.0]
+    ]);
+    expect(ends, hasLength(1));
+    expect(ends.single.dy, greaterThan(0));
+    expect(
+        f.calls.where((call) =>
+            call.method == 'setPointerUpdate' ||
+            call.method == 'querySiteGesturePolicyState'),
+        isEmpty);
+
+    // A click during a hosted pan cancels it with no release velocity.
+    await pan(PointerPanZoomStartEvent(
+        pointer: 8,
+        device: 8,
+        position: f.point,
+        timeStamp: const Duration(seconds: 3)));
+    await pan(PointerPanZoomUpdateEvent(
+        pointer: 8,
+        device: 8,
+        position: f.point,
+        pan: const Offset(0, 6),
+        panDelta: const Offset(0, 6),
+        timeStamp: const Duration(milliseconds: 3010)));
+    await tester.tapAt(f.point, kind: PointerDeviceKind.mouse);
+    await tester.pump();
+    expect(starts, [0, 1]);
+    expect(ends, [ends.first, Offset.zero]);
+    expect(f.parent.offset, 0);
+
+    // A quick flick reaches Flutter as a single update before the platform's
+    // inertia takes over; its speed must still be reported.
+    await pan(PointerPanZoomStartEvent(
+        pointer: 9,
+        device: 9,
+        position: f.point,
+        timeStamp: const Duration(seconds: 4)));
+    await pan(PointerPanZoomUpdateEvent(
+        pointer: 9,
+        device: 9,
+        position: f.point,
+        pan: const Offset(0, -12),
+        panDelta: const Offset(0, -12),
+        timeStamp: const Duration(milliseconds: 4008)));
+    await pan(PointerPanZoomEndEvent(
+        pointer: 9,
+        device: 9,
+        position: f.point,
+        timeStamp: const Duration(milliseconds: 4012)));
+    expect(ends, hasLength(3));
+    expect(ends.last.dx, 0);
+    expect(ends.last.dy, closeTo(1500, 0.001));
+    // A pause before lifting the fingers is a stop, not a fling.
+    await pan(PointerPanZoomStartEvent(
+        pointer: 10,
+        device: 10,
+        position: f.point,
+        timeStamp: const Duration(seconds: 5)));
+    await pan(PointerPanZoomUpdateEvent(
+        pointer: 10,
+        device: 10,
+        position: f.point,
+        pan: const Offset(0, -12),
+        panDelta: const Offset(0, -12),
+        timeStamp: const Duration(milliseconds: 5008)));
+    await pan(PointerPanZoomEndEvent(
+        pointer: 10,
+        device: 10,
+        position: f.point,
+        timeStamp: const Duration(milliseconds: 5200)));
+    expect(ends.last, Offset.zero);
+
+    // A touch that stops the platform's release inertia reaches the host.
+    expect(inertiaCancels, 0);
+    await tester.sendEventToBinding(PointerScrollInertiaCancelEvent(
+        position: f.point,
+        kind: PointerDeviceKind.trackpad,
+        timeStamp: const Duration(seconds: 6)));
+    expect(inertiaCancels, 1);
+    expect(f.calls.where((call) => call.method == 'setPointerUpdate'), isEmpty);
+    await f.dispose();
+  }, timeout: platformViewTestTimeout);
+
+  testWidgets('a hosted pan survives its host resizing the view',
+      (tester) async {
+    late final _WheelFixture f;
+    final updates = <Offset>[];
+    final ends = <Offset>[];
+    f = await _WheelFixture.mount(
+      tester,
+      pixelWheel: true,
+      transform: (event) => event.scrollDelta,
+      trackpad: WindowsWebViewTrackpadWheel(
+        onUpdate: (delta) {
+          updates.add(delta);
+          // Like a collapsing page header: the first motion grows the view.
+          if (updates.length == 1) {
+            f.height.value = 320;
+            return Offset.zero;
+          }
+          return delta;
+        },
+        onEnd: ends.add,
+      ),
+    );
+    Future<void> pan(PointerEvent event) async {
+      await tester.sendEventToBinding(event);
+      await tester.pump();
+      await tester.pump();
+    }
+
+    await pan(PointerPanZoomStartEvent(
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        timeStamp: const Duration(seconds: 2)));
+    await pan(PointerPanZoomUpdateEvent(
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        pan: const Offset(0, -20),
+        panDelta: const Offset(0, -20),
+        timeStamp: const Duration(milliseconds: 2010)));
+    expect(
+        tester.getSize(find.byType(CustomPlatformView)), const Size(300, 320));
+    expect(f.calls.where((call) => call.method == 'setSize').last.arguments,
+        [300.0, 320.0, anything]);
+    expect(ends, isEmpty);
+    await pan(PointerPanZoomUpdateEvent(
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        pan: const Offset(0, -30),
+        panDelta: const Offset(0, -10),
+        timeStamp: const Duration(milliseconds: 2020)));
+    await pan(PointerPanZoomEndEvent(
+        pointer: 7,
+        device: 7,
+        position: f.point,
+        timeStamp: const Duration(milliseconds: 2030)));
+    expect(updates, const [Offset(0, 20), Offset(0, 10)]);
+    expect(f.scrolls, [
+      [0.0, -2.0]
+    ]);
+    expect(ends, hasLength(1));
+    expect(ends.single.dy, greaterThan(0));
+    expect(
+        f.calls.where((call) =>
+            call.method == 'setPointerUpdate' ||
+            call.method == 'querySiteGesturePolicyState'),
+        isEmpty);
+    await f.dispose();
+  }, timeout: platformViewTestTimeout);
 }
 
 class _WheelFixture {
   _WheelFixture(this.tester);
   final WidgetTester tester;
   final parent = ScrollController();
+  final height = ValueNotifier<double>(300);
   final calls = <MethodCall>[];
   CustomPlatformViewController? native;
   final Zone _ownerZone = Zone.current;
@@ -170,6 +390,8 @@ class _WheelFixture {
   static Future<_WheelFixture> mount(
     WidgetTester tester, {
     Offset Function(PointerScrollEvent)? transform,
+    bool pixelWheel = false,
+    WindowsWebViewTrackpadWheel? trackpad,
     bool blocked = false,
     bool bothDisabled = false,
   }) async {
@@ -180,6 +402,7 @@ class _WheelFixture {
         if (!f._disposed) await f.dispose();
       } finally {
         f.parent.dispose();
+        f.height.dispose();
         messenger.setMockMethodCallHandler(manager, null);
         messenger.setMockMethodCallHandler(view, null);
         messenger.setMockMethodCallHandler(events, null);
@@ -202,7 +425,12 @@ class _WheelFixture {
       },
     });
     if (transform != null) {
-      child = WindowsWebViewWheelScope(transform: transform, child: child);
+      child = WindowsWebViewWheelScope(
+        transform: transform,
+        pixelWheel: pixelWheel,
+        trackpad: trackpad,
+        child: child,
+      );
     }
     await tester.pumpWidget(MaterialApp(
         home: Center(
@@ -215,7 +443,10 @@ class _WheelFixture {
           // Models suppressed native delivery without importing application code.
           IgnorePointer(
               ignoring: blocked,
-              child: SizedBox.square(dimension: 300, child: child)),
+              child: ValueListenableBuilder<double>(
+                  valueListenable: f.height,
+                  builder: (_, height, __) =>
+                      SizedBox(width: 300, height: height, child: child))),
           const SizedBox(height: 800),
         ]),
       ),

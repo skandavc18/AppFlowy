@@ -5,12 +5,12 @@ import 'dart:io';
 
 import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
-import 'package:appflowy/shared/document_viewer/native_file_page_scroll.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/viewer_card.dart';
-import 'package:appflowy/util/color_to_hex_string.dart';
+import 'package:appflowy/workspace/application/settings/appearance/appearance_cubit.dart';
+import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart'
     as sidebar_settings;
@@ -24,6 +24,9 @@ import 'package:path/path.dart' as p;
 
 import 'office_document_bridge.dart';
 import 'office_cloud_session.dart';
+import 'office_editor_chrome.dart';
+import 'office_editor_scroll.dart';
+import 'office_editor_skin.dart';
 import 'office_server_settings.dart';
 import 'office_server_settings_form.dart';
 
@@ -89,17 +92,15 @@ enum OfficeEditorRefreshAction {
 @visibleForTesting
 OfficeEditorRefreshAction officeEditorRefreshAction({
   required bool managed,
-  required bool? editorIsDark,
-  required Color? editorBackground,
-  required bool isDark,
-  required Color background,
+  required OfficeEditorSkin? editorSkin,
+  required OfficeEditorSkin skin,
 }) {
-  if (editorIsDark != isDark) {
+  if (editorSkin?.isDark != skin.isDark) {
     return managed
         ? OfficeEditorRefreshAction.managedSession
         : OfficeEditorRefreshAction.editorPage;
   }
-  if (editorBackground != background) {
+  if (editorSkin != skin) {
     return OfficeEditorRefreshAction.editorPage;
   }
   return OfficeEditorRefreshAction.none;
@@ -112,14 +113,15 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
   HostedOfficeEditor? _hostedEditor;
   ManagedOfficeSession? _managedSession;
   UserProfilePB? _cloudProfile;
-  Color? _editorBackground;
-  bool? _editorIsDark;
+  OfficeEditorSkin? _editorSkin;
   String? _documentKey;
   String? _errorMessage;
   _OfficeConnectionMode _mode = _OfficeConnectionMode.unknown;
   bool _showInitialSetup = false;
   bool _didLoad = false;
   bool _refreshingEditorPage = false;
+  final _scroll = OfficeEditorScrollController();
+  OfficeEditorTypography? _typography;
 
   @override
   void didChangeDependencies() {
@@ -130,10 +132,8 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
     } else if (_status == OfficeServerStatus.connected) {
       final action = officeEditorRefreshAction(
         managed: _mode == _OfficeConnectionMode.cloud,
-        editorIsDark: _editorIsDark,
-        editorBackground: _editorBackground,
-        isDark: _currentIsDark(),
-        background: _currentEditorBackground(),
+        editorSkin: _editorSkin,
+        skin: _currentEditorSkin(),
       );
       if (action != OfficeEditorRefreshAction.none) {
         unawaited(_refreshEditorAppearance());
@@ -143,6 +143,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
 
   @override
   void dispose() {
+    _scroll.detach();
     _releaseEditorResources();
     super.dispose();
   }
@@ -156,8 +157,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
     _bridged = null;
     _hostedEditor = null;
     _managedSession = null;
-    _editorBackground = null;
-    _editorIsDark = null;
+    _editorSkin = null;
     _documentKey = null;
   }
 
@@ -173,6 +173,10 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       });
     }
     try {
+      _typography = await loadOfficeEditorTypography(_appFontFamily());
+      if (!mounted) {
+        return;
+      }
       final profile = await widget.cloudService.connectedCloudProfile();
       if (!mounted) {
         return;
@@ -261,8 +265,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
         throw const FormatException('Invalid document server address');
       }
       final documentKey = _buildDocumentKey(stat.modified);
-      final isDark = _currentIsDark();
-      final background = _currentEditorBackground();
+      final skin = _currentEditorSkin();
       hostedEditor = await OfficeDocumentBridge.instance.publishEditorPage(
         buildOfficeEditorHtml(
           serverOrigin: serverOrigin.toString(),
@@ -270,8 +273,8 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
           fileName: widget.name,
           documentKey: documentKey,
           editable: widget.editable,
-          isDark: isDark,
-          background: background,
+          isDark: skin.isDark,
+          background: skin.desk,
           secret: settings.jwtSecret.trim(),
         ),
       );
@@ -288,13 +291,12 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       setState(() {
         _bridged = bridged;
         _hostedEditor = hostedEditor;
-        _editorBackground = background;
-        _editorIsDark = isDark;
+        _editorSkin = skin;
         _documentKey = documentKey;
         _status = OfficeServerStatus.connected;
         _showInitialSetup = false;
       });
-      _refreshAppearanceIfStale(background, isDark);
+      _refreshAppearanceIfStale(skin);
     } catch (error) {
       final bridgeToken = bridged?.token;
       final editorToken = hostedEditor?.token;
@@ -321,24 +323,23 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       _errorMessage = null;
     });
     try {
-      final isDark = _currentIsDark();
+      final skin = _currentEditorSkin();
       final session = await widget.cloudService.createSession(
         profile: profile,
         storageUrl: widget.source,
         fileName: widget.name,
         editable: widget.editable,
-        isDark: isDark,
+        isDark: skin.isDark,
       );
       if (!mounted) {
         return;
       }
-      final background = _currentEditorBackground();
       final hostedEditor =
           await OfficeDocumentBridge.instance.publishEditorPage(
         buildManagedOfficeEditorHtml(
           serverOrigin: session.documentServerUrl,
           editorConfig: session.editorConfig,
-          background: background,
+          background: skin.desk,
         ),
       );
       if (!mounted) {
@@ -352,11 +353,10 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       setState(() {
         _managedSession = session;
         _hostedEditor = hostedEditor;
-        _editorBackground = background;
-        _editorIsDark = isDark;
+        _editorSkin = skin;
         _status = OfficeServerStatus.connected;
       });
-      _refreshAppearanceIfStale(background, isDark);
+      _refreshAppearanceIfStale(skin);
     } catch (error) {
       Log.error('AppFlowy Cloud could not start the office editor: $error');
       if (mounted) {
@@ -446,30 +446,26 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
     }
   }
 
-  Color _currentEditorBackground() {
-    final theme = AppFlowyTheme.of(context);
-    return EditorSurfaceStyle.previewBackgroundFor(
-      Theme.of(context).brightness,
-      theme.surfaceColorScheme.primary,
-      isPaper: PaperTheme.isEnabled(context),
-    );
+  OfficeEditorSkin _currentEditorSkin() => OfficeEditorSkin.of(context);
+
+  String _appFontFamily() {
+    try {
+      return context.read<AppearanceSettingsCubit>().state.font;
+    } on ProviderNotFoundException {
+      return defaultFontFamily;
+    }
   }
 
-  bool _currentIsDark() => Theme.of(context).brightness == Brightness.dark;
+  bool _matchesCurrentAppearance(OfficeEditorSkin skin) =>
+      _currentEditorSkin() == skin;
 
-  bool _matchesCurrentAppearance(Color background, bool isDark) =>
-      _currentEditorBackground() == background && _currentIsDark() == isDark;
-
-  void _refreshAppearanceIfStale(Color background, bool isDark) {
-    if (!_matchesCurrentAppearance(background, isDark)) {
+  void _refreshAppearanceIfStale(OfficeEditorSkin skin) {
+    if (!_matchesCurrentAppearance(skin)) {
       unawaited(_refreshEditorAppearance());
     }
   }
 
-  String? _currentEditorHtml(
-    Color background, {
-    required bool isDark,
-  }) {
+  String? _currentEditorHtml(OfficeEditorSkin skin) {
     if (_mode == _OfficeConnectionMode.cloud) {
       final session = _managedSession;
       if (session == null) {
@@ -478,7 +474,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       return buildManagedOfficeEditorHtml(
         serverOrigin: session.documentServerUrl,
         editorConfig: session.editorConfig,
-        background: background,
+        background: skin.desk,
       );
     }
 
@@ -493,8 +489,8 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       fileName: widget.name,
       documentKey: _documentKey ?? '',
       editable: widget.editable,
-      isDark: isDark,
-      background: background,
+      isDark: skin.isDark,
+      background: skin.desk,
       secret: _settings.jwtSecret.trim(),
     );
   }
@@ -503,14 +499,11 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
     if (_refreshingEditorPage || !mounted) {
       return;
     }
-    final isDark = _currentIsDark();
-    final background = _currentEditorBackground();
+    final skin = _currentEditorSkin();
     final action = officeEditorRefreshAction(
       managed: _mode == _OfficeConnectionMode.cloud,
-      editorIsDark: _editorIsDark,
-      editorBackground: _editorBackground,
-      isDark: isDark,
-      background: background,
+      editorSkin: _editorSkin,
+      skin: skin,
     );
     if (action == OfficeEditorRefreshAction.none) {
       return;
@@ -519,6 +512,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
     HostedOfficeEditor? replacement;
     var retry = false;
     try {
+      _typography = await loadOfficeEditorTypography(_appFontFamily());
       ManagedOfficeSession? replacementSession;
       late final String? html;
       switch (action) {
@@ -533,17 +527,17 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
             storageUrl: widget.source,
             fileName: widget.name,
             editable: widget.editable,
-            isDark: isDark,
+            isDark: skin.isDark,
             sessionId: session.sessionId,
           );
           html = buildManagedOfficeEditorHtml(
             serverOrigin: replacementSession.documentServerUrl,
             editorConfig: replacementSession.editorConfig,
-            background: background,
+            background: skin.desk,
           );
           break;
         case OfficeEditorRefreshAction.editorPage:
-          html = _currentEditorHtml(background, isDark: isDark);
+          html = _currentEditorHtml(skin);
           break;
         case OfficeEditorRefreshAction.none:
           return;
@@ -551,7 +545,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
       if (html == null) {
         return;
       }
-      if (!_matchesCurrentAppearance(background, isDark)) {
+      if (!_matchesCurrentAppearance(skin)) {
         retry = true;
         return;
       }
@@ -563,7 +557,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
         replacement = null;
         return;
       }
-      if (!_matchesCurrentAppearance(background, isDark)) {
+      if (!_matchesCurrentAppearance(skin)) {
         OfficeDocumentBridge.instance.revoke(newEditor.token);
         replacement = null;
         retry = true;
@@ -575,8 +569,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
           _managedSession = replacementSession;
         }
         _hostedEditor = newEditor;
-        _editorBackground = background;
-        _editorIsDark = isDark;
+        _editorSkin = skin;
       });
       if (previous != null) {
         OfficeDocumentBridge.instance.revoke(previous);
@@ -597,15 +590,11 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = _currentIsDark();
-    final background = _currentEditorBackground();
     if (_status == OfficeServerStatus.connected &&
         officeEditorRefreshAction(
               managed: _mode == _OfficeConnectionMode.cloud,
-              editorIsDark: _editorIsDark,
-              editorBackground: _editorBackground,
-              isDark: isDark,
-              background: background,
+              editorSkin: _editorSkin,
+              skin: _currentEditorSkin(),
             ) !=
             OfficeEditorRefreshAction.none) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -655,16 +644,18 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
         managed: _mode == _OfficeConnectionMode.cloud,
       );
     }
-    final background = _editorBackground ?? _currentEditorBackground();
+    final skin = _editorSkin ?? _currentEditorSkin();
     final documentServerUrl = _mode == _OfficeConnectionMode.cloud
         ? _managedSession!.documentServerUrl
         : _settings.baseUri!.toString();
+    final physics = officeScrollPhysics(context);
 
     return PremiumScrollExclusion(
       key: kOfficeEditorScrollExclusionKey,
       child: ViewerCard(
-        color: background,
-        child: NativeFilePageHeaderWheel(
+        color: skin.desk,
+        child: OfficeEditorScroll(
+          controller: _scroll,
           child: widget.editorBuilder?.call(context, hostedEditor) ??
               InAppWebView(
                 key: ValueKey(hostedEditor.token),
@@ -674,8 +665,22 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
                 initialUserScripts: UnmodifiableListView([
                   buildOfficeThemeStorageUserScript(
                     documentServerUrl: documentServerUrl,
-                    isDark: _editorIsDark ?? _currentIsDark(),
+                    skin: skin,
                   ),
+                  buildOfficeEditorChromeUserScript(
+                    documentServerUrl: documentServerUrl,
+                    typography: _typography ??
+                        OfficeEditorTypography(
+                          family: resolveFontFamily(defaultFontFamily),
+                        ),
+                  ),
+                  if (officeEditorScrollSupported)
+                    buildOfficeScrollUserScript(
+                      documentServerUrl: documentServerUrl,
+                      hostUrl: hostedEditor.url,
+                      config: physics.config,
+                      smooth: physics.smooth,
+                    ),
                 ]),
                 // The editor is a JavaScript application, so scripting stays on
                 // (the default) unlike sandboxed markdown and HTML previews.
@@ -684,6 +689,7 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
                   transparentBackground: true,
                   mediaPlaybackRequiresUserGesture: false,
                 ),
+                onWebViewCreated: _scroll.attach,
                 onConsoleMessage: (_, message) {
                   if (message.messageLevel == ConsoleMessageLevel.ERROR) {
                     Log.error('ONLYOFFICE: ${message.message}');
@@ -697,25 +703,24 @@ class _OfficeDocumentViewState extends State<OfficeDocumentView> {
 }
 
 @visibleForTesting
-String officeUiTheme(bool isDark) => isDark ? 'theme-night' : 'theme-white';
-
-@visibleForTesting
 UserScript buildOfficeThemeStorageUserScript({
   required String documentServerUrl,
-  required bool isDark,
+  required OfficeEditorSkin skin,
 }) {
   final documentServerOrigin = Uri.parse(documentServerUrl).origin;
+  // A theme the person once picked inside the editor would otherwise win.
   final source = '''
 (() => {
   if (window.location.origin === ${jsonEncode(documentServerOrigin)}) {
-    window.localStorage.setItem(
-      "ui-theme-id",
-      ${jsonEncode(officeUiTheme(isDark))}
-    );
-    window.localStorage.setItem(
-      "content-theme",
-      ${jsonEncode(isDark ? 'dark' : 'light')}
-    );
+    try {
+      const storage = window.localStorage;
+      storage.setItem("ui-theme-id", ${jsonEncode(skin.baseThemeId)});
+      storage.setItem("ui-theme", ${jsonEncode(officeStoredUiThemeJson(skin))});
+      storage.setItem(
+        "content-theme",
+        ${jsonEncode(skin.isDark ? 'dark' : 'light')}
+      );
+    } catch (_) {}
   }
 })();
 ''';
@@ -766,6 +771,7 @@ String buildOfficeEditorHtml({
         'forcesave': true,
         'compactHeader': true,
         'hideRightMenu': true,
+        ...officeChromeCustomization,
         'uiTheme': officeUiTheme(isDark),
       },
     },
@@ -799,7 +805,7 @@ String _buildOfficeEditorPage({
   required Map<String, dynamic> editorConfig,
   required Color background,
 }) {
-  final css = '#${background.toHexString().substring(4)}';
+  final css = officeCssColor(background);
   return '''
 <!DOCTYPE html>
 <html>
@@ -816,6 +822,9 @@ String _buildOfficeEditorPage({
   <body>
     <div id="appflowy-office"></div>
     <div id="appflowy-office-error">The document server did not answer.</div>
+    <script type="text/javascript">
+${buildOfficeScrollRelayScript(serverOrigin)}
+    </script>
     <script type="text/javascript">
       (function () {
         if (typeof DocsAPI === 'undefined') {

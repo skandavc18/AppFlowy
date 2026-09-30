@@ -4,9 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_inappwebview_windows/flutter_inappwebview_windows.dart';
 
 import '../scrolling/premium_scroll_behavior.dart';
 import 'standalone_file_page.dart';
@@ -27,37 +25,6 @@ class NativeFileWebViewEnvironment extends InheritedWidget {
   @override
   bool updateShouldNotify(NativeFileWebViewEnvironment oldWidget) =>
       environment != oldWidget.environment || onCreated != oldWidget.onCreated;
-}
-
-/// Opaque Office editors cannot acknowledge body travel. Only retire the
-/// header on DOWNWARD wheel input, passing the exact unused wheel delta once
-/// through the native wheel hook. Reverse/pan/pinch/editing stay native.
-/// This intentionally makes NO claim of reverse full-page Office handoff.
-class NativeFilePageHeaderWheel extends StatelessWidget {
-  const NativeFilePageHeaderWheel({super.key, required this.child});
-  final Widget child;
-  @override
-  Widget build(BuildContext context) {
-    final page = StandaloneFilePageScroll.maybeOf(context);
-    return WindowsWebViewWheelScope(
-      transform: (event) {
-        final keys = HardwareKeyboard.instance;
-        final delta = event.scrollDelta;
-        if (!context.mounted ||
-            page == null ||
-            keys.isControlPressed ||
-            keys.isMetaPressed ||
-            keys.isShiftPressed ||
-            delta.dy <= 0 ||
-            delta.dy <= delta.dx.abs()) {
-          return delta;
-        }
-        final used = StandaloneFilePageScroll.move(page.outer, delta.dy);
-        return Offset(delta.dx, delta.dy - used);
-      },
-      child: child,
-    );
-  }
 }
 
 /// Measured body travel and a separately verified upper boundary. Rounded
