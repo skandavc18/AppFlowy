@@ -169,6 +169,7 @@ dependencies:
   media_kit_video: 2.0.1
   media_kit_libs_video: 1.0.7
   pdfrx: ^1.0.103
+  pdf: ^3.11.3
   printing: ^5.14.2
   flutter_inappwebview: ^6.1.5
   file_picker: 8.1.4

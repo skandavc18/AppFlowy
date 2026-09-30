@@ -24,6 +24,7 @@ import 'package:appflowy/workspace/application/table_views/form_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
 import 'package:appflowy/workspace/application/table_views/table_row_source.dart';
 import 'package:appflowy/workspace/presentation/encryption/encryption_dialogs.dart';
+import 'package:appflowy/workspace/presentation/widgets/date_picker/date_picker_popup.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
@@ -1227,24 +1228,23 @@ class FormStageState extends State<FormStage> with WidgetsBindingObserver {
           ),
         ),
         const SizedBox(width: TableViewMetrics.space2),
-        TableViewAction(
-          palette: palette,
-          label: chosen == null ? 'Pick' : 'Change',
-          icon: Icons.event_rounded,
-          primary: false,
-          onTap: () => unawaited(_pickDate(field)),
+        Builder(
+          builder: (anchor) => TableViewAction(
+            palette: palette,
+            label: chosen == null ? 'Pick' : 'Change',
+            icon: Icons.event_rounded,
+            primary: false,
+            onTap: () => unawaited(_pickDate(field, anchor)),
+          ),
         ),
       ],
     );
   }
 
-  Future<void> _pickDate(FieldPB field) async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: parseTableDate(_answers[field.id] ?? '') ?? now,
-      firstDate: DateTime(now.year - 10),
-      lastDate: DateTime(now.year + 10),
+  Future<void> _pickDate(FieldPB field, BuildContext anchor) async {
+    final picked = await showDatePickerPopup(
+      context: anchor,
+      initialDate: parseTableDate(_answers[field.id] ?? ''),
     );
     if (picked == null || !mounted) {
       return;

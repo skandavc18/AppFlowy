@@ -1,12 +1,10 @@
-import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/database/grid/presentation/widgets/common/type_option_separator.dart';
 import 'package:appflowy/plugins/database/widgets/field/type_option_editor/date/date_time_format.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 
 import 'appflowy_date_picker_base.dart';
-import 'widgets/date_picker.dart';
+import 'widgets/date_picker_calendar.dart';
 import 'widgets/date_time_text_field.dart';
 import 'widgets/end_time_button.dart';
 import 'widgets/reminder_selector.dart';
@@ -99,12 +97,10 @@ class DesktopAppFlowyDatePickerState
               ),
             ],
             const VSpace(14),
-            Focus(
-              descendantsAreTraversable: false,
-              child: _buildDatePickerHeader(),
-            ),
-            const VSpace(14),
-            DatePicker(
+            DatePickerCalendar(
+              key: const ValueKey('date_picker_calendar'),
+              // Tab stays with the date and time fields above.
+              traversable: false,
               isRange: isRange,
               onDaySelected: (selectedDay, focusedDay) {
                 onDateSelectedFromDatePicker(selectedDay, null);
@@ -116,17 +112,8 @@ class DesktopAppFlowyDatePickerState
               startDay: isRange ? startDateTime : null,
               endDay: isRange ? endDateTime : null,
               focusedDay: focusedDateTime,
-              onCalendarCreated: (controller) {
-                pageController = controller;
-              },
-              onPageChanged: (focusedDay) {
-                setState(
-                  () => focusedDateTime = DateTime(
-                    focusedDay.year,
-                    focusedDay.month,
-                    focusedDay.day,
-                  ),
-                );
+              onFocusedDayChanged: (focusedDay) {
+                setState(() => focusedDateTime = focusedDay);
               },
             ),
             if (widget.onIsRangeChanged != null ||
@@ -173,48 +160,6 @@ class DesktopAppFlowyDatePickerState
             ],
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildDatePickerHeader() {
-    return Padding(
-      padding: const EdgeInsetsDirectional.only(start: 22.0, end: 18.0),
-      child: Row(
-        children: [
-          Expanded(
-            child: FlowyText(
-              DateFormat.yMMMM().format(focusedDateTime),
-            ),
-          ),
-          FlowyIconButton(
-            width: 20,
-            icon: FlowySvg(
-              FlowySvgs.arrow_left_s,
-              color: Theme.of(context).iconTheme.color,
-              size: const Size.square(20.0),
-            ),
-            onPressed: () => pageController?.previousPage(
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-            ),
-          ),
-          const HSpace(4.0),
-          FlowyIconButton(
-            width: 20,
-            icon: FlowySvg(
-              FlowySvgs.arrow_right_s,
-              color: Theme.of(context).iconTheme.color,
-              size: const Size.square(20.0),
-            ),
-            onPressed: () {
-              pageController?.nextPage(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOut,
-              );
-            },
-          ),
-        ],
       ),
     );
   }

@@ -11,6 +11,7 @@ import 'package:appflowy/extensions/dart/built_in/astrology/shadbala.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/vedic_chart_view.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/vimshottari.dart';
 import 'package:appflowy/shared/paper_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:flowy_infra/theme.dart';
@@ -466,7 +467,7 @@ void main() {
     }
 
     testWidgets(
-      'Back and each breadcrumb restore exactly the selected parent list',
+      'Back and each opened ancestor restore exactly the selected parent list',
       (tester) async {
         final semantics = tester.ensureSemantics();
         try {
@@ -479,20 +480,19 @@ void main() {
             _dashaApp(AstrologyDashaTable(chart: chart, at: chart.utc)),
           );
           await _openDashaPath(tester, trail);
-          for (var index = 0; index < 4; index++) {
+          for (var index = 0; index < 3; index++) {
             final crumb = _key('dasha-breadcrumb-$index');
             await tester.ensureVisible(crumb);
             await tester.pump();
             final label = '${trail[index].lord.label} ${_dashaLevels[index]}';
-            final tooltip = tester.widget<Tooltip>(
-              find.ancestor(of: crumb, matching: find.byType(Tooltip)).first,
-            );
-            expect(tooltip.message, label);
-            expect(
-              tester.getSemantics(crumb).getSemanticsData().label,
-              contains(label),
-            );
+            final data = tester.getSemantics(crumb).getSemanticsData();
+            expect(data.label, startsWith('$label, '));
+            expect(data.hasFlag(ui.SemanticsFlag.isButton), isTrue);
+            expect(data.hasAction(ui.SemanticsAction.tap), isTrue);
+            expect(data.hint, 'Show its ${_dashaLevels[index + 1]}s');
           }
+          // The selected period is the opened overview, not a breadcrumb.
+          expect(_key('dasha-breadcrumb-3'), findsNothing);
           for (var length = 3; length >= 0; length--) {
             await _tap(tester, 'dasha-back');
             _expectDashaPage(tester, chart, trail.take(length).toList());
@@ -501,7 +501,7 @@ void main() {
           for (final index in [2, 1, 0]) {
             await _tap(tester, 'dasha-breadcrumb-$index');
             _expectDashaPage(tester, chart, trail.take(index + 1).toList());
-            expect(_key('dasha-breadcrumb-${index + 1}'), findsNothing);
+            expect(_key('dasha-breadcrumb-$index'), findsNothing);
           }
           await _tap(tester, 'dasha-breadcrumb-root');
           _expectDashaPage(tester, chart, const []);
@@ -542,7 +542,7 @@ void main() {
               expect(data.hasFlag(ui.SemanticsFlag.hasExpandedState), isFalse);
               expect(data.hint, contains(_dashaLevels[level]));
               expect(
-                tester.widget<Icon>(_key('dasha-chevron-$path')).icon,
+                tester.widget<WorkspaceGlyph>(_key('dasha-chevron-$path')).icon,
                 Icons.chevron_right_rounded,
               );
               await _press(tester, key);
@@ -668,7 +668,41 @@ void main() {
     );
 
     testWidgets(
-      'date columns adapt to width while retaining typography at every level',
+      'the default dashboard card shows all nine Mahadashas unscrolled',
+      (tester) async {
+        tester.view
+          ..devicePixelRatio = 1
+          ..physicalSize = const Size(1200, 1300);
+        addTearDown(tester.view.reset);
+        final chart = _chart();
+        // Twenty comfortable rows (20 × 46 + 19 × 14) less the card header
+        // (40) and body padding (2 × 6), on a full-width card of a laptop
+        // window. The test font's square glyphs are far wider than UI text,
+        // so this width is what keeps card dates on one line, as they are on
+        // narrower real cards.
+        await tester.pumpWidget(
+          _dashaApp(
+            AstrologyDashaTable(chart: chart, at: chart.utc),
+            size: const Size(1100, 1134),
+          ),
+        );
+        final viewport = tester.getRect(_key('astrology-dasha-scroll'));
+        final periods = _periods(chart);
+        expect(periods, hasLength(9));
+        for (final period in periods) {
+          final card = tester.getRect(_key('dasha-card-${period.lord.name}'));
+          expect(
+            card.bottom,
+            lessThanOrEqualTo(viewport.bottom),
+            reason: '${period.lord.label} must be visible without scrolling.',
+          );
+        }
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      'rows form one indented column and keep typography at every level',
       (tester) async {
         final chart = _chart();
         final trail = _firstDashaPath(_periods(chart).first);
@@ -685,12 +719,15 @@ void main() {
             ),
           );
           for (var level = 0; level < 4; level++) {
+            final parent = trail.take(level).toList();
             final path = _dashaPath(trail.take(level + 1));
             final start = tester.widget<Text>(_key('dasha-$path-start'));
             final end = tester.widget<Text>(_key('dasha-$path-end'));
-            expect(start.data!.split('\n'), hasLength(3));
-            expect(end.data!.split('\n'), hasLength(3));
-            expect(start.data, endsWith('UTC+05:30'));
+            expect(
+              start.data,
+              _cardStamp(chart.input, trail[level].start, level),
+            );
+            expect(end.data, _cardStamp(chart.input, trail[level].end, level));
             expect(start.style!.fontFamily, 'Fixture face');
             expect(start.style!.fontWeight, FontWeight.w300);
             expect(start.style!.fontVariations, variations);
@@ -700,29 +737,48 @@ void main() {
             );
             expect(_value(tester, 'dasha-$path-start-label'), 'Start');
             expect(_value(tester, 'dasha-$path-end-label'), 'End');
+            // Start and End always sit side by side inside their own card.
             final startBounds = tester.getRect(_key('dasha-$path-start'));
             final endLabel = tester.getRect(_key('dasha-$path-end-label'));
-            if (width == 280) {
-              expect(
-                endLabel.top - startBounds.bottom,
-                greaterThanOrEqualTo(16),
-              );
-            } else {
-              expect(
-                endLabel.left - startBounds.right,
-                greaterThanOrEqualTo(16),
-              );
-              expect(
-                endLabel.top,
-                tester.getTopLeft(_key('dasha-$path-start-label')).dy,
-              );
-            }
+            expect(endLabel.left - startBounds.left, greaterThan(0));
+            expect(
+              endLabel.top,
+              tester.getTopLeft(_key('dasha-$path-start-label')).dy,
+            );
             final card = tester.getRect(_key('dasha-card-$path'));
             expect(startBounds.left, greaterThan(card.left));
-            expect(startBounds.right, lessThan(card.right));
+            expect(
+              tester.getRect(_key('dasha-$path-end')).right,
+              lessThan(card.right),
+            );
+
+            // The nine siblings hang in one column of equal-width rows.
+            final siblings = [
+              for (final period
+                  in level == 0 ? _periods(chart) : parent.last.children)
+                tester.getRect(
+                  _key('dasha-card-${_dashaPath([...parent, period])}'),
+                ),
+            ];
+            expect(siblings, hasLength(9));
+            for (var index = 1; index < 9; index++) {
+              expect(siblings[index].left, closeTo(siblings[0].left, 0.01));
+              expect(siblings[index].width, closeTo(siblings[0].width, 0.01));
+              expect(
+                siblings[index].top,
+                greaterThan(siblings[index - 1].bottom),
+              );
+            }
             await _tap(tester, 'dasha-open-$path');
-            expect(_value(tester, 'dasha-detail-start'), start.data);
-            expect(_value(tester, 'dasha-detail-end'), end.data);
+            // The overview keeps every endpoint's full precision and offset.
+            expect(
+              _value(tester, 'dasha-detail-start'),
+              _dateStamp(chart.input, trail[level].start),
+            );
+            expect(
+              _value(tester, 'dasha-detail-end'),
+              _dateStamp(chart.input, trail[level].end),
+            );
           }
           await _finishDasha(tester);
         }
@@ -772,14 +828,23 @@ void main() {
               final controller = _dashaController(tester);
               for (var level = 0; level < 4; level++) {
                 final path = _dashaPath(trail.take(level + 1));
+                final tone = palette.planetTone(trail[level].lord);
                 final ink = tester.widget<InkWell>(_key('dasha-open-$path'));
-                expect(ink.hoverColor, palette.hover);
-                expect(ink.focusColor, palette.selection);
+                // Hover lifts the card and deepens its tone, not a grey ink.
+                expect(ink.hoverColor, tone.mark.withValues(alpha: 0));
+                expect(ink.focusColor, tone.mark.withValues(alpha: 0.08));
+                expect(ink.highlightColor, tone.mark.withValues(alpha: 0.06));
+                final running = trail[level].contains(chart.utc);
+                final fill = tester
+                    .widget<AnimatedContainer>(_key('dasha-card-fill-$path'))
+                    .decoration! as BoxDecoration;
+                expect(fill.border, isNull);
                 expect(
-                  tester.widget<Material>(_key('dasha-card-$path')).color,
-                  trail[level].contains(chart.utc)
-                      ? palette.selection
-                      : palette.control,
+                  (fill.gradient! as LinearGradient).colors,
+                  [
+                    running ? tone.fillStrong : tone.fill,
+                    running ? tone.fill : tone.wash,
+                  ],
                 );
                 await _tap(tester, 'dasha-open-$path');
                 _expectDashaPage(tester, chart, trail.take(level + 1).toList());
@@ -789,11 +854,11 @@ void main() {
               }
               expect(
                 _value(tester, 'dasha-detail-start'),
-                contains('\nUTC+05:30'),
+                contains(' UTC+05:30'),
               );
               expect(
                 _value(tester, 'dasha-detail-end'),
-                contains('\nUTC+05:30'),
+                contains(' UTC+05:30'),
               );
               controller.jumpTo(controller.position.maxScrollExtent);
               await tester.pumpAndSettle();
@@ -935,17 +1000,21 @@ void main() {
           expect(_value(tester, 'dasha-detail-status'), 'Current');
           expect(_dashaRows(), findsNothing);
           expect(_dashaController(tester).offset, 0);
-          for (var index = 0; index < 4; index++) {
+          for (var index = 0; index < 3; index++) {
             expect(
-              _value(tester, 'dasha-breadcrumb-$index'),
-              active[index].lord.label,
+              _value(tester, 'dasha-breadcrumb-$index-title'),
+              '${active[index].lord.label} ${_dashaLevels[index]}',
             );
           }
+          expect(
+            _value(tester, 'dasha-selected-title'),
+            '${active[3].lord.label} ${_dashaLevels[3]}',
+          );
         }
         await _tap(tester, 'dasha-details');
         expect(
           _value(tester, 'dasha-reading-date'),
-          'Reading date: ${_dateStamp(chart.input, firstPath.last.end).replaceAll('\n', ' ')}',
+          'Reading date: ${_dateStamp(chart.input, firstPath.last.end)}',
         );
         await _tap(tester, 'dasha-back');
         expect(_dashaRows(), findsNWidgets(9));
@@ -1039,20 +1108,20 @@ void main() {
         await _tap(tester, 'dasha-details');
         await _tap(tester, 'dasha-open-venus');
         final antar = _periods(chart).first.children.first;
+        // Each card endpoint is read in its own offset: EST, then EDT.
         expect(
           _value(tester, 'dasha-venus-venus-start'),
-          _dateStamp(chart.input, antar.start),
+          _cardStamp(chart.input, antar.start, 1),
         );
         expect(
           _value(tester, 'dasha-venus-venus-end'),
-          _dateStamp(chart.input, antar.end),
+          _cardStamp(chart.input, antar.end, 1),
         );
-        expect(
-          _value(tester, 'dasha-venus-venus-start'),
-          endsWith('UTC−05:00'),
-        );
-        expect(_value(tester, 'dasha-venus-venus-end'), endsWith('UTC−04:00'));
         await _tap(tester, 'dasha-open-venus-venus');
+        expect(
+          _value(tester, 'dasha-detail-start'),
+          _dateStamp(chart.input, antar.start),
+        );
         expect(_value(tester, 'dasha-detail-start'), endsWith('UTC−05:00'));
         expect(_value(tester, 'dasha-detail-end'), endsWith('UTC−04:00'));
         expect(_value(tester, 'dasha-detail-zone'), 'America/New_York');
@@ -1078,7 +1147,11 @@ void main() {
         await tester.pumpWidget(
           _dashaApp(AstrologyDashaTable(chart: chart, at: chart.utc)),
         );
-        expect(_value(tester, 'dasha-venus-start'), endsWith('UTC+00:09:21'));
+        final venus = _periods(chart).first;
+        expect(
+          _value(tester, 'dasha-venus-start'),
+          _cardStamp(chart.input, venus.start, 0),
+        );
         final trail = _firstDashaPath(_periods(chart).first);
         await _openDashaPath(tester, trail);
         _expectDashaPage(tester, chart, trail);
@@ -1115,20 +1188,26 @@ void main() {
         );
         await _openDashaPath(tester, trail.take(3).toList());
         final path = _dashaPath(trail);
+        // A sub-day card shows the clock and a humane span; the overview
+        // keeps the exact fractional endpoints and duration.
         expect(
           _value(tester, 'dasha-$path-start'),
-          _dateStamp(chart.input, leaf.start),
+          _cardStamp(chart.input, leaf.start, 3),
         );
         expect(
           _value(tester, 'dasha-$path-end'),
-          _dateStamp(chart.input, leaf.end),
+          _cardStamp(chart.input, leaf.end, 3),
+        );
+        expect(
+          _value(tester, 'dasha-$path-span'),
+          'Sookshma dasha · 6 hours 34 minutes',
         );
         await _tap(tester, 'dasha-$path-end');
         _expectDashaPage(tester, chart, trail);
         final start = _value(tester, 'dasha-detail-start');
         final end = _value(tester, 'dasha-detail-end');
-        expect(start, matches(RegExp(r'\d{2}:\d{2}:\d{2}\.\d{6}\nUTC\+05:30')));
-        expect(end, matches(RegExp(r'\d{2}:\d{2}:\d{2}\.\d{6}\nUTC\+05:30')));
+        expect(start, matches(RegExp(r'\d{2}:\d{2}:\d{2}\.\d{6} UTC\+05:30')));
+        expect(end, matches(RegExp(r'\d{2}:\d{2}:\d{2}\.\d{6} UTC\+05:30')));
         expect(start, isNot(end));
         expect(_value(tester, 'dasha-detail-duration'), startsWith('6h 34m '));
         final secondPart = duration.inSeconds % 60;
@@ -1166,9 +1245,17 @@ void main() {
         );
         for (var level = 0; level < 4; level++) {
           final path = _dashaPath(trail.take(level + 1));
-          expect(_value(tester, 'dasha-$path-start'), endsWith('UTC+05:30'));
-          expect(_value(tester, 'dasha-$path-end'), endsWith('UTC+05:30'));
+          expect(
+            _value(tester, 'dasha-$path-start'),
+            _cardStamp(chart.input, trail[level].start, level),
+          );
+          expect(
+            _value(tester, 'dasha-$path-end'),
+            _cardStamp(chart.input, trail[level].end, level),
+          );
           await _tap(tester, 'dasha-open-$path');
+          expect(_value(tester, 'dasha-detail-start'), endsWith('UTC+05:30'));
+          expect(_value(tester, 'dasha-detail-end'), endsWith('UTC+05:30'));
           expect(
             _value(tester, 'dasha-detail-zone'),
             'America/New_York · fixed UTC offset override',
@@ -1224,7 +1311,10 @@ void main() {
           ]) {
             controller.jumpTo(controller.position.maxScrollExtent);
             await tester.pump();
-            tester.widget<TextButton>(_key(id)).onPressed!();
+            final action = tester.widget(_key(id));
+            action is InkWell
+                ? action.onTap!()
+                : (action as TextButton).onPressed!();
             await tester.pumpAndSettle();
             expect(controller.offset, 0);
             expect(outer.offset, outerOffset);
@@ -2575,17 +2665,18 @@ void _expectDashaPage(
     expect(_value(tester, 'dasha-$path-title'), period.lord.label);
     expect(
       _value(tester, 'dasha-$path-start'),
-      _dateStamp(chart.input, period.start),
+      _cardStamp(chart.input, period.start, period.level),
     );
     expect(
       _value(tester, 'dasha-$path-end'),
-      _dateStamp(chart.input, period.end),
+      _cardStamp(chart.input, period.end, period.level),
     );
     expect(_key('dasha-chevron-$path'), findsOneWidget);
   }
   if (trail.isEmpty) {
     expect(_key('dasha-selected-title'), findsNothing);
     expect(_key('dasha-back'), findsNothing);
+    expect(_key('dasha-breadcrumb-0'), findsNothing);
   } else {
     final selected = trail.last;
     expect(
@@ -2601,14 +2692,52 @@ void _expectDashaPage(
       _dateStamp(chart.input, selected.end),
     );
     expect(_key('dasha-back'), findsOneWidget);
+    // Like JHora's listing, every opened ancestor stays visible above the
+    // selected period, each one indented under its own parent.
+    final lefts = <double>[];
+    for (var index = 0; index < trail.length - 1; index++) {
+      expect(
+        _value(tester, 'dasha-breadcrumb-$index-title'),
+        '${trail[index].lord.label} ${_dashaLevels[index]}',
+      );
+      lefts.add(tester.getTopLeft(_key('dasha-path-card-$index')).dx);
+    }
+    expect(_key('dasha-breadcrumb-${trail.length - 1}'), findsNothing);
+    lefts.add(tester.getTopLeft(_key('dasha-overview')).dx);
+    for (var index = 1; index < lefts.length; index++) {
+      expect(lefts[index], greaterThan(lefts[index - 1]));
+    }
+    if (trail.length < 4) {
+      final child = tester.getTopLeft(
+        _key('dasha-card-${_dashaPath([...trail, visible.first])}'),
+      );
+      expect(child.dx, greaterThan(lefts.last));
+      expect(
+        child.dy,
+        greaterThan(tester.getBottomLeft(_key('dasha-overview')).dy),
+      );
+    }
   }
   if (trail.length == 4) {
     expect(_key('dasha-leaf-note'), findsOneWidget);
     expect(_key('dasha-list-heading'), findsNothing);
   } else {
-    expect(_value(tester, 'dasha-list-heading'), _dashaLevels[trail.length]);
+    expect(
+      _value(tester, 'dasha-list-heading'),
+      '${_dashaLevels[trail.length]}s',
+    );
     expect(_dashaRows(), findsNWidgets(9));
     expect(_key('dasha-leaf-note'), findsNothing);
+    // The nine periods hang in one column, in order, on the same indent.
+    final rows = [
+      for (final period in visible)
+        tester.getRect(_key('dasha-card-${_dashaPath([...trail, period])}')),
+    ];
+    for (var index = 1; index < rows.length; index++) {
+      expect(rows[index].left, closeTo(rows.first.left, 0.01));
+      expect(rows[index].width, closeTo(rows.first.width, 0.01));
+      expect(rows[index].top, greaterThan(rows[index - 1].bottom));
+    }
   }
 }
 
@@ -2711,9 +2840,30 @@ String _dateStamp(AstrologyInput input, DateTime utc) {
   final local = AstrologyTime.localTime(input, utc);
   final micros = local.millisecond * 1000 + local.microsecond;
   final fraction = micros == 0 ? '' : '.${micros.toString().padLeft(6, '0')}';
-  return _stamp(input, utc)
-      .replaceFirst(' ', '\n')
-      .replaceFirst(' UTC', '$fraction\nUTC');
+  return _stamp(input, utc).replaceFirst(' UTC', '$fraction UTC');
+}
+
+/// A period card's compact endpoint: its local date, plus the clock for the
+/// short Pratyantar and Sookshma periods. The overview keeps [_dateStamp].
+String _cardStamp(AstrologyInput input, DateTime utc, int level) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final local = AstrologyTime.localTime(input, utc);
+  String two(int value) => value.toString().padLeft(2, '0');
+  final date = '${local.day} ${months[local.month - 1]} ${local.year}';
+  return level >= 2 ? '$date · ${two(local.hour)}:${two(local.minute)}' : date;
 }
 
 int _sum(Iterable<int> values) => values.fold(0, (sum, value) => sum + value);

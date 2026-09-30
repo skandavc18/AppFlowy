@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 
 import 'astrology_engine.dart';
@@ -32,6 +33,8 @@ class AstrologyChartPanel extends StatefulWidget {
     this.onConfigure,
     this.calculator,
     this.locationService,
+    this.dashaAt,
+    this.transit = false,
   });
 
   final AstrologyInput input;
@@ -42,6 +45,12 @@ class AstrologyChartPanel extends StatefulWidget {
   final VoidCallback? onConfigure;
   final AstrologyCalculator? calculator;
   final AstrologyLocationService? locationService;
+
+  /// The dasha reading instant; null samples the current moment.
+  final DateTime? dashaAt;
+
+  /// [input] is a transit moment rather than a birth.
+  final bool transit;
 
   @override
   State<AstrologyChartPanel> createState() => _AstrologyChartPanelState();
@@ -210,7 +219,10 @@ class _AstrologyChartPanelState extends State<AstrologyChartPanel>
     return switch (widget.view) {
       AstrologyView.placements => AstrologyPlacementsTable(chart: chart),
       AstrologyView.panchanga => AstrologyPanchangaView(chart: chart),
-      AstrologyView.dasha => AstrologyDashaTable(chart: chart),
+      AstrologyView.dasha => AstrologyDashaTable(
+          chart: chart,
+          at: widget.dashaAt,
+        ),
       AstrologyView.shadbala => AstrologyShadbalaView(chart: chart),
       AstrologyView.ashtakavarga => AstrologyAshtakavargaView(
           chart: chart,
@@ -229,7 +241,7 @@ class _AstrologyChartPanelState extends State<AstrologyChartPanel>
             ),
             const SizedBox(height: 4),
             Text(
-              '${widget.input.isTransit ? 'Live transit · ' : ''}'
+              '${widget.transit ? widget.input.isTransit ? 'Transit · now · ' : 'Transit · ' : widget.input.isTransit ? 'Now · ' : ''}'
               '${chart.input.ayanamsaLabel} · '
               '${chart.utc.toIso8601String().substring(0, 19).replaceFirst('T', ' ')} UTC',
               maxLines: 2,
@@ -254,10 +266,13 @@ class _AstrologyChartPanelState extends State<AstrologyChartPanel>
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
+              WorkspaceGlyph(
                 error ? Icons.location_off_rounded : Icons.auto_awesome_rounded,
                 color: error ? palette.danger : palette.accent,
-                size: 23,
+                size: 26,
+                role: error
+                    ? WorkspaceGlyphRole.preserveInk
+                    : WorkspaceGlyphRole.standard,
               ),
               const SizedBox(height: 8),
               Text(

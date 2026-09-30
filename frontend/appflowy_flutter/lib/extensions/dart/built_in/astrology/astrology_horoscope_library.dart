@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:appflowy/shared/scrolling/no_scrollbar_behavior.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
@@ -285,7 +286,15 @@ class _AstrologyHoroscopeTableState extends State<AstrologyHoroscopeTable> {
                           disabledForegroundColor: palette.muted,
                           overlayColor: palette.hover,
                         ),
-                        icon: const Icon(Icons.refresh_rounded, size: 16),
+                        icon: WorkspaceGlyph(
+                          Icons.refresh_rounded,
+                          size: 16,
+                          color:
+                              widget.loading ? palette.muted : palette.accent,
+                          role: widget.loading
+                              ? WorkspaceGlyphRole.preserveInk
+                              : WorkspaceGlyphRole.standard,
+                        ),
                         label: Text(
                           widget.loading
                               ? 'Refreshing…'
@@ -477,10 +486,11 @@ class _AstrologyHoroscopeTableState extends State<AstrologyHoroscopeTable> {
                 ),
                 if (openIcon) ...[
                   const SizedBox(width: 8),
-                  Icon(
+                  WorkspaceGlyph(
                     Icons.chevron_right_rounded,
                     size: 16,
                     color: palette.muted,
+                    role: WorkspaceGlyphRole.preserveInk,
                   ),
                 ],
               ],

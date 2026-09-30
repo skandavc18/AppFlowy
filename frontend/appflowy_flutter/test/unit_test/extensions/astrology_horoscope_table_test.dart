@@ -6,6 +6,7 @@ import 'package:appflowy/extensions/dart/built_in/astrology/astrology_model.dart
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/scrolling/no_scrollbar_behavior.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/material.dart';
@@ -527,7 +528,14 @@ void main() {
       isTrue,
     );
     expect(find.byType(TableRowInkWell), findsNothing);
-    expect(find.byIcon(Icons.chevron_right_rounded), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is WorkspaceGlyph &&
+            widget.icon == Icons.chevron_right_rounded,
+      ),
+      findsNothing,
+    );
     for (final field in _fields) {
       await _tap(tester, _field(valid.id, field));
     }

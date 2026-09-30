@@ -17,6 +17,7 @@ import 'package:appflowy/shared/calendar/reminder_composer.dart';
 import 'package:appflowy/shared/calendar/reminder_store.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
+import 'package:appflowy/workspace/presentation/widgets/date_picker/date_picker_popup.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -684,6 +685,7 @@ class _CountdownBody extends StatefulWidget {
 
 class _CountdownBodyState extends State<_CountdownBody> {
   Timer? _tick;
+  final _figure = GlobalKey();
 
   @override
   void initState() {
@@ -737,6 +739,7 @@ class _CountdownBodyState extends State<_CountdownBody> {
                   : null,
               child: Center(
                 child: DashboardFigure(
+                  key: _figure,
                   value: days > 0 ? '$days' : '$hours',
                   suffix: days > 0
                       ? LocaleKeys.dashboard_countdown_days.tr()
@@ -776,17 +779,17 @@ class _CountdownBodyState extends State<_CountdownBody> {
   }
 
   Future<void> _pickDate(DateTime? current) async {
-    final now = DateTime.now();
-    final chosen = await showDatePicker(
-      context: context,
-      initialDate: current ?? now.add(const Duration(days: 7)),
-      firstDate: DateTime(now.year - 5),
-      lastDate: DateTime(now.year + 20),
+    final chosen = await showDatePickerPopup(
+      context: _figure.currentContext ?? context,
+      initialDate: current,
     );
-    if (chosen == null) {
+    if (chosen == null || !mounted) {
       return;
     }
-    widget.context.setSettings({_keyTarget: chosen.toIso8601String()});
+    widget.context.setSettings({
+      _keyTarget:
+          DateTime(chosen.year, chosen.month, chosen.day).toIso8601String(),
+    });
   }
 }
 

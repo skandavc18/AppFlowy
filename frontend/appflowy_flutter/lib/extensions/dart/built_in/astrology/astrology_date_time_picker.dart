@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
-import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/workspace/presentation/widgets/date_picker/widgets/date_picker_calendar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,6 +22,7 @@ class AstrologyDateTimeSelection {
 /// [localNow] must already contain the birthplace's wall-clock components.
 /// Opening, browsing, and cancelling never change the caller's draft. Only
 /// Apply returns a selection; the caller decides whether to adopt it.
+/// [subject] names the moment being edited, e.g. "Birth" or "Transit".
 Future<AstrologyDateTimeSelection?> showAstrologyDateTimePicker({
   required BuildContext context,
   required String date,
@@ -29,6 +30,7 @@ Future<AstrologyDateTimeSelection?> showAstrologyDateTimePicker({
   required DateTime localNow,
   required String timeZoneLabel,
   bool focusTime = false,
+  String subject = 'Birth',
 }) {
   if (!context.mounted) return Future.value();
   final box = context.findRenderObject();
@@ -54,6 +56,7 @@ Future<AstrologyDateTimeSelection?> showAstrologyDateTimePicker({
       localNow: localNow,
       timeZoneLabel: timeZoneLabel,
       focusTime: focusTime,
+      subject: subject,
       themes: InheritedTheme.capture(from: context, to: navigator.context),
       mediaQuery: MediaQuery.of(context),
       textDirection: Directionality.of(context),
@@ -70,6 +73,7 @@ class _AstrologyDateTimeRoute extends PopupRoute<AstrologyDateTimeSelection> {
     required this.localNow,
     required this.timeZoneLabel,
     required this.focusTime,
+    required this.subject,
     required this.themes,
     required this.mediaQuery,
     required this.textDirection,
@@ -82,6 +86,7 @@ class _AstrologyDateTimeRoute extends PopupRoute<AstrologyDateTimeSelection> {
   final DateTime localNow;
   final String timeZoneLabel;
   final bool focusTime;
+  final String subject;
   final CapturedThemes themes;
   final MediaQueryData mediaQuery;
   final TextDirection textDirection;
@@ -127,7 +132,7 @@ class _AstrologyDateTimeRoute extends PopupRoute<AstrologyDateTimeSelection> {
               anchor: anchor,
               insets: insets,
               width:
-                  360 * (mediaQuery.textScaler.scale(14) / 14).clamp(1.0, 1.25),
+                  300 * (mediaQuery.textScaler.scale(14) / 14).clamp(1.0, 1.25),
             ),
             child: FadeTransition(
               opacity: animation,
@@ -137,6 +142,7 @@ class _AstrologyDateTimeRoute extends PopupRoute<AstrologyDateTimeSelection> {
                 localNow: localNow,
                 timeZoneLabel: timeZoneLabel,
                 focusTime: focusTime,
+                subject: subject,
                 onFinished: (selection) {
                   if (isCurrent) navigator?.pop(selection);
                 },
@@ -212,6 +218,7 @@ class _AstrologyDateTimePicker extends StatefulWidget {
     required this.localNow,
     required this.timeZoneLabel,
     required this.focusTime,
+    required this.subject,
     required this.onFinished,
   });
 
@@ -220,6 +227,7 @@ class _AstrologyDateTimePicker extends StatefulWidget {
   final DateTime localNow;
   final String timeZoneLabel;
   final bool focusTime;
+  final String subject;
   final ValueChanged<AstrologyDateTimeSelection?> onFinished;
 
   @override
@@ -234,9 +242,15 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
   final _timeFocus = FocusNode(debugLabel: 'Astrology picker time');
   final _scroll = ScrollController();
   DateTime? _calendarDate;
-  int _calendarGeneration = 0;
+
+  /// The month the calendar shows.
+  late DateTime _displayedMonth;
   String? _error;
   bool _closing = false;
+
+  static const _radius = 10.0;
+  static final _firstDay = DateTime.utc(1800);
+  static final _lastDay = DateTime.utc(2399, 12, 31);
 
   @override
   void initState() {
@@ -244,6 +258,7 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
     _date = TextEditingController(text: widget.date);
     _time = TextEditingController(text: widget.time);
     _calendarDate = _readDate(widget.date);
+    _displayedMonth = _monthOf(_calendarDate ?? _fallbackDay);
   }
 
   @override
@@ -259,6 +274,16 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
   }
 
   static String _two(int value) => value.toString().padLeft(2, '0');
+
+  static DateTime _monthOf(DateTime day) => DateTime(day.year, day.month);
+
+  /// The day the calendar shows while the date field is blank or invalid.
+  DateTime get _fallbackDay {
+    final now = widget.localNow;
+    if (now.year < 1800) return DateTime(1800);
+    if (now.year > 2399) return DateTime(2399, 12, 31);
+    return DateTime(now.year, now.month, now.day);
+  }
 
   DateTime? _readDate(String value) {
     if (value.trim().isEmpty) return null;
@@ -291,13 +316,13 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
     setState(() {
       if (!DateUtils.isSameDay(day, _calendarDate)) {
         _calendarDate = day;
-        _calendarGeneration++;
+        _displayedMonth = _monthOf(day ?? _fallbackDay);
       }
       _error = null;
     });
   }
 
-  void _chooseDay(DateTime day, {bool resetCalendar = false}) {
+  void _chooseDay(DateTime day) {
     if (_closing) return;
     setState(() {
       final text = '${day.year.toString().padLeft(4, '0')}-'
@@ -307,34 +332,9 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
         selection: TextSelection.collapsed(offset: text.length),
       );
       _calendarDate = _readDate(text);
-      if (resetCalendar) _calendarGeneration++;
+      _displayedMonth = _monthOf(_calendarDate ?? _fallbackDay);
       _error = null;
     });
-  }
-
-  void _chooseClock(int part, int value) {
-    if (_closing) return;
-    try {
-      final clock = AstrologyTime.parseWallTime(
-        date: '2000-01-01',
-        time: _time.text,
-        now: widget.localNow,
-      );
-      final parts = [clock.hour, clock.minute, clock.second];
-      if (_time.text.trim().isNotEmpty && parts[part] == value) return;
-      parts[part] = value;
-      final text = parts.map(_two).join(':');
-      setState(() {
-        _time.value = TextEditingValue(
-          text: text,
-          selection: TextSelection.collapsed(offset: text.length),
-        );
-        _error = null;
-      });
-    } on FormatException catch (error) {
-      // A dropdown must not silently replace an invalid manual clock with Now.
-      _showError(error.message);
-    }
   }
 
   String _retainOriginal(
@@ -392,33 +392,46 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
       scopesRoute: true,
       namesRoute: true,
       explicitChildNodes: true,
-      label: 'Birth date and time',
+      label: '${widget.subject} date and time',
       child: Listener(
         behavior: HitTestBehavior.opaque,
-        child: Material(
-          key: const ValueKey('astrology-date-time-picker'),
-          color: palette.raised,
-          surfaceTintColor: Colors.transparent,
-          shadowColor: palette.ink.withValues(alpha: 0.14),
-          elevation: 4,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(PremiumTheme.surfaceRadius),
-            side: BorderSide(color: palette.line, width: 0.5),
+        child: DecoratedBox(
+          decoration: ShapeDecoration(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(_radius),
+            ),
+            shadows: [
+              BoxShadow(
+                color: palette.shadow,
+                blurRadius: 24,
+                spreadRadius: -4,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          clipBehavior: Clip.antiAlias,
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth < 80 || constraints.maxHeight <= 0) {
-                return const SizedBox.shrink();
-              }
-              return SingleChildScrollView(
-                controller: _scroll,
-                primary: false,
-                physics: const ClampingScrollPhysics(),
-                padding: const EdgeInsets.all(12),
-                child: _contents(context, palette, constraints.maxWidth - 24),
-              );
-            },
+          child: Material(
+            key: const ValueKey('astrology-date-time-picker'),
+            color: palette.raised,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(_radius),
+              side: BorderSide(color: palette.line, width: 0.5),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 80 || constraints.maxHeight <= 0) {
+                  return const SizedBox.shrink();
+                }
+                return SingleChildScrollView(
+                  controller: _scroll,
+                  primary: false,
+                  physics: const ClampingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+                  child: _contents(context, palette, constraints.maxWidth - 28),
+                );
+              },
+            ),
           ),
         ),
       ),
@@ -427,13 +440,15 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
       data: theme.copyWith(
         colorScheme: theme.colorScheme.copyWith(
           primary: palette.accent,
-          onPrimary: palette.ink,
+          onPrimary: palette.onAccent,
           surface: palette.raised,
           onSurface: palette.ink,
           onSurfaceVariant: palette.muted,
           outline: palette.line,
           error: palette.danger,
         ),
+        // Unselected day cells are drawn in the card colour.
+        cardColor: palette.raised,
         canvasColor: palette.raised,
         hoverColor: palette.hover,
         focusColor: palette.selection,
@@ -451,8 +466,7 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
           selectionHandleColor: palette.accent,
         ),
       ),
-      // DropdownButton adds its own always-visible Scrollbar. Its captured
-      // theme must suppress that rail as well as automatic desktop scrollbars.
+      // A compact popup: no scroll rails, including the year list's.
       child: ScrollbarTheme(
         data: const ScrollbarThemeData(
           thickness: WidgetStatePropertyAll(0),
@@ -495,39 +509,19 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
     AstrologyPalette palette,
     double width,
   ) {
-    final scaler = MediaQuery.textScalerOf(context);
-    final fieldWidth = width >= scaler.scale(300) ? (width - 8) / 2 : width;
-    final clock = _readClock(_time.text);
-    final columns = (width / (math.max(80, scaler.scale(13) * 2 + 40) + 8))
-        .floor()
-        .clamp(1, 3);
-    final clockWidth = (width - (columns - 1) * 8) / columns;
-    final parts = [
-      (id: 'hour', label: 'Hour', count: 24, value: clock?.hour),
-      (id: 'minute', label: 'Minute', count: 60, value: clock?.minute),
-      (id: 'second', label: 'Second', count: 60, value: clock?.second),
-    ];
-    // The calendar can browse a boundary even if a synthetic/current date is
-    // outside the ephemeris range. This display seed never fills either field.
-    final initialDay = _calendarDate ??
-        (widget.localNow.year < 1800
-            ? DateTime.utc(1800)
-            : widget.localNow.year > 2399
-                ? DateTime.utc(2399, 12, 31)
-                : null);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Birth date and time',
+          '${widget.subject} date and time',
           style: TextStyle(
             color: palette.ink,
-            fontSize: 14,
+            fontSize: 13.5,
             fontWeight: FontWeight.w600,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(
           widget.timeZoneLabel.isEmpty
               ? 'Birthplace wall time'
@@ -535,21 +529,8 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
           style: TextStyle(color: palette.muted, fontSize: 11.5),
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            SizedBox(
-              width: fieldWidth,
-              child: _field(palette, date: true),
-            ),
-            SizedBox(
-              width: fieldWidth,
-              child: _field(palette, date: false),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
+        _entry(context, palette, width),
+        const SizedBox(height: 14),
         // Preserve legible day cells on exceptionally narrow windows without
         // overflowing the route or shrinking the caller's accessibility scale.
         SingleChildScrollView(
@@ -558,104 +539,21 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
           physics: const ClampingScrollPhysics(),
           child: SizedBox(
             width: math.max(240, width),
-            child: DatePickerTheme(
-              data: _calendarTheme(palette),
-              child: IconButtonTheme(
-                data: IconButtonThemeData(
-                  style: ButtonStyle(
-                    backgroundColor: WidgetStateProperty.resolveWith((states) {
-                      if (states.contains(WidgetState.focused)) {
-                        return palette.selection;
-                      }
-                      return states.contains(WidgetState.hovered)
-                          ? palette.hover
-                          : Colors.transparent;
-                    }),
-                    overlayColor: WidgetStatePropertyAll(palette.selection),
-                    shape: WidgetStatePropertyAll(
-                      RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.circular(PremiumTheme.controlRadius),
-                      ),
-                    ),
-                  ),
-                ),
-                child: KeyedSubtree(
-                  key: ValueKey(_calendarGeneration),
-                  child: CalendarDatePicker(
-                    key: const ValueKey('astrology-picker-calendar'),
-                    initialDate: initialDay,
-                    firstDate: DateTime.utc(1800),
-                    lastDate: DateTime.utc(2399, 12, 31),
-                    currentDate: widget.localNow,
-                    onDateChanged: _chooseDay,
-                  ),
-                ),
-              ),
+            // The month and the year in its header open lists to jump to.
+            // Browsing never chooses a day; only a day click does.
+            child: DatePickerCalendar(
+              key: const ValueKey('astrology-picker-calendar'),
+              focusedDay: _displayedMonth,
+              selectedDay: _calendarDate,
+              firstDay: _firstDay,
+              lastDay: _lastDay,
+              currentDay: widget.localNow,
+              horizontalPadding: 0,
+              onDaySelected: (day, _) => _chooseDay(day),
+              onFocusedDayChanged: (day) =>
+                  setState(() => _displayedMonth = _monthOf(day)),
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final (index, part) in parts.indexed)
-              SizedBox(
-                width: clockWidth,
-                child: _labeled(
-                  palette,
-                  part.label,
-                  Semantics(
-                    label: 'Birth time ${part.id}',
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: palette.control,
-                        borderRadius:
-                            BorderRadius.circular(PremiumTheme.controlRadius),
-                        border: Border.all(color: palette.line, width: 0.5),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<int>(
-                          key: ValueKey('astrology-picker-${part.id}'),
-                          value: part.value,
-                          isExpanded: true,
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          iconSize: 20,
-                          iconEnabledColor: palette.muted,
-                          focusColor: palette.selection,
-                          dropdownColor: palette.raised,
-                          elevation: 0,
-                          borderRadius:
-                              BorderRadius.circular(PremiumTheme.controlRadius),
-                          itemHeight: math.max(48, scaler.scale(13) * 1.5 + 16),
-                          menuMaxHeight: 240,
-                          style: TextStyle(color: palette.ink, fontSize: 13),
-                          hint: const Text('—'),
-                          items: [
-                            for (var value = 0; value < part.count; value++)
-                              DropdownMenuItem(
-                                value: value,
-                                child: Text(
-                                  _two(value),
-                                  // A dropdown is another route, which captures
-                                  // themes but not a card's local MediaQuery.
-                                  textScaler: scaler,
-                                  semanticsLabel:
-                                      '${part.label} ${_two(value)}',
-                                ),
-                              ),
-                          ],
-                          onChanged: (value) {
-                            if (value != null) _chooseClock(index, value);
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
         ),
         const SizedBox(height: 10),
         Text(
@@ -679,156 +577,143 @@ class _AstrologyDateTimePickerState extends State<_AstrologyDateTimePicker> {
           spacing: 8,
           runSpacing: 8,
           alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             _button(
               palette,
               'today',
               'Today',
-              () => _chooseDay(widget.localNow, resetCalendar: true),
+              () => _chooseDay(widget.localNow),
             ),
-            _button(palette, 'cancel', 'Cancel', () => _finish(null)),
-            _button(palette, 'apply', 'Apply', _apply),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _button(palette, 'cancel', 'Cancel', () => _finish(null)),
+                _button(palette, 'apply', 'Apply', _apply),
+              ],
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _field(AstrologyPalette palette, {required bool date}) {
-    final border = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(PremiumTheme.controlRadius),
-      borderSide: BorderSide(color: palette.line, width: 0.5),
-    );
-    final label = date ? 'Birth date' : 'Birth time · 24-hour';
-    return _labeled(
-      palette,
-      label,
-      Semantics(
-        label: label,
-        child: TextEntryShortcuts(
-          child: TextField(
-            key: ValueKey(
-              date ? 'astrology-picker-date' : 'astrology-picker-time',
+  /// One outlined box holding the date and the time, like a date cell's.
+  Widget _entry(BuildContext context, AstrologyPalette palette, double width) {
+    final stacked = width < MediaQuery.textScalerOf(context).scale(200);
+    return ListenableBuilder(
+      listenable: Listenable.merge([_dateFocus, _timeFocus]),
+      builder: (context, _) {
+        final focused = _dateFocus.hasFocus || _timeFocus.hasFocus;
+        final date = _field(palette, date: true);
+        final time = _field(palette, date: false);
+        return AnimatedContainer(
+          key: const ValueKey('astrology-picker-entry'),
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 140),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: focused ? palette.accent : palette.line,
             ),
-            controller: date ? _date : _time,
-            focusNode: date ? _dateFocus : _timeFocus,
-            autofocus: date ? !widget.focusTime : widget.focusTime,
-            autocorrect: false,
-            enableSuggestions: false,
-            keyboardType: TextInputType.datetime,
-            textInputAction: date ? TextInputAction.next : TextInputAction.done,
-            scrollPadding: EdgeInsets.zero,
-            style: TextStyle(color: palette.ink, fontSize: 13),
-            cursorColor: palette.accent,
-            decoration: InputDecoration(
-              isDense: true,
-              filled: true,
-              fillColor: palette.control,
-              hoverColor: palette.hover,
-              hintText: date ? 'YYYY-MM-DD' : 'HH:mm:ss',
-              hintStyle: TextStyle(color: palette.muted, fontSize: 13),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
-              border: border,
-              enabledBorder: border,
-              focusedBorder: border.copyWith(
-                borderSide: BorderSide(color: palette.accent),
-              ),
-            ),
-            onChanged: date ? _editDate : (_) => setState(() => _error = null),
-            onSubmitted: (_) => date ? _timeFocus.requestFocus() : _apply(),
           ),
+          child: stacked
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    date,
+                    Divider(height: 1, thickness: 1, color: palette.line),
+                    time,
+                  ],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: date),
+                    Container(width: 1, height: 18, color: palette.line),
+                    Expanded(child: time),
+                  ],
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _field(AstrologyPalette palette, {required bool date}) {
+    final label =
+        date ? '${widget.subject} date' : '${widget.subject} time · 24-hour';
+    return Semantics(
+      label: label,
+      child: TextEntryShortcuts(
+        child: TextField(
+          key: ValueKey(
+            date ? 'astrology-picker-date' : 'astrology-picker-time',
+          ),
+          controller: date ? _date : _time,
+          focusNode: date ? _dateFocus : _timeFocus,
+          autofocus: date ? !widget.focusTime : widget.focusTime,
+          autocorrect: false,
+          enableSuggestions: false,
+          keyboardType: TextInputType.datetime,
+          textInputAction: date ? TextInputAction.next : TextInputAction.done,
+          scrollPadding: EdgeInsets.zero,
+          style: TextStyle(color: palette.ink, fontSize: 13),
+          cursorColor: palette.accent,
+          // The surrounding box draws the outline; themed borders and fills
+          // must not add a second one inside it.
+          decoration: InputDecoration(
+            isCollapsed: true,
+            filled: false,
+            border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            hintText: date ? 'YYYY-MM-DD' : 'HH:mm:ss',
+            hintStyle: TextStyle(color: palette.muted, fontSize: 13),
+            contentPadding: EdgeInsetsDirectional.fromSTEB(
+              date ? 12 : 10,
+              9,
+              date ? 8 : 12,
+              9,
+            ),
+          ),
+          onChanged: date ? _editDate : (_) => setState(() => _error = null),
+          onSubmitted: (_) => date ? _timeFocus.requestFocus() : _apply(),
         ),
       ),
     );
   }
-
-  Widget _labeled(AstrologyPalette palette, String label, Widget child) =>
-      Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          ExcludeSemantics(
-            child: Text(
-              label,
-              style: TextStyle(color: palette.muted, fontSize: 11.5),
-            ),
-          ),
-          const SizedBox(height: 5),
-          child,
-        ],
-      );
 
   Widget _button(
     AstrologyPalette palette,
     String id,
     String label,
     VoidCallback onPressed,
-  ) =>
-      TextButton(
-        key: ValueKey('astrology-picker-$id'),
-        onPressed: onPressed,
-        style: TextButton.styleFrom(
-          foregroundColor: id == 'apply' ? palette.accent : palette.ink,
-          backgroundColor: id == 'apply'
-              ? palette.accent.withValues(alpha: 0.10)
-              : palette.control,
-          overlayColor: palette.hover,
-          minimumSize: const Size(0, 36),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-          textStyle: const TextStyle(fontSize: 12.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(PremiumTheme.controlRadius),
-          ),
+  ) {
+    final primary = id == 'apply';
+    return TextButton(
+      key: ValueKey('astrology-picker-$id'),
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        foregroundColor: primary
+            ? palette.onAccent
+            : id == 'today'
+                ? palette.accent
+                : palette.ink,
+        backgroundColor: primary ? palette.accent : Colors.transparent,
+        overlayColor: primary ? palette.onAccent : palette.ink,
+        minimumSize: const Size(0, 32),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        // A button's own text style replaces the theme's, font included.
+        textStyle: (Theme.of(context).textTheme.labelLarge ?? const TextStyle())
+            .copyWith(
+          fontSize: 12.5,
+          fontWeight: primary ? FontWeight.w600 : FontWeight.w500,
         ),
-        child: Text(label),
-      );
-
-  DatePickerThemeData _calendarTheme(AstrologyPalette palette) {
-    final foreground = WidgetStateProperty.resolveWith<Color>((states) {
-      if (states.contains(WidgetState.disabled)) return palette.muted;
-      return states.contains(WidgetState.selected)
-          ? palette.accent
-          : palette.ink;
-    });
-    final background = WidgetStateProperty.resolveWith<Color>(
-      (states) => states.contains(WidgetState.selected)
-          ? palette.selection
-          : palette.raised,
-    );
-    final overlay = WidgetStateProperty.resolveWith<Color>((states) {
-      if (states.contains(WidgetState.disabled)) return Colors.transparent;
-      if (states.contains(WidgetState.pressed) ||
-          states.contains(WidgetState.focused)) {
-        return palette.selection;
-      }
-      return states.contains(WidgetState.hovered)
-          ? palette.hover
-          : Colors.transparent;
-    });
-    return DatePickerThemeData(
-      backgroundColor: palette.raised,
-      surfaceTintColor: Colors.transparent,
-      headerBackgroundColor: palette.raised,
-      headerForegroundColor: palette.ink,
-      weekdayStyle: TextStyle(color: palette.muted, fontSize: 12),
-      dayStyle: const TextStyle(fontSize: 12),
-      dayForegroundColor: foreground,
-      dayBackgroundColor: background,
-      dayOverlayColor: overlay,
-      dayShape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(PremiumTheme.controlRadius),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
-      todayForegroundColor: WidgetStatePropertyAll(palette.accent),
-      todayBackgroundColor: background,
-      todayBorder: BorderSide(color: palette.accent),
-      yearStyle: const TextStyle(fontSize: 13),
-      yearForegroundColor: foreground,
-      yearBackgroundColor: background,
-      yearOverlayColor: overlay,
-      dividerColor: palette.line,
+      child: Text(label),
     );
   }
 }

@@ -19,7 +19,7 @@ import 'package:collection/collection.dart';
 /// reads current metadata; childViews lists direct, non-trashed children.
 /// updateView need not return children (the service explicitly re-reads).
 /// deleteView moves a view to Trash, never permanently deletes it.
-/// buildEvents is for a NEW Grid only and must build AND verify its six fields,
+/// buildEvents is for a NEW Grid only and must build AND verify all its fields,
 /// primary field and planet choices before completing successfully.
 abstract interface class AstrologyDashboardRepository {
   Future<ViewPB> createView({
@@ -126,7 +126,7 @@ class BackendAstrologyDashboardRepository
     if (fields.length != columns.length ||
         fields.any((field) => field.id.isEmpty) ||
         fields.map((field) => field.id).toSet().length != fields.length) {
-      throw StateError('The life-events table does not have all six fields.');
+      throw StateError('The life-events table does not have all its fields.');
     }
     for (final column in columns) {
       final matches =

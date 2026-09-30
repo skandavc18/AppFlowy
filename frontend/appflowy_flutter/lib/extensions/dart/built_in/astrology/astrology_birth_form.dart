@@ -4,6 +4,7 @@ import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:timezone/timezone.dart' as tz;
@@ -18,7 +19,7 @@ import 'astrology_time.dart';
 ///
 /// Give the form a bounded width. A bounded height scrolls independently; an
 /// unbounded height lets it size to its contents. Only the explicit buttons
-/// invoke callbacks. Saving freezes live time without changing the live draft.
+/// invoke callbacks. Blank date/time fields fix the moment of the click.
 class AstrologyBirthForm extends StatefulWidget {
   const AstrologyBirthForm({
     super.key,
@@ -28,6 +29,7 @@ class AstrologyBirthForm extends StatefulWidget {
     this.saveLabel = 'Save horoscope',
     this.enabled = true,
     this.autoLocate = true,
+    this.showTitle = true,
     this.locationService,
   });
 
@@ -37,6 +39,9 @@ class AstrologyBirthForm extends StatefulWidget {
   final String saveLabel;
   final bool enabled;
   final bool autoLocate;
+
+  /// False where a surrounding tab already says "Birth details".
+  final bool showTitle;
   final AstrologyLocationService? locationService;
 
   @override
@@ -77,7 +82,6 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
   IndianChartStyle _style = IndianChartStyle.north;
   double _yearDays = 365.25636;
   bool _trueNode = false;
-  bool _now = true;
   bool _timeEdited = false;
   bool _advanced = false;
   bool _autoLocateAttempted = false;
@@ -196,7 +200,6 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
     _invalidatePlaceWork();
     _name.text = input.name;
     _sourceUtc = input.utc?.toUtc();
-    _now = input.utc == null;
     _timeEdited = false;
     _ayanamsa = input.ayanamsa;
     _sourceAyanamsaOffset = input.ayanamsaOffsetArcseconds;
@@ -289,10 +292,7 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
 
   void _editClock(String _) {
     if (!_canEdit) return;
-    setState(() {
-      _now = false;
-      _edited(time: true);
-    });
+    setState(() => _edited(time: true));
   }
 
   Future<void> _pickClock(
@@ -346,7 +346,6 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
       setState(() {
         _date.text = selected.date;
         _time.text = selected.time;
-        _now = false;
         _edited(time: true);
       });
     } on Object catch (error) {
@@ -766,7 +765,6 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
       // changing parents nor a delayed response can change this submission.
       final date = _date.text;
       final time = _time.text;
-      final live = _now;
       final sourceUtc = _timeEdited ? null : _sourceUtc;
       final zone = _zone.text.trim();
       final offset = AstrologyTime.parseOffset(_offset.text);
@@ -804,39 +802,30 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
       place.validate();
       _validateZone(place.timeZone, offset);
       final resolved = draft.copyWith(place: place);
-      DateTime? utc;
-      if (live) {
-        utc = save ? clickedUtc : null;
-      } else {
-        final knownInstant = sourceUtc ??
-            (date.trim().isEmpty && time.trim().isEmpty ? clickedUtc : null);
-        final parsed = AstrologyTime.parseBirthTime(
-          date: date,
-          time: time,
-          place: place,
-          offsetMinutes: knownInstant == null
-              ? offset
-              : offset ??
-                  AstrologyTime.offsetAt(resolved, knownInstant).inMinutes,
-          now: clickedUtc,
-        );
-        // An unchanged, already fixed instant is unambiguous, even in a DST
-        // overlap, and may carry subsecond precision the fields do not show.
-        // Two blank fields also mean an actual instant, not an ambiguous wall
-        // clock reading if the current time happens to be in a DST overlap.
-        utc = knownInstant ?? parsed;
-      }
-      final submitted = resolved.copyWith(
-        utc: utc,
-        useCurrentTime: live && !save,
+      final knownInstant = sourceUtc ??
+          (date.trim().isEmpty && time.trim().isEmpty ? clickedUtc : null);
+      final parsed = AstrologyTime.parseBirthTime(
+        date: date,
+        time: time,
+        place: place,
+        offsetMinutes: knownInstant == null
+            ? offset
+            : offset ??
+                AstrologyTime.offsetAt(resolved, knownInstant).inMinutes,
+        now: clickedUtc,
       );
+      // An unchanged, already fixed instant is unambiguous, even in a DST
+      // overlap, and may carry subsecond precision the fields do not show.
+      // Two blank fields also mean an actual instant, not an ambiguous wall
+      // clock reading if the current time happens to be in a DST overlap.
+      final submitted = resolved.copyWith(utc: knownInstant ?? parsed);
       submitted.validate();
       if (!_acceptSubmission(generation)) return;
       if (draft.place == null) {
         final resolvedPlace = place;
         setState(() {
           _writePlace(resolvedPlace);
-          if (sourceUtc != null && !live) {
+          if (sourceUtc != null) {
             _writeWallTime(AstrologyTime.localTime(submitted, sourceUtc));
           }
         });
@@ -933,61 +922,15 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      Text(
-                        'Birth details',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: colors.ink,
-                            ),
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Switch(
-                            key: const ValueKey('astrology-now'),
-                            value: _now,
-                            thumbColor: WidgetStateProperty.resolveWith(
-                              (states) =>
-                                  states.contains(WidgetState.selected) &&
-                                          !states.contains(WidgetState.disabled)
-                                      ? colors.accent
-                                      : colors.muted,
-                            ),
-                            trackColor: WidgetStateProperty.resolveWith(
-                              (states) => states.contains(WidgetState.selected)
-                                  ? colors.accent.withValues(alpha: 0.15)
-                                  : colors.field,
-                            ),
-                            trackOutlineColor: WidgetStatePropertyAll(
-                              colors.accent.withValues(alpha: 0.15),
-                            ),
-                            onChanged: !_canEdit
-                                ? null
-                                : (value) => setState(() {
-                                      _now = value;
-                                      if (value) {
-                                        _date.clear();
-                                        _time.clear();
-                                      }
-                                      _edited(time: true);
-                                    }),
+                  if (widget.showTitle) ...[
+                    Text(
+                      'Birth details',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            color: colors.ink,
                           ),
-                          Flexible(
-                            child: Text(
-                              'Now · live',
-                              style: TextStyle(color: colors.ink, fontSize: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   _fields(width, [
                     _field(
                       colors,
@@ -1003,11 +946,8 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
                   const SizedBox(height: 6),
                   _hint(
                     colors,
-                    _now
-                        ? 'Generate follows Now. Save captures the instant you click. '
-                            'Editing a date or time turns Now off.'
-                        : 'Local time at the birthplace. Blank date/time fields '
-                            'use the current date/time there.',
+                    'Local time at the birthplace. Blank date/time fields use '
+                    'the date/time there when you click Generate or Save.',
                   ),
                   const SizedBox(height: 12),
                   Wrap(
@@ -1281,6 +1221,7 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
                             : 'Generate',
                         icon: Icons.auto_awesome_rounded,
                         busy: _submitting && !_saving,
+                        primary: true,
                         onPressed: _canSubmit
                             ? () => unawaited(_submit(save: false))
                             : null,
@@ -1294,6 +1235,7 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
                               : widget.saveLabel,
                           icon: Icons.bookmark_add_rounded,
                           busy: _submitting && _saving,
+                          primary: true,
                           onPressed: _canSubmit
                               ? () => unawaited(_submit(save: true))
                               : null,
@@ -1427,9 +1369,13 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
                   date ? 'astrology-pick-date' : 'astrology-pick-time',
                 ),
                 tooltip: date ? 'Choose birth date' : 'Choose birth time',
-                icon: Icon(
+                icon: WorkspaceGlyph(
                   date ? Icons.calendar_month_rounded : Icons.schedule_rounded,
                   size: 17,
+                  color: _canEdit ? colors.accent : colors.muted,
+                  role: _canEdit
+                      ? WorkspaceGlyphRole.standard
+                      : WorkspaceGlyphRole.preserveInk,
                 ),
                 color: colors.accent,
                 disabledColor: colors.muted,
@@ -1487,11 +1433,19 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
           onEditingComplete: () {},
           onSubmitted: (_) => _submitPlaceQuery(),
           suffixIcon: _place.text.isEmpty
-              ? Icon(Icons.place_rounded, color: colors.muted, size: 17)
+              ? WorkspaceGlyph(
+                  Icons.place_rounded,
+                  color: colors.muted,
+                  size: 17,
+                )
               : IconButton(
                   key: const ValueKey('astrology-clear-place'),
                   tooltip: 'Clear birthplace',
-                  icon: const Icon(Icons.close_rounded, size: 16),
+                  icon: WorkspaceGlyph(
+                    Icons.close_rounded,
+                    size: 16,
+                    color: colors.muted,
+                  ),
                   color: colors.muted,
                   padding: const EdgeInsets.all(7),
                   constraints:
@@ -1605,17 +1559,26 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
     required IconData icon,
     required VoidCallback? onPressed,
     bool busy = false,
+    bool primary = false,
   }) {
     final generation = _inputGeneration;
+    final enabled = onPressed != null;
+    final ink = !enabled
+        ? colors.muted
+        : primary
+            ? colors.onAccent
+            : colors.ink;
     return TextButton(
       key: ValueKey(id),
       style: TextButton.styleFrom(
-        foregroundColor: colors.accent,
-        backgroundColor: colors.accent.withValues(alpha: 0.10),
+        foregroundColor: primary ? colors.onAccent : colors.ink,
+        backgroundColor: primary ? colors.accent : colors.field,
         disabledForegroundColor: colors.muted,
         disabledBackgroundColor: colors.field,
-        overlayColor: colors.accent.withValues(alpha: 0.10),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        overlayColor:
+            primary ? colors.ink.withValues(alpha: 0.12) : colors.hover,
+        splashFactory: NoSplash.splashFactory,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
         minimumSize: const Size(0, 34),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(PremiumTheme.controlRadius),
@@ -1638,12 +1601,19 @@ class _AstrologyBirthFormState extends State<AstrologyBirthForm> {
               dimension: 15,
               child: CircularProgressIndicator(
                 strokeWidth: 1.7,
-                color: colors.accent,
+                color: ink,
               ),
             )
           else
-            Icon(icon, size: 16),
-          const SizedBox(width: 6),
+            WorkspaceGlyph(
+              icon,
+              size: 16,
+              color: ink,
+              role: primary || !enabled
+                  ? WorkspaceGlyphRole.preserveInk
+                  : WorkspaceGlyphRole.standard,
+            ),
+          const SizedBox(width: 7),
           Flexible(
             child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
           ),
@@ -1674,6 +1644,7 @@ class _BirthFormColors {
     required this.accent,
     required this.hover,
     required this.error,
+    required this.onAccent,
   });
 
   factory _BirthFormColors.of(BuildContext context) {
@@ -1707,6 +1678,9 @@ class _BirthFormColors {
       error: premium == null
           ? theme.colorScheme.error
           : PremiumTheme.semanticColorFor(theme.colorScheme.error, premium),
+      onAccent: paper
+          ? PaperTheme.onAccent
+          : premium?.onAccent ?? theme.colorScheme.onPrimary,
     );
   }
 
@@ -1717,4 +1691,5 @@ class _BirthFormColors {
   final Color accent;
   final Color hover;
   final Color error;
+  final Color onAccent;
 }

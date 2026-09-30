@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/extensions/dart/appflowy_extension.dart';
 import 'package:appflowy/extensions/dart/extension_context.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +8,7 @@ import 'astrology/astrology_block.dart';
 import 'astrology/astrology_chart_panel.dart';
 import 'astrology/astrology_dashboard_widgets.dart';
 import 'astrology/astrology_engine.dart';
+import 'astrology/astrology_events_sync.dart';
 import 'astrology/astrology_model.dart';
 
 class AstrologyExtension extends AppFlowyExtension {
@@ -22,9 +25,12 @@ class AstrologyExtension extends AppFlowyExtension {
   Future<void> activate(ExtensionContext context) async {
     final ctx = context as DartExtensionContext;
     AstrologyRuntime.active.value = true;
+    // Saved people's Life events tables fill their dasha/transit columns.
+    AstrologyEventsSync.instance.start();
     ctx.scope.onDispose(
       () {
         AstrologyRuntime.active.value = false;
+        unawaited(AstrologyEventsSync.instance.stop());
         AstrologyEngine.instance.clearCache();
       },
     );

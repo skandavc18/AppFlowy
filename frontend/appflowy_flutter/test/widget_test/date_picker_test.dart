@@ -1,9 +1,12 @@
+import 'dart:ui' show SemanticsAction, SemanticsFlag;
+
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/plugins/database/widgets/cell/editable_cell_skeleton/date.dart';
 import 'package:appflowy/plugins/database/widgets/field/type_option_editor/date/date_time_format.dart';
 import 'package:appflowy/workspace/presentation/widgets/date_picker/appflowy_date_picker_base.dart';
 import 'package:appflowy/workspace/presentation/widgets/date_picker/desktop_date_picker.dart';
 import 'package:appflowy/workspace/presentation/widgets/date_picker/widgets/date_picker.dart';
+import 'package:appflowy/workspace/presentation/widgets/date_picker/widgets/date_picker_calendar.dart';
 import 'package:appflowy/workspace/presentation/widgets/date_picker/widgets/date_time_text_field.dart';
 import 'package:appflowy/workspace/presentation/widgets/date_picker/widgets/end_time_button.dart';
 import 'package:appflowy/workspace/presentation/widgets/toggle/toggle.dart';
@@ -144,6 +147,23 @@ class _MockDatePickerState extends State<_MockDatePicker> {
   }
 }
 
+void _expectHeader(DateTime month) {
+  expect(
+    find.descendant(
+      of: find.byKey(const ValueKey('date_picker_month_button')),
+      matching: find.text(DateFormat.MMMM().format(month)),
+    ),
+    findsOneWidget,
+  );
+  expect(
+    find.descendant(
+      of: find.byKey(const ValueKey('date_picker_year_button')),
+      matching: find.text(DateFormat.y().format(month)),
+    ),
+    findsOneWidget,
+  );
+}
+
 void main() {
   setUpAll(() async {
     SharedPreferences.setMockInitialValues({});
@@ -178,6 +198,85 @@ void main() {
       );
 
   group('AppFlowy date picker:', () {
+    testWidgets('month and year lists stay within the range, without app theme',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      var focused = DateTime(1801, 2);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 280,
+              child: StatefulBuilder(
+                builder: (context, setState) => DatePickerCalendar(
+                  focusedDay: focused,
+                  firstDay: DateTime.utc(1800, 3, 15),
+                  lastDay: DateTime.utc(1801, 6, 30),
+                  currentDay: DateTime(1800, 12, 25),
+                  onFocusedDayChanged: (day) => setState(() => focused = day),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      _expectHeader(DateTime(1801, 2));
+      final days = tester.widget<TableCalendar>(find.byType(TableCalendar));
+      expect(days.firstDay, DateTime.utc(1800, 3, 15));
+      expect(days.lastDay, DateTime.utc(1801, 6, 30));
+      expect(days.currentDay, DateTime(1800, 12, 25));
+
+      await tester.tap(find.byKey(const ValueKey('date_picker_year_button')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('date_picker_year_1799')), findsNothing);
+      expect(find.byKey(const ValueKey('date_picker_year_1802')), findsNothing);
+      // February 1800 precedes the range, so the jump lands on its first month.
+      await tester.tap(find.byKey(const ValueKey('date_picker_year_1800')));
+      await tester.pumpAndSettle();
+      expect(focused, DateTime(1800, 3));
+      _expectHeader(DateTime(1800, 3));
+
+      await tester.tap(find.byKey(const ValueKey('date_picker_month_button')));
+      await tester.pumpAndSettle();
+      void expectMonths(bool Function(int month) allowed) {
+        for (var month = 1; month <= 12; month++) {
+          final data = tester
+              .getSemantics(find.byKey(ValueKey('date_picker_month_$month')))
+              .getSemanticsData();
+          expect(
+            data.hasFlag(SemanticsFlag.isEnabled),
+            allowed(month),
+            reason: 'month $month',
+          );
+          expect(data.hasAction(SemanticsAction.tap), allowed(month));
+        }
+      }
+
+      expectMonths((month) => month >= 3);
+      await tester.tap(find.byKey(const ValueKey('date_picker_month_1')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('date_picker_month_grid')),
+        findsOneWidget,
+      );
+      expect(focused, DateTime(1800, 3));
+
+      await tester.tap(find.byFlowySvg(FlowySvgs.arrow_right_s));
+      await tester.pumpAndSettle();
+      _expectHeader(DateTime(1801, 3));
+      expectMonths((month) => month <= 6);
+      await tester.tap(find.byFlowySvg(FlowySvgs.arrow_right_s));
+      await tester.pumpAndSettle();
+      _expectHeader(DateTime(1801, 3));
+
+      await tester.tap(find.byKey(const ValueKey('date_picker_month_6')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TableCalendar), findsOneWidget);
+      expect(focused, DateTime(1801, 6));
+      _expectHeader(DateTime(1801, 6));
+      semantics.dispose();
+    });
     testWidgets('default state', (tester) async {
       await tester.pumpWidget(
         const WidgetTestApp(
@@ -299,25 +398,132 @@ void main() {
       await tester.pumpAndSettle();
 
       final now = DateTime.now();
-      expect(
-        find.text(DateFormat.yMMMM().format(now)),
-        findsOneWidget,
-      );
+      _expectHeader(now);
 
       final lastMonth = getLastMonth(now);
       await tester.tap(find.byFlowySvg(FlowySvgs.arrow_left_s));
       await tester.pumpAndSettle();
-      expect(
-        find.text(DateFormat.yMMMM().format(lastMonth)),
-        findsOneWidget,
-      );
+      _expectHeader(lastMonth);
 
       await tester.tap(find.byFlowySvg(FlowySvgs.arrow_right_s));
       await tester.pumpAndSettle();
-      expect(
-        find.text(DateFormat.yMMMM().format(now)),
-        findsOneWidget,
+      _expectHeader(now);
+    });
+
+    testWidgets('month list jumps to a month without choosing a day',
+        (tester) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        WidgetTestApp(
+          child: _MockDatePicker(
+            data: _DatePickerDataStub(
+              dateTime: DateTime(2024, 10, 12),
+              endDateTime: null,
+              includeTime: false,
+              isRange: false,
+            ),
+          ),
+        ),
       );
+      await tester.pumpAndSettle();
+      _expectHeader(DateTime(2024, 10));
+
+      await tester.tap(find.byKey(const ValueKey('date_picker_month_button')));
+      await tester.pumpAndSettle();
+      final grid = find.byKey(const ValueKey('date_picker_month_grid'));
+      expect(grid, findsOneWidget);
+      expect(find.byType(TableCalendar), findsNothing);
+      for (var month = 1; month <= 12; month++) {
+        final cell = find.byKey(ValueKey('date_picker_month_$month'));
+        expect(
+          find.descendant(
+            of: cell,
+            matching: find.text(DateFormat.MMM().format(DateTime(2024, month))),
+          ),
+          findsOneWidget,
+        );
+        final data = tester.getSemantics(cell).getSemanticsData();
+        expect(data.label, DateFormat.yMMMM().format(DateTime(2024, month)));
+        expect(data.hasFlag(SemanticsFlag.isButton), isTrue);
+        expect(data.hasFlag(SemanticsFlag.isSelected), month == 10);
+        expect(data.hasAction(SemanticsAction.tap), isTrue);
+      }
+
+      // While the list is open, the arrows change its year.
+      await tester.tap(find.byFlowySvg(FlowySvgs.arrow_right_s));
+      await tester.pumpAndSettle();
+      _expectHeader(DateTime(2025, 10));
+      await tester.tap(find.byFlowySvg(FlowySvgs.arrow_left_s));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byFlowySvg(FlowySvgs.arrow_left_s));
+      await tester.pumpAndSettle();
+      _expectHeader(DateTime(2023, 10));
+      expect(grid, findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('date_picker_month_3')));
+      await tester.pumpAndSettle();
+      expect(grid, findsNothing);
+      expect(find.byType(TableCalendar), findsOneWidget);
+      _expectHeader(DateTime(2023, 3));
+      expect(getAfState(tester).focusedDateTime, DateTime(2023, 3));
+      expect(getAfState(tester).dateTime, DateTime(2024, 10, 12));
+      expect(getMockState(tester).data.dateTime, DateTime(2024, 10, 12));
+
+      await tester.tap(dayInDatePicker(15));
+      await tester.pumpAndSettle();
+      expect(getAfState(tester).dateTime, DateTime(2023, 3, 15));
+      expect(getMockState(tester).data.dateTime, DateTime(2023, 3, 15));
+      semantics.dispose();
+    });
+
+    testWidgets('year list opens on the shown year and jumps to another',
+        (tester) async {
+      await tester.pumpWidget(
+        WidgetTestApp(
+          child: _MockDatePicker(
+            data: _DatePickerDataStub(
+              dateTime: DateTime(2024, 10, 12),
+              endDateTime: null,
+              includeTime: false,
+              isRange: false,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('date_picker_year_button')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TableCalendar), findsNothing);
+      Finder year(int value) =>
+          find.byKey(ValueKey('date_picker_year_$value')).hitTestable();
+      expect(year(2024), findsOneWidget);
+      expect(year(2044), findsNothing);
+
+      // The arrows page the list without choosing.
+      await tester.tap(find.byFlowySvg(FlowySvgs.arrow_right_s));
+      await tester.pumpAndSettle();
+      expect(year(2044), findsOneWidget);
+      expect(year(2024), findsNothing);
+      await tester.tap(find.byFlowySvg(FlowySvgs.arrow_left_s));
+      await tester.pumpAndSettle();
+      expect(year(2024), findsOneWidget);
+      _expectHeader(DateTime(2024, 10));
+
+      await tester.tap(year(2031));
+      await tester.pumpAndSettle();
+      expect(find.byType(TableCalendar), findsOneWidget);
+      _expectHeader(DateTime(2031, 10));
+      expect(getAfState(tester).dateTime, DateTime(2024, 10, 12));
+
+      // The open list's own button returns to the days.
+      await tester.tap(find.byKey(const ValueKey('date_picker_year_button')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TableCalendar), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('date_picker_year_button')));
+      await tester.pumpAndSettle();
+      expect(find.byType(TableCalendar), findsOneWidget);
+      _expectHeader(DateTime(2031, 10));
     });
 
     testWidgets('select date', (tester) async {

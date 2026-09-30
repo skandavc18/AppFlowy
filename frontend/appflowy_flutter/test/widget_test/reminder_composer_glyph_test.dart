@@ -187,28 +187,38 @@ void main() {
         _expectGlyph(tester, priority, 'flag', DefaultIconStyle.vivid,
             size: 14, ink: palette.textMuted, preserveInk: true);
 
-        await tester.tap(dateButton);
-        await tester.pumpAndSettle();
-        final dateDialog = find.byType(DatePickerDialog);
-        expect(dateDialog, findsOneWidget);
-        await tester.tap(find.descendant(
-            of: dateDialog,
-            matching: find.widgetWithText(
-                TextButton,
-                MaterialLocalizations.of(tester.element(dateDialog))
-                    .cancelButtonLabel)));
-        await tester.pumpAndSettle();
-        await tester.tap(timeButton);
-        await tester.pumpAndSettle();
-        final timeDialog = find.byType(TimePickerDialog);
-        expect(timeDialog, findsOneWidget);
-        await tester.tap(find.descendant(
-            of: timeDialog,
-            matching: find.widgetWithText(
-                TextButton,
-                MaterialLocalizations.of(tester.element(timeDialog))
-                    .cancelButtonLabel)));
-        await tester.pumpAndSettle();
+        // Both open AppFlowy's own date picker, anchored under the button.
+        // Dismissing it outside the popup leaves the composer untouched.
+        final popup = find.byKey(const ValueKey('date_picker_popup'));
+        for (final (button, includesTime) in [
+          (dateButton, false),
+          (timeButton, true),
+        ]) {
+          await tester.tap(button);
+          await tester.pumpAndSettle();
+          expect(popup, findsOneWidget);
+          expect(find.byType(DatePickerDialog), findsNothing);
+          expect(find.byType(TimePickerDialog), findsNothing);
+          final popupRect = tester.getRect(popup);
+          expect(popupRect.top, tester.getRect(button).bottom + 6);
+          expect(popupRect.left, tester.getRect(button).left);
+          expect(
+            (tester.widget<Container>(popup).decoration! as ShapeDecoration)
+                .color,
+            Theme.of(tester.element(popup)).cardColor,
+          );
+          expect(
+            find.descendant(
+              of: popup,
+              matching: find.byKey(const ValueKey('date_time_text_field_time')),
+            ),
+            includesTime ? findsOneWidget : findsNothing,
+          );
+          await tester.tapAt(const Offset(4, 4));
+          await tester.pumpAndSettle();
+          expect(popup, findsNothing);
+          expect(dialog, findsOneWidget);
+        }
         expect(editable.controller.text, 'Keep this draft tomorrow at 9am');
         expect(tester.state(editableFinder), same(inputState));
         await tester.tap(find.text(LocaleKeys.reminders_cancel.tr()));

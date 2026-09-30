@@ -1,6 +1,6 @@
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme_extension.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:universal_platform/universal_platform.dart';
 
@@ -20,6 +20,10 @@ class DatePicker extends StatefulWidget {
     this.onRangeSelected,
     this.onCalendarCreated,
     this.onPageChanged,
+    this.firstDay,
+    this.lastDay,
+    this.currentDay,
+    this.horizontalPadding = 16,
   });
 
   final bool isRange;
@@ -46,6 +50,16 @@ class DatePicker extends StatefulWidget {
 
   final void Function(DateTime focusedDay)? onPageChanged;
 
+  /// The earliest and latest days offered. Default to [kFirstDay] and
+  /// [kLastDay].
+  final DateTime? firstDay;
+  final DateTime? lastDay;
+
+  /// The day marked as today. Defaults to the device's date.
+  final DateTime? currentDay;
+
+  final double horizontalPadding;
+
   @override
   State<DatePicker> createState() => _DatePickerState();
 }
@@ -69,15 +83,21 @@ class _DatePickerState extends State<DatePicker> {
             ),
           )
         : _CalendarStyle.desktop(
-            dowTextStyle: AFThemeExtension.of(context).caption,
+            dowTextStyle:
+                Theme.of(context).extension<AFThemeExtension>()?.caption ??
+                    textStyle.copyWith(
+                      color: Theme.of(context).hintColor,
+                      fontSize: 12.0,
+                    ),
             selectedColor: Theme.of(context).colorScheme.primary,
           );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+      padding: EdgeInsets.symmetric(horizontal: widget.horizontalPadding),
       child: TableCalendar(
-        firstDay: kFirstDay,
-        lastDay: kLastDay,
+        firstDay: widget.firstDay ?? kFirstDay,
+        lastDay: widget.lastDay ?? kLastDay,
+        currentDay: widget.currentDay,
         focusedDay: widget.focusedDay,
         rowHeight: calendarStyle.rowHeight,
         calendarFormat: _calendarFormat,
@@ -129,7 +149,8 @@ class _DatePickerState extends State<DatePicker> {
         ),
         calendarBuilders: CalendarBuilders(
           dowBuilder: (context, day) {
-            final locale = context.locale.toLanguageTag();
+            final locale =
+                Localizations.maybeLocaleOf(context)?.toLanguageTag();
             final label = DateFormat.E(locale).format(day);
             return Padding(
               padding: const EdgeInsets.only(bottom: 8.0),

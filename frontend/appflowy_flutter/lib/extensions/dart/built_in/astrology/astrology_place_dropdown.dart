@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/shared/context_menu/app_menu_style.dart';
 import 'package:appflowy/shared/scrolling/no_scrollbar_behavior.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -564,9 +565,10 @@ class _AstrologyPlaceDropdownState extends State<AstrologyPlaceDropdown>
                                         alignment: Alignment.centerLeft,
                                         textStyle: menu.subtitleStyle,
                                       ),
-                                      icon: const Icon(
+                                      icon: WorkspaceGlyph(
                                         Icons.edit_location_alt_rounded,
                                         size: 16,
+                                        color: palette.accent,
                                       ),
                                       label: const Text(
                                           'Enter coordinates manually'),

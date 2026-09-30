@@ -9,6 +9,7 @@ import 'package:appflowy/shared/calendar/reminder_parser.dart';
 import 'package:appflowy/shared/calendar/reminder_google_sync.dart';
 import 'package:appflowy/shared/calendar/reminder_store.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/workspace/presentation/widgets/date_picker/date_picker_popup.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -293,15 +294,13 @@ class _ReminderComposerState extends State<_ReminderComposer> {
         ReminderPriority.high => LocaleKeys.reminders_priorities_high.tr(),
       };
 
-  Future<void> _pickDate() async {
+  Future<void> _pickDate(BuildContext anchor) async {
     final base = _when ?? DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: base,
-      firstDate: DateTime(base.year - 5),
-      lastDate: DateTime(base.year + 10),
+    final picked = await showDatePickerPopup(
+      context: anchor,
+      initialDate: _when,
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() {
@@ -315,24 +314,25 @@ class _ReminderComposerState extends State<_ReminderComposer> {
     });
   }
 
-  Future<void> _pickTime() async {
+  Future<void> _pickTime(BuildContext anchor) async {
     final base = _when ?? DateTime.now();
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(base),
+    final picked = await showDatePickerPopup(
+      context: anchor,
+      initialDate: DateTime(
+        base.year,
+        base.month,
+        base.day,
+        _hasTime ? base.hour : 9,
+        _hasTime ? base.minute : 0,
+      ),
+      includeTime: true,
     );
-    if (picked == null) {
+    if (picked == null || !mounted) {
       return;
     }
     setState(() {
       _hasTime = true;
-      _when = DateTime(
-        base.year,
-        base.month,
-        base.day,
-        picked.hour,
-        picked.minute,
-      );
+      _when = picked;
     });
   }
 
@@ -510,7 +510,9 @@ class _PickerButton extends StatelessWidget {
 
   final IconData icon;
   final String label;
-  final VoidCallback onTap;
+
+  /// Receives this button's context, to anchor a popup to it.
+  final ValueChanged<BuildContext> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -518,7 +520,7 @@ class _PickerButton extends StatelessWidget {
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       child: GestureDetector(
-        onTap: onTap,
+        onTap: () => onTap(context),
         behavior: HitTestBehavior.opaque,
         child: Container(
           height: 38,

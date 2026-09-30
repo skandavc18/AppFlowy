@@ -726,10 +726,10 @@ void main() {
         expect(
           widgets.take(4).map(_layout),
           const [
-            (astrologyInputWidgetType, 0, 0, 12, 7),
-            (astrologyLibraryWidgetType, 0, 7, 12, 5),
-            (astrologyChartWidgetType, 0, 12, 6, 7),
-            (astrologyChartWidgetType, 6, 12, 6, 7),
+            (astrologyInputWidgetType, 0, 0, 12, 9),
+            (astrologyLibraryWidgetType, 0, 9, 12, 5),
+            (astrologyChartWidgetType, 0, 14, 6, 14),
+            (astrologyDashaWidgetType, 6, 14, 6, 29),
           ],
         );
         final birth = widgets.first.placement;
@@ -737,7 +737,7 @@ void main() {
         expect(library.row, birth.row + birth.rowSpan);
         expect(widgets[2].placement.row, library.row + library.rowSpan);
         expect(
-          widgets.skip(2).every((spec) => spec.placement.row >= 12),
+          widgets.skip(2).every((spec) => spec.placement.row >= 14),
           isTrue,
         );
         final definition = _libraryDefinition();
@@ -748,7 +748,7 @@ void main() {
       },
     );
 
-    test('person layout has no library and retains charts at row seven', () {
+    test('person layout has no library and starts the charts at row nine', () {
       final document = buildAstrologyDashboard(
         library: false,
         libraryId: _libraryId,
@@ -764,16 +764,17 @@ void main() {
       expect(
         document.allWidgets.map(_layout),
         const [
-          (astrologyInputWidgetType, 0, 0, 12, 7),
-          (astrologyChartWidgetType, 0, 7, 6, 7),
-          (astrologyChartWidgetType, 6, 7, 6, 7),
-          (astrologyPanchangaWidgetType, 0, 14, 6, 7),
-          (astrologyChartWidgetType, 6, 14, 6, 7),
-          (astrologyPlacementsWidgetType, 0, 21, 12, 7),
-          (astrologyShadbalaWidgetType, 0, 28, 6, 8),
-          (astrologyDashaWidgetType, 6, 28, 6, 8),
-          (astrologyAshtakavargaWidgetType, 0, 36, 12, 8),
-          (astrologyEventsWidgetType, 0, 44, 12, 8),
+          (astrologyInputWidgetType, 0, 0, 12, 9),
+          (astrologyChartWidgetType, 0, 9, 6, 14),
+          (astrologyDashaWidgetType, 6, 9, 6, 29),
+          (astrologyChartWidgetType, 0, 23, 6, 14),
+          (astrologyChartWidgetType, 0, 37, 6, 14),
+          (astrologyPanchangaWidgetType, 6, 38, 6, 13),
+          (astrologyShadbalaWidgetType, 0, 51, 12, 14),
+          (astrologyAshtakavargaWidgetType, 0, 65, 12, 32),
+          (astrologyEventsWidgetType, 0, 97, 12, 12),
+          (astrologyPlacementsWidgetType, 0, 109, 12, 21),
+          (astrologyDateAnalysisWidgetType, 0, 130, 12, 19),
         ],
       );
       expect(astrologyEventsViewId(document), 'person-events');

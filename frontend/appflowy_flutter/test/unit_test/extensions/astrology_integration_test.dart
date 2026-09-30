@@ -6,8 +6,11 @@ import 'package:appflowy/extensions/dart/built_in/astrology/astrology_birth_form
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_block.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_chart_panel.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_dashboard_model.dart';
+import 'package:appflowy/extensions/dart/built_in/astrology/astrology_date_analysis_view.dart';
+import 'package:appflowy/extensions/dart/built_in/astrology/astrology_file_actions.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_location.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_model.dart';
+import 'package:appflowy/extensions/dart/built_in/astrology/astrology_transit_form.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/vedic_chart_view.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology_extension.dart';
 import 'package:appflowy/extensions/dart/extension_context.dart';
@@ -86,6 +89,7 @@ const _widgetTypes = {
   astrologyPanchangaWidgetType,
   astrologyLibraryWidgetType,
   astrologyEventsWidgetType,
+  astrologyDateAnalysisWidgetType,
 };
 
 const _place = AstrologyPlace(
@@ -207,29 +211,32 @@ void main() {
           _widgetTypes,
         );
 
-        // The actual template has ELEVEN cards on a twelve-column grid,
+        // The actual template has TWELVE cards on a twelve-column grid,
         // including three instances of the same chart widget definition.
-        expect(document.widgetCount, 11);
+        expect(document.widgetCount, 12);
         expect(document.allWidgets.map((spec) => spec.type), [
           astrologyInputWidgetType,
           astrologyLibraryWidgetType,
           astrologyChartWidgetType,
+          astrologyDashaWidgetType,
+          astrologyChartWidgetType,
           astrologyChartWidgetType,
           astrologyPanchangaWidgetType,
-          astrologyChartWidgetType,
-          astrologyPlacementsWidgetType,
           astrologyShadbalaWidgetType,
-          astrologyDashaWidgetType,
           astrologyAshtakavargaWidgetType,
           astrologyEventsWidgetType,
+          astrologyPlacementsWidgetType,
+          astrologyDateAnalysisWidgetType,
         ]);
         expect(
             document.allWidgets.map((spec) => spec.type).toSet(), _widgetTypes);
         expect(
-            document.allWidgets.map((spec) => spec.id).toSet(), hasLength(11));
+            document.allWidgets.map((spec) => spec.id).toSet(), hasLength(12));
         expect(document.allWidgets.first.placement.columnSpan, 12);
         expect(document.variableFor(astrologyDraftKey), isNotNull);
         expect(document.variableFor(astrologyDraftKey)!.initialValue, isNull);
+        expect(document.variableFor(astrologyTransitKey), isNotNull);
+        expect(document.variableFor(astrologyTransitKey)!.initialValue, isNull);
         expect(isAstrologyLibrary(document), isTrue);
         expect(astrologyEventsViewId(document), isEmpty);
         for (final spec in document.allWidgets) {
@@ -402,7 +409,7 @@ void main() {
                 DashboardController(viewId: '', document: document);
             final before = jsonEncode(document.toJson());
             try {
-              expect(document.widgetCount, library ? 11 : 10);
+              expect(document.widgetCount, library ? 12 : 11);
               for (final spec in document.allWidgets) {
                 for (final size in const [Size(280, 300), Size(1360, 300)]) {
                   await tester.pumpWidget(
@@ -497,6 +504,196 @@ void main() {
             _input().name);
         expect(controller.document, same(document));
         expect(find.byType(VedicChartView), findsNothing);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await _unmount(tester);
+        controller.dispose();
+        context.scope.close();
+      }
+    });
+
+    testWidgets(
+        'an applied transit moves transit-following cards, not natal ones',
+        (tester) async {
+      final context = await _activateAstrology();
+      final natal = _input();
+      final document = buildAstrologyDashboard(
+        input: natal,
+        library: false,
+        libraryId: 'person-library',
+      );
+      final controller = DashboardController(viewId: '', document: document);
+      DashboardWidgetSpec spec(String type, {bool transit = false}) =>
+          document.allWidgets.firstWhere(
+            (spec) => spec.type == type && spec.flag('transit') == transit,
+          );
+      final birth = spec(astrologyInputWidgetType);
+      final natalChart = spec(astrologyChartWidgetType);
+      final transitChart = spec(astrologyChartWidgetType, transit: true);
+      final panchanga = spec(astrologyPanchangaWidgetType);
+      final placements = spec(astrologyPlacementsWidgetType);
+      final dasha = spec(astrologyDashaWidgetType);
+      final shadbala = spec(astrologyShadbalaWidgetType);
+      AstrologyChartPanel panel(DashboardWidgetSpec spec) =>
+          tester.widget<AstrologyChartPanel>(
+            find.descendant(
+              of: find.byKey(ValueKey('preview-${spec.id}')),
+              matching: find.byType(AstrologyChartPanel),
+            ),
+          );
+      Finder badge(DashboardWidgetSpec spec) =>
+          find.byKey(ValueKey('astrology-transit-badge-${spec.id}'));
+      void expectNatal(DashboardWidgetSpec spec) {
+        expect(panel(spec).input.toJson(), natal.toJson(), reason: spec.type);
+        expect(panel(spec).transit, isFalse, reason: spec.type);
+      }
+
+      void expectTransit(
+        DashboardWidgetSpec spec,
+        DateTime? utc, {
+        AstrologyPlace? place,
+      }) {
+        final input = panel(spec).input;
+        expect(panel(spec).transit, isTrue, reason: spec.type);
+        expect(input.utc, utc, reason: spec.type);
+        expect(input.place?.toJson(), (place ?? natal.place!).toJson());
+        // The birth-time manual offset never shifts a transit moment.
+        expect(input.utcOffsetMinutes, isNull);
+        expect(input.ayanamsa, natal.ayanamsa);
+        expect(input.style, natal.style);
+      }
+
+      try {
+        await tester.pumpWidget(
+          _app(
+            Column(
+              children: [
+                SizedBox(height: 420, child: _dashboardCard(controller, birth)),
+                for (final spec in [
+                  natalChart,
+                  transitChart,
+                  panchanga,
+                  placements,
+                  dasha,
+                  shadbala,
+                ])
+                  Expanded(child: _dashboardCard(controller, spec)),
+                for (final spec in [panchanga, dasha])
+                  Builder(
+                    builder: (context) => DashboardWidgetRegistry.definitionFor(
+                      spec.type,
+                    )!
+                        .headerTrailing!(
+                      DashboardWidgetContext(
+                        context: context,
+                        controller: controller,
+                        spec: spec,
+                        palette: DashboardPalette.of(context),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            size: const Size(900, 1400),
+          ),
+        );
+        await tester.pump();
+        expect(find.byType(AstrologyBirthForm), findsOneWidget);
+        expect(find.byType(AstrologyTransitForm), findsNothing);
+        expect(find.byType(AstrologyFileActions), findsOneWidget);
+        for (final spec in [natalChart, panchanga, placements, shadbala]) {
+          expectNatal(spec);
+        }
+        expectTransit(transitChart, null);
+        expectNatal(dasha);
+        expect(panel(dasha).dashaAt, isNull);
+        expect(badge(panchanga), findsNothing);
+
+        await tester.tap(find.byKey(const ValueKey('astrology-tab-transit')));
+        await tester.pump();
+        expect(astrologyTransitState(controller.state).active, isTrue);
+        expect(find.byType(AstrologyBirthForm), findsNothing);
+        expect(find.byType(AstrologyTransitForm), findsOneWidget);
+        expect(
+          find.byType(AstrologyBirthForm, skipOffstage: false),
+          findsOneWidget,
+          reason: 'The hidden birth draft stays mounted.',
+        );
+        expect(find.byType(AstrologyFileActions), findsNothing);
+        // Opening the tab changes nothing until a transit is applied.
+        for (final spec in [natalChart, panchanga, placements, shadbala]) {
+          expectNatal(spec);
+        }
+        expectTransit(transitChart, null);
+        expectNatal(dasha);
+        expect(panel(dasha).dashaAt, isNull);
+        expect(badge(panchanga), findsNothing);
+        expect(badge(dasha), findsNothing);
+
+        // A template preview's form is read-only, so apply through its
+        // callback: the dashboard records exactly what Apply reports.
+        final form = tester
+            .widget<AstrologyTransitForm>(find.byType(AstrologyTransitForm));
+        expect(form.applied, isFalse);
+        final moment = DateTime.utc(2030, 1, 2, 3, 4);
+        form.onApplied(moment, null);
+        await tester.pump();
+        expect(
+          astrologyTransitState(controller.state),
+          AstrologyTransitState(active: true, applied: true, utc: moment),
+        );
+        for (final spec in [transitChart, panchanga, placements]) {
+          expectTransit(spec, moment);
+        }
+        expectNatal(dasha);
+        expect(panel(dasha).dashaAt, moment);
+        expect(find.text('Transit · 2030-01-02 08:34'), findsOneWidget);
+        expect(find.text('Current dasha · 2030-01-02 08:34'), findsOneWidget);
+        expect(
+          tester
+              .widget<AstrologyTransitForm>(find.byType(AstrologyTransitForm))
+              .utc,
+          moment,
+        );
+
+        // An applied place casts the transit there, on its own clock.
+        const london = AstrologyPlace(
+          name: 'London, England, United Kingdom',
+          latitude: 51.5072,
+          longitude: -0.1276,
+          timeZone: 'Europe/London',
+        );
+        controller.setValue(
+          astrologyTransitKey,
+          astrologyTransitState(controller.state)
+              .withMoment(moment, place: london),
+        );
+        await tester.pump();
+        for (final spec in [transitChart, panchanga, placements]) {
+          expectTransit(spec, moment, place: london);
+        }
+        expect(
+          find.text('Transit · 2030-01-02 03:04 · London'),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Current dasha · 2030-01-02 03:04 · London'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.byKey(const ValueKey('astrology-tab-birth')));
+        await tester.pump();
+        expect(astrologyTransitState(controller.state).active, isFalse);
+        expect(astrologyTransitState(controller.state).utc, moment);
+        for (final spec in [panchanga, placements, dasha, shadbala]) {
+          expectNatal(spec);
+        }
+        expect(panel(dasha).dashaAt, isNull);
+        // A transit chart shows the applied transit on either tab.
+        expectTransit(transitChart, moment, place: london);
+        expect(badge(panchanga), findsNothing);
+        expect(badge(dasha), findsNothing);
+        expect(controller.document, same(document));
         expect(tester.takeException(), isNull);
       } finally {
         await _unmount(tester);
@@ -728,7 +925,7 @@ void main() {
         expect(received.single.utc!.second, 0);
         expect(received.single.utc!.millisecond, 0);
         expect(received.single.utc!.microsecond, 0);
-        expect(find.textContaining('Live transit · '), findsOneWidget);
+        expect(find.textContaining('Now · '), findsOneWidget);
         await tester.pump(const Duration(seconds: 59));
         expect(received, hasLength(1));
         await tester.pump(const Duration(seconds: 1));
@@ -1135,8 +1332,11 @@ void _expectPreviewCard(
     expect(panel.division, spec.integer('division', fallback: 1));
     expect(find.text(_previewMessage(view)), findsOneWidget);
     if (spec.flag('transit')) {
+      // A transit chart is cast for the Transit details moment (null: now)
+      // at the birthplace, never with the birth-time manual offset.
+      expect(panel.transit, isTrue);
       expect(panel.input.utc, isNull);
-      expect(panel.input.place, isNull);
+      expect(panel.input.place?.toJson(), input.place?.toJson());
       expect(panel.input.utcOffsetMinutes, isNull);
       expect(panel.input.style, input.style);
       expect(panel.input.ayanamsa, input.ayanamsa);
@@ -1173,6 +1373,14 @@ void _expectPreviewCard(
         expect(find.byType(ActionChip), findsNothing);
       case astrologyEventsWidgetType:
         expect(find.textContaining('Save a named horoscope above'),
+            findsOneWidget);
+      case astrologyDateAnalysisWidgetType:
+        final analysis = tester.widget<AstrologyDateAnalysisView>(
+          find.byType(AstrologyDateAnalysisView),
+        );
+        expect(analysis.preview, isTrue);
+        expect(analysis.natal.toJson(), input.toJson());
+        expect(find.textContaining('No location is requested in a preview'),
             findsOneWidget);
       default:
         fail('An untested astrology preview type was added: ${spec.type}');

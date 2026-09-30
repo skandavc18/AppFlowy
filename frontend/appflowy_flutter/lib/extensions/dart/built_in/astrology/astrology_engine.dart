@@ -4,6 +4,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sweph/sweph.dart';
 
 import 'astrology_model.dart';
+import 'astrology_panchanga.dart';
 import 'astrology_time.dart';
 
 class _EphemerisAssets with AssetLoader {
@@ -88,6 +89,147 @@ class AstrologyEngine {
   }
 
   void clearCache() => _cache.clear();
+
+  /// Sidereal positions of the nine grahas only, for transit tables. No
+  /// houses, sunrise or lagnas are calculated, so no place is needed. Uses
+  /// [settings]' ayanamsha, adjustment and node exactly like [calculate].
+  Future<List<VedicPlacement>> positions(
+    AstrologyInput settings,
+    DateTime utc,
+  ) async {
+    final instant = utc.toUtc();
+    AstrologyInput(
+      utc: instant,
+      ayanamsaOffsetArcseconds: settings.ayanamsaOffsetArcseconds,
+      dashaYearDays: settings.dashaYearDays,
+    ).validate();
+    await initialize();
+    Sweph.swe_set_sid_mode(SiderealMode(settings.ayanamsa.swissId));
+    final jd = julianDay(instant);
+    final adjustment = settings.ayanamsaOffsetArcseconds / 3600;
+    final planets = <VedicPlacement>[];
+    for (final body in VedicBody.values) {
+      if (body == VedicBody.ketu) continue;
+      final id =
+          body == VedicBody.rahu && settings.trueNode ? 11 : body.swissId;
+      final position = Sweph.swe_calc_ut(jd, HeavenlyBody(id), _flags);
+      planets.add(
+        VedicPlacement(
+          body: body,
+          name: body.label,
+          shortName: body.shortName,
+          longitude: normalizeDegrees(position.longitude - adjustment),
+          latitude: position.latitude,
+          speed: position.speedInLongitude,
+        ),
+      );
+    }
+    final rahu = planets.last;
+    planets.add(
+      VedicPlacement(
+        body: VedicBody.ketu,
+        name: 'Ketu',
+        shortName: 'Ke',
+        longitude: normalizeDegrees(rahu.longitude + 180),
+        latitude: -rahu.latitude,
+        speed: rahu.speed,
+      ),
+    );
+    return List.unmodifiable(planets);
+  }
+
+  /// When the tithi, nakshatra, yoga and karana current at [chart]'s instant
+  /// end, plus the sunset before its sunrise (for Brahma muhurta).
+  ///
+  /// Each end is the next boundary crossing, found by Newton iteration on the
+  /// actual sidereal longitudes and speeds; a limb that does not converge is
+  /// returned as null rather than guessed.
+  Future<AstrologyPanchangaTimes> panchangaTimes(AstrologyChart chart) async {
+    await initialize();
+    final input = chart.input;
+    Sweph.swe_set_sid_mode(SiderealMode(input.ayanamsa.swissId));
+    final adjustment = input.ayanamsaOffsetArcseconds / 3600;
+    final start = chart.julianDay;
+    final cache = <double, (CoordinatesWithSpeed, CoordinatesWithSpeed)>{};
+    (CoordinatesWithSpeed, CoordinatesWithSpeed) luminaries(double jd) =>
+        cache[jd] ??= (
+          Sweph.swe_calc_ut(jd, HeavenlyBody.SE_SUN, _flags),
+          Sweph.swe_calc_ut(jd, HeavenlyBody.SE_MOON, _flags),
+        );
+    (double, double) elongation(double jd) {
+      final (sun, moon) = luminaries(jd);
+      return (
+        normalizeDegrees(moon.longitude - sun.longitude),
+        moon.speedInLongitude - sun.speedInLongitude,
+      );
+    }
+
+    (double, double) moon(double jd) {
+      final (_, moon) = luminaries(jd);
+      return (
+        normalizeDegrees(moon.longitude - adjustment),
+        moon.speedInLongitude,
+      );
+    }
+
+    (double, double) yoga(double jd) {
+      final (sun, moon) = luminaries(jd);
+      return (
+        normalizeDegrees(sun.longitude + moon.longitude - 2 * adjustment),
+        sun.speedInLongitude + moon.speedInLongitude,
+      );
+    }
+
+    DateTime? previousSunset;
+    final sunrise = chart.sunrise;
+    final place = input.place;
+    if (sunrise != null && place != null) {
+      final rise = julianDay(sunrise);
+      final set = Sweph.swe_rise_trans(
+        rise - 1,
+        HeavenlyBody.SE_SUN,
+        SwephFlag.SEFLG_SWIEPH,
+        RiseSetTransitFlag.SE_CALC_SET | RiseSetTransitFlag.SE_BIT_HINDU_RISING,
+        GeoPosition(place.longitude, place.latitude),
+        0,
+        15,
+      );
+      if (set != null && set < rise && set > rise - 1) {
+        previousSunset = _fromJulian(set);
+      }
+    }
+    return AstrologyPanchangaTimes(
+      tithiEnd: _nextBoundary(start, 12, elongation),
+      nakshatraEnd: _nextBoundary(start, 40 / 3, moon),
+      yogaEnd: _nextBoundary(start, 40 / 3, yoga),
+      karanaEnd: _nextBoundary(start, 6, elongation),
+      previousSunset: previousSunset,
+    );
+  }
+
+  /// The first instant after [jd] at which [sample]'s angle reaches the next
+  /// multiple of [step]. The angle must increase (positive rate).
+  static DateTime? _nextBoundary(
+    double jd,
+    double step,
+    (double, double) Function(double jd) sample,
+  ) {
+    final (initial, _) = sample(jd);
+    final target = normalizeDegrees(((initial / step).floor() + 1) * step);
+    var time = jd;
+    for (var iteration = 0; iteration < 40; iteration++) {
+      final (angle, rate) = sample(time);
+      if (!rate.isFinite || rate <= 0) return null;
+      var remaining = normalizeDegrees(target - angle);
+      // After the first step, a small overshoot must be corrected backwards.
+      if (iteration > 0 && remaining > 180) remaining -= 360;
+      final delta = remaining / rate;
+      time += delta;
+      if (time - jd > 2 || time < jd) return null;
+      if (delta.abs() * 86400 < 0.005) return _fromJulian(time);
+    }
+    return null;
+  }
 
   static double julianDay(DateTime utc) => Sweph.swe_utc_to_jd(
         utc.year,

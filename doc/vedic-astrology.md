@@ -9,11 +9,26 @@ Click a sign for its planets, degrees, nakshatras and padas.
 Retrograde planets appear in parentheses, such as `(Sa)` or `(Me)`, instead of
 an `Rx` suffix. Full details still spell out **Retrograde**. The division label uses a
 theme-matched center medallion in North Indian charts, or the open center in
-South Indian charts. Click anywhere on a dasha period card (or press Enter /
-Space while focused) to open its full-card overview and subperiod list. Back
-and breadcrumbs return to its parents; the Sookshma leaf opens its own detail
-view. Current period jumps directly to the active four-lord path. Start and end
-dates are spaced separately, with exact times and per-endpoint UTC offsets.
+South Indian charts. The **Vimshottari** card shows the lords running now (or
+at the Transit details moment) and lays the periods out as a tree, like
+Jagannatha Hora: opened periods (Mahadasha → Antardasha → Pratyantardasha)
+stack as indented planet-tinted rows, the selected period's overview sits under
+them, and its nine subperiods hang one step deeper, joined by connector lines.
+Each subperiod row shows its span and exact start and end; the running one
+draws its connector and a bottom progress track in its planet color, with the
+elapsed percentage and a soft glow. Cards have no outlines: each lord has its
+own gentle, well-separated tint (Mars red, Sun orange, Jupiter gold, Mercury
+green, Moon aqua, Rahu blue, Saturn indigo, Ketu violet, Venus pink), drawn as
+a soft diagonal gradient that sits on the page with a contact shadow and a
+diffuse ambient one; badges carry a light top highlight. Text on every tint
+keeps AA contrast in light, dark and paper modes. On hover or keyboard focus a
+row lifts slightly, deepens its tint and shadow, grows its badge and nudges its
+arrow; pressing settles it back. Click a row
+(or press Enter / Space while focused) to open it one level deeper; click an
+opened parent row, **Back** or **All dashas** to return. The Sookshma leaf
+opens its own detail view. Current period jumps directly to the active
+four-lord path. The overview gives exact start and end times with per-endpoint
+UTC offsets and the time zone.
 The vertical **Shadbala** graph plots each planet's total as a percentage of its
 own required minimum: `total ÷ minimum × 100`, so 360 virupas against a minimum
 of 300 is **120%**. The shared percentage axis includes 100% (minimum met), with
@@ -32,13 +47,19 @@ Cards have no visible scrollbar rails, including on narrow charts and tables.
 
 ## Saved horoscopes
 
-In **Templates**, choose **Astrology dashboard template**. The top card accepts
+In **Templates**, choose **Astrology dashboard template**. The top card has two
+tabs, **Birth details** and **Transit details**. Birth details accepts
 a name, local date/time and birthplace. Click the date or time field (or its
-calendar/clock icon) for a compact calendar popover with month/year navigation
-and hour, minute and second pickers. **Apply** updates the draft; **Cancel**,
-Escape or clicking outside leaves it unchanged. Direct keyboard entry remains
-available. **Today** uses the birthplace's clock, or the device clock until a
-place is chosen. **Generate** previews the input across
+calendar/clock icon) for the same compact picker that database date cells use:
+one outlined date | time box above the calendar. Click the month or the year in
+the calendar's header to choose from a list instead of paging month by month;
+the year list covers 1800 to 2399 and opens on the shown year, and its arrows
+page it. Choosing a month or year only moves the calendar; click a day to
+choose it. Type the time as `HH:mm:ss` (24-hour). **Apply** updates the draft;
+**Cancel**, Escape or clicking outside leaves it unchanged. Direct keyboard entry
+remains available. **Today** uses the birthplace's clock, or the device clock until a
+place is chosen. Blank date and time fields mean the moment **Generate** or
+**Save** is clicked; there is no live toggle. **Generate** previews the input across
 all cards; **Save as person’s dashboard** creates an actual child dashboard.
 Repeat to add people. The template's **Saved horoscopes** table sits directly
 below **Birth details**, with **Name**, **Date of birth**, **Time of birth** and
@@ -55,14 +76,121 @@ saved layouts are preserved.
 **Save changes** updates a person's profile without replacing its arrangement
 or notes.
 Each person owns a separate, ordinary editable **Life events** Grid with Event
-name, Date, Dasha, Antardasha, Pratyantardasha and Notes columns. Its dasha
-columns are manually editable planet choices, not inferred event predictions.
+name, Date, Dasha, Antardasha, Pratyantardasha, Sookshma dasha, Moon
+nakshatra, Transit Sun … Transit Ketu, Calculated for and Notes columns.
 
-Blank/live inputs use the current clock and request the device's current
+### Transit details
+
+The **Transit details** tab has a date, a time and a place; every other
+setting comes from the birth details. Opening the tab changes no card, and
+nothing you type or pick is shown until you press **Apply** (below the fields;
+Enter in a field applies too). **Now** fills in the current date and time and
+then, once the device location is read, the current location; it does not
+apply them. If the location is unavailable or permission is denied, the
+fields keep the birthplace's clock and a note explains why. Search the place
+field for any city (only the typed query is sent), or clear it to use the
+birthplace. Times are read on the chosen place's own clock. Leaving both date
+and time blank applies the live current moment, which refreshes each minute;
+a blank date or time alone uses today or the current time there. The status
+next to **Apply** says whether the fields are applied. The tab, moment and
+place reset when the dashboard is reopened.
+
+The transit chart always shows the applied transit (the current moment at the
+birthplace until something is applied). While the Transit details tab is open
+and a transit has been applied, **Panchanga** and **Planetary & special
+lagnas** follow it too and show a **Transit · …** badge (with the place when
+it is not the birthplace), and the Vimshottari card highlights the periods
+running then, with a **Current dasha · …** badge. The birth charts (D-1, D-9
+and other vargas), **Shadbala** and **Ashtakavarga** always stay natal.
+
+New dashboards use a JHora-like arrangement: **Birth details** across the top;
+then D-1, D-9 and the transit chart down the left half, beside the Vimshottari
+card (top right) and Panchanga (bottom right), both halves ending together;
+then full-width Shadbala and Ashtakavarga, the Life events table, Placements
+and Date analysis. Every card is tall enough to show its usual content without
+scrolling on a desktop window, including the Vimshottari tree down to a
+Pratyantardasha's nine Sookshma dashas. Existing arrangements are not moved or
+resized; drag a card's bottom edge to enlarge it.
+
+### Automatic life-event columns
+
+Add or change an event's **Date** and the row is filled from the person's
+saved birth details a moment later:
+
+- **Dasha → Sookshma dasha**: the natal Vimshottari lords running at that
+  instant (blank outside the natal 120-year cycle).
+- **Moon nakshatra**: the transiting Moon's nakshatra, pada and lord, such as
+  `Rohini, pada 2 · lord Moon`.
+- **Transit Sun … Transit Ketu**: sign and degree, `R` when retrograde, then
+  the whole-sign house from the natal Lagna (`H`) and natal Moon (`M`), such as
+  `Aquarius 5°12′ R · H10 · M11`.
+- **Calculated for**: the instant used. A date without a time means local
+  noon of the date shown in the Grid (this computer's time zone), and says so;
+  give the date a time for the exact Moon and Sookshma dasha.
+
+Values are ordinary cells: sort, filter or edit them. A row is recalculated
+when its date changes or the person's birth details are saved again; your
+edits are otherwise kept. The first calculation of rows entered before this
+feature only fills empty cells. **Recalculate** (the refresh icon on the Life
+events card) overwrites every calculated cell of every dated row. Removing a
+date clears its calculated values; Event name and Notes are never touched.
+Existing tables gain the new columns once, after Pratyantardasha; columns you
+later delete, rename or retype are not recreated or written.
+
+### Date analysis card
+
+New dashboards include a **Date analysis** card; add it to existing dashboards
+from **Add widget → Astrology · Date analysis**. It starts at *now* at the
+birthplace. Choose any date (time optional: blank means noon) and the
+birthplace, current location or another searched place. It shows:
+
+- the natal Mahadasha, Antardasha, Pratyantardasha and Sookshma dasha with
+  their exact start/end;
+- each graha's transit sign/degree, nakshatra and pada, retrograde state, and
+  houses from the natal Lagna and Moon, plus Sade Sati / Ardhashtama /
+  Ashtama Shani notes;
+- panchanga: vara and lord, tithi, nakshatra, yoga and karana with their end
+  times (found from the actual longitudes and speeds), sunrise/sunset and the
+  Moon/Sun signs;
+- muhurta: Brahma muhurta (14th of 15 night muhurtas), Rahu Kalam, Yamaganda
+  and Gulika Kalam (weekday eighths of daytime), Abhijit (8th of 15 day
+  muhurtas; not used on Wednesday), the planetary hora in effect, and Tara and
+  Chandra bala from the natal Moon. Without a saved birth time only the date's
+  own panchanga, transits and muhurta appear.
+
+### Jagannatha Hora files and PDF reports
+
+The birth-details card has **Open .jhd**, **Save .jhd**, **Save PDF** and
+**Print**.
+
+- **Open .jhd** reads a Jagannatha Hora birth file into the dashboard draft;
+  review it, then **Save** to keep it. The file name becomes the chart name,
+  as in JHora. Date, local time, time zone, longitude and latitude are read in
+  JHora's packed `D.MMSS` notation (east longitudes and zones are negative);
+  city and country are used when present. Older files that store planet
+  longitudes after line 8 are accepted and those longitudes ignored. When the
+  file's zone matches the place's historical IANA rules the zone is kept;
+  otherwise its fixed offset is kept (a local-mean-time offset with seconds is
+  shown rounded to the minute while the birth instant stays exact). Style,
+  ayanamsha, node and dasha-year settings, which a .jhd does not store, come
+  from the dashboard.
+- **Save .jhd** writes the same 18-line layout JHora 8 uses (CRLF, Latin-1;
+  characters outside Latin-1 become `?`). Live horoscopes are frozen at the
+  current second and device location first.
+- **Save PDF** / **Print** produce an A4 report: birth data, D-1 and D-9 charts
+  in the selected style, panchanga at birth, planetary positions (longitude,
+  nakshatra/pada/lord, house, D-9, speed, retrograde, chara karaka), special
+  lagnas (Bhava, Hora, Ghati, Gulika, Maandi, Sri) and the Sun-based upagrahas
+  (Dhuma, Vyatipata, Parivesha, Indrachapa, Upaketu), D-1…D-30 signs, the full
+  Vimshottari Mahadasha/Antardasha table with the dasha running on the report
+  date, Shadbala components and ratios, and the Ashtakavarga BAV/SAV table.
+  Fonts are bundled; nothing is uploaded.
+
+Without a place, **Generate** and **Save** request the device's current
 location. A denied permission or unavailable sensor is shown explicitly;
-there is no guessed default city. Enter a place or coordinates instead. The
-transit card can switch between current location and birthplace. Live charts
-refresh each minute while the application is open and resumed.
+there is no guessed default city. Enter a place or coordinates instead.
+Charts that follow the current moment refresh each minute while the
+application is open and resumed.
 
 Birthplace suggestions drop down while typing after at least three characters
 and a short pause. Choose a result with the mouse, or use Up/Down and Enter;
@@ -185,11 +313,16 @@ validated predictions or medical, financial or other professional advice.
 ## Verification
 
 Tests live in `frontend/appflowy_flutter/test/unit_test/extensions/astrology*`
-and `vedic_chart_view_test.dart`. `astrology_ephemeris_test.dart` uses the real
+and `vedic_chart_view_test.dart`. `astrology_ephemeris_test.dart` and
+`astrology_panchanga_ephemeris_test.dart` use the real
 Windows `sweph.dll` from the app Debug bundle or `build/astrology_ephemeris/Release`;
 an explicit `ASTROLOGY_TEST_LIBRARY` Dart define can name another build. The
 native group reports a skip if no library has been built. Tests use temporary
-ephemeris directories, never the user's workspace data.
+ephemeris directories, never the user's workspace data. The native panchanga
+test checks every limb's end time by recalculating one second before and after
+it. `astrology_jhd_test.dart` reads the layouts of the sample files shipped
+with JHora 8 (including local-mean-time and older 18-line files) and round
+trips east/west/north/south places.
 
 The screenshot regression uses 2026-09-11 19:16:15 at UTC+05:30,
 12°59′ N / 77°35′ E. Its ayanamsa settings were not visible, so the test uses a

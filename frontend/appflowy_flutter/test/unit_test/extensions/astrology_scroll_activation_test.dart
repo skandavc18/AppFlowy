@@ -42,6 +42,7 @@ const _nativeTypes = {
   astrologyPanchangaWidgetType,
   astrologyLibraryWidgetType,
   astrologyEventsWidgetType,
+  astrologyDateAnalysisWidgetType,
 };
 const _modes = [
   (name: 'native', enabled: false, reduced: false),
@@ -50,7 +51,7 @@ const _modes = [
 ];
 
 void main() {
-  _case('all nine real registrations gate the entire card in offline preview',
+  _case('all ten real registrations gate the entire card in offline preview',
       (tester, h) async {
     final definitions = DashboardWidgetRegistry.all()
         .where((definition) => definition.extensionId == 'astrology')
@@ -59,7 +60,7 @@ void main() {
       definitions.map((definition) => definition.type).toSet(),
       _nativeTypes,
     );
-    expect(definitions, hasLength(9));
+    expect(definitions, hasLength(10));
     for (final definition in DashboardWidgetRegistry.all()
         .where((definition) => definition.extensionId.isEmpty)) {
       expect(
@@ -524,6 +525,8 @@ void main() {
           tester,
           [h.spec('dasha')],
           rebuildOnSelection: false,
+          // The Vimshottari header and running strip precede the first card.
+          cardSize: const Size(420, 600),
         );
         final document = h.controller.document;
         final before = jsonEncode(document.toJson());
@@ -972,6 +975,7 @@ class _DashboardHarness {
     bool page = false,
     DashboardMode mode = DashboardMode.edit,
     bool rebuildOnSelection = true,
+    Size cardSize = const Size(420, 420),
   }) async {
     await tester.pumpWidget(const SizedBox.shrink());
     _controller?.dispose();
@@ -992,8 +996,8 @@ class _DashboardHarness {
             : board([
                 for (final spec in specs)
                   SizedBox(
-                    width: 420,
-                    height: 420,
+                    width: cardSize.width,
+                    height: cardSize.height,
                     child: Builder(
                       builder: (context) {
                         Widget buildCard() => DashboardCard(

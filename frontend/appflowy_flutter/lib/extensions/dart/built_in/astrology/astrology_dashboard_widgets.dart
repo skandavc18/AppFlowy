@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registr
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/shared/scrolling/no_scrollbar_behavior.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_variable.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -17,18 +18,52 @@ import 'astrology_birth_form.dart';
 import 'astrology_block.dart';
 import 'astrology_chart_panel.dart';
 import 'astrology_chart_selector.dart';
+import 'astrology_controls.dart';
 import 'astrology_dashboard_model.dart';
 import 'astrology_dashboard_service.dart';
+import 'astrology_date_analysis.dart';
+import 'astrology_date_analysis_view.dart';
 import 'astrology_engine.dart';
+import 'astrology_events_sync.dart';
+import 'astrology_file_actions.dart';
 import 'astrology_horoscope_library.dart';
 import 'astrology_model.dart';
 import 'astrology_style.dart';
+import 'astrology_transit_form.dart';
 
 AstrologyInput _input(DashboardWidgetContext context) {
   final draft = context.controller.state[astrologyDraftKey];
   if (draft is AstrologyInput) return draft;
   return astrologyInputFromDashboard(context.controller.document);
 }
+
+/// Cards that follow an applied transit while the Transit details tab is open.
+const _transitFollowing = {
+  AstrologyView.panchanga,
+  AstrologyView.placements,
+  AstrologyView.dasha,
+};
+
+/// Icons that follow the chosen icon style (Vivid artwork or line).
+const _viewIcons = {
+  AstrologyView.chart: Icons.auto_awesome_rounded,
+  AstrologyView.dasha: Icons.view_timeline_rounded,
+  AstrologyView.shadbala: Icons.balance_rounded,
+  AstrologyView.ashtakavarga: Icons.grid_on_rounded,
+  AstrologyView.placements: Icons.public_rounded,
+  AstrologyView.panchanga: Icons.wb_sunny_rounded,
+};
+
+/// Default spans: each card's usual content shows without scrolling on a
+/// desktop canvas, matching the template's JHora-like arrangement.
+const _viewSpans = {
+  AstrologyView.chart: (6, 14),
+  AstrologyView.dasha: (6, 29),
+  AstrologyView.shadbala: (12, 14),
+  AstrologyView.ashtakavarga: (12, 32),
+  AstrologyView.placements: (12, 21),
+  AstrologyView.panchanga: (6, 13),
+};
 
 /// A control and its charts are siblings: listen to the same dashboard
 /// controller, not an inherited widget that only one sibling could see.
@@ -41,7 +76,7 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
         icon: Icons.person_rounded,
         group: DashboardWidgetGroup.controls,
         defaultColumnSpan: 12,
-        defaultRowSpan: 7,
+        defaultRowSpan: 9,
         minimumColumnSpan: 4,
         minimumRowSpan: 5,
         showsTitleByDefault: false,
@@ -76,12 +111,10 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
           extensionId: 'astrology',
           requiresScrollActivation: true,
           label: () => 'Astrology · ${entry.value.label}',
-          icon: entry.value == AstrologyView.chart
-              ? Icons.auto_awesome_rounded
-              : Icons.table_chart_rounded,
+          icon: _viewIcons[entry.value]!,
           group: DashboardWidgetGroup.data,
-          defaultColumnSpan: 6,
-          defaultRowSpan: 8,
+          defaultColumnSpan: _viewSpans[entry.value]!.$1,
+          defaultRowSpan: _viewSpans[entry.value]!.$2,
           minimumColumnSpan: 3,
           minimumRowSpan: 5,
           padding: const EdgeInsets.all(6),
@@ -93,7 +126,12 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
                     ),
                     builder: (_, __) => _ChartHeaderActions(context: context),
                   )
-              : null,
+              : _transitFollowing.contains(entry.value)
+                  ? (context) => ListenableBuilder(
+                        listenable: context.controller,
+                        builder: (_, __) => _TransitBadge(context: context),
+                      )
+                  : null,
           builder: (context) => ListenableBuilder(
             listenable: context.controller,
             builder: (_, __) =>
@@ -120,7 +158,7 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
                     context.setSettings({'division': int.parse(value)}),
               ),
               DashboardConfigToggle(
-                label: 'Current-day transit',
+                label: 'Transit chart (follows Transit details)',
                 value: context.spec.flag('transit'),
                 onChanged: (value) => context.setSettings({'transit': value}),
               ),
@@ -167,10 +205,10 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
         extensionId: 'astrology',
         requiresScrollActivation: true,
         label: () => 'Horoscope life events',
-        icon: Icons.event_note_rounded,
+        icon: Icons.history_rounded,
         group: DashboardWidgetGroup.data,
         defaultColumnSpan: 12,
-        defaultRowSpan: 8,
+        defaultRowSpan: 12,
         minimumColumnSpan: 4,
         minimumRowSpan: 5,
         keywords: const [
@@ -180,7 +218,16 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
           'dasha',
           'antardasha',
           'pratyantardasha',
+          'sookshma',
+          'transit',
         ],
+        headerTrailing: (context) {
+          final id = context.spec.source.viewId;
+          if (id.isEmpty || context.controller.viewId.isEmpty) {
+            return const SizedBox.shrink();
+          }
+          return _EventsRecalculate(viewId: id, context: context);
+        },
         builder: (context) {
           final id = context.spec.source.viewId;
           if (id.isEmpty || context.controller.viewId.isEmpty) {
@@ -189,38 +236,96 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   'Save a named horoscope above to create its own editable Life events grid.\n'
-                  'Event name · Date · Dasha · Antardasha · Pratyantardasha · Notes',
+                  'Add a date to any event to fill its dasha, antardasha, pratyantardasha, '
+                  'sookshma dasha, Moon nakshatra and transits automatically.',
                   textAlign: TextAlign.center,
                 ),
               ),
             );
           }
-          return DashboardViewBuilder(
-            viewId: id,
-            revision: context.refreshToken,
-            builder: (_, view) =>
-                Provider<DatabasePluginWidgetBuilderSize>.value(
-              value: const DatabasePluginWidgetBuilderSize(
-                horizontalPadding: 0,
-                showScrollbars: false,
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _EventsStatus(
+                key: ValueKey('astrology-events-status-$id'),
+                viewId: id,
               ),
-              child: ScrollConfiguration(
-                behavior: NoScrollbarBehavior(
-                  ScrollConfiguration.of(context.context),
-                ),
-                child: IgnorePointer(
-                  ignoring: !context.isTypable,
-                  child: DatabaseTabBarView(
-                    key: ValueKey('astrology-events-${view.id}'),
-                    view: view,
-                    shrinkWrap: false,
-                    showActions: false,
+              Expanded(
+                child: DashboardViewBuilder(
+                  viewId: id,
+                  revision: context.refreshToken,
+                  builder: (_, view) =>
+                      Provider<DatabasePluginWidgetBuilderSize>.value(
+                    value: const DatabasePluginWidgetBuilderSize(
+                      horizontalPadding: 0,
+                      showScrollbars: false,
+                    ),
+                    child: ScrollConfiguration(
+                      behavior: NoScrollbarBehavior(
+                        ScrollConfiguration.of(context.context),
+                      ),
+                      child: IgnorePointer(
+                        ignoring: !context.isTypable,
+                        child: DatabaseTabBarView(
+                          key: ValueKey('astrology-events-${view.id}'),
+                          view: view,
+                          shrinkWrap: false,
+                          showActions: false,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           );
         },
+      ),
+      DashboardWidgetDefinition(
+        type: astrologyDateAnalysisWidgetType,
+        extensionId: 'astrology',
+        requiresScrollActivation: true,
+        label: () => 'Astrology · Date analysis',
+        icon: Icons.event_available_rounded,
+        group: DashboardWidgetGroup.data,
+        defaultColumnSpan: 12,
+        defaultRowSpan: 19,
+        minimumColumnSpan: 4,
+        minimumRowSpan: 5,
+        padding: const EdgeInsets.all(6),
+        keywords: const [
+          'astrology',
+          'date',
+          'dasha',
+          'transit',
+          'panchanga',
+          'muhurta',
+          'rahu kalam',
+          'tara bala',
+        ],
+        builder: (context) => ListenableBuilder(
+          listenable: context.controller,
+          builder: (_, __) {
+            try {
+              return AstrologyDateAnalysisView(
+                key: ValueKey('astrology-date-analysis-${context.spec.id}'),
+                natal: _input(context),
+                preview: context.controller.viewId.isEmpty,
+              );
+            } on Object catch (error) {
+              return Center(
+                child: Text('This horoscope could not be read: $error'),
+              );
+            }
+          },
+        ),
+        configure: (context) => [
+          DashboardConfigButton(
+            label: 'Birth details / location',
+            icon: Icons.tune_rounded,
+            onPressed: () => _configure(context),
+          ),
+        ],
       ),
     ];
 
@@ -264,6 +369,25 @@ void _setDraft(DashboardController controller, AstrologyInput input) {
   controller.setValue(astrologyDraftKey, input);
 }
 
+void _setTransit(DashboardController controller, AstrologyTransitState value) {
+  // Declared like the draft, or a layout edit prunes the tab and its moment.
+  if (controller.document.variableFor(astrologyTransitKey) == null &&
+      !controller.isReadOnly) {
+    controller.edit(
+      (document) => document.withVariable(
+        const DashboardVariable(
+          key: astrologyTransitKey,
+          label: 'Transit details',
+        ),
+      ),
+    );
+  }
+  controller.setValue(astrologyTransitKey, value);
+}
+
+const _birthTab = 'astrology-tab-birth';
+const _transitTab = 'astrology-tab-transit';
+
 class _BirthCard extends StatelessWidget {
   const _BirthCard({required this.context});
   final DashboardWidgetContext context;
@@ -292,6 +416,11 @@ class _BirthCard extends StatelessWidget {
       controller.edit((document) => withAstrologyInput(document, input));
       controller.setValue(astrologyDraftKey, null);
       await controller.flush();
+      // Changed birth details change every event's dashas and houses.
+      final events = astrologyEventsViewId(controller.document);
+      if (events.isNotEmpty) {
+        unawaited(AstrologyEventsSync.instance.recalculate(events));
+      }
     }
     if (!context.context.mounted) return;
     controller.refresh();
@@ -303,37 +432,113 @@ class _BirthCard extends StatelessWidget {
     try {
       final controller = context.controller;
       final library = isAstrologyLibrary(controller.document);
-      final enabled = context.isTypable &&
-          controller.viewId.isNotEmpty &&
-          AstrologyRuntime.active.value;
+      final running = AstrologyRuntime.active.value;
+      final enabled =
+          context.isTypable && controller.viewId.isNotEmpty && running;
+      final input = _input(context);
+      final transit = astrologyTransitState(controller.state);
       return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!library)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed:
-                    !enabled ? null : () => unawaited(_openLibrary(context)),
-                icon: const Icon(Icons.people_rounded, size: 16),
-                label: const Text('All horoscopes / add another person'),
-              ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                AstrologyTabs(
+                  key: const ValueKey('astrology-details-tabs'),
+                  tabs: const [
+                    AstrologyTab(
+                      id: _birthTab,
+                      label: 'Birth details',
+                      icon: Icons.person_rounded,
+                    ),
+                    AstrologyTab(
+                      id: _transitTab,
+                      label: 'Transit details',
+                      icon: Icons.timelapse_rounded,
+                    ),
+                  ],
+                  selected: transit.active ? _transitTab : _birthTab,
+                  onSelected: !running
+                      ? null
+                      : (id) => _setTransit(
+                            controller,
+                            astrologyTransitState(controller.state)
+                                .withActive(id == _transitTab),
+                          ),
+                ),
+                // Birth files belong to the birth details, not a transit.
+                if (!transit.active)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      if (!library)
+                        AstrologyButton(
+                          id: 'astrology-open-library',
+                          label: 'All horoscopes / add another person',
+                          icon: Icons.people_rounded,
+                          onPressed: !enabled
+                              ? null
+                              : () => unawaited(_openLibrary(context)),
+                        ),
+                      AstrologyFileActions(
+                        input: () => _input(context),
+                        enabled: enabled,
+                        onImported: (input) async {
+                          if (buildContext.mounted &&
+                              AstrologyRuntime.active.value) {
+                            _setDraft(controller, input);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+              ],
             ),
+          ),
           Expanded(
-            child: AstrologyBirthForm(
-              input: _input(context),
-              enabled: enabled,
-              saveLabel:
-                  library ? 'Save as person’s dashboard' : 'Save changes',
-              onGenerate: (input) async {
-                if (!AstrologyRuntime.active.value) {
-                  throw StateError('Astrology is disabled.');
-                }
-                await AstrologyEngine.instance.calculate(input);
-                if (buildContext.mounted && AstrologyRuntime.active.value) {
-                  _setDraft(controller, input);
-                }
-              },
-              onSave: _save,
+            // Both stay mounted: switching tabs keeps an unsaved birth draft.
+            child: IndexedStack(
+              index: transit.active ? 1 : 0,
+              sizing: StackFit.expand,
+              children: [
+                AstrologyBirthForm(
+                  input: input,
+                  enabled: enabled,
+                  showTitle: false,
+                  saveLabel:
+                      library ? 'Save as person’s dashboard' : 'Save changes',
+                  onGenerate: (input) async {
+                    if (!AstrologyRuntime.active.value) {
+                      throw StateError('Astrology is disabled.');
+                    }
+                    await AstrologyEngine.instance.calculate(input);
+                    if (buildContext.mounted && AstrologyRuntime.active.value) {
+                      _setDraft(controller, input);
+                    }
+                  },
+                  onSave: _save,
+                ),
+                AstrologyTransitForm(
+                  key: const ValueKey('astrology-transit-form'),
+                  natal: input,
+                  utc: transit.utc,
+                  place: transit.place,
+                  applied: transit.applied,
+                  enabled: running && controller.viewId.isNotEmpty,
+                  onApplied: (utc, place) => _setTransit(
+                    controller,
+                    astrologyTransitState(controller.state)
+                        .withMoment(utc, place: place),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -408,7 +613,15 @@ class _ChartHeaderActions extends StatelessWidget {
           tooltip: input.style == IndianChartStyle.north
               ? 'Switch to South Indian'
               : 'Switch to North Indian',
-          icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+          icon: WorkspaceGlyph(
+            Icons.swap_horiz_rounded,
+            size: 16,
+            color:
+                enabled ? palette.muted : palette.muted.withValues(alpha: 0.5),
+            role: enabled
+                ? WorkspaceGlyphRole.standard
+                : WorkspaceGlyphRole.preserveInk,
+          ),
           color: palette.muted,
           padding: const EdgeInsets.all(4),
           constraints: const BoxConstraints.tightFor(width: 26, height: 26),
@@ -449,62 +662,212 @@ class _ReadingCard extends StatelessWidget {
   @override
   Widget build(BuildContext buildContext) {
     try {
-      var input = _input(context);
+      final natal = _input(context);
       final spec = context.controller.document.widgetById(context.spec.id) ??
           context.spec;
-      final transit = spec.flag('transit');
-      final atBirthplace = spec.flag('transit_at_birthplace');
-      if (transit) {
-        // A transit is NOW in the place chosen for transits, never the natal
-        // UTC offset (which may have been daylight saving decades ago).
-        input = AstrologyInput(
-          place: atBirthplace ? input.place : null,
-          style: input.style,
-          ayanamsa: input.ayanamsa,
-          ayanamsaOffsetArcseconds: input.ayanamsaOffsetArcseconds,
-          trueNode: input.trueNode,
-          dashaYearDays: input.dashaYearDays,
-        );
-      }
+      final transit = astrologyTransitState(context.controller.state);
+      // A transit chart always shows the applied transit; panchanga and
+      // placements (and the dasha's reading date) follow it while the Transit
+      // details tab is open and Apply has been pressed. Everything else is
+      // fixed by the birth.
+      final transitChart = spec.flag('transit');
+      final following = transit.following && _transitFollowing.contains(view);
+      final castForTransit =
+          transitChart || (following && view != AstrologyView.dasha);
+      final input = castForTransit
+          ? astrologyTransitInput(natal, transit.utc, place: transit.place)
+          : natal;
       final rawDivision = spec.integer('division', fallback: 1);
       final division =
           astrologyDivisions.containsKey(rawDivision) ? rawDivision : 1;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (view == AstrologyView.chart && transit)
-            Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: !context.isTypable
-                    ? null
-                    : () => _setReadingSettings(
-                          context,
-                          {'transit_at_birthplace': !atBirthplace},
-                        ),
-                child: Text(
-                  atBirthplace ? 'At birthplace' : 'Current location',
-                ),
-              ),
-            ),
-          Expanded(
-            child: AstrologyChartPanel(
-              input: input,
-              view: view,
-              division: division,
-              refreshToken: context.controller.refreshToken,
-              preview: context.controller.viewId.isEmpty,
-              onConfigure: context.isTypable
-                  ? () => unawaited(_configure(context))
-                  : null,
-            ),
-          ),
-        ],
+      return AstrologyChartPanel(
+        input: input,
+        view: view,
+        division: division,
+        transit: castForTransit,
+        dashaAt: following ? transit.utc : null,
+        refreshToken: context.controller.refreshToken,
+        preview: context.controller.viewId.isEmpty,
+        onConfigure:
+            context.isTypable ? () => unawaited(_configure(context)) : null,
       );
     } on Object catch (error) {
       return Center(
         child: Text('This horoscope could not be read: $error'),
       );
     }
+  }
+}
+
+/// Names a transit-following card while an applied transit is shown.
+class _TransitBadge extends StatelessWidget {
+  const _TransitBadge({required this.context});
+  final DashboardWidgetContext context;
+
+  @override
+  Widget build(BuildContext buildContext) {
+    final transit = astrologyTransitState(context.controller.state);
+    if (!transit.following) return const SizedBox.shrink();
+    final palette = AstrologyPalette.of(buildContext);
+    var moment = 'now';
+    final utc = transit.utc;
+    if (utc != null) {
+      try {
+        final input =
+            astrologyTransitInput(_input(context), null, place: transit.place);
+        moment = '${astrologyLocalDate(input, utc)} '
+            '${astrologyLocalClock(input, utc)}';
+      } on Object {
+        moment = '${utc.toIso8601String().substring(0, 16)} UTC';
+      }
+    }
+    final place = transit.place?.name.split(',').first.trim() ?? '';
+    if (place.isNotEmpty) moment = '$moment · $place';
+    final label = context.spec.type == astrologyDashaWidgetType
+        ? 'Current dasha · $moment'
+        : 'Transit · $moment';
+    return Semantics(
+      label: label,
+      excludeSemantics: true,
+      child: DecoratedBox(
+        key: ValueKey('astrology-transit-badge-${context.spec.id}'),
+        decoration: BoxDecoration(
+          color: palette.accent.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              WorkspaceGlyph(
+                Icons.timelapse_rounded,
+                size: 14,
+                color: palette.accent,
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.accent,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    fontVariations: const [FontVariation.weight(600)],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A one-line key to the calculated columns, and the current fill status.
+/// Mounting starts a pass, so a table opened for the first time is filled.
+class _EventsStatus extends StatefulWidget {
+  const _EventsStatus({super.key, required this.viewId});
+
+  final String viewId;
+
+  @override
+  State<_EventsStatus> createState() => _EventsStatusState();
+}
+
+class _EventsStatusState extends State<_EventsStatus> {
+  @override
+  void initState() {
+    super.initState();
+    AstrologyEventsSync.instance.watch(widget.viewId);
+  }
+
+  @override
+  void didUpdateWidget(_EventsStatus oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewId != widget.viewId) {
+      AstrologyEventsSync.instance.watch(widget.viewId);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = AstrologyPalette.of(context);
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(
+          color: palette.muted,
+          fontSize: 11.5,
+        );
+    return ValueListenableBuilder<AstrologyEventsStatus>(
+      valueListenable: AstrologyEventsSync.instance.status(widget.viewId),
+      builder: (context, status, _) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+        child: Text.rich(
+          TextSpan(
+            children: [
+              const TextSpan(
+                text: 'Dates fill the dashas, Moon nakshatra and transits '
+                    'automatically (no time = noon). Transits: sign degree · '
+                    'R retrograde · H house from natal Lagna · M house from '
+                    'natal Moon.',
+              ),
+              if (status.message.isNotEmpty)
+                TextSpan(
+                  text: '  ${status.message}',
+                  style: TextStyle(
+                    color: status.failed ? palette.danger : palette.accent,
+                  ),
+                ),
+            ],
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: style,
+        ),
+      ),
+    );
+  }
+}
+
+class _EventsRecalculate extends StatelessWidget {
+  const _EventsRecalculate({required this.viewId, required this.context});
+
+  final String viewId;
+  final DashboardWidgetContext context;
+
+  @override
+  Widget build(BuildContext buildContext) {
+    final palette = AstrologyPalette.of(buildContext);
+    return ValueListenableBuilder<AstrologyEventsStatus>(
+      valueListenable: AstrologyEventsSync.instance.status(viewId),
+      builder: (_, status, __) => IconButton(
+        key: ValueKey('astrology-events-recalculate-$viewId'),
+        tooltip: 'Recalculate every dated event (replaces edited values)',
+        icon: status.busy
+            ? const SizedBox.square(
+                dimension: 14,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : WorkspaceGlyph(
+                Icons.refresh_rounded,
+                size: 16,
+                color: palette.muted,
+              ),
+        color: palette.muted,
+        padding: const EdgeInsets.all(4),
+        constraints: const BoxConstraints.tightFor(width: 26, height: 26),
+        onPressed:
+            status.busy || !context.isTypable || !AstrologyRuntime.active.value
+                ? null
+                : () => unawaited(
+                      AstrologyEventsSync.instance.recalculate(
+                        viewId,
+                        force: true,
+                      ),
+                    ),
+      ),
+    );
   }
 }

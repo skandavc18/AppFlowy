@@ -58,6 +58,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:linked_scroll_controller/linked_scroll_controller.dart';
 
 import 'test_asset_bundle.dart';
 import 'workspace_design_fixture.dart'
@@ -172,6 +173,73 @@ void main() {
     expect(loaded, hasLength(1));
     expect(loaded.single, same(_translations));
     expect(loaded.single['dashboard'], isA<Map<String, dynamic>>());
+  });
+
+  testWidgets(
+      'widget scroll views neither restore nor overwrite the page offset',
+      (tester) async {
+    _viewport(tester);
+    const type = 'test.dashboard_workspace.linked_columns';
+    expect(DashboardWidgetRegistry.definitionFor(type), isNull);
+    final generation = ValueNotifier(0);
+    final columns = ValueNotifier(18);
+    DashboardWidgetRegistry.register(
+      DashboardWidgetDefinition(
+        type: type,
+        extensionId: _readingOwner,
+        label: () => 'Linked columns',
+        icon: Icons.table_chart_rounded,
+        group: DashboardWidgetGroup.text,
+        builder: (context) => ValueListenableBuilder<int>(
+          valueListenable: generation,
+          builder: (_, value, __) =>
+              _LinkedColumns(key: ValueKey(value), columns: columns),
+        ),
+      ),
+    );
+    final controller = _controller(
+      document: _document.withWidget(_note.copyWith(type: type)),
+    );
+    Widget app(int page) => _app(
+          WorkspaceDesignAppearance.values.first,
+          KeyedSubtree(key: ValueKey(page), child: _page(_view(), controller)),
+        );
+    _LinkedColumnsState linked() =>
+        tester.state<_LinkedColumnsState>(find.byType(_LinkedColumns));
+    try {
+      await tester.pumpWidget(app(0));
+      await _settle(tester);
+      _pageScroll(tester).position.jumpTo(74);
+      await _settle(tester);
+
+      // A grid's header receives its columns a frame after its rows. Fresh
+      // linked positions used to restore the page's 74 and only the rows
+      // could keep it.
+      columns.value = 0;
+      generation.value++;
+      await tester.pump();
+      columns.value = 18;
+      await _settle(tester);
+      expect(linked().header.offset, 0);
+      expect(linked().body.offset, 0);
+
+      linked().body.jumpTo(300);
+      await _settle(tester);
+      expect(linked().header.offset, 300);
+
+      await tester.pumpWidget(app(1));
+      await _settle(tester);
+      expect(_pageScroll(tester).position.pixels, 74);
+      expect(linked().header.offset, 0);
+      expect(linked().body.offset, 0);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      controller.dispose();
+      generation.dispose();
+      columns.dispose();
+      DashboardWidgetRegistry.unregisterAll(_readingOwner);
+    }
+    expect(DashboardWidgetRegistry.definitionFor(type), isNull);
   });
 
   for (final appearance in WorkspaceDesignAppearance.values) {
@@ -2628,6 +2696,64 @@ class _ViewInfoBloc extends Fake implements ViewInfoBloc {}
 class _ReadingLifecycle {
   int created = 0;
   int disposed = 0;
+}
+
+/// The shape of an embedded grid: a header and rows scrolled together.
+class _LinkedColumns extends StatefulWidget {
+  const _LinkedColumns({super.key, required this.columns});
+
+  final ValueNotifier<int> columns;
+
+  @override
+  State<_LinkedColumns> createState() => _LinkedColumnsState();
+}
+
+class _LinkedColumnsState extends State<_LinkedColumns> {
+  final _group = LinkedScrollControllerGroup();
+  late final ScrollController header;
+  late final ScrollController body;
+
+  @override
+  void initState() {
+    super.initState();
+    header = _group.addAndGet();
+    body = _group.addAndGet();
+  }
+
+  @override
+  void dispose() {
+    header.dispose();
+    body.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            controller: header,
+            child: ValueListenableBuilder<int>(
+              valueListenable: widget.columns,
+              builder: (_, count, __) => Row(
+                children: [
+                  for (var i = 0; i < count; i++)
+                    const SizedBox(width: 150, height: 24),
+                  const SizedBox(width: 140, height: 24),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              controller: body,
+              child: const SizedBox(width: 18 * 150 + 140, height: 60),
+            ),
+          ),
+        ],
+      );
 }
 
 class _RetainedReading extends StatefulWidget {

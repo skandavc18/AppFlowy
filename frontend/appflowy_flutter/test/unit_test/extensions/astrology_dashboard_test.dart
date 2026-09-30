@@ -53,7 +53,9 @@ void main() {
           astrologyPanchangaWidgetType,
           astrologyLibraryWidgetType,
           astrologyEventsWidgetType,
+          astrologyDateAnalysisWidgetType,
           astrologyDraftKey,
+          astrologyTransitKey,
         ],
         [
           'ext.astrology.input',
@@ -65,7 +67,9 @@ void main() {
           'ext.astrology.panchanga',
           'ext.astrology.library',
           'ext.astrology.events',
+          'ext.astrology.date_analysis',
           'astrology_input_draft',
+          'astrology_transit',
         ],
       );
     });
@@ -107,7 +111,8 @@ void main() {
           eventsViewId: 'real-events',
         );
         final widgets = document.allWidgets.toList();
-        final row = library ? 12 : 7;
+        final band = library ? 14 : 9;
+        final below = band + 42;
         expect(
           widgets.map(
             (widget) => (
@@ -119,17 +124,21 @@ void main() {
             ),
           ),
           [
-            (astrologyInputWidgetType, 0, 0, 12, 7),
-            if (library) (astrologyLibraryWidgetType, 0, 7, 12, 5),
-            (astrologyChartWidgetType, 0, row, 6, 7),
-            (astrologyChartWidgetType, 6, row, 6, 7),
-            (astrologyPanchangaWidgetType, 0, row + 7, 6, 7),
-            (astrologyChartWidgetType, 6, row + 7, 6, 7),
-            (astrologyPlacementsWidgetType, 0, row + 14, 12, 7),
-            (astrologyShadbalaWidgetType, 0, row + 21, 6, 8),
-            (astrologyDashaWidgetType, 6, row + 21, 6, 8),
-            (astrologyAshtakavargaWidgetType, 0, row + 29, 12, 8),
-            (astrologyEventsWidgetType, 0, row + 37, 12, 8),
+            (astrologyInputWidgetType, 0, 0, 12, 9),
+            if (library) (astrologyLibraryWidgetType, 0, 9, 12, 5),
+            // JHora-like: the charts down the left beside the dasha, with the
+            // panchanga under it. Both halves end together, and each is tall
+            // enough to read without scrolling.
+            (astrologyChartWidgetType, 0, band, 6, 14),
+            (astrologyDashaWidgetType, 6, band, 6, 29),
+            (astrologyChartWidgetType, 0, band + 14, 6, 14),
+            (astrologyChartWidgetType, 0, band + 28, 6, 14),
+            (astrologyPanchangaWidgetType, 6, band + 29, 6, 13),
+            (astrologyShadbalaWidgetType, 0, below, 12, 14),
+            (astrologyAshtakavargaWidgetType, 0, below + 14, 12, 32),
+            (astrologyEventsWidgetType, 0, below + 46, 12, 12),
+            (astrologyPlacementsWidgetType, 0, below + 58, 12, 21),
+            (astrologyDateAnalysisWidgetType, 0, below + 79, 12, 19),
           ],
         );
         expect(widgets.map((widget) => widget.id).toSet(),
@@ -319,7 +328,7 @@ void main() {
   });
 
   group('the life-events schema', () {
-    test('six typed columns, text primary, nine planet choices, no fake events',
+    test('typed columns, text primary, nine planet choices, no fake events',
         () {
       expect(astrologyLifeEventsTable.rows, isEmpty);
       expect(
@@ -331,12 +340,25 @@ void main() {
           ('Dasha', FieldType.SingleSelect),
           ('Antardasha', FieldType.SingleSelect),
           ('Pratyantardasha', FieldType.SingleSelect),
+          ('Sookshma dasha', FieldType.SingleSelect),
+          ('Moon nakshatra', FieldType.RichText),
+          for (final body in VedicBody.values)
+            ('Transit ${body.label}', FieldType.RichText),
+          ('Calculated for', FieldType.RichText),
           ('Notes', FieldType.RichText),
         ],
       );
-      for (final column in astrologyLifeEventsTable.columns.skip(2).take(3)) {
+      for (final column in astrologyLifeEventsTable.columns.skip(2).take(4)) {
         expect(column.options, VedicBody.values.map((body) => body.label));
       }
+      expect(
+        astrologyLifeEventsTable.columns.skip(2).take(4).map((c) => c.name),
+        astrologyDashaColumns,
+      );
+      expect(
+        astrologyTransitColumns,
+        VedicBody.values.map((body) => 'Transit ${body.label}'),
+      );
     });
 
     test('read-back uses primary identity and does not assume field-list order',
@@ -363,7 +385,8 @@ void main() {
     });
 
     test('a missing, misnamed or mistyped field is never accepted', () {
-      for (var index = 0; index < 6; index++) {
+      final count = astrologyLifeEventsTable.columns.length;
+      for (var index = 0; index < count; index++) {
         for (final defect in ['missing', 'name', 'type']) {
           final fields = _eventFields('events');
           final primary = FieldPB()..mergeFromMessage(fields.first);

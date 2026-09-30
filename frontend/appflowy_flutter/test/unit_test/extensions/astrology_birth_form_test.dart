@@ -67,7 +67,6 @@ void main() {
       );
       await _enter(tester, 'astrology-date', '1990-02-30');
       await _enter(tester, 'astrology-time', '12:34:56');
-      expect(_nowSwitch(tester).value, isFalse);
 
       await _tap(tester, 'astrology-generate');
 
@@ -126,7 +125,7 @@ void main() {
       expect(service.queries, isEmpty);
     });
 
-    testWidgets('Generate keeps live UTC null and clock edits turn Now off',
+    testWidgets('Generate uses entered clock values; there is no live toggle',
         (tester) async {
       final generated = <AstrologyInput>[];
       await _pumpForm(
@@ -135,21 +134,26 @@ void main() {
         service: _FakeLocationService(),
         onGenerate: (input) async => generated.add(input),
       );
-      await _tap(tester, 'astrology-generate');
-      expect(generated.single.utc, isNull);
-      expect(generated.single.name, isEmpty);
+      expect(_byId('astrology-now'), findsNothing);
+      expect(find.byType(Switch), findsNothing);
+      expect(find.textContaining('Now'), findsNothing);
 
       await _enter(tester, 'astrology-date', '2000-01-02');
       await _enter(tester, 'astrology-time', '23:45:06');
-      expect(_nowSwitch(tester).value, isFalse);
       await _tap(tester, 'astrology-generate');
-      expect(generated.last.utc, DateTime.utc(2000, 1, 2, 18, 15, 6));
+      expect(generated.single.utc, DateTime.utc(2000, 1, 2, 18, 15, 6));
+      expect(generated.single.name, isEmpty);
 
-      await _tap(tester, 'astrology-now');
-      expect(_nowSwitch(tester).value, isTrue);
+      // Clearing both fields again fixes the next click, never a live clock.
+      await _enter(tester, 'astrology-date', '');
+      await _enter(tester, 'astrology-time', '');
+      final before = DateTime.now().toUtc();
       await _tap(tester, 'astrology-generate');
-      expect(generated, hasLength(3));
-      expect(generated.last.utc, isNull);
+      final after = DateTime.now().toUtc();
+      expect(generated, hasLength(2));
+      expect(generated.last.utc, isNotNull);
+      expect(generated.last.utc!.isBefore(before), isFalse);
+      expect(generated.last.utc!.isAfter(after), isFalse);
     });
 
     testWidgets(
@@ -162,8 +166,6 @@ void main() {
         service: _FakeLocationService(),
         onGenerate: (input) async => generated.add(input),
       );
-      await _tap(tester, 'astrology-now');
-      expect(_nowSwitch(tester).value, isFalse);
       expect(_controller(tester, 'astrology-date').text, isEmpty);
       expect(_controller(tester, 'astrology-time').text, isEmpty);
       final before = DateTime.now().toUtc();
@@ -249,7 +251,8 @@ void main() {
       );
       expect(input.utc, isNull);
       expect(_controller(tester, 'astrology-name').text, '  Named draft  ');
-      expect(_nowSwitch(tester).value, isTrue);
+      expect(_controller(tester, 'astrology-date').text, isEmpty);
+      expect(_controller(tester, 'astrology-time').text, isEmpty);
       expect(_byId('astrology-success'), findsNothing);
       stalePress();
       expect(saved, hasLength(1));
@@ -733,12 +736,16 @@ void main() {
         await _enter(tester, 'astrology-latitude', '12.5');
         await _enter(tester, 'astrology-longitude', '77.5');
         await _enter(tester, 'astrology-utc-offset', '+05:30');
+        final before = DateTime.now().toUtc();
         await _tap(tester, 'astrology-generate');
+        final after = DateTime.now().toUtc();
 
         expect(generated.single.place!.name, 'Unlisted birthplace');
         expect(generated.single.place!.timeZone, isEmpty);
         expect(generated.single.utcOffsetMinutes, 330);
-        expect(generated.single.utc, isNull);
+        // Blank date and time fix the moment of the click.
+        expect(generated.single.utc!.isBefore(before), isFalse);
+        expect(generated.single.utc!.isAfter(after), isFalse);
         expect(service.currentForces, isEmpty);
         expect(service.queries, ['Unlisted birthplace']);
       });
@@ -756,11 +763,14 @@ void main() {
       );
       expect(_controller(tester, 'astrology-place').text, isEmpty);
       expect(service.currentForces, isEmpty);
+      final before = DateTime.now().toUtc();
       await _tap(tester, 'astrology-generate');
+      final after = DateTime.now().toUtc();
       expect(service.currentForces, [false]);
       expect(generated.single.place!.toJson(), _device.toJson());
       expect(generated.single.place, same(_device));
-      expect(generated.single.utc, isNull);
+      expect(generated.single.utc!.isBefore(before), isFalse);
+      expect(generated.single.utc!.isAfter(after), isFalse);
       expect(service.queries, isEmpty);
     });
 
@@ -977,7 +987,10 @@ void main() {
         tester.widget<TextField>(_byId('astrology-name')).enabled,
         isFalse,
       );
-      expect(_nowSwitch(tester).onChanged, isNull);
+      expect(
+        tester.widget<TextField>(_byId('astrology-date')).enabled,
+        isFalse,
+      );
       expect(_controller(tester, 'astrology-place').text, isEmpty);
       expect(service.currentForces, isEmpty);
       expect(service.queries, isEmpty);
@@ -1107,7 +1120,6 @@ void main() {
             _message(tester, 'astrology-error'),
             contains('Edit callback marker'),
           );
-          expect(_nowSwitch(tester).value, isTrue);
 
           await tester.ensureVisible(_byId(entry.id));
           await tester.pump();
@@ -1146,9 +1158,6 @@ void main() {
             // Every field's onChanged clears feedback. A controller-only
             // substring workaround would leave this error visible.
             expect(_byId('astrology-error'), findsNothing);
-            if (entry.id == 'astrology-date' || entry.id == 'astrology-time') {
-              expect(_nowSwitch(tester).value, isFalse);
-            }
             await tester.sendKeyRepeatEvent(
               LogicalKeyboardKey.backspace,
               physicalKey: PhysicalKeyboardKey.backspace,
@@ -1486,11 +1495,19 @@ void main() {
                   .fillColor,
               PaperTheme.codeBlockBackground,
             );
+            // Primary actions wear the filled paper accent; secondary ones
+            // stay on the warm field surface, never a cold grey.
             final style = _button(tester, 'astrology-generate').style!;
-            expect(style.foregroundColor!.resolve({}), PaperTheme.accent);
+            expect(style.foregroundColor!.resolve({}), PaperTheme.onAccent);
+            expect(style.backgroundColor!.resolve({}), PaperTheme.accent);
+            final secondary = _button(tester, 'astrology-advanced').style!;
             expect(
-              style.backgroundColor!.resolve({}),
-              PaperTheme.accent.withValues(alpha: 0.10),
+              secondary.foregroundColor!.resolve({}),
+              PaperTheme.textPrimary,
+            );
+            expect(
+              secondary.backgroundColor!.resolve({}),
+              PaperTheme.codeBlockBackground,
             );
             expect(
               _choice<AstrologyAyanamsa>(tester, 'astrology-ayanamsa')
@@ -1592,9 +1609,6 @@ TextEditingController _controller(WidgetTester tester, String id) =>
 
 TextButton _button(WidgetTester tester, String id) =>
     tester.widget<TextButton>(_byId(id));
-
-Switch _nowSwitch(WidgetTester tester) =>
-    tester.widget<Switch>(_byId('astrology-now'));
 
 String _message(WidgetTester tester, String id) =>
     tester.widget<Text>(_byId(id)).data!;

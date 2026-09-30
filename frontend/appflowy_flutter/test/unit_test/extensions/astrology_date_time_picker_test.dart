@@ -4,14 +4,15 @@ import 'package:appflowy/extensions/dart/built_in/astrology/astrology_style.dart
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_time.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/shared/paper_theme.dart';
-import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
+import 'package:appflowy/workspace/presentation/widgets/date_picker/widgets/date_picker_calendar.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 const _newYork = AstrologyPlace(
   name: 'New York',
@@ -143,7 +144,7 @@ void main() {
     });
   });
 
-  _widgetTest('calendar navigation and all clock controls edit only their part',
+  _widgetTest('the calendar browses freely; only a day click chooses',
       (tester) async {
     final host = await _mountHost(tester);
     await _open(tester);
@@ -151,54 +152,35 @@ void main() {
     final anchor = tester.getRect(_byId('picker-test-anchor'));
     expect(popup.left, closeTo(anchor.left, 0.01));
     expect(popup.top, closeTo(anchor.bottom + 6, 0.01));
-    final calendar = tester.widget<CalendarDatePicker>(_calendar);
-    expect(calendar.firstDate, DateTime(1800));
-    expect(calendar.lastDate, DateTime(2399, 12, 31));
-    expect(calendar.currentDate, DateTime(2024, 2, 28));
+    final calendar = tester.widget<DatePickerCalendar>(_calendar);
+    expect(calendar.firstDay, DateTime.utc(1800));
+    expect(calendar.lastDay, DateTime.utc(2399, 12, 31));
+    expect(calendar.currentDay, DateTime.utc(2024, 2, 28, 12, 34, 7));
+    expect(calendar.selectedDay, DateTime.utc(2024, 2, 28));
+    _expectMonth('February', '2024');
     expect(host.results, isEmpty);
 
-    await _tap(
-      tester,
-      find.descendant(of: _calendar, matching: find.text('29')).hitTestable(),
-    );
+    await _tapDay(tester, 29);
     expect(_controller(tester, 'date').text, '2024-02-29');
     expect(_controller(tester, 'time').text, '23:45:56');
-    final localizations = MaterialLocalizations.of(tester.element(_calendar));
-    await _tap(tester, find.byTooltip(localizations.nextMonthTooltip));
-    expect(find.text('March 2024'), findsOneWidget);
+    await _tap(tester, _inCalendar('date_picker_next'));
+    _expectMonth('March', '2024');
     expect(_controller(tester, 'date').text, '2024-02-29');
-    await _tap(tester, find.byTooltip(localizations.previousMonthTooltip));
-    await _tap(tester, find.text('February 2024'));
-    expect(find.byType(YearPicker), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('2025'),
-      180,
-      scrollable: find.descendant(
-        of: find.byType(YearPicker),
-        matching: find.byType(Scrollable),
-      ),
-    );
-    await _tap(tester, find.text('2025').hitTestable());
+    await _tap(tester, _inCalendar('date_picker_previous'));
+    _expectMonth('February', '2024');
+
+    // The year list jumps without choosing; a day click then chooses.
+    await _tap(tester, _inCalendar('date_picker_year_button'));
+    expect(_inCalendar('date_picker_days'), findsNothing);
+    await _tap(tester, _year(2025));
+    _expectMonth('February', '2025');
+    expect(_controller(tester, 'date').text, '2024-02-29');
+    await _tapDay(tester, 28);
     expect(_controller(tester, 'date').text, '2025-02-28');
     expect(_controller(tester, 'time').text, '23:45:56');
 
-    for (final part in ['hour', 'minute', 'second']) {
-      final control = _clock(tester, part);
-      expect(
-        control.items!.map((item) => item.value),
-        List.generate(part == 'hour' ? 24 : 60, (value) => value),
-      );
-    }
-    await _chooseNumber(tester, 'hour', 22);
-    expect(_controller(tester, 'time').text, '22:45:56');
-    await _tap(tester, _byId('astrology-picker-minute'));
-    await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
-    await tester.pumpAndSettle();
-    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
-    await tester.pumpAndSettle();
-    expect(_controller(tester, 'time').text, '22:44:56');
-    await _chooseNumber(tester, 'second', 57);
-    expect(_controller(tester, 'time').text, '22:44:57');
+    // The clock is typed, like a date cell's.
+    await _enter(tester, 'time', '22:44:57');
     expect(_controller(tester, 'date').text, '2025-02-28');
     expect(host.date, '2024-02-28', reason: 'No live mutation of the caller.');
     expect(host.time, '23:45:56');
@@ -209,6 +191,60 @@ void main() {
     expect(host.date, '2025-02-28');
     expect(host.time, '22:44:57');
     expect(_byId('astrology-date-time-picker'), findsNothing);
+  });
+
+  _widgetTest('month and year lists jump far without choosing a day',
+      (tester) async {
+    final host = await _mountHost(tester, date: '2024-03-31');
+    await _open(tester);
+    _expectMonth('March', '2024');
+
+    // Twenty years back is a page of the year list, not 240 month pages.
+    await _tap(tester, _inCalendar('date_picker_year_button'));
+    final years = tester.widget<GridView>(
+      find.descendant(of: _calendar, matching: find.byType(GridView)),
+    );
+    expect(
+      (years.childrenDelegate as SliverChildBuilderDelegate).childCount,
+      600,
+    );
+    expect(_year(2024), findsOneWidget);
+    await _tap(tester, _inCalendar('date_picker_previous'));
+    await _tap(tester, _year(2004));
+    _expectMonth('March', '2004');
+    expect(_controller(tester, 'date').text, '2024-03-31');
+
+    await _tap(tester, _inCalendar('date_picker_month_button'));
+    for (var month = 1; month <= 12; month++) {
+      expect(_inCalendar('date_picker_month_$month'), findsOneWidget);
+    }
+    await _tap(tester, _inCalendar('date_picker_month_2'));
+    _expectMonth('February', '2004');
+    expect(_controller(tester, 'date').text, '2024-03-31');
+    await _tapDay(tester, 29);
+    expect(_controller(tester, 'date').text, '2004-02-29');
+    expect(host.results, isEmpty);
+
+    await _tap(tester, _byId('astrology-picker-apply'));
+    expect(host.date, '2004-02-29');
+    expect(host.time, '23:45:56');
+  });
+
+  _widgetTest('a blank date browses from today at the birthplace',
+      (tester) async {
+    final host = await _mountHost(tester, date: '');
+    await _open(tester);
+    _expectMonth('February', '2024');
+    expect(tester.widget<DatePickerCalendar>(_calendar).selectedDay, isNull);
+    await _tap(tester, _inCalendar('date_picker_year_button'));
+    await _tap(tester, _inCalendar('date_picker_previous'));
+    await _tap(tester, _inCalendar('date_picker_previous'));
+    await _tap(tester, _year(1990));
+    _expectMonth('February', '1990');
+    expect(_controller(tester, 'date').text, isEmpty);
+    await _tap(tester, _byId('astrology-picker-cancel'));
+    expect(host.results, [null]);
+    expect(host.date, '');
   });
 
   _widgetTest(
@@ -227,8 +263,6 @@ void main() {
     await _open(tester);
     await _enter(tester, 'date', '2024-02-29');
     await _enter(tester, 'time', '09:05:00');
-    expect(_clock(tester, 'second').value, 0);
-    await _chooseNumber(tester, 'hour', 9);
     final controller = _controller(tester, 'date');
     final apply = _byId('astrology-picker-apply');
     await tester.ensureVisible(apply);
@@ -285,24 +319,19 @@ void main() {
       timeZoneLabel: 'Pacific/Kiritimati · UTC +14:00',
     );
     await _open(tester);
-    expect(tester.widget<CalendarDatePicker>(_calendar).initialDate, isNull);
-    expect(
-      tester.widget<CalendarDatePicker>(_calendar).currentDate,
-      DateTime(2025),
-    );
+    final calendar = tester.widget<DatePickerCalendar>(_calendar);
+    expect(calendar.selectedDay, isNull);
+    expect(calendar.currentDay, DateTime.utc(2025, 1, 1, 0, 0, 7));
+    _expectMonth('January', '2025');
     expect(_controller(tester, 'date').text, isEmpty);
     expect(_controller(tester, 'time').text, isEmpty);
-    for (final part in ['hour', 'minute', 'second']) {
-      expect(_clock(tester, part).value, isNull);
-    }
     await _tap(tester, _byId('astrology-picker-apply'));
     expect(host.date, isEmpty);
     expect(host.time, isEmpty);
 
     await _open(tester);
-    await _chooseNumber(tester, 'hour', 1);
+    await _enter(tester, 'time', '01:00:07');
     expect(_controller(tester, 'date').text, isEmpty);
-    expect(_controller(tester, 'time').text, '01:00:07');
     await _tap(tester, _byId('astrology-picker-cancel'));
     expect(host.date, isEmpty);
     expect(host.time, isEmpty);
@@ -340,22 +369,22 @@ void main() {
     }
     await _enter(tester, 'date', '2000-02-29');
     expect(
-      tester.widget<CalendarDatePicker>(_calendar).initialDate,
-      DateTime(2000, 2, 29),
+      tester.widget<DatePickerCalendar>(_calendar).selectedDay,
+      DateTime.utc(2000, 2, 29),
     );
+    _expectMonth('February', '2000');
     await _enter(tester, 'time', '12:34:60');
     await _tap(tester, _byId('astrology-picker-apply'));
     expect(_errorText(tester), contains('does not exist'));
     expect(_controller(tester, 'time').text, '12:34:60');
-    // Neither selecting a date nor attempting a clock choice fixes seconds
-    // behind the user's back.
-    _clock(tester, 'hour').onChanged!(13);
-    await tester.pumpAndSettle();
+    // Choosing a day does not fix the seconds behind the user's back.
+    await _tapDay(tester, 28);
+    expect(_controller(tester, 'date').text, '2000-02-28');
     expect(_controller(tester, 'time').text, '12:34:60');
     await _enter(tester, 'time', '12:34:59');
     expect(_byId('astrology-picker-error'), findsNothing);
     await _tap(tester, _byId('astrology-picker-apply'));
-    expect(host.date, '2000-02-29');
+    expect(host.date, '2000-02-28');
     expect(host.time, '12:34:59');
   });
 
@@ -396,7 +425,6 @@ void main() {
         platform: 'windows',
       );
     }
-    expect(_clock(tester, 'second').value, 0);
 
     await _tap(tester, _byId('astrology-picker-date'));
     final date = _controller(tester, 'date');
@@ -451,10 +479,10 @@ void main() {
       expect(rect.bottom, lessThanOrEqualTo(232));
       final material = tester.widget<Material>(root);
       expect(material.color, palette.raised);
-      expect(
-        (material.shape! as RoundedRectangleBorder).borderRadius,
-        BorderRadius.circular(PremiumTheme.surfaceRadius),
-      );
+      final shape = material.shape! as RoundedRectangleBorder;
+      expect(shape.borderRadius, BorderRadius.circular(10));
+      expect(shape.side.width, 0.5);
+      expect(shape.side.color, palette.line);
       expect(
         Theme.of(tester.element(_calendar)).brightness,
         appearance.brightness,
@@ -462,33 +490,46 @@ void main() {
       for (final part in ['date', 'time']) {
         final field = _byId('astrology-picker-$part');
         expect(MediaQuery.textScalerOf(tester.element(field)).scale(13), 26);
-        expect(
-          tester.widget<TextField>(field).decoration!.fillColor,
-          palette.control,
-        );
+        // One outline around both fields, as in a date cell's picker.
+        final decoration = tester.widget<TextField>(field).decoration!;
+        expect(decoration.filled, isFalse);
+        expect(decoration.enabledBorder, InputBorder.none);
+        expect(decoration.focusedBorder, InputBorder.none);
         final fieldRect = tester.getRect(field);
         expect(fieldRect.left, greaterThanOrEqualTo(rect.left));
         expect(fieldRect.right, lessThanOrEqualTo(rect.right));
       }
-      final calendarTheme = DatePickerTheme.of(tester.element(_calendar));
-      expect(
-        calendarTheme.dayBackgroundColor!.resolve({WidgetState.selected}),
-        palette.selection,
+      Color outline() => ((tester
+                  .widget<AnimatedContainer>(_byId('astrology-picker-entry'))
+                  .decoration! as BoxDecoration)
+              .border! as Border)
+          .top
+          .color;
+      // The date field starts focused, so the shared outline is the accent.
+      expect(outline(), palette.accent);
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      expect(outline(), palette.line);
+      // The shared calendar draws with the picker's own palette.
+      final days = find.descendant(
+        of: _calendar,
+        matching: find.byType(TableCalendar),
       );
-      expect(
-        calendarTheme.dayOverlayColor!.resolve({WidgetState.hovered}),
-        palette.hover,
-      );
-      expect(calendarTheme.yearForegroundColor!.resolve({}), palette.ink);
-      expect(calendarTheme.todayForegroundColor!.resolve({}), palette.accent);
+      final calendarTheme = Theme.of(tester.element(days));
+      expect(calendarTheme.colorScheme.primary, palette.accent);
+      expect(calendarTheme.colorScheme.surface, palette.raised);
+      expect(calendarTheme.cardColor, palette.raised);
+      expect(calendarTheme.hoverColor, palette.hover);
       final apply = tester.widget<TextButton>(_byId('astrology-picker-apply'));
-      expect(
-        apply.style!.backgroundColor!.resolve({}),
-        palette.accent.withValues(alpha: 0.10),
+      expect(apply.style!.backgroundColor!.resolve({}), palette.accent);
+      expect(apply.style!.foregroundColor!.resolve({}), palette.onAccent);
+      final cancel = tester.widget<TextButton>(
+        _byId('astrology-picker-cancel'),
       );
+      expect(cancel.style!.backgroundColor!.resolve({}), Colors.transparent);
       if (appearance.paper) {
         expect(material.color, PaperTheme.popupBackground);
-        expect(palette.control.r, greaterThan(palette.control.b));
+        expect(palette.raised.r, greaterThan(palette.raised.b));
       }
       final routeSemantics = find.byWidgetPredicate(
         (widget) =>
@@ -529,18 +570,28 @@ void main() {
         reason: 'Focus and wheel input only move the popup scroll view.',
       );
 
-      await _tap(tester, _byId('astrology-picker-second'));
-      expect(_clock(tester, 'second').dropdownColor, palette.raised);
-      final menuNumber = find.text('56').hitTestable();
-      expect(menuNumber, findsOneWidget);
-      expect(tester.widget<Text>(menuNumber).textScaler!.scale(13), 26);
-      final scrollbar = find.byType(Scrollbar).last;
-      final scrollbarTheme = ScrollbarTheme.of(tester.element(scrollbar));
+      // The year list follows the card's text scale and shows no rail.
+      await _tap(tester, _inCalendar('date_picker_year_button'));
+      final year = _inCalendar('date_picker_year_2024');
+      expect(year, findsOneWidget);
+      expect(
+        MediaQuery.textScalerOf(
+          tester
+              .element(find.descendant(of: year, matching: find.text('2024'))),
+        ).scale(13),
+        26,
+      );
+      expect(
+        find.descendant(
+          of: root,
+          matching: find.byWidgetPredicate((widget) => widget is RawScrollbar),
+        ),
+        findsNothing,
+      );
+      final scrollbarTheme = ScrollbarTheme.of(tester.element(year));
       expect(scrollbarTheme.thickness!.resolve({}), 0);
       expect(scrollbarTheme.trackVisibility!.resolve({}), isFalse);
-      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
-      await tester.pumpAndSettle();
-      expect(root, findsOneWidget);
+      expect(host.scroll.offset, outerOffset);
       await _tap(tester, _byId('astrology-picker-cancel'));
       expect(host.results.single, isNull);
       expect(host.scroll.offset, outerOffset);
@@ -607,12 +658,41 @@ void _widgetTest(String name, Future<void> Function(WidgetTester) body) {
 
 Finder _byId(String id) => find.byKey(ValueKey(id));
 Finder get _calendar => _byId('astrology-picker-calendar');
+Finder _inCalendar(String id) =>
+    find.descendant(of: _calendar, matching: _byId(id));
+Finder _year(int year) => _inCalendar('date_picker_year_$year').hitTestable();
+
+/// A day of the month on screen: neither a neighbouring month's spill-over
+/// nor a cell on the calendar's off-screen neighbouring pages.
+Finder _day(int day) {
+  final days = find.descendant(
+    of: _calendar,
+    matching: find.byType(TableCalendar),
+  );
+  final cells =
+      find.descendant(of: days, matching: find.text('$day')).hitTestable();
+  return day < 15 ? cells.first : cells.last;
+}
+
+void _expectMonth(String month, String year) {
+  expect(
+    find.descendant(
+      of: _inCalendar('date_picker_month_button'),
+      matching: find.text(month),
+    ),
+    findsOneWidget,
+  );
+  expect(
+    find.descendant(
+      of: _inCalendar('date_picker_year_button'),
+      matching: find.text(year),
+    ),
+    findsOneWidget,
+  );
+}
 
 TextEditingController _controller(WidgetTester tester, String part) =>
     tester.widget<TextField>(_byId('astrology-picker-$part')).controller!;
-
-DropdownButton<int> _clock(WidgetTester tester, String part) =>
-    tester.widget<DropdownButton<int>>(_byId('astrology-picker-$part'));
 
 String _errorText(WidgetTester tester) =>
     tester.widget<Text>(_byId('astrology-picker-error')).data!;
@@ -640,34 +720,21 @@ Future<void> _tap(WidgetTester tester, Finder target) async {
   await tester.pumpAndSettle();
 }
 
+/// Reveals the calendar rather than the day: revealing a day cell would
+/// scroll the calendar's own month pages sideways.
+Future<void> _tapDay(WidgetTester tester, int day) async {
+  await tester.ensureVisible(_calendar);
+  await tester.pumpAndSettle();
+  await tester.tap(_day(day));
+  await tester.pumpAndSettle();
+}
+
 Future<void> _enter(WidgetTester tester, String part, String value) async {
   final field = _byId('astrology-picker-$part');
   await tester.ensureVisible(field);
   await tester.pumpAndSettle();
   await tester.enterText(field, value);
   await tester.pumpAndSettle();
-}
-
-Future<void> _chooseNumber(WidgetTester tester, String part, int value) async {
-  final selected = _clock(tester, part).value ?? 0;
-  await _tap(tester, _byId('astrology-picker-$part'));
-  // Allow absent lazy rows and exclude calendar dates behind the modal barrier.
-  final option = find.text(value.toString().padLeft(2, '0')).hitTestable();
-  final menuScrollables = find.byElementPredicate(
-    (element) =>
-        element.widget is Scrollable &&
-        ModalRoute.of(element)?.isCurrent == true,
-  );
-  expect(menuScrollables, findsWidgets);
-  await tester.scrollUntilVisible(
-    option,
-    value < selected ? -48 : 48,
-    scrollable: menuScrollables.last,
-    maxScrolls: 120,
-  );
-  await tester.pumpAndSettle();
-  expect(option, findsOneWidget);
-  await _tap(tester, option);
 }
 
 ThemeData _theme(Brightness brightness, bool paper) =>

@@ -815,7 +815,7 @@ void _expectDisabled(_FormHarness form) {
   ]) {
     expect(form.button(id).onPressed, isNull, reason: '$id must be disabled.');
   }
-  expect(form.tester.widget<Switch>(_byId('astrology-now')).onChanged, isNull);
+  expect(form.tester.widgetList(_byId('astrology-now')), isEmpty);
 }
 
 ({VoidCallback edit, VoidCallback toggle}) _captureDraftCallbacks(
@@ -885,13 +885,17 @@ Color _expectColors(_FormHarness form, {required bool paper}) {
     expect(decorator.decoration.focusedBorder!.borderSide.color, accent);
   }
   final generateStyle = form.button(_generate).style!;
+  final onAccent = paper ? PaperTheme.onAccent : palette.onAccent;
+  expect(generateStyle.foregroundColor!.resolve({}), onAccent);
+  expect(generateStyle.backgroundColor!.resolve({}), accent);
+  final advancedStyle = form.button('astrology-advanced').style!;
   for (final id in [_adjust, _reset]) {
     final style = form.button(id).style!;
-    expect(style.foregroundColor!.resolve({}), accent);
-    expect(style.backgroundColor!.resolve({}), accent.withValues(alpha: 0.10));
+    expect(style.foregroundColor!.resolve({}), ink);
+    expect(style.backgroundColor!.resolve({}), fieldColor);
     expect(
       style.overlayColor!.resolve({WidgetState.hovered}),
-      generateStyle.overlayColor!.resolve({WidgetState.hovered}),
+      advancedStyle.overlayColor!.resolve({WidgetState.hovered}),
     );
     expect(style.backgroundColor!.resolve({WidgetState.disabled}), fieldColor);
     expect(style.foregroundColor!.resolve({WidgetState.disabled}), muted);

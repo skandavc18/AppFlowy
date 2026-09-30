@@ -2,10 +2,12 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:appflowy/shared/scrolling/no_scrollbar_behavior.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 
 import 'ashtakavarga.dart';
 import 'astrology_model.dart';
+import 'astrology_panchanga.dart';
 import 'astrology_strength_chart.dart';
 import 'astrology_style.dart';
 import 'astrology_time.dart';
@@ -741,79 +743,6 @@ String _contributorLabel(int contributor) =>
 
 int _sum(Iterable<int> values) => values.fold(0, (sum, value) => sum + value);
 
-const _tithiNames = [
-  'Pratipada',
-  'Dvitiya',
-  'Tritiya',
-  'Chaturthi',
-  'Panchami',
-  'Shashthi',
-  'Saptami',
-  'Ashtami',
-  'Navami',
-  'Dashami',
-  'Ekadashi',
-  'Dvadashi',
-  'Trayodashi',
-  'Chaturdashi',
-  'Purnima',
-];
-const _yogaNames = [
-  'Vishkambha',
-  'Priti',
-  'Ayushman',
-  'Saubhagya',
-  'Shobhana',
-  'Atiganda',
-  'Sukarma',
-  'Dhriti',
-  'Shula',
-  'Ganda',
-  'Vriddhi',
-  'Dhruva',
-  'Vyaghata',
-  'Harshana',
-  'Vajra',
-  'Siddhi',
-  'Vyatipata',
-  'Variyana',
-  'Parigha',
-  'Shiva',
-  'Siddha',
-  'Sadhya',
-  'Shubha',
-  'Shukla',
-  'Brahma',
-  'Indra',
-  'Vaidhriti',
-];
-const _karanaNames = [
-  'Bava',
-  'Balava',
-  'Kaulava',
-  'Taitila',
-  'Gara',
-  'Vanija',
-  'Vishti',
-];
-const _weekdayNames = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-];
-
-String _karanaName(int halfTithi) => switch (halfTithi) {
-      0 => 'Kimstughna',
-      57 => 'Shakuni',
-      58 => 'Chatushpada',
-      59 => 'Naga',
-      _ => _karanaNames[(halfTithi - 1) % 7],
-    };
-
 List<_Fact> _panchangaFacts(AstrologyChart chart) {
   final input = chart.input;
   final place = input.place;
@@ -823,8 +752,7 @@ List<_Fact> _panchangaFacts(AstrologyChart chart) {
     moonLongitude: moon.longitude,
     yearDays: input.dashaYearDays,
   ).first;
-  final tithiName =
-      chart.tithi == 30 ? 'Amavasya' : _tithiNames[(chart.tithi - 1) % 15];
+  final tithi = tithiName(chart.tithi);
   final paksha =
       chart.tithi <= 15 ? 'Shukla Paksha (waxing)' : 'Krishna Paksha (waning)';
   final halfTithi = (chart.elongation / 6).floor();
@@ -835,7 +763,7 @@ List<_Fact> _panchangaFacts(AstrologyChart chart) {
     _Fact(
       'panchanga-tithi',
       'Tithi',
-      '$tithiName · $paksha · ${chart.tithi}/30\n'
+      '$tithi · $paksha · ${chart.tithi}/30\n'
           '${(chart.tithiRemaining * 100).toStringAsFixed(2)}% remaining '
           '(fraction ${chart.tithiRemaining.toStringAsFixed(6)})',
     ),
@@ -850,17 +778,17 @@ List<_Fact> _panchangaFacts(AstrologyChart chart) {
     _Fact(
       'panchanga-yoga',
       'Yoga',
-      '${_yogaNames[chart.yoga]} · ${chart.yoga + 1}/27',
+      '${yogaNames[chart.yoga]} · ${chart.yoga + 1}/27',
     ),
     _Fact(
       'panchanga-karana',
       'Karana',
-      '${_karanaName(halfTithi)} · half-tithi ${halfTithi + 1}/60',
+      '${karanaName(halfTithi)} · half-tithi ${halfTithi + 1}/60',
     ),
     _Fact(
       'panchanga-vara',
       'Vara',
-      '${_weekdayNames[chart.weekday]} · '
+      '${weekdayNames[chart.weekday]} · '
           '${chart.sunrise == null ? 'civil weekday; sunrise unavailable' : 'sunrise-based weekday'}',
     ),
     _Fact(
@@ -1272,7 +1200,11 @@ class _Select<T extends Object> extends StatelessWidget {
                 focusColor: palette.hover,
                 borderRadius: BorderRadius.circular(10),
                 style: _textStyle(context, palette.ink, 13),
-                icon: Icon(Icons.expand_more_rounded, color: palette.muted),
+                icon: WorkspaceGlyph(
+                  Icons.expand_more_rounded,
+                  color: palette.muted,
+                  role: WorkspaceGlyphRole.preserveInk,
+                ),
                 items: [
                   for (final entry in options.entries)
                     DropdownMenuItem(

@@ -83,6 +83,13 @@ class _DashboardPageState extends State<DashboardPage> {
   /// Where the sections are, so a widget can be dragged from one to another.
   final DashboardSectionRegistry _sections = DashboardSectionRegistry();
 
+  /// Scroll views inside the page without their own [PageStorageKey] would
+  /// otherwise share the page scroll's storage slot: each saved its offset
+  /// over the page's and a fresh one restored whatever was saved last. An
+  /// embedded grid restored it only into its rows, so they no longer lined up
+  /// with its header.
+  final PageStorageBucket _contentStorage = PageStorageBucket();
+
   @override
   void initState() {
     super.initState();
@@ -315,33 +322,36 @@ class _DashboardPageState extends State<DashboardPage> {
           final inset = WorkspaceTokens.pageInset(constraints.maxWidth);
           return SingleChildScrollView(
             key: const PageStorageKey('dashboard-workspace-scroll'),
-            child: MediaQuery(
-              // A dashboard on a wall is read from further away.
-              data: MediaQuery.of(context).copyWith(
-                textScaler: presenting
-                    ? const TextScaler.linear(1.18)
-                    : MediaQuery.textScalerOf(context),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (document.settings.showHeader || _controller.isEditable)
-                    _buildHeader(palette, immersive, inset),
-                  Padding(
-                    padding: EdgeInsets.symmetric(horizontal: inset),
-                    child: Center(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: maxWidth > 0 ? maxWidth : double.infinity,
-                        ),
-                        child: DashboardBoard(
-                          registry: _sections,
-                          child: content,
+            child: PageStorage(
+              bucket: _contentStorage,
+              child: MediaQuery(
+                // A dashboard on a wall is read from further away.
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: presenting
+                      ? const TextScaler.linear(1.18)
+                      : MediaQuery.textScalerOf(context),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (document.settings.showHeader || _controller.isEditable)
+                      _buildHeader(palette, immersive, inset),
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: inset),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: maxWidth > 0 ? maxWidth : double.infinity,
+                          ),
+                          child: DashboardBoard(
+                            registry: _sections,
+                            child: content,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           );

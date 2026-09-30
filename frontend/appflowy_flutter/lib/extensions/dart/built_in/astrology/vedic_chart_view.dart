@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
@@ -1154,7 +1155,11 @@ class _SignDetailsDialog extends StatelessWidget {
                     IconButton(
                       tooltip: 'Close sign details',
                       onPressed: () => Navigator.of(context).pop(),
-                      icon: Icon(Icons.close_rounded, color: palette.muted),
+                      icon: WorkspaceGlyph(
+                        Icons.close_rounded,
+                        color: palette.muted,
+                        role: WorkspaceGlyphRole.preserveInk,
+                      ),
                     ),
                   ],
                 ),

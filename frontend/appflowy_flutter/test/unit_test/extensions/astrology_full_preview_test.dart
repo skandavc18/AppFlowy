@@ -6,6 +6,7 @@ import 'package:appflowy/extensions/dart/built_in/astrology/astrology_chart_pane
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_chart_selector.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_dashboard_model.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/astrology_model.dart';
+import 'package:appflowy/extensions/dart/built_in/astrology/astrology_transit_form.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology/vedic_chart_view.dart';
 import 'package:appflowy/extensions/dart/built_in/astrology_extension.dart';
 import 'package:appflowy/extensions/dart/extension_context.dart';
@@ -44,6 +45,7 @@ const _cardTypes = {
   'Shadbala': astrologyShadbalaWidgetType,
   'Vimshottari dasha': astrologyDashaWidgetType,
   'Ashtakavarga': astrologyAshtakavargaWidgetType,
+  'Date analysis': astrologyDateAnalysisWidgetType,
   'Life events': astrologyEventsWidgetType,
 };
 
@@ -369,21 +371,21 @@ DashboardController _expectRealPreview(WidgetTester tester) {
   expect(find.byType(DashboardBoard), findsOneWidget);
   expect(find.byType(DashboardSectionView), findsOneWidget);
   expect(find.byType(DashboardCanvas), findsOneWidget);
-  expect(find.byType(DashboardCard), findsNWidgets(11));
+  expect(find.byType(DashboardCard), findsNWidgets(12));
   expect(
     DashboardWidgetRegistry.all()
         .where((definition) => definition.extensionId == 'astrology')
         .map((definition) => definition.type),
     unorderedEquals(_cardTypes.values.toSet()),
   );
-  expect(_cardTypes.values.toSet(), hasLength(9));
+  expect(_cardTypes.values.toSet(), hasLength(10));
 
   final controller =
       tester.widget<DashboardCanvas>(find.byType(DashboardCanvas)).controller;
   expect(controller.viewId, isEmpty);
   expect(controller.mode, DashboardMode.presentation);
   expect(controller.isEditable, isFalse);
-  expect(controller.document.widgetCount, 11);
+  expect(controller.document.widgetCount, 12);
   expect(controller.document.settings.columns, 0);
   expect(controller.state[astrologyDraftKey], isNull);
   expect(controller.canUndo, isFalse);
@@ -445,12 +447,14 @@ DashboardController _expectRealPreview(WidgetTester tester) {
     expect(field.autofocus, isFalse, reason: id);
     expect(field.controller!.text, isEmpty, reason: id);
   }
-  expect(
-    tester
-        .widget<Switch>(find.byKey(const ValueKey('astrology-now')))
-        .onChanged,
-    isNull,
+  // Birth and Transit details are tabs; there is no live/Now toggle.
+  expect(find.byKey(const ValueKey('astrology-now')), findsNothing);
+  expect(find.byKey(const ValueKey('astrology-details-tabs')), findsOneWidget);
+  final transitForm = tester.widget<AstrologyTransitForm>(
+    find.byType(AstrologyTransitForm, skipOffstage: false),
   );
+  expect(transitForm.enabled, isFalse);
+  expect(transitForm.utc, isNull);
   for (final id in const [
     'astrology-current-location',
     'astrology-search',
@@ -499,6 +503,13 @@ DashboardController _expectRealPreview(WidgetTester tester) {
     ),
     findsOneWidget,
   );
+  expect(
+    find.descendant(
+      of: _card('Date analysis'),
+      matching: find.textContaining('No location is requested in a preview'),
+    ),
+    findsOneWidget,
+  );
   expect(find.byType(ActionChip), findsNothing);
   expect(
     tester
@@ -539,37 +550,58 @@ void _expectLayout(
   required double gap,
 }) {
   // These are visual requirements, not expected values obtained from the
-  // production layout resolver. Six-plus-six scales exactly to 4+4 and 3+3;
-  // the former three four-column cards collide on an eight-column preview.
-  const rows = [
-    ['Birth details'],
-    ['Saved horoscopes'],
-    ['Lagna · D-1', 'Navamsha · D-9'],
-    ['Panchanga', 'Transit · D-1'],
-    ['Planetary & special lagnas'],
-    ['Shadbala', 'Vimshottari dasha'],
-    ['Ashtakavarga'],
-    ['Life events'],
-  ];
+  // production layout resolver. Full-width bands stack top to bottom. Between
+  // them, JHora-like, the charts run down the left half beside the dasha and
+  // then the panchanga on the right. Six-plus-six scales exactly to 4+4 and
+  // 3+3, and both halves start and end together.
+  final half = (width - gap) / 2;
   var nextTop = 0.0;
-  for (final row in rows) {
-    final left = rects[row.first]!;
-    expect(left.top, closeTo(nextTop, _epsilon), reason: row.first);
-    expect(left.left, closeTo(0, _epsilon), reason: row.first);
-    if (row.length == 1) {
-      expect(left.width, closeTo(width, _epsilon), reason: row.first);
-    } else {
-      final right = rects[row.last]!;
-      final reason = '${row.first} and ${row.last} must remain equal peers.';
-      expect(right.top, closeTo(left.top, _epsilon), reason: reason);
-      expect(right.height, closeTo(left.height, _epsilon), reason: reason);
-      expect(right.width, closeTo(left.width, _epsilon), reason: reason);
-      expect(left.width, closeTo((width - gap) / 2, _epsilon), reason: reason);
-      expect(right.left - left.right, closeTo(gap, _epsilon), reason: reason);
-      expect(right.right, closeTo(width, _epsilon), reason: reason);
-      expect(left.overlaps(right), isFalse, reason: reason);
+  void full(String title) {
+    final rect = rects[title]!;
+    expect(rect.top, closeTo(nextTop, _epsilon), reason: title);
+    expect(rect.left, closeTo(0, _epsilon), reason: title);
+    expect(rect.width, closeTo(width, _epsilon), reason: title);
+    nextTop = rect.bottom + gap;
+  }
+
+  double column(List<String> titles, {required bool right}) {
+    var top = nextTop;
+    for (final title in titles) {
+      final rect = rects[title]!;
+      expect(rect.top, closeTo(top, _epsilon), reason: title);
+      expect(rect.width, closeTo(half, _epsilon), reason: title);
+      expect(
+        right ? rect.right : rect.left,
+        closeTo(right ? width : 0, _epsilon),
+        reason: title,
+      );
+      top = rect.bottom + gap;
     }
-    nextTop = left.bottom + gap;
+    return top;
+  }
+
+  full('Birth details');
+  full('Saved horoscopes');
+  const charts = ['Lagna · D-1', 'Navamsha · D-9', 'Transit · D-1'];
+  final left = column(charts, right: false);
+  final right = column(['Vimshottari dasha', 'Panchanga'], right: true);
+  expect(right, closeTo(left, _epsilon), reason: 'The halves end together.');
+  for (final title in charts) {
+    expect(
+      rects[title]!.height,
+      closeTo(rects[charts.first]!.height, _epsilon),
+      reason: '$title is an equal peer.',
+    );
+  }
+  nextTop = left;
+  for (final title in const [
+    'Shadbala',
+    'Ashtakavarga',
+    'Life events',
+    'Planetary & special lagnas',
+    'Date analysis',
+  ]) {
+    full(title);
   }
 
   final entries = rects.entries.toList();
