@@ -283,6 +283,12 @@ pub(crate) async fn read_recent_views_handler(
   let recent_items = folder.get_my_recent_sections().await;
   let start = data.start;
   let limit = data.limit;
+  // Pair each view with its own timestamp. Trashed or missing views are
+  // filtered out below, so zipping by position would shift later timestamps.
+  let timestamps = recent_items
+    .iter()
+    .map(|item| (item.id.clone(), item.timestamp))
+    .collect::<std::collections::HashMap<_, _>>();
   let ids = recent_items
     .iter()
     .rev()  // the most recent view is at the end of the list
@@ -293,10 +299,12 @@ pub(crate) async fn read_recent_views_handler(
   let views = folder.get_view_pbs_without_children(ids).await?;
   let items = views
     .into_iter()
-    .zip(recent_items.into_iter().rev())
-    .map(|(view, item)| SectionViewPB {
-      item: view,
-      timestamp: item.timestamp,
+    .map(|view| {
+      let timestamp = timestamps.get(&view.id).copied().unwrap_or_default();
+      SectionViewPB {
+        item: view,
+        timestamp,
+      }
     })
     .collect::<Vec<_>>();
   data_result_ok(RepeatedRecentViewPB { items })

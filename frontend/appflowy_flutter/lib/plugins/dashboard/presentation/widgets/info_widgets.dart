@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_field.dart';
@@ -8,11 +7,11 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
 import 'package:appflowy/shared/maps/map_geocoder.dart';
+import 'package:appflowy/shared/weather/weather_reading.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
 /// Everything else a dashboard can show.
 ///
@@ -73,20 +72,7 @@ final _weather = DashboardWidgetDefinition(
 );
 
 /// One reading of the weather, as it came back.
-@immutable
-class _Weather {
-  const _Weather({
-    required this.temperature,
-    required this.high,
-    required this.low,
-    required this.code,
-  });
-
-  final double temperature;
-  final double high;
-  final double low;
-  final int code;
-}
+typedef _Weather = WeatherReading;
 
 class _WeatherBody extends StatefulWidget {
   const _WeatherBody({required this.context});
@@ -160,33 +146,10 @@ class _WeatherBodyState extends State<_WeatherBody> {
 
       final fahrenheit =
           spec.setting(_keyUnits, fallback: 'celsius') == 'fahrenheit';
-      final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
-        'latitude': '$latitude',
-        'longitude': '$longitude',
-        'current': 'temperature_2m,weather_code',
-        'daily': 'temperature_2m_max,temperature_2m_min',
-        'forecast_days': '1',
-        'timezone': 'auto',
-        if (fahrenheit) 'temperature_unit': 'fahrenheit',
-      });
-      final response = await http.get(uri).timeout(const Duration(seconds: 12));
-      if (response.statusCode != 200) {
-        throw StateError('HTTP ${response.statusCode}');
-      }
-      final body = jsonDecode(response.body);
-      if (body is! Map) {
-        throw StateError('unexpected answer');
-      }
-      final current = body['current'];
-      final daily = body['daily'];
-      if (current is! Map || daily is! Map) {
-        throw StateError('unexpected answer');
-      }
-      final weather = _Weather(
-        temperature: (current['temperature_2m'] as num?)?.toDouble() ?? 0,
-        high: _firstNumber(daily['temperature_2m_max']),
-        low: _firstNumber(daily['temperature_2m_min']),
-        code: (current['weather_code'] as num?)?.round() ?? 0,
+      final weather = await readWeather(
+        latitude: latitude.toDouble(),
+        longitude: longitude.toDouble(),
+        fahrenheit: fahrenheit,
       );
       if (mounted) {
         setState(() {
@@ -204,11 +167,6 @@ class _WeatherBodyState extends State<_WeatherBody> {
       }
     }
   }
-
-  static double _firstNumber(Object? value) =>
-      value is List && value.isNotEmpty && value.first is num
-          ? (value.first as num).toDouble()
-          : 0;
 
   Future<void> _choosePlace() async {
     final place = await showDashboardPlacePicker(
@@ -259,7 +217,7 @@ class _WeatherBodyState extends State<_WeatherBody> {
     return Row(
       children: [
         Icon(
-          _iconFor(weather.code),
+          weatherIconFor(weather.code),
           size: 34,
           color: widget.context.strong,
         ),
@@ -277,25 +235,5 @@ class _WeatherBodyState extends State<_WeatherBody> {
         ),
       ],
     );
-  }
-
-  /// WMO weather codes, as Open-Meteo reports them.
-  IconData _iconFor(int code) {
-    if (code == 0) {
-      return Icons.wb_sunny_rounded;
-    }
-    if (code <= 3) {
-      return Icons.wb_cloudy_rounded;
-    }
-    if (code <= 48) {
-      return Icons.foggy;
-    }
-    if (code <= 67 || (code >= 80 && code <= 82)) {
-      return Icons.water_drop_rounded;
-    }
-    if (code <= 79 || (code >= 85 && code <= 86)) {
-      return Icons.ac_unit_rounded;
-    }
-    return Icons.thunderstorm_rounded;
   }
 }

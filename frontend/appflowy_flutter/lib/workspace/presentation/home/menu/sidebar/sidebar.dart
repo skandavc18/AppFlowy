@@ -31,12 +31,14 @@ import 'package:appflowy/workspace/presentation/home/menu/sidebar/header/sidebar
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/header/sidebar_user.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_folder.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_home_button.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_library_buttons.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_new_page_button.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/sidebar_space.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/space/space_migration.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/workspace/sidebar_workspace.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_style.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_gallery/view_gallery_labels.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/workspace.pb.dart';
@@ -378,6 +380,24 @@ class _SidebarState extends State<_Sidebar> {
                   Padding(
                     padding: menuHorizontalInset,
                     child: const SidebarHomeButton(),
+                  ),
+                  Padding(
+                    padding: menuHorizontalInset,
+                    child: const SidebarLibraryButton(
+                      library: ViewLibrary.recents,
+                    ),
+                  ),
+                  Padding(
+                    padding: menuHorizontalInset,
+                    child: const SidebarLibraryButton(
+                      library: ViewLibrary.favorites,
+                    ),
+                  ),
+                  Padding(
+                    padding: menuHorizontalInset,
+                    child: const SidebarLibraryButton(
+                      library: ViewLibrary.all,
+                    ),
                   ),
 
                   // scrollable document list

@@ -34,17 +34,26 @@ class CachedRecentService {
 
   bool isDisposed = false;
 
+  /// Bumped by every reset; a read begun before one belongs to another
+  /// workspace and must not land in this one.
+  int _generation = 0;
+
   Future<List<SectionViewPB>> recentViews() async {
     if (_isInitialized || _completer.isCompleted) return _recentViews;
 
     _isInitialized = true;
+    final generation = _generation;
+    final completer = _completer;
 
     _listener.start(recentViewsUpdated: _recentViewsUpdated);
-    _recentViews = await _readRecentViews().fold(
+    final views = await _readRecentViews().fold(
       (s) => s.items.unique((e) => e.item.id),
-      (_) => [],
+      (_) => <SectionViewPB>[],
     );
-    _completer.complete();
+    if (generation == _generation && !isDisposed) {
+      _recentViews = views;
+    }
+    if (!completer.isCompleted) completer.complete();
 
     return _recentViews;
   }
@@ -92,6 +101,7 @@ class CachedRecentService {
   bool _isInitialized = false;
 
   Future<void> reset() async {
+    _generation++;
     await _listener.stop();
     _resetCompleter();
     _isInitialized = false;
@@ -111,10 +121,14 @@ class CachedRecentService {
   ) async {
     final viewIds = result.toNullable();
     if (viewIds != null) {
-      _recentViews = await _readRecentViews().fold(
+      final generation = _generation;
+      final views = await _readRecentViews().fold(
         (s) => s.items.unique((e) => e.item.id),
-        (_) => [],
+        (_) => <SectionViewPB>[],
       );
+      if (generation == _generation && !isDisposed) {
+        _recentViews = views;
+      }
     }
   }
 

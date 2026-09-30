@@ -861,7 +861,8 @@ class PageManager {
                   );
                 }
 
-                return const BlankPage();
+                // Offstage slots stay empty: Home is a live landing page.
+                return const SizedBox.shrink();
               },
             ).toList(),
           );

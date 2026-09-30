@@ -20,6 +20,7 @@ import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_content_policy.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
+import 'package:appflowy/workspace/application/view/local_page_store.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_controller.dart';
@@ -31,6 +32,7 @@ import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_e
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_database_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_file_kind_menu.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_inline_name_editor.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_cover/local_page_cover.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_decoration_actions.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart'
@@ -327,35 +329,46 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
         Widget buildHeader(
           Widget? iconActions,
           Widget? coverActions,
-          Widget? _,
-        ) =>
+          Widget? _, {
+          LocalPage? rootCover,
+        }) =>
             WorkspacePageHeader(
               // The shell inset already contains its centered outer margin.
               // Applying a second max-width here would count that margin twice.
               maxWidth: double.infinity,
               contentInset: horizontal,
               overlapIcon: rootWorkspace != null || folderView != null,
-              coverView: rootWorkspace == null ? folderView : null,
-              coverBinding: (controller, folder.id),
-              coverEditable: rootWorkspace == null && canEditIdentity,
+              // The workspace cover belongs to the workspace, not a folder
+              // view; its height is a preference kept on this device.
+              coverView: rootCover?.view ??
+                  (rootWorkspace == null ? folderView : null),
+              coverBackend: rootCover?.heights,
+              coverBinding: rootCover == null ? (controller, folder.id) : null,
+              coverEditable: rootCover != null ||
+                  (rootWorkspace == null && canEditIdentity),
               canResizeCover: () =>
                   mounted &&
                   widget.controller == controller &&
                   controller.currentFolder.id == folder.id &&
-                  _canEditCurrentFolder(identity: true),
-              isSameCoverTarget: (fresh) =>
-                  fresh.pluginType == folderView?.pluginType,
-              onCoverHeightChanged: (height) {
-                final latest = controller.viewForId(folder.id);
-                if (mounted &&
-                    widget.controller == controller &&
-                    controller.currentFolder.id == folder.id &&
-                    latest != null &&
-                    _canEditCurrentFolder(identity: true)) {
-                  controller
-                      .updateView(PageCoverHeight.applyTo(latest, height));
-                }
-              },
+                  (rootCover != null ||
+                      _canEditCurrentFolder(identity: true)),
+              isSameCoverTarget: rootCover != null
+                  ? null
+                  : (fresh) => fresh.pluginType == folderView?.pluginType,
+              onCoverHeightChanged: rootCover != null
+                  ? null
+                  : (height) {
+                      final latest = controller.viewForId(folder.id);
+                      if (mounted &&
+                          widget.controller == controller &&
+                          controller.currentFolder.id == folder.id &&
+                          latest != null &&
+                          _canEditCurrentFolder(identity: true)) {
+                        controller.updateView(
+                          PageCoverHeight.applyTo(latest, height),
+                        );
+                      }
+                    },
               leading: widget.showControls && controller.breadcrumbs.length > 1
                   ? Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -424,16 +437,25 @@ class _FolderGalleryHeaderState extends State<FolderGalleryHeader> {
             );
         return PreviewToolbarRegion(
           child: rootWorkspace != null
-              ? WorkspaceCoverActions(
-                  workspace: rootWorkspace,
-                  userProfile: widget.userProfile,
-                  visible: keepVisible,
-                  editable: canEditIdentity,
-                  showIconAction: true,
-                  layoutBuilder: buildHeader,
-                  onCoverChanged: (cover) => _setWorkspaceCoverOverride(
-                    rootWorkspace,
-                    cover,
+              ? LocalPageBuilder(
+                  pageId: localPageId('workspace', rootWorkspace.workspaceId),
+                  builder: (context, rootCover) => WorkspaceCoverActions(
+                    workspace: rootWorkspace,
+                    userProfile: widget.userProfile,
+                    visible: keepVisible,
+                    editable: canEditIdentity,
+                    showIconAction: true,
+                    layoutBuilder: (iconActions, coverActions, pageActions) =>
+                        buildHeader(
+                      iconActions,
+                      coverActions,
+                      pageActions,
+                      rootCover: rootCover,
+                    ),
+                    onCoverChanged: (cover) => _setWorkspaceCoverOverride(
+                      rootWorkspace,
+                      cover,
+                    ),
                   ),
                 )
               : folderView != null

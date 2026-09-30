@@ -293,17 +293,30 @@ class CommandPaletteModal extends StatefulWidget {
     super.key,
     required this.shortcutBuilder,
     this.contentReadProvider,
+    this.initialQuery,
+    this.initialFilter,
+    this.anchoredSize,
   });
 
   final Widget Function(Widget) shortcutBuilder;
   final DocumentFindReadProvider? contentReadProvider;
+
+  /// Seeds the search box instead of the palette's last query, keeping the
+  /// caret at its end (the words were typed into another search bar).
+  final String? initialQuery;
+  final CommandPaletteFilter? initialFilter;
+
+  /// Draws the same search as a panel of this size inside a host route (the
+  /// Home search bar) instead of as a centred dialog.
+  final Size? anchoredSize;
 
   @override
   State<CommandPaletteModal> createState() => _CommandPaletteModalState();
 }
 
 class _CommandPaletteModalState extends State<CommandPaletteModal> {
-  CommandPaletteFilter filter = const CommandPaletteFilter();
+  late CommandPaletteFilter filter =
+      widget.initialFilter ?? const CommandPaletteFilter();
   late final CommandPaletteBloc _paletteBloc;
   late final UserWorkspaceBloc? _workspaceBloc;
   late final WorkspaceContentSearchController _contentSearch;
@@ -322,7 +335,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
     super.initState();
     _paletteBloc = context.read<CommandPaletteBloc>();
     _workspaceBloc = context.read<UserWorkspaceBloc?>();
-    _draft = _paletteBloc.state.query ?? '';
+    _draft = widget.initialQuery ?? _paletteBloc.state.query ?? '';
     final provider = widget.contentReadProvider;
     _contentSearch = provider == null
         ? WorkspaceContentSearchController.native(
@@ -357,6 +370,18 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
       _syncTitleSource(_paletteBloc.state);
       if (mounted && !_closing) setState(() {});
     });
+    if (filter.pageContents) {
+      _paletteBloc.setContentSearchEnabled(true);
+      _syncContentSource(_paletteBloc.state);
+      _contentSearch.search(_draft, enabled: true, filter: filter);
+    } else if (widget.initialQuery != null &&
+        _draft != (_paletteBloc.state.query ?? '')) {
+      _paletteBloc.add(
+        _draft.isEmpty
+            ? const CommandPaletteEvent.clearSearch()
+            : CommandPaletteEvent.searchChanged(search: _draft),
+      );
+    }
   }
 
   void _syncTitleSource(CommandPaletteState state) {
@@ -623,213 +648,228 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
           final spaces =
               context.watch<SpaceBloc?>()?.state.spaces ?? const <ViewPB>[];
           final media = MediaQuery.of(context);
-          final dialogSize = commandPaletteDialogSize(
-            media.size,
-            viewInsets: media.viewInsets,
-          );
+          final anchoredSize = widget.anchoredSize;
+          final dialogSize = anchoredSize ??
+              commandPaletteDialogSize(
+                media.size,
+                viewInsets: media.viewInsets,
+              );
           final contentInset = media.size.width < 640
               ? WorkspaceTokens.space4
               : WorkspaceTokens.space6;
+          final content = widget.shortcutBuilder(
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                contentInset,
+                contentInset,
+                contentInset,
+                0,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  ConstrainedBox(
+                    constraints:
+                        BoxConstraints(maxHeight: dialogSize.height * 0.4),
+                    child: SingleChildScrollView(
+                      primary: false,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SearchField(
+                            query: _draft,
+                            isLoading: searching,
+                            selectAllOnOpen: widget.initialQuery == null,
+                            onChanged: _queryChanged,
+                            onSubmit: inCommandMode && hasCommands
+                                ? () => _runCommand(
+                                      matchedCommands.first,
+                                      commandRunQuery,
+                                    )
+                                : hasResult
+                                    ? () {
+                                        final id = resultItems.first.id;
+                                        final allowed = inContentMode
+                                            ? _contentSearch.canUseResult(
+                                                id, _draft)
+                                            : _titleSearch.canUseResult(
+                                                id, _draft);
+                                        if (!allowed ||
+                                            ModalRoute.of(context)?.isCurrent ==
+                                                false) return;
+                                        final view = cachedViews[id];
+                                        if (view == null) return;
+                                        _dismiss();
+                                        view.navigateTo();
+                                      }
+                                    : null,
+                          ),
+                          if (!inCommandMode)
+                            SearchFilterBar(
+                              filter: filter,
+                              spaces: spaces,
+                              onChanged: _filterChanged,
+                            )
+                          else
+                            const VSpace(WorkspaceTokens.space4),
+                          if (inContentMode)
+                            WorkspaceContentSearchStatusView(
+                              state: contentState,
+                            ),
+                          if (!inContentMode &&
+                              !inCommandMode &&
+                              _titleSearch.timedOut)
+                            Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                'Title search timed out. Coverage is incomplete.',
+                                key: const ValueKey(
+                                    'command-palette-title-timeout'),
+                                style: WorkspaceTypography.style(
+                                    context, WorkspaceTextRole.metadata),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (inCommandMode)
+                    Expanded(
+                      child: CommandPalettePanel(
+                        commands: matchedCommands,
+                        onRun: (command) =>
+                            _runCommand(command, commandRunQuery),
+                      ),
+                    )
+                  else if (inContentMode)
+                    Expanded(
+                      child: hasResult
+                          ? SearchResultList(
+                              cachedViews: {
+                                for (final hit in contentState.results)
+                                  hit.view.id: hit.view,
+                              },
+                              resultItems: resultItems,
+                              resultSummaries: const [],
+                              query: rawQuery,
+                              contentSearch: true,
+                              canUseResult: (id) =>
+                                  _contentSearch.canUseResult(id, _draft),
+                            )
+                          : WorkspaceContentSearchEmpty(
+                              state: contentState,
+                            ),
+                    )
+                  else if (noQuery)
+                    Expanded(
+                      child: RecentViewsList(
+                        onSelected: _dismiss,
+                        filter: filter,
+                        cachedViews: cachedViews,
+                        currentUserId: currentUserId,
+                        currentWorkspaceId: currentWorkspace?.workspaceId,
+                        currentWorkspaceName: currentWorkspace?.name,
+                        currentWorkspaceIcon: currentWorkspace?.icon,
+                        currentWorkspaceCover: currentWorkspaceCover,
+                      ),
+                    )
+                  else if (hasQuery && (hasResult || hasCommands))
+                    Expanded(
+                      child: SearchResultList(
+                        cachedViews: cachedViews,
+                        resultItems: resultItems,
+                        resultSummaries: const [],
+                        query: rawQuery,
+                        metadataOnly: true,
+                        canUseResult: (id) =>
+                            _titleSearch.canUseResult(id, _draft),
+                        commands: matchedCommands,
+                        onRunCommand: (command) =>
+                            _runCommand(command, commandRunQuery),
+                        currentWorkspaceId: currentWorkspace?.workspaceId,
+                        currentWorkspaceName: currentWorkspace?.name,
+                        currentWorkspaceIcon: currentWorkspace?.icon,
+                        currentWorkspaceCover: currentWorkspaceCover,
+                      ),
+                    )
+                  // When there are no results and the query is not empty and not loading,
+                  // show the no results message, centered in the available space.
+                  else if (hasQuery &&
+                      !searching &&
+                      !_titleSearch.timedOut) ...[
+                    SearchAskAiEntrance(),
+                    Expanded(
+                      child: const NoSearchResultsHint(),
+                    ),
+                  ],
+                  if (hasQuery &&
+                      searching &&
+                      !hasResult &&
+                      !hasCommands &&
+                      !inContentMode &&
+                      !inCommandMode)
+                    // Show a loading indicator when searching
+                    Expanded(
+                      child: Center(
+                        child: Center(
+                          child: CircularProgressIndicator.adaptive(),
+                        ),
+                      ),
+                    ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final minimumWidth =
+                          MediaQuery.textScalerOf(context).scale(400);
+                      return SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: SizedBox(
+                          width: constraints.maxWidth < minimumWidth
+                              ? minimumWidth
+                              : constraints.maxWidth,
+                          child: CommandPaletteHintBar(
+                            commandMode: inCommandMode,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          );
+          final shape = RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(WorkspaceTokens.dialogRadius),
+          );
           return PopScope<Object?>(
             onPopInvokedWithResult: (didPop, _) {
               if (didPop) _stopContentSearch();
             },
-            child: FlowyDialog(
-              backgroundColor: palette.elevatedSurface,
-              width: dialogSize.width,
-              elevation: 8,
-              shadowColor: palette.shadow,
-              surfaceTintColor: Colors.transparent,
-              shape: RoundedRectangleBorder(
-                borderRadius:
-                    BorderRadius.circular(WorkspaceTokens.dialogRadius),
-              ),
-              alignment: Alignment.center,
-              insetPadding: commandPaletteDialogInsets(media.size),
-              padding: EdgeInsets.zero,
-              constraints: BoxConstraints.tight(dialogSize),
-              expandHeight: false,
-              child: widget.shortcutBuilder(
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    contentInset,
-                    contentInset,
-                    contentInset,
-                    0,
+            child: anchoredSize != null
+                ? Material(
+                    key: const ValueKey('command-palette-anchored-panel'),
+                    color: palette.elevatedSurface,
+                    elevation: 8,
+                    shadowColor: palette.shadow,
+                    surfaceTintColor: Colors.transparent,
+                    shape: shape,
+                    clipBehavior: Clip.antiAlias,
+                    child:
+                        SizedBox.fromSize(size: anchoredSize, child: content),
+                  )
+                : FlowyDialog(
+                    backgroundColor: palette.elevatedSurface,
+                    width: dialogSize.width,
+                    elevation: 8,
+                    shadowColor: palette.shadow,
+                    surfaceTintColor: Colors.transparent,
+                    shape: shape,
+                    alignment: Alignment.center,
+                    insetPadding: commandPaletteDialogInsets(media.size),
+                    padding: EdgeInsets.zero,
+                    constraints: BoxConstraints.tight(dialogSize),
+                    expandHeight: false,
+                    child: content,
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ConstrainedBox(
-                        constraints:
-                            BoxConstraints(maxHeight: dialogSize.height * 0.4),
-                        child: SingleChildScrollView(
-                          primary: false,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              SearchField(
-                                query: _draft,
-                                isLoading: searching,
-                                onChanged: _queryChanged,
-                                onSubmit: inCommandMode && hasCommands
-                                    ? () => _runCommand(
-                                          matchedCommands.first,
-                                          commandRunQuery,
-                                        )
-                                    : hasResult
-                                        ? () {
-                                            final id = resultItems.first.id;
-                                            final allowed = inContentMode
-                                                ? _contentSearch.canUseResult(
-                                                    id, _draft)
-                                                : _titleSearch.canUseResult(
-                                                    id, _draft);
-                                            if (!allowed ||
-                                                ModalRoute.of(context)
-                                                        ?.isCurrent ==
-                                                    false) return;
-                                            final view = cachedViews[id];
-                                            if (view == null) return;
-                                            _dismiss();
-                                            view.navigateTo();
-                                          }
-                                        : null,
-                              ),
-                              if (!inCommandMode)
-                                SearchFilterBar(
-                                  filter: filter,
-                                  spaces: spaces,
-                                  onChanged: _filterChanged,
-                                )
-                              else
-                                const VSpace(WorkspaceTokens.space4),
-                              if (inContentMode)
-                                WorkspaceContentSearchStatusView(
-                                  state: contentState,
-                                ),
-                              if (!inContentMode &&
-                                  !inCommandMode &&
-                                  _titleSearch.timedOut)
-                                Semantics(
-                                  liveRegion: true,
-                                  child: Text(
-                                    'Title search timed out. Coverage is incomplete.',
-                                    key: const ValueKey(
-                                        'command-palette-title-timeout'),
-                                    style: WorkspaceTypography.style(
-                                        context, WorkspaceTextRole.metadata),
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (inCommandMode)
-                        Expanded(
-                          child: CommandPalettePanel(
-                            commands: matchedCommands,
-                            onRun: (command) =>
-                                _runCommand(command, commandRunQuery),
-                          ),
-                        )
-                      else if (inContentMode)
-                        Expanded(
-                          child: hasResult
-                              ? SearchResultList(
-                                  cachedViews: {
-                                    for (final hit in contentState.results)
-                                      hit.view.id: hit.view,
-                                  },
-                                  resultItems: resultItems,
-                                  resultSummaries: const [],
-                                  query: rawQuery,
-                                  contentSearch: true,
-                                  canUseResult: (id) =>
-                                      _contentSearch.canUseResult(id, _draft),
-                                )
-                              : WorkspaceContentSearchEmpty(
-                                  state: contentState,
-                                ),
-                        )
-                      else if (noQuery)
-                        Expanded(
-                          child: RecentViewsList(
-                            onSelected: _dismiss,
-                            filter: filter,
-                            cachedViews: cachedViews,
-                            currentUserId: currentUserId,
-                            currentWorkspaceId: currentWorkspace?.workspaceId,
-                            currentWorkspaceName: currentWorkspace?.name,
-                            currentWorkspaceIcon: currentWorkspace?.icon,
-                            currentWorkspaceCover: currentWorkspaceCover,
-                          ),
-                        )
-                      else if (hasQuery && (hasResult || hasCommands))
-                        Expanded(
-                          child: SearchResultList(
-                            cachedViews: cachedViews,
-                            resultItems: resultItems,
-                            resultSummaries: const [],
-                            query: rawQuery,
-                            metadataOnly: true,
-                            canUseResult: (id) =>
-                                _titleSearch.canUseResult(id, _draft),
-                            commands: matchedCommands,
-                            onRunCommand: (command) =>
-                                _runCommand(command, commandRunQuery),
-                            currentWorkspaceId: currentWorkspace?.workspaceId,
-                            currentWorkspaceName: currentWorkspace?.name,
-                            currentWorkspaceIcon: currentWorkspace?.icon,
-                            currentWorkspaceCover: currentWorkspaceCover,
-                          ),
-                        )
-                      // When there are no results and the query is not empty and not loading,
-                      // show the no results message, centered in the available space.
-                      else if (hasQuery &&
-                          !searching &&
-                          !_titleSearch.timedOut) ...[
-                        SearchAskAiEntrance(),
-                        Expanded(
-                          child: const NoSearchResultsHint(),
-                        ),
-                      ],
-                      if (hasQuery &&
-                          searching &&
-                          !hasResult &&
-                          !hasCommands &&
-                          !inContentMode &&
-                          !inCommandMode)
-                        // Show a loading indicator when searching
-                        Expanded(
-                          child: Center(
-                            child: Center(
-                              child: CircularProgressIndicator.adaptive(),
-                            ),
-                          ),
-                        ),
-                      LayoutBuilder(
-                        builder: (context, constraints) {
-                          final minimumWidth =
-                              MediaQuery.textScalerOf(context).scale(400);
-                          return SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: SizedBox(
-                              width: constraints.maxWidth < minimumWidth
-                                  ? minimumWidth
-                                  : constraints.maxWidth,
-                              child: CommandPaletteHintBar(
-                                commandMode: inCommandMode,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
           );
         },
       ),

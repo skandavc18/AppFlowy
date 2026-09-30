@@ -1,3 +1,4 @@
+import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
@@ -142,6 +143,15 @@ void main() {
       AutomaticViewCover.supports(
         layout: ViewLayoutPB.Chat,
         extra: '',
+        creationMetadata: const {},
+      ),
+      isFalse,
+    );
+    // A canvas page has nowhere to show one.
+    expect(
+      AutomaticViewCover.supports(
+        layout: ViewLayoutPB.Document,
+        extra: CanvasMetadata.newExtra(),
         creationMetadata: const {},
       ),
       isFalse,

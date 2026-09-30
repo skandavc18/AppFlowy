@@ -18,10 +18,15 @@ class SearchField extends StatefulWidget {
     this.isLoading = false,
     this.onSubmit,
     this.onChanged,
+    this.selectAllOnOpen = true,
   });
 
   final String? query;
   final bool isLoading;
+
+  /// A reopened palette selects its last query; a query typed into another
+  /// search bar continues with the caret at its end instead.
+  final bool selectAllOnOpen;
 
   /// When supplied, the modal owns dispatch (local contents or metadata).
   /// Backend state is not written back into this field's live draft.
@@ -48,10 +53,12 @@ class _SearchFieldState extends State<SearchField> {
     // Update the text selection after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      controller.selection = TextSelection(
-        baseOffset: 0,
-        extentOffset: controller.text.length,
-      );
+      controller.selection = widget.selectAllOnOpen
+          ? TextSelection(
+              baseOffset: 0,
+              extentOffset: controller.text.length,
+            )
+          : TextSelection.collapsed(offset: controller.text.length);
     });
   }
 

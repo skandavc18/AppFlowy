@@ -5,11 +5,13 @@ import 'package:appflowy/plugins/database/board/board.dart';
 import 'package:appflowy/plugins/database/grid/grid.dart';
 import 'package:appflowy/plugins/database_document/database_document_plugin.dart';
 import 'package:appflowy/plugins/templates/templates_plugin.dart';
+import 'package:appflowy/plugins/view_library/view_library_plugin.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/plugins/document/document.dart';
 import 'package:appflowy/plugins/trash/trash.dart';
+import 'package:appflowy/workspace/presentation/widgets/view_gallery/view_gallery_labels.dart';
 
 class PluginLoadTask extends LaunchTask {
   const PluginLoadTask();
@@ -30,6 +32,18 @@ class PluginLoadTask extends LaunchTask {
     registerPlugin(
       builder: ExtensionsPluginBuilder(),
       config: ExtensionsPluginConfig(),
+    );
+    registerPlugin(
+      builder: ViewLibraryPluginBuilder(ViewLibrary.recents),
+      config: ViewLibraryPluginConfig(),
+    );
+    registerPlugin(
+      builder: ViewLibraryPluginBuilder(ViewLibrary.favorites),
+      config: ViewLibraryPluginConfig(),
+    );
+    registerPlugin(
+      builder: ViewLibraryPluginBuilder(ViewLibrary.all),
+      config: ViewLibraryPluginConfig(),
     );
     registerPlugin(builder: DocumentPluginBuilder());
     registerPlugin(builder: GridPluginBuilder(), config: GridPluginConfig());

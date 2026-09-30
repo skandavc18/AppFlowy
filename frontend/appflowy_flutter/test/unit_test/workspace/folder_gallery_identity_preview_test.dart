@@ -157,6 +157,18 @@ void main() {
         expect(preview.wordCount, 0);
         expect(preview.readingMinutes, 0);
         expect(preview.hasHero, isFalse);
+        expect(preview.note, FolderGalleryPreviewNote.empty);
+      }
+    });
+
+    test('a page holding more than empty text is never called empty', () {
+      for (final block in [
+        BlockPB(id: 'rule', ty: 'divider', data: '{}'),
+        BlockPB(id: 'picture', ty: 'image', data: '{}'),
+        BlockPB(id: 'grid', ty: 'grid', data: '{}'),
+        _text('Words'),
+      ]) {
+        expect(_parse(_document([block])).note, isNull, reason: block.ty);
       }
     });
 
@@ -269,6 +281,7 @@ void main() {
         expect(preview.wordCount, 0);
         expect(preview.readingMinutes, 0);
         expect(preview.hasHero, isFalse);
+        expect(preview.note, FolderGalleryPreviewNote.empty);
       });
     }
 
@@ -283,17 +296,93 @@ void main() {
       expect(preview.hasHero, isFalse);
     });
 
-    test('missing paths and remote unread text are not empty files', () async {
+    test('missing paths and unreadable remote text are not empty files',
+        () async {
+      final remote = <(Uri, int)>[];
+      final reader = FolderGalleryPreviewLoader(
+        documentService: documents,
+        remoteReader: (uri, maxBytes) async {
+          remote.add((uri, maxBytes));
+          return null;
+        },
+      );
       for (final path in [
         '',
-        '${temporary.path}/missing.txt',
         'https://example.test/not-downloaded.txt',
       ]) {
-        final preview = await _load(loader, _storedFile('Unread.txt', path));
+        final preview = await _load(reader, _storedFile('Unread.txt', path));
         expect(preview.unavailable, isTrue);
+        expect(preview.note, isNull);
         expect(preview.blocks, isEmpty);
         expect(preview.hasHero, isFalse);
       }
+      // A file whose bytes are not on this device says so: it is neither
+      // empty nor something a retry could bring back.
+      final missing = await _load(
+        reader,
+        _storedFile('Unread.txt', '${temporary.path}/missing.txt'),
+      );
+      expect(missing.unavailable, isFalse);
+      expect(missing.note, FolderGalleryPreviewNote.missing);
+      expect(missing.blocks, isEmpty);
+      expect(missing.hasHero, isFalse);
+      // Only the remote file is asked for, and only its opening bytes.
+      expect(
+        remote,
+        [(Uri.parse('https://example.test/not-downloaded.txt'), 8193)],
+      );
+    });
+
+    test('remote text previews from its opening bytes, like a local file',
+        () async {
+      final asked = <Uri>[];
+      final reader = FolderGalleryPreviewLoader(
+        documentService: documents,
+        remoteReader: (uri, maxBytes) async {
+          asked.add(uri);
+          final source = switch (uri.path) {
+            '/blob/README.md' => '# Project\n\nA **real** readme',
+            '/blob/main.py' => 'print("hello")\n',
+            '/blob/blank.txt' => '',
+            _ => '${' ' * (8 * 1024)}Content beyond the preview limit',
+          };
+          return utf8.encode(source).take(maxBytes).toList();
+        },
+      );
+      final readme = await _load(
+        reader,
+        _storedFile('README.md', 'http://localhost:8000/blob/README.md'),
+      );
+      expect(readme.unavailable, isFalse);
+      expect(readme.kind, FolderGalleryPreviewKind.document);
+      expect(readme.blocks.first.kind, FolderGalleryPreviewBlockKind.heading);
+      expect(readme.blocks.first.plainText, 'Project');
+      expect(readme.blocks.last.runs.any((run) => run.bold), isTrue);
+
+      final code = await _load(
+        reader,
+        _storedFile('main.py', 'https://files.example.test/blob/main.py'),
+      );
+      expect(code.unavailable, isFalse);
+      expect(code.kind, FolderGalleryPreviewKind.code);
+      expect(code.language, 'py');
+      expect(code.blocks.single.plainText, 'print("hello")');
+
+      final blank = await _load(
+        reader,
+        _storedFile('blank.txt', 'https://files.example.test/blob/blank.txt'),
+      );
+      expect(blank.unavailable, isFalse);
+      expect(blank.blocks, isEmpty);
+      expect(blank.note, FolderGalleryPreviewNote.empty);
+
+      // A blank opening is not proof that the rest of the file is blank.
+      final long = await _load(
+        reader,
+        _storedFile('long.txt', 'https://files.example.test/blob/long.txt'),
+      );
+      expect(long.unavailable, isTrue);
+      expect(asked, hasLength(4));
     });
 
     test('a whitespace-only bounded prefix is not proof of an empty file',

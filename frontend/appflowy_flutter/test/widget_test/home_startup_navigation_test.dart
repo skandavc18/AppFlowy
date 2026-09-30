@@ -1,17 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
-import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
-import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
-import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_home_button.dart';
 import 'package:appflowy/workspace/presentation/home/menu/sidebar_design.dart';
@@ -31,121 +27,6 @@ import 'vivid_icon_test_support.dart';
 
 void main() {
   setUpAll(prepareVividIconTestAssets);
-
-  group('Home preference resolution (memory only)', () {
-    test('concurrent reads wait for the same stored choice without writes',
-        () async {
-      final storage = _MemoryStorage()..pending = Completer<String?>();
-      final loaded = <String>[];
-      final home = DashboardHome(
-        storage: storage,
-        loadView: (id) async {
-          loaded.add(id);
-          return _dashboard(id);
-        },
-        loadAncestors: (_) => throw StateError('Direct child needs no lookup'),
-      );
-      final first = home.ensureLoaded();
-      final second = home.resolveForWorkspace('workspace');
-      await Future<void>.delayed(Duration.zero);
-      expect(loaded, isEmpty);
-      expect(storage.reads, ['appflowy_home_dashboard']);
-      storage.pending!.complete('chosen-home');
-      await first;
-      expect((await second)?.id, 'chosen-home');
-      expect(home.viewId, 'chosen-home');
-      expect(storage.writes, isEmpty);
-      home.dispose();
-    });
-
-    for (final target in [
-      'missing',
-      'plain page',
-      'other workspace',
-      'nested',
-    ]) {
-      test('$target uses only an appropriate existing dashboard', () async {
-        final storage = _MemoryStorage();
-        final before = Map.of(storage.values);
-        final home = DashboardHome(
-          storage: storage,
-          loadView: (id) async => switch (target) {
-            'missing' => null,
-            'plain page' => ViewPB(id: id, parentViewId: 'workspace'),
-            _ => _dashboard(id, parent: 'space'),
-          },
-          loadAncestors: (_) async => [
-            ViewPB(id: 'space'),
-            ViewPB(id: target == 'nested' ? 'workspace' : 'another-workspace'),
-          ],
-        );
-        final result = await home.resolveForWorkspace('workspace');
-        expect(result?.id, target == 'nested' ? 'chosen-home' : null);
-        expect(home.viewId, 'chosen-home');
-        expect(storage.values, before);
-        expect(storage.writes, isEmpty);
-        home.dispose();
-      });
-    }
-
-    test('converted dashboard choices never mount or vanish from the tree',
-        () async {
-      final storage = _MemoryStorage();
-      getIt.registerSingleton<KeyValueStorage>(storage);
-      try {
-        await DashboardHome.instance.ensureLoaded();
-        final dashboard = _dashboard('chosen-home');
-        expect(withoutHomeDashboard([dashboard]), isEmpty);
-        final converted = [
-          _dashboard('chosen-home')
-            ..extra = const CollectionMetadata(kind: CollectionKind.album)
-                .mergeIntoExtra(dashboard.extra),
-          _dashboard('chosen-home')
-            ..extra = const WorkspaceItemMetadata.folder()
-                .mergeIntoExtra(dashboard.extra),
-          _dashboard('chosen-home')
-            ..extra = const WorkspaceItemMetadata.file(
-              contentKind: WorkspaceFileContentKind.binary,
-            ).mergeIntoExtra(dashboard.extra),
-          _dashboard('chosen-home', parent: ''),
-          _dashboard('chosen-home')
-            ..extra = jsonEncode({
-              ...decodeViewExtra(dashboard.extra),
-              'is_space': true,
-            }),
-        ];
-        for (final view in converted) {
-          final home = DashboardHome(
-            storage: storage,
-            loadView: (_) async => view,
-            loadAncestors: (_) =>
-                throw StateError('Do not resolve a converted Home'),
-          );
-          expect(await home.resolveForWorkspace('workspace'), isNull);
-          expect(withoutHomeDashboard([view]), [view]);
-          home.dispose();
-        }
-        expect(storage.writes, isEmpty);
-      } finally {
-        await getIt.unregister<KeyValueStorage>();
-      }
-    });
-
-    test('preference read failure is a fallback, not a reset or page creation',
-        () async {
-      final storage = _MemoryStorage()..failReads = true;
-      final home = DashboardHome(
-        storage: storage,
-        loadView: (_) => throw StateError('No view should be loaded'),
-        loadAncestors: (_) => throw StateError('No ancestor should be loaded'),
-      );
-      expect(await home.resolveForWorkspace('workspace'), isNull);
-      expect(storage.writes, isEmpty);
-      storage.failReads = false;
-      expect(await home.resolveForWorkspace(''), isNull);
-      home.dispose();
-    });
-  });
 
   group('desktop Home and sidebar', () {
     late MenuSharedState menu;
@@ -764,13 +645,10 @@ class _MemoryStorage implements KeyValueStorage {
   };
   final reads = <String>[];
   final writes = <String>[];
-  Completer<String?>? pending;
-  bool failReads = false;
   @override
   Future<String?> get(String key) async {
     reads.add(key);
-    if (failReads) throw StateError('unavailable preferences');
-    return pending != null ? await pending!.future : values[key];
+    return values[key];
   }
 
   @override

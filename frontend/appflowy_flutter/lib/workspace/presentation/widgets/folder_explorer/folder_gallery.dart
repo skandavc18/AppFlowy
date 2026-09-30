@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/canvas/presentation/canvas_preview.dart';
+import 'package:appflowy/plugins/collection/views/bookmark/bookmark_preview_face.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/shared/af_user_profile_extension.dart';
@@ -14,6 +17,7 @@ import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/view/view_preview_mode.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
@@ -1078,6 +1082,16 @@ class _GalleryPreviewStage extends StatelessWidget {
       return _GalleryIdentityPreview(
         key: const ValueKey('folder-gallery-file-identity'),
         glyph: _GalleryIdentityGlyph(item: item, view: view),
+        // Only a page or file that was actually read may be called empty.
+        caption: switch (preview.note) {
+          FolderGalleryPreviewNote.missing =>
+            LocaleKeys.viewLibrary_fileMissing.tr(),
+          FolderGalleryPreviewNote.empty => item.isFile
+              ? LocaleKeys.viewLibrary_emptyFile.tr()
+              : LocaleKeys.viewLibrary_emptyPage.tr(),
+          null => null,
+        },
+        captionKey: const ValueKey('folder-gallery-empty-note'),
       );
     }
     final database = preview.database;
@@ -1089,16 +1103,43 @@ class _GalleryPreviewStage extends StatelessWidget {
       return _GalleryIdentityPreview(
         key: const ValueKey('folder-gallery-empty-table-artwork'),
         glyph: _GalleryIdentityGlyph(item: item, view: view),
+        caption: LocaleKeys.viewLibrary_emptyTable.tr(),
+        captionKey: const ValueKey('folder-gallery-empty-note'),
+      );
+    }
+    // An empty board wears the same face as every other empty item.
+    final emptyBoard = switch (preview.kind) {
+      FolderGalleryPreviewKind.dashboard
+          when preview.dashboard?.widgetCount == 0 =>
+        LocaleKeys.viewLibrary_emptyDashboard.tr(),
+      FolderGalleryPreviewKind.canvas when preview.canvas?.isEmpty ?? false =>
+        LocaleKeys.viewLibrary_emptyCanvas.tr(),
+      _ => null,
+    };
+    if (emptyBoard != null) {
+      return _GalleryIdentityPreview(
+        key: const ValueKey('folder-gallery-empty-board'),
+        glyph: _GalleryIdentityGlyph(item: item, view: view),
+        caption: emptyBoard,
+        captionKey: const ValueKey('folder-gallery-empty-note'),
       );
     }
     final base = _galleryIdentitySurface(context);
     final padding = compact
         ? switch (preview.kind) {
-            FolderGalleryPreviewKind.folder => EdgeInsets.zero,
+            FolderGalleryPreviewKind.folder ||
+            FolderGalleryPreviewKind.dashboard ||
+            FolderGalleryPreviewKind.canvas ||
+            FolderGalleryPreviewKind.link =>
+              EdgeInsets.zero,
             _ => const EdgeInsets.fromLTRB(13, 14, 13, 12),
           }
         : switch (preview.kind) {
-            FolderGalleryPreviewKind.folder => EdgeInsets.zero,
+            FolderGalleryPreviewKind.folder ||
+            FolderGalleryPreviewKind.dashboard ||
+            FolderGalleryPreviewKind.canvas ||
+            FolderGalleryPreviewKind.link =>
+              EdgeInsets.zero,
             FolderGalleryPreviewKind.code =>
               const EdgeInsets.fromLTRB(22, 24, 22, 22),
             FolderGalleryPreviewKind.database =>
@@ -1113,6 +1154,7 @@ class _GalleryPreviewStage extends StatelessWidget {
         padding: padding,
         child: _GalleryPreviewBody(
           item: item,
+          view: view,
           preview: preview,
           userProfile: userProfile,
         ),
@@ -1229,9 +1271,11 @@ class _GalleryPreviewBody extends StatelessWidget {
     required this.item,
     required this.preview,
     required this.userProfile,
+    this.view,
   });
 
   final WorkspaceExplorerItem item;
+  final ViewPB? view;
   final FolderGalleryPreview preview;
   final UserProfilePB? userProfile;
 
@@ -1240,6 +1284,9 @@ class _GalleryPreviewBody extends StatelessWidget {
     if (preview.unavailable) {
       return const _GalleryUnavailablePreview();
     }
+    final dashboard = preview.dashboard;
+    final canvas = preview.canvas;
+    final link = preview.link;
     return switch (preview.kind) {
       FolderGalleryPreviewKind.chat => _GalleryChatPreview(item: item),
       FolderGalleryPreviewKind.folder =>
@@ -1259,6 +1306,20 @@ class _GalleryPreviewBody extends StatelessWidget {
           preview: preview,
           userProfile: userProfile,
         ),
+      FolderGalleryPreviewKind.dashboard => dashboard == null
+          ? const _GalleryUnavailablePreview()
+          : DashboardMiniature(document: dashboard),
+      FolderGalleryPreviewKind.canvas => canvas == null
+          ? const _GalleryUnavailablePreview()
+          : CanvasMiniature(document: canvas),
+      FolderGalleryPreviewKind.link => link == null
+          ? const _GalleryUnavailablePreview()
+          : BookmarkPreviewFace(
+              entry: BookmarkEntry(
+                view: view ?? ViewPB(id: item.id, name: item.name),
+                metadata: link,
+              ),
+            ),
     };
   }
 }

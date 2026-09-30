@@ -21,6 +21,9 @@ enum PluginType {
   calendar,
   databaseDocument,
   chat,
+  recents,
+  favorites,
+  pageLibrary,
 }
 
 typedef PluginId = String;

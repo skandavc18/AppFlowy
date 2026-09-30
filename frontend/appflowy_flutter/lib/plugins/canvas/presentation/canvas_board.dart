@@ -41,6 +41,8 @@ class CanvasBoard extends StatefulWidget {
     this.editable = true,
     this.embedded = false,
     this.showChrome = true,
+    this.fitPadding = 72,
+    this.refitOnResize = false,
     this.onOpenView,
     this.onPickView,
     this.onCreatePage,
@@ -58,6 +60,13 @@ class CanvasBoard extends StatefulWidget {
   final bool embedded;
 
   final bool showChrome;
+
+  /// The screen margin left around everything when the canvas is framed.
+  final double fitPadding;
+
+  /// Frame everything again whenever the board changes size; for previews,
+  /// which nobody pans.
+  final bool refitOnResize;
 
   /// Open the workspace object a card points at.
   final void Function(ViewPB view)? onOpenView;
@@ -217,7 +226,9 @@ class CanvasBoardState extends State<CanvasBoard> {
       _setCamera(const CanvasCamera());
       return;
     }
-    _setCamera(CanvasCamera.fittedTo(box, _viewport));
+    _setCamera(
+      CanvasCamera.fittedTo(box, _viewport, padding: widget.fitPadding),
+    );
   }
 
   void resetZoom() => _setCamera(
@@ -1798,7 +1809,13 @@ class CanvasBoardState extends State<CanvasBoard> {
           builder: (context, constraints) {
             final size = Size(constraints.maxWidth, constraints.maxHeight);
             if (size != _viewport || !_readViewport) {
+              final resized = _readViewport && size != _viewport;
               _viewport = size;
+              if (resized && widget.refitOnResize) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) zoomToFit();
+                });
+              }
               // The canvas opens where it was left. Reading it once, after the
               // first real layout, is what stops a stored viewport being applied
               // against a zero-sized box.

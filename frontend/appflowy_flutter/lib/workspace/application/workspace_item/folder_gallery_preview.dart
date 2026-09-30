@@ -8,6 +8,12 @@ import 'package:appflowy/plugins/database/domain/cell_service.dart';
 import 'package:appflowy/plugins/database/domain/database_view_service.dart';
 import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/util/int64_extension.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
+import 'package:appflowy/workspace/application/workspace_item/remote_file_head.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/log.dart';
@@ -30,6 +36,15 @@ enum FolderGalleryPreviewKind {
   folder,
   database,
   chat,
+
+  /// A dashboard, drawn from the widgets it holds.
+  dashboard,
+
+  /// A canvas, drawn from its cards, frames and connections.
+  canvas,
+
+  /// A saved link, drawn from what was learned about the page.
+  link,
 }
 
 enum FolderGalleryPreviewBlockKind {
@@ -41,6 +56,15 @@ enum FolderGalleryPreviewBlockKind {
   quote,
   code,
   math,
+}
+
+/// Why a preview that was read has nothing to draw.
+enum FolderGalleryPreviewNote {
+  /// The page or file was read and holds nothing yet.
+  empty,
+
+  /// The file's bytes are not on this device, so there is nothing to read.
+  missing,
 }
 
 @immutable
@@ -89,7 +113,11 @@ class FolderGalleryPreview {
     this.heroUrl,
     this.language,
     this.database,
+    this.dashboard,
+    this.canvas,
+    this.link,
     this.unavailable = false,
+    this.note,
   });
 
   final FolderGalleryPreviewKind kind;
@@ -101,9 +129,31 @@ class FolderGalleryPreview {
   final String? heroUrl;
   final String? language;
   final FolderGalleryDatabaseSnapshot? database;
+  final DashboardDocument? dashboard;
+  final CanvasDocument? canvas;
+  final BookmarkMetadata? link;
   final bool unavailable;
+  final FolderGalleryPreviewNote? note;
 
   bool get hasHero => heroUrl?.isNotEmpty ?? false;
+
+  FolderGalleryPreview withNote(FolderGalleryPreviewNote note) =>
+      FolderGalleryPreview(
+        kind: kind,
+        blocks: blocks,
+        wordCount: wordCount,
+        readingMinutes: readingMinutes,
+        tags: tags,
+        fileTypeLabel: fileTypeLabel,
+        heroUrl: heroUrl,
+        language: language,
+        database: database,
+        dashboard: dashboard,
+        canvas: canvas,
+        link: link,
+        unavailable: unavailable,
+        note: note,
+      );
 }
 
 @immutable
@@ -128,12 +178,15 @@ class FolderGalleryPreviewLoader {
   FolderGalleryPreviewLoader({
     DocumentService? documentService,
     FolderGalleryDatabasePreviewLoader? databasePreviewLoader,
+    RemoteFileHeadReader? remoteReader,
   })  : _documentService = documentService ?? DocumentService(),
         _databasePreviewLoader =
-            databasePreviewLoader ?? const FolderGalleryDatabasePreviewLoader();
+            databasePreviewLoader ?? const FolderGalleryDatabasePreviewLoader(),
+        _remoteReader = remoteReader ?? readRemoteFileHead;
 
   final DocumentService _documentService;
   final FolderGalleryDatabasePreviewLoader _databasePreviewLoader;
+  final RemoteFileHeadReader _remoteReader;
 
   Future<FolderGalleryPreview> load({
     required ViewPB view,
@@ -200,19 +253,26 @@ class FolderGalleryPreviewLoader {
     if (path == null || path.isEmpty) {
       return FolderGalleryPreviewParser.unavailable(view: view, item: item);
     }
-    final scheme = Uri.tryParse(path)?.scheme.toLowerCase() ?? '';
+    final uri = Uri.tryParse(path);
+    final scheme = uri?.scheme.toLowerCase() ?? '';
+    // A file kept online is read the same way, but only its opening bytes are
+    // fetched. An unread file is still not an empty file.
+    final String? source;
     if (scheme == 'http' || scheme == 'https') {
-      // This cheap preview deliberately does not download remote text. An
-      // unread file is not an empty file (and must not look like one).
-      return FolderGalleryPreviewParser.unavailable(view: view, item: item);
+      source = await _readRemoteHead(uri!);
+    } else {
+      final local = await _readHead(path);
+      // Retrying cannot bring back a file that is not on this device.
+      if (local.missing) {
+        return preview.withNote(FolderGalleryPreviewNote.missing);
+      }
+      source = local.text;
     }
-
-    final source = await _readHead(path);
     if (source == null) {
       return FolderGalleryPreviewParser.unavailable(view: view, item: item);
     }
     if (source.trim().isEmpty) {
-      return preview;
+      return preview.withNote(FolderGalleryPreviewNote.empty);
     }
 
     final blocks = preview.kind == FolderGalleryPreviewKind.code
@@ -247,29 +307,42 @@ class FolderGalleryPreviewLoader {
 
   static const _maxPreviewBytes = 8 * 1024;
 
-  Future<String?> _readHead(String path) async {
+  Future<({String? text, bool missing})> _readHead(String path) async {
     try {
       final uri = Uri.tryParse(path);
       final file = uri?.scheme == 'file' ? File.fromUri(uri!) : File(path);
       final handle = await file.open();
       try {
-        final bytes = await handle.read(_maxPreviewBytes + 1);
-        final truncated = bytes.length > _maxPreviewBytes;
-        final source = const Utf8Decoder(allowMalformed: true).convert(
-          bytes,
-          0,
-          truncated ? _maxPreviewBytes : bytes.length,
+        return (
+          text: _decodeHead(await handle.read(_maxPreviewBytes + 1)),
+          missing: false,
         );
-        // A bounded prefix with no words is not evidence that the whole file
-        // is empty. Do not read the remainder merely to decorate a card.
-        return truncated && source.trim().isEmpty ? null : source;
       } finally {
         await handle.close();
       }
+    } on PathNotFoundException {
+      return (text: null, missing: true);
     } on Object catch (error) {
       Log.info('Unable to read the gallery file preview: $error');
-      return null;
+      return (text: null, missing: false);
     }
+  }
+
+  Future<String?> _readRemoteHead(Uri uri) async {
+    final bytes = await _remoteReader(uri, _maxPreviewBytes + 1);
+    return bytes == null ? null : _decodeHead(bytes);
+  }
+
+  static String? _decodeHead(List<int> bytes) {
+    final truncated = bytes.length > _maxPreviewBytes;
+    final source = const Utf8Decoder(allowMalformed: true).convert(
+      bytes,
+      0,
+      truncated ? _maxPreviewBytes : bytes.length,
+    );
+    // A bounded prefix with no words is not evidence that the whole file is
+    // empty. Do not read the remainder merely to decorate a card.
+    return truncated && source.trim().isEmpty ? null : source;
   }
 }
 
@@ -809,6 +882,17 @@ class FolderGalleryPreviewParser {
   static const _file = 'file';
   static const _delta = 'delta';
 
+  static const _textBlockTypes = {
+    _paragraph,
+    _heading,
+    _bulletedList,
+    _numberedList,
+    _todoList,
+    _quote,
+    _code,
+    _math,
+  };
+
   static const _codeExtensions = {
     'c',
     'cc',
@@ -868,6 +952,11 @@ class FolderGalleryPreviewParser {
     required WorkspaceExplorerItem item,
   }) {
     if (view.layout == ViewLayoutPB.Chat) return chat(view);
+    final selfContained = FolderGalleryPreviewParser.selfContained(
+      view: view,
+      item: item,
+    );
+    if (selfContained != null) return selfContained;
     if (item.kind == WorkspaceExplorerItemKind.folder) {
       return FolderGalleryPreview(
         kind: FolderGalleryPreviewKind.folder,
@@ -909,11 +998,67 @@ class FolderGalleryPreviewParser {
     );
   }
 
+  /// A page whose whole content is kept on the view itself: a saved link, a
+  /// dashboard or a canvas. There is no document or file to read for any of
+  /// them, so they can never be unavailable for want of one.
+  static FolderGalleryPreview? selfContained({
+    required ViewPB view,
+    required WorkspaceExplorerItem item,
+  }) {
+    final link = item.bookmark ?? view.bookmark;
+    if (link != null) {
+      return FolderGalleryPreview(
+        kind: FolderGalleryPreviewKind.link,
+        blocks: const [],
+        wordCount: 0,
+        readingMinutes: link.readingMinutes ?? 0,
+        tags: link.tags.isNotEmpty
+            ? List.unmodifiable(link.tags.take(6))
+            : _tagsFromExtra(view.extra),
+        fileTypeLabel: 'LINK',
+        // Never a hero: the link face paints its own picture, and a hero
+        // would send the card down the image path instead.
+        link: link,
+      );
+    }
+    if (view.layout != ViewLayoutPB.Document) return null;
+    final dashboard = view.dashboard;
+    if (dashboard != null) {
+      return FolderGalleryPreview(
+        kind: FolderGalleryPreviewKind.dashboard,
+        blocks: const [],
+        wordCount: 0,
+        readingMinutes: 0,
+        tags: _tagsFromExtra(view.extra),
+        fileTypeLabel: 'DASHBOARD',
+        dashboard: dashboard.document,
+      );
+    }
+    final canvas = view.canvas;
+    if (canvas != null) {
+      return FolderGalleryPreview(
+        kind: FolderGalleryPreviewKind.canvas,
+        blocks: const [],
+        wordCount: 0,
+        readingMinutes: 0,
+        tags: _tagsFromExtra(view.extra),
+        fileTypeLabel: 'CANVAS',
+        canvas: canvas.document,
+      );
+    }
+    return null;
+  }
+
   static FolderGalleryPreview unavailable({
     required ViewPB view,
     required WorkspaceExplorerItem item,
   }) {
     if (view.layout == ViewLayoutPB.Chat) return chat(view);
+    final selfContained = FolderGalleryPreviewParser.selfContained(
+      view: view,
+      item: item,
+    );
+    if (selfContained != null) return selfContained;
     final kind = switch (item.kind) {
       WorkspaceExplorerItemKind.folder => FolderGalleryPreviewKind.folder,
       WorkspaceExplorerItemKind.database => FolderGalleryPreviewKind.database,
@@ -949,11 +1094,19 @@ class FolderGalleryPreviewParser {
     required DocumentDataPB document,
   }) {
     if (view.layout == ViewLayoutPB.Chat) return chat(view);
+    final selfContained = FolderGalleryPreviewParser.selfContained(
+      view: view,
+      item: item,
+    );
+    if (selfContained != null) return selfContained;
     final previewBlocks = <FolderGalleryPreviewBlock>[];
     final allText = StringBuffer();
     final visited = <String>{};
     String? heroUrl;
     var hasMeaningfulContent = false;
+    // Anything other than text — a divider, an embed, an empty picture slot —
+    // means the page is not blank even when it has no words.
+    var holdsOtherContent = false;
     var incomplete = false;
     String? firstCodeLanguage;
 
@@ -988,6 +1141,7 @@ class FolderGalleryPreviewParser {
         if (!hasMeaningfulContent && url is String && url.isNotEmpty) {
           heroUrl = url;
         }
+        holdsOtherContent = true;
       } else {
         final previewBlock = _previewBlock(
           type: block.ty,
@@ -1004,6 +1158,8 @@ class FolderGalleryPreviewParser {
           }
         } else if (block.ty == _file) {
           hasMeaningfulContent = true;
+        } else if (!_textBlockTypes.contains(block.ty)) {
+          holdsOtherContent = true;
         }
       }
 
@@ -1052,6 +1208,13 @@ class FolderGalleryPreviewParser {
           : 'PAGE',
       heroUrl: heroUrl,
       language: language,
+      note: previewBlocks.isEmpty &&
+              heroUrl == null &&
+              !hasMeaningfulContent &&
+              !holdsOtherContent &&
+              wordCount == 0
+          ? FolderGalleryPreviewNote.empty
+          : null,
     );
   }
 

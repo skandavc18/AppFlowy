@@ -11,6 +11,9 @@ import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/settings/appearance/base_appearance.dart';
 import 'package:appflowy/workspace/application/settings/appearance/desktop_appearance.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
@@ -696,6 +699,111 @@ void main() {
       });
     }
   });
+
+  for (final appearance in ['light', 'dark', 'paper']) {
+    _test('$appearance: empty and missing items say so on one shared face',
+        (tester) async {
+      FolderGalleryPreview blank(
+        FolderGalleryPreviewKind kind,
+        FolderGalleryPreviewNote note,
+      ) =>
+          FolderGalleryPreview(
+            kind: kind,
+            blocks: const [],
+            wordCount: 0,
+            readingMinutes: 0,
+            tags: const [],
+            fileTypeLabel: 'FILE',
+            note: note,
+          );
+      final table = ViewPB(
+        id: 'table',
+        name: 'Tasks',
+        layout: ViewLayoutPB.Grid,
+      );
+      final dashboard = ViewPB(
+        id: 'dashboard',
+        name: 'Plans',
+        layout: ViewLayoutPB.Document,
+        extra: const DashboardMetadata(document: DashboardDocument())
+            .mergeIntoExtra(''),
+      );
+      final canvas = ViewPB(
+        id: 'canvas',
+        name: 'Ideas',
+        layout: ViewLayoutPB.Document,
+        extra: CanvasMetadata.newExtra(),
+      );
+      FolderGalleryPreview selfContained(ViewPB view) =>
+          FolderGalleryPreviewParser.selfContained(
+            view: view,
+            item: WorkspaceExplorerItem.fromView(view),
+          )!;
+      for (final (view, preview, caption) in [
+        (
+          _page(),
+          blank(
+            FolderGalleryPreviewKind.document,
+            FolderGalleryPreviewNote.empty,
+          ),
+          'Nothing on this page yet',
+        ),
+        (
+          _file('blank.txt'),
+          blank(
+            FolderGalleryPreviewKind.document,
+            FolderGalleryPreviewNote.empty,
+          ),
+          'This file is empty',
+        ),
+        (
+          _file('Untitled.py'),
+          blank(
+            FolderGalleryPreviewKind.code,
+            FolderGalleryPreviewNote.missing,
+          ),
+          'Not found on this device',
+        ),
+        (
+          table,
+          const FolderGalleryPreview(
+            kind: FolderGalleryPreviewKind.database,
+            blocks: [],
+            wordCount: 0,
+            readingMinutes: 0,
+            tags: [],
+            fileTypeLabel: 'TABLE',
+            database: FolderGalleryDatabaseSnapshot(
+              columns: ['Name'],
+              rows: [],
+              totalRowCount: 0,
+            ),
+          ),
+          'No rows yet',
+        ),
+        (dashboard, selfContained(dashboard), 'Nothing on this dashboard yet'),
+        (canvas, selfContained(canvas), 'Nothing on this canvas yet'),
+      ]) {
+        for (final size in [const Size(280, 180), const Size(148, 148)]) {
+          await _mount(
+            tester,
+            _thumbnail(view, SynchronousFuture(preview), size: size),
+            appearance: appearance,
+          );
+          final note = find.byKey(const ValueKey('folder-gallery-empty-note'));
+          expect(note, findsOneWidget, reason: '$caption $size');
+          expect(tester.widget<Text>(note).data, caption);
+          _expectInside(
+            _paintedRect(tester, note),
+            tester.getRect(find.byType(FolderGalleryPreviewThumbnail)),
+          );
+          expect(find.byKey(_errorKey), findsNothing);
+          expect(find.byKey(_retryKey), findsNothing);
+          expect(tester.takeException(), isNull);
+        }
+      }
+    });
+  }
 }
 
 void _test(String name, Future<void> Function(WidgetTester) body) =>

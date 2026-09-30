@@ -56,6 +56,44 @@ import 'package:universal_platform/universal_platform.dart';
 
 import 'prelude.dart';
 
+/// Opens what [action] points at once the current frame has finished.
+@visibleForTesting
+void scheduleNavigationAction(NavigationAction? action) {
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (action?.type == ActionType.openView && UniversalPlatform.isDesktop) {
+      final view = action!.arguments?[ActionArgumentKeys.view] as ViewPB?;
+      final nodePath = action.arguments?[ActionArgumentKeys.nodePath];
+      final blockId = action.arguments?[ActionArgumentKeys.blockId];
+      if (view != null) {
+        getIt<TabsBloc>().openPlugin(
+          view,
+          arguments: {
+            PluginArgumentKeys.selection: nodePath,
+            PluginArgumentKeys.blockId: blockId,
+          },
+        );
+      }
+    } else if (action?.type == ActionType.openRow &&
+        UniversalPlatform.isMobile) {
+      final view = action!.arguments?[ActionArgumentKeys.view];
+      if (view != null) {
+        final view = action.arguments?[ActionArgumentKeys.view];
+        final rowId = action.arguments?[ActionArgumentKeys.rowId];
+        AppGlobals.rootNavKey.currentContext?.pushView(
+          view,
+          arguments: {
+            PluginArgumentKeys.rowId: rowId,
+          },
+        );
+      }
+    }
+  });
+  // A post-frame callback never asks for a frame itself. On an idle page
+  // nothing else draws one, so a clicked page only opened once something
+  // unrelated (a hover, a blinking caret) happened to repaint.
+  WidgetsBinding.instance.ensureVisualUpdate();
+}
+
 class InitAppWidgetTask extends LaunchTask {
   const InitAppWidgetTask();
 
@@ -228,40 +266,7 @@ class _ApplicationWidgetState extends State<ApplicationWidget> {
         ],
         child: BlocListener<ActionNavigationBloc, ActionNavigationState>(
           listenWhen: (_, curr) => curr.action != null,
-          listener: (context, state) {
-            final action = state.action;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (action?.type == ActionType.openView &&
-                  UniversalPlatform.isDesktop) {
-                final view =
-                    action!.arguments?[ActionArgumentKeys.view] as ViewPB?;
-                final nodePath = action.arguments?[ActionArgumentKeys.nodePath];
-                final blockId = action.arguments?[ActionArgumentKeys.blockId];
-                if (view != null) {
-                  getIt<TabsBloc>().openPlugin(
-                    view,
-                    arguments: {
-                      PluginArgumentKeys.selection: nodePath,
-                      PluginArgumentKeys.blockId: blockId,
-                    },
-                  );
-                }
-              } else if (action?.type == ActionType.openRow &&
-                  UniversalPlatform.isMobile) {
-                final view = action!.arguments?[ActionArgumentKeys.view];
-                if (view != null) {
-                  final view = action.arguments?[ActionArgumentKeys.view];
-                  final rowId = action.arguments?[ActionArgumentKeys.rowId];
-                  AppGlobals.rootNavKey.currentContext?.pushView(
-                    view,
-                    arguments: {
-                      PluginArgumentKeys.rowId: rowId,
-                    },
-                  );
-                }
-              }
-            });
-          },
+          listener: (context, state) => scheduleNavigationAction(state.action),
           child: BlocBuilder<AppearanceSettingsCubit, AppearanceSettingsState>(
             builder: (context, state) {
               _setSystemOverlayStyle(state);

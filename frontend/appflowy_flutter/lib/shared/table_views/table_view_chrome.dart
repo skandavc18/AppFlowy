@@ -77,6 +77,8 @@ class TableViewHeader extends StatefulWidget {
     this.optionsBuilder,
     this.actions = const [],
     this.allowGrouping = true,
+    this.naturalOrderLabel,
+    this.searchHint,
   });
 
   final TableViewPalette palette;
@@ -98,6 +100,12 @@ class TableViewHeader extends StatefulWidget {
   final List<Widget> actions;
 
   final bool allowGrouping;
+
+  /// What "no sort" means for this view; defaults to the table's own order.
+  final String? naturalOrderLabel;
+
+  /// Placeholder of the search box; defaults to searching rows.
+  final String? searchHint;
 
   @override
   State<TableViewHeader> createState() => TableViewHeaderState();
@@ -277,7 +285,8 @@ class TableViewHeaderState extends State<TableViewHeader> {
             isDense: true,
             filled: true,
             fillColor: palette.raised,
-            hintText: LocaleKeys.tableViews_searchHint.tr(),
+            hintText:
+                widget.searchHint ?? LocaleKeys.tableViews_searchHint.tr(),
             hintStyle: TextStyle(fontSize: 13, color: palette.textMuted),
             prefixIcon: Center(
               widthFactor: 1,
@@ -325,7 +334,8 @@ class TableViewHeaderState extends State<TableViewHeader> {
       entries: [
         AppMenuHeader(LocaleKeys.tableViews_sortBy.tr()),
         AppMenuItem(
-          label: LocaleKeys.tableViews_tableOrder.tr(),
+          label:
+              widget.naturalOrderLabel ?? LocaleKeys.tableViews_tableOrder.tr(),
           icon: Icons.list_rounded,
           selected: !query.isSorting,
           onSelected: () =>

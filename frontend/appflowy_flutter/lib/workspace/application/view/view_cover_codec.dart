@@ -19,8 +19,10 @@ abstract final class ViewCoverCodec {
     return Map<String, dynamic>.from(decoded);
   }
 
-  static PageStyleCover? decodeCover(String extra) {
-    final metadata = decodeExtra(extra);
+  static PageStyleCover? decodeCover(String extra) =>
+      coverOf(decodeExtra(extra));
+
+  static PageStyleCover? coverOf(Map<String, dynamic> metadata) {
     final value = metadata[coverKey];
     if (value is! Map) {
       return null;

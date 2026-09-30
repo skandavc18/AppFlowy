@@ -6,6 +6,9 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/mobile/application/page_style/document_page_style_bloc.dart';
+import 'package:appflowy/plugins/canvas/presentation/canvas_preview.dart';
+import 'package:appflowy/plugins/collection/views/bookmark/bookmark_preview_face.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_preview.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
 import 'package:appflowy/plugins/document/application/document_service.dart';
@@ -23,8 +26,13 @@ import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
 import 'package:appflowy/shared/flowy_gradient_colors.dart';
 import 'package:appflowy/shared/icon_emoji_picker/flowy_icon_emoji_picker.dart';
+import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
+import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
+import 'package:appflowy/workspace/application/collections/collection.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/application/workspace_item/folder_gallery_preview.dart';
+import 'package:appflowy/workspace/application/workspace_item/workspace_explorer_models.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
@@ -94,7 +102,9 @@ class PagePreview extends StatelessWidget {
       child:
           BlocBuilder<DocumentImmersiveCoverBloc, DocumentImmersiveCoverState>(
         builder: (context, state) {
-          final cover = buildCover(state, context);
+          // A dashboard's preview is its whole page, cover included.
+          final cover =
+              _dashboardOf(view) == null ? buildCover(state, context) : null;
           return CommandPalettePreviewSurface(
             key: const ValueKey('page-preview-card'),
             header: Padding(
@@ -131,20 +141,89 @@ class PagePreview extends StatelessWidget {
                 ],
               ),
             ),
-            child: _buildPageContent(),
+            child: _buildPageContent(context),
           );
         },
       ),
     );
   }
 
-  Widget _buildPageContent() {
+  static DashboardMetadata? _dashboardOf(ViewPB view) =>
+      view.layout == ViewLayoutPB.Document ? view.dashboard : null;
+
+  Widget _buildPageContent(BuildContext context) {
+    // A saved link is stored as a file with no bytes; what it has to show is
+    // what was learned about its page.
+    final link = view.bookmark;
+    if (link != null) {
+      return Padding(
+        key: ValueKey('bookmark-preview-${view.id}'),
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(WorkspaceTokens.cardRadius),
+          child: BookmarkPreviewFace(
+            entry: BookmarkEntry(view: view, metadata: link),
+          ),
+        ),
+      );
+    }
     // A workspace file is stored as a document holding one attachment, so the
     // document renderer would only ever show that block's chip.
     if (view.isWorkspaceFile) {
       return _WorkspaceFilePreview(
         key: ValueKey('file-preview-${view.id}'),
         view: view,
+      );
+    }
+    // A dashboard and a canvas are document pages whose whole content lives in
+    // the view's own settings; their document holds nothing to preview.
+    final document = view.layout == ViewLayoutPB.Document;
+    final dashboard = _dashboardOf(view);
+    if (dashboard != null) {
+      final palette = WorkspacePalette.of(context);
+      final radius = BorderRadius.circular(WorkspaceTokens.cardRadius);
+      // The page drawn small, as one card lined up with the title above.
+      return Padding(
+        key: ValueKey('dashboard-preview-${view.id}'),
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: radius,
+            border: Border.all(color: palette.border),
+          ),
+          child: ClipRRect(
+            borderRadius: radius,
+            child: DashboardLivePreview(
+              document: dashboard.document,
+              view: view,
+              userProfile:
+                  context.read<UserWorkspaceBloc?>()?.state.userProfile,
+            ),
+          ),
+        ),
+      );
+    }
+    final canvas = document ? view.canvas : null;
+    if (canvas != null) {
+      return CanvasLivePreview(
+        key: ValueKey('canvas-preview-${view.id}'),
+        document: canvas.document,
+      );
+    }
+    // A folder (the workspace itself included) or a collection is what it
+    // holds; its own document has nothing to show.
+    if (view.isWorkspaceFolder || view.isCollection) {
+      return Padding(
+        key: ValueKey('folder-preview-${view.id}'),
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(WorkspaceTokens.cardRadius),
+          child: FolderGalleryCollectionArtwork(
+            item: WorkspaceExplorerItem.fromView(view),
+            view: view,
+          ),
+        ),
       );
     }
     if (view.layout.isDocumentView) {
@@ -324,6 +403,7 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
   EditorState? editorState;
   bool isLoading = true;
   bool hasError = false;
+  bool blank = false;
   int requestId = 0;
 
   @override
@@ -384,10 +464,28 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
     }
     setState(() {
       editorState = document == null ? null : EditorState(document: document);
+      blank = document != null && _isBlank(document);
       hasError = document == null;
       isLoading = false;
     });
   }
+
+  static const _textTypes = {
+    ParagraphBlockKeys.type,
+    HeadingBlockKeys.type,
+    BulletedListBlockKeys.type,
+    NumberedListBlockKeys.type,
+    TodoListBlockKeys.type,
+    QuoteBlockKeys.type,
+  };
+
+  /// Nothing but empty lines of text: a page nobody has written in yet.
+  static bool _isBlank(Document document) => document.root.children.every(
+        (node) =>
+            _textTypes.contains(node.type) &&
+            node.children.isEmpty &&
+            (node.delta?.toPlainText().trim().isEmpty ?? true),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -398,6 +496,13 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
     final editorState = this.editorState;
     if (hasError || editorState == null) {
       return _PreviewError(onRetry: () => unawaited(_loadDocument()));
+    }
+    if (blank) {
+      return BoardPreviewEmptyNote(
+        key: const ValueKey('document-preview-empty'),
+        icon: Icons.article_rounded,
+        message: LocaleKeys.viewLibrary_emptyPage.tr(),
+      );
     }
 
     return LayoutBuilder(

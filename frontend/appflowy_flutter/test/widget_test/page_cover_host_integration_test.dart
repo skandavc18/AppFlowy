@@ -16,6 +16,7 @@ import 'package:appflowy/workspace/application/dashboard/dashboard_controller.da
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
+import 'package:appflowy/workspace/application/view/local_page_store.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -227,21 +228,25 @@ void main() {
     }
 
     testWidgets(
-        '$theme workspace root follows persisted defaults without a page writer',
+        '$theme workspace root resizes on this device without a page writer',
         (tester) async {
       final fixture = _HostFixture('workspace');
       final storage = CoverMemoryStorage();
       var store = CoverAppearanceStore(resolveStorage: () => storage);
+      // The workspace cover belongs to the workspace; its height is a
+      // preference of this device, never written into the root page.
+      final heightId = localPageId('workspace', 'cover-host-workspace');
       try {
         await store.ensureLoaded();
         await fixture.explorer.initialize();
         await mountFileControls(tester, fixture.scoped(store), mode: theme);
-        expect(find.byKey(_grip), findsNothing);
+        expect(find.byKey(_grip).hitTestable(), findsOneWidget);
         expect(
             tester
                 .widget<WorkspacePageHeader>(find.byType(WorkspacePageHeader))
-                .coverView,
-            isNull);
+                .coverView
+                ?.id,
+            heightId);
         await store.update((value) => value.copyWith(
               corners: CoverCorners.square,
               aspectRatio: 4,
@@ -254,6 +259,19 @@ void main() {
         expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.contain);
         expect(tester.widget<Image>(find.byType(Image)).alignment,
             Alignment.topCenter);
+
+        final pointer = await _drag(tester);
+        await pointer.up();
+        await settleFileControls(tester);
+        final resized = tester.getSize(find.byType(WorkspacePageCover)).height;
+        expect(resized, closeTo(size.height + 48, .001));
+        expect(
+          PageCoverHeight.decode(LocalPageStore.instance.peek(heightId)!),
+          closeTo(resized, .001),
+        );
+        expect(fixture.io.reads, 0);
+        expect(fixture.io.writes, isEmpty);
+
         final preference = store.value;
         await unmountFileControls(tester);
         store.dispose();
@@ -261,13 +279,17 @@ void main() {
         await store.ensureLoaded();
         await mountFileControls(tester, fixture.scoped(store), mode: theme);
         expect(store.value, preference);
-        expect(tester.getSize(find.byType(WorkspacePageCover)), size);
+        expect(
+          tester.getSize(find.byType(WorkspacePageCover)).height,
+          closeTo(resized, .001),
+        );
         expect(fixture.io.reads, 0);
         expect(fixture.io.writes, isEmpty);
-        expect(find.byKey(_grip), findsNothing);
         expect(tester.takeException(), isNull);
       } finally {
         await unmountFileControls(tester);
+        // Later appearances start from the default height again.
+        await LocalPageStore.instance.write(heightId, '');
         fixture.dispose();
         store.dispose();
       }

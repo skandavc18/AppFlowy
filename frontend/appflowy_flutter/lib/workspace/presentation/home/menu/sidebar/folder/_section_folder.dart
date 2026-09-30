@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
 import 'package:appflowy/workspace/application/collections/collection.dart';
 import 'package:appflowy/workspace/application/collections/collection_registry.dart';
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
@@ -71,18 +70,15 @@ class _SectionFolderState extends State<SectionFolder> {
         create: (_) => FolderBloc(type: widget.spaceType)
           ..add(const FolderEvent.initial()),
         child: BlocBuilder<FolderBloc, FolderState>(
-          builder: (context, state) => ListenableBuilder(
-            listenable: DashboardHome.instance,
-            builder: (context, _) => Column(
-              children: [
-                _buildHeader(context),
-                // Pages
-                const VSpace(2.0),
-                ..._buildViews(context, state, isHovered),
-                // Add a placeholder if there are no views
-                _buildDraggablePlaceholder(context),
-              ],
-            ),
+          builder: (context, state) => Column(
+            children: [
+              _buildHeader(context),
+              // Pages
+              const VSpace(2.0),
+              ..._buildViews(context, state, isHovered),
+              // Add a placeholder if there are no views
+              _buildDraggablePlaceholder(context),
+            ],
           ),
         ),
       ),
@@ -252,7 +248,7 @@ class _SectionFolderState extends State<SectionFolder> {
       return [];
     }
 
-    final views = withoutHomeDashboard(widget.views);
+    final views = widget.views;
     return views.map(
       (view) => ViewItem(
         key: ValueKey('${widget.spaceType.name} ${view.id}'),

@@ -136,7 +136,7 @@ void main() {
         );
         expect(isIconPackLoaded(sidebarIconPack), isFalse);
         final glyphs = find.byType(WorkspaceGlyph);
-        expect(sourceCount, 50);
+        expect(sourceCount, 53);
         expect(glyphs, findsNWidgets(sourceCount));
         expect(find.byType(SvgPicture), findsNWidgets(sourceCount));
         expect(find.byType(FlowySvg), findsNothing);

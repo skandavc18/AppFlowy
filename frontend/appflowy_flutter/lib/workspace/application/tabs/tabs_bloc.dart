@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/blank/blank.dart';
-import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
 import 'package:appflowy/plugins/util.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -26,8 +25,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
     Future<ViewPB?> Function(String)? loadHomeView,
   })  : _loadHistoryView = loadHistoryView ?? _readHistoryView,
         _buildHistoryPlugin = buildHistoryPlugin ?? _pluginForHistory,
-        _loadHomeView =
-            loadHomeView ?? DashboardHome.instance.resolveForWorkspace,
+        _loadHomeView = loadHomeView ?? _landingHome,
         super(TabsState()) {
     menuSharedState = getIt<MenuSharedState>();
     _dispatch();
@@ -515,6 +513,9 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       PluginType.trash,
       PluginType.templates,
       PluginType.extensions,
+      PluginType.recents,
+      PluginType.favorites,
+      PluginType.pageLibrary,
     }.contains(plugin.pluginType)) {
       return PageHistoryEntry(
         tabId: manager.tabId,
@@ -584,6 +585,9 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
 
   static Future<ViewPB?> _readHistoryView(String id) async =>
       (await ViewBackendService.getView(id)).fold((view) => view, (_) => null);
+
+  /// Home is the workspace landing page, never a page standing in for it.
+  static Future<ViewPB?> _landingHome(String _) async => null;
 
   static Plugin _pluginForHistory(ViewPB view) => view.plugin();
 

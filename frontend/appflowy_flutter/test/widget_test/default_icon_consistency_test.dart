@@ -190,7 +190,7 @@ void main() {
 
   test('saved default catalogue and serialized colors remain compatible', () {
     final all = appFlowyDefaultIconGroups.expand((group) => group.icons);
-    expect(all, hasLength(54));
+    expect(all, hasLength(57));
     for (final group in appFlowyDefaultIconGroups) {
       for (final icon in group.icons) {
         final data = IconsData(group.name, icon.name, '4283665274');

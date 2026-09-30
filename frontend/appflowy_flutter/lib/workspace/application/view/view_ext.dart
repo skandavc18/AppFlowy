@@ -388,7 +388,10 @@ extension ViewExtension on ViewPB {
 
   PageStyleCover? get cover {
     try {
-      return ViewCoverCodec.decodeCover(extra);
+      final metadata = ViewCoverCodec.decodeExtra(extra);
+      // A canvas page never shows a cover, so one stamped on it is not its face.
+      if (metadata.containsKey(CanvasMetadata.envelopeKey)) return null;
+      return ViewCoverCodec.coverOf(metadata);
     } on FormatException {
       return null;
     }

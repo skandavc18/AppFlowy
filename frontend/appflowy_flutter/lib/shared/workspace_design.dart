@@ -532,6 +532,7 @@ class WorkspacePageHeader extends StatelessWidget {
     this.canResizeCover,
     this.isSameCoverTarget,
     this.onCoverHeightChanged,
+    this.coverBackend,
   });
 
   final Widget identity;
@@ -555,6 +556,9 @@ class WorkspacePageHeader extends StatelessWidget {
   final bool Function(ViewPB)? isSameCoverTarget;
   final ValueChanged<double?>? onCoverHeightChanged;
 
+  /// Where [coverView]'s height is read and saved; null uses the folder.
+  final PageCoverBackendService? coverBackend;
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
         builder: (context, constraints) {
@@ -574,6 +578,7 @@ class WorkspacePageHeader extends StatelessWidget {
             canResize: canResizeCover,
             isSameTarget: isSameCoverTarget,
             onHeightChanged: onCoverHeightChanged,
+            backend: coverBackend,
             builder: (context, imageHeight, grip) {
               final hasIcon = overlapIcon ??
                   (identity is WorkspacePageIdentity &&
@@ -700,11 +705,16 @@ class WorkspacePageCover extends StatelessWidget {
     required this.image,
     this.actions,
     this.resizeGrip,
+    this.bottomInset = 0,
   });
 
   final Widget image;
   final Widget? actions;
   final Widget? resizeGrip;
+
+  /// Room kept clear along the bottom edge for something laid across it,
+  /// such as Home's search bar. The grip and actions sit above it.
+  final double bottomInset;
 
   @override
   Widget build(BuildContext context) {
@@ -728,7 +738,8 @@ class WorkspacePageCover extends StatelessWidget {
               image,
               if (actions != null)
                 PositionedDirectional(
-                  bottom: resizeGrip == null ? WorkspaceTokens.space2 : 28,
+                  bottom: (resizeGrip == null ? WorkspaceTokens.space2 : 28) +
+                      bottomInset,
                   start: WorkspaceTokens.space2,
                   end: WorkspaceTokens.space2,
                   child: Align(
@@ -757,7 +768,7 @@ class WorkspacePageCover extends StatelessWidget {
                 ),
               if (resizeGrip != null)
                 Positioned(
-                  bottom: 0,
+                  bottom: bottomInset,
                   left: 0,
                   right: 0,
                   child: Center(child: resizeGrip),

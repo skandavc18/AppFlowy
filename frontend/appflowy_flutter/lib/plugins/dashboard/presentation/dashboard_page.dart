@@ -7,7 +7,6 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_board.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_canvas.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_panel.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_find.dart';
-import 'package:appflowy/plugins/dashboard/presentation/dashboard_home.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_template_gallery.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_variables_bar.dart';
@@ -377,7 +376,7 @@ class _DashboardPageState extends State<DashboardPage> {
             opticalRole: IconOpticalRole.header,
           )
         : WorkspaceGlyph.named(
-            DashboardHome.instance.viewId == _view.id ? 'house' : 'layout',
+            'layout',
             size: WorkspaceTokens.pageIconSize,
             color: palette.accent,
           );
@@ -740,14 +739,6 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ),
         const AppMenuSeparator(),
-        AppMenuItem(
-          label: LocaleKeys.dashboard_option_setHome.tr(),
-          icon: Icons.home_rounded,
-          selected: DashboardHome.instance.viewId == widget.view.id,
-          onSelected: () => unawaited(
-            DashboardHome.instance.toggle(widget.view.id),
-          ),
-        ),
         AppMenuItem(
           label: LocaleKeys.dashboard_option_startOver.tr(),
           icon: Icons.restart_alt_rounded,

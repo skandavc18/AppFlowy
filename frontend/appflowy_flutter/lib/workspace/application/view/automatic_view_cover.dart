@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover_codec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -121,6 +122,10 @@ abstract final class AutomaticViewCover {
       return false;
     }
     if (WorkspaceItemMetadata.fromExtra(extra)?.isFile == true) {
+      return false;
+    }
+    // A canvas page has nowhere to show a cover.
+    if (decodeViewExtra(extra).containsKey(CanvasMetadata.envelopeKey)) {
       return false;
     }
     // A table is data, not a document — a picture invented for it is chrome
