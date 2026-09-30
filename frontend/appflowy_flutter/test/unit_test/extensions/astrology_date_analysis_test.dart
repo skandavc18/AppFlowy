@@ -14,7 +14,17 @@ const _place = AstrologyPlace(
   timeZone: 'Asia/Kolkata',
 );
 
-const _longitudes = [10.0, 20.0, 96.0, 151.0, 215.0, 278.0, 305.0, 345.0, 165.0];
+const _longitudes = [
+  10.0,
+  20.0,
+  96.0,
+  151.0,
+  215.0,
+  278.0,
+  305.0,
+  345.0,
+  165.0
+];
 const _speeds = [0.98, 13.2, 0.4, -0.65, 0.08, 1.1, 0.02, -0.05, -0.05];
 
 AstrologyChart _chart({
@@ -386,7 +396,8 @@ void main() {
       expect(
         astrologyEventsNatalKey(input),
         isNot(
-          astrologyEventsNatalKey(input.copyWith(utc: DateTime.utc(1990, 1, 2))),
+          astrologyEventsNatalKey(
+              input.copyWith(utc: DateTime.utc(1990, 1, 2))),
         ),
       );
       expect(

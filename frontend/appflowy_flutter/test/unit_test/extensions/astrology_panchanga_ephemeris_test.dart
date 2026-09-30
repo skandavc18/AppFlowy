@@ -156,7 +156,8 @@ void main() {
         );
         final natal = await engine.calculate(natalInput);
         final moment = await engine.calculate(
-          AstrologyInput(utc: DateTime.utc(2026, 9, 28, 6, 30), place: _bengaluru),
+          AstrologyInput(
+              utc: DateTime.utc(2026, 9, 28, 6, 30), place: _bengaluru),
         );
         final analysis = analyzeAstrologyDate(
           moment: moment,

@@ -105,8 +105,7 @@ class _Backend implements AstrologyEventsBackend {
   FieldPB named(String name) =>
       schema.singleWhere((field) => field.name == name);
 
-  String cell(String row, String column) =>
-      cells[row]?[named(column).id] ?? '';
+  String cell(String row, String column) => cells[row]?[named(column).id] ?? '';
 
   void setCell(String row, String column, String value) =>
       (cells[row] ??= {})[named(column).id] = value;
@@ -129,8 +128,7 @@ class _Backend implements AstrologyEventsBackend {
     setCell(row, 'Date', '${local.year}-${local.month}-${local.day}');
   }
 
-  Map<String, Object?> marker() =>
-      Map<String, Object?>.from(
+  Map<String, Object?> marker() => Map<String, Object?>.from(
         decodeViewExtra(views['events']!.extra)['appflowy_astrology_events']
                 as Map? ??
             const {},
@@ -167,7 +165,8 @@ class _Backend implements AstrologyEventsBackend {
       );
 
   @override
-  Future<DateCellDataPB> date(String viewId, String fieldId, String rowId) async =>
+  Future<DateCellDataPB> date(
+          String viewId, String fieldId, String rowId) async =>
       dates[rowId] ?? DateCellDataPB();
 
   @override
@@ -340,8 +339,7 @@ void main() {
     );
   });
 
-  test('a dated event is filled; notes and other rows are untouched',
-      () async {
+  test('a dated event is filled; notes and other rows are untouched', () async {
     await sync.recalculate('events');
     backend.addRow('wedding', local: DateTime(2020, 6));
     backend.addRow('idea');

@@ -25,7 +25,17 @@ AstrologyChart _chart(AstrologyInput input, {double moon = 20}) {
   final utc = input.utc!;
   final midnight = DateTime.utc(utc.year, utc.month, utc.day);
   final sunrise = midnight.add(const Duration(minutes: 30));
-  final longitudes = [10.0, moon, 96.0, 151.0, 215.0, 278.0, 345.0, 125.0, 305.0];
+  final longitudes = [
+    10.0,
+    moon,
+    96.0,
+    151.0,
+    215.0,
+    278.0,
+    345.0,
+    125.0,
+    305.0
+  ];
   const speeds = [0.98, 13.2, 0.4, -0.65, 0.08, 1.1, 0.02, -0.05, -0.05];
   return AstrologyChart(
     input: input,
