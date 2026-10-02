@@ -14,17 +14,23 @@ import 'package:flutter/material.dart';
 /// once, and the answer can be remembered. The arguments are shown in full,
 /// because "may I write to your workspace" is not a question anybody can answer
 /// without seeing what would be written.
+///
+/// [context] is where to ask from when the question must appear above a
+/// surface of its own, such as the search palette; otherwise the app's root.
 Future<AIToolDecision> askToRunTool(
   AITool tool,
-  Map<String, dynamic> arguments,
-) async {
-  final context = AppGlobals.rootNavKey.currentContext;
-  if (context == null) {
+  Map<String, dynamic> arguments, {
+  BuildContext? context,
+}) async {
+  final host = context != null && context.mounted
+      ? context
+      : AppGlobals.rootNavKey.currentContext;
+  if (host == null) {
     return AIToolDecision.denyOnce;
   }
 
   final decision = await showDialog<AIToolDecision>(
-    context: context,
+    context: host,
     // Dismissing is refusing. A question nobody can get rid of would hold the
     // keyboard for the whole app, and the safe answer is no.
     builder: (_) => _ToolApprovalDialog(tool: tool, arguments: arguments),

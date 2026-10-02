@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/plugins/trash/application/trash_listener.dart';
 import 'package:appflowy/plugins/trash/application/trash_service.dart';
-import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_scope.dart';
 import 'package:appflowy/workspace/application/command_palette/search_service.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
@@ -214,9 +214,9 @@ class CommandPaletteBloc
       generatingAIOverview: false,
     ));
     final generation = _searchGeneration;
-    // A command query never reaches the backend, so there is nothing to wait
-    // for — filtering the commands as fast as they are typed.
-    if (paletteCommandModeQuery(event.search) != null) {
+    // A command query or a question never reaches the backend, so there is
+    // nothing to wait for — filtering the commands as fast as they are typed.
+    if (isPaletteLocalQuery(event.search)) {
       _searchDebouncer.cancel();
       _activeQuery = null;
       add(CommandPaletteEvent.performSearch(search: event.search));
@@ -239,7 +239,7 @@ class CommandPaletteBloc
       return;
     final generation = _searchGeneration;
     _pendingQuery = event.search;
-    final isCommandQuery = paletteCommandModeQuery(event.search) != null;
+    final isCommandQuery = isPaletteLocalQuery(event.search);
     if (event.search.trim().isEmpty ||
         isCommandQuery ||
         event.search.length > 256) {

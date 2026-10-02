@@ -192,8 +192,8 @@ class ListStageState extends State<ListStage> {
     final revision = _source.revision;
     final titles = {for (final card in _source.cards) card.rowId: card.title};
     _renamed.removeWhere(
-      (rowId, rename) => rename.mark
-          .isDone(revision, matched: titles[rowId] == rename.title),
+      (rowId, rename) =>
+          rename.mark.isDone(revision, matched: titles[rowId] == rename.title),
     );
     _removed.removeWhere(
       (rowId, mark) =>
@@ -495,8 +495,8 @@ class ListStageState extends State<ListStage> {
       onToggle: () => widget.onSpecChanged(
         widget.spec.toggleGroup(group.label),
       ),
-      addTooltip: LocaleKeys.listView_newInGroup
-          .tr(namedArgs: {'group': group.label}),
+      addTooltip:
+          LocaleKeys.listView_newInGroup.tr(namedArgs: {'group': group.label}),
       onAdd: _canCreate
           ? () {
               if (collapsed) {
@@ -520,9 +520,8 @@ class ListStageState extends State<ListStage> {
       showIcon: widget.spec.showIcons,
       quiet: _query.isSearching && !_matches.contains(card.rowId),
       editor: _renaming == card.rowId ? _buildRenameField(palette) : null,
-      onOpen: widget.onOpenRow == null
-          ? null
-          : () => widget.onOpenRow!(card.rowId),
+      onOpen:
+          widget.onOpenRow == null ? null : () => widget.onOpenRow!(card.rowId),
       onMenu: (context, position) => _showRowMenu(context, card, position),
       onRename: canRename ? () => _startRename(card) : null,
     );
@@ -1361,8 +1360,7 @@ class _ListRowState extends State<_ListRow> {
                       color: _hovered || editing
                           ? palette.hover
                           : palette.hoverAtRest,
-                      borderRadius:
-                          BorderRadius.circular(_ListMetrics.radius),
+                      borderRadius: BorderRadius.circular(_ListMetrics.radius),
                       // Always drawn, so focusing a row never moves it.
                       border: Border.all(
                         width: _ListMetrics.border,
@@ -1675,8 +1673,7 @@ class _ListAddLine extends StatelessWidget {
         highlightColor: palette.hover,
         splashFactory: NoSplash.splashFactory,
         child: Container(
-          constraints:
-              const BoxConstraints(minHeight: _ListMetrics.lineHeight),
+          constraints: const BoxConstraints(minHeight: _ListMetrics.lineHeight),
           padding: const EdgeInsets.symmetric(
             horizontal: _ListMetrics.inset + _ListMetrics.border,
             vertical: 3 + _ListMetrics.border,
@@ -1773,8 +1770,8 @@ class _ListDraftLine extends StatelessWidget {
                   cursorColor: palette.accent,
                   decoration: InputDecoration.collapsed(
                     hintText: hint,
-                    hintStyle: _titleStyle(context, palette, quiet: true)
-                        .copyWith(
+                    hintStyle:
+                        _titleStyle(context, palette, quiet: true).copyWith(
                       fontWeight: FontWeight.w400,
                       fontVariations: const [FontVariation.weight(450)],
                     ),
@@ -1806,8 +1803,7 @@ class _ListPendingLine extends StatelessWidget {
   Widget build(BuildContext context) => Opacity(
         opacity: 0.6,
         child: Container(
-          constraints:
-              const BoxConstraints(minHeight: _ListMetrics.lineHeight),
+          constraints: const BoxConstraints(minHeight: _ListMetrics.lineHeight),
           margin: const EdgeInsets.only(bottom: 1),
           padding: const EdgeInsets.symmetric(
             horizontal: _ListMetrics.inset + _ListMetrics.border,
@@ -2041,8 +2037,7 @@ class _RenderListPropertyStrip extends RenderBox
     }
   }
 
-  BoxConstraints _itemConstraints(BoxConstraints constraints) =>
-      BoxConstraints(
+  BoxConstraints _itemConstraints(BoxConstraints constraints) => BoxConstraints(
         maxWidth: math.min(_maxItemWidth, constraints.maxWidth),
         maxHeight: constraints.maxHeight,
       );

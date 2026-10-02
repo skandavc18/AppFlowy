@@ -1,5 +1,8 @@
 import 'dart:async';
 
+import 'package:appflowy/ai/providers/ai_provider_store.dart';
+import 'package:appflowy/ai/tools/tool_approval_dialog.dart';
+import 'package:appflowy/ai/tools/tool_registry.dart';
 import 'package:appflowy/features/workspace/application/workspace_cover_codec.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
@@ -10,28 +13,44 @@ import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
+import 'package:appflowy/startup/tasks/app_widget.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_ai.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_ai_engines.dart';
 import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_scope.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_setting.dart';
 import 'package:appflowy/workspace/application/command_palette/workspace_content_search_controller.dart';
+import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart';
 import 'package:appflowy/workspace/application/sidebar/space/space_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/automatic_view_cover.dart';
 import 'package:appflowy/workspace/application/view/view_cover.dart';
+import 'package:appflowy/workspace/application/view/view_ext.dart';
+import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/palette_commands.dart';
+import 'package:appflowy/workspace/presentation/command_palette/palette_settings.dart';
 import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_extension.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/command_results_list.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/content_search_widgets.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_ai_panel.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_option_picker.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_scope_bar.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_setting_cell.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/recent_views_list.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_field.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_filter_bar.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_layout.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_results_list.dart';
 import 'package:appflowy/workspace/presentation/home/menu/menu_shared_state.dart';
+import 'package:appflowy/workspace/presentation/home/menu/sidebar/shared/sidebar_setting.dart';
+import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
+import 'package:collection/collection.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
@@ -323,12 +342,52 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
   int _titleRefreshGeneration = 0;
   String _titleWorkspaceId = '';
 
+  /// The part of the palette chosen with its tabs. A prefix typed into the
+  /// box (`>` or `?`) narrows it further without changing this.
+  PaletteScope _scope = PaletteScope.all;
+
+  /// The setting whose long list of choices is open, and what was typed
+  /// before it was, to put back afterwards.
+  String? _pickerSettingId;
+  String _pickerReturnDraft = '';
+
+  /// The pages the next question to the assistant goes with.
+  List<PaletteAISource> _aiSources = const [];
+
+  final _fieldFocus = FocusNode(debugLabel: 'command palette search');
+  late final TextEditingController _fieldController;
+  final _resultsFocus = FocusNode(
+    debugLabel: 'command palette results',
+    skipTraversal: true,
+    canRequestFocus: false,
+  );
+  late final AIToolApproval _approval;
+  int _conversationTurns = 0;
+
+  /// How many settings a plain search shows beside the pages it found.
+  static const _inlineSettingLimit = 3;
+
+  PaletteAIConversation get _conversation => paletteAIConversation;
+
   @override
   void initState() {
     super.initState();
+    PaletteSettingSources.refresh();
+    PaletteSettingSources.changes.addListener(_settingsChanged);
+    _conversationTurns = _conversation.turns.length;
+    _conversation.addListener(_conversationChanged);
+    // Tool questions asked while the palette is open must appear above it,
+    // not behind it on the app's own navigator.
+    _approval = (tool, arguments) => askToRunTool(
+          tool,
+          arguments,
+          context: mounted ? context : null,
+        );
+    paletteAIApproval = _approval;
     _paletteBloc = context.read<CommandPaletteBloc>();
     _workspaceBloc = context.read<UserWorkspaceBloc?>();
     _draft = widget.initialQuery ?? _paletteBloc.state.query ?? '';
+    _fieldController = TextEditingController(text: _draft);
     final provider = widget.contentReadProvider;
     _contentSearch = provider == null
         ? WorkspaceContentSearchController.native(
@@ -474,6 +533,9 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
   void _queryChanged(String value) {
     if (_closing || !mounted || _paletteBloc.isClosed) return;
     setState(() => _draft = value);
+    // A list of choices, a conversation, or a scope that is not about pages
+    // is filtered right here; the workspace is not searched for it.
+    if (_pickerSettingId != null || !_scope.searchesPages) return;
     _searchTitles(_paletteBloc.state);
     _contentSearch.search(value, enabled: filter.pageContents, filter: filter);
     if (!filter.pageContents) {
@@ -483,6 +545,285 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
             : CommandPaletteEvent.searchChanged(search: value),
       );
     }
+  }
+
+  /// Narrows the palette to [scope], keeping what was typed so it can be
+  /// looked for there too — "dark" then Settings finds the appearance row.
+  void _setScope(PaletteScope scope) {
+    if (_closing || !mounted) return;
+    final leavingConversation = _scope == PaletteScope.ai;
+    final parsed = parsePaletteQuery(_draft);
+    setState(() {
+      _scope = scope;
+      _pickerSettingId = null;
+      // A prefix only meant "go there"; the tab says it now.
+      if (parsed.fromPrefix) _replaceDraft(parsed.text);
+      // A half-typed follow-up is not a search.
+      if (leavingConversation) _replaceDraft('');
+      if (scope == PaletteScope.ai && _aiSources.isEmpty) {
+        _aiSources = _initialAISources(withSearchResults: false);
+      }
+    });
+    if (scope.searchesPages && !_paletteBloc.isClosed) {
+      _searchTitles(_paletteBloc.state);
+      _contentSearch.search(
+        _draft,
+        enabled: filter.pageContents,
+        filter: filter,
+      );
+      if (!filter.pageContents &&
+          (_paletteBloc.state.query ?? '') != _draft) {
+        _paletteBloc.add(
+          _draft.isEmpty
+              ? const CommandPaletteEvent.clearSearch()
+              : CommandPaletteEvent.searchChanged(search: _draft),
+        );
+      }
+    }
+    _focusField();
+  }
+
+  void _focusField() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_closing) _fieldFocus.requestFocus();
+    });
+  }
+
+  /// Puts [text] in the box as though it had been typed there, with the caret
+  /// at its end. Nothing is searched for: callers decide that.
+  void _replaceDraft(String text) {
+    _draft = text;
+    if (_fieldController.text != text) {
+      _fieldController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+    }
+  }
+
+  /// Down from the box goes to the first thing listed, past the tabs and
+  /// filters in between.
+  void _focusFirstResult() {
+    final first = _resultsFocus.traversalDescendants.firstOrNull;
+    if (first != null) {
+      first.requestFocus();
+    } else {
+      _fieldFocus.nextFocus();
+    }
+  }
+
+  /// The page open behind the palette, when it is one the assistant can read.
+  ViewPB? get _openDocument {
+    if (!getIt.isRegistered<MenuSharedState>()) return null;
+    final view = getIt<MenuSharedState>().latestOpenView;
+    if (view == null || view.layout != ViewLayoutPB.Document) return null;
+    if (_paletteBloc.state.trash.any((item) => item.id == view.id)) {
+      return null;
+    }
+    return view;
+  }
+
+  /// The page open behind the palette, then — when the question came from a
+  /// search — the pages that search found.
+  List<PaletteAISource> _initialAISources({required bool withSearchResults}) {
+    final sources = <PaletteAISource>[];
+    final open = _openDocument;
+    if (open != null) {
+      sources.add(
+        PaletteAISource(
+          id: open.id,
+          title: open.nameOrDefault,
+          isCurrentPage: true,
+        ),
+      );
+    }
+    if (withSearchResults) {
+      final views = _paletteBloc.state.cachedViews;
+      for (final item in _titleSearch.results) {
+        if (sources.length >= paletteAISourceLimit - 1) break;
+        final view = views[item.id];
+        if (view == null ||
+            view.layout != ViewLayoutPB.Document ||
+            sources.any((source) => source.id == view.id)) {
+          continue;
+        }
+        sources.add(PaletteAISource(id: view.id, title: view.nameOrDefault));
+      }
+    }
+    return sources;
+  }
+
+  /// Turns the palette into a conversation and, when there is a question,
+  /// asks it. From a search, the pages it found go along with it.
+  void _askAI(String question) {
+    if (_closing || !mounted) return;
+    final text = question.trim();
+    final fromSearch = _scope != PaletteScope.ai;
+    final sources = fromSearch
+        ? _initialAISources(withSearchResults: true)
+        : _aiSources;
+    setState(() {
+      _scope = PaletteScope.ai;
+      _pickerSettingId = null;
+      _replaceDraft('');
+      _aiSources = sources;
+    });
+    if (fromSearch && !_paletteBloc.isClosed) {
+      _paletteBloc.add(const CommandPaletteEvent.clearSearch());
+    }
+    if (text.isNotEmpty) {
+      unawaited(_conversation.ask(text, sources: sources));
+    }
+    _focusField();
+  }
+
+  void _openPicker(PaletteSetting setting) {
+    if (_closing || !mounted || setting.control is! PaletteChoice) return;
+    setState(() {
+      _pickerSettingId = setting.id;
+      _pickerReturnDraft = _draft;
+      _replaceDraft('');
+    });
+    _focusField();
+  }
+
+  void _closePicker() {
+    if (!mounted) return;
+    setState(() {
+      _pickerSettingId = null;
+      _replaceDraft(_pickerReturnDraft);
+    });
+    _focusField();
+  }
+
+  void _pick(PaletteChoice choice, PaletteSettingOption option) {
+    runPaletteSettingChange(() => choice.onSelected(option));
+    _closePicker();
+  }
+
+  /// Opens Settings at [page]. The palette closes first, because Settings
+  /// opens on the app's own navigator, under this route.
+  void _openSettingsPage(SettingsPage page) {
+    final workspaceBloc = _workspaceBloc;
+    _dismiss();
+    final host = AppGlobals.rootNavKey.currentContext;
+    if (host == null || workspaceBloc == null) return;
+    showSettingsDialog(host, userWorkspaceBloc: workspaceBloc, initPage: page);
+  }
+
+  void _openPage(String viewId) {
+    final view = _paletteBloc.state.cachedViews[viewId];
+    _dismiss();
+    view == null ? viewId.navigateTo() : view.navigateTo();
+  }
+
+  Future<void> _insertAnswer(ViewPB page, String markdown) async {
+    final written = await PaletteAIDocuments.append(page.id, markdown);
+    showToastNotification(
+      message: written
+          ? LocaleKeys.commandPalette_ai_inserted.tr(args: [page.nameOrDefault])
+          : LocaleKeys.commandPalette_ai_insertFailed.tr(),
+      type: written ? ToastificationType.success : ToastificationType.error,
+    );
+  }
+
+  /// A page named after the question, holding the answer.
+  Future<void> _saveAnswer(PaletteAITurn turn) async {
+    final target = paletteCreationTarget(context);
+    if (target == null) return;
+    final view = await PaletteAIDocuments.createPage(
+      parentViewId: target.parentViewId,
+      section: target.section,
+      name: _titleFor(turn.question),
+      markdown: turn.answer.trim(),
+    );
+    if (view == null) {
+      showToastNotification(
+        message: LocaleKeys.commandPalette_ai_saveFailed.tr(),
+        type: ToastificationType.error,
+      );
+      return;
+    }
+    _dismiss();
+    getIt<TabsBloc>().openPlugin(view);
+  }
+
+  /// Carries the conversation on in a chat page of its own.
+  Future<void> _continueInChat() async {
+    final target = paletteCreationTarget(context);
+    final exchanges = _conversation.exchanges;
+    if (target == null || exchanges.isEmpty) return;
+    final created = await ViewBackendService.createView(
+      layoutType: ViewLayoutPB.Chat,
+      parentViewId: target.parentViewId,
+      section: target.section,
+      name: _titleFor(exchanges.first.question),
+    );
+    final chat = created.fold((view) => view, (_) => null);
+    if (chat == null) {
+      showToastNotification(
+        message: LocaleKeys.commandPalette_command_createFailed.tr(),
+        type: ToastificationType.error,
+      );
+      return;
+    }
+    await PaletteAIDocuments.seedChat(chat.id, exchanges);
+    _dismiss();
+    getIt<TabsBloc>().openPlugin(chat);
+  }
+
+  static String _titleFor(String question) {
+    final line = question.trim().split('\n').first.trim();
+    return line.length > 60 ? '${line.substring(0, 57)}…' : line;
+  }
+
+  Widget _buildConversation(List<PaletteSetting> settings) {
+    final open = _openDocument;
+    final modelSetting =
+        settings.firstWhereOrNull((setting) => setting.id == 'ai_model');
+    return PaletteAIPanel(
+      key: const ValueKey('command-palette-ai-panel'),
+      conversation: _conversation,
+      sources: _aiSources,
+      modelLabel: paletteAIModelLabel(),
+      hasCurrentPage: open != null,
+      onAsk: _askAI,
+      onRemoveSource: (source) => setState(
+        () => _aiSources = [
+          for (final kept in _aiSources)
+            if (kept.id != source.id) kept,
+        ],
+      ),
+      onOpenSource: _openPage,
+      onSetUp: () => _openSettingsPage(SettingsPage.ai),
+      onPickModel: () {
+        if (modelSetting != null) _openPicker(modelSetting);
+      },
+      onNewConversation: () async {
+        await _conversation.clear();
+        if (mounted) setState(() {});
+        _focusField();
+      },
+      onSaveAsPage: _saveAnswer,
+      onInsert: open == null ? null : (markdown) => _insertAnswer(open, markdown),
+      insertTargetName: open?.nameOrDefault ?? '',
+      onContinueInChat: CustomAIProviderStore.instance.activeSelection == null
+          ? null
+          : () => unawaited(_continueInChat()),
+    );
+  }
+
+  void _settingsChanged() {
+    if (mounted && !_closing) setState(() {});
+  }
+
+  /// Only a question asked or a conversation cleared changes the palette
+  /// around the panel; the panel follows the answer itself.
+  void _conversationChanged() {
+    final turns = _conversation.turns.length;
+    if (turns == _conversationTurns) return;
+    _conversationTurns = turns;
+    if (mounted && !_closing) setState(() {});
   }
 
   void _filterChanged(CommandPaletteFilter value) {
@@ -515,6 +856,16 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
     _titleSearch.removeListener(_titleChanged);
     _titleSearch.dispose();
     _sourceRefresh.dispose();
+    _fieldFocus.dispose();
+    _fieldController.dispose();
+    _resultsFocus.dispose();
+    PaletteSettingSources.changes.removeListener(_settingsChanged);
+    _conversation.removeListener(_conversationChanged);
+    // An answer still being written may ask to run a tool after the palette
+    // has gone; ask from the app itself then.
+    if (identical(paletteAIApproval, _approval)) {
+      paletteAIApproval = askToRunTool;
+    }
     unawaited(_paletteSubscription?.cancel());
     unawaited(_workspaceSubscription?.cancel());
     super.dispose();
@@ -533,7 +884,12 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
     unawaited(
       Future.sync(
         () => command.run(
-          PaletteCommandContext(query: query, dismiss: _dismiss),
+          PaletteCommandContext(
+            query: query,
+            argument: paletteCommandArgument(command, query) ?? '',
+            dismiss: _dismiss,
+            askAI: _askAI,
+          ),
         ),
       ),
     );
@@ -552,15 +908,30 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
         context.read<CommandPaletteBloc>().add(CommandPaletteEvent.askedAI());
         // Discard an action queued before switching to local content mode.
         if (filter.pageContents || _closing) return;
-        unawaited(startPaletteAIChat(context, dismiss: _dismiss));
+        // Asked right here, in the palette, rather than on a page of its own.
+        _askAI(parsePaletteQuery(_draft, selected: _scope).text);
       },
       child: BlocBuilder<CommandPaletteBloc, CommandPaletteState>(
         builder: (context, state) {
           final palette = WorkspacePalette.of(context);
           final rawQuery = _draft;
-          final commandQuery = paletteCommandModeQuery(rawQuery);
-          final inCommandMode = commandQuery != null;
-          final inContentMode = filter.pageContents && !inCommandMode;
+          final appSettings = buildPaletteSettings(context);
+          final extensionSettings = buildPaletteExtensionSettings();
+          final pickerSetting = _pickerSettingId == null
+              ? null
+              : [...appSettings, ...extensionSettings]
+                  .firstWhereOrNull((setting) => setting.id == _pickerSettingId);
+          final pickerControl = pickerSetting?.control;
+          final picker = pickerSetting != null && pickerControl is PaletteChoice
+              ? (setting: pickerSetting, choice: pickerControl)
+              : null;
+          final inPicker = picker != null;
+          final parsed = parsePaletteQuery(rawQuery, selected: _scope);
+          final scope = parsed.scope;
+          final text = parsed.text;
+          final inCommandMode = !inPicker && scope == PaletteScope.commands;
+          final searchesPages = !inPicker && scope.searchesPages;
+          final inContentMode = filter.pageContents && searchesPages;
           final contentState = _contentSearch.state;
           final searchQuery = rawQuery;
           final noQuery = searchQuery.trim().isEmpty, hasQuery = !noQuery;
@@ -606,38 +977,86 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                   )
                   .toList(growable: false)
               : _titleSearch.results;
-          final resultItems = searchableItems
-              .where(
-                (item) => cachedViews.containsKey(item.id),
-              )
-              .where(
-                (item) => filter.matchesSearchResult(
-                  item: item,
-                  view: cachedViews[item.id],
-                  query: searchQuery,
-                  cachedViews: cachedViews,
-                  currentUserId: currentUserId,
-                ),
-              )
-              .toList();
+          final resultItems = !searchesPages
+              ? const <SearchResultItem>[]
+              : searchableItems
+                  .where(
+                    (item) => cachedViews.containsKey(item.id),
+                  )
+                  .where(
+                    (item) => filter.matchesSearchResult(
+                      item: item,
+                      view: cachedViews[item.id],
+                      query: searchQuery,
+                      cachedViews: cachedViews,
+                      currentUserId: currentUserId,
+                    ),
+                  )
+                  .toList();
           final hasResult = resultItems.isNotEmpty;
           final searching = inContentMode
               ? contentState.isSearching
               : _titleSearch.searching || state.searching;
           final commands = buildPaletteCommands(context);
-          final matchedCommands = inCommandMode
-              ? rankPaletteCommands(commands, commandQuery)
-              // One stray letter matches half of them, which is noise beside
-              // the pages somebody was actually looking for.
-              : inContentMode || rawQuery.trim().length < 2
-                  ? const <PaletteCommand>[]
-                  : rankPaletteCommands(
+          // One stray letter matches half of everything, which is noise beside
+          // the pages somebody was actually looking for.
+          final inlineMatches = scope == PaletteScope.all &&
+              !inPicker &&
+              !inContentMode &&
+              text.length >= 2;
+          final matchedCommands = inPicker
+              ? const <PaletteCommand>[]
+              : switch (scope) {
+                  PaletteScope.commands =>
+                    rankPaletteCommands(commands, text, limit: 500),
+                  PaletteScope.extensions => rankPaletteCommands(
+                      [
+                        for (final command in commands)
+                          if (command.group == PaletteCommandGroup.extensions)
+                            command,
+                      ],
+                      text,
+                      limit: 200,
+                    ),
+                  PaletteScope.all when inlineMatches => rankPaletteCommands(
                       commands,
                       rawQuery,
                       limit: paletteInlineCommandLimit,
-                    );
+                    ),
+                  _ => const <PaletteCommand>[],
+                };
+          final matchedSettings = inPicker
+              ? const <PaletteSetting>[]
+              : switch (scope) {
+                  PaletteScope.settings =>
+                    rankPaletteSettings(appSettings, text, limit: 200),
+                  PaletteScope.extensions => rankPaletteSettings(
+                      [
+                        ...extensionSettings,
+                        for (final setting in appSettings)
+                          if (setting.section ==
+                              PaletteSettingSection.extensions)
+                            setting,
+                      ],
+                      text,
+                      limit: 200,
+                    ),
+                  PaletteScope.all when inlineMatches => rankPaletteSettings(
+                      [...appSettings, ...extensionSettings],
+                      text,
+                      limit: _inlineSettingLimit,
+                    ),
+                  _ => const <PaletteSetting>[],
+                };
           final hasCommands = matchedCommands.isNotEmpty;
-          final commandRunQuery = commandQuery ?? rawQuery;
+          final hasSettings = matchedSettings.isNotEmpty;
+          final commandRunQuery =
+              scope == PaletteScope.all ? rawQuery : text;
+          // A command handed what was typed ("new page Ideas") is the answer
+          // Enter gives, ahead of any page whose title happens to match.
+          final commandTakesQuery = scope == PaletteScope.all &&
+              hasCommands &&
+              paletteCommandArgument(matchedCommands.first, rawQuery) != null;
           final spaces =
               context.watch<SpaceBloc?>()?.state.spaces ?? const <ViewPB>[];
           final media = MediaQuery.of(context);
@@ -650,6 +1069,215 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
           final contentInset = media.size.width < 640
               ? WorkspaceTokens.space4
               : WorkspaceTokens.space6;
+          void openFirstResult() {
+            final id = resultItems.first.id;
+            final allowed = inContentMode
+                ? _contentSearch.canUseResult(id, _draft)
+                : _titleSearch.canUseResult(id, _draft);
+            if (!allowed || ModalRoute.of(context)?.isCurrent == false) return;
+            final view = cachedViews[id];
+            if (view == null) return;
+            _dismiss();
+            view.navigateTo();
+          }
+
+          void activateFirstSetting() => activatePaletteSetting(
+                matchedSettings.first,
+                onOpenPicker: _openPicker,
+              );
+
+          void runFirstCommand() =>
+              _runCommand(matchedCommands.first, commandRunQuery);
+
+          final pickedOptions = picker != null
+              ? rankPaletteOptions(picker.choice.options, text)
+              : const <PaletteSettingOption>[];
+          final VoidCallback? onSubmit;
+          if (picker != null) {
+            onSubmit = pickedOptions.isEmpty
+                ? null
+                : () => _pick(picker.choice, pickedOptions.first);
+          } else {
+            onSubmit = switch (scope) {
+              PaletteScope.ai => text.isEmpty ? null : () => _askAI(text),
+              PaletteScope.commands => hasCommands ? runFirstCommand : null,
+              PaletteScope.settings =>
+                hasSettings ? activateFirstSetting : null,
+              PaletteScope.extensions => hasSettings
+                  ? activateFirstSetting
+                  : hasCommands
+                      ? runFirstCommand
+                      : null,
+              PaletteScope.all || PaletteScope.pages => commandTakesQuery
+                  ? runFirstCommand
+                  : hasResult
+                      ? openFirstResult
+                      : hasCommands
+                          ? runFirstCommand
+                          : hasSettings
+                              ? activateFirstSetting
+                              // Nothing here answers it; perhaps the
+                              // assistant can.
+                              : scope == PaletteScope.all &&
+                                      hasQuery &&
+                                      !searching &&
+                                      !inContentMode
+                                  ? () => _askAI(text)
+                                  : null,
+            };
+          }
+
+          final Widget body;
+          if (picker != null) {
+            body = PaletteOptionPicker(
+              setting: picker.setting,
+              options: pickedOptions,
+              selectedId: picker.choice.selectedId,
+              onPicked: (option) => _pick(picker.choice, option),
+              onBack: _closePicker,
+            );
+          } else {
+            body = switch (scope) {
+              PaletteScope.ai => _buildConversation(
+                  [...appSettings, ...extensionSettings],
+                ),
+              PaletteScope.commands => CommandPalettePanel(
+                  commands: matchedCommands,
+                  onRun: (command) => _runCommand(command, commandRunQuery),
+                  query: commandRunQuery,
+                ),
+              PaletteScope.settings => PaletteSettingsPanel(
+                  key: const ValueKey('command-palette-settings-panel'),
+                  settings: matchedSettings,
+                  grouped: text.isEmpty,
+                  onOpenPicker: _openPicker,
+                  onOpenSettings: _openSettingsPage,
+                  empty: _PaletteEmptyHint(
+                    icon: Icons.tune_rounded,
+                    text: LocaleKeys.commandPalette_setting_noResults.tr(),
+                  ),
+                ),
+              PaletteScope.extensions => PaletteSettingsPanel(
+                  key: const ValueKey('command-palette-extensions-panel'),
+                  settings: matchedSettings,
+                  grouped: false,
+                  sectionLabel:
+                      LocaleKeys.commandPalette_extension_installed.tr(),
+                  onOpenPicker: _openPicker,
+                  onOpenSettings: _openSettingsPage,
+                  footer: hasCommands
+                      ? CommandResultsList(
+                          commands: matchedCommands,
+                          onRun: (command) =>
+                              _runCommand(command, commandRunQuery),
+                          grouped: false,
+                          sectionLabel:
+                              LocaleKeys.commandPalette_extension_commands.tr(),
+                          query: commandRunQuery,
+                        )
+                      : null,
+                  empty: _PaletteEmptyHint(
+                    icon: Icons.extension_outlined,
+                    text: LocaleKeys.commandPalette_extension_none.tr(),
+                  ),
+                ),
+              PaletteScope.all || PaletteScope.pages => inContentMode
+                  ? hasResult
+                      ? SearchResultList(
+                          cachedViews: {
+                            for (final hit in contentState.results)
+                              hit.view.id: hit.view,
+                          },
+                          resultItems: resultItems,
+                          resultSummaries: const [],
+                          query: rawQuery,
+                          contentSearch: true,
+                          canUseResult: (id) =>
+                              _contentSearch.canUseResult(id, _draft),
+                        )
+                      : WorkspaceContentSearchEmpty(
+                          state: contentState,
+                        )
+                  : noQuery
+                      ? RecentViewsList(
+                          onSelected: _dismiss,
+                          filter: filter,
+                          cachedViews: cachedViews,
+                          currentUserId: currentUserId,
+                          currentWorkspaceId: currentWorkspace?.workspaceId,
+                          currentWorkspaceName: currentWorkspace?.name,
+                          currentWorkspaceIcon: currentWorkspace?.icon,
+                          currentWorkspaceCover: currentWorkspaceCover,
+                        )
+                      : hasResult || hasCommands || hasSettings
+                          ? SearchResultList(
+                              cachedViews: cachedViews,
+                              resultItems: resultItems,
+                              resultSummaries: const [],
+                              query: rawQuery,
+                              metadataOnly: true,
+                              canUseResult: (id) =>
+                                  _titleSearch.canUseResult(id, _draft),
+                              commands: matchedCommands,
+                              onRunCommand: (command) =>
+                                  _runCommand(command, commandRunQuery),
+                              settings: matchedSettings,
+                              onOpenSettingPicker: _openPicker,
+                              onOpenSettingsPage: _openSettingsPage,
+                              highlightFirstCommand: commandTakesQuery,
+                              currentWorkspaceId: currentWorkspace?.workspaceId,
+                              currentWorkspaceName: currentWorkspace?.name,
+                              currentWorkspaceIcon: currentWorkspace?.icon,
+                              currentWorkspaceCover: currentWorkspaceCover,
+                            )
+                          // Nothing found and nothing still on its way: say
+                          // so, centred in the space, and offer the assistant.
+                          : !searching && !_titleSearch.timedOut
+                              ? Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    SearchAskAiEntrance(),
+                                    const Expanded(
+                                      child: NoSearchResultsHint(),
+                                    ),
+                                  ],
+                                )
+                              : searching
+                                  ? const Center(
+                                      child:
+                                          CircularProgressIndicator.adaptive(),
+                                    )
+                                  : const SizedBox.shrink(),
+            };
+          }
+
+          final hintMode = inPicker
+              ? PaletteHintMode.picker
+              : switch (scope) {
+                  PaletteScope.commands => PaletteHintMode.commands,
+                  PaletteScope.settings ||
+                  PaletteScope.extensions =>
+                    PaletteHintMode.settings,
+                  PaletteScope.ai => PaletteHintMode.ai,
+                  _ => PaletteHintMode.search,
+                };
+          final fieldHint = picker != null
+              ? LocaleKeys.commandPalette_setting_pickerHint
+                  .tr(args: [picker.setting.title])
+              : scope == PaletteScope.ai
+                  ? (_conversation.isEmpty
+                      ? paletteScopeHint(PaletteScope.ai)
+                      : LocaleKeys.commandPalette_ai_followUp.tr())
+                  : _scope == PaletteScope.all
+                      ? null
+                      : paletteScopeHint(_scope);
+          final leadingIcon = picker != null
+              ? picker.setting.icon
+              : scope == PaletteScope.all || scope == PaletteScope.pages
+                  ? null
+                  : paletteScopeIcon(scope);
+
           final content = widget.shortcutBuilder(
             Padding(
               padding: EdgeInsets.fromLTRB(
@@ -671,46 +1299,63 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                         children: [
                           SearchField(
                             query: _draft,
+                            controller: _fieldController,
+                            focusNode: _fieldFocus,
                             isLoading: searching,
                             selectAllOnOpen: widget.initialQuery == null,
                             onChanged: _queryChanged,
-                            onSubmit: inCommandMode && hasCommands
-                                ? () => _runCommand(
-                                      matchedCommands.first,
-                                      commandRunQuery,
-                                    )
-                                : hasResult
-                                    ? () {
-                                        final id = resultItems.first.id;
-                                        final allowed = inContentMode
-                                            ? _contentSearch.canUseResult(
-                                                id, _draft)
-                                            : _titleSearch.canUseResult(
-                                                id, _draft);
-                                        if (!allowed ||
-                                            ModalRoute.of(context)?.isCurrent ==
-                                                false) return;
-                                        final view = cachedViews[id];
-                                        if (view == null) return;
-                                        _dismiss();
-                                        view.navigateTo();
-                                      }
+                            onSubmit: onSubmit,
+                            hintText: fieldHint,
+                            leadingIcon: leadingIcon,
+                            badge: picker != null
+                                ? PaletteScopeBadge(
+                                    label: picker.setting.title,
+                                    icon: picker.setting.icon,
+                                    onClear: _closePicker,
+                                  )
+                                : null,
+                            onArrowDown: _focusFirstResult,
+                            onTab: () {
+                              if (inPicker ||
+                                  !(scope == PaletteScope.all ||
+                                      scope == PaletteScope.pages) ||
+                                  inContentMode ||
+                                  text.isEmpty) {
+                                return false;
+                              }
+                              _askAI(text);
+                              return true;
+                            },
+                            onBackspaceWhenEmpty: inPicker
+                                ? _closePicker
+                                : _scope != PaletteScope.all
+                                    ? () => _setScope(PaletteScope.all)
                                     : null,
+                            onEscape: inPicker
+                                ? () {
+                                    _closePicker();
+                                    return true;
+                                  }
+                                : null,
                           ),
-                          if (!inCommandMode)
+                          PaletteScopeBar(
+                            scope: inPicker ? _scope : scope,
+                            onChanged: _setScope,
+                          ),
+                          if (searchesPages && !inCommandMode)
                             SearchFilterBar(
                               filter: filter,
                               spaces: spaces,
                               onChanged: _filterChanged,
                             )
                           else
-                            const VSpace(WorkspaceTokens.space4),
+                            const VSpace(WorkspaceTokens.space3),
                           if (inContentMode)
                             WorkspaceContentSearchStatusView(
                               state: contentState,
                             ),
-                          if (!inContentMode &&
-                              !inCommandMode &&
+                          if (searchesPages &&
+                              !inContentMode &&
                               _titleSearch.timedOut)
                             Semantics(
                               liveRegion: true,
@@ -726,89 +1371,14 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                       ),
                     ),
                   ),
-                  if (inCommandMode)
-                    Expanded(
-                      child: CommandPalettePanel(
-                        commands: matchedCommands,
-                        onRun: (command) =>
-                            _runCommand(command, commandRunQuery),
-                      ),
-                    )
-                  else if (inContentMode)
-                    Expanded(
-                      child: hasResult
-                          ? SearchResultList(
-                              cachedViews: {
-                                for (final hit in contentState.results)
-                                  hit.view.id: hit.view,
-                              },
-                              resultItems: resultItems,
-                              resultSummaries: const [],
-                              query: rawQuery,
-                              contentSearch: true,
-                              canUseResult: (id) =>
-                                  _contentSearch.canUseResult(id, _draft),
-                            )
-                          : WorkspaceContentSearchEmpty(
-                              state: contentState,
-                            ),
-                    )
-                  else if (noQuery)
-                    Expanded(
-                      child: RecentViewsList(
-                        onSelected: _dismiss,
-                        filter: filter,
-                        cachedViews: cachedViews,
-                        currentUserId: currentUserId,
-                        currentWorkspaceId: currentWorkspace?.workspaceId,
-                        currentWorkspaceName: currentWorkspace?.name,
-                        currentWorkspaceIcon: currentWorkspace?.icon,
-                        currentWorkspaceCover: currentWorkspaceCover,
-                      ),
-                    )
-                  else if (hasQuery && (hasResult || hasCommands))
-                    Expanded(
-                      child: SearchResultList(
-                        cachedViews: cachedViews,
-                        resultItems: resultItems,
-                        resultSummaries: const [],
-                        query: rawQuery,
-                        metadataOnly: true,
-                        canUseResult: (id) =>
-                            _titleSearch.canUseResult(id, _draft),
-                        commands: matchedCommands,
-                        onRunCommand: (command) =>
-                            _runCommand(command, commandRunQuery),
-                        currentWorkspaceId: currentWorkspace?.workspaceId,
-                        currentWorkspaceName: currentWorkspace?.name,
-                        currentWorkspaceIcon: currentWorkspace?.icon,
-                        currentWorkspaceCover: currentWorkspaceCover,
-                      ),
-                    )
-                  // When there are no results and the query is not empty and not loading,
-                  // show the no results message, centered in the available space.
-                  else if (hasQuery &&
-                      !searching &&
-                      !_titleSearch.timedOut) ...[
-                    SearchAskAiEntrance(),
-                    Expanded(
-                      child: const NoSearchResultsHint(),
+                  Expanded(
+                    child: Focus(
+                      focusNode: _resultsFocus,
+                      canRequestFocus: false,
+                      skipTraversal: true,
+                      child: body,
                     ),
-                  ],
-                  if (hasQuery &&
-                      searching &&
-                      !hasResult &&
-                      !hasCommands &&
-                      !inContentMode &&
-                      !inCommandMode)
-                    // Show a loading indicator when searching
-                    Expanded(
-                      child: Center(
-                        child: Center(
-                          child: CircularProgressIndicator.adaptive(),
-                        ),
-                      ),
-                    ),
+                  ),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final minimumWidth =
@@ -821,6 +1391,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                               : constraints.maxWidth,
                           child: CommandPaletteHintBar(
                             commandMode: inCommandMode,
+                            mode: hintMode,
                           ),
                         ),
                       );
@@ -915,6 +1486,40 @@ class NoSearchResultsHint extends StatelessWidget {
                 );
               },
               child: Text(LocaleKeys.trash_text.tr()),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What an empty scope says, centred where its list would be.
+class _PaletteEmptyHint extends StatelessWidget {
+  const _PaletteEmptyHint({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = WorkspacePalette.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(WorkspaceTokens.space6),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            WorkspaceGlyph(icon, size: 24, color: palette.secondaryText),
+            const VSpace(WorkspaceTokens.space2),
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: WorkspaceTypography.style(
+                context,
+                WorkspaceTextRole.body,
+                color: palette.secondaryText,
+              ),
             ),
           ],
         ),

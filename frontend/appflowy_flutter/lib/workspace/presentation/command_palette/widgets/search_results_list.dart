@@ -2,10 +2,14 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_setting.dart';
 import 'package:appflowy/workspace/application/command_palette/search_result_list_bloc.dart';
+import 'package:appflowy/workspace/application/settings/settings_dialog_bloc.dart'
+    show SettingsPage;
 import 'package:appflowy/workspace/application/view/view_cover.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_extension.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_setting_cell.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_ask_ai_entrance.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
@@ -26,6 +30,10 @@ class SearchResultList extends StatefulWidget {
     required this.resultSummaries,
     this.commands = const [],
     this.onRunCommand,
+    this.settings = const [],
+    this.onOpenSettingPicker,
+    this.onOpenSettingsPage,
+    this.highlightFirstCommand = false,
     this.currentWorkspaceId,
     this.currentWorkspaceName,
     this.currentWorkspaceIcon,
@@ -44,6 +52,15 @@ class SearchResultList extends StatefulWidget {
   /// The commands whose names also answer to the query, offered above the pages.
   final List<PaletteCommand> commands;
   final ValueChanged<PaletteCommand>? onRunCommand;
+
+  /// The settings that answer to the query, changed right in their rows.
+  final List<PaletteSetting> settings;
+  final ValueChanged<PaletteSetting>? onOpenSettingPicker;
+  final ValueChanged<SettingsPage>? onOpenSettingsPage;
+
+  /// Marks the first command as the one Enter runs, when it is the best
+  /// answer to what was typed — a command handed a name, say.
+  final bool highlightFirstCommand;
   final String? currentWorkspaceId;
   final String? currentWorkspaceName;
   final String? currentWorkspaceIcon;
@@ -201,7 +218,15 @@ class _SearchResultListState extends State<SearchResultList> {
     final commands = widget.commands;
     final onRunCommand = widget.onRunCommand;
     final showCommands = commands.isNotEmpty && onRunCommand != null;
-    if (resultItems.isEmpty && !showCommands) return const SizedBox.shrink();
+    final settings = widget.settings;
+    final onOpenPicker = widget.onOpenSettingPicker;
+    final onOpenSettings = widget.onOpenSettingsPage;
+    final showSettings = settings.isNotEmpty &&
+        onOpenPicker != null &&
+        onOpenSettings != null;
+    if (resultItems.isEmpty && !showCommands && !showSettings) {
+      return const SizedBox.shrink();
+    }
     return ScrollControllerBuilder(
       builder: (context, controller) {
         final hoveredId = bloc.state.hoveredResult?.id;
@@ -224,6 +249,15 @@ class _SearchResultListState extends State<SearchResultList> {
                       CommandResultsList(
                         commands: commands,
                         onRun: onRunCommand,
+                        grouped: false,
+                        query: _query,
+                        highlightFirst: widget.highlightFirstCommand,
+                      ),
+                    if (showSettings)
+                      PaletteSettingsList(
+                        settings: settings,
+                        onOpenPicker: onOpenPicker,
+                        onOpenSettings: onOpenSettings,
                         grouped: false,
                       ),
                     if (resultItems.isNotEmpty)

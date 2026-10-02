@@ -49,6 +49,9 @@ class _AskAIFor extends StatelessWidget {
         borderColor: (context, isHovering, disable, isFocused) =>
             Colors.transparent,
         builder: (ctx, isHovering, disable) {
+          final hasQuery = (context.read<CommandPaletteBloc?>()?.state.query ??
+                  '')
+              .isNotEmpty;
           return Row(
             children: [
               SizedBox.square(
@@ -62,6 +65,10 @@ class _AskAIFor extends StatelessWidget {
               ),
               HSpace(8),
               buildText(context),
+              if (hasQuery) ...[
+                HSpace(8),
+                const _KeyCap(label: 'Tab'),
+              ],
             ],
           );
         },
@@ -86,7 +93,7 @@ class _AskAIFor extends StatelessWidget {
             .copyWith(height: 22 / 14),
       );
     }
-    return Flexible(
+    return Expanded(
       child: RichText(
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
@@ -105,6 +112,30 @@ class _AskAIFor extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// A key, drawn the way the hint bar draws them.
+class _KeyCap extends StatelessWidget {
+  const _KeyCap({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppFlowyTheme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: theme.borderColorScheme.primary),
+      ),
+      child: Text(
+        label,
+        style: theme.textStyle.caption
+            .enhanced(color: theme.textColorScheme.tertiary),
       ),
     );
   }

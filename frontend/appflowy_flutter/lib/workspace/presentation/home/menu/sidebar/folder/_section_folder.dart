@@ -300,6 +300,7 @@ Future<ViewPB?> createSidebarRootItem(
   BuildContext context, {
   required FolderSpaceType spaceType,
   required SidebarRootCreateKind kind,
+  String? name,
 }) async {
   final workspaceId =
       context.read<UserWorkspaceBloc>().state.currentWorkspace?.workspaceId;
@@ -311,55 +312,58 @@ Future<ViewPB?> createSidebarRootItem(
     return null;
   }
 
+  // A name somebody typed wins over every default below.
+  final given = name?.trim() ?? '';
+  String named(String fallback) => given.isEmpty ? fallback : given;
   final section = spaceType.toViewSectionPB;
   final result = switch (kind) {
     SidebarRootCreateKind.folder => const WorkspaceItemService().createFolder(
         parentViewId: workspaceId,
-        name: LocaleKeys.workspaceFolderExplorer_untitledFolder.tr(),
+        name: named(LocaleKeys.workspaceFolderExplorer_untitledFolder.tr()),
         section: section,
       ),
     SidebarRootCreateKind.page => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Document,
         parentViewId: workspaceId,
-        name: '',
+        name: named(''),
         section: section,
       ),
     SidebarRootCreateKind.canvas => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Document,
         parentViewId: workspaceId,
-        name: LocaleKeys.canvas_defaultName.tr(),
+        name: named(LocaleKeys.canvas_defaultName.tr()),
         section: section,
         extra: CanvasMetadata.newExtra(),
       ),
     SidebarRootCreateKind.dashboard => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Document,
         parentViewId: workspaceId,
-        name: LocaleKeys.dashboard_defaultName.tr(),
+        name: named(LocaleKeys.dashboard_defaultName.tr()),
         section: section,
         extra: DashboardMetadata.newExtra(),
       ),
     SidebarRootCreateKind.table => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Grid,
         parentViewId: workspaceId,
-        name: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
+        name: named(LocaleKeys.menuAppHeader_defaultNewPageName.tr()),
         section: section,
       ),
     SidebarRootCreateKind.board => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Board,
         parentViewId: workspaceId,
-        name: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
+        name: named(LocaleKeys.menuAppHeader_defaultNewPageName.tr()),
         section: section,
       ),
     SidebarRootCreateKind.calendar => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Calendar,
         parentViewId: workspaceId,
-        name: LocaleKeys.menuAppHeader_defaultNewPageName.tr(),
+        name: named(LocaleKeys.menuAppHeader_defaultNewPageName.tr()),
         section: section,
       ),
     SidebarRootCreateKind.chat => ViewBackendService.createView(
         layoutType: ViewLayoutPB.Chat,
         parentViewId: workspaceId,
-        name: '',
+        name: named(''),
         section: section,
       ),
   };

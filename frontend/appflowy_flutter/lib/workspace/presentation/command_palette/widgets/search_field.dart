@@ -1,6 +1,7 @@
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -19,6 +20,15 @@ class SearchField extends StatefulWidget {
     this.onSubmit,
     this.onChanged,
     this.selectAllOnOpen = true,
+    this.hintText,
+    this.leadingIcon,
+    this.badge,
+    this.onTab,
+    this.onBackspaceWhenEmpty,
+    this.onEscape,
+    this.onArrowDown,
+    this.focusNode,
+    this.controller,
   });
 
   final String? query;
@@ -36,6 +46,41 @@ class SearchField extends StatefulWidget {
   /// palette can run whatever it is offering first.
   final VoidCallback? onSubmit;
 
+  /// Replaces the workspace search hint, for a palette narrowed to settings
+  /// or holding a conversation.
+  final String? hintText;
+
+  /// Replaces the magnifier, such as with the assistant's spark.
+  final IconData? leadingIcon;
+
+  /// Sits before the text, naming what the palette is narrowed to.
+  final Widget? badge;
+
+  /// Tab while the caret is in the box. Returns whether it was used; when it
+  /// was not, Tab moves focus as usual.
+  final bool Function()? onTab;
+
+  /// Backspace in an empty box, which steps out of a scope or a list of
+  /// choices the way it does in Spotlight.
+  final VoidCallback? onBackspaceWhenEmpty;
+
+  /// Escape while the caret is in the box. Returns whether it was used; when
+  /// it was not, Escape closes the palette.
+  final bool Function()? onEscape;
+
+  /// Down from the box. Without it focus simply moves on.
+  final VoidCallback? onArrowDown;
+
+  /// Lets the palette put the caret back in the box after a click elsewhere.
+  /// The field still handles its keys through it; the owner disposes it.
+  final FocusNode? focusNode;
+
+  /// Lets the palette replace the words itself — clearing them once a
+  /// question is asked, or stepping into a list of choices. Without one, a
+  /// changed [query] never overwrites what is being typed. The owner disposes
+  /// it.
+  final TextEditingController? controller;
+
   @override
   State<SearchField> createState() => _SearchFieldState();
 }
@@ -43,12 +88,17 @@ class SearchField extends StatefulWidget {
 class _SearchFieldState extends State<SearchField> {
   late final FocusNode focusNode;
   late final TextEditingController controller;
+  late final bool _ownsFocusNode;
+  late final bool _ownsController;
 
   @override
   void initState() {
     super.initState();
-    controller = TextEditingController(text: widget.query);
-    focusNode = FocusNode(onKeyEvent: _handleKeyEvent);
+    _ownsController = widget.controller == null;
+    controller =
+        widget.controller ?? TextEditingController(text: widget.query);
+    _ownsFocusNode = widget.focusNode == null;
+    focusNode = (widget.focusNode ?? FocusNode())..onKeyEvent = _handleKeyEvent;
     focusNode.requestFocus();
     // Update the text selection after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -66,15 +116,37 @@ class _SearchFieldState extends State<SearchField> {
     if (!node.hasFocus || event is! KeyDownEvent) {
       return KeyEventResult.ignored;
     }
-    if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-      node.nextFocus();
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowDown) {
+      final onArrowDown = widget.onArrowDown;
+      if (onArrowDown != null) {
+        onArrowDown();
+      } else {
+        node.nextFocus();
+      }
       return KeyEventResult.handled;
     }
     final onSubmit = widget.onSubmit;
     if (onSubmit != null &&
-        (event.logicalKey == LogicalKeyboardKey.enter ||
-            event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+        (key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter)) {
       onSubmit();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.tab &&
+        !HardwareKeyboard.instance.isShiftPressed &&
+        (widget.onTab?.call() ?? false)) {
+      return KeyEventResult.handled;
+    }
+    final onBackspace = widget.onBackspaceWhenEmpty;
+    if (onBackspace != null &&
+        key == LogicalKeyboardKey.backspace &&
+        controller.text.isEmpty) {
+      onBackspace();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.escape &&
+        (widget.onEscape?.call() ?? false)) {
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -82,8 +154,12 @@ class _SearchFieldState extends State<SearchField> {
 
   @override
   void dispose() {
-    focusNode.dispose();
-    controller.dispose();
+    if (_ownsFocusNode) {
+      focusNode.dispose();
+    } else if (focusNode.onKeyEvent == _handleKeyEvent) {
+      focusNode.onKeyEvent = null;
+    }
+    if (_ownsController) controller.dispose();
     super.dispose();
   }
 
@@ -143,8 +219,9 @@ class _SearchFieldState extends State<SearchField> {
                 borderRadius: radius,
               ),
               isDense: false,
-              hintText: LocaleKeys.search_searchFieldHint
-                  .tr(args: ['${workspace?.name}']),
+              hintText: widget.hintText ??
+                  LocaleKeys.search_searchFieldHint
+                      .tr(args: ['${workspace?.name}']),
               hintStyle: theme.textStyle.heading4
                   .standard(color: theme.textColorScheme.tertiary),
               hintMaxLines: 1,
@@ -156,13 +233,30 @@ class _SearchFieldState extends State<SearchField> {
               ),
               prefixIcon: Padding(
                 padding: const EdgeInsets.only(left: 12, right: 8),
-                child: WorkspaceGlyph.svg(
-                  FlowySvgs.search_icon_m,
-                  color: theme.iconColorScheme.secondary,
-                  size: 20,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    widget.leadingIcon == null
+                        ? WorkspaceGlyph.svg(
+                            FlowySvgs.search_icon_m,
+                            color: theme.iconColorScheme.secondary,
+                            size: 20,
+                          )
+                        : WorkspaceGlyph(
+                            widget.leadingIcon!,
+                            color: WorkspacePalette.of(context).accent,
+                            size: 20,
+                          ),
+                    if (widget.badge != null) ...[
+                      const SizedBox(width: 8),
+                      widget.badge!,
+                    ],
+                  ],
                 ),
               ),
-              prefixIconConstraints: BoxConstraints.loose(Size(40, 20)),
+              prefixIconConstraints: widget.badge == null
+                  ? BoxConstraints.loose(Size(40, 20))
+                  : BoxConstraints.loose(Size(320, 28)),
               suffixIconConstraints:
                   hasText ? BoxConstraints.loose(Size(48, 28)) : null,
               suffixIcon: hasText ? _buildSuffixIcon(context) : null,

@@ -1,6 +1,8 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
+import 'package:appflowy/workspace/application/command_palette/palette_scope.dart';
 import 'package:appflowy/workspace/presentation/command_palette/palette_commands.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_row_surface.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -46,6 +48,7 @@ class CommandResultsList extends StatelessWidget {
     this.grouped = true,
     this.sectionLabel,
     this.highlightFirst = false,
+    this.query = '',
   });
 
   final List<PaletteCommand> commands;
@@ -57,6 +60,9 @@ class CommandResultsList extends StatelessWidget {
 
   /// Marks the command Enter would run while the caret is still in the box.
   final bool highlightFirst;
+
+  /// What was typed, so a command handed an argument can show it.
+  final String query;
 
   @override
   Widget build(BuildContext context) {
@@ -99,6 +105,7 @@ class CommandResultsList extends StatelessWidget {
   Widget _cell(PaletteCommand command, bool isFirst) => PaletteCommandCell(
         key: ValueKey(command.id),
         command: command,
+        argument: paletteCommandArgument(command, query) ?? '',
         preselected: highlightFirst && isFirst,
         onRun: () => onRun(command),
       );
@@ -111,10 +118,12 @@ class CommandPalettePanel extends StatefulWidget {
     super.key,
     required this.commands,
     required this.onRun,
+    this.query = '',
   });
 
   final List<PaletteCommand> commands;
   final ValueChanged<PaletteCommand> onRun;
+  final String query;
 
   @override
   State<CommandPalettePanel> createState() => _CommandPalettePanelState();
@@ -149,6 +158,7 @@ class _CommandPalettePanelState extends State<CommandPalettePanel> {
                     commands: widget.commands,
                     onRun: widget.onRun,
                     highlightFirst: !_hasFocus,
+                    query: widget.query,
                   ),
                   const VSpace(16),
                 ],
@@ -169,11 +179,15 @@ class PaletteCommandCell extends StatefulWidget {
     required this.command,
     required this.onRun,
     this.preselected = false,
+    this.argument = '',
   });
 
   final PaletteCommand command;
   final VoidCallback onRun;
   final bool preselected;
+
+  /// What the command will be handed, such as the name of the page it makes.
+  final String argument;
 
   @override
   State<PaletteCommandCell> createState() => _PaletteCommandCellState();
@@ -235,7 +249,23 @@ class _PaletteCommandCellState extends State<PaletteCommandCell> {
                         .copyWith(height: 22 / 14),
                   ),
                 ),
-                if (command.subtitle.isNotEmpty) ...[
+                if (widget.argument.isNotEmpty) ...[
+                  const HSpace(6),
+                  Flexible(
+                    child: Text(
+                      '\u201c${widget.argument}\u201d',
+                      key: const ValueKey('command-palette-command-argument'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textStyle.body
+                          .enhanced(
+                            color: WorkspacePalette.of(context).accent,
+                          )
+                          .copyWith(height: 22 / 14),
+                    ),
+                  ),
+                ],
+                if (command.subtitle.isNotEmpty && widget.argument.isEmpty) ...[
                   const HSpace(8),
                   Flexible(
                     child: Text(
@@ -294,12 +324,22 @@ class NoCommandsHint extends StatelessWidget {
   }
 }
 
+/// What the keys do in each of the palette's modes.
+enum PaletteHintMode { search, commands, settings, picker, ai }
+
 /// The quiet line along the bottom of the palette that says what the keys do —
-/// and, above all, that `>` exists at all.
+/// and, above all, that `>` and `?` exist at all.
 class CommandPaletteHintBar extends StatelessWidget {
-  const CommandPaletteHintBar({super.key, required this.commandMode});
+  const CommandPaletteHintBar({
+    super.key,
+    required this.commandMode,
+    this.mode,
+  });
 
   final bool commandMode;
+
+  /// Overrides [commandMode] when set.
+  final PaletteHintMode? mode;
 
   @override
   Widget build(BuildContext context) {
@@ -308,6 +348,34 @@ class CommandPaletteHintBar extends StatelessWidget {
         theme.textStyle.caption.standard(color: theme.textColorScheme.tertiary);
     final keyStyle = theme.textStyle.caption
         .enhanced(color: theme.textColorScheme.secondary);
+    final mode = this.mode ??
+        (commandMode ? PaletteHintMode.commands : PaletteHintMode.search);
+
+    final hints = <(String, String)>[
+      if (mode != PaletteHintMode.ai)
+        ('\u2191\u2193', LocaleKeys.commandPalette_hintNavigate.tr()),
+      (
+        '\u21b5',
+        switch (mode) {
+          PaletteHintMode.search => LocaleKeys.commandPalette_hintOpen.tr(),
+          PaletteHintMode.commands => LocaleKeys.commandPalette_hintRun.tr(),
+          PaletteHintMode.settings =>
+            LocaleKeys.commandPalette_hintChange.tr(),
+          PaletteHintMode.picker => LocaleKeys.commandPalette_hintChoose.tr(),
+          PaletteHintMode.ai => LocaleKeys.commandPalette_hintAsk.tr(),
+        },
+      ),
+      if (mode == PaletteHintMode.settings)
+        ('\u2190\u2192', LocaleKeys.commandPalette_hintAdjust.tr()),
+      if (mode == PaletteHintMode.search)
+        ('Tab', LocaleKeys.commandPalette_hintAskAI.tr()),
+      if (mode == PaletteHintMode.picker || mode == PaletteHintMode.ai)
+        ('\u232b', LocaleKeys.commandPalette_hintBack.tr()),
+      if (mode == PaletteHintMode.search) ...[
+        (paletteCommandPrefix, LocaleKeys.commandPalette_hintCommands.tr()),
+        (paletteAskPrefix, LocaleKeys.commandPalette_hintQuestion.tr()),
+      ],
+    ];
 
     return Padding(
       padding: EdgeInsets.only(
@@ -316,33 +384,22 @@ class CommandPaletteHintBar extends StatelessWidget {
         left: theme.spacing.m,
         right: theme.spacing.m,
       ),
-      child: Row(
+      // Wraps rather than overflowing when the palette is narrow or the text
+      // is large; every hint stays readable, none is cut off.
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 2,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Text('↑↓', style: keyStyle),
-          const HSpace(4),
-          Text(LocaleKeys.commandPalette_hintNavigate.tr(), style: style),
-          const HSpace(12),
-          Text('↵', style: keyStyle),
-          const HSpace(4),
-          Text(
-            commandMode
-                ? LocaleKeys.commandPalette_hintRun.tr()
-                : LocaleKeys.commandPalette_hintOpen.tr(),
-            style: style,
-          ),
-          if (!commandMode) ...[
-            const HSpace(12),
-            Text(paletteCommandPrefix, style: keyStyle),
-            const HSpace(4),
-            Flexible(
-              child: Text(
-                LocaleKeys.commandPalette_hintCommands.tr(),
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+          for (final (key, label) in hints)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(key, style: keyStyle),
+                const HSpace(4),
+                Text(label, style: style),
+              ],
             ),
-          ],
         ],
       ),
     );

@@ -49,7 +49,8 @@ void main() {
       // A choice wears the colour its column gave it, exactly as the grid
       // draws it, in every appearance.
       final context = tester.element(find.byType(ListStage));
-      final doing = find.descendant(of: _row('r1'), matching: find.text('Doing'));
+      final doing =
+          find.descendant(of: _row('r1'), matching: find.text('Doing'));
       expect(doing.hitTestable(), findsOneWidget);
       final pill = tester.widget<Container>(
         find.ancestor(of: doing, matching: find.byType(Container)).first,
@@ -80,7 +81,8 @@ void main() {
       await tester.pumpAndSettle();
       final line = tester.widget<AnimatedContainer>(
         find
-            .descendant(of: _row('r1'), matching: find.byType(AnimatedContainer))
+            .descendant(
+                of: _row('r1'), matching: find.byType(AnimatedContainer))
             .first,
       );
       expect((line.decoration! as BoxDecoration).color, palette.hover);
@@ -103,12 +105,16 @@ void main() {
     await _pump(tester, _Host(), width: 600);
 
     expect(
-      find.descendant(of: _row('r1'), matching: find.text('Doing')).hitTestable(),
+      find
+          .descendant(of: _row('r1'), matching: find.text('Doing'))
+          .hitTestable(),
       findsOneWidget,
     );
     for (final hidden in ['Ada Lovelace', 'Aug 6, 2026']) {
       expect(
-        find.descendant(of: _row('r1'), matching: find.text(hidden)).hitTestable(),
+        find
+            .descendant(of: _row('r1'), matching: find.text(hidden))
+            .hitTestable(),
         findsNothing,
         reason: hidden,
       );
