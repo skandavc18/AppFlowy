@@ -1165,6 +1165,19 @@ abstract final class WorkspaceGlyphs {
     Icons.location_city: 'city',
     Icons.emoji_symbols: 'emoji',
     Icons.home_work_rounded: 'workspace-home',
+    // Web embeds: what each site's links point at.
+    Icons.thumb_up_rounded: 'thumb-up',
+    Icons.movie_filter_rounded: 'film-strip',
+    Icons.smart_display_rounded: 'film-strip',
+    Icons.send_rounded: 'send',
+    Icons.album_rounded: 'music-note',
+    Icons.podcasts_rounded: 'waveform',
+    Icons.question_answer_rounded: 'chat-circle',
+    Icons.mode_comment_rounded: 'chat-circle',
+    Icons.help_rounded: 'help',
+    Icons.photo_camera_rounded: 'camera',
+    Icons.directions_rounded: 'route',
+    Icons.public_off_rounded: 'globe-off',
   };
 
   // Compare path stems, not FlowySvgData identity: generated and reconstructed

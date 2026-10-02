@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:appflowy/shared/scrolling/frame_synced_scroll_pan.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:flutter/foundation.dart';
@@ -32,8 +33,10 @@ const SpringDescription documentSettleSpring = SpringDescription(
 ///
 /// Platform behaviour is preserved where it is genuinely native — Apple
 /// platforms keep rubber-band overscroll, Windows and Linux clamp — while
-/// impulse, inertia and deceleration stay identical everywhere.
-class DocumentScrollPhysics extends ScrollPhysics {
+/// impulse, inertia and deceleration stay identical everywhere. Trackpad
+/// input is frame-paced beneath it exactly as on every other page.
+class DocumentScrollPhysics extends ScrollPhysics
+    implements PremiumPacedOuterPhysics {
   const DocumentScrollPhysics({
     super.parent,
     this.flingFriction = documentFlingFriction,
@@ -92,6 +95,10 @@ class DocumentScrollPhysics extends ScrollPhysics {
       return super.createBallisticSimulation(position, velocity);
     }
 
+    // Trackpad motion not yet on screen when the fingers lifted is travelled
+    // by this coast rather than jumped to.
+    final release = FrameSyncedScrollPan.releaseOf(position);
+    final launch = release?.launch(velocity, flingFriction) ?? velocity;
     final tolerance = toleranceFor(position);
     if (position.outOfRange) {
       return ScrollSpringSimulation(
@@ -104,38 +111,41 @@ class DocumentScrollPhysics extends ScrollPhysics {
         tolerance: tolerance,
       );
     }
-    if (velocity.abs() < tolerance.velocity ||
-        (velocity > 0 && position.pixels >= position.maxScrollExtent) ||
-        (velocity < 0 && position.pixels <= position.minScrollExtent)) {
+    if (launch.abs() < tolerance.velocity ||
+        (launch > 0 && position.pixels >= position.maxScrollExtent) ||
+        (launch < 0 && position.pixels <= position.minScrollExtent)) {
       return null;
     }
+    FrameSyncedScrollPan.takeRelease(position);
 
     final simulation = FrictionSimulation(
       math.exp(-flingFriction),
       position.pixels,
-      velocity,
+      launch,
       tolerance: tolerance,
     );
 
     // Land smoothly on the document edge rather than colliding with it.
     final endpoint = simulation.finalX;
+    final Simulation coast;
     if (endpoint > position.maxScrollExtent) {
-      return FrictionSimulation.through(
+      coast = FrictionSimulation.through(
         position.pixels,
         position.maxScrollExtent,
-        velocity,
+        launch,
         tolerance.velocity,
       );
-    }
-    if (endpoint < position.minScrollExtent) {
-      return FrictionSimulation.through(
+    } else if (endpoint < position.minScrollExtent) {
+      coast = FrictionSimulation.through(
         position.pixels,
         position.minScrollExtent,
-        velocity,
+        launch,
         -tolerance.velocity,
       );
+    } else {
+      coast = simulation;
     }
-    return simulation;
+    return release?.leading(coast) ?? coast;
   }
 
   @override

@@ -258,6 +258,100 @@ void main() {
     }, timeout: const Timeout(Duration(seconds: 30)));
   }
 
+  testWidgets('a visible access gate is named rather than unavailable',
+      (tester) async {
+    final fixture = _Fixture();
+    final gate = fixture.captureGate = Completer<dynamic>();
+    try {
+      await fixture.mount(tester);
+      fixture.action(tester, 'reader')();
+      await tester.pump();
+      gate.complete(jsonEncode({'url': _url, 'gate': true}));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text(BookmarkReaderStrings.gated), findsOneWidget);
+      expect(find.text(BookmarkReaderStrings.unavailable), findsNothing);
+      expect(find.byType(BookmarkArticleView), findsNothing);
+      expect(fixture.action(tester, 'reader'), isNotNull);
+      expect(fixture.saves, 0);
+      expect(tester.takeException(), isNull);
+    } finally {
+      await fixture.dispose(tester);
+    }
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
+  for (final appearance in ['light', 'dark', 'paper']) {
+    testWidgets('$appearance: Reader reads a page still loading, saying so',
+        (tester) async {
+      final fixture = _Fixture();
+      try {
+        await fixture.mount(tester, appearance: appearance);
+        // Loading again: not finished, but already on its way.
+        fixture.session.navigationStarted(_url);
+        fixture.captureGate = Completer<dynamic>()
+          ..complete(jsonEncode({'url': _url, 'loading': true}));
+        fixture.action(tester, 'reader')();
+        await tester.pump();
+        await tester.pump();
+        expect(fixture.captureCalls, 1);
+        final chip = find.byKey(const ValueKey('bookmark-reader-preparing'));
+        expect(chip, findsOneWidget);
+        expect(find.text(BookmarkReaderStrings.preparing), findsOneWidget);
+        // The workspace's own surface, warm in paper mode, like the error.
+        expect(tester.widget<Material>(chip).color,
+            bookmarkThemeOf(tester.element(chip)).panel);
+        expect(find.byType(BookmarkArticleView), findsNothing);
+        // The live page stays usable underneath while Reader waits.
+        expect(find.byKey(const ValueKey('live-field')).hitTestable(),
+            findsOneWidget);
+        expect(
+            tester
+                .widget<BookmarkAction>(
+                    find.byKey(const ValueKey('bookmark-reader-reader')))
+                .onPressed,
+            isNull);
+
+        fixture.captureGate = null;
+        await tester.pump(bookmarkReaderRetryInterval);
+        await tester.pump();
+        await tester.pump();
+        expect(fixture.captureCalls, 2);
+        expect(find.byType(BookmarkArticleView), findsOneWidget);
+        expect(chip, findsNothing);
+        expect(tester.takeException(), isNull);
+      } finally {
+        await fixture.dispose(tester);
+      }
+    }, timeout: const Timeout(Duration(seconds: 30)));
+  }
+
+  testWidgets('Reader follows a page that moves on while it is read',
+      (tester) async {
+    final fixture = _Fixture();
+    final gate = fixture.captureGate = Completer<dynamic>();
+    try {
+      await fixture.mount(tester);
+      fixture.action(tester, 'reader')();
+      await tester.pump();
+      expect(fixture.captureCalls, 1);
+      // A redirect, or a route the site pushes as it loads.
+      const moved = 'https://reader.example/article?view=full';
+      fixture.session.navigationStarted(moved);
+      fixture.captureGate = Completer<dynamic>()
+        ..complete(_payload(url: moved));
+      gate.complete(_payload());
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(fixture.captureCalls, 2);
+      expect(find.byType(BookmarkArticleView), findsOneWidget);
+      expect(find.text(BookmarkReaderStrings.unavailable), findsNothing);
+      expect(fixture.saves, 0);
+    } finally {
+      await fixture.dispose(tester);
+    }
+  }, timeout: const Timeout(Duration(seconds: 30)));
+
   for (final invalidation in ['source', 'permission']) {
     testWidgets('$invalidation during capture cannot save bookmark metadata',
         (tester) async {

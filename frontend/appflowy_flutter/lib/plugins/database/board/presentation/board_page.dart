@@ -408,7 +408,8 @@ class _BoardContentState extends State<_BoardContent> {
               valueListenable: databaseController.compactModeNotifier,
               builder: (context, compactMode, _) {
                 final board = ScrollConfiguration(
-                  behavior: const BoardScrollBehaviour(),
+                  behavior:
+                      BoardScrollBehaviour(ScrollConfiguration.of(context)),
                   child: BoardColumnSurface(
                     child: AppFlowyBoard(
                       boardScrollController: scrollManager,

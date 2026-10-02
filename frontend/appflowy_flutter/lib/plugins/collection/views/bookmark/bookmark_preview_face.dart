@@ -23,7 +23,8 @@ class BookmarkPreviewFace extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = bookmarkThemeOf(context);
     final metadata = entry.metadata;
-    final host = entry.host ?? bookmarkDisplayUrl(entry.url);
+    final host =
+        entry.embed?.label ?? entry.host ?? bookmarkDisplayUrl(entry.url);
     final summary = _summary(metadata);
     final bodyStyle = theme.body.copyWith(fontSize: 12, height: 1.42);
     final cover = BookmarkCover(

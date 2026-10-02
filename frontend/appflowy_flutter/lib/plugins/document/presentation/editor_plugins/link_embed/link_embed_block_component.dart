@@ -1,4 +1,6 @@
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
+import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_page_preview.dart';
@@ -75,6 +77,23 @@ class LinkEmbedBlockComponentState
   /// The real ratio of the embedded video, once the decoder has reported it.
   double? videoAspectRatio;
 
+  /// Whether the page has been read for the preview card. A link a site draws
+  /// live never needs it, unless that site is switched off.
+  bool _parserStarted = false;
+
+  /// Bumped to load a live site again.
+  int _webEmbedReload = 0;
+
+  /// How tall a live post draws at this width, for a frame nobody has sized.
+  double? _webEmbedHeight;
+
+  /// The site that draws this link live, when an extension knows it.
+  ///
+  /// YouTube keeps the player this block has always had, which sizes itself
+  /// by the video's own ratio and can be downloaded from the menu.
+  WebEmbedLink? get webEmbed =>
+      isYoutubeVideoUrl(url) ? null : ExtensionWebEmbedRegistry.recognize(url);
+
   void _handleVideoAspectRatio(double aspectRatio) {
     if (!mounted || videoAspectRatio == aspectRatio) {
       return;
@@ -98,13 +117,41 @@ class LinkEmbedBlockComponentState
         });
       }
     });
-    parser.start(url);
+    ExtensionWebEmbedRegistry.revision.addListener(_onWebEmbedsChanged);
+    if (webEmbed == null) {
+      _startParser();
+    }
   }
 
   @override
   void dispose() {
+    ExtensionWebEmbedRegistry.revision.removeListener(_onWebEmbedsChanged);
     parser.dispose();
     super.dispose();
+  }
+
+  void _startParser() {
+    _parserStarted = true;
+    parser.start(url);
+  }
+
+  /// A site was switched on or off: draw the link the way that now allows.
+  void _onWebEmbedsChanged() {
+    if (!mounted) {
+      return;
+    }
+    if (webEmbed == null && !_parserStarted) {
+      _startParser();
+    }
+    setState(() => _webEmbedHeight = null);
+  }
+
+  void _handleWebEmbedHeight(double height) {
+    final next = height.clamp(minimumLinkEmbedHeight, 1200.0).toDouble();
+    if (!mounted || (next - (_webEmbedHeight ?? 0)).abs() < 1) {
+      return;
+    }
+    setState(() => _webEmbedHeight = next);
   }
 
   @override
@@ -129,6 +176,10 @@ class LinkEmbedBlockComponentState
   }
 
   Widget buildChild(BuildContext context) {
+    final link = webEmbed;
+    if (link != null) {
+      return buildWebEmbed(context, link);
+    }
     final theme = AppFlowyTheme.of(context),
         fillScheme = theme.fillColorScheme,
         borderScheme = theme.borderColorScheme;
@@ -195,30 +246,78 @@ class LinkEmbedBlockComponentState
     );
   }
 
+  /// A post, map or document drawn live by its own site, in a frame that
+  /// starts at the size the site suits and hugs a single post's height until
+  /// somebody drags it.
+  Widget buildWebEmbed(BuildContext context, WebEmbedLink link) {
+    final theme = AppFlowyTheme.of(context);
+    final storedWidth = node.attributes[LinkEmbedKeys.width]?.toDouble();
+    final storedHeight = node.attributes[LinkEmbedKeys.height]?.toDouble();
+    return ResizableMedia(
+      width: storedWidth ?? link.defaultWidth,
+      height: storedHeight ?? _webEmbedHeight ?? link.defaultHeight,
+      minHeight: minimumLinkEmbedHeight,
+      alignment: blockEmbedAlignment(node),
+      editable: context.read<EditorState>().editable,
+      onResize: (value) => _write({LinkEmbedKeys.width: value}),
+      onResizeHeight: (value) => _write({LinkEmbedKeys.height: value}),
+      child: Container(
+        key: widgetKey,
+        decoration: BoxDecoration(
+          color: theme.fillColorScheme.content,
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+          border: Border.all(color: theme.borderColorScheme.primary),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: WebEmbedSurface(
+                link: link,
+                reloadToken: _webEmbedReload,
+                onContentHeight:
+                    storedHeight == null ? _handleWebEmbedHeight : null,
+              ),
+            ),
+            buildMenu(context, webEmbed: link),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _write(Map<String, Object?> attributes) {
     final editorState = context.read<EditorState>();
     final transaction = editorState.transaction..updateNode(node, attributes);
     editorState.apply(transaction);
   }
 
-  Widget buildMenu(BuildContext context) {
+  Widget buildMenu(BuildContext context, {WebEmbedLink? webEmbed}) {
     return Positioned(
       top: 12,
       right: 12,
       child: PreviewToolbar(
-        keepVisible:
-            !isYoutubeVideoUrl(url) && status == LinkLoadingStatus.error,
+        keepVisible: webEmbed == null &&
+            !isYoutubeVideoUrl(url) &&
+            status == LinkLoadingStatus.error,
         child: LinkEmbedMenu(
           editorState: context.read<EditorState>(),
           node: node,
           onReload: () {
+            if (webEmbed != null) {
+              setState(() => _webEmbedReload++);
+              return;
+            }
             setState(() {
               status = LinkLoadingStatus.loading;
             });
             Future.delayed(const Duration(milliseconds: 200), () {
-              if (mounted) parser.start(url);
+              if (mounted) _startParser();
             });
           },
+          onFullscreen: webEmbed == null
+              ? null
+              : () => showWebEmbedFullscreen(context, webEmbed),
           onMenuShowed: () {},
           onMenuHided: () {},
         ),

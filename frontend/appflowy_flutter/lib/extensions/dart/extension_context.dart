@@ -6,6 +6,7 @@ import 'package:appflowy/extensions/application/action_scheduler.dart';
 import 'package:appflowy/extensions/application/extension_data_store.dart';
 import 'package:appflowy/extensions/dart/appflowy_extension.dart';
 import 'package:appflowy/extensions/dart/extension_registries.dart';
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
@@ -33,6 +34,7 @@ class DartExtensionContext implements ExtensionContext {
   late final ExtensionDashboardWidgets dashboardWidgets =
       ExtensionDashboardWidgets._(this);
   late final ExtensionData data = ExtensionData._(this);
+  late final ExtensionWebEmbeds webEmbeds = ExtensionWebEmbeds._(this);
   late final ExtensionJobs jobs = ExtensionJobs._(this);
 }
 
@@ -55,6 +57,7 @@ class ExtensionBlocks {
     String slashDescription = '',
     Node Function()? newNode,
     bool alignable = false,
+    List<ExtensionSlashEntry> slashEntries = const [],
   }) {
     ExtensionBlockRegistry.register(
       ExtensionBlockDefinition(
@@ -68,6 +71,7 @@ class ExtensionBlocks {
         slashDescription: slashDescription,
         newNode: newNode,
         alignable: alignable,
+        extraSlashEntries: slashEntries,
       ),
     );
     _context.scope.onDispose(() => ExtensionBlockRegistry.unregister(type));
@@ -199,6 +203,25 @@ class ExtensionThemes {
       _registeredTeardown = true;
       _context.scope.onDispose(
         () => ExtensionThemeRegistry.unregisterAll(_context.info.id),
+      );
+    }
+  }
+}
+
+/// Sites whose links this extension shows properly, wherever a link is shown.
+class ExtensionWebEmbeds {
+  ExtensionWebEmbeds._(this._context);
+
+  final DartExtensionContext _context;
+
+  var _registeredTeardown = false;
+
+  void add(WebEmbedProvider provider) {
+    ExtensionWebEmbedRegistry.register(_context.info.id, provider);
+    if (!_registeredTeardown) {
+      _registeredTeardown = true;
+      _context.scope.onDispose(
+        () => ExtensionWebEmbedRegistry.unregisterAll(_context.info.id),
       );
     }
   }

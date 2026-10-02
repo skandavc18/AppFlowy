@@ -3,6 +3,8 @@ import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/core/helpers/url_launcher.dart';
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
+import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_card.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_chrome.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_find.dart';
@@ -285,10 +287,11 @@ class CanvasBoardState extends State<CanvasBoard> {
   String addCard(
     CanvasNodeKind kind, {
     Offset? at,
+    Size? size,
     bool startTyping = false,
     bool configure = true,
   }) {
-    final size = defaultCanvasNodeSize(kind);
+    size ??= defaultCanvasNodeSize(kind);
     final wanted = at ?? _sceneCentre - Offset(size.width / 2, size.height / 2);
     final position = at != null
         ? wanted
@@ -429,15 +432,29 @@ class CanvasBoardState extends State<CanvasBoard> {
         });
       case CanvasNodeKind.web:
       case CanvasNodeKind.bookmark:
-        final url = await askForCanvasLink(
+        final answer = await askForCanvasLink(
           context,
           palette: palette,
           initialValue: node.url,
         );
+        final url = _linkFrom(answer);
         if (url == null || !mounted) {
           return;
         }
-        _controller.updateNode(id, (current) => current.copyWith(url: url));
+        final embed = ExtensionWebEmbedRegistry.recognize(url);
+        _controller.updateNode(id, (current) {
+          var next = current.copyWith(url: url);
+          // The picture was of the page the card pointed at before.
+          if (current.url.trim() != url) {
+            next = next.withData('preview', null);
+          }
+          // A card nobody has sized takes the shape of what it now shows.
+          if (embed != null &&
+              current.size == defaultCanvasNodeSize(current.kind)) {
+            next = next.copyWith(size: canvasWebEmbedCardSize(embed));
+          }
+          return next;
+        });
         unawaited(_describeLink(id, url));
       case CanvasNodeKind.diagram:
         final kind = await askForCanvasDiagramKind(
@@ -492,29 +509,91 @@ class CanvasBoardState extends State<CanvasBoard> {
 
   /// Fill in a saved link's title and picture, so it looks like the page it
   /// points at. Failure is normal and silent — plenty of sites refuse a fetch.
+  ///
+  /// A pin, post or video a site extension knows is asked of the site itself,
+  /// which answers where a plain read of the page only meets a sign-in wall,
+  /// and a short link is kept as the address it leads to.
   Future<void> _describeLink(String id, String url) async {
-    final info = await readCanvasLinkInfo(url);
-    if (info == null || !mounted) {
+    var address = url;
+    var embed = ExtensionWebEmbedRegistry.recognize(url);
+    if (embed != null && embed.needsResolution) {
+      address = await ExtensionWebEmbedRegistry.settledUrl(embed);
+      embed = ExtensionWebEmbedRegistry.recognize(address) ?? embed;
+    }
+    final details =
+        embed == null ? null : await ExtensionWebEmbedRegistry.details(embed);
+    final info = details?.title == null || details?.thumbnailUrl == null
+        ? await readCanvasLinkInfo(address)
+        : null;
+    if (!mounted) {
       return;
     }
+    // What such a site shows a stranger is its own name or a sign-in form,
+    // and the rest of that page describes the form, not the link.
+    final pageTitle =
+        embed == null ? info?.title : webEmbedPageTitle(embed, info?.title);
+    final page = embed == null || pageTitle != null ? info : null;
+    String? present(String? value) {
+      final trimmed = value?.trim() ?? '';
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    final title = present(details?.title) ?? present(pageTitle);
+    final description =
+        present(details?.description) ?? present(page?.description);
+    final image = present(details?.thumbnailUrl) ??
+        present(embed?.thumbnailUrl) ??
+        present(page?.imageUrl);
     _controller.updateNode(id, (current) {
+      // Somebody pointed the card elsewhere while this one was being read.
+      if (current.url.trim() != url.trim()) {
+        return current;
+      }
       var next = current;
-      final title = info.title?.trim();
-      if (title != null && title.isNotEmpty && current.title.trim().isEmpty) {
+      if (address != url) {
+        next = next.copyWith(url: address);
+      }
+      if (title != null && current.title.trim().isEmpty) {
         next = next.copyWith(title: title);
       }
-      final description = info.description?.trim();
-      if (description != null &&
-          description.isNotEmpty &&
-          current.text.trim().isEmpty) {
+      if (description != null && current.text.trim().isEmpty) {
         next = next.copyWith(text: description);
       }
-      final image = info.imageUrl?.trim();
-      if (image != null && image.isNotEmpty) {
+      if (image != null) {
         next = next.withData('preview', image);
       }
       return next;
     });
+  }
+
+  /// The address in what was typed or pasted for a link card: embed code
+  /// gives up the link it names, and a link a site knows loses its share
+  /// tracking.
+  String? _linkFrom(String? answer) {
+    final text = answer?.trim() ?? '';
+    final address = text.contains('<') ? webEmbedAddressFrom(text) : text;
+    if (address == null || address.isEmpty) {
+      return null;
+    }
+    return ExtensionWebEmbedRegistry.canonicalUrl(address);
+  }
+
+  /// Open what a link card points at: live at window size when a site
+  /// extension knows it, in the browser otherwise.
+  void _openLink(CanvasNode node) {
+    final embed = canvasWebEmbedFor(node);
+    if (embed == null) {
+      unawaited(afLaunchUrlString(node.url.trim()));
+      return;
+    }
+    final title = node.title.trim();
+    unawaited(
+      showWebEmbedFullscreen(
+        context,
+        embed,
+        title: title.isEmpty ? null : title,
+      ),
+    );
   }
 
   /// Open a hand-drawn diagram in the Excalidraw editor.
@@ -1330,6 +1409,19 @@ class CanvasBoardState extends State<CanvasBoard> {
     if (text == null || text.isEmpty) {
       return;
     }
+    final embed = ExtensionWebEmbedRegistry.recognize(
+      text.contains('<') ? webEmbedAddressFrom(text) : text,
+    );
+    if (embed != null) {
+      final id = addCard(
+        CanvasNodeKind.web,
+        size: canvasWebEmbedCardSize(embed),
+        configure: false,
+      );
+      _controller.updateNode(id, (current) => current.copyWith(url: embed.url));
+      unawaited(_describeLink(id, embed.url));
+      return;
+    }
     final url = Uri.tryParse(text);
     final isAddress = !text.contains(RegExp(r'\s')) &&
         url != null &&
@@ -1513,7 +1605,7 @@ class CanvasBoardState extends State<CanvasBoard> {
           } else if (node.kind.referencesWorkspaceObject) {
             _openReference(node);
           } else if (node.url.trim().isNotEmpty) {
-            unawaited(afLaunchUrlString(node.url.trim()));
+            _openLink(node);
           }
         },
         onSetUp: () => unawaited(
@@ -1563,7 +1655,7 @@ class CanvasBoardState extends State<CanvasBoard> {
               if (node.kind.referencesWorkspaceObject) {
                 _openReference(node);
               } else {
-                unawaited(afLaunchUrlString(node.url.trim()));
+                _openLink(node);
               }
             },
           ),
@@ -2198,7 +2290,7 @@ class CanvasBoardState extends State<CanvasBoard> {
             (node.kind == CanvasNodeKind.web ||
                 node.kind == CanvasNodeKind.bookmark)) {
           // A saved link opens where a link opens.
-          unawaited(afLaunchUrlString(node.url.trim()));
+          _openLink(node);
         } else {
           unawaited(_editCard(node.id));
         }
@@ -2234,7 +2326,7 @@ class CanvasBoardState extends State<CanvasBoard> {
         if (node.kind.referencesWorkspaceObject) {
           _openReference(node);
         } else if (node.url.trim().isNotEmpty) {
-          unawaited(afLaunchUrlString(node.url.trim()));
+          _openLink(node);
         }
       },
       onSetUp: () => unawaited(_setUpCard(node.id)),

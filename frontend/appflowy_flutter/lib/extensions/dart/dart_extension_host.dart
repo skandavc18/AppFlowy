@@ -8,6 +8,7 @@ import 'package:appflowy/extensions/dart/built_in/glass_theme_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/news_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/stock_extension.dart';
 import 'package:appflowy/extensions/dart/built_in/tally_table_view_extension.dart';
+import 'package:appflowy/extensions/dart/built_in/web_embeds_extension.dart';
 import 'package:appflowy/extensions/dart/extension_context.dart';
 import 'package:appflowy/extensions/dart/extension_registries.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -27,6 +28,7 @@ List<AppFlowyExtension> builtInDartExtensions() => [
       StockExtension(),
       NewsExtension(),
       AstrologyExtension(),
+      WebEmbedsExtension(),
     ];
 
 /// Switches Dart extensions on and off, and remembers which are off.

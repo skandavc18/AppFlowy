@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:appflowy/shared/markup_parse.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
 import 'package:flutter/foundation.dart';
 import 'package:html/dom.dart' as dom;
@@ -38,6 +39,10 @@ class LinkMetadata {
 
   bool get isEmpty => title == null && description == null && imageUrl == null;
 }
+
+/// [parseLinkMetadata], read off the UI isolate when [html] is a whole page.
+Future<LinkMetadata> readLinkMetadata(String html, Uri url) =>
+    parseMarkup(html, (html) => parseLinkMetadata(html, url));
 
 /// Reads [html] as the page at [url].
 ///

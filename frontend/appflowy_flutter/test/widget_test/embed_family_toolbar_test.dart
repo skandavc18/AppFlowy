@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:appflowy/extensions/dart/built_in/news_extension.dart';
@@ -31,6 +32,7 @@ import 'package:appflowy/shared/charts/app_chart.dart';
 import 'package:appflowy/shared/charts/chart_stage.dart';
 import 'package:appflowy/shared/charts/chart_toolbar.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
 import 'package:appflowy/shared/maps/app_map_toolbar.dart';
 import 'package:appflowy/shared/maps/app_map_view.dart';
 import 'package:appflowy/shared/maps/map_geo.dart';
@@ -68,6 +70,7 @@ import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra/theme.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flowy_svg/flowy_svg.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -1329,6 +1332,73 @@ void main() {
     }
   }
 
+  for (final appearance in _appearances) {
+    testWidgets(
+        '$appearance: the link embed toolbar floats on the page surface',
+        (tester) async {
+      final node = Node(
+        type: 'link_preview',
+        attributes: {'url': 'https://example.invalid'},
+      );
+      final editor =
+          EditorState(document: Document(root: pageNode(children: [node])))
+            ..disableSealTimer = true;
+      try {
+        await _mount(
+          tester,
+          appearance,
+          Provider<EditorState>.value(
+            value: editor,
+            child: Center(
+              child: LinkEmbedMenu(
+                node: node,
+                editorState: editor,
+                onMenuShowed: () {},
+                onMenuHided: () {},
+                onReload: () {},
+                onFullscreen: () {},
+              ),
+            ),
+          ),
+        );
+        final toolbar = find.byKey(const ValueKey('link-embed-menu-toolbar'));
+        _expectAppearance(tester, appearance, toolbar);
+        final context = tester.element(toolbar);
+        final theme = Theme.of(context);
+        final surface = EditorSurfaceStyle.previewBackgroundFor(
+          theme.brightness,
+          theme.cardColor,
+          isPaper: PaperTheme.isEnabled(context),
+        );
+        final decoration =
+            tester.widget<Container>(toolbar).decoration! as BoxDecoration;
+        expect(decoration.color, surface);
+        expect(
+          decoration.color,
+          isNot(AppFlowyTheme.of(context).surfaceColorScheme.inverse),
+        );
+        expect(decoration.boxShadow, isNotEmpty);
+        if (appearance == 'paper') {
+          expect(surface, EditorSurfaceStyle.lightPreviewBackground);
+        }
+        final icons = tester.widgetList<FlowySvg>(
+          find.descendant(of: toolbar, matching: find.byType(FlowySvg)),
+        );
+        expect(icons, hasLength(4));
+        for (final icon in icons) {
+          expect(
+            _contrast(Color.alphaBlend(icon.color!, surface), surface),
+            greaterThanOrEqualTo(4.5),
+          );
+        }
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox());
+        editor.dispose();
+      }
+    });
+  }
+
   for (final accessible in [false, true]) {
     testWidgets(
         'visual and canvas actions obey reduced motion and accessible '
@@ -1701,6 +1771,12 @@ Future<void> _tabTo(WidgetTester tester, Finder control) async {
     reason: 'Hidden tools remain in the real Tab traversal.',
   );
   await tester.pump(_settle);
+}
+
+/// WCAG contrast ratio between two opaque colours.
+double _contrast(Color a, Color b) {
+  final first = a.computeLuminance(), second = b.computeLuminance();
+  return (math.max(first, second) + 0.05) / (math.min(first, second) + 0.05);
 }
 
 Set<int> _semanticsIds(WidgetTester tester) {

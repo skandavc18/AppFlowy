@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/document_viewer/document_scroll.dart';
 import 'package:appflowy/shared/scrolling/frame_synced_scroll_pan.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:flutter/gestures.dart';
@@ -212,7 +213,7 @@ void main() {
   );
 
   testWidgets(
-    'coarse release keeps the original bounded velocity estimate',
+    'a moving release coasts through unshown motion instead of jumping',
     (tester) async {
       tester.view.display.refreshRate = 120;
       addTearDown(tester.view.display.resetRefreshRate);
@@ -223,6 +224,9 @@ void main() {
         await _update(tester, point, step, -24);
         await tester.pump(_packetInterval);
       }
+      final shown = controller.offset;
+      final target = 1000 + 144 * _gain;
+      expect(shown, lessThan(target - 2));
       await tester.sendEventToBinding(
         PointerPanZoomEndEvent(
           pointer: 71,
@@ -231,16 +235,61 @@ void main() {
           timeStamp: _packetInterval * 6 + const Duration(milliseconds: 1),
         ),
       );
-      final released = controller.offset;
-      expect(released, closeTo(1000 + 144 * _gain, 0.01));
-      final motion = controller.position.physics.createBallisticSimulation(
-        controller.position,
-        24 * _gain / (_packetInterval.inMicroseconds / 1e6),
-      )!;
+      // Nothing is jumped to: the coast starts from what is on screen.
+      expect(controller.offset, shown);
+      expect(controller.position.isScrollingNotifier.value, isTrue);
+      final velocity = 24 * _gain / (_packetInterval.inMicroseconds / 1e6);
+      final friction = const PremiumScrollPhysicsConfig().desktopCoastFriction;
+      // Its first frame continues at the release speed, a frame in.
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(controller.offset, closeTo(motion.x(0.1), 0.01));
+      final firstFrame = controller.offset - shown;
+      expect(firstFrame, greaterThan(velocity / 120));
+      expect(firstFrame, lessThan(velocity / 120 * 1.3));
       await tester.pumpAndSettle(_frameInterval);
+      // And it travels the unshown distance as well as the original bounded
+      // coast: the same resting place as jumping there and coasting.
+      expect(controller.offset, greaterThan(target + velocity / friction - 2));
+      expect(controller.offset, lessThan(target + velocity / friction));
+    },
+    variant: _desktop,
+  );
+
+  testWidgets(
+    'document pages pace trackpad input and coast like every other page',
+    (tester) async {
+      tester.view.display.refreshRate = 120;
+      addTearDown(tester.view.display.resetRefreshRate);
+      final controller = await _mount(tester, document: true);
+      final point = tester.getCenter(find.byKey(_listKey));
+      await _start(tester, point);
+      for (var step = 1; step <= 6; step++) {
+        await _update(tester, point, step, -24);
+        final before = controller.offset;
+        await tester.pump(_frameInterval);
+        final halfway = controller.offset;
+        await tester.pump(_frameInterval);
+        if (step > 1) {
+          // Unpaced, each packet landed whole on one frame and the next
+          // frame stood still.
+          expect(halfway, greaterThan(before));
+          expect(controller.offset, greaterThan(halfway));
+        }
+      }
+      final shown = controller.offset;
+      final target = 1000 + 144 * _gain;
+      expect(shown, lessThan(target));
+      await tester.sendEventToBinding(
+        PointerPanZoomEndEvent(
+          pointer: 71,
+          device: 71,
+          position: point,
+          timeStamp: _packetInterval * 6 + const Duration(milliseconds: 1),
+        ),
+      );
+      expect(controller.offset, shown);
+      await tester.pumpAndSettle(_frameInterval);
+      // The document's own coast travels what was not yet shown as well.
+      expect(controller.offset, greaterThan(target));
     },
     variant: _desktop,
   );
@@ -250,6 +299,11 @@ void main() {
     (tester) async {
       tester.view.display.refreshRate = 120;
       addTearDown(tester.view.display.resetRefreshRate);
+      // Punctual delivery from the first packet: no allowance for lateness,
+      // so each packet is due one input interval after it was stamped.
+      final allowance = FrameSyncedScrollPan.initialJitterFrames;
+      FrameSyncedScrollPan.initialJitterFrames = 0;
+      addTearDown(() => FrameSyncedScrollPan.initialJitterFrames = allowance);
       final controller = await _mount(tester);
       final point = tester.getCenter(find.byKey(_listKey));
       await _start(tester, point);
@@ -406,11 +460,21 @@ Future<ScrollController> _mount(
   WidgetTester tester, {
   bool enabled = true,
   bool reducedMotion = false,
+  bool document = false,
   PremiumScrollPhysicsConfig config = const PremiumScrollPhysicsConfig(),
   ScrollPhysics? physics,
 }) async {
   final controller = ScrollController(initialScrollOffset: 1000);
   addTearDown(controller.dispose);
+  Widget list = ListView.builder(
+    key: _listKey,
+    controller: controller,
+    physics: physics,
+    itemCount: 200,
+    itemExtent: 40,
+    itemBuilder: (_, index) => Text('Generated row $index'),
+  );
+  if (document) list = DocumentScrollScope(child: list);
   await tester.pumpWidget(
     MaterialApp(
       home: MediaQuery(
@@ -422,14 +486,7 @@ Future<ScrollController> _mount(
             child: SizedBox(
               width: 400,
               height: 300,
-              child: ListView.builder(
-                key: _listKey,
-                controller: controller,
-                physics: physics,
-                itemCount: 200,
-                itemExtent: 40,
-                itemBuilder: (_, index) => Text('Generated row $index'),
-              ),
+              child: list,
             ),
           ),
         ),

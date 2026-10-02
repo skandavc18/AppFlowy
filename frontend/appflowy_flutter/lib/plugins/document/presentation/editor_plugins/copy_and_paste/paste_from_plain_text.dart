@@ -75,22 +75,31 @@ extension PasteFromPlainText on EditorState {
   void checkToShowPasteAsMenu(Node node) {
     if (selection == null || !selection!.isCollapsed) return;
     if (UniversalPlatform.isMobile) return;
-    final href = _getLinkFromNode(node);
-    if (href != null) {
+    final link = pastedLinkOf(node);
+    if (link != null) {
       final context = document.root.context;
       if (context != null && context.mounted) {
-        PasteAsMenuService(context: context, editorState: this).show(href);
+        PasteAsMenuService(context: context, editorState: this).show(
+          link.href,
+          length: link.text.length,
+        );
       }
     }
   }
+}
 
-  String? _getLinkFromNode(Node node) {
-    final delta = node.delta;
-    if (delta == null) return null;
-    final inserts = delta.whereType<TextInsert>();
-    if (inserts.isEmpty || inserts.length > 1) return null;
-    final link = inserts.first.attributes?.href;
-    if (link != null) return inserts.first.text;
-    return null;
-  }
+/// The one link [node] holds, as the words it shows and the address it
+/// points at, or null when the node holds anything else.
+///
+/// The two differ when a browser copies an address together with its page's
+/// title, or when markdown names a link: the address is what an embed shows,
+/// and the words are what the paste left before the caret.
+({String text, String href})? pastedLinkOf(Node node) {
+  final delta = node.delta;
+  if (delta == null) return null;
+  final inserts = delta.whereType<TextInsert>().toList();
+  if (inserts.length != 1) return null;
+  final href = inserts.first.attributes?.href;
+  if (href == null || href.isEmpty) return null;
+  return (text: inserts.first.text, href: href);
 }

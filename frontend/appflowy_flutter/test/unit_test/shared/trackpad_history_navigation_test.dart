@@ -340,12 +340,14 @@ void main() {
           _app(
             back: () => navigation++,
             forward: () => navigation++,
-            child: ScrollConfiguration(
-              behavior: const BoardScrollBehaviour(),
-              child: SingleChildScrollView(
-                controller: scroll,
-                scrollDirection: Axis.horizontal,
-                child: const SizedBox(width: 4000),
+            child: Builder(
+              builder: (context) => ScrollConfiguration(
+                behavior: BoardScrollBehaviour(ScrollConfiguration.of(context)),
+                child: SingleChildScrollView(
+                  controller: scroll,
+                  scrollDirection: Axis.horizontal,
+                  child: const SizedBox(width: 4000),
+                ),
               ),
             ),
           ),

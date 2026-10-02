@@ -18,7 +18,7 @@ class BookmarkService {
     String? name,
     ViewSectionPB? section,
   }) {
-    final address = normalizeBookmarkUrl(url);
+    final address = bookmarkAddress(url);
     if (address == null) {
       return Future.value(
         FlowyResult.failure(FlowyError(msg: 'Not a web address: $url')),

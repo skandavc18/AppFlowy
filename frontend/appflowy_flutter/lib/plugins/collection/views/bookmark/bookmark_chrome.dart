@@ -1,3 +1,5 @@
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
+import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/collection_workspace_surface.dart';
 import 'package:appflowy/shared/text_rendering.dart';
@@ -344,6 +346,11 @@ class BookmarkChip extends StatelessWidget {
 ///
 /// A letter tile is deliberate: a broken image icon on every card is worse
 /// than no icon, and the tile is still recognisable at a glance.
+///
+/// A link a site extension knows wears the extension's mark instead, the same
+/// one its embeds wear in documents and on canvases: it tells a sheet from a
+/// slide deck and a pin from a board, where the page's own icon, often a
+/// sign-in page's, only says Google or Pinterest.
 class BookmarkFavicon extends StatelessWidget {
   const BookmarkFavicon({
     super.key,
@@ -358,6 +365,14 @@ class BookmarkFavicon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final embed = entry.embed;
+    if (embed != null) {
+      return WebEmbedMark(
+        link: embed,
+        size: size,
+        brightness: theme.isDark ? Brightness.dark : Brightness.light,
+      );
+    }
     final host = entry.host ?? '?';
     final fallback = _letterTile(host);
     final url = entry.metadata.faviconUrl;
@@ -425,6 +440,10 @@ Color siteHue(String host) {
 }
 
 /// The illustration on a card, with a woven fallback when there is none.
+///
+/// A link a site extension knows is drawn as the extension draws it anywhere
+/// else: the picture on the site's own colour and icon, and a play button on
+/// a video.
 class BookmarkCover extends StatelessWidget {
   const BookmarkCover({
     super.key,
@@ -439,7 +458,25 @@ class BookmarkCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final url = entry.metadata.imageUrl;
+    final metadata = entry.metadata;
+    final embed = entry.embed;
+    if (embed != null) {
+      // Only what was saved with the bookmark: a library of links is never
+      // an excuse to ask every site again. The card prints the title and
+      // the site itself.
+      return WebEmbedPoster(
+        link: embed,
+        details: WebEmbedDetails(
+          title: metadata.pageTitle,
+          author: metadata.author,
+          thumbnailUrl: metadata.imageUrl,
+        ),
+        dense: true,
+        caption: false,
+        badge: false,
+      );
+    }
+    final url = metadata.imageUrl;
     if (url == null || url.isEmpty) {
       return BookmarkCoverFallback(entry: entry, theme: theme);
     }

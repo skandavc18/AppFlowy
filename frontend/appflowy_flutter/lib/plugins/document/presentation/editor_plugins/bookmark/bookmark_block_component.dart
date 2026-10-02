@@ -5,6 +5,7 @@ import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart'
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_page_preview.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/base/block_align.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
+import 'package:appflowy/shared/unusable_page_title.dart';
 import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_browser_reader.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_fetcher.dart';
@@ -94,7 +95,9 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
   @override
   void initState() {
     super.initState();
-    if (_url.isNotEmpty && node.attributes[BookmarkBlockKeys.title] == null) {
+    final title = node.attributes[BookmarkBlockKeys.title] as String?;
+    // A bot check stood in for the page when it was last read.
+    if (_url.isNotEmpty && (title == null || isStandInPageTitle(title))) {
       unawaited(_read(_url));
     }
   }
@@ -198,14 +201,14 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
                 ),
               ),
               const SizedBox(width: BookmarkMetrics.space3),
-              _PlaceholderButton(
+              BookmarkPlaceholderButton(
                 label: LocaleKeys.collections_bookmark_pasteFromClipboard.tr(),
                 icon: Icons.content_paste_rounded,
                 theme: theme,
                 onPressed: _pasteAndCommit,
               ),
               const SizedBox(width: BookmarkMetrics.space2 - 2),
-              _PlaceholderButton(
+              BookmarkPlaceholderButton(
                 label: LocaleKeys.collections_bookmark_addLink.tr(),
                 icon: Icons.arrow_forward_rounded,
                 theme: theme,
@@ -221,9 +224,16 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
 
   Widget _card(BookmarkTheme theme, {bool fill = false}) {
     final attributes = node.attributes;
-    final title = attributes[BookmarkBlockKeys.title] as String?;
-    final description = attributes[BookmarkBlockKeys.description] as String?;
-    final image = attributes[BookmarkBlockKeys.imageUrl] as String?;
+    final stored = attributes[BookmarkBlockKeys.title] as String?;
+    // A bot check's title, text and picture are not the page's; a post its
+    // site would not show is named after its address.
+    final standIn = isStandInPageTitle(stored);
+    final title = (isUnusablePageTitle(stored, url: _url) ? null : stored) ??
+        bookmarkEmbed(_url)?.title;
+    final description =
+        standIn ? null : attributes[BookmarkBlockKeys.description] as String?;
+    final image =
+        standIn ? null : attributes[BookmarkBlockKeys.imageUrl] as String?;
     final site = attributes[BookmarkBlockKeys.siteName] as String? ??
         bookmarkHost(_url) ??
         _url;
@@ -404,13 +414,16 @@ class BookmarkBlockComponentState extends State<BookmarkBlockComponent>
   }
 }
 
-class _PlaceholderButton extends StatefulWidget {
-  const _PlaceholderButton({
+/// The square buttons beside a link field: paste, and go.
+class BookmarkPlaceholderButton extends StatefulWidget {
+  const BookmarkPlaceholderButton({
+    super.key,
     required this.label,
     required this.icon,
     required this.theme,
     required this.onPressed,
     this.primary = false,
+    this.accent,
   });
 
   final String label;
@@ -419,19 +432,24 @@ class _PlaceholderButton extends StatefulWidget {
   final VoidCallback? onPressed;
   final bool primary;
 
+  /// The primary button's fill, when it belongs to a site with its own colour.
+  final Color? accent;
+
   @override
-  State<_PlaceholderButton> createState() => _PlaceholderButtonState();
+  State<BookmarkPlaceholderButton> createState() =>
+      _BookmarkPlaceholderButtonState();
 }
 
-class _PlaceholderButtonState extends State<_PlaceholderButton> {
+class _BookmarkPlaceholderButtonState extends State<BookmarkPlaceholderButton> {
   bool _hovered = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = widget.theme;
     final enabled = widget.onPressed != null;
+    final accent = widget.accent ?? theme.accent;
     final background = widget.primary
-        ? theme.accent.withValues(alpha: enabled ? (_hovered ? 1 : 0.9) : 0.28)
+        ? accent.withValues(alpha: enabled ? (_hovered ? 1 : 0.9) : 0.28)
         : theme.sunken.withValues(alpha: _hovered ? 1 : 0.75);
     final foreground = widget.primary
         ? Colors.white

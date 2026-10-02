@@ -16,6 +16,7 @@ class ExtensionBlockDefinition {
     this.slashDescription = '',
     this.newNode,
     this.alignable = false,
+    this.extraSlashEntries = const [],
   });
 
   final String extensionId;
@@ -47,7 +48,42 @@ class ExtensionBlockDefinition {
   /// `blockEmbedAlignment(node)`, or the menu ticks an alignment nothing uses.
   final bool alignable;
 
+  /// More `/` entries that insert this same block set up differently, like
+  /// one embed block offering a line per site.
+  final List<ExtensionSlashEntry> extraSlashEntries;
+
   bool get hasSlashEntry => slashName != null && newNode != null;
+
+  /// Every `/` entry for the block, its own first.
+  List<ExtensionSlashEntry> get slashEntries => [
+        if (hasSlashEntry)
+          ExtensionSlashEntry(
+            name: slashName!,
+            keywords: slashKeywords,
+            icon: slashIcon,
+            description: slashDescription,
+            newNode: newNode!,
+          ),
+        ...extraSlashEntries,
+      ];
+}
+
+/// One `/` entry: what it is called, how it is found and what it inserts.
+@immutable
+class ExtensionSlashEntry {
+  const ExtensionSlashEntry({
+    required this.name,
+    required this.newNode,
+    this.keywords = const [],
+    this.icon = Icons.extension_rounded,
+    this.description = '',
+  });
+
+  final String name;
+  final List<String> keywords;
+  final IconData icon;
+  final String description;
+  final Node Function() newNode;
 }
 
 /// Every block type extensions have added.

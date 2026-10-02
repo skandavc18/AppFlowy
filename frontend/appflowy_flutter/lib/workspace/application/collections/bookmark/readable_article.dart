@@ -1,3 +1,4 @@
+import 'package:appflowy/shared/markup_parse.dart';
 import 'package:flutter/foundation.dart';
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
@@ -64,12 +65,17 @@ const _strippedTags = <String>{
 };
 
 /// Words in a class or id that mark furniture rather than content.
+///
+/// A list of citations is furniture too: dense with commas, it would
+/// otherwise outscore the article it cites. Only the plural is listed,
+/// because documentation marks every ordinary link `reference`.
 final _furniturePattern = RegExp(
   r'(^|[\s_-])('
-  'ad|ads|advert|advertisement|banner|breadcrumb|byline|comment|comments|'
-  'cookie|disqus|footer|header|hidden|masthead|menu|modal|nav|navbar|newsletter|'
-  'paywall|popup|promo|related|share|sharing|sidebar|signup|social|sponsor|'
-  'subscribe|toolbar|widget'
+  'ad|ads|advert|advertisement|banner|bibliography|breadcrumb|byline|'
+  'citations|comment|comments|cookie|disqus|footer|header|hidden|masthead|'
+  'menu|modal|nav|navbar|newsletter|paywall|popup|promo|references|reflist|'
+  'related|share|sharing|sidebar|signup|social|sponsor|subscribe|toolbar|'
+  'widget'
   r')([\s_-]|$)',
   caseSensitive: false,
 );
@@ -80,6 +86,11 @@ final _contentPattern = RegExp(
   r'([\s_-]|$)',
   caseSensitive: false,
 );
+
+/// [parseReadableArticle], read off the UI isolate when [html] is a whole
+/// page.
+Future<ReadableArticle> readReadableArticle(String html, {Uri? baseUrl}) =>
+    parseMarkup(html, (html) => parseReadableArticle(html, baseUrl: baseUrl));
 
 /// Reads the main content out of [html].
 ///
@@ -192,6 +203,7 @@ dom.Element? _pickContent(dom.Document document) {
   }
 
   final scores = <dom.Element, double>{};
+  final prose = <_Prose>[];
   for (final paragraph in body.querySelectorAll('p, pre, blockquote, li')) {
     final text = _collapse(paragraph.text);
     if (text.length < 25) {
@@ -206,6 +218,13 @@ dom.Element? _pickContent(dom.Document document) {
       ancestor = ancestor.parent;
       depth++;
     }
+    prose.add(
+      (
+        block: paragraph,
+        length: text.length * (1 - _linkDensity(paragraph)),
+        furniture: _furnitureAround(paragraph, body),
+      ),
+    );
   }
 
   if (scores.isEmpty) {
@@ -230,7 +249,67 @@ dom.Element? _pickContent(dom.Document document) {
       best = element;
     }
   }
-  return best ?? body;
+  return _widenToProse(best ?? body, body, prose);
+}
+
+/// A block of prose: its readable length, and the furniture it sits in.
+typedef _Prose = ({dom.Element block, double length, dom.Element? furniture});
+
+/// Prose laid out a paragraph per wrapper, as many news and documentation
+/// pages do, never adds up in any one scored container, so the best of them
+/// holds a single paragraph or section. That widens to the nearest ancestor
+/// holding most of the page's prose, unless that is mostly links.
+dom.Element _widenToProse(
+  dom.Element best,
+  dom.Element body,
+  List<_Prose> prose,
+) {
+  // Furniture around the best container is not furniture to it.
+  final counted = [
+    for (final block in prose)
+      if (block.furniture == null || _isWithin(best, block.furniture!)) block,
+  ];
+  double held(dom.Element element) => counted
+      .where((block) => _isWithin(block.block, element))
+      .fold(0.0, (sum, block) => sum + block.length);
+  final total = counted.fold(0.0, (sum, block) => sum + block.length);
+  if (total == 0 || held(best) >= total / 2) {
+    return best;
+  }
+  for (var ancestor = best.parent;
+      ancestor != null;
+      ancestor = ancestor.parent) {
+    if (held(ancestor) >= total / 2) {
+      return _linkDensity(ancestor) < 0.5 ? ancestor : best;
+    }
+    if (identical(ancestor, body)) {
+      break;
+    }
+  }
+  return best;
+}
+
+/// The nearest element at or above [element], short of [body], marked as
+/// page furniture.
+dom.Element? _furnitureAround(dom.Element element, dom.Element body) {
+  for (dom.Element? node = element;
+      node != null && !identical(node, body);
+      node = node.parent) {
+    final marker = '${node.className} ${node.id}';
+    if (marker.trim().isNotEmpty && _furniturePattern.hasMatch(marker)) {
+      return node;
+    }
+  }
+  return null;
+}
+
+bool _isWithin(dom.Node node, dom.Element ancestor) {
+  for (dom.Node? current = node; current != null; current = current.parent) {
+    if (identical(current, ancestor)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// How much of an element's text is inside links.

@@ -25,9 +25,27 @@ String? youtubeVideoId(String url) {
     return null;
   }
 
+  // A playlist's embed code, `embed/videoseries?list=…`, names no video,
+  // though `videoseries` is as long as an id.
+  final segments = uri.pathSegments;
+  if (segments.length >= 2 &&
+      segments.first == 'embed' &&
+      segments[1] == 'videoseries') {
+    return null;
+  }
+
   final id = VideoId.parseVideoId(url);
   if (id != null) {
     return id;
+  }
+
+  // Live links, and the privacy-enhanced embed code's
+  // `youtube-nocookie.com/embed/…`, name the video in the path, which the
+  // parser does not know.
+  if (segments.length >= 2 &&
+      (segments.first == 'live' || segments.first == 'embed') &&
+      _youtubeVideoIdPattern.hasMatch(segments[1])) {
+    return segments[1];
   }
 
   // Shorts links are only recognised when the id ends the URL, which the
@@ -47,11 +65,16 @@ bool isYoutubeShortsUrl(String url) {
   return segments.length >= 2 && segments.first == 'shorts';
 }
 
+final _youtubeVideoIdPattern = RegExp(r'^[A-Za-z0-9_-]{11}$');
+
 bool _isYoutubeHost(String host) {
   final normalized = host.toLowerCase();
   return normalized == 'youtube.com' ||
       normalized == 'www.youtube.com' ||
       normalized == 'm.youtube.com' ||
+      normalized == 'music.youtube.com' ||
+      normalized == 'youtube-nocookie.com' ||
+      normalized == 'www.youtube-nocookie.com' ||
       normalized == 'youtu.be';
 }
 

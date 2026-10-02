@@ -20,8 +20,8 @@ List<SelectionMenuItem> islandSlashMenuItems() {
     }
   }
   for (final block in ExtensionBlockRegistry.all()) {
-    if (block.hasSlashEntry) {
-      items.add(_blockItem(block));
+    for (final entry in block.slashEntries) {
+      items.add(_blockItem(entry));
     }
   }
   return items;
@@ -50,22 +50,22 @@ Map<SelectionMenuItem, String> islandSlashMenuDescriptions(
     }
   }
   for (final block in ExtensionBlockRegistry.all()) {
-    if (block.hasSlashEntry) {
-      describe(block.slashDescription);
+    for (final entry in block.slashEntries) {
+      describe(entry.description);
     }
   }
   return descriptions;
 }
 
-SelectionMenuItem _blockItem(ExtensionBlockDefinition block) =>
+SelectionMenuItem _blockItem(ExtensionSlashEntry entry) =>
     SelectionMenuItem.node(
-      getName: () => block.slashName!,
-      keywords: [block.slashName!.toLowerCase(), ...block.slashKeywords],
-      nodeBuilder: (_, __) => block.newNode!(),
+      getName: () => entry.name,
+      keywords: [entry.name.toLowerCase(), ...entry.keywords],
+      nodeBuilder: (_, __) => entry.newNode(),
       replace: (_, node) => node.delta?.isEmpty ?? false,
       nameBuilder: slashMenuItemNameBuilder,
       iconBuilder: (_, isSelected, style) => SelectableIconWidget(
-        icon: block.slashIcon,
+        icon: entry.icon,
         isSelected: isSelected,
         style: style,
       ),

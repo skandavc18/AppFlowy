@@ -1,16 +1,13 @@
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/link_embed_block_component.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/link_embed/youtube_video_download.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/shared.dart';
-import 'package:appflowy/plugins/document/presentation/editor_plugins/menu/menu_extension.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
-import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra_ui/style_widget/button.dart';
-import 'package:flowy_infra_ui/style_widget/text.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
-const _menuHeighgt = 188.0, _menuWidth = 288.0;
+import 'paste_choice_menu.dart';
 
 class PasteAsMenuService {
   PasteAsMenuService({
@@ -20,218 +17,170 @@ class PasteAsMenuService {
 
   final BuildContext context;
   final EditorState editorState;
-  OverlayEntry? _menuEntry;
+  late final PasteChoiceMenuOverlay _overlay = PasteChoiceMenuOverlay(
+    context: context,
+    editorState: editorState,
+  );
 
-  void show(String href) {
-    WidgetsBinding.instance.addPostFrameCallback((_) => _show(href));
-  }
-
-  void dismiss() {
-    if (_menuEntry != null) {
-      keepEditorFocusNotifier.decrease();
-      // editorState.service.scrollService?.enable();
-      // editorState.service.keyboardService?.enable();
-    }
-    _menuEntry?.remove();
-    _menuEntry = null;
-  }
-
-  void _show(String href) {
-    final Size editorSize = editorState.renderBox?.size ?? Size.zero;
-    if (editorSize == Size.zero) return;
-    final menuPosition = editorState.calculateMenuOffset(
-      menuWidth: _menuWidth,
-      menuHeight: _menuHeighgt,
-    );
-    if (menuPosition == null) return;
-    final ltrb = menuPosition.ltrb;
-
-    _menuEntry = OverlayEntry(
-      builder: (context) => SizedBox(
-        height: editorSize.height,
-        width: editorSize.width,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: dismiss,
-          child: Stack(
-            children: [
-              ltrb.buildPositioned(
-                child: PasteAsMenu(
-                  editorState: editorState,
-                  onSelect: (t) {
-                    final selection = editorState.selection;
-                    if (selection == null) return;
-                    final end = selection.end;
-                    final urlSelection = Selection(
-                      start: end.copyWith(offset: end.offset - href.length),
-                      end: end,
-                    );
-                    if (t == PasteMenuType.bookmark) {
-                      convertUrlToLinkPreview(editorState, urlSelection, href);
-                    } else if (t == PasteMenuType.mention) {
-                      convertUrlToMention(editorState, urlSelection);
-                    } else if (t == PasteMenuType.embed) {
-                      convertUrlToLinkPreview(
-                        editorState,
-                        urlSelection,
-                        href,
-                        previewType: LinkEmbedKeys.embed,
-                      );
-                    }
-                    dismiss();
-                  },
-                  onDismiss: dismiss,
-                ),
-              ),
-            ],
-          ),
-        ),
+  /// Asks what the link just pasted before the caret should become.
+  ///
+  /// [length] is how much text the link takes up before the caret. It is not
+  /// [href]'s length when the link came with a title, the way browsers copy
+  /// an address.
+  void show(String href, {int? length}) {
+    final linkLength = length ?? href.length;
+    _overlay.show(
+      choices: PasteMenuType.values.length,
+      builder: (dismiss) => PasteAsMenu(
+        editorState: editorState,
+        href: href,
+        onSelect: (type) {
+          final selection = editorState.selection;
+          if (selection == null) return;
+          final end = selection.end;
+          final urlSelection = Selection(
+            start: end.copyWith(offset: end.offset - linkLength),
+            end: end,
+          );
+          if (type == PasteMenuType.bookmark) {
+            convertUrlToLinkPreview(editorState, urlSelection, href);
+          } else if (type == PasteMenuType.mention) {
+            convertUrlToMention(editorState, urlSelection);
+          } else if (type == PasteMenuType.embed) {
+            convertUrlToLinkPreview(
+              editorState,
+              urlSelection,
+              href,
+              previewType: LinkEmbedKeys.embed,
+            );
+          }
+          dismiss();
+        },
+        onDismiss: dismiss,
       ),
     );
+  }
 
-    Overlay.of(context).insert(_menuEntry!);
+  void dismiss() => _overlay.dismiss();
+}
 
-    keepEditorFocusNotifier.increase();
-    // editorState.service.keyboardService?.disable(showCursor: true);
-    // editorState.service.scrollService?.disable();
+/// What an embed of a pasted link would show, when anything can draw it.
+@immutable
+class PasteEmbedTarget {
+  const PasteEmbedTarget({
+    required this.subject,
+    required this.icon,
+    required this.color,
+  });
+
+  /// `X post`, `Spotify track`, `BBC article`.
+  final String subject;
+  final IconData icon;
+  final Color color;
+
+  static PasteEmbedTarget? of(String? href) {
+    final link = ExtensionWebEmbedRegistry.recognize(href);
+    if (link != null) {
+      return PasteEmbedTarget(
+        subject: webEmbedSubject(link),
+        icon: link.icon,
+        color: link.color,
+      );
+    }
+    // The embed block plays YouTube itself, even with the sites switched off.
+    if (href != null && isYoutubeVideoUrl(href)) {
+      return const PasteEmbedTarget(
+        subject: 'YouTube video',
+        icon: Icons.smart_display_rounded,
+        color: Color(0xFFFF0033),
+      );
+    }
+    return null;
   }
 }
 
-class PasteAsMenu extends StatefulWidget {
+/// The site and what the link is within it: `X post`, `BBC article`, or just
+/// `Google Sheets` when the site's own name already says what it is.
+String webEmbedSubject(WebEmbedLink link) {
+  final site = link.site.trim();
+  final kind = link.kind.trim();
+  if (kind.isEmpty || site.toLowerCase().contains(kind.toLowerCase())) {
+    return site;
+  }
+  // `PDF` and `TV show` keep their capitals; `Post` reads as `post`.
+  final acronym = kind.length > 1 &&
+      kind[1].toUpperCase() == kind[1] &&
+      kind[1].toLowerCase() != kind[1];
+  final word = acronym ? kind : kind[0].toLowerCase() + kind.substring(1);
+  return '$site $word';
+}
+
+/// Asks what a pasted link should become.
+///
+/// A link a site can draw is asked about as an embed: the question names the
+/// site and the embed is the answer already chosen, with keeping the link,
+/// a bookmark card and a mention one key away. Any other link gets the plain
+/// choice of what to paste it as.
+class PasteAsMenu extends StatelessWidget {
   const PasteAsMenu({
     super.key,
     required this.onSelect,
     required this.onDismiss,
     required this.editorState,
+    this.href,
   });
+
   final ValueChanged<PasteMenuType?> onSelect;
   final VoidCallback onDismiss;
   final EditorState editorState;
 
-  @override
-  State<PasteAsMenu> createState() => _PasteAsMenuState();
-}
-
-class _PasteAsMenuState extends State<PasteAsMenu> {
-  final focusNode = FocusNode(debugLabel: 'paste_as_menu');
-  final ValueNotifier<int> selectedIndexNotifier = ValueNotifier(0);
-
-  EditorState get editorState => widget.editorState;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => focusNode.requestFocus(),
-    );
-    editorState.selectionNotifier.addListener(dismiss);
-  }
-
-  @override
-  void dispose() {
-    focusNode.dispose();
-    selectedIndexNotifier.dispose();
-    editorState.selectionNotifier.removeListener(dismiss);
-    super.dispose();
-  }
+  /// The pasted link.
+  final String? href;
 
   @override
   Widget build(BuildContext context) {
-    final theme = AppFlowyTheme.of(context);
-    return Focus(
-      focusNode: focusNode,
-      onKeyEvent: onKeyEvent,
-      child: Container(
-        width: _menuWidth,
-        height: _menuHeighgt,
-        padding: EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          color: theme.surfaceColorScheme.primary,
-          boxShadow: theme.shadow.medium,
+    final target = PasteEmbedTarget.of(href);
+    if (target == null) {
+      return PasteChoiceMenu<PasteMenuType>(
+        editorState: editorState,
+        title:
+            LocaleKeys.document_plugins_linkPreview_typeSelection_pasteAs.tr(),
+        choices: [
+          for (final type in PasteMenuType.values)
+            PasteChoice(value: type, label: type.title),
+        ],
+        onSelect: onSelect,
+        onDismiss: onDismiss,
+      );
+    }
+    return PasteChoiceMenu<PasteMenuType>(
+      editorState: editorState,
+      leading: Icon(target.icon, size: 16, color: target.color),
+      title: LocaleKeys.document_plugins_linkPreview_typeSelection_embedQuestion
+          .tr(args: [target.subject]),
+      choices: [
+        PasteChoice(
+          value: PasteMenuType.embed,
+          label: PasteMenuType.embed.title,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              height: 32,
-              padding: EdgeInsets.all(8),
-              child: FlowyText.semibold(
-                color: theme.textColorScheme.primary,
-                LocaleKeys.document_plugins_linkPreview_typeSelection_pasteAs
-                    .tr(),
-              ),
-            ),
-            ...List.generate(
-              PasteMenuType.values.length,
-              (i) => buildItem(PasteMenuType.values[i], i),
-            ),
-          ],
+        PasteChoice(
+          value: PasteMenuType.url,
+          label: LocaleKeys.document_plugins_linkPreview_typeSelection_keepLink
+              .tr(),
         ),
-      ),
+        PasteChoice(
+          value: PasteMenuType.bookmark,
+          label: PasteMenuType.bookmark.title,
+        ),
+        PasteChoice(
+          value: PasteMenuType.mention,
+          label: PasteMenuType.mention.title,
+        ),
+      ],
+      onSelect: onSelect,
+      onDismiss: onDismiss,
     );
   }
-
-  Widget buildItem(PasteMenuType type, int i) {
-    return ValueListenableBuilder(
-      valueListenable: selectedIndexNotifier,
-      builder: (context, value, child) {
-        final isSelected = i == value;
-        return SizedBox(
-          height: 36,
-          child: FlowyButton(
-            isSelected: isSelected,
-            text: FlowyText(
-              type.title,
-            ),
-            onTap: () => onSelect(type),
-          ),
-        );
-      },
-    );
-  }
-
-  void changeIndex(int index) => selectedIndexNotifier.value = index;
-
-  KeyEventResult onKeyEvent(focus, KeyEvent event) {
-    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
-      return KeyEventResult.ignored;
-    }
-
-    int index = selectedIndexNotifier.value,
-        length = PasteMenuType.values.length;
-    if (event.logicalKey == LogicalKeyboardKey.enter) {
-      onSelect(PasteMenuType.values[index]);
-      return KeyEventResult.handled;
-    } else if (event.logicalKey == LogicalKeyboardKey.escape) {
-      dismiss();
-    } else if (event.logicalKey == LogicalKeyboardKey.backspace) {
-      dismiss();
-    } else if ([LogicalKeyboardKey.arrowUp, LogicalKeyboardKey.arrowLeft]
-        .contains(event.logicalKey)) {
-      if (index == 0) {
-        index = length - 1;
-      } else {
-        index--;
-      }
-      changeIndex(index);
-      return KeyEventResult.handled;
-    } else if ([LogicalKeyboardKey.arrowDown, LogicalKeyboardKey.arrowRight]
-        .contains(event.logicalKey)) {
-      if (index == length - 1) {
-        index = 0;
-      } else {
-        index++;
-      }
-      changeIndex(index);
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
-  }
-
-  void onSelect(PasteMenuType type) => widget.onSelect.call(type);
-
-  void dismiss() => widget.onDismiss.call();
 }
 
 enum PasteMenuType {

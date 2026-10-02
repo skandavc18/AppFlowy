@@ -3,6 +3,7 @@ import 'package:appflowy/shared/table_views/table_view_style.dart';
 import 'package:appflowy/shared/workspace_tokens.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 /// The board's surfaces.
 ///
@@ -128,10 +129,14 @@ class BoardColumnWash extends StatelessWidget {
 
 /// How the board scrolls.
 ///
-/// Momentum in both directions and a thin scrollbar that only shows itself
-/// while the board is moving, so a column keeps its full width at rest.
-class BoardScrollBehaviour extends MaterialScrollBehavior {
-  const BoardScrollBehaviour();
+/// The application's own engine, as [parent] supplies it, so the board takes
+/// the same wheel smoothing, trackpad pacing and coasting as every page,
+/// with a thin scrollbar that only shows itself while the board is moving,
+/// so a column keeps its full width at rest.
+class BoardScrollBehaviour extends ScrollBehavior {
+  const BoardScrollBehaviour(this.parent);
+
+  final ScrollBehavior parent;
 
   @override
   Set<PointerDeviceKind> get dragDevices => const {
@@ -141,8 +146,24 @@ class BoardScrollBehaviour extends MaterialScrollBehavior {
       };
 
   @override
+  Set<LogicalKeyboardKey> get pointerAxisModifiers =>
+      parent.pointerAxisModifiers;
+
+  @override
+  TargetPlatform getPlatform(BuildContext context) =>
+      parent.getPlatform(context);
+
+  @override
+  MultitouchDragStrategy getMultitouchDragStrategy(BuildContext context) =>
+      parent.getMultitouchDragStrategy(context);
+
+  @override
+  GestureVelocityTrackerBuilder velocityTrackerBuilder(BuildContext context) =>
+      parent.velocityTrackerBuilder(context);
+
+  @override
   ScrollPhysics getScrollPhysics(BuildContext context) =>
-      const BouncingScrollPhysics(parent: RangeMaintainingScrollPhysics());
+      parent.getScrollPhysics(context);
 
   @override
   Widget buildOverscrollIndicator(
@@ -150,7 +171,7 @@ class BoardScrollBehaviour extends MaterialScrollBehavior {
     Widget child,
     ScrollableDetails details,
   ) {
-    final decorated = super.buildOverscrollIndicator(context, child, details);
+    final decorated = parent.buildOverscrollIndicator(context, child, details);
     return axisDirectionToAxis(details.direction) == Axis.horizontal
         ? HistorySwipeExclusion(child: decorated)
         : decorated;
@@ -175,4 +196,10 @@ class BoardScrollBehaviour extends MaterialScrollBehavior {
       child: child,
     );
   }
+
+  @override
+  bool shouldNotify(covariant ScrollBehavior oldDelegate) =>
+      oldDelegate is! BoardScrollBehaviour ||
+      oldDelegate.parent.runtimeType != parent.runtimeType ||
+      parent.shouldNotify(oldDelegate.parent);
 }

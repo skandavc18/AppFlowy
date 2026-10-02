@@ -104,8 +104,9 @@ class PremiumScrollPhysicsConfig {
   /// Desktop-only release decay; custom viewer wheel impulses stay unchanged.
   final double desktopCoastFriction;
 
-  /// Distribute coarse trackpad drag packets across high-refresh frames with
-  /// at most 16.67ms of interpolation, never predicting unreceived distance.
+  /// Play coarse trackpad drag packets across high-refresh frames by their
+  /// input timestamps, a short adaptive delay behind the fingers, never
+  /// predicting unreceived distance.
   final bool desktopFramePacing;
 
   @override
@@ -447,6 +448,25 @@ class PremiumKineticScrollPhysics extends ScrollPhysics {
   }
 }
 
+/// Physics layered above [PremiumKineticScrollPhysics] that pass user offsets
+/// to their parent unchanged and start any release coast of their own from
+/// [FrameSyncedScrollPan.takeRelease]. Trackpad pacing reaches through them,
+/// so a page with its own coast still scrolls like every other page.
+abstract interface class PremiumPacedOuterPhysics {}
+
+/// The premium physics trackpad pacing can drive beneath [physics]: every
+/// physics above it must hand user offsets down unchanged and either take
+/// the release hand-over or leave the coast to the premium physics.
+PremiumKineticScrollPhysics? _pacedPhysicsOf(ScrollPhysics physics) {
+  ScrollPhysics? current = physics;
+  while (current is PremiumPacedOuterPhysics ||
+      current.runtimeType == AlwaysScrollableScrollPhysics ||
+      current.runtimeType == RangeMaintainingScrollPhysics) {
+    current = current!.parent;
+  }
+  return current is PremiumKineticScrollPhysics ? current : null;
+}
+
 /// Use macOS-like rubber-band resistance and its non-oscillating desktop spring,
 /// but not iOS's repeated-fling boost or the 8x desktop fling speed allowance.
 class _DesktopElasticScrollPhysics extends BouncingScrollPhysics {
@@ -475,23 +495,31 @@ class _DesktopElasticScrollPhysics extends BouncingScrollPhysics {
     ScrollMetrics position,
     double velocity,
   ) {
+    // Motion the fingers made before lifting that frame pacing has not shown
+    // yet: the coast travels it too, starting from what is on screen, rather
+    // than the content jumping to it in one frame.
+    final release = FrameSyncedScrollPan.releaseOf(position);
+    final launch =
+        release?.launch(velocity, config.desktopCoastFriction) ?? velocity;
     final platformTolerance = toleranceFor(position);
     final tolerance = Tolerance(
       distance: platformTolerance.distance,
       velocity: math.min(platformTolerance.velocity, config.stopVelocity),
     );
-    if (!position.outOfRange && velocity.abs() < tolerance.velocity) {
+    if (!position.outOfRange && launch.abs() < tolerance.velocity) {
       return null;
     }
-    return _DesktopCoastSimulation(
+    FrameSyncedScrollPan.takeRelease(position);
+    final coast = _DesktopCoastSimulation(
       position: position.pixels,
-      velocity: velocity,
+      velocity: launch,
       leadingExtent: position.minScrollExtent,
       trailingExtent: position.maxScrollExtent,
       friction: config.desktopCoastFriction,
       spring: spring,
       tolerance: tolerance,
     );
+    return release?.leading(coast) ?? coast;
   }
 }
 
@@ -624,13 +652,19 @@ class _DesktopPanSession {
       return;
     }
     for (final pan in pans) {
-      pan.inputIntervalUs = interval;
+      pan.receive(event.timeStamp, interval);
     }
   }
 
   void finish({bool flush = true}) {
     for (final pan in pans) {
       pan.dispose(flush: flush);
+    }
+  }
+
+  void release(Duration stamp) {
+    for (final pan in pans) {
+      pan.release(stamp);
     }
   }
 }
@@ -1419,7 +1453,7 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
             ? []
             : [
                 for (final region in _hitRegions)
-                  ...region.prepareTrackpadPan(),
+                  ...region.prepareTrackpadPan(startedAt: event.timeStamp),
               ],
       );
     } else if (event is PointerPanZoomUpdateEvent) {
@@ -1427,7 +1461,7 @@ class _RenderPremiumScrollDispatcher extends RenderProxyBox {
     } else if (event is PointerPanZoomEndEvent) {
       final session = _panSessions.remove(event.pointer);
       session?.endedAt = event.timeStamp;
-      session?.finish();
+      session?.release(event.timeStamp);
     } else if (event is PointerCancelEvent) {
       _cancelCoordinatedWheels();
       _panSessions.remove(event.pointer)?.finish(flush: false);
@@ -1639,15 +1673,16 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
     return null;
   }
 
-  List<FrameSyncedScrollPan> prepareTrackpadPan() {
+  List<FrameSyncedScrollPan> prepareTrackpadPan({Duration? startedAt}) {
     final controller = _controller;
     if (!attached || !paceTrackpad || controller == null) return [];
     // A controller may drive several views. Only this region's Scrollable is
     // a candidate; a pan over another view must not discard its pending input.
     final position = scrollable?.position;
+    final premium = position == null ? null : _pacedPhysicsOf(position.physics);
     if (position is! ScrollPositionWithSingleContext ||
         !controller.positions.contains(position) ||
-        position.physics is! PremiumKineticScrollPhysics ||
+        premium == null ||
         !position.hasContentDimensions ||
         !position.physics.shouldAcceptUserOffset(position)) {
       return [];
@@ -1662,9 +1697,9 @@ class _RenderPremiumScrollRegion extends RenderProxyBox {
       controller: controller,
       position: position,
       refreshRate: refreshRate,
-      directScale: (position.physics as PremiumKineticScrollPhysics)
-          .directManipulationScale,
+      directScale: premium.directManipulationScale,
       onDispose: () => _panBindings.remove(pan),
+      startedAt: startedAt,
     );
     _panBindings.add(pan);
     return [pan];

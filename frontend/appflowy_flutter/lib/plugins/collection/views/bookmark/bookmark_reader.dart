@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
+import 'package:appflowy/extensions/presentation/web_embed_frame.dart';
+import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/features/page_access_level/logic/page_access_level_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_card.dart';
@@ -91,6 +94,7 @@ class BookmarkReader extends StatefulWidget {
     this.canEdit,
     this.snapshots,
     this.webPageBuilder,
+    this.sitePageBuilder,
     this.offlinePreviewBuilder,
     this.readingSession,
   });
@@ -114,6 +118,11 @@ class BookmarkReader extends StatefulWidget {
   /// keyed [BookmarkWebPage] and text-only [BookmarkArticleView].
   final BookmarkSnapshotStore? snapshots;
   final WidgetBuilder? webPageBuilder;
+
+  /// Stands in for the site's own view of a link a site extension knows, which
+  /// is otherwise [WebEmbedFullView].
+  final Widget Function(BuildContext context, WebEmbedLink link)?
+      sitePageBuilder;
   final WidgetBuilder? offlinePreviewBuilder;
 
   /// Optional capture handle for host integration and isolated tests.
@@ -139,12 +148,21 @@ class _BookmarkReaderState extends State<BookmarkReader> {
   bool _loadingSnapshot = true;
   bool _showAside = true;
   BookmarkReadingMode _mode = BookmarkReadingMode.live;
+
+  /// Whether the full page has been asked for since the source last changed.
+  /// A link its site shows opens as the site shows it, and its full page is
+  /// only loaded for Live or Reader: otherwise a video would play unseen
+  /// behind its own player.
+  bool _liveStarted = false;
   late BookmarkReadingSession _reading;
   BookmarkReaderCapture? _capture;
   String? _offlineText;
   bool _readingBusy = false;
   String? _readingError;
   int _readerRequest = 0;
+
+  /// Reader waiting for the live page to start loading.
+  Completer<void>? _pageWait;
 
   BookmarkEntry? get _entry => widget.controller.entryFor(widget.entryId);
 
@@ -154,6 +172,22 @@ class _BookmarkReaderState extends State<BookmarkReader> {
       (_snapshot?.hasArticle ?? false) &&
       (_offlineText != null || widget.offlinePreviewBuilder != null);
 
+  /// What a site extension reads [entry] as, where this device can show it
+  /// the way the site does.
+  WebEmbedLink? _siteLink(BookmarkEntry? entry) =>
+      canShowWebEmbedPages ? entry?.embed : null;
+
+  /// How a source opens: as its site shows it when a site extension knows the
+  /// link, the live page otherwise.
+  BookmarkReadingMode get _openingMode => _siteLink(_entry) == null
+      ? BookmarkReadingMode.live
+      : BookmarkReadingMode.embed;
+
+  void _enter(BookmarkReadingMode mode) {
+    _mode = mode;
+    if (mode == BookmarkReadingMode.live) _liveStarted = true;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -161,7 +195,9 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     _sourceUrl = _entry?.url;
     _snapshotPath = _entry?.metadata.snapshotPath;
     _reading = widget.readingSession ?? BookmarkReadingSession();
+    _enter(_openingMode);
     widget.controller.addListener(_onChanged);
+    ExtensionWebEmbedRegistry.revision.addListener(_onSitesChanged);
     unawaited(_loadSnapshot());
     unawaited(_markAsReading());
   }
@@ -170,12 +206,13 @@ class _BookmarkReaderState extends State<BookmarkReader> {
   void didUpdateWidget(covariant BookmarkReader oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.readingSession, widget.readingSession)) {
+      _stopWaitingForPage();
       if (oldWidget.readingSession == null) _reading.dispose();
       _reading = widget.readingSession ?? BookmarkReadingSession();
       _capture = null;
       _readerRequest++;
       _readingBusy = false;
-      _mode = BookmarkReadingMode.live;
+      _enter(_openingMode);
     }
     if (!identical(oldWidget.controller, widget.controller) ||
         oldWidget.entryId != widget.entryId) {
@@ -195,11 +232,13 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     // setNotes publishes synchronously before its async persistence completes.
     // Do not rebuild this reader while it is being unmounted.
     widget.controller.removeListener(_onChanged);
+    ExtensionWebEmbedRegistry.revision.removeListener(_onSitesChanged);
     _flushNotes();
     _notes.dispose();
     _tagInput.dispose();
     _asideScroll.dispose();
     _readerRequest++;
+    _stopWaitingForPage();
     if (widget.readingSession == null) _reading.dispose();
     super.dispose();
   }
@@ -213,6 +252,13 @@ class _BookmarkReaderState extends State<BookmarkReader> {
         unawaited(_loadSnapshot());
       }
       setState(() {});
+    }
+  }
+
+  /// A site extension switched off takes its view of the link with it.
+  void _onSitesChanged() {
+    if (_mode == BookmarkReadingMode.embed && _siteLink(_entry) == null) {
+      _selectMode(BookmarkReadingMode.live);
     }
   }
 
@@ -231,8 +277,10 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     _webKey = GlobalKey();
     _snapshot = null;
     _loadingSnapshot = true;
-    _mode = BookmarkReadingMode.live;
+    _liveStarted = false;
+    _enter(_openingMode);
     _readerRequest++;
+    _stopWaitingForPage();
     _capture = null;
     _offlineText = null;
     _readingBusy = false;
@@ -282,8 +330,11 @@ class _BookmarkReaderState extends State<BookmarkReader> {
         _snapshot = snapshot;
         _offlineText = offlineText;
         _loadingSnapshot = false;
-        // A page that cannot be rendered live has only the copy to show.
-        if (!canRenderLiveBookmarkPage && _canReadOffline) {
+        // A page that cannot be rendered live has only the copy to show,
+        // unless its site shows it.
+        if (!canRenderLiveBookmarkPage &&
+            _canReadOffline &&
+            _mode != BookmarkReadingMode.embed) {
           _mode = BookmarkReadingMode.offline;
         }
       });
@@ -454,9 +505,10 @@ class _BookmarkReaderState extends State<BookmarkReader> {
                 builder: (context, constraints) {
                   // Icon-only native controls are 28px, plus the source group's
                   // 8px insets. Reserve their real width, not a second flex share.
-                  final toolsWidth =
-                      28.0 * (canRenderLiveBookmarkPage ? 8 : 7) +
-                          BookmarkMetrics.space2 * 2;
+                  final toolsWidth = 28.0 *
+                          ((canRenderLiveBookmarkPage ? 8 : 7) +
+                              (_siteLink(entry) == null ? 0 : 1)) +
+                      BookmarkMetrics.space2 * 2;
                   final stacked = constraints.maxWidth <
                       toolsWidth +
                           BookmarkMetrics.space3 +
@@ -497,8 +549,10 @@ class _BookmarkReaderState extends State<BookmarkReader> {
 
   Widget _identity(BookmarkTheme theme, BookmarkEntry entry) => Row(
         children: [
-          // Offline/Reader presentation must not request a remote favicon.
-          if (_mode == BookmarkReadingMode.live)
+          // Offline/Reader presentation must not request a remote favicon. A
+          // site's own view wears its extension's mark, which requests nothing.
+          if (_mode == BookmarkReadingMode.live ||
+              _mode == BookmarkReadingMode.embed)
             BookmarkFavicon(entry: entry, theme: theme, size: 22)
           else
             const SizedBox(
@@ -590,14 +644,25 @@ class _BookmarkReaderState extends State<BookmarkReader> {
         ),
       );
 
-  /// The live page or the saved copy, plus the download that creates one.
+  /// The site's own view, the live page or the saved copy, plus the download
+  /// that creates one.
   Widget _sourceToggle(BookmarkTheme theme, BookmarkEntry entry) {
     final working = widget.controller.isWorkingOn(entry.id);
+    final site = _siteLink(entry);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: BookmarkMetrics.space2),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (site != null)
+            BookmarkAction(
+              key: const ValueKey('bookmark-reader-site'),
+              icon: site.icon,
+              tooltip: BookmarkReaderStrings.siteView(site.site),
+              theme: theme,
+              active: _mode == BookmarkReadingMode.embed,
+              onPressed: () => _selectMode(BookmarkReadingMode.embed),
+            ),
           if (canRenderLiveBookmarkPage)
             BookmarkAction(
               key: const ValueKey('bookmark-reader-live'),
@@ -638,7 +703,8 @@ class _BookmarkReaderState extends State<BookmarkReader> {
             onPressed: working ||
                     _readingBusy ||
                     !_canEdit ||
-                    _mode == BookmarkReadingMode.offline
+                    _mode == BookmarkReadingMode.offline ||
+                    _mode == BookmarkReadingMode.embed
                 ? null
                 : () => _takeSnapshot(entry),
           ),
@@ -659,6 +725,7 @@ class _BookmarkReaderState extends State<BookmarkReader> {
     }
 
     final live = _mode == BookmarkReadingMode.live;
+    final site = _mode == BookmarkReadingMode.embed ? _siteLink(entry) : null;
     return Stack(fit: StackFit.expand, children: [
       Offstage(
         key: const ValueKey('bookmark-retained-live'),
@@ -671,15 +738,20 @@ class _BookmarkReaderState extends State<BookmarkReader> {
               ignoring: !live,
               child: TickerMode(
                 enabled: live,
-                child: canRenderLiveBookmarkPage
-                    ? _livePage(theme, entry)
-                    : _noSnapshot(theme, entry),
+                child: !canRenderLiveBookmarkPage
+                    ? _noSnapshot(theme, entry)
+                    : _liveStarted
+                        ? _livePage(theme, entry)
+                        : const SizedBox.shrink(),
               ),
             ),
           ),
         ),
       ),
-      if (!live) _localPage(theme, entry),
+      if (site != null)
+        _sitePage(theme, site)
+      else if (!live)
+        _localPage(theme, entry),
       if (live && _readingError != null)
         Positioned(
           left: 8,
@@ -693,6 +765,48 @@ class _BookmarkReaderState extends State<BookmarkReader> {
               child: Semantics(
                 liveRegion: true,
                 child: Text(_readingError!, style: theme.body),
+              ),
+            ),
+          ),
+        )
+      // The page stays usable while Reader waits for it to be readable.
+      else if (live && _readingBusy)
+        Positioned(
+          left: 8,
+          right: 8,
+          bottom: 8,
+          child: Align(
+            alignment: AlignmentDirectional.bottomStart,
+            child: Material(
+              key: const ValueKey('bookmark-reader-preparing'),
+              color: theme.panel,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Semantics(
+                  liveRegion: true,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: theme.accent,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          BookmarkReaderStrings.preparing,
+                          style: theme.body,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
@@ -754,6 +868,28 @@ class _BookmarkReaderState extends State<BookmarkReader> {
       ),
     );
   }
+
+  /// The link as its site shows it: the pin, the post, the player, the sheet.
+  Widget _sitePage(BookmarkTheme theme, WebEmbedLink site) => Padding(
+        padding: const EdgeInsets.fromLTRB(
+          BookmarkMetrics.space2,
+          0,
+          BookmarkMetrics.space2,
+          BookmarkMetrics.space2,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(BookmarkMetrics.cardRadius - 6),
+          child: KeyedSubtree(
+            key: ValueKey(('bookmark-reader-site-page', _sourceRevision)),
+            child: widget.sitePageBuilder == null
+                ? WebEmbedFullView(link: site)
+                : Builder(
+                    builder: (context) =>
+                        widget.sitePageBuilder!(context, site),
+                  ),
+          ),
+        ),
+      );
 
   Widget _livePage(BookmarkTheme theme, BookmarkEntry entry) => Padding(
         padding: const EdgeInsets.fromLTRB(
@@ -1085,11 +1221,43 @@ class _BookmarkReaderState extends State<BookmarkReader> {
   void _selectMode(BookmarkReadingMode mode) {
     if (!mounted) return;
     _readerRequest++;
+    _stopWaitingForPage();
     setState(() {
-      _mode = mode;
+      _enter(mode);
       _readingBusy = false;
       _readingError = null;
     });
+  }
+
+  /// Completes once the live page has started loading, which is all Reader
+  /// needs: it waits for the page itself. Also completes at the page deadline
+  /// or once Reader stops waiting.
+  Future<void> _livePageReady() async {
+    final session = _reading;
+    if (session.canRead) return;
+    _stopWaitingForPage();
+    final ready = _pageWait = Completer<void>();
+    void check() {
+      if (session.canRead && !ready.isCompleted) ready.complete();
+    }
+
+    session.addListener(check);
+    final deadline = Timer(bookmarkReaderPageDeadline, () {
+      if (!ready.isCompleted) ready.complete();
+    });
+    try {
+      await ready.future;
+    } finally {
+      deadline.cancel();
+      session.removeListener(check);
+      if (identical(_pageWait, ready)) _pageWait = null;
+    }
+  }
+
+  void _stopWaitingForPage() {
+    final wait = _pageWait;
+    _pageWait = null;
+    if (wait != null && !wait.isCompleted) wait.complete();
   }
 
   bool _captureIsCurrent(BookmarkReaderCapture capture) =>
@@ -1107,39 +1275,79 @@ class _BookmarkReaderState extends State<BookmarkReader> {
       _readingBusy = true;
       _readingError = null;
     });
+    bool current() =>
+        mounted &&
+        request == _readerRequest &&
+        revision == _sourceRevision &&
+        identical(controller, widget.controller);
     BookmarkReaderCapture? capture;
+    var failure = BookmarkReaderFailure.unavailable;
     try {
-      capture = await (canRenderLiveBookmarkPage
-              ? _reading.capture()
-              : controller.readArticleForReader(entry))
-          .timeout(bookmarkReaderDeadline);
+      if (canRenderLiveBookmarkPage) {
+        // The session bounds every wait. A page that moves on while it is
+        // read (a redirect, a route the site pushes as it loads) is read
+        // again where it went, within one overall deadline.
+        final waited = Stopwatch()..start();
+        for (var attempt = 0; attempt < _readAttempts; attempt++) {
+          final session = _reading;
+          capture = await session.capture();
+          failure = session.lastFailure ?? BookmarkReaderFailure.unavailable;
+          if (capture != null ||
+              failure != BookmarkReaderFailure.navigated ||
+              !current() ||
+              !identical(session, _reading) ||
+              !session.canRead ||
+              waited.elapsed >= bookmarkReaderPageDeadline) {
+            break;
+          }
+        }
+      } else {
+        capture = await controller
+            .readArticleForReader(entry)
+            .timeout(bookmarkReaderDeadline);
+      }
     } on Object {
       // A failed/late fallback read must release the controls just like a
       // failed live capture, without an unhandled async UI callback error.
     }
-    if (!mounted ||
-        request != _readerRequest ||
-        revision != _sourceRevision ||
-        !identical(controller, widget.controller)) return null;
+    if (!current()) return null;
     setState(() {
       _readingBusy = false;
       _capture = capture;
-      _readingError =
-          capture == null ? BookmarkReaderStrings.unavailable : null;
+      _readingError = capture != null
+          ? null
+          : failure == BookmarkReaderFailure.gated
+              ? BookmarkReaderStrings.gated
+              : BookmarkReaderStrings.unavailable;
     });
     return capture;
   }
+
+  /// How many times Reader follows a page that keeps moving while it is read.
+  static const _readAttempts = 5;
 
   Future<void> _openReader() async {
     if (!mounted || _readingBusy) return;
     // Capture before hiding/suspending the native page; a suspended renderer
     // must not be asked to execute the Reader script.
     if (_capture == null || !_captureIsCurrent(_capture!)) {
-      if (_mode != BookmarkReadingMode.live && canRenderLiveBookmarkPage) {
-        _selectMode(BookmarkReadingMode.live);
-        final ticket = _readerRequest;
-        await WidgetsBinding.instance.endOfFrame;
-        if (!mounted || ticket != _readerRequest) return;
+      if (canRenderLiveBookmarkPage) {
+        if (_mode != BookmarkReadingMode.live) {
+          _selectMode(BookmarkReadingMode.live);
+          final ticket = _readerRequest;
+          await WidgetsBinding.instance.endOfFrame;
+          if (!mounted || ticket != _readerRequest) return;
+        }
+        // A page only now opening (the site's own view never loaded it, or
+        // the popup has just appeared) has nothing to read until it starts
+        // loading. Reader is busy meanwhile: asked again, it would read a
+        // page that is not there yet.
+        if (!_reading.canRead) {
+          final ticket = _readerRequest;
+          setState(() => _readingBusy = true);
+          await _livePageReady();
+          if (!mounted || ticket != _readerRequest) return;
+        }
       }
       final mode = _mode;
       final revision = _sourceRevision;

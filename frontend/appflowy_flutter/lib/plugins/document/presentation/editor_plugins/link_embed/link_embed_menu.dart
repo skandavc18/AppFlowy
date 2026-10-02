@@ -6,12 +6,15 @@ import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_to
 import 'package:appflowy/plugins/document/presentation/editor_plugins/desktop_toolbar/link/link_replace_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/link_preview/shared.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/menu/menu_extension.dart';
+import 'package:appflowy/shared/editor_surface_style.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy_editor/appflowy_editor.dart';
 import 'package:appflowy_editor_plugins/appflowy_editor_plugins.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:flutter/material.dart' show Theme;
 import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -26,6 +29,7 @@ class LinkEmbedMenu extends StatefulWidget {
     required this.onMenuShowed,
     required this.onMenuHided,
     required this.onReload,
+    this.onFullscreen,
   });
 
   final Node node;
@@ -33,6 +37,9 @@ class LinkEmbedMenu extends StatefulWidget {
   final VoidCallback onMenuShowed;
   final VoidCallback onMenuHided;
   final VoidCallback onReload;
+
+  /// Opens the embed at window size, for embeds that can be shown that way.
+  final VoidCallback? onFullscreen;
 
   @override
   State<LinkEmbedMenu> createState() => _LinkEmbedMenuState();
@@ -70,27 +77,36 @@ class _LinkEmbedMenuState extends State<LinkEmbedMenu> {
   }
 
   Widget buildChild() {
-    final theme = AppFlowyTheme.of(context),
-        surfaceColorScheme = theme.surfaceColorScheme;
+    final theme = AppFlowyTheme.of(context);
+    final materialTheme = Theme.of(context);
 
     return Container(
+      key: const ValueKey('link-embed-menu-toolbar'),
       padding: EdgeInsets.all(4),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
-        color: surfaceColorScheme.inverse,
+        // The image menu's surface: it floats over light and dark content alike.
+        color: EditorSurfaceStyle.previewBackgroundFor(
+          materialTheme.brightness,
+          materialTheme.cardColor,
+          isPaper: PaperTheme.isEnabled(context),
+        ),
+        boxShadow: EditorSurfaceStyle.embedShadow(context, raised: true),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // FlowyIconButton(
-          //   icon: FlowySvg(
-          //     FlowySvgs.embed_fullscreen_m,
-          //     color: EditorChromeStyle.iconColor(context),
-          //   ),
-          //   tooltipText: LocaleKeys.document_imageBlock_openFullScreen.tr(),
-          //   preferBelow: false,
-          //   onPressed: () {},
-          // ),
+          if (widget.onFullscreen != null)
+            FlowyIconButton(
+              icon: FlowySvg(
+                FlowySvgs.embed_fullscreen_m,
+                color: EditorChromeStyle.iconColor(context),
+              ),
+              radius: BorderRadius.all(Radius.circular(theme.borderRadius.m)),
+              tooltipText: LocaleKeys.document_imageBlock_openFullScreen.tr(),
+              preferBelow: false,
+              onPressed: widget.onFullscreen,
+            ),
           FlowyIconButton(
             icon: FlowySvg(
               FlowySvgs.toolbar_link_m,

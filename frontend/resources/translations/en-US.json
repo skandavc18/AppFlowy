@@ -3537,7 +3537,9 @@
           "mention": "Mention",
           "URL": "URL",
           "bookmark": "Bookmark",
-          "embed": "Embed"
+          "embed": "Embed",
+          "embedQuestion": "Embed this {}?",
+          "keepLink": "Keep as link"
         },
         "linkPreviewMenu": {
           "toMetion": "Convert to Mention",
@@ -3552,6 +3554,19 @@
           "unableToDisplay": "unable to display",
           "downloadFailed": "Video download failed, please try again"
         }
+      },
+      "localPathPaste": {
+        "question": "Copy “{}” into AppFlowy?",
+        "copy": "Copy into AppFlowy",
+        "keepLink": "Keep as link",
+        "keepText": "Keep as text",
+        "copied": "Copied “{}” into AppFlowy",
+        "partlyCopied": "Copied “{}” into AppFlowy, but {} items could not be copied",
+        "tooManyFiles": "“{}” holds more than {} files, too many to copy into AppFlowy at once",
+        "tooLarge": "“{}” is larger than {}, too much to copy into AppFlowy at once",
+        "tooDeep": "“{}” has folders nested more than {} deep, too deep to copy into AppFlowy",
+        "pageChanged": "The link to “{}” changed before its copy was ready, so the page was left as it was",
+        "failed": "“{}” could not be copied into AppFlowy"
       }
     },
     "outlineBlock": {
@@ -6932,7 +6947,10 @@
       "offlineUnavailableDescription": "Save a copy of this page and it can be read here without a connection.",
       "live": "Live page",
       "reader": "Reader",
+      "siteView": "As {} shows it",
       "readerUnavailable": "Reader is unavailable for this page. Open Live to continue.",
+      "readerGated": "A sign-in, subscription or consent prompt covers this page. Answer it in Live, then open Reader again.",
+      "readerPreparing": "Reading the page…",
       "readerSaveFailed": "The offline copy could not be saved. Please retry.",
       "blockingOn": "Ad-network blocking on — turn off and reload",
       "blockingOff": "Ad-network blocking off — turn on and reload",

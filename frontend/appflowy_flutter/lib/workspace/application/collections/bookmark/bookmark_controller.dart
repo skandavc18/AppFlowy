@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_browser_reader.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_fetcher.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_link.dart';
@@ -174,7 +175,7 @@ class BookmarkController extends ChangeNotifier {
 
   String _groupLabel(BookmarkEntry entry, BookmarkGrouping grouping) =>
       switch (grouping) {
-        BookmarkGrouping.site => entry.host ?? 'Other',
+        BookmarkGrouping.site => entry.site ?? 'Other',
         BookmarkGrouping.tag =>
           entry.metadata.tags.isEmpty ? 'Untagged' : entry.metadata.tags.first,
         BookmarkGrouping.month => _monthKey(entry.timelineDate),
@@ -281,6 +282,11 @@ class BookmarkController extends ChangeNotifier {
   }
 
   /// Reads a page and writes what it says about itself back onto the view.
+  ///
+  /// A pin, post, video or shared file a site extension knows is asked of the
+  /// site itself, and a short link is kept as the address it leads to: a
+  /// plain read of such a page mostly meets a sign-in wall, whose title and
+  /// text describe the wall rather than the link.
   Future<void> refresh(
     BookmarkEntry entry, {
     bool snapshot = false,
@@ -297,51 +303,90 @@ class BookmarkController extends ChangeNotifier {
     notifyListeners();
 
     try {
+      var url = entry.url;
+      var embed = ExtensionWebEmbedRegistry.recognize(url);
+      if (embed != null && embed.needsResolution) {
+        url = await ExtensionWebEmbedRegistry.settledUrl(embed);
+        embed = ExtensionWebEmbedRegistry.recognize(url) ?? embed;
+      }
+      final details =
+          embed == null ? null : await ExtensionWebEmbedRegistry.details(embed);
+      final answered = details != null && !details.isEmpty;
       // The article is always read: it supplies the excerpt, the reading time
       // and the picture for pages that only declare a logo. Only the offline
-      // copy needs the page kept as well.
-      final result = await _fetcher.fetch(entry.url, keepHtml: snapshot);
+      // copy needs the page kept as well, and a site that already answered
+      // is not worth a browser to get past its bot check.
+      final result = await _fetcher.fetch(
+        url,
+        keepHtml: snapshot,
+        allowBrowserFallback: !answered,
+      );
       if (_disposed) {
         return;
       }
-      if (!result.succeeded) {
+      final found = result.metadata;
+      // What a bot check said in place of the page is no part of it, whether
+      // or not this read gets further.
+      final saved = entry.metadata.hasStandInTitle
+          ? entry.metadata.withoutPageDetails()
+          : entry.metadata;
+      if (found == null && !answered) {
         _failed.add(entry.id);
-        await _write(entry, entry.metadata.copyWith(fetchFailed: true));
+        await _write(
+          entry,
+          saved.copyWith(
+            url: url,
+            // The address may still spell the post's title out.
+            title: embed?.title,
+            fetchFailed: true,
+          ),
+        );
+        await _renameMovedBookmark(entry, url);
         return;
       }
 
-      final found = result.metadata!;
-      final article = result.article;
-      var metadata = entry.metadata.copyWith(
-        title: found.title,
-        description: found.description,
-        siteName: found.siteName,
-        author: found.author,
-        // A social post often declares only the site's logo, so the picture
-        // inside the post itself is the better illustration.
-        imageUrl: found.imageUrl ?? article?.leadImageUrl,
-        faviconUrl: found.faviconUrl,
-        canonicalUrl: found.canonicalUrl,
-        publishedAt: found.publishedAt,
+      // What such a site shows a stranger is its own name or a sign-in form,
+      // and the rest of that page describes the form, not the link.
+      final pageTitle =
+          embed == null ? found?.title : webEmbedPageTitle(embed, found?.title);
+      final page = embed == null || pageTitle != null ? found : null;
+      final article = page == null ? null : result.article;
+      final imageUrl = details?.thumbnailUrl ??
+          embed?.thumbnailUrl ??
+          page?.imageUrl ??
+          // A social post often declares only the site's logo, so the picture
+          // inside the post itself is the better illustration.
+          article?.leadImageUrl;
+      var metadata = saved.copyWith(
+        url: url,
+        title: details?.title ?? pageTitle ?? embed?.title,
+        description: details?.description ?? page?.description,
+        siteName: embed?.site ?? found?.siteName,
+        author: details?.author ?? page?.author,
+        imageUrl: imageUrl,
+        faviconUrl: found?.faviconUrl,
+        canonicalUrl: page?.canonicalUrl,
+        publishedAt: page?.publishedAt,
         fetchedAt: DateTime.now(),
         fetchFailed: false,
       );
 
       if (article != null && !article.isEmpty) {
         metadata = metadata.copyWith(
-          wordCount: article.wordCount,
+          // A pin, a video or a spreadsheet is not read in minutes.
+          wordCount: embed == null ? article.wordCount : null,
           excerpt: article.excerpt(),
         );
       }
 
       if (snapshot) {
-        final hero = found.imageUrl == null
-            ? null
-            : await _fetcher.fetchImage(found.imageUrl!);
+        final hero =
+            imageUrl == null ? null : await _fetcher.fetchImage(imageUrl);
         final saved = await _snapshots.save(
-          url: entry.url,
+          url: url,
           article: article,
-          html: result.html,
+          // A sign-in form is no offline copy of the link.
+          html: page == null ? null : result.html,
           heroBytes: hero,
         );
         if (saved != null) {
@@ -354,12 +399,26 @@ class BookmarkController extends ChangeNotifier {
       }
 
       await _write(entry, metadata);
+      await _renameMovedBookmark(entry, url);
     } finally {
       _working.remove(entry.id);
       if (!_disposed) {
         notifyListeners();
       }
     }
+  }
+
+  /// A bookmark saved from a short link is named after the short link's site
+  /// until its page names it; once the link is kept as where it leads, the
+  /// name follows, so it still reads as a stand-in.
+  Future<void> _renameMovedBookmark(BookmarkEntry entry, String url) async {
+    final host = bookmarkHost(url);
+    if (url == entry.url ||
+        host == null ||
+        entry.view.name.trim() != bookmarkHost(entry.url)) {
+      return;
+    }
+    await _service.rename(viewId: entry.id, name: host);
   }
 
   /// Reads every bookmark that has never been read, a few at a time.
@@ -490,7 +549,8 @@ class BookmarkController extends ChangeNotifier {
     return [
       for (final entry in source)
         if (_matchesFilter(entry) &&
-            (site == null || entry.host == site) &&
+            // A filter saved before sites had names picked a host.
+            (site == null || entry.site == site || entry.host == site) &&
             (tags.isEmpty || tags.every(entry.metadata.tags.contains)) &&
             (_query.isEmpty || entry.searchText.contains(_query)))
           entry,
@@ -521,8 +581,10 @@ class BookmarkController extends ChangeNotifier {
         );
       case BookmarkSort.site:
         entries.sort((a, b) {
-          final byHost = (a.host ?? '').compareTo(b.host ?? '');
-          return byHost != 0 ? byHost : b.savedDate.compareTo(a.savedDate);
+          final bySite = (a.site ?? '')
+              .toLowerCase()
+              .compareTo((b.site ?? '').toLowerCase());
+          return bySite != 0 ? bySite : b.savedDate.compareTo(a.savedDate);
         });
       case BookmarkSort.unreadFirst:
         entries.sort((a, b) {
@@ -547,9 +609,9 @@ class BookmarkController extends ChangeNotifier {
     var starred = 0;
     var offline = 0;
     for (final entry in _all) {
-      final host = entry.host;
-      if (host != null) {
-        sites[host] = (sites[host] ?? 0) + 1;
+      final site = entry.site;
+      if (site != null) {
+        sites[site] = (sites[site] ?? 0) + 1;
       }
       for (final tag in entry.metadata.tags) {
         tags[tag] = (tags[tag] ?? 0) + 1;

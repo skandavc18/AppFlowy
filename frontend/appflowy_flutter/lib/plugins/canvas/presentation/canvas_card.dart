@@ -183,6 +183,10 @@ class _CanvasCardState extends State<CanvasCard> {
   }
 
   IconData get _openIcon => switch (widget.node.kind) {
+        // A post or video a site knows opens live over the canvas.
+        CanvasNodeKind.web ||
+        CanvasNodeKind.bookmark when canvasWebEmbedFor(widget.node) != null =>
+          Icons.open_in_full_rounded,
         CanvasNodeKind.web ||
         CanvasNodeKind.bookmark =>
           Icons.open_in_new_rounded,

@@ -529,7 +529,11 @@ class _BookmarkWebPageState extends State<BookmarkWebPage> {
         onUpdateVisitedHistory: (controller, url, _) {
           if (!_alive || !sameWebViewController(controller, _controller))
             return;
-          widget.readingSession?.historyChanged(url?.toString());
+          // A page that routes itself while it loads finishes at its new
+          // address: that is the load to wait for, not the one it left.
+          final visited = url?.toString();
+          if (visited != null) _loadingUrl = visited;
+          widget.readingSession?.historyChanged(visited);
         },
         onReceivedError: (controller, request, __) {
           if (_alive &&

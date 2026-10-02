@@ -248,11 +248,16 @@ class AttachmentPasteTarget {
 /// Inserts media as blocks at the caret, retaining text on both sides and a
 /// trailing editable paragraph. Same-container replacements are one undoable
 /// transaction, including backward selections and block selections.
+///
+/// [replacing] names the text to replace instead of the selection, for an
+/// answer that arrives after the caret has had the chance to move on. It
+/// must lie within one container.
 Future<bool> insertPastedAttachments(
   EditorState editor,
-  List<Node> attachments,
-) async {
-  final selection = editor.selection?.normalized;
+  List<Node> attachments, {
+  Selection? replacing,
+}) async {
+  final selection = (replacing ?? editor.selection)?.normalized;
   if (editor.isDisposed ||
       !editor.editable ||
       selection == null ||
@@ -273,10 +278,12 @@ Future<bool> insertPastedAttachments(
   // their operations and the insertion together. No live half-deleted page or
   // separate undo step is exposed while crossing a list/table boundary.
   if (!identical(start.parent, end.parent)) {
+    if (replacing != null) return false;
     return _insertAcrossContainers(editor, attachments, selection);
   }
 
-  final blockSelection = editor.selectionType == SelectionType.block;
+  final blockSelection =
+      replacing == null && editor.selectionType == SelectionType.block;
   final prefix = <Node>[];
   Node? suffix;
   if (!blockSelection) {

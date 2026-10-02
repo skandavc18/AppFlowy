@@ -11,7 +11,15 @@
 
 namespace flutter_inappwebview_plugin
 {
-  const int kNumBuffers = 1;
+  // Two, so the next frame can be captured while the last one still waits for
+  // the platform thread, which scrolling input keeps busy. With one, every
+  // such wait cost a frame (measured: 24 fps delivered during wheel scrolling
+  // of a page drawing at 111 fps).
+  const int kNumBuffers = 2;
+
+  // Windows otherwise captures at most every 1/60 s, below a faster display.
+  // In 100 ns units: 1 ms leaves the display's own refresh as the limit.
+  constexpr INT64 kMinUpdateInterval = 10000;
 
   TextureBridge::TextureBridge(GraphicsContext* graphics_context,
     ABI::Windows::UI::Composition::IVisual* visual)
@@ -95,6 +103,16 @@ namespace flutter_inappwebview_plugin
       std::cerr << "Creating capture session failed." << std::endl;
       return false;
     }
+
+#if defined(____x_ABI_CWindows_CGraphics_CCapture_CIGraphicsCaptureSession5_INTERFACE_DEFINED__)
+    // Windows 11 24H2 and later; older systems keep their 60 fps capture.
+    if (auto session5 = capture_session_.try_as<
+      ABI::Windows::Graphics::Capture::IGraphicsCaptureSession5>()) {
+      ABI::Windows::Foundation::TimeSpan interval{};
+      interval.Duration = kMinUpdateInterval;
+      session5->put_MinUpdateInterval(interval);
+    }
+#endif
 
     if (SUCCEEDED(capture_session_->StartCapture())) {
       is_running_ = true;

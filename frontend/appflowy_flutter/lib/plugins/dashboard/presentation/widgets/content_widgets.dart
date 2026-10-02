@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
+import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_config_field.dart';
@@ -376,6 +378,11 @@ final _bookmark = DashboardWidgetDefinition(
 ///
 /// The reading comes from the same [LinkParser] a link preview block uses, so
 /// a link saved on a dashboard and a link written into a page agree.
+///
+/// A link a site extension knows is read by the extension first and drawn as
+/// it draws it everywhere else: the pin, the post or the video's own picture
+/// and title, with a play button on a video, the site's mark and what the
+/// link is, rather than whatever sign-in page the site shows a visitor.
 class _LinkCard extends StatefulWidget {
   const _LinkCard({required this.context});
 
@@ -388,6 +395,9 @@ class _LinkCard extends StatefulWidget {
 class _LinkCardState extends State<_LinkCard> {
   final LinkParser _parser = LinkParser();
   LinkInfo? _info;
+
+  /// What the site's extension says about the link, when one knows it.
+  WebEmbedDetails? _site;
   String _resolving = '';
   bool _hovered = false;
 
@@ -397,6 +407,7 @@ class _LinkCardState extends State<_LinkCard> {
   void initState() {
     super.initState();
     _parser.addLinkInfoListener(_onInfo);
+    ExtensionWebEmbedRegistry.revision.addListener(_onSitesChanged);
     _resolve();
   }
 
@@ -408,6 +419,7 @@ class _LinkCardState extends State<_LinkCard> {
 
   @override
   void dispose() {
+    ExtensionWebEmbedRegistry.revision.removeListener(_onSitesChanged);
     _parser.dispose();
     super.dispose();
   }
@@ -418,6 +430,15 @@ class _LinkCardState extends State<_LinkCard> {
     }
   }
 
+  /// A site extension switched on or off changes how the link is read.
+  void _onSitesChanged() {
+    if (!mounted) {
+      return;
+    }
+    setState(() => _site = null);
+    _askSite(_resolving);
+  }
+
   void _resolve() {
     final url = _url;
     if (url.isEmpty || url == _resolving) {
@@ -425,7 +446,26 @@ class _LinkCardState extends State<_LinkCard> {
     }
     _resolving = url;
     _info = null;
+    _site = null;
     unawaited(_parser.start(url));
+    _askSite(url);
+  }
+
+  /// Asks the extension that knows [url] what the site says about it. The
+  /// answer is kept by the registry, so the same link on another card or in
+  /// a page is not asked for twice.
+  void _askSite(String url) {
+    final embed = ExtensionWebEmbedRegistry.recognize(url);
+    if (embed == null) {
+      return;
+    }
+    unawaited(
+      ExtensionWebEmbedRegistry.details(embed).then((details) {
+        if (mounted && url == _resolving && details != null) {
+          setState(() => _site = details);
+        }
+      }),
+    );
   }
 
   @override
@@ -444,18 +484,28 @@ class _LinkCardState extends State<_LinkCard> {
       );
     }
 
-    final info = _info;
+    final embed = ExtensionWebEmbedRegistry.recognize(url);
+    final site = embed == null ? null : _site;
+    // A page that only shows a visitor its sign-in wall, or the site's bare
+    // name, says nothing about the post: not its title, not its picture.
+    final info = embed == null || webEmbedPageTitle(embed, _info?.title) != null
+        ? _info
+        : null;
     final uri = Uri.tryParse(url);
     final host = uri?.host ?? '';
     final title = context.spec.title.isNotEmpty
         ? context.spec.title
-        : (info?.title?.trim().isNotEmpty ?? false)
-            ? info!.title!.trim()
-            : (host.isEmpty ? url : host);
-    final description = info?.description?.trim() ?? '';
-    final image = info?.imageUrl;
-    final address =
+        : _filled(site?.title) ??
+            _filled(info?.title) ??
+            _filled(embed?.title) ??
+            (host.isEmpty ? url : host);
+    final description =
+        _filled(site?.description) ?? _filled(info?.description) ?? '';
+    final image = _filled(site?.thumbnailUrl) ?? _filled(info?.imageUrl);
+    final path =
         uri == null ? url : '${uri.host}${uri.path == '/' ? '' : uri.path}';
+    // `Reddit · Comment`, `Google Sheets`: what the link is, then where.
+    final address = embed == null ? path : '${embed.label} · $path';
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,
@@ -484,11 +534,31 @@ class _LinkCardState extends State<_LinkCard> {
           child: LayoutBuilder(
             builder: (_, constraints) {
               final wide = constraints.maxWidth >= 320;
+              final pictureWidth =
+                  (constraints.maxWidth * 0.34).clamp(120.0, 220.0);
               return Row(
                 children: [
-                  if (image != null && image.isNotEmpty && wide)
+                  // A known site always has a picture: its own, or its colour
+                  // and mark when it gives none, like a sheet or a place.
+                  if (embed != null && wide)
                     SizedBox(
-                      width: (constraints.maxWidth * 0.34).clamp(120.0, 220.0),
+                      width: pictureWidth,
+                      height: double.infinity,
+                      child: WebEmbedPoster(
+                        link: embed,
+                        details: WebEmbedDetails(
+                          title: title,
+                          author: site?.author,
+                          thumbnailUrl: image,
+                        ),
+                        dense: true,
+                        caption: false,
+                        badge: false,
+                      ),
+                    )
+                  else if (image != null && wide)
+                    SizedBox(
+                      width: pictureWidth,
                       height: double.infinity,
                       child: ColoredBox(
                         color: palette.sunken,
@@ -535,14 +605,22 @@ class _LinkCardState extends State<_LinkCard> {
                             children: [
                               SizedBox.square(
                                 dimension: 15,
-                                child: info?.buildIconWidget(
-                                      size: const Size.square(15),
-                                    ) ??
-                                    Icon(
-                                      Icons.public_rounded,
-                                      size: 15,
-                                      color: palette.textMuted,
-                                    ),
+                                child: embed != null
+                                    ? WebEmbedMark(
+                                        link: embed,
+                                        size: 15,
+                                        brightness: palette.isDark
+                                            ? Brightness.dark
+                                            : Brightness.light,
+                                      )
+                                    : info?.buildIconWidget(
+                                          size: const Size.square(15),
+                                        ) ??
+                                        Icon(
+                                          Icons.public_rounded,
+                                          size: 15,
+                                          color: palette.textMuted,
+                                        ),
                               ),
                               const SizedBox(width: 7),
                               Expanded(
@@ -765,6 +843,12 @@ class _PageLinkRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// [value] trimmed, or null when nothing is left.
+String? _filled(String? value) {
+  final trimmed = value?.trim() ?? '';
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 Future<void> _askForUrl(DashboardWidgetContext context) async {

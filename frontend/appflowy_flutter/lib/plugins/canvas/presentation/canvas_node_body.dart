@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
+import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_find.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
@@ -678,7 +680,8 @@ class _CanvasImageBody extends StatelessWidget {
 /// that is dragged and resized is the documented Windows renderer crash path,
 /// and a canvas is nothing but dragging and resizing. The card opens the page
 /// in a browser instead, which is what somebody wants from a spatial note
-/// anyway.
+/// anyway. A pin, post, video, map or document a site extension knows shows
+/// as that site's own poster, and opens live at window size.
 class _CanvasLinkBody extends StatelessWidget {
   const _CanvasLinkBody({
     required this.node,
@@ -700,29 +703,54 @@ class _CanvasLinkBody extends StatelessWidget {
         label: LocaleKeys.canvas_card_addUrl.tr(),
       );
     }
+    // Switching a site on or off turns its cards into posters or back.
+    return ValueListenableBuilder<int>(
+      valueListenable: ExtensionWebEmbedRegistry.revision,
+      builder: (context, _, __) => _buildLink(context, address),
+    );
+  }
 
+  Widget _buildLink(BuildContext context, String address) {
+    final embed = canvasWebEmbedFor(node);
     final uri = Uri.tryParse(address);
     final host = uri?.host ?? address;
-    final title = node.title.trim().isNotEmpty ? node.title.trim() : host;
+    final title = node.title.trim().isNotEmpty
+        ? node.title.trim()
+        : embed?.title ?? embed?.label ?? host;
     final preview = node.stringData('preview');
     final revealDescription = SurfaceFindScope.maybeOf(context)?.current?.id ==
         canvasFindNode(node.id, CanvasSearchField.text);
 
+    // A text post with nothing to picture reads better as its words than as
+    // the site's colour; anything else a site knows is shown as its poster.
+    final picture = embed?.thumbnailUrl ?? preview;
+    Widget? poster;
+    if (embed != null && (picture != null || node.text.trim().isEmpty)) {
+      poster = WebEmbedPoster(
+        link: embed.copyWith(thumbnailUrl: picture),
+        dense: true,
+        // The title and the address are printed underneath.
+        caption: false,
+      );
+    } else if (embed == null && preview != null) {
+      poster = Image.network(
+        preview,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (preview != null)
+        if (poster != null)
           Expanded(
             child: Stack(
               fit: StackFit.expand,
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    preview,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                  ),
+                  child: poster,
                 ),
                 if (revealDescription)
                   ColoredBox(color: palette.surface, child: _description()),
@@ -736,7 +764,14 @@ class _CanvasLinkBody extends StatelessWidget {
         const SizedBox(height: CanvasMetrics.space2),
         Row(
           children: [
-            _Favicon(host: host, palette: palette),
+            if (embed != null)
+              WebEmbedMark(
+                link: embed,
+                size: 20,
+                brightness: palette.isDark ? Brightness.dark : Brightness.light,
+              )
+            else
+              _Favicon(host: host, palette: palette),
             const SizedBox(width: CanvasMetrics.space2),
             Expanded(
               child: Column(
@@ -1123,4 +1158,24 @@ CanvasNodeKind canvasKindForUrl(String url) {
     return CanvasNodeKind.image;
   }
   return CanvasNodeKind.bookmark;
+}
+
+/// The site that shows a link card as its own poster and opens it live, when
+/// a site extension knows the card's address.
+WebEmbedLink? canvasWebEmbedFor(CanvasNode node) =>
+    node.kind == CanvasNodeKind.web || node.kind == CanvasNodeKind.bookmark
+        ? ExtensionWebEmbedRegistry.recognize(node.url)
+        : null;
+
+/// A link card shaped like what [link] is — tall for a pin or a Short, wide
+/// for a video or a map — with room around its poster for the card's padding
+/// and the title underneath.
+Size canvasWebEmbedCardSize(WebEmbedLink link) {
+  final width = link.isPortrait ? 236.0 : 356.0;
+  final height =
+      (width * link.defaultHeight / link.defaultWidth).clamp(180.0, 400.0);
+  return Size(
+    width + 2 * CanvasMetrics.space3,
+    height + 2 * CanvasMetrics.space3 + 40,
+  );
 }

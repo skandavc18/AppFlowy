@@ -23,8 +23,12 @@ class BookmarkByline extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final metadata = entry.metadata;
+    final embed = entry.embed;
     final parts = <String>[
-      if (metadata.siteName?.isNotEmpty ?? false)
+      // `Reddit · Comment`, `Google Sheets`: what the link is, not only where.
+      if (embed != null)
+        embed.label
+      else if (metadata.siteName?.isNotEmpty ?? false)
         metadata.siteName!
       else if (entry.host != null)
         entry.host!,

@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:appflowy/extensions/dart/web_embed_registry.dart';
+import 'package:appflowy/shared/unusable_page_title.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:flutter/foundation.dart';
@@ -98,19 +100,55 @@ class BookmarkMetadata {
 
   bool get hasSnapshot => snapshotPath != null && snapshotPath!.isNotEmpty;
 
-  bool get hasMetadata => title != null || description != null;
+  /// A page read is complete once it named the page or described it; a bot
+  /// check's title and text did neither, so such a bookmark is read again.
+  bool get hasMetadata =>
+      !hasStandInTitle && (title != null || description != null);
+
+  /// Whether [title] came from a bot check, a refusal or an error page shown
+  /// in place of the page.
+  bool get hasStandInTitle => isStandInPageTitle(title);
+
+  /// [title] unless it cannot name this link: a bot check's, or only the
+  /// site's name on one of its posts.
+  String? get pageTitle {
+    final value = title?.trim();
+    return value == null || isUnusablePageTitle(value, url: url) ? null : value;
+  }
 
   /// The name to show, falling back through the page title to the address.
+  ///
+  /// A new bookmark is named after its site, which only stands in until the
+  /// page's own title is known: otherwise every pin saved from Pinterest
+  /// would be called `pinterest.com`. A post whose site would not show it is
+  /// named after its address, as a site extension reads it.
   String displayTitle(String viewName) {
-    if (viewName.trim().isNotEmpty && viewName != untitledBookmarkName) {
+    final name = viewName.trim();
+    if (name.isNotEmpty &&
+        name != untitledBookmarkName &&
+        name != bookmarkHost(url)) {
       return viewName;
     }
-    final pageTitle = title?.trim();
-    if (pageTitle != null && pageTitle.isNotEmpty) {
-      return pageTitle;
-    }
-    return bookmarkHost(url) ?? url;
+    return pageTitle ?? bookmarkEmbed(url)?.title ?? bookmarkHost(url) ?? url;
   }
+
+  /// This bookmark without what its page said about itself, for when that
+  /// was a bot check's: what the reader added stays.
+  BookmarkMetadata withoutPageDetails() => BookmarkMetadata(
+        url: url,
+        siteName: siteName,
+        faviconUrl: faviconUrl,
+        addedAt: addedAt,
+        tags: tags,
+        notes: notes,
+        starred: starred,
+        readState: readState,
+        readProgress: readProgress,
+        snapshotPath: snapshotPath,
+        snapshotAt: snapshotAt,
+        snapshotBytes: snapshotBytes,
+        fetchFailed: fetchFailed,
+      );
 
   /// Minutes of reading at an average pace, or null when it is not an article.
   int? get readingMinutes {
@@ -312,6 +350,15 @@ class BookmarkEntry {
   String get title => metadata.displayTitle(view.name);
   String? get host => bookmarkHost(metadata.url);
 
+  /// What a library groups and filters by: a site extension's own name for a
+  /// link it knows, so Docs, Sheets and Slides part ways and `youtu.be` joins
+  /// YouTube, and the host otherwise.
+  String? get site => bookmarkSite(metadata.url);
+
+  /// The pin, post, video, place or shared file a site extension reads this
+  /// link as, or null when no extension knows it.
+  WebEmbedLink? get embed => bookmarkEmbed(metadata.url);
+
   /// The moment the bookmark belongs at on a timeline: when the page was
   /// published if it says, otherwise when it was saved.
   DateTime get timelineDate =>
@@ -433,6 +480,40 @@ String? bookmarkHost(String url) {
   return host.startsWith('www.') ? host.substring(4) : host;
 }
 
+/// [url]'s site as a library groups it: `Google Sheets` or `Reddit` for a
+/// link a site extension knows, the host otherwise.
+String? bookmarkSite(String url) =>
+    bookmarkEmbed(url)?.site ?? bookmarkHost(url);
+
+/// What a site extension reads [url] as, or null when none knows it.
+///
+/// Remembered per address, because a library sorts, groups, counts and draws
+/// by it on every change; forgotten whenever the set of known sites changes.
+WebEmbedLink? bookmarkEmbed(String url) {
+  final revision = ExtensionWebEmbedRegistry.revision.value;
+  if (revision != _embedsRevision || _embeds.length > 4096) {
+    _embeds.clear();
+    _embedsRevision = revision;
+  }
+  return _embeds.putIfAbsent(
+    url,
+    () => ExtensionWebEmbedRegistry.recognize(url),
+  );
+}
+
+final _embeds = <String, WebEmbedLink?>{};
+int? _embedsRevision;
+
+/// [raw] as a bookmark saves it: tidied, then in a site extension's own form
+/// where one knows the link, so `youtu.be/…` and `youtube.com/watch?v=…` are
+/// the same bookmark.
+///
+/// Returns null when the text is not a web address at all.
+String? bookmarkAddress(String raw) {
+  final url = normalizeBookmarkUrl(raw);
+  return url == null ? null : ExtensionWebEmbedRegistry.canonicalUrl(url);
+}
+
 /// The address as it should be shown: host plus a shortened path.
 String bookmarkDisplayUrl(String url, {int maxLength = 64}) {
   final uri = Uri.tryParse(url);
@@ -461,7 +542,20 @@ String? normalizeBookmarkTag(String raw) {
 }
 
 /// Pulls every address out of a block of text, for pasting a list at once.
+///
+/// A site's embed code — Instagram's, Reddit's, Pinterest's, a YouTube or Maps
+/// `<iframe>` — saves the one post it shows, not every link to its author and
+/// the site's script around it.
 List<String> extractBookmarkUrls(String text) {
+  if (text.contains('<')) {
+    final embedded = webEmbedAddressFrom(text);
+    if (ExtensionWebEmbedRegistry.recognize(embedded) != null) {
+      final url = bookmarkAddress(embedded!);
+      if (url != null) {
+        return [url];
+      }
+    }
+  }
   final found = <String>[];
   final pattern = RegExp(
     r'(?:https?://|www\.)[^\s<>"'
@@ -471,7 +565,7 @@ List<String> extractBookmarkUrls(String text) {
   for (final match in pattern.allMatches(text)) {
     // Trailing punctuation belongs to the sentence, not to the address.
     final candidate = match.group(0)!.replaceAll(RegExp(r'[.,;:!?]+$'), '');
-    final url = normalizeBookmarkUrl(candidate);
+    final url = bookmarkAddress(candidate);
     if (url != null && !found.contains(url)) {
       found.add(url);
     }

@@ -2,6 +2,8 @@ import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_notification.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/local_path_paste.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/local_path_paste_menu.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_attachments.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_block_link.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/paste_from_html.dart';
@@ -172,6 +174,21 @@ Future<void> _doPaste(
       if (!inserted) await prepared.discard();
     }
     return;
+  }
+
+  // A path to a file or folder on this computer becomes a link to it, and
+  // the page then asks whether to copy it into AppFlowy instead.
+  final localPath = UniversalPlatform.isDesktop
+      ? await resolvePastedLocalPath(plainText)
+      : null;
+  if (localPath != null) {
+    // Looking the path up can take a moment on a network share.
+    if (!target.isCurrent) return;
+    final link = await editorState.pasteLocalPathLink(localPath);
+    if (link != null) {
+      offerToCopyPastedLocalPath(editorState, link);
+      return Log.info('Pasted a local path');
+    }
   }
 
   if (await editorState.pasteAppFlowySharePageLink(plainText)) {

@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:appflowy/shared/markup_parse.dart';
+import 'package:appflowy/shared/unusable_page_title.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/link_metadata.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/readable_article.dart';
 import 'package:flutter/foundation.dart';
@@ -27,37 +29,40 @@ const _userAgent =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 
-/// Titles a site shows instead of its page while it decides whether the
-/// caller is a person.
-const _challengeTitles = [
-  'please wait',
-  'just a moment',
-  'checking your browser',
-  'verifying you are human',
-  'are you a robot',
-  'attention required',
-  'access denied',
-  'access to this page has been denied',
-  'security check',
-  'enable javascript and cookies',
-  'blocked',
-  'forbidden',
-];
-
-/// Whether what came back is a bot check rather than the page.
-bool looksLikeChallenge(LinkMetadata? metadata, int? statusCode) {
-  if (statusCode == 403 || statusCode == 429 || statusCode == 503) {
+/// Whether what came back for [url] is a bot check rather than the page.
+bool looksLikeChallenge(
+  LinkMetadata? metadata,
+  int? statusCode, {
+  String? url,
+}) {
+  if (statusCode == 401 ||
+      statusCode == 403 ||
+      statusCode == 429 ||
+      statusCode == 503) {
     return true;
   }
   if (metadata == null) {
     return true;
   }
-  final title = metadata.title?.toLowerCase();
+  final title = metadata.title;
   if (title == null) {
     return metadata.imageUrl == null && metadata.description == null;
   }
-  return _challengeTitles.any(title.contains);
+  return isUnusablePageTitle(title, url: url);
 }
+
+/// Whether [body] styles or gates its text in ways only a browser can tell
+/// apart from what is shown.
+bool _mayHideProse(String body) =>
+    html_parser.parse(body).querySelector(
+              'style,link[rel="stylesheet"],[style],'
+              '[hidden],[aria-hidden="true"],[aria-modal="true"],dialog',
+            ) !=
+        null ||
+    RegExp(
+      'paywall|access-gate|subscription-wall|regwall',
+      caseSensitive: false,
+    ).hasMatch(body);
 
 /// What one visit to a saved address produced.
 @immutable
@@ -138,47 +143,51 @@ class BookmarkFetcher {
         );
       }
 
-      final metadata = parseLinkMetadata(body, resolved);
+      final metadata = await readLinkMetadata(body, resolved);
+      final address = resolved.toString();
       if (readerOnly) {
         if (statusCode < 200 ||
             statusCode >= 300 ||
-            looksLikeChallenge(metadata, statusCode)) {
+            looksLikeChallenge(metadata, statusCode, url: address)) {
           return BookmarkFetchResult.failed(url, 'Reader unavailable');
         }
         // Without a browser there is no computed visibility. Conservatively
         // refuse styled/gated pages rather than exposing CSS-hidden prose.
-        final document = html_parser.parse(body);
-        if (document.querySelector('style,link[rel="stylesheet"],[style],'
-                    '[hidden],[aria-hidden="true"],[aria-modal="true"],dialog') !=
-                null ||
-            RegExp(r'paywall|access-gate|subscription-wall|regwall',
-                    caseSensitive: false)
-                .hasMatch(body)) {
+        if (await parseMarkup(body, _mayHideProse)) {
           return BookmarkFetchResult.failed(url, 'Reader unavailable');
         }
       }
       if (!readerOnly &&
           allowBrowserFallback &&
-          looksLikeChallenge(metadata, statusCode) &&
+          looksLikeChallenge(metadata, statusCode, url: address) &&
           browserFallback != null) {
         final rendered = await browserFallback!(resolved);
         if (rendered != null) {
-          final second = parseLinkMetadata(rendered, resolved);
-          if (!looksLikeChallenge(second, null)) {
+          final second = await readLinkMetadata(rendered, resolved);
+          if (!looksLikeChallenge(second, null, url: address)) {
             return BookmarkFetchResult(
               url: url,
               statusCode: statusCode,
               metadata: second,
               article: readArticle
-                  ? parseReadableArticle(rendered, baseUrl: resolved)
+                  ? await readReadableArticle(rendered, baseUrl: resolved)
                   : null,
               html: keepHtml ? rendered : null,
             );
           }
         }
       }
-      final article =
-          readArticle ? parseReadableArticle(body, baseUrl: resolved) : null;
+      // Neither read reached the page: its title, text and picture describe
+      // the check the site put in front of it.
+      if (isStandInPageTitle(metadata.title)) {
+        return BookmarkFetchResult.failed(
+          url,
+          'The site did not show the page',
+        );
+      }
+      final article = readArticle
+          ? await readReadableArticle(body, baseUrl: resolved)
+          : null;
       return BookmarkFetchResult(
         url: url,
         statusCode: statusCode,

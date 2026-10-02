@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:appflowy/core/helpers/url_launcher.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_node_body.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_setup.dart';
@@ -129,6 +132,7 @@ List<AppMenuEntry> canvasNodeMenuEntries({
 }) {
   final selection = controller.selection;
   final multiple = selection.length > 1;
+  final embed = canvasWebEmbedFor(node);
 
   void run(VoidCallback action) {
     action();
@@ -166,9 +170,19 @@ List<AppMenuEntry> canvasNodeMenuEntries({
         !node.needsSetUp) ...[
       AppMenuItem(
         label: LocaleKeys.canvas_menu_open.tr(),
-        icon: Icons.open_in_new_rounded,
+        icon: embed == null
+            ? Icons.open_in_new_rounded
+            : Icons.open_in_full_rounded,
         onSelected: onOpen,
       ),
+      // A post a site knows opens live over the canvas; the browser stays
+      // one step away.
+      if (embed != null)
+        AppMenuItem(
+          label: LocaleKeys.collections_bookmark_openInBrowser.tr(),
+          icon: Icons.open_in_new_rounded,
+          onSelected: () => unawaited(afLaunchUrlString(embed.url)),
+        ),
       AppMenuItem(
         label: LocaleKeys.canvas_card_addUrl.tr(),
         icon: Icons.link_rounded,

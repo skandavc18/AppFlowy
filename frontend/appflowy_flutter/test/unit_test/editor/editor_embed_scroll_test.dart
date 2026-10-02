@@ -365,7 +365,11 @@ Future<List<double>> _coastTrace(
     await tester.pump(frameInterval);
     if (step > 1) expect(position.pixels, greaterThan(halfway));
   }
-  expect(position.pixels, closeTo(480 * 0.60, 0.01));
+  // The page took every packet, never running past what it received. Frame
+  // pacing shows them slightly behind the fingers; the release coast carries
+  // whatever is not yet on screen.
+  expect(position.pixels, lessThanOrEqualTo(480 * 0.60 + 0.01));
+  expect(position.pixels, greaterThan((480 - 40) * 0.60));
   await tester.sendEventToBinding(
     PointerPanZoomEndEvent(
       pointer: 82,

@@ -3,6 +3,7 @@ import 'package:appflowy/core/config/kv.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
 import 'package:appflowy/shared/appflowy_network_svg.dart';
+import 'package:appflowy/shared/unusable_page_title.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:flutter/material.dart';
@@ -133,7 +134,9 @@ class LinkInfoCache {
       '$_linkInfoPrefix$uri',
       (value) => LinkInfo.fromJson(jsonDecode(value)),
     );
-    return option;
+    // Saved before bot checks were told apart from pages: a preview keeps
+    // the last good details it had, so this one would never be replaced.
+    return isStandInPageTitle(option?.title) ? null : option;
   }
 
   static Future<void> set(Uri uri, LinkInfo data) async {

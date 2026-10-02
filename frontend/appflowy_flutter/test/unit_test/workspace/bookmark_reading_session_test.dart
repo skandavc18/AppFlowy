@@ -16,6 +16,7 @@ const _html =
     '</article></body></html>';
 String _payload({String url = _url, String html = _html}) =>
     jsonEncode({'url': url, 'html': html});
+final _loading = jsonEncode({'url': _url, 'loading': true});
 
 void main() {
   test('capture reuses one evaluation; Reader has no persistence dependency',
@@ -27,9 +28,15 @@ void main() {
       calls++;
       return gate.future;
     });
-    session.navigationStarted(_url);
+    // Nothing on its way yet: there is nothing to wait for.
+    expect(session.canRead, isFalse);
     expect(await session.capture(), isNull);
-    session.navigationFinished(_url);
+    expect(session.lastFailure, BookmarkReaderFailure.unavailable);
+    expect(calls, 0);
+    // A page still loading can already be read.
+    session.navigationStarted(_url);
+    expect(session.ready, isFalse);
+    expect(session.canRead, isTrue);
     final first = session.capture();
     final second = session.capture();
     expect(identical(first, second), isTrue);
@@ -37,10 +44,193 @@ void main() {
     final capture = await first;
     expect(capture, isNotNull);
     expect(calls, 1);
+    expect(session.lastFailure, isNull);
     expect(capture!.article.plainText, contains('Visible prose'));
+    expect(session.isCurrent(capture), isTrue);
+    session.navigationFinished(_url);
     expect(session.isCurrent(capture), isTrue);
     session.historyChanged('$_url#next');
     expect(session.isCurrent(capture), isFalse);
+    session.dispose();
+  });
+
+  test('a page that is not on the web cannot be read', () async {
+    final session = BookmarkReadingSession();
+    var calls = 0;
+    session.attach(Object(), (_) async {
+      calls++;
+      return _payload();
+    });
+    for (final url in ['about:blank', 'file:///C:/page.html', null]) {
+      session.navigationStarted(url);
+      session.navigationFinished(url);
+      expect(session.canRead, isFalse);
+      expect(await session.capture(), isNull);
+    }
+    expect(calls, 0);
+    session.dispose();
+  });
+
+  testWidgets('waits for a loading page, past the document it replaces',
+      (tester) async {
+    final session = BookmarkReadingSession();
+    final answers = <Object? Function()>[
+      // The blank page a view starts on, the document being left, the new
+      // one still parsing, then the new one.
+      () => null,
+      () => _payload(url: 'https://news.example/previous'),
+      () => throw StateError('the document went away mid-answer'),
+      () => _loading,
+      _payload,
+    ];
+    var calls = 0;
+    session.attach(Object(), (_) async => answers[calls++]());
+    session.navigationStarted(_url);
+    BookmarkReaderCapture? result;
+    var completed = false;
+    unawaited(session.capture().then((value) {
+      result = value;
+      completed = true;
+    }));
+    await tester.pump();
+    expect(calls, 1);
+    for (var i = 0; i < 4; i++) {
+      expect(completed, isFalse);
+      await tester.pump(bookmarkReaderRetryInterval);
+    }
+    await tester.pump();
+    expect(completed, isTrue);
+    expect(calls, 5);
+    expect(result?.article.plainText, contains('Visible prose'));
+    expect(session.lastFailure, isNull);
+    session.dispose();
+  });
+
+  testWidgets('the end of the load wakes a waiting capture at once',
+      (tester) async {
+    final session = BookmarkReadingSession();
+    var loaded = false;
+    var calls = 0;
+    session.attach(Object(), (_) async {
+      calls++;
+      return loaded ? _payload() : _loading;
+    });
+    session.navigationStarted(_url);
+    BookmarkReaderCapture? result;
+    unawaited(session.capture().then((value) => result = value));
+    await tester.pump();
+    expect(calls, 1);
+    loaded = true;
+    session.navigationFinished(_url);
+    await tester.pump();
+    expect(calls, 2);
+    expect(result, isNotNull);
+    session.dispose();
+  });
+
+  testWidgets('a page that never becomes readable fails at the page deadline',
+      (tester) async {
+    final session = BookmarkReadingSession(
+      pageDeadline: bookmarkReaderRetryInterval * 4,
+    );
+    var calls = 0;
+    session.attach(Object(), (_) async {
+      calls++;
+      return _loading;
+    });
+    session.navigationStarted(_url);
+    var completed = false;
+    BookmarkReaderCapture? result;
+    unawaited(session.capture().then((value) {
+      result = value;
+      completed = true;
+    }));
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(bookmarkReaderRetryInterval);
+    }
+    await tester.pump();
+    expect(completed, isTrue);
+    expect(result, isNull);
+    expect(calls, 5);
+    expect(session.lastFailure, BookmarkReaderFailure.unavailable);
+    session.dispose();
+  });
+
+  for (final change in ['navigation', 'detach', 'dispose']) {
+    testWidgets('$change ends a wait for a loading page', (tester) async {
+      final session = BookmarkReadingSession();
+      final owner = Object();
+      var calls = 0;
+      session.attach(owner, (_) async {
+        calls++;
+        return _loading;
+      });
+      session.navigationStarted(_url);
+      var completed = false;
+      BookmarkReaderCapture? result;
+      unawaited(session.capture().then((value) {
+        result = value;
+        completed = true;
+      }));
+      await tester.pump();
+      expect(calls, 1);
+      switch (change) {
+        case 'navigation':
+          session.navigationStarted('https://news.example/other');
+        case 'detach':
+          session.detach(owner);
+        case 'dispose':
+          session.dispose();
+      }
+      await tester.pump();
+      expect(completed, isTrue);
+      expect(result, isNull);
+      expect(calls, 1);
+      expect(session.lastFailure, BookmarkReaderFailure.navigated);
+      if (change != 'dispose') session.dispose();
+    });
+  }
+
+  test('a visible access gate is reported as one', () async {
+    final session = BookmarkReadingSession();
+    session.attach(
+        Object(), (_) async => jsonEncode({'url': _url, 'gate': true}));
+    session.navigationStarted(_url);
+    expect(await session.capture(), isNull);
+    expect(session.lastFailure, BookmarkReaderFailure.gated);
+    session.dispose();
+  });
+
+  test('a loaded page that cannot answer fails at once', () async {
+    final session = BookmarkReadingSession();
+    var calls = 0;
+    session.attach(Object(), (_) async {
+      calls++;
+      throw StateError('renderer gone');
+    });
+    session.navigationStarted(_url);
+    session.navigationFinished(_url);
+    expect(await session.capture(), isNull);
+    expect(calls, 1);
+    expect(session.lastFailure, BookmarkReaderFailure.unavailable);
+    session.dispose();
+  });
+
+  test('a long article is parsed in the background', () async {
+    final paragraphs = List.generate(
+        800,
+        (i) => '<p>Paragraph $i of a long article, with enough ordinary words '
+            'in it to be read as prose rather than navigation.</p>').join();
+    final html = '<html><body><article>$paragraphs</article></body></html>';
+    expect(html.length, greaterThan(64 * 1024));
+    final session = BookmarkReadingSession();
+    session.attach(Object(), (_) async => _payload(html: html));
+    session.navigationStarted(_url);
+    session.navigationFinished(_url);
+    final capture = await session.capture();
+    expect(capture, isNotNull);
+    expect(capture!.article.plainText, contains('Paragraph 799'));
+    expect(session.isCurrent(capture), isTrue);
     session.dispose();
   });
 
@@ -66,6 +256,7 @@ void main() {
       }
       gate.complete(_payload());
       expect(await pending, isNull);
+      expect(session.lastFailure, BookmarkReaderFailure.navigated);
       if (change != 'dispose') session.dispose();
     });
   }
@@ -80,11 +271,13 @@ void main() {
     test(
         'rejects missing, malformed, mismatched or oversized capture ${payload?.length}',
         () async {
-      final session = BookmarkReadingSession();
+      // A mismatched page is waited for; here the wait has no time at all.
+      final session = BookmarkReadingSession(pageDeadline: Duration.zero);
       session.attach(Object(), (_) async => payload);
       session.navigationStarted(_url);
       session.navigationFinished(_url);
       expect(await session.capture(), isNull);
+      expect(session.lastFailure, BookmarkReaderFailure.unavailable);
       session.dispose();
     });
   }
@@ -109,6 +302,63 @@ void main() {
     await tester.pump();
     expect(result, isNull);
     session.dispose();
+  });
+
+  test('a list of citations is not mistaken for the article', () {
+    // Commas everywhere: a references list outscores the prose it cites.
+    final citations = List.generate(
+        60,
+        (i) => '<li>"Source $i". Publisher, City, 2021. Archived, '
+            'retrieved 2021-02-07, page $i.</li>').join();
+    final paragraphs = List.generate(
+        12,
+        (i) => '<p>Paragraph $i of the article itself, long enough to '
+            'read as prose.</p>').join();
+    final article = parseReadableArticle(
+        '<html><body><div class="content"><h1>Reading</h1>$paragraphs'
+        '<div class="reflist"><ol class="references">$citations</ol></div>'
+        '</div></body></html>',
+        baseUrl: Uri.parse(_url));
+    expect(article.plainText, contains('Paragraph 0 of the article'));
+    expect(article.plainText, contains('Paragraph 11 of the article'));
+  });
+
+  test('a paragraph per nested wrapper still reads as the whole article', () {
+    // BBC's layout: no scored container ever holds more than one paragraph.
+    String block(String text) =>
+        '<div><div><div><div><p>$text</p></div></div></div></div>';
+    final blocks = [
+      for (var i = 0; i < 20; i++)
+        block('Paragraph $i of the story, long enough to read as prose.'),
+      block('One paragraph, with commas, many commas, more, still more, '
+          'and yet more, outscores every other paragraph on its own.'),
+    ].join();
+    final article = parseReadableArticle(
+        '<html><body><main><article><h1>Story</h1>$blocks</article></main>'
+        '<ul><li><a href="/next">A related story with a long headline</a></li>'
+        '</ul></body></html>',
+        baseUrl: Uri.parse(_url));
+    expect(article.plainText, contains('Paragraph 0 of the story'));
+    expect(article.plainText, contains('Paragraph 19 of the story'));
+    expect(article.plainText, contains('outscores every other paragraph'));
+    expect(article.plainText, isNot(contains('A related story')));
+  });
+
+  test('comments beside an article are not gathered into it', () {
+    final story = List.generate(
+        6,
+        (i) => '<p>Paragraph $i, with a clause, another clause, and a third, '
+            'of the story itself.</p>').join();
+    final comments = List.generate(
+        30,
+        (i) => '<div class="comment"><p>Comment $i says something long '
+            'enough to be read as prose here and there.</p></div>').join();
+    final article = parseReadableArticle(
+        '<html><body><article>$story</article>'
+        '<section class="comments">$comments</section></body></html>',
+        baseUrl: Uri.parse(_url));
+    expect(article.plainText, contains('Paragraph 5'));
+    expect(article.plainText, isNot(contains('Comment 0 says')));
   });
 
   test('parser rejects hidden prose and unsafe links', () {

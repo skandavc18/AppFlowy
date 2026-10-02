@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/collection/views/bookmark/bookmark_chrome.dart';
 import 'package:appflowy/workspace/application/collections/bookmark/bookmark_controller.dart';
@@ -202,12 +203,7 @@ class _AddBookmarkDialogState extends State<_AddBookmarkDialog> {
                           left: BookmarkMetrics.space2 + 2,
                           bottom: 3,
                         ),
-                        child: Text(
-                          bookmarkDisplayUrl(url, maxLength: 72),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.meta,
-                        ),
+                        child: _FoundLink(url: url, theme: theme),
                       ),
                   ],
                 ),
@@ -326,13 +322,45 @@ class _OfflineToggle extends StatelessWidget {
       );
 }
 
+/// A link the add dialog found, marked with the site that will show it when
+/// a site extension knows it.
+class _FoundLink extends StatelessWidget {
+  const _FoundLink({required this.url, required this.theme});
+
+  final String url;
+  final BookmarkTheme theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final embed = bookmarkEmbed(url);
+    return Row(
+      children: [
+        if (embed != null) ...[
+          WebEmbedBadge(link: embed, dense: true),
+          const SizedBox(width: BookmarkMetrics.space1 + 2),
+        ],
+        Expanded(
+          child: Text(
+            bookmarkDisplayUrl(url, maxLength: 72),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: theme.meta,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// Renames a bookmark.
 Future<void> showRenameBookmarkDialog({
   required BuildContext context,
   required BookmarkEntry entry,
 }) async {
   final theme = bookmarkThemeOf(context);
-  final controller = TextEditingController(text: entry.view.name);
+  // The name the card shows, which for a bookmark nobody named is the page's
+  // title rather than the site it was first called after.
+  final controller = TextEditingController(text: entry.title);
   final name = await showDialog<String>(
     context: context,
     builder: (context) => BookmarkDialogShell(
@@ -381,7 +409,7 @@ Future<void> showRenameBookmarkDialog({
     ),
   );
   controller.dispose();
-  if (name != null && name.isNotEmpty && name != entry.view.name) {
+  if (name != null && name.isNotEmpty && name != entry.title) {
     await const BookmarkService().rename(viewId: entry.id, name: name);
   }
 }
