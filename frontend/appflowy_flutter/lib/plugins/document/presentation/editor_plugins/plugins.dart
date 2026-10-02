@@ -28,6 +28,7 @@ export 'file/file_block.dart';
 export 'folder_explorer/folder_explorer_block_component.dart';
 export 'bookmark/bookmark_block_component.dart';
 export 'chart/chart_block_component.dart';
+export 'dashboard_widget/dashboard_widget_block_component.dart';
 export 'map/map_block_component.dart';
 export 'page_preview/page_preview_block_component.dart';
 export 'find_and_replace/document_find_menu.dart';

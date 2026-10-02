@@ -121,12 +121,15 @@ class DashboardDatabaseCalendarScope extends StatelessWidget {
 
 final _database = DashboardWidgetDefinition(
   type: 'database',
+  pageBlock: 'grid',
   label: () => LocaleKeys.dashboard_widget_database.tr(),
   description: () => LocaleKeys.dashboard_widget_databaseHint.tr(),
   icon: Icons.table_rows_rounded,
   group: DashboardWidgetGroup.data,
   defaultColumnSpan: 8,
   defaultRowSpan: 8,
+  // A table has its own tabs and toolbar along the top edge.
+  reservesHeader: true,
   keywords: const [
     'database',
     'table',
@@ -198,12 +201,16 @@ final _database = DashboardWidgetDefinition(
 
 final _chart = DashboardWidgetDefinition(
   type: 'chart',
+  pageBlock: 'chart',
   label: () => LocaleKeys.dashboard_widget_chart.tr(),
   description: () => LocaleKeys.dashboard_widget_chartHint.tr(),
   icon: Icons.bar_chart_rounded,
   group: DashboardWidgetGroup.data,
   defaultColumnSpan: 6,
   defaultRowSpan: 6,
+  // Integrated: a chart is drawn on the page, not in a box, unless somebody
+  // gives it a colour or a surface of its own.
+  surface: DashboardSurface.plain,
   slashName: 'chart',
   keywords: const ['chart', 'graph', 'bar', 'line', 'pie', 'plot', 'analytics'],
   builder: (context) => _ChartBody(context: context),
@@ -364,6 +371,8 @@ final _metric = DashboardWidgetDefinition(
   group: DashboardWidgetGroup.data,
   defaultColumnSpan: 3,
   defaultRowSpan: 3,
+  // A statistic is type set straight onto the page.
+  surface: DashboardSurface.plain,
   slashName: 'metric',
   keywords: const ['metric', 'number', 'kpi', 'stat', 'total', 'count'],
   builder: (context) => _AggregateBody(
@@ -372,53 +381,79 @@ final _metric = DashboardWidgetDefinition(
       // A metric that reads a table shows what it read; one that holds its own
       // number is typed into where it is read.
       final own = !context.spec.source.isBound;
-      return Center(
-        child: own
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  if (context.spec.setting(_keyPrefix).isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 3),
-                      child: Text(
-                        context.spec.setting(_keyPrefix),
-                        style: DashboardType.caption(context.palette)
-                            .copyWith(fontSize: 14),
-                      ),
-                    ),
-                  Flexible(
-                    child: DashboardEditableNumber(
-                      value: context.spec.number(_keyValue, fallback: 0),
-                      palette: context.palette,
-                      enabled: context.isTypable,
-                      textAlign: TextAlign.center,
-                      style: DashboardType.figure(context.palette)
-                          .copyWith(color: context.strong),
-                      onChanged: (next) =>
-                          context.setSettings({_keyValue: next}),
-                    ),
+      final palette = context.palette;
+      final tone = context.tone;
+      // Set like a headline, left aligned the way a page is read: the number
+      // is the widget, its prefix and unit are quiet companions on its line.
+      final figure = DashboardType.display(
+        palette,
+        size: 44,
+        weight: FontWeight.w500,
+        color: tone.figure,
+      );
+      final prefix = context.spec.setting(_keyPrefix);
+      final unit = context.spec.setting(_keyUnit);
+      Widget affix(String text) => Text(
+            text,
+            style: DashboardType.eyebrow(palette, color: tone.label)
+                .copyWith(fontSize: 16),
+          );
+      final caption = own ? '' : context.spec.source.name;
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                if (prefix.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: affix(prefix),
                   ),
-                  if (context.spec.setting(_keyUnit).isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(left: 3),
-                      child: Text(
-                        context.spec.setting(_keyUnit),
-                        style: DashboardType.caption(context.palette)
-                            .copyWith(fontSize: 14),
-                      ),
-                    ),
-                ],
-              )
-            : DashboardFigure(
-                value: value == null ? '—' : formatChartNumber(value),
-                prefix: context.spec.setting(_keyPrefix),
-                suffix: context.spec.setting(_keyUnit),
-                palette: context.palette,
-                color: context.strong,
-                caption: context.spec.source.name,
+                Flexible(
+                  child: own
+                      ? DashboardEditableNumber(
+                          value: context.spec.number(_keyValue, fallback: 0),
+                          palette: palette,
+                          enabled: context.isTypable,
+                          style: figure,
+                          onChanged: (next) =>
+                              context.setSettings({_keyValue: next}),
+                        )
+                      : FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            value == null ? '—' : formatChartNumber(value),
+                            maxLines: 1,
+                            style: figure,
+                          ),
+                        ),
+                ),
+                if (unit.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 5),
+                    child: affix(unit),
+                  ),
+              ],
+            ),
+            if (caption.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                caption,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: DashboardType.caption(palette, color: tone.inkSoft)
+                    .copyWith(fontSize: 12.5),
               ),
+            ],
+          ],
+        ),
       );
     },
   ),
@@ -429,11 +464,14 @@ final _metric = DashboardWidgetDefinition(
 
 final _progress = DashboardWidgetDefinition(
   type: 'progress',
+  pageBlock: 'interactive_progress',
   label: () => LocaleKeys.dashboard_widget_progress.tr(),
   description: () => LocaleKeys.dashboard_widget_progressHint.tr(),
   icon: Icons.donut_large_rounded,
   group: DashboardWidgetGroup.data,
   defaultRowSpan: 3,
+  surface: DashboardSurface.tinted,
+  identity: DashboardAccent.green,
   slashName: 'progress',
   keywords: const ['progress', 'bar', 'percent', 'completion', 'goal', 'ring'],
   builder: (context) => _AggregateBody(
@@ -463,8 +501,8 @@ final _progress = DashboardWidgetDefinition(
                       enabled: context.isTypable,
                       style: DashboardType.figure(
                         context.palette,
-                        size: ring ? 15 : 22,
-                      ),
+                        size: 15,
+                      ).copyWith(color: context.tone.ink),
                       onChanged: (next) =>
                           context.setSettings({_keyValue: next}),
                     )
@@ -474,8 +512,8 @@ final _progress = DashboardWidgetDefinition(
                       overflow: TextOverflow.ellipsis,
                       style: DashboardType.figure(
                         context.palette,
-                        size: ring ? 15 : 22,
-                      ),
+                        size: 15,
+                      ).copyWith(color: context.tone.ink),
                     ),
             ),
             Text(
@@ -511,15 +549,20 @@ final _progress = DashboardWidgetDefinition(
                     SizedBox.expand(
                       child: CircularProgressIndicator(
                         value: fraction,
-                        strokeWidth: 8,
+                        strokeWidth: 9,
                         strokeCap: StrokeCap.round,
-                        backgroundColor: context.strong.withValues(alpha: 0.16),
+                        backgroundColor: context.strong.withValues(alpha: 0.18),
                         valueColor: AlwaysStoppedAnimation(context.strong),
                       ),
                     ),
                     Text(
                       '${(fraction * 100).round()}%',
-                      style: DashboardType.figure(context.palette, size: 20),
+                      style: DashboardType.display(
+                        context.palette,
+                        size: 21,
+                        weight: FontWeight.w500,
+                        color: context.tone.figure,
+                      ),
                     ),
                   ],
                 ),
@@ -538,20 +581,17 @@ final _progress = DashboardWidgetDefinition(
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              // Expanded, never Flexible beside a Spacer: the two would share
-              // the free space and the percentage would drift off the edge.
-              Expanded(child: numbers(flexible: true)),
-              const SizedBox(width: 8),
-              Text(
-                '${(fraction * 100).round()}%',
-                style: DashboardType.cardTitle(
-                  context.palette,
-                  color: context.strong,
-                ),
-              ),
-            ],
+          // How far along, set large; the bar beneath it; and the two numbers
+          // behind the percentage as a quiet footnote.
+          Text(
+            '${(fraction * 100).round()}%',
+            maxLines: 1,
+            style: DashboardType.display(
+              context.palette,
+              size: 30,
+              weight: FontWeight.w500,
+              color: context.tone.figure,
+            ),
           ),
           const SizedBox(height: 10),
           _ProgressTrack(
@@ -565,6 +605,22 @@ final _progress = DashboardWidgetDefinition(
               (spec) => spec.withSettings({_keyValue: next * target}),
               transient: !settled,
             ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              // Expanded, never Flexible beside a Spacer: the two would share
+              // the free space and the numbers would drift off the edge.
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: DefaultTextStyle.merge(
+                    style: TextStyle(color: context.tone.inkSoft),
+                    child: numbers(flexible: true),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       );
@@ -647,8 +703,8 @@ class _ProgressTrackState extends State<_ProgressTrack> {
         tween: Tween(begin: 0, end: shown),
         builder: (_, animated, __) => LinearProgressIndicator(
           value: animated,
-          minHeight: 9,
-          backgroundColor: widget.strong.withValues(alpha: 0.15),
+          minHeight: 8,
+          backgroundColor: widget.strong.withValues(alpha: 0.18),
           valueColor: AlwaysStoppedAnimation(widget.strong),
         ),
       ),

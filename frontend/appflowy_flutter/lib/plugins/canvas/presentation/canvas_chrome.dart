@@ -3,6 +3,7 @@ import 'package:appflowy/plugins/canvas/presentation/canvas_painters.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_geometry.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
@@ -467,11 +468,15 @@ class _OutlineRowState extends State<_OutlineRow> {
           ),
           child: Row(
             children: [
-              Icon(
-                isFrame ? Icons.crop_free_rounded : Icons.circle,
-                size: isFrame ? 13 : 5,
-                color: palette.textMuted,
-              ),
+              if (isFrame)
+                WorkspaceGlyph(
+                  Icons.crop_free_rounded,
+                  size: 13,
+                  color: palette.textMuted,
+                )
+              else
+                // A dot, not a glyph: it only says "a card in this frame".
+                Icon(Icons.circle, size: 5, color: palette.textMuted),
               const SizedBox(width: CanvasMetrics.space2),
               Expanded(
                 child: Text(
@@ -561,7 +566,11 @@ class _CanvasSearchBarState extends State<CanvasSearchBar> {
         height: 34,
         child: Row(
           children: [
-            Icon(Icons.search_rounded, size: 16, color: palette.textMuted),
+            WorkspaceGlyph(
+              Icons.search_rounded,
+              size: 16,
+              color: palette.textMuted,
+            ),
             const SizedBox(width: CanvasMetrics.space2),
             Expanded(
               child: TextEntryShortcuts(

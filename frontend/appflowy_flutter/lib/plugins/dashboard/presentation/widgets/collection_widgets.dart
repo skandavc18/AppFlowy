@@ -54,6 +54,8 @@ bool acceptsDashboardCollection(ViewPB view, CollectionKind kind) {
 DashboardWidgetDefinition _definitionFor(CollectionTypeDefinition type) =>
     DashboardWidgetDefinition(
       type: dashboardCollectionType(type.kind),
+      // A page embeds a collection through its folder block.
+      pageBlock: 'workspace_folder',
       label: () => type.label,
       description: () => type.description,
       icon: type.icon,
@@ -66,6 +68,8 @@ DashboardWidgetDefinition _definitionFor(CollectionTypeDefinition type) =>
       // The embed is already a card with its own shadow; a card around a card
       // reads as a double border.
       paintsOwnSurface: true,
+      // Its own controls live in the right-hand end of its heading.
+      controlsAtStart: true,
       slashName: type.kind.name,
       keywords: [
         'collection',

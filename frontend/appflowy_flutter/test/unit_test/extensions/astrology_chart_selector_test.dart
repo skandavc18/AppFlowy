@@ -27,6 +27,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
+import '../../support/pointer_reach.dart';
+
 const _epsilon = 0.01;
 const _appearances = [
   (name: 'light', brightness: Brightness.light, paper: false),
@@ -338,15 +340,32 @@ void main() {
                           lessThanOrEqualTo(headerRect.bottom));
                       expect(selectorRect.right,
                           lessThanOrEqualTo(cardRect.right));
-                      expect(
-                        selectorRect.right,
-                        closeTo(
-                          cardRect.right - (mode.isEditable ? 60 : 14),
-                          _epsilon,
-                        ),
-                        reason:
-                            'The pill stays at the right edge even when compact.',
-                      );
+                      // The header keeps its last target clear of the right
+                      // resize grip; in edit mode the card's own controls sit
+                      // at that edge and the pill sits just before them.
+                      final edge =
+                          cardRect.right - (DashboardMetrics.resizeHandle + 4);
+                      if (mode.isEditable) {
+                        final management = tester.getRect(
+                          find.byKey(
+                            ValueKey('dashboard-card-management-${spec.id}'),
+                          ),
+                        );
+                        expect(management.right, closeTo(edge, _epsilon));
+                        expect(
+                          selectorRect.right,
+                          closeTo(management.left - 8, _epsilon),
+                          reason: 'The pill stays at the right edge even '
+                              'when compact.',
+                        );
+                      } else {
+                        expect(
+                          selectorRect.right,
+                          closeTo(edge, _epsilon),
+                          reason: 'The pill stays at the right edge even '
+                              'when compact.',
+                        );
+                      }
                       expect(
                           headerRect.bottom, lessThanOrEqualTo(panelRect.top));
                       expect(
@@ -376,7 +395,7 @@ void main() {
                             Icons.more_horiz_rounded,
                           ]) {
                             final action = _dashboardAction(card, icon);
-                            expect(action.hitTestable(), findsOneWidget);
+                            expect(receivesPointer(tester, action), isTrue);
                             final opacities =
                                 tester.widgetList<AnimatedOpacity>(
                               _within(
@@ -468,8 +487,8 @@ void main() {
             card,
             find.byTooltip('Switch to ${style.label}'),
           );
-          expect(toggle.hitTestable(), findsOneWidget);
-          await tester.tap(toggle);
+          expect(receivesPointer(tester, toggle), isTrue);
+          await tapReceiving(tester, toggle);
           await tester.pumpAndSettle();
           final draft = controller.state[astrologyDraftKey] as AstrologyInput;
           expect(draft.style, style);

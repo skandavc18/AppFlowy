@@ -70,6 +70,9 @@ const _viewSpans = {
 List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
       DashboardWidgetDefinition(
         type: astrologyInputWidgetType,
+        // Birth details steer a whole dashboard. A page's Astrology block
+        // carries its own, so that block is the page's version of this card.
+        pageBlock: astrologyBlockType,
         extensionId: 'astrology',
         requiresScrollActivation: true,
         label: () => 'Horoscope birth details',
@@ -108,6 +111,10 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
       }.entries)
         DashboardWidgetDefinition(
           type: entry.key,
+          // The same reading is a page block of its own.
+          pageBlock: entry.value == AstrologyView.chart
+              ? astrologyBlockType
+              : 'extension_astrology_${entry.value.name}',
           extensionId: 'astrology',
           requiresScrollActivation: true,
           label: () => 'Astrology · ${entry.value.label}',
@@ -167,6 +174,7 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
         ),
       DashboardWidgetDefinition(
         type: astrologyLibraryWidgetType,
+        pageBlock: astrologyBlockType,
         extensionId: 'astrology',
         requiresScrollActivation: true,
         label: () => 'Saved horoscopes',
@@ -202,6 +210,7 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
       ),
       DashboardWidgetDefinition(
         type: astrologyEventsWidgetType,
+        pageBlock: astrologyBlockType,
         extensionId: 'astrology',
         requiresScrollActivation: true,
         label: () => 'Horoscope life events',
@@ -283,6 +292,7 @@ List<DashboardWidgetDefinition> astrologyDashboardWidgets() => [
       ),
       DashboardWidgetDefinition(
         type: astrologyDateAnalysisWidgetType,
+        pageBlock: astrologyBlockType,
         extensionId: 'astrology',
         requiresScrollActivation: true,
         label: () => 'Astrology · Date analysis',

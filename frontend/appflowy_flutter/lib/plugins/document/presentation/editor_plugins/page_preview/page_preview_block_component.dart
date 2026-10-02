@@ -186,7 +186,7 @@ class PagePreviewBlockComponentState extends State<PagePreviewBlockComponent>
             onResize: (value) => _updateWidth(value),
             child: PagePreviewCard(
               view: view,
-              userProfile: context.read<DocumentBloc>().state.userProfilePB,
+              userProfile: context.read<DocumentBloc?>()?.state.userProfilePB,
               previewCache: previewCache,
               onOpen: () => context.read<TabsBloc>().openPlugin(view),
               previewMode: previewMode,

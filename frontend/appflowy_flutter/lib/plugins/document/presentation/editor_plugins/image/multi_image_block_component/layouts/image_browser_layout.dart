@@ -55,7 +55,7 @@ class _ImageBrowserLayoutState extends State<ImageBrowserLayout> {
   void initState() {
     super.initState();
     _userProfile = context.read<UserWorkspaceBloc?>()?.state.userProfile ??
-        context.read<DocumentBloc>().state.userProfilePB;
+        context.read<DocumentBloc?>()?.state.userProfilePB;
   }
 
   @override
@@ -299,7 +299,7 @@ class _ImageBrowserLayoutState extends State<ImageBrowserLayout> {
       return;
     }
 
-    final isLocalMode = context.read<DocumentBloc>().isLocalMode;
+    final isLocalMode = context.read<DocumentBloc?>()?.isLocalMode ?? true;
     final transaction = widget.editorState.transaction;
     final images = await extractAndUploadImages(context, urls, isLocalMode);
     if (images.isEmpty) {

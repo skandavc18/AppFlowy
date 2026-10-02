@@ -1109,13 +1109,19 @@ void main() {
             tester.getSize(find.byKey(const ValueKey('resizable_media'))),
             const Size(280, 300),
           );
+          // The reading is chosen from a menu button now, not a dropdown;
+          // a read-only block shows its reading but cannot change it.
+          expect(find.byType(DropdownButton<AstrologyView>), findsNothing);
+          final pickers = tester.widgetList<TextButton>(
+            find.ancestor(
+              of: find.text(entry.value.$2.label),
+              matching: find.byType(TextButton),
+            ),
+          );
+          expect(pickers, isNotEmpty);
           expect(
-            tester
-                .widget<DropdownButton<AstrologyView>>(
-                  find.byType(DropdownButton<AstrologyView>),
-                )
-                .onChanged,
-            isNull,
+            pickers.every((picker) => picker.onPressed == null),
+            isTrue,
           );
           for (final chip
               in tester.widgetList<ChoiceChip>(find.byType(ChoiceChip))) {

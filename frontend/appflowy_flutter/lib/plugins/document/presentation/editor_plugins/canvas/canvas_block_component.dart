@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/interactive/interactive_view_picker.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/resizable_media.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_metadata.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
@@ -248,7 +249,7 @@ class _CanvasBlockComponentState extends State<CanvasBlockComponent>
       color: palette.surface,
       child: Row(
         children: [
-          Icon(
+          WorkspaceGlyph(
             Icons.dashboard_customize_rounded,
             size: 15,
             color: palette.textMuted,
@@ -517,10 +518,15 @@ class _PickerButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
+              // The application's own glyphs, as on the canvas itself; a
+              // disabled button keeps its quiet ink.
+              WorkspaceGlyph(
                 icon,
                 size: 15,
                 color: primary ? palette.accent : palette.textSecondary,
+                role: enabled
+                    ? WorkspaceGlyphRole.standard
+                    : WorkspaceGlyphRole.preserveInk,
               ),
               const SizedBox(width: 6),
               Text(

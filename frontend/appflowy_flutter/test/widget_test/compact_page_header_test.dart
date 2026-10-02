@@ -190,8 +190,8 @@ void main() {
               ),
             )
             .label;
-        final rawImage = tester.widget<RawImage>(find.byType(RawImage)).image!;
-        expect(rawImage.isCloneOf(decoded.image), isTrue);
+        final rawImage = await _awaitCoverFrame(tester);
+        _expectCoverOf(rawImage, decoded.image);
         expect(cover.left - header.left, 8);
         expect(header.right - cover.right, 8);
         expect(cover.top - header.top, 8);
@@ -933,6 +933,7 @@ void main() {
       const selection = TextSelection(baseOffset: 2, extentOffset: 7);
       frame.title.selection = selection;
       expect(tester.takeException(), isNull);
+      ui.Image? shown;
       for (final appearance in vividIconTestAppearances) {
         for (final direction in ui.TextDirection.values) {
           frame
@@ -962,13 +963,12 @@ void main() {
           expect(tester.state(find.byType(DesktopCover)), same(renderer));
           expect(tester.state(find.byType(EditableText)), same(titleState));
           expect(frame.title.selection, selection);
-          expect(
-            tester
-                .widget<RawImage>(find.byType(RawImage))
-                .image!
-                .isCloneOf(decoded.image),
-            isTrue,
-          );
+          // Hover, appearance and direction never reload the cover: the same
+          // decoded frame stays on screen.
+          final image = await _awaitCoverFrame(tester);
+          shown ??= image;
+          expect(image.isCloneOf(shown), isTrue);
+          _expectCoverOf(image, decoded.image);
           expect(tester.takeException(), isNull);
         }
       }
@@ -1529,6 +1529,37 @@ Future<ImageInfo> _decodeCover(WidgetTester tester) async =>
         stream.removeListener(listener);
       }
     }))!;
+
+/// The cover's first decoded frame, once it is on screen.
+///
+/// A cover is decoded at its laid-out size through a resizing provider, so it
+/// cannot be warmed before layout; the engine's decode needs real time. Turns
+/// alternate a bounded real-time wait with a frame, never an await of a
+/// fake-clock future.
+Future<ui.Image> _awaitCoverFrame(WidgetTester tester) async {
+  for (var turn = 0; turn < 200; turn++) {
+    final raw = find.byType(RawImage);
+    if (raw.evaluate().length == 1) {
+      final image = tester.widget<RawImage>(raw).image;
+      if (image != null) return image;
+    }
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump();
+  }
+  fail('The cover never showed a decoded frame.');
+}
+
+/// [shown] is [source] decoded for its box: never larger, same proportions.
+void _expectCoverOf(ui.Image shown, ui.Image source) {
+  expect(shown.width, lessThanOrEqualTo(source.width));
+  expect(shown.height, lessThanOrEqualTo(source.height));
+  expect(
+    shown.width / shown.height,
+    closeTo(source.width / source.height, 0.02),
+  );
+}
 
 class _Backend extends ViewCoverActionsBackend {
   _Backend({this.waitForUpload = false, this.waitForSave = false});

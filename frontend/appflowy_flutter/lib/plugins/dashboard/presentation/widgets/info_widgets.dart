@@ -35,6 +35,9 @@ final _weather = DashboardWidgetDefinition(
   defaultColumnSpan: 3,
   defaultRowSpan: 3,
   defaultAccent: DashboardAccent.blue,
+  // A little piece of sky rather than a box with a number in it.
+  surface: DashboardSurface.gradient,
+  identity: DashboardAccent.blue,
   slashName: 'weather',
   keywords: const ['weather', 'forecast', 'temperature', 'rain', 'outside'],
   builder: (context) => _WeatherBody(context: context),
@@ -187,11 +190,13 @@ class _WeatherBodyState extends State<_WeatherBody> {
   @override
   Widget build(BuildContext context) {
     final palette = widget.context.palette;
+    final tone = widget.context.tone;
     final place = widget.context.spec.setting(_keyPlace).trim();
     if (place.isEmpty) {
       return DashboardPlaceholder(
         palette: palette,
         icon: Icons.location_on_outlined,
+        color: tone.label,
         message: LocaleKeys.dashboard_weather_pickPlace.tr(),
         action: LocaleKeys.dashboard_config_choose.tr(),
         onAction: () => unawaited(_choosePlace()),
@@ -202,6 +207,7 @@ class _WeatherBodyState extends State<_WeatherBody> {
       return DashboardPlaceholder(
         palette: palette,
         icon: _loading ? Icons.cloud_queue_rounded : Icons.cloud_off_rounded,
+        color: tone.label,
         message: _loading
             ? LocaleKeys.dashboard_widget_reading.tr()
             : (_failure ?? LocaleKeys.dashboard_weather_unavailable.tr()),
@@ -214,26 +220,116 @@ class _WeatherBodyState extends State<_WeatherBody> {
             'fahrenheit'
         ? '°F'
         : '°C';
-    return Row(
+    String degrees(double value) =>
+        '${formatDashboardNumber(value, decimals: 0)}°';
+
+    // A small piece of sky: where, how warm, what it is doing, and the
+    // day's range — the temperature large, everything else quiet around it.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Icon(
-          weatherIconFor(weather.code),
-          size: 34,
-          color: widget.context.strong,
+        Row(
+          children: [
+            Icon(Icons.near_me_rounded, size: 13, color: tone.label),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Text(
+                place,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: DashboardType.eyebrow(palette, color: tone.label),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 14),
         Expanded(
-          child: DashboardFigure(
-            value: formatDashboardNumber(weather.temperature, decimals: 0),
-            suffix: unit,
-            palette: palette,
-            size: 28,
-            caption: '$place · '
-                '${formatDashboardNumber(weather.low, decimals: 0)}'
-                '–${formatDashboardNumber(weather.high, decimals: 0)}$unit',
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.bottomLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          formatDashboardNumber(
+                            weather.temperature,
+                            decimals: 0,
+                          ),
+                          style: DashboardType.display(
+                            palette,
+                            size: 56,
+                            weight: FontWeight.w300,
+                            color: tone.figure,
+                          ),
+                        ),
+                        Text(
+                          unit,
+                          style: DashboardType.display(
+                            palette,
+                            size: 22,
+                            color: tone.label,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4, left: 6),
+                child: Icon(
+                  weatherIconFor(weather.code),
+                  size: 38,
+                  color: tone.strong,
+                ),
+              ),
+            ],
           ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          [
+            _conditionOf(weather.code),
+            LocaleKeys.dashboard_weather_high.tr(
+              args: [degrees(weather.high)],
+            ),
+            LocaleKeys.dashboard_weather_low.tr(
+              args: [degrees(weather.low)],
+            ),
+          ].join('  ·  '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: DashboardType.caption(palette, color: tone.inkSoft)
+              .copyWith(fontSize: 12.5),
         ),
       ],
     );
   }
+}
+
+/// WMO weather codes, in words.
+String _conditionOf(int code) {
+  if (code == 0) {
+    return LocaleKeys.dashboard_weather_clear.tr();
+  }
+  if (code <= 3) {
+    return LocaleKeys.dashboard_weather_cloudy.tr();
+  }
+  if (code <= 48) {
+    return LocaleKeys.dashboard_weather_fog.tr();
+  }
+  if (code <= 67 || (code >= 80 && code <= 82)) {
+    return LocaleKeys.dashboard_weather_rain.tr();
+  }
+  if (code <= 79 || (code >= 85 && code <= 86)) {
+    return LocaleKeys.dashboard_weather_snow.tr();
+  }
+  return LocaleKeys.dashboard_weather_storm.tr();
 }

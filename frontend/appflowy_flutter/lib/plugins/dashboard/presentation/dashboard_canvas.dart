@@ -38,6 +38,7 @@ class DashboardSectionView extends StatefulWidget {
 class _DashboardSectionViewState extends State<DashboardSectionView> {
   bool _hovered = false;
   bool _renaming = false;
+  bool _editingSubtitle = false;
 
   DashboardController get controller => widget.controller;
 
@@ -66,11 +67,11 @@ class _DashboardSectionViewState extends State<DashboardSectionView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (section.hasHeading || editable)
+            if (section.hasHeading || section.subtitle.isNotEmpty || editable)
               _buildHeading(context, editable),
             if (section.showDivider)
               Padding(
-                padding: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.only(bottom: 16),
                 child: Container(height: 1, color: palette.gridLine),
               ),
             _DashboardSectionReveal(
@@ -92,103 +93,183 @@ class _DashboardSectionViewState extends State<DashboardSectionView> {
     );
   }
 
+  /// A section reads like a chapter heading in a magazine: a quiet title, an
+  /// optional line beneath it, and nothing else until it is pointed at.
+  ///
+  /// An untitled section shows nothing at rest — not "Untitled section" — and
+  /// offers "Add a heading" only while the pointer is over it.
   Widget _buildHeading(BuildContext context, bool editable) {
     final title = section.title;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10, left: 2),
-      child: Row(
-        children: [
-          if (section.hasHeading || section.collapsed)
-            _Chevron(
-              collapsed: section.collapsed,
-              palette: palette,
-              onPressed: () => controller.edit(
-                (document) => document.withSection(
-                  section.copyWith(collapsed: !section.collapsed),
-                ),
-              ),
-            ),
-          Flexible(
-            // A section is named the way a page is named: double click it.
-            child: SurfaceFindTarget(
-              id: dashboardFindSection(section.id),
-              child: editable
-                  ? WorkspaceInlineEditableText(
-                      text: title,
-                      editingValue: title,
-                      editing: _renaming,
-                      style: DashboardType.sectionLabel(palette).copyWith(
-                        color: title.isEmpty
-                            ? palette.textMuted
-                            : palette.textSecondary,
-                      ),
-                      display: Text(
-                        title.isEmpty
-                            ? LocaleKeys.dashboard_section_untitled.tr()
-                            : title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: DashboardType.sectionLabel(palette).copyWith(
-                          color: title.isEmpty
-                              ? palette.textMuted
-                              : palette.textSecondary,
-                        ),
-                      ),
-                      onDoubleTap: () => setState(() => _renaming = true),
-                      onCancelled: () => setState(() => _renaming = false),
-                      onSubmitted: (name) async {
-                        setState(() => _renaming = false);
-                        controller.edit(
-                          (document) => document.withSection(
-                            section.copyWith(title: name.trim()),
-                          ),
-                        );
-                        return true;
-                      },
-                    )
-                  : Text(
-                      title,
+    final named = title.isNotEmpty;
+    final subtitle = section.subtitle;
+    final showsSubtitle = subtitle.isNotEmpty || _editingSubtitle;
+    final reveal = _hovered || _renaming;
+    final titleStyle = DashboardType.sectionTitle(palette);
+
+    final Widget name = editable
+        ? WorkspaceInlineEditableText(
+            text: title,
+            editingValue: title,
+            editing: _renaming,
+            style: titleStyle,
+            display: named
+                ? Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: titleStyle,
+                  )
+                : AnimatedOpacity(
+                    duration: DashboardMetrics.hover,
+                    opacity: reveal ? 1 : 0,
+                    child: Text(
+                      LocaleKeys.dashboard_section_heading.tr(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: DashboardType.sectionLabel(palette).copyWith(
-                        color: palette.textSecondary,
+                      style: titleStyle.copyWith(
+                        color: palette.textMuted,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
+                  ),
+            // A heading that is not there yet is added with one click; one
+            // that is there is renamed the way a page is: double click it.
+            onTap: named || !reveal
+                ? null
+                : () => setState(() => _renaming = true),
+            onDoubleTap: () => setState(() => _renaming = true),
+            onCancelled: () => setState(() => _renaming = false),
+            onSubmitted: (name) async {
+              setState(() => _renaming = false);
+              controller.edit(
+                (document) => document.withSection(
+                  section.copyWith(title: name.trim()),
+                ),
+              );
+              return true;
+            },
+          )
+        : Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: titleStyle,
+          );
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: named || showsSubtitle ? 14 : 6,
+        left: 2,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 30,
+            child: Row(
+              children: [
+                Flexible(
+                  child: SurfaceFindTarget(
+                    id: dashboardFindSection(section.id),
+                    child: name,
+                  ),
+                ),
+                if (named || section.collapsed)
+                  // Folding a section away is offered beside its name, and
+                  // only while it is pointed at — or when it is folded, so it
+                  // can be found again.
+                  AnimatedOpacity(
+                    duration: DashboardMetrics.hover,
+                    opacity: reveal || section.collapsed ? 1 : 0,
+                    child: IgnorePointer(
+                      ignoring: !(reveal || section.collapsed),
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 2),
+                        child: _Chevron(
+                          collapsed: section.collapsed,
+                          palette: palette,
+                          onPressed: () => controller.edit(
+                            (document) => document.withSection(
+                              section.copyWith(collapsed: !section.collapsed),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (editable) ...[
+                  const SizedBox(width: 4),
+                  // Beside the name, not adrift at the far edge of the board.
+                  AnimatedOpacity(
+                    duration: DashboardMetrics.hover,
+                    opacity: _hovered ? 1 : 0,
+                    child: IgnorePointer(
+                      ignoring: !_hovered,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          DashboardIconButton(
+                            icon: Icons.add_rounded,
+                            palette: palette,
+                            size: 24,
+                            tooltip: LocaleKeys.dashboard_add_widget.tr(),
+                            onPressed: () => _addWidget(context),
+                          ),
+                          Builder(
+                            builder: (anchor) => DashboardIconButton(
+                              icon: Icons.more_horiz_rounded,
+                              palette: palette,
+                              size: 24,
+                              tooltip:
+                                  LocaleKeys.dashboard_section_options.tr(),
+                              onPressed: () => _showMenu(anchor),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+                const Spacer(),
+              ],
             ),
           ),
-          if (editable) ...[
-            const SizedBox(width: 6),
-            // Beside the name, not adrift at the far edge of the board.
-            AnimatedOpacity(
-              duration: DashboardMetrics.hover,
-              opacity: _hovered ? 1 : 0,
-              child: IgnorePointer(
-                ignoring: !_hovered,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    DashboardIconButton(
-                      icon: Icons.add_rounded,
-                      palette: palette,
-                      size: 24,
-                      tooltip: LocaleKeys.dashboard_add_widget.tr(),
-                      onPressed: () => _addWidget(context),
-                    ),
-                    Builder(
-                      builder: (anchor) => DashboardIconButton(
-                        icon: Icons.more_horiz_rounded,
-                        palette: palette,
-                        size: 24,
-                        tooltip: LocaleKeys.dashboard_section_options.tr(),
-                        onPressed: () => _showMenu(anchor),
+          if (showsSubtitle)
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: SurfaceFindTarget(
+                id: dashboardFindSectionSubtitle(section.id),
+                child: editable
+                    ? WorkspaceInlineEditableText(
+                        text: subtitle.isEmpty
+                            ? LocaleKeys.dashboard_section_subtitle.tr()
+                            : subtitle,
+                        editingValue: subtitle,
+                        editing: _editingSubtitle,
+                        style: DashboardType.sectionSubtitle(palette),
+                        onDoubleTap: () =>
+                            setState(() => _editingSubtitle = true),
+                        onCancelled: () =>
+                            setState(() => _editingSubtitle = false),
+                        onSubmitted: (value) async {
+                          setState(() => _editingSubtitle = false);
+                          controller.edit(
+                            (document) => document.withSection(
+                              section.copyWith(subtitle: value.trim()),
+                            ),
+                          );
+                          return true;
+                        },
+                      )
+                    : Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: DashboardType.sectionSubtitle(palette),
                       ),
-                    ),
-                  ],
-                ),
               ),
             ),
-          ],
-          const Spacer(),
         ],
       ),
     );
@@ -233,6 +314,13 @@ class _DashboardSectionViewState extends State<DashboardSectionView> {
           label: LocaleKeys.dashboard_section_rename.tr(),
           icon: Icons.edit_rounded,
           onSelected: () => setState(() => _renaming = true),
+        ),
+        AppMenuItem(
+          label: section.subtitle.isEmpty
+              ? LocaleKeys.dashboard_section_subtitle.tr()
+              : LocaleKeys.dashboard_section_editSubtitle.tr(),
+          icon: Icons.short_text_rounded,
+          onSelected: () => setState(() => _editingSubtitle = true),
         ),
         AppMenuItem(
           label: LocaleKeys.dashboard_section_arrange.tr(),
@@ -383,6 +471,11 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
   final GlobalKey _board = GlobalKey();
   DashboardSectionRegistry? _registry;
 
+  /// Every widget this canvas has drawn, so one that arrives later can be
+  /// told apart from the board's first drawing.
+  final Set<String> _known = {};
+  bool _primed = false;
+
   /// The last grid the canvas was drawn on, so a drag can keep working while
   /// the page scrolls under it.
   DashboardGridMetrics? _lastMetrics;
@@ -460,7 +553,7 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
                 id: spec.id,
                 placement: spec.id == _activeId && _livePlacement != null
                     ? _livePlacement!
-                    : _forCanvas(spec.placement, columns, pinned),
+                    : _forCanvas(spec.placement, columns, pinned, metrics),
               ),
           ],
           columns: columns,
@@ -498,6 +591,18 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
             return byRow != 0 ? byRow : first.column.compareTo(second.column);
           });
 
+        // A widget that arrives after the board is up — added, pasted back by
+        // undo, carried in from another section — settles in rather than
+        // popping into existence. The board's first drawing does not.
+        final entering = {
+          for (final spec in visible)
+            if (_primed && !_known.contains(spec.id)) spec.id,
+        };
+        _known.addAll(visible.map((spec) => spec.id));
+        _primed = true;
+        final animateEntrance =
+            !settings.reduceMotion && !MediaQuery.disableAnimationsOf(context);
+
         return SizedBox(
           key: _board,
           height: _frozenHeight ?? height,
@@ -512,6 +617,7 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
                   metrics: metrics,
                   columns: columns,
                   pinned: pinned,
+                  entering: animateEntrance && entering.contains(spec.id),
                 ),
             ],
           ),
@@ -526,23 +632,28 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
     required DashboardGridMetrics metrics,
     required int columns,
     required bool pinned,
+    required bool entering,
   }) {
     final active = spec.id == _activeId;
-    final card = RepaintBoundary(
-      child: DashboardCard(
-        key: ValueKey(spec.id),
-        controller: controller,
-        spec: spec,
-        palette: widget.palette,
-        selected: controller.selectedWidgetId == spec.id,
-        dragging: active && _resizing == null,
-        onDragStart: () => _begin(spec, placement, null),
-        onDragUpdate: (delta, pointer) =>
-            _move(delta, pointer, metrics, columns),
-        onDragEnd: () => _commit(spec, columns, pinned, metrics),
-        onResizeStart: (edge) => _begin(spec, placement, edge),
-        onResizeUpdate: (edge, delta) => _resize(spec, delta, metrics, columns),
-        onResizeEnd: () => _commit(spec, columns, pinned, metrics),
+    final card = _CardEntrance(
+      animate: entering,
+      child: RepaintBoundary(
+        child: DashboardCard(
+          key: ValueKey(spec.id),
+          controller: controller,
+          spec: spec,
+          palette: widget.palette,
+          selected: controller.selectedWidgetId == spec.id,
+          dragging: active && _resizing == null,
+          onDragStart: () => _begin(spec, placement, null),
+          onDragUpdate: (delta, pointer) =>
+              _move(delta, pointer, metrics, columns),
+          onDragEnd: () => _commit(spec, columns, pinned, metrics),
+          onResizeStart: (edge) => _begin(spec, placement, edge),
+          onResizeUpdate: (edge, delta) =>
+              _resize(spec, delta, metrics, columns),
+          onResizeEnd: () => _commit(spec, columns, pinned, metrics),
+        ),
       ),
     );
 
@@ -593,7 +704,8 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
     );
   }
 
-  /// The outline of where the card will land.
+  /// The outline of where the card will land: a soft pool of the accent, so
+  /// the drop reads as a place rather than as a box drawn on the page.
   Widget _buildLanding(DashboardGridMetrics metrics) {
     final placement = _livePlacement;
     if (placement == null) {
@@ -610,10 +722,12 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
       child: IgnorePointer(
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: widget.palette.accent.withValues(alpha: 0.07),
+            color: widget.palette.accent.withValues(
+              alpha: widget.palette.isDark ? 0.12 : 0.07,
+            ),
             borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
             border: Border.all(
-              color: widget.palette.accent.withValues(alpha: 0.32),
+              color: widget.palette.accent.withValues(alpha: 0.28),
               width: 1.5,
             ),
           ),
@@ -622,23 +736,11 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
     );
   }
 
-  Widget _buildEmpty(BuildContext context) => GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _add(context),
-        child: Container(
-          height: 132,
-          decoration: BoxDecoration(
-            color: widget.palette.sunken.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
-          ),
-          child: DashboardPlaceholder(
-            palette: widget.palette,
-            icon: Icons.add_rounded,
-            message: LocaleKeys.dashboard_empty_section.tr(),
-            action: LocaleKeys.dashboard_add_widget.tr(),
-            onAction: () => _add(context),
-          ),
-        ),
+  /// An empty section while arranging: a quiet pool with one invitation in
+  /// it, rather than a grey slab announcing that nothing is there.
+  Widget _buildEmpty(BuildContext context) => _EmptySection(
+        palette: widget.palette,
+        onAdd: () => _add(context),
       );
 
   Future<void> _add(BuildContext context) async {
@@ -665,18 +767,40 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
   /// whatever the window allows. A COLUMN COUNT THE PERSON CHOSE is not that:
   /// it is a coarser or finer grid, so the spans are taken at face value and
   /// a card really does become wider when there are fewer columns.
+  ///
+  /// Scaling alone would shrink a quarter-width widget to a sliver in a
+  /// narrow window, so a widget is also given as many columns as it needs to
+  /// stay readable. That is display only: what is stored never changes.
   DashboardPlacement _forCanvas(
     DashboardPlacement placement,
     int columns,
     bool pinned,
-  ) =>
-      pinned
-          ? placement
-          : scaleDashboardPlacement(
-              placement,
-              from: DashboardPlacement.referenceColumns,
-              to: columns,
-            );
+    DashboardGridMetrics metrics,
+  ) {
+    if (pinned) {
+      return placement;
+    }
+    final scaled = scaleDashboardPlacement(
+      placement,
+      from: DashboardPlacement.referenceColumns,
+      to: columns,
+    );
+    if (columns >= DashboardPlacement.referenceColumns ||
+        metrics.widthOf(scaled.columnSpan) >= _readableWidth) {
+      return scaled;
+    }
+    var span = scaled.columnSpan;
+    while (span < columns && metrics.widthOf(span) < _readableWidth) {
+      span++;
+    }
+    return scaled.copyWith(
+      columnSpan: span,
+      column: math.min(scaled.column, columns - span),
+    );
+  }
+
+  /// The narrowest a widget is drawn when the window is what made it narrow.
+  static const double _readableWidth = 190;
 
   void _begin(
     DashboardWidgetSpec spec,
@@ -867,13 +991,25 @@ class _DashboardCanvasState extends State<DashboardCanvas> {
         ? placement
         : placement.copyWith(row: metrics.rowAt(landed!.local.dy));
 
-    final stored = pinned
+    var stored = pinned
         ? settled
         : scaleDashboardPlacement(
             settled,
             from: columns,
             to: DashboardPlacement.referenceColumns,
           );
+    if (moving) {
+      // Carrying a widget somewhere is not a request to resize it. A narrow
+      // window may have widened it only to keep it readable; scaling that
+      // back up would quietly make it bigger everywhere else.
+      final grid = pinned ? columns : DashboardPlacement.referenceColumns;
+      final span = math.min(spec.placement.columnSpan, grid);
+      stored = stored.copyWith(
+        columnSpan: span,
+        rowSpan: spec.placement.rowSpan,
+        column: math.min(stored.column, math.max(0, grid - span)),
+      );
+    }
     if (target == null && stored == spec.placement) {
       return;
     }
@@ -923,6 +1059,103 @@ IconData dashboardSectionLayoutIcon(DashboardSectionLayout layout) =>
       DashboardSectionLayout.sidebarLeft => Icons.view_sidebar_rounded,
       DashboardSectionLayout.sidebarRight => Icons.vertical_split_rounded,
     };
+
+/// A widget arriving on the board: it fades up and settles to full size.
+///
+/// Decided once, when the widget first appears. The wrapper is always the
+/// same widget, so nothing underneath it is rebuilt when the motion ends.
+class _CardEntrance extends StatefulWidget {
+  const _CardEntrance({required this.animate, required this.child});
+
+  final bool animate;
+  final Widget child;
+
+  @override
+  State<_CardEntrance> createState() => _CardEntranceState();
+}
+
+class _CardEntranceState extends State<_CardEntrance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 280),
+    value: widget.animate ? 0 : 1,
+  );
+  late final Animation<double> _curve = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.animate) {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: _curve,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.95, end: 1).animate(_curve),
+          child: widget.child,
+        ),
+      );
+}
+
+class _EmptySection extends StatefulWidget {
+  const _EmptySection({required this.palette, required this.onAdd});
+
+  final DashboardPalette palette;
+  final VoidCallback onAdd;
+
+  @override
+  State<_EmptySection> createState() => _EmptySectionState();
+}
+
+class _EmptySectionState extends State<_EmptySection> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onAdd,
+        child: AnimatedContainer(
+          duration: DashboardMetrics.hover,
+          curve: DashboardMetrics.curve,
+          height: 112,
+          decoration: BoxDecoration(
+            color: _hovered
+                ? palette.accent.withValues(alpha: palette.isDark ? 0.09 : 0.05)
+                : palette.sunken
+                    .withValues(alpha: palette.isDark ? 0.35 : 0.45),
+            borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
+          ),
+          child: DashboardPlaceholder(
+            palette: palette,
+            icon: Icons.add_rounded,
+            message: LocaleKeys.dashboard_empty_section.tr(),
+            action: LocaleKeys.dashboard_add_widget.tr(),
+            onAction: widget.onAdd,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _Chevron extends StatelessWidget {
   const _Chevron({

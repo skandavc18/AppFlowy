@@ -289,6 +289,7 @@ class DashboardSection {
   const DashboardSection({
     required this.id,
     this.title = '',
+    this.subtitle = '',
     this.collapsed = false,
     this.layout = DashboardSectionLayout.free,
     this.widgets = const [],
@@ -301,6 +302,7 @@ class DashboardSection {
       DashboardSection(
         id: json['id'] as String? ?? '',
         title: json['title'] as String? ?? '',
+        subtitle: json['subtitle'] as String? ?? '',
         collapsed: json['collapsed'] == true,
         layout: DashboardSectionLayout.fromValue(json['layout']),
         widgets: [
@@ -315,6 +317,9 @@ class DashboardSection {
 
   final String id;
   final String title;
+
+  /// A line under the heading — "Your day at a glance".
+  final String subtitle;
   final bool collapsed;
   final DashboardSectionLayout layout;
   final List<DashboardWidgetSpec> widgets;
@@ -336,6 +341,7 @@ class DashboardSection {
   DashboardSection copyWith({
     String? id,
     String? title,
+    String? subtitle,
     bool? collapsed,
     DashboardSectionLayout? layout,
     List<DashboardWidgetSpec>? widgets,
@@ -346,6 +352,7 @@ class DashboardSection {
       DashboardSection(
         id: id ?? this.id,
         title: title ?? this.title,
+        subtitle: subtitle ?? this.subtitle,
         collapsed: collapsed ?? this.collapsed,
         layout: layout ?? this.layout,
         widgets: widgets ?? this.widgets,
@@ -372,6 +379,7 @@ class DashboardSection {
   Map<String, Object?> toJson() => {
         'id': id,
         if (title.isNotEmpty) 'title': title,
+        if (subtitle.isNotEmpty) 'subtitle': subtitle,
         if (collapsed) 'collapsed': true,
         if (layout != DashboardSectionLayout.free) 'layout': layout.name,
         'widgets': [for (final widget in widgets) widget.toJson()],
@@ -385,6 +393,7 @@ class DashboardSection {
       other is DashboardSection &&
       other.id == id &&
       other.title == title &&
+      other.subtitle == subtitle &&
       other.collapsed == collapsed &&
       other.layout == layout &&
       listEquals(other.widgets, widgets) &&
@@ -396,6 +405,7 @@ class DashboardSection {
   int get hashCode => Object.hash(
         id,
         title,
+        subtitle,
         collapsed,
         layout,
         Object.hashAll(widgets),

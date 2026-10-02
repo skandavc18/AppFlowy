@@ -11,6 +11,7 @@ import 'package:appflowy/plugins/dashboard/presentation/dashboard_card.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_page.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
+import 'package:appflowy/plugins/dashboard/presentation/widgets/page_block_widget.dart';
 import 'package:appflowy/shared/scrolling/no_scrollbar_behavior.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
 import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
@@ -61,8 +62,19 @@ void main() {
       _nativeTypes,
     );
     expect(definitions, hasLength(10));
-    for (final definition in DashboardWidgetRegistry.all()
-        .where((definition) => definition.extensionId.isEmpty)) {
+    // Built-in widgets leave the wheel to the dashboard, except the one that
+    // carries a page's blocks: a map, a diagram or a long table inside it
+    // would otherwise take the wheel from the page.
+    expect(
+      DashboardWidgetRegistry.definitionFor(dashboardPageBlockType)
+          ?.requiresScrollActivation,
+      isTrue,
+    );
+    for (final definition in DashboardWidgetRegistry.all().where(
+      (definition) =>
+          definition.extensionId.isEmpty &&
+          definition.type != dashboardPageBlockType,
+    )) {
       expect(
         definition.requiresScrollActivation,
         isFalse,

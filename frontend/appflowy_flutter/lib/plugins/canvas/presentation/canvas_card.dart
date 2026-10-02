@@ -7,6 +7,7 @@ import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_view_resolver.dart';
 import 'package:appflowy/shared/find_replace/find_highlight.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
 import 'package:easy_localization/easy_localization.dart';
@@ -88,6 +89,7 @@ class CanvasCard extends StatefulWidget {
     required this.onOpen,
     required this.onSetUp,
     required this.onEdit,
+    this.onDataChanged,
     this.connectingFrom = false,
     this.connectTarget = false,
     this.searchHit = false,
@@ -131,6 +133,9 @@ class CanvasCard extends StatefulWidget {
   /// Change what the card already holds: rewrite the diagram, swap the
   /// picture, point the link somewhere else.
   final VoidCallback onEdit;
+
+  /// A widget or block card changed what it holds, under [key] of its data.
+  final void Function(String key, Object? value)? onDataChanged;
 
   /// This card is where a connection being drawn started.
   final bool connectingFrom;
@@ -177,7 +182,9 @@ class _CanvasCardState extends State<CanvasCard> {
       CanvasNodeKind.diagram ||
       CanvasNodeKind.image ||
       CanvasNodeKind.text ||
-      CanvasNodeKind.code =>
+      CanvasNodeKind.code ||
+      CanvasNodeKind.widget ||
+      CanvasNodeKind.block =>
         null,
     };
   }
@@ -216,6 +223,14 @@ class _CanvasCardState extends State<CanvasCard> {
             LocaleKeys.canvas_card_addUrl.tr(),
             Icons.link_rounded,
           ),
+        CanvasNodeKind.widget => (
+            LocaleKeys.canvas_card_chooseWidget.tr(),
+            Icons.widgets_rounded,
+          ),
+        CanvasNodeKind.block => (
+            LocaleKeys.canvas_card_chooseBlock.tr(),
+            Icons.dashboard_customize_rounded,
+          ),
         _ => (
             LocaleKeys.canvas_card_chooseObject.tr(),
             Icons.search_rounded,
@@ -243,6 +258,11 @@ class _CanvasCardState extends State<CanvasCard> {
       CanvasNodeKind.canvas ||
       CanvasNodeKind.file =>
         (LocaleKeys.canvas_card_chooseObject.tr(), Icons.swap_horiz_rounded),
+      // A widget or block is used in place: this hands it the pointer.
+      CanvasNodeKind.widget || CanvasNodeKind.block => (
+          LocaleKeys.canvas_card_use.tr(),
+          Icons.touch_app_rounded
+        ),
     };
   }
 
@@ -315,8 +335,12 @@ class _CanvasCardState extends State<CanvasCard> {
               )
             : null,
         clipBehavior: Clip.antiAlias,
+        // A picture is the card; a widget or a block brings its own surface
+        // and insets, so the card does not frame it a second time.
         padding: EdgeInsets.all(
-          node.kind == CanvasNodeKind.image ? 0 : CanvasMetrics.space3,
+          node.kind == CanvasNodeKind.image || node.kind.isInteractive
+              ? 0
+              : CanvasMetrics.space3,
         ),
         // A card that is not being typed into must not take the pointer, or
         // the board could never drag it: the field would win the arena.
@@ -331,6 +355,7 @@ class _CanvasCardState extends State<CanvasCard> {
             onTextChanged: widget.onTextChanged,
             onEditingFinished: widget.onEditingFinished,
             onOpen: widget.onOpen,
+            onDataChanged: widget.onDataChanged,
           ),
         ),
       ),
@@ -391,7 +416,7 @@ class _CanvasCardState extends State<CanvasCard> {
             child: Transform.scale(
               scale: inverse,
               alignment: Alignment.topRight,
-              child: Icon(
+              child: WorkspaceGlyph(
                 Icons.lock_rounded,
                 size: 13,
                 color: palette.textMuted,
@@ -836,7 +861,7 @@ class _CanvasFrameBoxState extends State<CanvasFrameBox> {
             child: AnimatedRotation(
               duration: CanvasMetrics.hover,
               turns: frame.collapsed ? -0.25 : 0,
-              child: Icon(
+              child: WorkspaceGlyph(
                 Icons.keyboard_arrow_down_rounded,
                 size: 16,
                 color: palette.textMuted,

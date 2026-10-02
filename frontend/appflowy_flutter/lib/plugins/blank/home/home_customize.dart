@@ -1,13 +1,9 @@
 import 'dart:math' as math;
 
 import 'package:appflowy/generated/locale_keys.g.dart';
-import 'package:appflowy/plugins/dashboard/presentation/dashboard_card.dart'
-    show dashboardTextScaleKey;
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_standalone_card.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
-import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_registry.dart';
-import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget_kit.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
-import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
 import 'package:appflowy/shared/workspace_chrome.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
@@ -623,146 +619,11 @@ class HomeWidgetCard extends StatelessWidget {
   final DashboardPalette palette;
 
   @override
-  Widget build(BuildContext context) {
-    final definition = DashboardWidgetRegistry.definitionFor(spec.type);
-    if (definition?.requiresScrollActivation != true) {
-      return _buildCard(context, definition);
-    }
-    // An embedded list or table does not take the page's scrolling until it
-    // is clicked, exactly as on a dashboard.
-    return ListenableBuilder(
-      listenable: controller,
-      builder: (context, _) => ScrollActivationRegion(
-        key: ValueKey('home-widget-scroll-activation-${spec.id}'),
-        active: controller.selectedWidgetId == spec.id,
-        onActiveChanged: (active) {
-          if (active) {
-            controller.select(spec.id);
-          } else if (controller.selectedWidgetId == spec.id) {
-            controller.select(null);
-          }
-        },
-        child: Builder(builder: (context) => _buildCard(context, definition)),
-      ),
-    );
-  }
-
-  Widget _buildCard(
-    BuildContext context,
-    DashboardWidgetDefinition? definition,
-  ) {
-    final widgetContext = DashboardWidgetContext(
-      context: context,
-      controller: controller,
-      spec: spec,
-      palette: palette,
-    );
-    final body = definition == null
-        ? DashboardPlaceholder(
-            palette: palette,
-            icon: Icons.help_outline_rounded,
-            message: LocaleKeys.dashboard_card_unknownWidget.tr(),
-          )
-        : definition.builder(widgetContext);
-    final tone = palette.toneFor(spec.accent);
-    final bare = definition?.paintsOwnSurface ?? false;
-    final showsTitle = spec.showTitle && spec.title.isNotEmpty;
-    final trailing = definition?.headerTrailing?.call(widgetContext);
-    final showsHeader = showsTitle || trailing != null;
-    final scale = spec.number(dashboardTextScaleKey, fallback: 1);
-    final ambient = MediaQuery.textScalerOf(context);
-    final headerHeight =
-        (ambient.scale(13) * scale * 1.25 + (trailing == null ? 8 : 16)).clamp(
-      trailing == null ? DashboardMetrics.headerHeight : 40.0,
-      double.infinity,
-    );
-
-    Widget content = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (showsHeader)
-          SizedBox(
-            height: headerHeight,
-            child: Padding(
-              padding: const EdgeInsetsDirectional.only(start: 14, end: 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: showsTitle
-                        ? Text(
-                            spec.title,
-                            key: ValueKey('home-widget-title-${spec.id}'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: DashboardType.cardTitle(
-                              palette,
-                              color: tone.inkSoft,
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                  if (trailing != null) ...[
-                    const SizedBox(width: 8),
-                    Flexible(
-                      flex: 2,
-                      child: Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 240),
-                          child: trailing,
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        Expanded(
-          child: Padding(
-            padding: definition?.padding ??
-                EdgeInsets.fromLTRB(
-                  bare ? 0 : 14,
-                  showsHeader ? 0 : (bare ? 0 : 12),
-                  bare ? 0 : 14,
-                  bare ? 0 : 12,
-                ),
-            child: body,
-          ),
-        ),
-      ],
-    );
-    content = MediaQuery(
-      data: MediaQuery.of(context).copyWith(
-        textScaler: scale == 1
-            ? ambient
-            : TextScaler.linear(scale * ambient.scale(100) / 100),
-      ),
-      child: content,
-    );
-    content = bare
-        ? ClipRRect(
-            borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
-            child: content,
-          )
-        : DecoratedBox(
-            decoration: BoxDecoration(
-              color: tone.surface,
-              borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
-              boxShadow: palette.cardShadow(),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
-              child: content,
-            ),
-          );
-    return DashboardEditingScope(
-      controller: controller,
-      child: SizedBox(
-        key: ValueKey('home-widget-${spec.id}'),
+  Widget build(BuildContext context) => DashboardStandaloneCard(
+        controller: controller,
+        spec: spec,
+        palette: palette,
+        keyPrefix: 'home-widget',
         height: homeWidgetHeight(spec, controller.document.settings.density),
-        child: content,
-      ),
-    );
-  }
+      );
 }

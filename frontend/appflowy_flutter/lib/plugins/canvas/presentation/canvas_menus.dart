@@ -490,6 +490,9 @@ List<AppMenuEntry> canvasEdgeMenuEntries({
 }
 
 /// Right-clicking the canvas itself.
+///
+/// [widgetsAndBlocks] are the "Widgets" and "From pages" rows, built by the
+/// board from the registries as the menu opens.
 List<AppMenuEntry> canvasBackgroundMenuEntries({
   required CanvasController controller,
   required VoidCallback onChanged,
@@ -498,6 +501,7 @@ List<AppMenuEntry> canvasBackgroundMenuEntries({
   required VoidCallback onPaste,
   required VoidCallback onZoomToFit,
   required VoidCallback onTemplates,
+  List<AppMenuEntry> widgetsAndBlocks = const [],
 }) {
   return [
     AppMenuItem(
@@ -510,12 +514,17 @@ List<AppMenuEntry> canvasBackgroundMenuEntries({
       icon: Icons.add_rounded,
       submenu: [
         for (final kind in CanvasNodeKind.values)
-          if (kind != CanvasNodeKind.text)
+          // A widget or a block is chosen by what it is, below.
+          if (kind != CanvasNodeKind.text && !kind.isInteractive)
             AppMenuItem(
               label: canvasNodeLabel(kind),
               icon: canvasNodeIcon(kind),
               onSelected: () => onAdd(kind),
             ),
+        if (widgetsAndBlocks.isNotEmpty) ...[
+          const AppMenuSeparator(),
+          ...widgetsAndBlocks,
+        ],
       ],
     ),
     AppMenuItem(

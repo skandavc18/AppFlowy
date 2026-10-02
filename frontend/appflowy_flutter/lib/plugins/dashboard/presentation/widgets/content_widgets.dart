@@ -84,6 +84,7 @@ DashboardConfigField _viewField(
 
 final _page = DashboardWidgetDefinition(
   type: 'page',
+  pageBlock: 'page_preview',
   label: () => LocaleKeys.dashboard_widget_page.tr(),
   description: () => LocaleKeys.dashboard_widget_pageHint.tr(),
   icon: Icons.description_rounded,
@@ -93,6 +94,8 @@ final _page = DashboardWidgetDefinition(
   showsTitleByDefault: false,
   // Both readings draw their own surface, so the card must not draw one too.
   paintsOwnSurface: true,
+  // The preview keeps its own menu in the top-right corner.
+  controlsAtStart: true,
   slashName: 'page',
   keywords: const ['page', 'document', 'note', 'embed page', 'doc'],
   builder: (context) {
@@ -201,6 +204,7 @@ final _pageLink = DashboardWidgetDefinition(
   defaultRowSpan: 5,
   showsTitleByDefault: false,
   paintsOwnSurface: true,
+  controlsAtStart: true,
   keywords: const ['page link', 'shortcut', 'open', 'go to', 'jump'],
   builder: (context) {
     final source = context.spec.source;
@@ -244,6 +248,7 @@ final _pageLink = DashboardWidgetDefinition(
 
 final _image = DashboardWidgetDefinition(
   type: 'image',
+  pageBlock: 'image',
   label: () => LocaleKeys.dashboard_widget_image.tr(),
   icon: Icons.image_rounded,
   group: DashboardWidgetGroup.content,
@@ -351,6 +356,7 @@ Widget _paintImage(
 
 final _bookmark = DashboardWidgetDefinition(
   type: 'bookmark',
+  pageBlock: 'bookmark',
   label: () => LocaleKeys.dashboard_widget_bookmark.tr(),
   description: () => LocaleKeys.dashboard_widget_bookmarkHint.tr(),
   icon: Icons.bookmark_rounded,
@@ -657,11 +663,14 @@ class _LinkCardState extends State<_LinkCard> {
 
 final _file = DashboardWidgetDefinition(
   type: 'file',
+  pageBlock: 'file',
   label: () => LocaleKeys.dashboard_widget_file.tr(),
   icon: Icons.insert_drive_file_rounded,
   group: DashboardWidgetGroup.content,
   defaultRowSpan: 6,
   showsTitleByDefault: false,
+  // A previewed file brings its own toolbar along the top edge.
+  reservesHeader: true,
   keywords: const ['file', 'attachment', 'pdf', 'document', 'download'],
   builder: (context) {
     final source = context.spec.source;

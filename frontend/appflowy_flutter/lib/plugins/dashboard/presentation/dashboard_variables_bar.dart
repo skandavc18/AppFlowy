@@ -1,6 +1,7 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_variable.dart';
@@ -27,40 +28,49 @@ class DashboardVariablesBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final variables = controller.document.variables;
     final editable = controller.isEditable;
-    if (variables.isEmpty && !editable) {
+    // No controls, no strip. Adding the first one is offered from the
+    // dashboard's own menu, so an empty board never carries a permanent
+    // "add" button above its widgets.
+    if (variables.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 18),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          for (final variable in variables)
-            _VariableControl(
-              controller: controller,
-              palette: palette,
-              variable: variable,
-            ),
-          if (editable)
-            DashboardButton(
-              label: LocaleKeys.dashboard_variable_add.tr(),
-              icon: Icons.add_rounded,
-              palette: palette,
-              tooltip: LocaleKeys.dashboard_variable_addHint.tr(),
-              onPressed: () => _addVariable(context),
-            ),
-          if (variables.isNotEmpty && !editable)
-            DashboardIconButton(
-              icon: Icons.restart_alt_rounded,
-              palette: palette,
-              size: 30,
-              tooltip: LocaleKeys.dashboard_variable_reset.tr(),
-              onPressed: controller.resetState,
-            ),
-        ],
+    return PreviewToolbarRegion(
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 22),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final variable in variables)
+              _VariableControl(
+                controller: controller,
+                palette: palette,
+                variable: variable,
+              ),
+            if (editable)
+              PreviewToolbar(
+                child: Builder(
+                  builder: (anchor) => DashboardIconButton(
+                    icon: Icons.add_rounded,
+                    palette: palette,
+                    size: 30,
+                    tooltip: LocaleKeys.dashboard_variable_addHint.tr(),
+                    onPressed: () => _addVariable(anchor),
+                  ),
+                ),
+              ),
+            if (!editable)
+              DashboardIconButton(
+                icon: Icons.restart_alt_rounded,
+                palette: palette,
+                size: 30,
+                tooltip: LocaleKeys.dashboard_variable_reset.tr(),
+                onPressed: controller.resetState,
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -80,26 +90,37 @@ class DashboardVariablesBar extends StatelessWidget {
     if (kind == null) {
       return;
     }
-    final key = 'var${controller.document.variables.length + 1}';
-    controller.edit(
-      (document) => document.withVariable(
-        DashboardVariable(
-          key: key,
-          label: dashboardVariableKindLabel(kind),
-          kind: kind,
-          options: kind == DashboardVariableKind.option ||
-                  kind == DashboardVariableKind.multiOption
-              ? [
-                  DashboardOption(
-                    id: newDashboardId('o'),
-                    label: LocaleKeys.dashboard_config_newOption.tr(),
-                  ),
-                ]
-              : const [],
-        ),
-      ),
-    );
+    addDashboardVariable(controller, kind);
   }
+}
+
+/// Put a new control of [kind] on the dashboard's strip.
+void addDashboardVariable(
+  DashboardController controller,
+  DashboardVariableKind kind,
+) {
+  if (!controller.isEditable) {
+    return;
+  }
+  final key = 'var${controller.document.variables.length + 1}';
+  controller.edit(
+    (document) => document.withVariable(
+      DashboardVariable(
+        key: key,
+        label: dashboardVariableKindLabel(kind),
+        kind: kind,
+        options: kind == DashboardVariableKind.option ||
+                kind == DashboardVariableKind.multiOption
+            ? [
+                DashboardOption(
+                  id: newDashboardId('o'),
+                  label: LocaleKeys.dashboard_config_newOption.tr(),
+                ),
+              ]
+            : const [],
+      ),
+    ),
+  );
 }
 
 String dashboardVariableKindLabel(DashboardVariableKind kind) => switch (kind) {
@@ -382,12 +403,11 @@ class _PickerChip extends StatelessWidget {
             onTap: () => onTap(buttonContext),
             child: Container(
               height: 32,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               decoration: BoxDecoration(
-                color: palette.surface,
+                color: palette.sunken.withValues(alpha: 0.9),
                 borderRadius:
-                    BorderRadius.circular(DashboardMetrics.controlRadius),
-                boxShadow: palette.cardShadow(),
+                    BorderRadius.circular(DashboardMetrics.pillRadius),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -444,14 +464,13 @@ class _ToggleChip extends StatelessWidget {
           child: AnimatedContainer(
             duration: DashboardMetrics.hover,
             height: 32,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
               color: value
-                  ? palette.accent.withValues(alpha: 0.13)
-                  : palette.surface,
-              borderRadius:
-                  BorderRadius.circular(DashboardMetrics.controlRadius),
-              boxShadow: value ? null : palette.cardShadow(),
+                  ? palette.accent
+                      .withValues(alpha: palette.isDark ? 0.2 : 0.12)
+                  : palette.sunken.withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(DashboardMetrics.pillRadius),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -519,11 +538,10 @@ class _TextChipState extends State<_TextChip> {
     return Container(
       height: 32,
       width: 220,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
-        color: palette.surface,
-        borderRadius: BorderRadius.circular(DashboardMetrics.controlRadius),
-        boxShadow: palette.cardShadow(),
+        color: palette.sunken.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(DashboardMetrics.pillRadius),
       ),
       child: Row(
         children: [

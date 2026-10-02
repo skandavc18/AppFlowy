@@ -160,6 +160,10 @@ class DashboardPalette {
       );
 
   /// Settle a widget's chosen colour onto the surface it is painted over.
+  ///
+  /// A dashboard is a calm neutral page with a few vibrant moments, so every
+  /// colour arrives as a family: a pastel wash to sit on, a deeper ink for the
+  /// words written on that wash, and a two-stop light for atmospheric widgets.
   DashboardTone toneFor(DashboardAccent accent) {
     if (accent == DashboardAccent.neutral) {
       return DashboardTone(
@@ -168,56 +172,242 @@ class DashboardPalette {
         ink: textPrimary,
         inkSoft: textSecondary,
         strong: this.accent,
+        label: textSecondary,
+        figure: textPrimary,
+        glow: shadowColor,
+        tint: Color.alphaBlend(
+          sunken.withValues(alpha: isDark ? 0.9 : 0.85),
+          surface,
+        ),
+        gradient: [
+          Color.alphaBlend(
+            this.accent.withValues(alpha: isDark ? 0.18 : 0.10),
+            surface,
+          ),
+          Color.alphaBlend(
+            _partnerFor(accent).withValues(alpha: isDark ? 0.14 : 0.10),
+            surface,
+          ),
+        ],
       );
     }
     if (accent == DashboardAccent.paper && isPaper) {
-      return const DashboardTone(
+      return DashboardTone(
         surface: PaperTheme.editorPreviewBackground,
         border: PaperTheme.strongBorder,
         ink: PaperTheme.textPrimary,
         inkSoft: PaperTheme.textSecondary,
         strong: PaperTheme.accent,
+        label: PaperTheme.textSecondary,
+        figure: PaperTheme.textPrimary,
+        glow: shadowColor,
+        gradient: const [
+          PaperTheme.popupBackground,
+          PaperTheme.controlBackground,
+        ],
       );
     }
     final seed = _seedFor(accent);
+    final partner = _partnerFor(accent);
+    // Paper keeps its warmth: the wash is a little thinner, so the cream
+    // underneath still reads through every colour.
+    final wash = isDark ? 0.17 : (isPaper ? 0.12 : 0.13);
     return DashboardTone(
-      surface: Color.alphaBlend(
-        seed.withValues(alpha: isDark ? 0.15 : 0.10),
-        surface,
-      ),
+      surface: Color.alphaBlend(seed.withValues(alpha: wash), surface),
       border: seed.withValues(alpha: isDark ? 0.34 : 0.26),
       ink: textPrimary,
       inkSoft: textSecondary,
       strong: seed,
+      label: _inkFor(accent, seed, deep: false),
+      figure: _inkFor(accent, seed, deep: true),
+      glow: seed,
+      gradient: [
+        Color.alphaBlend(
+          seed.withValues(alpha: isDark ? 0.32 : (isPaper ? 0.20 : 0.24)),
+          surface,
+        ),
+        Color.alphaBlend(
+          partner.withValues(alpha: isDark ? 0.20 : (isPaper ? 0.13 : 0.16)),
+          surface,
+        ),
+      ],
     );
+  }
+
+  /// Words written in a colour, deep enough to be read on its own wash.
+  /// Yellow is the one hue that needs to travel a long way to stay legible.
+  Color _inkFor(DashboardAccent accent, Color seed, {required bool deep}) {
+    if (isDark) {
+      return Color.lerp(seed, Colors.white, deep ? 0.30 : 0.18)!;
+    }
+    final towards = isPaper ? PaperTheme.textPrimary : const Color(0xFF1E2333);
+    final yellow = accent == DashboardAccent.amber;
+    final amount = yellow ? (deep ? 0.58 : 0.52) : (deep ? 0.38 : 0.30);
+    return Color.lerp(seed, towards, amount)!;
   }
 
   Color _seedFor(DashboardAccent accent) => switch (accent) {
         DashboardAccent.neutral =>
           isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
         DashboardAccent.paper =>
-          isDark ? const Color(0xFFB59B79) : const Color(0xFFB08A55),
+          isDark ? const Color(0xFFC4A57D) : const Color(0xFFB08A55),
+        // Sky.
         DashboardAccent.blue =>
-          isDark ? const Color(0xFF60A5FA) : const Color(0xFF2F7FE4),
+          isDark ? const Color(0xFF6AA8FF) : const Color(0xFF3B82F6),
         DashboardAccent.green =>
-          isDark ? const Color(0xFF4ADE80) : const Color(0xFF16A34A),
+          isDark ? const Color(0xFF5FD38D) : const Color(0xFF22A45D),
+        // Sunshine.
         DashboardAccent.amber =>
-          isDark ? const Color(0xFFEAB308) : const Color(0xFFD9A100),
+          isDark ? const Color(0xFFF5C84B) : const Color(0xFFE5A800),
+        // Peach.
         DashboardAccent.orange =>
-          isDark ? const Color(0xFFFB923C) : const Color(0xFFEA580C),
+          isDark ? const Color(0xFFFFA66B) : const Color(0xFFF47A3D),
+        // Coral.
         DashboardAccent.red =>
-          isDark ? const Color(0xFFF87171) : const Color(0xFFDC2626),
+          isDark ? const Color(0xFFFF8A80) : const Color(0xFFEF5B5B),
+        // Rose.
         DashboardAccent.pink =>
-          isDark ? const Color(0xFFF472B6) : const Color(0xFFDB2777),
+          isDark ? const Color(0xFFF59BC8) : const Color(0xFFE8559A),
+        // Lavender.
         DashboardAccent.purple =>
-          isDark ? const Color(0xFFA78BFA) : const Color(0xFF7C3AED),
+          isDark ? const Color(0xFFB79CFF) : const Color(0xFF8B6CF0),
+        // Mint.
         DashboardAccent.teal =>
-          isDark ? const Color(0xFF2DD4BF) : const Color(0xFF0D9488),
+          isDark ? const Color(0xFF4FD8B8) : const Color(0xFF14B08C),
+      };
+
+  /// The second light in an atmospheric surface: a neighbouring hue, so a
+  /// gradient reads as weather or time of day rather than as a darker swatch.
+  Color _partnerFor(DashboardAccent accent) => switch (accent) {
+        DashboardAccent.neutral =>
+          isDark ? const Color(0xFFA5B4CB) : const Color(0xFF8FA3BF),
+        DashboardAccent.paper =>
+          isDark ? const Color(0xFFE0B47A) : const Color(0xFFD9A35E),
+        DashboardAccent.blue =>
+          isDark ? const Color(0xFF5EEAD4) : const Color(0xFF22C3E6),
+        DashboardAccent.green =>
+          isDark ? const Color(0xFF7DE3C4) : const Color(0xFF2BB5A0),
+        DashboardAccent.amber =>
+          isDark ? const Color(0xFFFFB27A) : const Color(0xFFFF9A52),
+        DashboardAccent.orange =>
+          isDark ? const Color(0xFFFF8FA3) : const Color(0xFFF2607A),
+        DashboardAccent.red =>
+          isDark ? const Color(0xFFFFB38A) : const Color(0xFFFF9466),
+        DashboardAccent.pink =>
+          isDark ? const Color(0xFFC4A5FF) : const Color(0xFF9D7BF5),
+        DashboardAccent.purple =>
+          isDark ? const Color(0xFFF0A0D0) : const Color(0xFFE878B8),
+        DashboardAccent.teal =>
+          isDark ? const Color(0xFF8CC8FF) : const Color(0xFF4C9BF0),
       };
 
   /// The one saturated colour a widget's chosen accent resolves to.
   Color strongFor(DashboardAccent accent) =>
       accent == DashboardAccent.neutral ? this.accent : _seedFor(accent);
+
+  /// The soft, coloured lift under a tinted or atmospheric widget.
+  ///
+  /// It glows in the widget's own hue rather than casting grey, and stays as
+  /// tight as the neutral shadow so it never smudges the card next door.
+  List<BoxShadow> tintShadow(
+    DashboardTone tone, {
+    bool raised = false,
+    bool dragging = false,
+  }) {
+    if (dragging) {
+      return cardShadow(dragging: true);
+    }
+    if (isDark) {
+      return [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: raised ? 0.30 : 0.22),
+          blurRadius: raised ? 14 : 10,
+          spreadRadius: -3,
+          offset: Offset(0, raised ? 4 : 3),
+        ),
+        BoxShadow(
+          color: Colors.white.withValues(alpha: raised ? 0.07 : 0.045),
+          spreadRadius: 0.5,
+        ),
+      ];
+    }
+    return [
+      BoxShadow(
+        color: tone.glow.withValues(alpha: raised ? 0.17 : 0.11),
+        blurRadius: raised ? 16 : 13,
+        spreadRadius: -6,
+        offset: Offset(0, raised ? 7 : 5),
+      ),
+      BoxShadow(
+        color: shadowColor.withValues(alpha: raised ? 0.05 : 0.035),
+        blurRadius: 2,
+        spreadRadius: -1,
+        offset: const Offset(0, 1),
+      ),
+    ];
+  }
+
+  /// The surface one widget is painted on.
+  ///
+  /// Never a border: depth comes from light and shadow alone. A widget that
+  /// sits on the page itself has no fill until it is picked up and carried.
+  BoxDecoration surfaceDecoration(
+    DashboardSurface kind,
+    DashboardTone tone, {
+    bool hovered = false,
+    bool dragging = false,
+    double radius = DashboardMetrics.cardRadius,
+  }) {
+    final shape = BorderRadius.circular(radius);
+    return switch (kind) {
+      DashboardSurface.plain => BoxDecoration(
+          color: dragging ? surface : null,
+          borderRadius: shape,
+          boxShadow: dragging ? cardShadow(dragging: true) : const [],
+        ),
+      DashboardSurface.tinted => BoxDecoration(
+          color: tone.tint,
+          borderRadius: shape,
+          boxShadow: tintShadow(tone, raised: hovered, dragging: dragging),
+        ),
+      DashboardSurface.gradient => BoxDecoration(
+          color: tone.gradient.isEmpty ? tone.tint : null,
+          gradient: tone.gradient.length < 2
+              ? null
+              : LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: tone.gradient,
+                ),
+          borderRadius: shape,
+          boxShadow: tintShadow(tone, raised: hovered, dragging: dragging),
+        ),
+      DashboardSurface.floating || DashboardSurface.automatic => BoxDecoration(
+          color: surface,
+          borderRadius: shape,
+          boxShadow: cardShadow(raised: hovered, dragging: dragging),
+        ),
+    };
+  }
+
+  /// Soft light falling across an atmospheric widget from its upper corner.
+  /// Painted under the content, never over it.
+  BoxDecoration sheenFor(DashboardSurface kind) {
+    if (kind != DashboardSurface.gradient) {
+      return const BoxDecoration();
+    }
+    final light = isPaper ? PaperTheme.popupBackground : Colors.white;
+    return BoxDecoration(
+      gradient: RadialGradient(
+        center: const Alignment(0.85, -1.1),
+        radius: 1.15,
+        colors: [
+          light.withValues(alpha: isDark ? 0.07 : (isPaper ? 0.42 : 0.46)),
+          light.withValues(alpha: 0),
+        ],
+      ),
+    );
+  }
 
   @override
   bool operator ==(Object other) =>
@@ -232,6 +422,28 @@ class DashboardPalette {
   int get hashCode => Object.hash(canvas, surface, accent, isDark, isPaper);
 }
 
+/// How a widget meets the page.
+///
+/// Not everything on a dashboard should be a card: a statistic can be type set
+/// straight onto the page, a clock can sit on a wash of colour, weather can be
+/// a little piece of sky.
+enum DashboardSurface {
+  /// Whatever the widget was designed as.
+  automatic,
+
+  /// A neutral sheet held up by a soft shadow — for dense, structured content.
+  floating,
+
+  /// A pastel wash of the widget's colour.
+  tinted,
+
+  /// Light moving across the widget's colour: weather, moments, countdowns.
+  gradient,
+
+  /// No surface at all. The content is set straight onto the page.
+  plain,
+}
+
 /// One accent, settled onto the surface it will be painted over.
 @immutable
 class DashboardTone {
@@ -241,22 +453,66 @@ class DashboardTone {
     required this.ink,
     required this.inkSoft,
     required this.strong,
-  });
+    Color? label,
+    Color? figure,
+    Color? glow,
+    Color? tint,
+    this.gradient = const [],
+  })  : label = label ?? inkSoft,
+        figure = figure ?? ink,
+        glow = glow ?? strong,
+        tint = tint ?? surface;
 
+  /// What the widget is painted on.
   final Color surface;
   final Color border;
   final Color ink;
   final Color inkSoft;
+
+  /// The saturated colour itself: bars, rings, checks, icons.
   final Color strong;
 
+  /// Small words in the widget's colour — an eyebrow, a date, a unit.
+  final Color label;
+
+  /// The colour a number that IS the widget is set in.
+  final Color figure;
+
+  /// The colour a tinted surface's shadow glows in.
+  final Color glow;
+
+  /// The pastel wash a tinted surface is filled with.
+  final Color tint;
+
+  /// The two lights an atmospheric surface moves between.
+  final List<Color> gradient;
+
   Color wash(double alpha) => strong.withValues(alpha: alpha);
+
+  DashboardTone copyWith({Color? surface}) => DashboardTone(
+        surface: surface ?? this.surface,
+        border: border,
+        ink: ink,
+        inkSoft: inkSoft,
+        strong: strong,
+        label: label,
+        figure: figure,
+        glow: glow,
+        tint: tint,
+        gradient: gradient,
+      );
 }
 
 /// The geometry and motion every dashboard surface answers to.
+///
+/// Radii step down with the size of the thing they round: widgets, then the
+/// panels inside them, then controls, then chips that are fully round.
 abstract final class DashboardMetrics {
   static const double cardRadius = WorkspaceTokens.cardRadius;
+  static const double innerRadius = 14;
   static const double controlRadius = WorkspaceTokens.controlRadius;
   static const double chipRadius = WorkspaceTokens.controlRadius;
+  static const double pillRadius = 999;
 
   static const double controlSize = 28;
   static const double headerHeight = 30;
@@ -304,6 +560,54 @@ abstract final class DashboardType {
         fontWeight: FontWeight.w600,
         fontVariations: flowyFontVariationsForWeight(FontWeight.w600),
         color: palette.textMuted,
+      );
+
+  /// A section's name: the quiet headline of a group of widgets.
+  static TextStyle sectionTitle(DashboardPalette palette, {Color? color}) =>
+      TextStyle(
+        fontSize: 17,
+        height: 1.3,
+        letterSpacing: -0.25,
+        fontWeight: FontWeight.w600,
+        fontVariations: flowyFontVariationsForWeight(FontWeight.w600),
+        color: color ?? palette.textPrimary,
+      );
+
+  /// The line under a section's name.
+  static TextStyle sectionSubtitle(DashboardPalette palette, {Color? color}) =>
+      TextStyle(
+        fontSize: 13.5,
+        height: 1.4,
+        color: color ?? palette.textSecondary,
+      );
+
+  /// The small label a widget wears above its content.
+  static TextStyle eyebrow(DashboardPalette palette, {Color? color}) =>
+      TextStyle(
+        fontSize: 12,
+        height: 1.25,
+        letterSpacing: 0.15,
+        fontWeight: FontWeight.w600,
+        fontVariations: flowyFontVariationsForWeight(FontWeight.w600),
+        color: color ?? palette.textSecondary,
+      );
+
+  /// A number set large enough to be read across a room: light, tight and
+  /// tabular, so it never jitters as it changes.
+  static TextStyle display(
+    DashboardPalette palette, {
+    double size = 48,
+    Color? color,
+    FontWeight weight = FontWeight.w400,
+  }) =>
+      TextStyle(
+        fontSize: size,
+        height: 1.0,
+        letterSpacing: -size * 0.035,
+        fontWeight: weight,
+        fontVariations: flowyFontVariationsForWeight(weight),
+        fontFeatures: const [FontFeature.tabularFigures()],
+        color: color ?? palette.textPrimary,
       );
 
   static TextStyle cardTitle(DashboardPalette palette, {Color? color}) =>
@@ -549,6 +853,8 @@ class _DotGridPainter extends CustomPainter {
 }
 
 /// What a widget shows when it has nothing to show yet.
+///
+/// An invitation rather than an error: one soft badge, one line, one action.
 class DashboardPlaceholder extends StatelessWidget {
   const DashboardPlaceholder({
     super.key,
@@ -557,6 +863,7 @@ class DashboardPlaceholder extends StatelessWidget {
     required this.message,
     this.action,
     this.onAction,
+    this.color,
   });
 
   final DashboardPalette palette;
@@ -565,30 +872,72 @@ class DashboardPlaceholder extends StatelessWidget {
   final String? action;
   final VoidCallback? onAction;
 
+  /// The hue of the badge; the app's accent when not given.
+  final Color? color;
+
   @override
-  Widget build(BuildContext context) => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
+  Widget build(BuildContext context) {
+    final hue = color ?? palette.accent;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // A short widget keeps only what fits: the badge goes first.
+        final bounded = constraints.hasBoundedHeight;
+        final roomy =
+            !bounded || constraints.maxHeight >= (action == null ? 96 : 132);
+        final column = Padding(
+          padding: const EdgeInsets.all(10),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              WorkspaceGlyph(icon, size: 24, color: palette.textMuted),
-              const SizedBox(height: 8),
+              if (roomy) ...[
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: hue.withValues(alpha: palette.isDark ? 0.18 : 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: WorkspaceGlyph(
+                    icon,
+                    size: 19,
+                    color: hue,
+                    role: WorkspaceGlyphRole.preserveInk,
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style: DashboardType.caption(palette),
+                style: DashboardType.caption(
+                  palette,
+                  color: palette.textSecondary,
+                ).copyWith(fontSize: 12.5, height: 1.35),
               ),
               if (action != null && onAction != null) ...[
                 const SizedBox(height: 10),
                 DashboardButton(
                   label: action!,
                   palette: palette,
+                  selected: true,
                   onPressed: onAction,
                 ),
               ],
             ],
           ),
-        ),
-      );
+        );
+        if (!bounded) {
+          return Center(child: column);
+        }
+        // Too little room clips the invitation instead of breaking the card.
+        return ClipRect(
+          child: OverflowBox(
+            maxHeight: double.infinity,
+            child: Center(child: column),
+          ),
+        );
+      },
+    );
+  }
 }

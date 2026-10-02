@@ -163,6 +163,10 @@ DashboardWidgetDefinition _offlineDefinition(
       icon: original.icon,
       group: original.group,
       padding: original.padding,
+      surface: original.surface,
+      identity: original.identity,
+      reservesHeader: original.reservesHeader,
+      controlsAtStart: original.controlsAtStart,
       configure: original.configure,
       builder: (data) {
         final declared = original.builder(data);

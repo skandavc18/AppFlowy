@@ -9,13 +9,16 @@ import 'package:appflowy/plugins/dashboard/presentation/widgets/dashboard_widget
 import 'package:appflowy/plugins/document/presentation/editor_plugins/interactive/search_block_component.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
+import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_action.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_variable.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item_service.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:easy_localization/easy_localization.dart';
+import 'package:flowy_infra_ui/style_widget/font_weight.dart';
 import 'package:flutter/material.dart';
 
 /// Controls: the things on a dashboard that DO something.
@@ -136,6 +139,7 @@ List<DashboardConfigField> _bindingFields(
 
 final _button = DashboardWidgetDefinition(
   type: 'button',
+  pageBlock: 'interactive_button',
   label: () => LocaleKeys.dashboard_widget_button.tr(),
   description: () => LocaleKeys.dashboard_widget_buttonHint.tr(),
   icon: Icons.smart_button_rounded,
@@ -143,6 +147,9 @@ final _button = DashboardWidgetDefinition(
   defaultColumnSpan: 3,
   defaultRowSpan: 2,
   showsTitleByDefault: false,
+  // Inline: the button IS the widget; a box around it would be a frame for
+  // a frame.
+  surface: DashboardSurface.plain,
   slashName: 'button',
   keywords: const ['button', 'action', 'run', 'press', 'cta', 'link'],
   builder: (context) {
@@ -238,12 +245,14 @@ IconData dashboardActionIconFor(DashboardAction action) =>
 
 final _selector = DashboardWidgetDefinition(
   type: 'selector',
+  pageBlock: 'interactive_selector',
   label: () => LocaleKeys.dashboard_widget_selector.tr(),
   description: () => LocaleKeys.dashboard_widget_selectorHint.tr(),
   icon: Icons.arrow_drop_down_circle_rounded,
   group: DashboardWidgetGroup.controls,
   defaultColumnSpan: 3,
   defaultRowSpan: 2,
+  surface: DashboardSurface.plain,
   slashName: 'selector',
   keywords: const ['selector', 'select', 'dropdown', 'filter', 'choose'],
   builder: (context) {
@@ -336,10 +345,12 @@ final _selector = DashboardWidgetDefinition(
 
 final _multiSelect = DashboardWidgetDefinition(
   type: 'multi_select',
+  pageBlock: 'interactive_multi_select',
   label: () => LocaleKeys.dashboard_widget_multiSelect.tr(),
   icon: Icons.checklist_rounded,
   group: DashboardWidgetGroup.controls,
   defaultRowSpan: 2,
+  surface: DashboardSurface.plain,
   keywords: const ['multi', 'select', 'tags', 'filter', 'several'],
   builder: (context) {
     final options = _optionsOf(context);
@@ -393,6 +404,7 @@ final _multiSelect = DashboardWidgetDefinition(
 
 final _radioGroup = DashboardWidgetDefinition(
   type: 'radio_group',
+  pageBlock: 'interactive_radio_group',
   label: () => LocaleKeys.dashboard_widget_radioGroup.tr(),
   icon: Icons.radio_button_checked_rounded,
   group: DashboardWidgetGroup.controls,
@@ -473,33 +485,53 @@ final _toggle = DashboardWidgetDefinition(
   defaultColumnSpan: 3,
   defaultRowSpan: 2,
   showsTitleByDefault: false,
+  surface: DashboardSurface.plain,
+  identity: DashboardAccent.teal,
   keywords: const ['toggle', 'switch', 'on off', 'show', 'hide'],
   builder: (context) {
     final on = _readValue(context) == true;
+    final palette = context.palette;
+    // A settings row set on the page: a soft capsule that takes on the
+    // widget's colour while it is on.
     return Center(
-      child: Row(
-        children: [
-          Expanded(
-            child: SurfaceFindTarget(
-              id: dashboardFindWidget(context.spec.id, _keyLabel),
-              child: Text(
-                context.spec.setting(
-                  _keyLabel,
-                  fallback: LocaleKeys.dashboard_widget_toggle.tr(),
+      child: AnimatedContainer(
+        duration: DashboardMetrics.settle,
+        curve: DashboardMetrics.curve,
+        padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+        decoration: BoxDecoration(
+          color: on
+              ? context.strong.withValues(alpha: palette.isDark ? 0.2 : 0.12)
+              : palette.sunken.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(DashboardMetrics.innerRadius),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: SurfaceFindTarget(
+                id: dashboardFindWidget(context.spec.id, _keyLabel),
+                child: Text(
+                  context.spec.setting(
+                    _keyLabel,
+                    fallback: LocaleKeys.dashboard_widget_toggle.tr(),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: DashboardType.body(palette).copyWith(
+                    fontWeight: FontWeight.w500,
+                    fontVariations:
+                        flowyFontVariationsForWeight(FontWeight.w500),
+                  ),
                 ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: DashboardType.body(context.palette),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Switch(
-            value: on,
-            activeColor: context.strong,
-            onChanged: (value) => _writeValue(context, value),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Switch(
+              value: on,
+              activeColor: context.strong,
+              onChanged: (value) => _writeValue(context, value),
+            ),
+          ],
+        ),
       ),
     );
   },
@@ -517,11 +549,14 @@ final _toggle = DashboardWidgetDefinition(
 
 final _checklist = DashboardWidgetDefinition(
   type: 'checklist',
+  pageBlock: 'todo_list',
   label: () => LocaleKeys.dashboard_widget_checklist.tr(),
   icon: Icons.check_box_rounded,
   group: DashboardWidgetGroup.controls,
   defaultColumnSpan: 3,
   defaultRowSpan: 5,
+  // Ticks in mint: finishing something should feel like it.
+  identity: DashboardAccent.teal,
   keywords: const ['checklist', 'todo', 'tasks', 'checkbox', 'habits'],
   builder: (context) {
     final items = [
@@ -529,6 +564,7 @@ final _checklist = DashboardWidgetDefinition(
         if (entry is Map) Map<String, Object?>.from(entry),
     ];
     final palette = context.palette;
+    final done = items.where((item) => item[_keyDone] == true).length;
 
     void write(List<Map<String, Object?>> next) =>
         context.setSettings({_keyItems: next});
@@ -536,52 +572,114 @@ final _checklist = DashboardWidgetDefinition(
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // How far through the list: a count and a hairline of progress, so
+        // the list says where it stands before a single row is read.
+        if (items.isNotEmpty) ...[
+          Row(
+            children: [
+              Text(
+                LocaleKeys.dashboard_control_doneCount.tr(
+                  args: ['$done', '${items.length}'],
+                ),
+                style: DashboardType.caption(
+                  palette,
+                  color: palette.textSecondary,
+                ).copyWith(fontSize: 12),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(end: done / items.length),
+                    duration: DashboardMetrics.settle,
+                    curve: DashboardMetrics.curve,
+                    builder: (_, value, __) => LinearProgressIndicator(
+                      value: value,
+                      minHeight: 3,
+                      backgroundColor: context.strong.withValues(alpha: 0.14),
+                      valueColor: AlwaysStoppedAnimation(context.strong),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         Expanded(
           child: ListView.builder(
             padding: EdgeInsets.zero,
             itemCount: items.length,
             itemBuilder: (_, index) {
               final item = items[index];
-              final done = item[_keyDone] == true;
+              final checked = item[_keyDone] == true;
               return _Row(
                 palette: palette,
                 onTap: () {
                   final next = [...items];
-                  next[index] = {...item, _keyDone: !done};
+                  next[index] = {...item, _keyDone: !checked};
                   write(next);
                 },
-                child: Row(
-                  children: [
-                    Icon(
-                      done
-                          ? Icons.check_circle_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      size: 17,
-                      color: done ? context.strong : palette.textMuted,
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        '${item[_keyLabel] ?? ''}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: DashboardType.body(palette).copyWith(
-                          decoration: done ? TextDecoration.lineThrough : null,
-                          color: done ? palette.textMuted : palette.textPrimary,
+                trailing: DashboardIconButton(
+                  icon: Icons.close_rounded,
+                  palette: palette,
+                  size: 20,
+                  iconSize: 13,
+                  onPressed: () => write([
+                    for (var i = 0; i < items.length; i++)
+                      if (i != index) items[i],
+                  ]),
+                ),
+                // A finished task steps back: it fades, its words are struck
+                // through, and its tick pops in in the widget's colour.
+                child: AnimatedOpacity(
+                  duration: DashboardMetrics.settle,
+                  opacity: checked ? 0.6 : 1,
+                  child: Row(
+                    children: [
+                      AnimatedSwitcher(
+                        duration: DashboardMetrics.settle,
+                        switchInCurve: Curves.easeOutBack,
+                        transitionBuilder: (child, animation) =>
+                            ScaleTransition(
+                          scale: animation,
+                          child: FadeTransition(
+                            opacity: animation,
+                            child: child,
+                          ),
+                        ),
+                        child: Icon(
+                          checked
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          key: ValueKey(checked),
+                          size: 18,
+                          color: checked ? context.strong : palette.textMuted,
                         ),
                       ),
-                    ),
-                    DashboardIconButton(
-                      icon: Icons.close_rounded,
-                      palette: palette,
-                      size: 20,
-                      iconSize: 13,
-                      onPressed: () => write([
-                        for (var i = 0; i < items.length; i++)
-                          if (i != index) items[i],
-                      ]),
-                    ),
-                  ],
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: AnimatedDefaultTextStyle(
+                          duration: DashboardMetrics.settle,
+                          style: DashboardType.body(palette).copyWith(
+                            decoration: checked
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.none,
+                            decorationColor: palette.textMuted,
+                            color: checked
+                                ? palette.textMuted
+                                : palette.textPrimary,
+                          ),
+                          child: Text(
+                            '${item[_keyLabel] ?? ''}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -625,6 +723,7 @@ final _checklist = DashboardWidgetDefinition(
 
 final _input = DashboardWidgetDefinition(
   type: 'input',
+  pageBlock: 'interactive_input',
   label: () => LocaleKeys.dashboard_widget_input.tr(),
   description: () => LocaleKeys.dashboard_widget_inputHint.tr(),
   icon: Icons.search_rounded,
@@ -962,11 +1061,14 @@ class _SuggestionRowState extends State<_SuggestionRow> {
 
 final _counter = DashboardWidgetDefinition(
   type: 'counter',
+  pageBlock: 'interactive_counter',
   label: () => LocaleKeys.dashboard_widget_counter.tr(),
   icon: Icons.exposure_plus_1_rounded,
   group: DashboardWidgetGroup.controls,
   defaultColumnSpan: 3,
   defaultRowSpan: 3,
+  surface: DashboardSurface.tinted,
+  identity: DashboardAccent.blue,
   slashName: 'counter',
   keywords: const ['counter', 'count', 'tally', 'increment', 'number'],
   builder: (context) {
@@ -989,31 +1091,45 @@ final _counter = DashboardWidgetDefinition(
       }
     }
 
+    final lens = context.palette.isDark
+        ? Colors.black.withValues(alpha: 0.2)
+        : Colors.white.withValues(alpha: 0.72);
+    Widget nudger(IconData icon, double delta) => ClipOval(
+          child: ColoredBox(
+            color: lens,
+            child: DashboardIconButton(
+              icon: icon,
+              palette: context.palette,
+              size: 36,
+              iconSize: 18,
+              color: context.tone.label,
+              onPressed: () => nudge(delta),
+            ),
+          ),
+        );
+
+    // The count large in the middle, with round buttons either side that
+    // sit in the wash like lenses.
     return Row(
       children: [
-        DashboardIconButton(
-          icon: Icons.remove_rounded,
-          palette: context.palette,
-          size: 30,
-          iconSize: 17,
-          onPressed: () => nudge(-step),
-        ),
+        nudger(Icons.remove_rounded, -step),
         Expanded(
-          child: DashboardFigure(
-            value: formatDashboardNumber(value),
-            palette: context.palette,
-            alignment: CrossAxisAlignment.center,
-            size: 30,
-            color: context.strong,
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                formatDashboardNumber(value),
+                maxLines: 1,
+                style: DashboardType.display(
+                  context.palette,
+                  size: 46,
+                  color: context.tone.figure,
+                ),
+              ),
+            ),
           ),
         ),
-        DashboardIconButton(
-          icon: Icons.add_rounded,
-          palette: context.palette,
-          size: 30,
-          iconSize: 17,
-          onPressed: () => nudge(step),
-        ),
+        nudger(Icons.add_rounded, step),
       ],
     );
   },
@@ -1060,37 +1176,60 @@ class _PressableSurface extends StatefulWidget {
 
 class _PressableSurfaceState extends State<_PressableSurface> {
   bool _hovered = false;
+  bool _pressed = false;
 
   @override
-  Widget build(BuildContext context) => MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.onPressed,
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    final strong = widget.strong;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _pressed = true),
+        onTapUp: (_) => setState(() => _pressed = false),
+        onTapCancel: () => setState(() => _pressed = false),
+        onTap: widget.onPressed,
+        // A press gives a little under the finger, then springs back.
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 120),
+          curve: DashboardMetrics.curve,
+          scale: _pressed ? 0.97 : 1,
           child: AnimatedContainer(
             duration: DashboardMetrics.hover,
             curve: DashboardMetrics.curve,
-            height: 36,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            height: 40,
+            padding: const EdgeInsets.symmetric(horizontal: 18),
             decoration: BoxDecoration(
               color: widget.filled
                   ? (_hovered
                       ? Color.alphaBlend(
                           Colors.black.withValues(
-                            alpha: widget.palette.isDark ? 0 : 0.1,
+                            alpha: palette.isDark ? 0 : 0.08,
                           ),
-                          widget.strong,
+                          strong,
                         )
-                      : widget.strong)
-                  : widget.strong.withValues(alpha: _hovered ? 0.22 : 0.14),
-              borderRadius:
-                  BorderRadius.circular(DashboardMetrics.controlRadius),
+                      : strong)
+                  : strong.withValues(alpha: _hovered ? 0.2 : 0.13),
+              borderRadius: BorderRadius.circular(DashboardMetrics.pillRadius),
+              boxShadow: widget.filled && !palette.isDark
+                  ? [
+                      BoxShadow(
+                        color: strong.withValues(alpha: _hovered ? 0.34 : 0.24),
+                        blurRadius: _hovered ? 16 : 12,
+                        spreadRadius: -5,
+                        offset: Offset(0, _hovered ? 6 : 5),
+                      ),
+                    ]
+                  : null,
             ),
             child: Center(widthFactor: 1, child: widget.child),
           ),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _FieldSurface extends StatelessWidget {
@@ -1107,11 +1246,11 @@ class _FieldSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final surface = Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         color: palette.sunken,
-        borderRadius: BorderRadius.circular(DashboardMetrics.controlRadius),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Center(child: child),
     );
@@ -1147,10 +1286,10 @@ class _Chip extends StatelessWidget {
           onTap: onTap,
           child: AnimatedContainer(
             duration: DashboardMetrics.hover,
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: selected ? strong.withValues(alpha: 0.18) : palette.sunken,
-              borderRadius: BorderRadius.circular(DashboardMetrics.chipRadius),
+              color: selected ? strong.withValues(alpha: 0.16) : palette.sunken,
+              borderRadius: BorderRadius.circular(DashboardMetrics.pillRadius),
             ),
             child: Center(
               widthFactor: 1,
@@ -1172,11 +1311,15 @@ class _Row extends StatefulWidget {
     required this.child,
     required this.palette,
     required this.onTap,
+    this.trailing,
   });
 
   final Widget child;
   final DashboardPalette palette;
   final VoidCallback onTap;
+
+  /// A secondary control, shown only while the row is pointed at or focused.
+  final Widget? trailing;
 
   @override
   State<_Row> createState() => _RowState();
@@ -1186,24 +1329,37 @@ class _RowState extends State<_Row> {
   bool _hovered = false;
 
   @override
-  Widget build(BuildContext context) => MouseRegion(
-        cursor: SystemMouseCursors.click,
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          behavior: HitTestBehavior.opaque,
-          child: AnimatedContainer(
-            duration: DashboardMetrics.hover,
-            height: 30,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            margin: const EdgeInsets.only(bottom: 2),
-            decoration: BoxDecoration(
-              color: _hovered ? widget.palette.hover : widget.palette.hoverBase,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: widget.child,
+  Widget build(BuildContext context) {
+    Widget row = MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        behavior: HitTestBehavior.opaque,
+        child: AnimatedContainer(
+          duration: DashboardMetrics.hover,
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          margin: const EdgeInsets.only(bottom: 2),
+          decoration: BoxDecoration(
+            color: _hovered ? widget.palette.hover : widget.palette.hoverBase,
+            borderRadius: BorderRadius.circular(10),
           ),
+          child: widget.trailing == null
+              ? widget.child
+              : Row(
+                  children: [
+                    Expanded(child: widget.child),
+                    PreviewToolbar(child: widget.trailing!),
+                  ],
+                ),
         ),
-      );
+      ),
+    );
+    if (widget.trailing != null) {
+      row = PreviewToolbarRegion(child: row);
+    }
+    return row;
+  }
 }

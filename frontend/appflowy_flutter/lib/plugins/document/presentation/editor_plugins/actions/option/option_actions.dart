@@ -64,6 +64,7 @@ enum EditorOptionActionType {
           DatabaseBlockKeys.boardType,
           DatabaseBlockKeys.calendarType,
           ChartBlockKeys.type,
+          DashboardWidgetBlockKeys.type,
           MapBlockKeys.type,
           SpreadsheetBlockKeys.type,
           PagePreviewBlockKeys.type,

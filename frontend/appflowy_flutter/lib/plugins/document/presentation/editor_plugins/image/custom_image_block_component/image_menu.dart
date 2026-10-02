@@ -416,9 +416,9 @@ class _ImageMenuState extends State<ImageMenu> {
 
     // The block can be removed or rebound while the editor is open, so capture
     // everything the save callback needs up front.
-    final documentBloc = context.read<DocumentBloc>();
+    final documentBloc = context.read<DocumentBloc?>();
     final userProfile = context.read<UserWorkspaceBloc?>()?.state.userProfile ??
-        documentBloc.state.userProfilePB;
+        documentBloc?.state.userProfilePB;
     final node = widget.node;
     final capturedEditorState = editorState;
 
@@ -448,7 +448,7 @@ class _ImageMenuState extends State<ImageMenu> {
     required Uint8List bytes,
     required Node node,
     required EditorState editorState,
-    required DocumentBloc documentBloc,
+    required DocumentBloc? documentBloc,
   }) async {
     final directory = await getTemporaryDirectory();
     final temporaryFile = File(
@@ -464,7 +464,8 @@ class _ImageMenuState extends State<ImageMenu> {
       String? errorMessage;
       var type = CustomImageType.local;
 
-      if (documentBloc.isLocalMode) {
+      // Outside a page there is no document to attach a cloud upload to.
+      if (documentBloc == null || documentBloc.isLocalMode) {
         path = await saveImageToLocalStorage(temporaryFile.path);
       } else {
         (path, errorMessage) = await saveImageToCloudStorage(

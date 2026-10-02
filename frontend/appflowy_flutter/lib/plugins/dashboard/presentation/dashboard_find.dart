@@ -48,6 +48,8 @@ const dashboardFindTitle = ('page', '', 'title');
 const dashboardFindSubtitle = ('page', '', 'subtitle');
 
 DashboardFindId dashboardFindSection(String id) => ('section', id, 'title');
+DashboardFindId dashboardFindSectionSubtitle(String id) =>
+    ('section', id, 'subtitle');
 DashboardFindId dashboardFindWidget(String id, String field) =>
     ('widget', id, field);
 
@@ -88,6 +90,13 @@ Iterable<SurfaceFindEntry> dashboardFindEntries(
       section.title,
       replaceable: editable,
     );
+    if (section.subtitle.isNotEmpty) {
+      yield SurfaceFindEntry(
+        dashboardFindSectionSubtitle(section.id),
+        section.subtitle,
+        replaceable: editable,
+      );
+    }
     final widgets = [...section.widgets]..sort((a, b) {
         final row = a.placement.row.compareTo(b.placement.row);
         return row != 0
@@ -137,6 +146,11 @@ void replaceDashboardFindText(
         final section = next.sectionById(id.$2);
         if (section != null && section.title == edit.before) {
           next = next.withSection(section.copyWith(title: edit.after));
+        }
+      } else if (id.$1 == 'section' && id.$3 == 'subtitle') {
+        final section = next.sectionById(id.$2);
+        if (section != null && section.subtitle == edit.before) {
+          next = next.withSection(section.copyWith(subtitle: edit.after));
         }
       } else if (id.$1 == 'widget') {
         final spec = next.widgetById(id.$2);

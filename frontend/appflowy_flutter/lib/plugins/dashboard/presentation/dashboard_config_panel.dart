@@ -29,11 +29,17 @@ class DashboardConfigPanel extends StatelessWidget {
     required this.controller,
     required this.palette,
     required this.spec,
+    this.standalone = false,
   });
 
   final DashboardController controller;
   final DashboardPalette palette;
   final DashboardWidgetSpec spec;
+
+  /// The widget lives in a page or on a canvas rather than on a dashboard.
+  /// Its size, its variables and its removal belong to that host, so those
+  /// rows are left out rather than offered and ignored.
+  final bool standalone;
 
   @override
   Widget build(BuildContext context) {
@@ -113,81 +119,85 @@ class DashboardConfigPanel extends StatelessWidget {
                     ),
                   ],
                 ),
-                _Group(
-                  label: LocaleKeys.dashboard_config_size.tr(),
-                  palette: palette,
-                  children: [
-                    _NumberRow(
-                      palette: palette,
-                      label: LocaleKeys.dashboard_config_widthUnits.tr(),
-                      value: spec.placement.columnSpan.toDouble(),
-                      minimum: 1,
-                      maximum: 12,
-                      onChanged: (value) => controller.edit(
-                        (document) => document.withWidget(
-                          spec.copyWith(
-                            placement: spec.placement
-                                .copyWith(columnSpan: value.round()),
+                if (!standalone)
+                  _Group(
+                    label: LocaleKeys.dashboard_config_size.tr(),
+                    palette: palette,
+                    children: [
+                      _NumberRow(
+                        palette: palette,
+                        label: LocaleKeys.dashboard_config_widthUnits.tr(),
+                        value: spec.placement.columnSpan.toDouble(),
+                        minimum: 1,
+                        maximum: 12,
+                        onChanged: (value) => controller.edit(
+                          (document) => document.withWidget(
+                            spec.copyWith(
+                              placement: spec.placement
+                                  .copyWith(columnSpan: value.round()),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    _NumberRow(
-                      palette: palette,
-                      label: LocaleKeys.dashboard_config_heightUnits.tr(),
-                      value: spec.placement.rowSpan.toDouble(),
-                      minimum: 1,
-                      maximum: 40,
-                      onChanged: (value) => controller.edit(
-                        (document) => document.withWidget(
-                          spec.copyWith(
-                            placement:
-                                spec.placement.copyWith(rowSpan: value.round()),
+                      _NumberRow(
+                        palette: palette,
+                        label: LocaleKeys.dashboard_config_heightUnits.tr(),
+                        value: spec.placement.rowSpan.toDouble(),
+                        minimum: 1,
+                        maximum: 40,
+                        onChanged: (value) => controller.edit(
+                          (document) => document.withWidget(
+                            spec.copyWith(
+                              placement: spec.placement
+                                  .copyWith(rowSpan: value.round()),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 if (!calendarFirst && widgetSettings != null) widgetSettings,
-                _Group(
-                  label: LocaleKeys.dashboard_config_visibility.tr(),
-                  palette: palette,
-                  children: [
-                    _BindingRow(
-                      palette: palette,
-                      label: LocaleKeys.dashboard_config_visibleWhen.tr(),
-                      hint: LocaleKeys.dashboard_config_visibleWhenHint.tr(),
-                      value: spec.visibleWhen,
-                      variables: controller.document.variables,
-                      onChanged: (value) => controller.edit(
-                        (document) => document
-                            .withWidget(spec.copyWith(visibleWhen: value)),
+                if (!standalone)
+                  _Group(
+                    label: LocaleKeys.dashboard_config_visibility.tr(),
+                    palette: palette,
+                    children: [
+                      _BindingRow(
+                        palette: palette,
+                        label: LocaleKeys.dashboard_config_visibleWhen.tr(),
+                        hint: LocaleKeys.dashboard_config_visibleWhenHint.tr(),
+                        value: spec.visibleWhen,
+                        variables: controller.document.variables,
+                        onChanged: (value) => controller.edit(
+                          (document) => document
+                              .withWidget(spec.copyWith(visibleWhen: value)),
+                        ),
                       ),
-                    ),
-                    _ToggleRow(
-                      palette: palette,
-                      label: LocaleKeys.dashboard_card_hide.tr(),
-                      value: spec.hidden,
-                      onChanged: (value) => controller.edit(
-                        (document) =>
-                            document.withWidget(spec.copyWith(hidden: value)),
+                      _ToggleRow(
+                        palette: palette,
+                        label: LocaleKeys.dashboard_card_hide.tr(),
+                        value: spec.hidden,
+                        onChanged: (value) => controller.edit(
+                          (document) =>
+                              document.withWidget(spec.copyWith(hidden: value)),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 const SizedBox(height: 8),
-                _ButtonRow(
-                  palette: palette,
-                  label: LocaleKeys.button_delete.tr(),
-                  icon: Icons.delete_outline_rounded,
-                  destructive: true,
-                  onPressed: () {
-                    controller.select(null);
-                    controller
-                        .edit((document) => document.withoutWidget(spec.id));
-                  },
-                ),
+                if (!standalone)
+                  _ButtonRow(
+                    palette: palette,
+                    label: LocaleKeys.button_delete.tr(),
+                    icon: Icons.delete_outline_rounded,
+                    destructive: true,
+                    onPressed: () {
+                      controller.select(null);
+                      controller.edit(
+                        (document) => document.withoutWidget(spec.id),
+                      );
+                    },
+                  ),
               ],
             ),
           ),

@@ -342,9 +342,27 @@ void main() {
             await mouse.moveTo(tester.getCenter(find.byKey(_toolbarKey)));
             await tester.pumpAndSettle();
             _expectGeometry(tester, width: 240, database: type == 'database');
+            // A long title scrolls inside its header instead of ellipsizing,
+            // so Find can still reveal any of it. What is visible, and the
+            // line itself, stay inside the header at every text scale.
+            final headerRect = tester.getRect(find.byKey(_headerKey));
+            final titleRect = tester.getRect(find.text('Calendar title'));
             _inside(
-              tester.getRect(find.text('Calendar title')),
-              tester.getRect(find.byKey(_headerKey)),
+              tester.getRect(
+                find
+                    .ancestor(
+                      of: find.text('Calendar title'),
+                      matching: find.byType(SingleChildScrollView),
+                    )
+                    .first,
+              ),
+              headerRect,
+            );
+            expect(titleRect.left, greaterThanOrEqualTo(headerRect.left));
+            expect(titleRect.top, greaterThanOrEqualTo(headerRect.top - 0.01));
+            expect(
+              titleRect.bottom,
+              lessThanOrEqualTo(headerRect.bottom + 0.01),
             );
             expect(tester.state(find.byType(CalendarShell)), same(shell));
             expect(
@@ -807,6 +825,10 @@ class _CalendarCardFixture {
         headerTrailing: original.headerTrailing,
         paintsOwnSurface: original.paintsOwnSurface,
         requiresScrollActivation: original.requiresScrollActivation,
+        surface: original.surface,
+        identity: original.identity,
+        reservesHeader: original.reservesHeader,
+        controlsAtStart: original.controlsAtStart,
         configure: original.configure,
         builder: _build,
       ),

@@ -448,6 +448,6 @@ class ImagePlaceholderState extends State<ImagePlaceholder> {
   }
 
   bool _isLocalMode() {
-    return context.read<DocumentBloc>().isLocalMode;
+    return context.read<DocumentBloc?>()?.isLocalMode ?? true;
   }
 }

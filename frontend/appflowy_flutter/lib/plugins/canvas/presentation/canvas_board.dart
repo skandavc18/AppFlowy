@@ -7,6 +7,7 @@ import 'package:appflowy/extensions/dart/web_embed_registry.dart';
 import 'package:appflowy/extensions/presentation/web_embed_widgets.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_card.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_chrome.dart';
+import 'package:appflowy/plugins/canvas/presentation/canvas_embeds.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_find.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_menus.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_node_body.dart';
@@ -14,16 +15,22 @@ import 'package:appflowy/plugins/canvas/presentation/canvas_painters.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_setup.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_view_resolver.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_add_menu.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/copy_and_paste/clipboard_service.dart';
+import 'package:appflowy/plugins/document/presentation/embedded_blocks/page_block_catalog.dart';
 import 'package:appflowy/shared/context_menu/app_context_menu.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/scrolling/premium_scroll_behavior.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_geometry.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_layout.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
+import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
+import 'package:appflowy_editor/appflowy_editor.dart' show EditorState;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -290,6 +297,8 @@ class CanvasBoardState extends State<CanvasBoard> {
     Size? size,
     bool startTyping = false,
     bool configure = true,
+    Map<String, Object?> data = const <String, Object?>{},
+    String title = '',
   }) {
     size ??= defaultCanvasNodeSize(kind);
     final wanted = at ?? _sceneCentre - Offset(size.width / 2, size.height / 2);
@@ -301,6 +310,8 @@ class CanvasBoardState extends State<CanvasBoard> {
       position: position,
       size: size,
       color: _controller.accent,
+      data: data,
+      title: title,
     );
     final id = _controller.addNode(
       node,
@@ -385,6 +396,13 @@ class CanvasBoardState extends State<CanvasBoard> {
         }
       case CanvasNodeKind.text:
       case CanvasNodeKind.code:
+        _controller
+          ..select([id])
+          ..beginEditing(id);
+      // A widget or a block is used where it stands: opening it hands it the
+      // pointer until somewhere else is clicked.
+      case CanvasNodeKind.widget:
+      case CanvasNodeKind.block:
         _controller
           ..select([id])
           ..beginEditing(id);
@@ -484,6 +502,26 @@ class CanvasBoardState extends State<CanvasBoard> {
       case CanvasNodeKind.canvas:
       case CanvasNodeKind.file:
         unawaitedPick(id, node.kind);
+      case CanvasNodeKind.widget:
+      case CanvasNodeKind.block:
+        // One panel offers both: every widget, and every block from a page.
+        final definition = await showDashboardWidgetPicker(
+          context: context,
+          palette: DashboardPalette.of(context),
+        );
+        if (definition == null || !mounted) {
+          return;
+        }
+        _controller.updateNode(id, (current) {
+          final filled = canvasCardFor(definition);
+          final unsized = current.size == defaultCanvasNodeSize(current.kind);
+          return current.copyWith(
+            kind: filled.kind,
+            data: filled.data,
+            title: filled.title,
+            size: unsized ? filled.size : current.size,
+          );
+        });
       case CanvasNodeKind.text:
       case CanvasNodeKind.code:
         _controller
@@ -1554,34 +1592,40 @@ class CanvasBoardState extends State<CanvasBoard> {
       return;
     }
     final scene = _toScene(globalPosition);
-    await showAppMenu<void>(
-      context: context,
-      globalPosition: globalPosition,
-      entries: canvasBackgroundMenuEntries(
-        controller: _controller,
-        onChanged: _refresh,
-        onAdd: (kind) => addCard(
-          kind,
-          at: scene,
-          startTyping: kind == CanvasNodeKind.text,
+    final icons = EditorState.blank();
+    try {
+      await showAppMenu<void>(
+        context: context,
+        globalPosition: globalPosition,
+        entries: canvasBackgroundMenuEntries(
+          controller: _controller,
+          onChanged: _refresh,
+          onAdd: (kind) => addCard(
+            kind,
+            at: scene,
+            startTyping: kind == CanvasNodeKind.text,
+          ),
+          widgetsAndBlocks: _widgetAndBlockEntries(icons, at: scene),
+          onAddFrame: () {
+            final frame = CanvasFrame.create(
+              position: scene,
+              size: const Size(420, 320),
+              color: _controller.accent,
+            );
+            _controller.edit(
+              (document) =>
+                  document.copyWith(frames: [...document.frames, frame]),
+            );
+            _controller.select([frame.id]);
+          },
+          onPaste: _paste,
+          onZoomToFit: zoomToFit,
+          onTemplates: () => _showTemplates(globalPosition),
         ),
-        onAddFrame: () {
-          final frame = CanvasFrame.create(
-            position: scene,
-            size: const Size(420, 320),
-            color: _controller.accent,
-          );
-          _controller.edit(
-            (document) =>
-                document.copyWith(frames: [...document.frames, frame]),
-          );
-          _controller.select([frame.id]);
-        },
-        onPaste: _paste,
-        onZoomToFit: zoomToFit,
-        onTemplates: () => _showTemplates(globalPosition),
-      ),
-    );
+      );
+    } finally {
+      icons.dispose();
+    }
   }
 
   Future<void> _showNodeMenu(CanvasNode node, Offset globalPosition) async {
@@ -1714,24 +1758,79 @@ class CanvasBoardState extends State<CanvasBoard> {
   }
 
   Future<void> _showAddMenu(Offset globalPosition) async {
-    await showAppMenu<void>(
-      context: context,
-      globalPosition: globalPosition,
-      entries: [
-        for (final kind in CanvasNodeKind.values)
+    final icons = EditorState.blank();
+    try {
+      await showAppMenu<void>(
+        context: context,
+        globalPosition: globalPosition,
+        entries: [
+          for (final kind in CanvasNodeKind.values)
+            if (!kind.isInteractive)
+              AppMenuItem(
+                label: canvasNodeLabel(kind),
+                icon: canvasNodeIcon(kind),
+                onSelected: () =>
+                    addCard(kind, startTyping: kind == CanvasNodeKind.text),
+              ),
+          const AppMenuSeparator(),
+          ..._widgetAndBlockEntries(icons),
+          const AppMenuSeparator(),
           AppMenuItem(
-            label: canvasNodeLabel(kind),
-            icon: canvasNodeIcon(kind),
-            onSelected: () =>
-                addCard(kind, startTyping: kind == CanvasNodeKind.text),
+            label: LocaleKeys.canvas_add_frame.tr(),
+            icon: Icons.crop_free_rounded,
+            onSelected: () => _controller.setTool(CanvasTool.frame),
           ),
-        const AppMenuSeparator(),
-        AppMenuItem(
-          label: LocaleKeys.canvas_add_frame.tr(),
-          icon: Icons.crop_free_rounded,
-          onSelected: () => _controller.setTool(CanvasTool.frame),
+        ],
+      );
+    } finally {
+      icons.dispose();
+    }
+  }
+
+  /// Every dashboard widget and every block a page's `/` offers, read as the
+  /// menu opens — so whatever is added to either tomorrow is here too.
+  List<AppMenuEntry> _widgetAndBlockEntries(
+    EditorState icons, {
+    Offset? at,
+  }) =>
+      canvasWidgetAndBlockEntries(
+        iconEditor: icons,
+        ink: workspaceGlyphInk(context),
+        onWidget: (definition) => _addFilledCard(
+          canvasCardFor(definition),
+          at: at,
         ),
-      ],
+        onBlock: (entry) => unawaited(_addBlockCard(entry, at: at)),
+      );
+
+  /// Puts down a card that already holds what it was chosen for.
+  String _addFilledCard(CanvasNode filled, {Offset? at}) => addCard(
+        filled.kind,
+        at: at,
+        size: filled.size,
+        data: filled.data,
+        title: filled.title,
+        configure: false,
+      );
+
+  /// Runs [entry] the way `/` would and puts what it inserted on a card.
+  Future<void> _addBlockCard(PageBlockEntry entry, {Offset? at}) async {
+    final run = await runPageBlockEntry(entry, context);
+    if (!mounted) return;
+    final document = run.document;
+    if (document == null) {
+      // A picker somebody closed is an answer, not a failure.
+      if (!run.dismissed) {
+        showToastNotification(
+          message: LocaleKeys.canvas_add_blockFailed.tr(),
+          type: ToastificationType.error,
+        );
+      }
+      return;
+    }
+    _addFilledCard(
+      canvasBlockCard(document: document, name: entry.name),
+      at: at,
     );
   }
 
@@ -2331,6 +2430,13 @@ class CanvasBoardState extends State<CanvasBoard> {
       },
       onSetUp: () => unawaited(_setUpCard(node.id)),
       onEdit: () => unawaited(_editCard(node.id)),
+      onDataChanged: (key, value) {
+        if (!widget.editable) return;
+        _controller.updateNode(
+          node.id,
+          (current) => current.locked ? current : current.withData(key, value),
+        );
+      },
     );
   }
 
@@ -2427,7 +2533,7 @@ class CanvasBoardState extends State<CanvasBoard> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
+                  WorkspaceGlyph(
                     Icons.lock_outline_rounded,
                     size: 13,
                     color: palette.textMuted,

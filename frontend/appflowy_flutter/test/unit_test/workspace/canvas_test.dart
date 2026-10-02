@@ -735,6 +735,9 @@ void main() {
         CanvasNodeKind.canvas,
         CanvasNodeKind.file,
         CanvasNodeKind.diagram,
+        // Which widget, or which page block, has to be chosen.
+        CanvasNodeKind.widget,
+        CanvasNodeKind.block,
       };
       for (final kind in CanvasNodeKind.values) {
         final node = CanvasNode.create(kind: kind, position: Offset.zero);

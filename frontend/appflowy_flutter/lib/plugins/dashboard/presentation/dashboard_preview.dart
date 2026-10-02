@@ -504,13 +504,15 @@ class _MiniatureCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final definition = DashboardWidgetRegistry.definitionFor(spec.type);
-    final tone = palette.toneFor(spec.accent);
+    // The miniature wears what the widget wears on the board: a sheet, a
+    // wash of colour, a gradient, or nothing at all.
+    final appearance = dashboardAppearanceOf(spec, palette);
+    final tone = appearance.tone;
     final words =
         _textTypes.contains(spec.type) ? spec.setting('text').trim() : '';
     final label = spec.title.trim().isNotEmpty
         ? spec.title.trim()
         : definition?.label() ?? spec.type;
-    final bare = definition?.paintsOwnSurface ?? false;
     final radius = math.max(2.0, DashboardMetrics.cardRadius * scale * 1.4);
     if (spec.type == 'heading') {
       // A heading is words on the board, not a card: draw the words.
@@ -536,11 +538,28 @@ class _MiniatureCard extends StatelessWidget {
         final width = constraints.maxWidth;
         final roomy = height >= 22 && width >= 34;
         final glyph = math.min(16.0, math.max(8.0, height * 0.32));
+        final surface = appearance.surface;
+        final gradient = !appearance.media &&
+                surface == DashboardSurface.gradient &&
+                tone.gradient.length > 1
+            ? LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: tone.gradient,
+              )
+            : null;
         return DecoratedBox(
           decoration: BoxDecoration(
-            color: bare ? tone.surface.withValues(alpha: 0.45) : tone.surface,
+            color: appearance.media
+                ? tone.surface.withValues(alpha: 0.45)
+                : surface == DashboardSurface.plain || gradient != null
+                    ? null
+                    : tone.surface,
+            gradient: gradient,
             borderRadius: BorderRadius.circular(radius),
-            border: Border.all(color: tone.border, width: 0.6),
+            border: surface == DashboardSurface.floating || appearance.media
+                ? Border.all(color: tone.border, width: 0.6)
+                : null,
           ),
           child: !roomy
               ? const SizedBox.expand()
@@ -554,7 +573,7 @@ class _MiniatureCard extends StatelessWidget {
                           WorkspaceGlyph(
                             definition?.icon ?? Icons.widgets_rounded,
                             size: glyph,
-                            color: palette.strongFor(spec.accent),
+                            color: palette.strongFor(appearance.accent),
                           ),
                           SizedBox(width: math.max(2, glyph * 0.3)),
                           Expanded(

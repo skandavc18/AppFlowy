@@ -7,14 +7,18 @@ import 'package:appflowy/plugins/canvas/presentation/canvas_find.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_style.dart';
 import 'package:appflowy/plugins/canvas/presentation/canvas_view_resolver.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_widget_host.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/syntax_highlighter.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/drawing/drawing_block_component.dart';
+import 'package:appflowy/plugins/document/presentation/embedded_blocks/embedded_blocks_view.dart';
 import 'package:appflowy/shared/drawing/excalidraw_scene.dart';
 import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/mermaid/mermaid_view.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_controller.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/workspace_item_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
@@ -36,6 +40,7 @@ class CanvasNodeBody extends StatelessWidget {
     required this.onTextChanged,
     required this.onEditingFinished,
     required this.onOpen,
+    this.onDataChanged,
   });
 
   final CanvasNode node;
@@ -54,13 +59,18 @@ class CanvasNodeBody extends StatelessWidget {
   /// Open the workspace object this card points at.
   final VoidCallback onOpen;
 
+  /// A widget or block card changed what it holds, under [key] of its data.
+  final void Function(String key, Object? value)? onDataChanged;
+
   /// Choose what this card should point at, for a card that points nowhere.
 
   @override
   Widget build(BuildContext context) {
     final body = _buildBody(context);
-    // Reference/link cards already show their title in their native body.
+    // Reference/link cards already show their title in their native body, and
+    // a widget or a block draws its own.
     if (node.kind.referencesWorkspaceObject ||
+        node.kind.isInteractive ||
         node.kind == CanvasNodeKind.web ||
         node.kind == CanvasNodeKind.bookmark) {
       return body;
@@ -132,7 +142,98 @@ class CanvasNodeBody extends StatelessWidget {
           resolver: resolver,
           onOpen: onOpen,
         );
+      case CanvasNodeKind.widget:
+        return _CanvasWidgetBody(
+          node: node,
+          palette: palette,
+          editable: editable,
+          onChanged: (spec) =>
+              onDataChanged?.call(canvasWidgetSpecKey, spec.toJson()),
+        );
+      case CanvasNodeKind.block:
+        final stored = node.data[canvasBlockDocumentKey];
+        if (stored is! Map) {
+          return _CanvasPlaceholder(
+            palette: palette,
+            icon: _iconFor(node.kind),
+            label: LocaleKeys.canvas_card_chooseBlock.tr(),
+          );
+        }
+        return Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: CanvasMetrics.space1,
+            vertical: CanvasMetrics.space2,
+          ),
+          child: EmbeddedBlocksView(
+            key: ValueKey('canvas-blocks-${node.id}'),
+            // The same map while nothing changed, so a rebuild is not taken
+            // for a new document.
+            document: stored is Map<String, Object?>
+                ? stored
+                : Map<String, Object?>.from(stored),
+            editable: editable,
+            onChanged: (document) =>
+                onDataChanged?.call(canvasBlockDocumentKey, document),
+          ),
+        );
     }
+  }
+}
+
+/// A dashboard widget, live on the canvas.
+///
+/// The widget is hosted exactly as on a dashboard and kept on the card by
+/// value, so copying the card copies the widget with everything it holds.
+class _CanvasWidgetBody extends StatefulWidget {
+  const _CanvasWidgetBody({
+    required this.node,
+    required this.palette,
+    required this.editable,
+    required this.onChanged,
+  });
+
+  final CanvasNode node;
+  final CanvasPalette palette;
+  final bool editable;
+  final ValueChanged<DashboardWidgetSpec> onChanged;
+
+  @override
+  State<_CanvasWidgetBody> createState() => _CanvasWidgetBodyState();
+}
+
+class _CanvasWidgetBodyState extends State<_CanvasWidgetBody> {
+  Object? _parsedFrom;
+  DashboardWidgetSpec? _parsed;
+
+  /// Parsed once per stored value rather than on every rebuild of the board.
+  DashboardWidgetSpec? get _spec {
+    final stored = widget.node.data[canvasWidgetSpecKey];
+    if (!identical(stored, _parsedFrom)) {
+      _parsedFrom = stored;
+      _parsed = stored is Map
+          ? DashboardWidgetSpec.fromJson(Map<String, Object?>.from(stored))
+          : null;
+    }
+    return _parsed;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final spec = _spec;
+    if (spec == null) {
+      return _CanvasPlaceholder(
+        palette: widget.palette,
+        icon: _iconFor(CanvasNodeKind.widget),
+        label: LocaleKeys.canvas_card_chooseWidget.tr(),
+      );
+    }
+    return DashboardWidgetHost(
+      key: ValueKey('canvas-widget-host-${widget.node.id}'),
+      spec: spec,
+      editable: widget.editable,
+      keyPrefix: 'canvas-widget',
+      onChanged: widget.onChanged,
+    );
   }
 }
 
@@ -966,18 +1067,26 @@ class _CanvasObjectCard extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            SizedBox(
-              width: 22,
-              height: 22,
-              child: Center(
-                child: view != null && view.isWorkspaceItem
-                    ? WorkspaceItemIcon.fromView(view: view)
-                    : Icon(
-                        _iconFor(node.kind),
-                        size: 18,
-                        color: palette.accentAt(node.color),
-                      ),
+            Container(
+              width: 28,
+              height: 28,
+              alignment: Alignment.center,
+              // The object's identity in a soft badge of its colour, so a
+              // canvas of references reads at a glance rather than as rows
+              // of grey glyphs.
+              decoration: BoxDecoration(
+                color: palette.accentAt(node.color).withValues(
+                      alpha: palette.isDark ? 0.2 : 0.12,
+                    ),
+                borderRadius: BorderRadius.circular(8),
               ),
+              child: view != null && view.isWorkspaceItem
+                  ? WorkspaceItemIcon.fromView(view: view)
+                  : WorkspaceGlyph(
+                      _iconFor(node.kind),
+                      size: 17,
+                      color: palette.accentAt(node.color),
+                    ),
             ),
             const SizedBox(width: CanvasMetrics.space2),
             Expanded(
@@ -1062,6 +1171,8 @@ class _CanvasObjectCard extends StatelessWidget {
       case CanvasNodeKind.image:
       case CanvasNodeKind.code:
       case CanvasNodeKind.diagram:
+      case CanvasNodeKind.widget:
+      case CanvasNodeKind.block:
         return '';
     }
   }
@@ -1096,8 +1207,21 @@ class _CanvasPlaceholder extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 20, color: palette.textMuted),
-          const SizedBox(height: CanvasMetrics.space1),
+          // The kind's own glyph in a soft badge of the canvas accent, so an
+          // empty card already says what it is waiting for.
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: palette.accent.withValues(
+                alpha: palette.isDark ? 0.18 : 0.1,
+              ),
+              borderRadius: BorderRadius.circular(CanvasMetrics.controlRadius),
+            ),
+            child: WorkspaceGlyph(icon, size: 19, color: palette.accent),
+          ),
+          const SizedBox(height: CanvasMetrics.space2),
           Flexible(
             child: Text(
               label,
@@ -1128,6 +1252,8 @@ IconData _iconFor(CanvasNodeKind kind) => switch (kind) {
       CanvasNodeKind.image => Icons.image_rounded,
       CanvasNodeKind.code => Icons.code_rounded,
       CanvasNodeKind.diagram => Icons.account_tree_rounded,
+      CanvasNodeKind.widget => Icons.widgets_rounded,
+      CanvasNodeKind.block => Icons.dashboard_customize_rounded,
     };
 
 /// The glyph and the words a card kind is known by, shared by the toolbar, the
@@ -1145,6 +1271,8 @@ String canvasNodeLabel(CanvasNodeKind kind) => switch (kind) {
       CanvasNodeKind.image => LocaleKeys.canvas_node_image.tr(),
       CanvasNodeKind.code => LocaleKeys.canvas_node_code.tr(),
       CanvasNodeKind.diagram => LocaleKeys.canvas_node_diagram.tr(),
+      CanvasNodeKind.widget => LocaleKeys.canvas_node_widget.tr(),
+      CanvasNodeKind.block => LocaleKeys.canvas_node_block.tr(),
     };
 
 /// Which card kind an address or a workspace object should become.

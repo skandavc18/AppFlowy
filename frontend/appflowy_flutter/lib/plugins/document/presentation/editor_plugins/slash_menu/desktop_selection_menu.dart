@@ -481,6 +481,7 @@ class _AppFlowyDesktopSelectionMenuWidgetState
         SlashMenuSection.interactive => LocaleKeys.interactive_sectionName.tr(),
         SlashMenuSection.canvas => LocaleKeys.canvas_sectionName.tr(),
         SlashMenuSection.dashboards => LocaleKeys.dashboard_sectionName.tr(),
+        SlashMenuSection.widgets => LocaleKeys.dashboard_slash_widgets.tr(),
         SlashMenuSection.media =>
           LocaleKeys.document_slashMenu_name_fileAndMedia.tr(),
         SlashMenuSection.collections => LocaleKeys.collections_plural.tr(),

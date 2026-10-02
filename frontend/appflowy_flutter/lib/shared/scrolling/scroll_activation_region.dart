@@ -85,8 +85,12 @@ class _ScrollActivationRegionState extends State<ScrollActivationRegion> {
     // The document's keyboard service can retain focus after an embed header
     // click. Escape must still release that embed; don't steal the key or
     // change focus, and let an open dialog/menu handle its own Escape first.
+    // While focus is INSIDE the card the focus chain decides instead: a
+    // control that consumes Escape (stepping back out of a drill-down) keeps
+    // the card engaged, and only an unclaimed Escape reaches [_onKeyEvent].
     if (widget.gateScrollGestures &&
         _active &&
+        !_focus.hasFocus &&
         (ModalRoute.isCurrentOf(context) ?? true)) {
       _onKeyEvent(_focus, event);
     }

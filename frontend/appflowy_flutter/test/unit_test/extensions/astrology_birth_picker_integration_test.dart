@@ -25,6 +25,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:table_calendar/table_calendar.dart';
 
+import '../../support/pointer_reach.dart';
+
 const _london = AstrologyPlace(
   name: 'London, England',
   latitude: 51.5074,
@@ -1413,7 +1415,9 @@ Future<void> _clickDisabled(WidgetTester tester, String id) async {
 Future<void> _tapFinder(WidgetTester tester, Finder target) async {
   await tester.ensureVisible(target);
   await _frames(tester);
-  await tester.tap(target, kind: PointerDeviceKind.mouse);
+  // A card not yet activated for scrolling wraps its content's hit targets;
+  // the click still arrives, so prove that through the gate.
+  await tapReceiving(tester, target, kind: PointerDeviceKind.mouse);
   await _frames(tester);
 }
 

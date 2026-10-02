@@ -1,6 +1,9 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/dashboard/presentation/dashboard_preview.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_style.dart';
 import 'package:appflowy/plugins/dashboard/presentation/dashboard_templates.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 
@@ -28,31 +31,43 @@ class DashboardTemplateGallery extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  Icons.dashboard_customize_rounded,
-                  size: 30,
-                  color: palette.accent,
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: palette.accent.withValues(
+                      alpha: palette.isDark ? 0.2 : 0.12,
+                    ),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.dashboard_customize_rounded,
+                    size: 24,
+                    color: palette.accent,
+                  ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 16),
                 Text(
                   LocaleKeys.dashboard_empty_title.tr(),
-                  style: DashboardType.title(palette),
+                  textAlign: TextAlign.center,
+                  style: DashboardType.display(palette, size: 26),
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
                   LocaleKeys.dashboard_empty_body.tr(),
                   textAlign: TextAlign.center,
-                  style: DashboardType.caption(palette).copyWith(fontSize: 13),
+                  style:
+                      DashboardType.caption(palette).copyWith(fontSize: 13.5),
                 ),
-                const SizedBox(height: 26),
+                const SizedBox(height: 28),
                 GridView.builder(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 280,
-                    mainAxisExtent: 96,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
+                    mainAxisExtent: 204,
+                    crossAxisSpacing: 16,
+                    mainAxisSpacing: 16,
                   ),
                   itemCount: dashboardTemplates().length,
                   itemBuilder: (_, index) {
@@ -89,68 +104,129 @@ class _TemplateCard extends StatefulWidget {
 class _TemplateCardState extends State<_TemplateCard> {
   bool _hovered = false;
 
+  // A template mints fresh ids each time it is built; one picture is enough.
+  late final DashboardDocument _document = widget.template.build();
+
   @override
   Widget build(BuildContext context) {
     final palette = widget.palette;
-    final tone = palette.toneFor(widget.template.accent);
+    final template = widget.template;
+    final neutral = template.accent == DashboardAccent.neutral;
+    final tone = palette.toneFor(template.accent);
+    final strong = neutral ? palette.accent : tone.strong;
+    // The template's own colour, laid behind a small picture of its board.
+    final backdrop = neutral || tone.gradient.length < 2
+        ? null
+        : LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              for (final colour in tone.gradient)
+                colour.withValues(alpha: palette.isDark ? 0.42 : 0.78),
+            ],
+          );
     return MouseRegion(
       cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: GestureDetector(
         onTap: widget.onTap,
-        child: AnimatedContainer(
+        child: AnimatedSlide(
           duration: DashboardMetrics.hover,
           curve: DashboardMetrics.curve,
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: tone.surface,
-            borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
-            boxShadow: palette.cardShadow(raised: _hovered),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: tone.wash(0.16),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(
-                  widget.template.icon,
-                  size: 18,
-                  color: tone.strong,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.template.label(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: DashboardType.cardTitle(
-                        palette,
-                        color: palette.textPrimary,
-                      ),
+          offset: Offset(0, _hovered ? -0.01 : 0),
+          child: AnimatedContainer(
+            duration: DashboardMetrics.hover,
+            curve: DashboardMetrics.curve,
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: palette.surface,
+              borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
+              boxShadow: palette.cardShadow(raised: _hovered),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: Container(
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: backdrop == null ? palette.sunken : null,
+                      gradient: backdrop,
+                      borderRadius:
+                          BorderRadius.circular(DashboardMetrics.innerRadius),
                     ),
-                    const SizedBox(height: 3),
-                    Expanded(
-                      child: Text(
-                        widget.template.description(),
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: DashboardType.caption(palette),
-                      ),
-                    ),
-                  ],
+                    child: _document.widgetCount == 0
+                        ? Center(
+                            child: AnimatedScale(
+                              duration: DashboardMetrics.hover,
+                              curve: DashboardMetrics.curve,
+                              scale: _hovered ? 1.08 : 1,
+                              child: Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: palette.surface,
+                                  shape: BoxShape.circle,
+                                  boxShadow: palette.cardShadow(),
+                                ),
+                                child: Icon(
+                                  Icons.add_rounded,
+                                  size: 22,
+                                  color: strong,
+                                ),
+                              ),
+                            ),
+                          )
+                        : AnimatedScale(
+                            duration: DashboardMetrics.hover,
+                            curve: DashboardMetrics.curve,
+                            scale: _hovered ? 1.03 : 1,
+                            alignment: Alignment.topCenter,
+                            child: IgnorePointer(
+                              child: DashboardMiniature(document: _document),
+                            ),
+                          ),
+                  ),
                 ),
-              ),
-            ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 10, 6, 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 1),
+                        child: Icon(template.icon, size: 16, color: strong),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              template.label(),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: DashboardType.cardTitle(
+                                palette,
+                                color: palette.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              template.description(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: DashboardType.caption(palette),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

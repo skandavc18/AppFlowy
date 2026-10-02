@@ -521,6 +521,10 @@ Map<String, BlockComponentBuilder> _buildBlockComponentBuilderMap(
     ChartBlockKeys.type: ChartBlockComponentBuilder(
       configuration: configuration,
     ),
+    // Every dashboard widget a page has no block of its own for.
+    DashboardWidgetBlockKeys.type: DashboardWidgetBlockComponentBuilder(
+      configuration: configuration,
+    ),
     MapBlockKeys.type: MapBlockComponentBuilder(
       configuration: configuration,
     ),

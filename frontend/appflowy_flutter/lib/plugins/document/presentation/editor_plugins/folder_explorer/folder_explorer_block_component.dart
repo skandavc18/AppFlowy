@@ -442,7 +442,9 @@ class FolderExplorerBlockComponentState
       width: width,
       height: height,
       alignment: blockEmbedAlignment(node),
-      userProfile: context.read<DocumentBloc>().state.userProfilePB,
+      // A folder can also be shown outside a page — on a dashboard or a
+      // canvas — where there is no page bloc to read the profile from.
+      userProfile: context.read<DocumentBloc?>()?.state.userProfilePB,
       editable: editorState.editable,
       onSettingsChanged: (settings) => unawaited(
         _updateAttributes({

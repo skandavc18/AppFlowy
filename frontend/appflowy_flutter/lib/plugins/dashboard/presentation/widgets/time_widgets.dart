@@ -54,6 +54,8 @@ final _clock = DashboardWidgetDefinition(
   defaultColumnSpan: 3,
   defaultRowSpan: 3,
   showsTitleByDefault: false,
+  surface: DashboardSurface.tinted,
+  identity: DashboardAccent.purple,
   slashName: 'clock',
   keywords: const ['clock', 'time', 'now', 'hour', 'today'],
   builder: (context) => _ClockBody(context: context),
@@ -136,33 +138,88 @@ class _ClockBodyState extends State<_ClockBody> {
   Widget build(BuildContext context) {
     final spec = widget.context.spec;
     final palette = widget.context.palette;
+    final tone = widget.context.tone;
     final twelve = spec.setting(_keyFormat, fallback: '24') == '12';
     final showSeconds = spec.flag(_keySeconds);
+    final showDate = spec.flag(_keyShowDate, fallback: true);
 
     final hour =
         twelve ? (_now.hour % 12 == 0 ? 12 : _now.hour % 12) : _now.hour;
-    final buffer = StringBuffer()
-      ..write(twelve ? '$hour' : hour.toString().padLeft(2, '0'))
-      ..write(':')
-      ..write(_now.minute.toString().padLeft(2, '0'));
-    if (showSeconds) {
-      buffer
-        ..write(':')
-        ..write(_now.second.toString().padLeft(2, '0'));
-    }
+    final time = '${twelve ? '$hour' : hour.toString().padLeft(2, '0')}'
+        ':${_now.minute.toString().padLeft(2, '0')}';
+    final period = twelve ? (_now.hour < 12 ? 'AM' : 'PM') : '';
 
-    return Center(
-      child: DashboardFigure(
-        value: buffer.toString(),
-        suffix: twelve ? (_now.hour < 12 ? 'AM' : 'PM') : '',
-        palette: palette,
-        alignment: CrossAxisAlignment.center,
-        size: 36,
-        color: widget.context.strong,
-        caption: spec.flag(_keyShowDate, fallback: true)
-            ? DateFormat.yMMMMEEEEd().format(_now)
-            : '',
+    // The time is the whole point: set large and light, with the seconds and
+    // the half of the day as small companions on its baseline.
+    final face = FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.bottomLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
+            time,
+            style: DashboardType.display(
+              palette,
+              size: 58,
+              color: tone.figure,
+              weight: FontWeight.w300,
+            ),
+          ),
+          if (showSeconds)
+            Text(
+              ':${_now.second.toString().padLeft(2, '0')}',
+              style: DashboardType.display(
+                palette,
+                size: 24,
+                color: tone.label.withValues(alpha: 0.7),
+              ),
+            ),
+          if (period.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 6),
+              child: Text(
+                period,
+                style: DashboardType.eyebrow(palette, color: tone.label),
+              ),
+            ),
+        ],
       ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // A short clock is only a time; a taller one is a little calendar
+        // page — the day above, the date below.
+        if (!showDate || constraints.maxHeight < 104) {
+          return Align(alignment: Alignment.centerLeft, child: face);
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              DateFormat.EEEE().format(_now).toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: DashboardType.eyebrow(palette, color: tone.label)
+                  .copyWith(letterSpacing: 1.1, fontSize: 11.5),
+            ),
+            Expanded(
+              child: Align(alignment: Alignment.bottomLeft, child: face),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              DateFormat.yMMMMd().format(_now),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: DashboardType.body(palette, color: tone.inkSoft)
+                  .copyWith(fontSize: 13),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -180,6 +237,8 @@ final _calendar = DashboardWidgetDefinition(
   minimumColumnSpan: 4,
   minimumRowSpan: 5,
   showsTitleByDefault: false,
+  // Its navigation runs along the top edge; floating controls would sit on it.
+  reservesHeader: true,
   padding: EdgeInsets.zero,
   slashName: 'calendar',
   keywords: const [
@@ -648,6 +707,8 @@ final _countdown = DashboardWidgetDefinition(
   defaultColumnSpan: 3,
   defaultRowSpan: 3,
   defaultAccent: DashboardAccent.orange,
+  surface: DashboardSurface.gradient,
+  identity: DashboardAccent.orange,
   slashName: 'countdown',
   keywords: const ['countdown', 'deadline', 'timer', 'days left', 'until'],
   builder: (context) => _CountdownBody(context: context),
@@ -722,45 +783,83 @@ class _CountdownBodyState extends State<_CountdownBody> {
     final past = remaining.isNegative;
     final days = remaining.abs().inDays;
     final hours = remaining.abs().inHours % 24;
+    final tone = widget.context.tone;
+    final label = spec.setting(_keyLabel);
+    final date = DateFormat.yMMMd().format(target);
 
     return MouseRegion(
       cursor: widget.context.isTypable
           ? SystemMouseCursors.click
           : MouseCursor.defer,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Flexible(
+          // What is being counted down to, in the widget's own ink.
+          Text(
+            label.isNotEmpty
+                ? label
+                : (past ? LocaleKeys.dashboard_countdown_passed.tr() : date),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: DashboardType.eyebrow(palette, color: tone.label),
+          ),
+          Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: widget.context.isTypable
                   ? () => unawaited(_pickDate(target))
                   : null,
-              child: Center(
-                child: DashboardFigure(
+              child: Align(
+                alignment: Alignment.bottomLeft,
+                child: FittedBox(
                   key: _figure,
-                  value: days > 0 ? '$days' : '$hours',
-                  suffix: days > 0
-                      ? LocaleKeys.dashboard_countdown_days.tr()
-                      : LocaleKeys.dashboard_countdown_hours.tr(),
-                  palette: palette,
-                  alignment: CrossAxisAlignment.center,
-                  color: past ? palette.textMuted : widget.context.strong,
-                  caption: spec.setting(_keyLabel).isEmpty
-                      ? (past
-                          ? LocaleKeys.dashboard_countdown_passed.tr()
-                          : DateFormat.yMMMd().format(target))
-                      : spec.setting(_keyLabel),
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.bottomLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      Text(
+                        days > 0 ? '$days' : '$hours',
+                        style: DashboardType.display(
+                          palette,
+                          size: 60,
+                          weight: FontWeight.w300,
+                          color: past ? palette.textMuted : tone.figure,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        days > 0
+                            ? LocaleKeys.dashboard_countdown_days.tr()
+                            : LocaleKeys.dashboard_countdown_hours.tr(),
+                        style: DashboardType.eyebrow(
+                          palette,
+                          color: tone.label,
+                        ).copyWith(fontSize: 14),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
+          if (label.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                past ? LocaleKeys.dashboard_countdown_passed.tr() : date,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: DashboardType.caption(palette, color: tone.inkSoft),
+              ),
+            ),
           // What the countdown is FOR. A bare number on a wall says nothing
           // once the reason for setting it has been forgotten.
           // Keep the note's slot even when the stored value is empty: its
           // first unsaved draft lives in the field, not in the spec yet.
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           DashboardEditableText(
             value: spec.setting(_keyNote),
             hint: widget.context.isTypable
@@ -768,9 +867,9 @@ class _CountdownBodyState extends State<_CountdownBody> {
                 : '',
             palette: palette,
             enabled: widget.context.isTypable,
-            textAlign: TextAlign.center,
             multiline: true,
-            style: DashboardType.caption(palette),
+            style: DashboardType.caption(palette, color: tone.inkSoft)
+                .copyWith(fontSize: 12.5, height: 1.4),
             onChanged: (value) => widget.context.setSettings({_keyNote: value}),
           ),
         ],
@@ -802,6 +901,7 @@ final _reminders = DashboardWidgetDefinition(
   icon: Icons.notifications_active_rounded,
   group: DashboardWidgetGroup.time,
   defaultRowSpan: 5,
+  identity: DashboardAccent.orange,
   keywords: const ['reminders', 'tasks', 'todo', 'due', 'upcoming'],
   builder: (context) => _RemindersBody(context: context),
   configure: (context) => [
@@ -933,53 +1033,112 @@ class _ReminderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final overdue = reminder.firesAt.isBefore(DateTime.now());
+    final title = reminder.title.isEmpty
+        ? LocaleKeys.dashboard_reminders_untitled.tr()
+        : reminder.title;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: MouseRegion(
-        cursor: editable ? SystemMouseCursors.click : MouseCursor.defer,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: editable ? onOpen : null,
-          child: Row(
-            children: [
-              if (editable)
-                DashboardIconButton(
-                  icon: Icons.radio_button_unchecked_rounded,
-                  palette: palette,
-                  size: 22,
-                  iconSize: 14,
-                  tooltip: LocaleKeys.dashboard_reminders_done.tr(),
-                  onPressed: onComplete,
-                )
-              else
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: overdue ? palette.textMuted : strong,
-                    shape: BoxShape.circle,
+      padding: const EdgeInsets.only(bottom: 2),
+      child: _HoverRow(
+        palette: palette,
+        onTap: editable ? onOpen : null,
+        child: Row(
+          children: [
+            if (editable)
+              DashboardIconButton(
+                icon: Icons.radio_button_unchecked_rounded,
+                palette: palette,
+                color: overdue ? strong : palette.textMuted,
+                tooltip: LocaleKeys.dashboard_reminders_done.tr(),
+                onPressed: onComplete,
+              )
+            else
+              SizedBox(
+                width: 24,
+                child: Center(
+                  child: Container(
+                    width: 7,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: overdue ? strong : palette.textMuted,
+                      shape: BoxShape.circle,
+                    ),
                   ),
                 ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  reminder.title.isEmpty
-                      ? LocaleKeys.dashboard_reminders_untitled.tr()
-                      : reminder.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: DashboardType.body(palette).copyWith(fontSize: 13),
-                ),
               ),
-              const SizedBox(width: 8),
-              Text(
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: DashboardType.body(palette).copyWith(fontSize: 13.5),
+              ),
+            ),
+            const SizedBox(width: 8),
+            // When it is due, as a small chip — warm when it has slipped by.
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: overdue
+                    ? strong.withValues(alpha: palette.isDark ? 0.2 : 0.12)
+                    : palette.sunken.withValues(alpha: 0.8),
+                borderRadius:
+                    BorderRadius.circular(DashboardMetrics.pillRadius),
+              ),
+              child: Text(
                 DateFormat.MMMd().add_jm().format(reminder.firesAt),
-                style: DashboardType.caption(palette).copyWith(
-                  color: overdue ? strong : palette.textMuted,
-                ),
+                style: DashboardType.caption(
+                  palette,
+                  color: overdue ? strong : palette.textSecondary,
+                ).copyWith(fontSize: 11),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A list row that answers the pointer with a soft wash.
+class _HoverRow extends StatefulWidget {
+  const _HoverRow({
+    required this.palette,
+    required this.child,
+    this.onTap,
+  });
+
+  final DashboardPalette palette;
+  final Widget child;
+  final VoidCallback? onTap;
+
+  @override
+  State<_HoverRow> createState() => _HoverRowState();
+}
+
+class _HoverRowState extends State<_HoverRow> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = widget.palette;
+    final live = widget.onTap != null;
+    return MouseRegion(
+      cursor: live ? SystemMouseCursors.click : MouseCursor.defer,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: DashboardMetrics.hover,
+          curve: DashboardMetrics.curve,
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          decoration: BoxDecoration(
+            color: live && _hovered ? palette.hover : palette.hoverBase,
+            borderRadius: BorderRadius.circular(10),
           ),
+          child: widget.child,
         ),
       ),
     );

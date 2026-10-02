@@ -64,6 +64,7 @@ List<DashboardConfigField> _alignField(DashboardWidgetContext context) => [
 
 final _heading = DashboardWidgetDefinition(
   type: 'heading',
+  pageBlock: 'heading',
   label: () => LocaleKeys.dashboard_widget_heading.tr(),
   description: () => LocaleKeys.dashboard_widget_headingHint.tr(),
   icon: Icons.title_rounded,
@@ -77,7 +78,7 @@ final _heading = DashboardWidgetDefinition(
   keywords: const ['heading', 'title', 'header', 'h1', 'h2'],
   builder: (context) {
     final level = context.spec.integer(_keyLevel, fallback: 2).clamp(1, 3);
-    final size = switch (level) { 1 => 26.0, 2 => 20.0, _ => 16.0 };
+    final size = switch (level) { 1 => 28.0, 2 => 21.0, _ => 16.5 };
     return Align(
       alignment: switch (context.spec.setting(_keyAlign, fallback: 'left')) {
         'center' => Alignment.center,
@@ -120,6 +121,7 @@ final _heading = DashboardWidgetDefinition(
 
 final _text = DashboardWidgetDefinition(
   type: 'text',
+  pageBlock: 'paragraph',
   label: () => LocaleKeys.dashboard_widget_text.tr(),
   description: () => LocaleKeys.dashboard_widget_textHint.tr(),
   icon: Icons.notes_rounded,
@@ -138,7 +140,9 @@ final _text = DashboardWidgetDefinition(
       enabled: context.isTypable,
       multiline: true,
       textAlign: _alignOf(context.spec.setting(_keyAlign, fallback: 'left')),
-      style: DashboardType.body(context.palette, color: context.tone.ink),
+      // A note is read like a page, so it is set like one.
+      style: DashboardType.body(context.palette, color: context.tone.ink)
+          .copyWith(fontSize: 14, height: 1.55),
       onChanged: (value) => context.setSettings({_keyText: value}),
     ),
   ),
@@ -155,57 +159,70 @@ final _text = DashboardWidgetDefinition(
 
 final _quote = DashboardWidgetDefinition(
   type: 'quote',
+  pageBlock: 'quote',
   label: () => LocaleKeys.dashboard_widget_quote.tr(),
   icon: Icons.format_quote_rounded,
   group: DashboardWidgetGroup.text,
   defaultRowSpan: 3,
   showsTitleByDefault: false,
+  // Editorial: the words are set on the page itself, not boxed up.
+  surface: DashboardSurface.plain,
+  identity: DashboardAccent.purple,
   keywords: const ['quote', 'citation', 'saying'],
   builder: (context) {
     final palette = context.palette;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    // Editorial: a large mark in the widget's colour, the words set big
+    // enough to be a moment on the page, and the attribution underneath.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Container(
-          width: 3,
-          decoration: BoxDecoration(
-            color: context.strong.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(2),
+        Icon(
+          Icons.format_quote_rounded,
+          size: 30,
+          color: context.strong.withValues(alpha: 0.75),
+        ),
+        const SizedBox(height: 2),
+        Flexible(
+          child: DashboardEditableText(
+            findId: dashboardFindWidget(context.spec.id, _keyText),
+            value: context.spec.setting(_keyText),
+            hint: LocaleKeys.dashboard_widget_quoteHint.tr(),
+            palette: palette,
+            enabled: context.isTypable,
+            multiline: true,
+            style:
+                DashboardType.body(palette, color: context.tone.ink).copyWith(
+              fontSize: 17,
+              height: 1.45,
+              letterSpacing: -0.15,
+              fontStyle: FontStyle.italic,
+            ),
+            onChanged: (value) => context.setSettings({_keyText: value}),
           ),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Flexible(
-                child: DashboardEditableText(
-                  findId: dashboardFindWidget(context.spec.id, _keyText),
-                  value: context.spec.setting(_keyText),
-                  hint: LocaleKeys.dashboard_widget_quoteHint.tr(),
-                  palette: palette,
-                  enabled: context.isTypable,
-                  multiline: true,
-                  style: DashboardType.body(palette).copyWith(
-                    fontSize: 15,
-                    fontStyle: FontStyle.italic,
-                  ),
-                  onChanged: (value) => context.setSettings({_keyText: value}),
-                ),
-              ),
-              const SizedBox(height: 6),
-              DashboardEditableText(
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Container(
+              width: 14,
+              height: 1.5,
+              margin: const EdgeInsets.only(right: 8),
+              color: context.tone.label.withValues(alpha: 0.6),
+            ),
+            Expanded(
+              child: DashboardEditableText(
                 findId: dashboardFindWidget(context.spec.id, _keyAuthor),
                 value: context.spec.setting(_keyAuthor),
                 hint: LocaleKeys.dashboard_widget_quoteAuthor.tr(),
                 palette: palette,
                 enabled: context.isTypable,
-                style: DashboardType.caption(palette),
+                style:
+                    DashboardType.eyebrow(palette, color: context.tone.label),
                 onChanged: (value) => context.setSettings({_keyAuthor: value}),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ],
     );
@@ -227,6 +244,7 @@ final _quote = DashboardWidgetDefinition(
 
 final _callout = DashboardWidgetDefinition(
   type: 'callout',
+  pageBlock: 'callout',
   label: () => LocaleKeys.dashboard_widget_callout.tr(),
   icon: Icons.campaign_rounded,
   group: DashboardWidgetGroup.text,
@@ -234,26 +252,45 @@ final _callout = DashboardWidgetDefinition(
   defaultRowSpan: 2,
   defaultAccent: DashboardAccent.blue,
   showsTitleByDefault: false,
+  surface: DashboardSurface.tinted,
+  identity: DashboardAccent.blue,
   defaultSettings: const {_keyIcon: '💡'},
   keywords: const ['callout', 'notice', 'tip', 'warning', 'info'],
   builder: (context) => Row(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(
-        context.spec.setting(_keyIcon, fallback: '💡'),
-        style: const TextStyle(fontSize: 18),
+      // The emoji sits in a little lens of light on the wash, so it reads as
+      // the callout's badge rather than as a stray character.
+      Container(
+        width: 34,
+        height: 34,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: context.palette.isDark
+              ? Colors.black.withValues(alpha: 0.18)
+              : Colors.white.withValues(alpha: 0.7),
+          shape: BoxShape.circle,
+        ),
+        child: Text(
+          context.spec.setting(_keyIcon, fallback: '💡'),
+          style: const TextStyle(fontSize: 17, height: 1.1),
+        ),
       ),
-      const SizedBox(width: 10),
+      const SizedBox(width: 12),
       Expanded(
-        child: DashboardEditableText(
-          findId: dashboardFindWidget(context.spec.id, _keyText),
-          value: context.spec.setting(_keyText),
-          hint: LocaleKeys.dashboard_widget_calloutHint.tr(),
-          palette: context.palette,
-          enabled: context.isTypable,
-          multiline: true,
-          style: DashboardType.body(context.palette, color: context.tone.ink),
-          onChanged: (value) => context.setSettings({_keyText: value}),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 7),
+          child: DashboardEditableText(
+            findId: dashboardFindWidget(context.spec.id, _keyText),
+            value: context.spec.setting(_keyText),
+            hint: LocaleKeys.dashboard_widget_calloutHint.tr(),
+            palette: context.palette,
+            enabled: context.isTypable,
+            multiline: true,
+            style: DashboardType.body(context.palette, color: context.tone.ink)
+                .copyWith(fontSize: 14, height: 1.5),
+            onChanged: (value) => context.setSettings({_keyText: value}),
+          ),
         ),
       ),
     ],
@@ -275,12 +312,15 @@ final _callout = DashboardWidgetDefinition(
 
 final _stickyNote = DashboardWidgetDefinition(
   type: 'sticky_note',
+  pageBlock: 'sticky_note',
   label: () => LocaleKeys.dashboard_widget_stickyNote.tr(),
   icon: Icons.sticky_note_2_rounded,
   group: DashboardWidgetGroup.text,
   defaultColumnSpan: 3,
   defaultAccent: DashboardAccent.amber,
   showsTitleByDefault: false,
+  surface: DashboardSurface.tinted,
+  identity: DashboardAccent.amber,
   keywords: const ['sticky', 'note', 'memo', 'postit', 'reminder note'],
   builder: (context) => Align(
     alignment: Alignment.topLeft,
@@ -293,7 +333,9 @@ final _stickyNote = DashboardWidgetDefinition(
       multiline: true,
       style:
           DashboardType.body(context.palette, color: context.tone.ink).copyWith(
-        fontSize: 14,
+        fontSize: 15,
+        height: 1.45,
+        letterSpacing: -0.1,
         fontWeight: FontWeight.w500,
         fontVariations: flowyFontVariationsForWeight(FontWeight.w500),
       ),
@@ -312,6 +354,7 @@ final _stickyNote = DashboardWidgetDefinition(
 
 final _divider = DashboardWidgetDefinition(
   type: 'divider',
+  pageBlock: 'divider',
   label: () => LocaleKeys.dashboard_widget_divider.tr(),
   icon: Icons.horizontal_rule_rounded,
   group: DashboardWidgetGroup.text,

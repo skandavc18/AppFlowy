@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/premium_theme.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/canvas/canvas_model.dart';
 import 'package:flutter/material.dart';
 
@@ -401,6 +402,7 @@ class CanvasButton extends StatelessWidget {
         : selected
             ? palette.accent
             : palette.textSecondary;
+    final enabled = onPressed != null;
 
     return SizedBox.square(
       dimension: size,
@@ -408,7 +410,17 @@ class CanvasButton extends StatelessWidget {
         tooltip: tooltip,
         isSelected: selected,
         onPressed: onPressed,
-        icon: Icon(icon, size: iconSize),
+        // The same glyphs as the rest of the application, so a canvas follows
+        // the chosen icon style. A filled tool and a disabled one keep their
+        // own ink: an illustration on the accent fill would not read.
+        icon: WorkspaceGlyph(
+          icon,
+          size: iconSize,
+          color: enabled ? ink : palette.textMuted.withValues(alpha: 0.45),
+          role: filled || !enabled
+              ? WorkspaceGlyphRole.preserveInk
+              : WorkspaceGlyphRole.standard,
+        ),
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,
           minimumSize: Size.square(size),

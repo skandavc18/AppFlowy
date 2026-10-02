@@ -3,7 +3,7 @@ import 'package:appflowy/plugins/document/application/document_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/ai/operations/ai_writer_node_extension.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/plugins.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/protobuf.dart';
-import 'package:appflowy_editor/appflowy_editor.dart';
+import 'package:appflowy_editor/appflowy_editor.dart' hide QuoteBlockKeys;
 import 'package:universal_platform/universal_platform.dart';
 
 import 'slash_menu_items/mobile_items.dart';
@@ -62,6 +62,8 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
   DocumentBloc? documentBloc,
   bool isEmpty = false,
 }) {
+  final linkedViews = linkedTableViewSlashMenuItems();
+  final linkedCollections = linkedCollectionSlashMenuItems();
   final databaseItems = <SelectionMenuItem>[
     tableSlashMenuItem,
     spreadsheetSlashMenuItem,
@@ -73,7 +75,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
     referencedKanbanSlashMenuItem,
     if (documentBloc != null) calendarSlashMenuItem(documentBloc),
     referencedCalendarSlashMenuItem,
-    ...linkedTableViewSlashMenuItems(),
+    ...linkedViews,
   ];
 
   return registerSlashMenuSections([
@@ -86,6 +88,7 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
       newItems: {
         if (!isEmpty) continueWritingSlashMenuItem,
       },
+      wholeSectionPageOnly: true,
     ),
     SlashMenuSectionItems(
       section: SlashMenuSection.basicBlocks,
@@ -109,15 +112,30 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         todoListSlashMenuItem: '-[]',
         toggleListSlashMenuItem: '>',
       },
+      wholeSectionPageOnly: true,
     ),
     SlashMenuSectionItems(
       section: SlashMenuSection.interactive,
       items: interactiveSlashMenuItems(),
       descriptions: interactiveSlashMenuDescriptions(),
+      blockTypes: {
+        stickyNoteSlashMenuItem: StickyNoteBlockKeys.type,
+        buttonSlashMenuItem: ButtonBlockKeys.type,
+        progressSlashMenuItem: ProgressBlockKeys.type,
+        counterSlashMenuItem: CounterBlockKeys.type,
+        memorySlashMenuItem: MemoryBlockKeys.type,
+        inputSlashMenuItem: InputBlockKeys.type,
+        searchSlashMenuItem: SearchBlockKeys.type,
+        selectorSlashMenuItem: SelectorBlockKeys.type,
+        radioGroupSlashMenuItem: RadioGroupBlockKeys.type,
+        multiSelectSlashMenuItem: MultiSelectBlockKeys.type,
+        reminderBlockSlashMenuItem: ReminderBlockKeys.type,
+      },
     ),
     _islandSection(),
     if (documentBloc != null) _canvasSection(documentBloc),
     if (documentBloc != null) _dashboardSection(documentBloc),
+    _widgetSection(),
     SlashMenuSectionItems(
       section: SlashMenuSection.diagrams,
       items: diagramSlashMenuItems(),
@@ -149,20 +167,59 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         textFileSlashMenuItem,
         notebookSlashMenuItem,
       ],
+      blockTypes: {
+        imageSlashMenuItem: ImageBlockKeys.type,
+        folderLinkSlashMenuItem: FolderExplorerBlockKeys.type,
+        folderExplorerSlashMenuItem: FolderExplorerBlockKeys.type,
+        bookmarkSlashMenuItem: BookmarkBlockKeys.type,
+        chartSlashMenuItem: ChartBlockKeys.type,
+        for (final item in [
+          fileSlashMenuItem,
+          pdfSlashMenuItem,
+          wordSlashMenuItem,
+          excelSlashMenuItem,
+          powerpointSlashMenuItem,
+          htmlSlashMenuItem,
+          markdownSlashMenuItem,
+          zipSlashMenuItem,
+          csvSlashMenuItem,
+          jsonSlashMenuItem,
+          codeFileSlashMenuItem,
+          textFileSlashMenuItem,
+          notebookSlashMenuItem,
+        ])
+          item: FileBlockKeys.type,
+      },
     ),
     SlashMenuSectionItems(
       section: SlashMenuSection.collections,
       items: [
         if (documentBloc != null) ...collectionSlashMenuItems(documentBloc),
-        ...linkedCollectionSlashMenuItems(),
+        ...linkedCollections,
         // A page can also pull one object out of a connected service, which
         // reads as `/Google Drive`, `/OneDrive`, `/Box`, `/Google Photos`.
         ...externalEmbedSlashMenuItems(),
       ],
+      blockTypes: {
+        for (final item in linkedCollections)
+          item: FolderExplorerBlockKeys.type,
+      },
     ),
     SlashMenuSectionItems(
       section: SlashMenuSection.database,
       items: databaseItems,
+      blockTypes: {
+        pagePreviewSlashMenuItem: PagePreviewBlockKeys.type,
+      },
+      // Links and linked views belong to the page they are written in: they
+      // create views beneath it, or point into its own text.
+      pageOnly: {
+        linkToPageSlashMenuItem,
+        referencedGridSlashMenuItem,
+        referencedKanbanSlashMenuItem,
+        referencedCalendarSlashMenuItem,
+        ...linkedViews,
+      },
     ),
     SlashMenuSectionItems(
       section: SlashMenuSection.advanced,
@@ -182,6 +239,25 @@ List<SelectionMenuItem> _defaultSlashMenuItems({
         dateOrReminderSlashMenuItem,
         subPageSlashMenuItem,
       ],
+      blockTypes: {
+        dividerSlashMenuItem: DividerBlockKeys.type,
+        quoteSlashMenuItem: QuoteBlockKeys.type,
+        calloutSlashMenuItem: CalloutBlockKeys.type,
+      },
+      // Layout, headings, inline marks and the page's own outline and
+      // sub-pages only mean something inside a page's flow of text.
+      pageOnly: {
+        twoColumnsSlashMenuItem,
+        threeColumnsSlashMenuItem,
+        fourColumnsSlashMenuItem,
+        outlineSlashMenuItem,
+        toggleHeading1SlashMenuItem,
+        toggleHeading2SlashMenuItem,
+        toggleHeading3SlashMenuItem,
+        emojiSlashMenuItem,
+        dateOrReminderSlashMenuItem,
+        subPageSlashMenuItem,
+      },
     ),
   ]);
 }
@@ -222,6 +298,20 @@ SlashMenuSectionItems _dashboardSection(DocumentBloc documentBloc) {
     section: SlashMenuSection.dashboards,
     items: items,
     descriptions: dashboardSlashMenuDescriptions(items),
+  );
+}
+
+/// Every dashboard widget a page has no block of its own for, read from the
+/// widget registry as the menu opens.
+SlashMenuSectionItems _widgetSection() {
+  final items = dashboardWidgetSlashMenuItems();
+  return SlashMenuSectionItems(
+    section: SlashMenuSection.widgets,
+    items: items,
+    descriptions: dashboardWidgetSlashMenuDescriptions(items),
+    blockTypes: {
+      for (final item in items) item: DashboardWidgetBlockKeys.type,
+    },
   );
 }
 

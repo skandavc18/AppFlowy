@@ -26,6 +26,7 @@ import 'package:appflowy/workspace/application/dashboard/dashboard_controller.da
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_metadata.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_service.dart';
+import 'package:appflowy/workspace/application/dashboard/dashboard_variable.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
 import 'package:appflowy/workspace/application/view/view_listener.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -563,20 +564,29 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
       };
 
-  Widget _buildAddSection(DashboardPalette palette) => Padding(
-        padding: const EdgeInsets.only(bottom: 20),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: DashboardButton(
-            label: LocaleKeys.dashboard_section_add.tr(),
-            icon: Icons.add_rounded,
-            palette: palette,
-            onPressed: () => _controller.edit(
-              (document) => document.copyWith(
-                sections: [
-                  ...document.sections,
-                  DashboardSection(id: newDashboardId('section')),
-                ],
+  /// "Add section" waits at the foot of the board and only shows itself when
+  /// the pointer (or keyboard focus) arrives there.
+  Widget _buildAddSection(DashboardPalette palette) => PreviewToolbarRegion(
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: 20),
+          child: SizedBox(
+            height: 44,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: PreviewToolbar(
+                child: DashboardButton(
+                  label: LocaleKeys.dashboard_section_add.tr(),
+                  icon: Icons.add_rounded,
+                  palette: palette,
+                  onPressed: () => _controller.edit(
+                    (document) => document.copyWith(
+                      sections: [
+                        ...document.sections,
+                        DashboardSection(id: newDashboardId('section')),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -622,6 +632,20 @@ class _DashboardPageState extends State<DashboardPage> {
           label: LocaleKeys.dashboard_addDescription.tr(),
           icon: Icons.notes_rounded,
           onSelected: () => setState(() => _editingSubtitle = true),
+        ),
+        // Controls drive the whole board, so they are added from the board's
+        // own menu rather than from a button that is always on show.
+        AppMenuItem(
+          label: LocaleKeys.dashboard_variable_add.tr(),
+          icon: Icons.tune_rounded,
+          submenu: [
+            for (final kind in DashboardVariableKind.values)
+              AppMenuItem(
+                label: dashboardVariableKindLabel(kind),
+                icon: dashboardVariableKindIcon(kind),
+                onSelected: () => addDashboardVariable(_controller, kind),
+              ),
+          ],
         ),
         AppMenuItem(
           label: LocaleKeys.dashboard_mode_focus.tr(),
@@ -883,10 +907,18 @@ class _ModalWidget extends StatelessWidget {
       spec: spec,
       palette: palette,
     );
+    // Enlarged, a widget keeps the surface it wears on the board — except
+    // that one set straight onto the page is lifted onto a sheet, since it is
+    // now floating over everything else.
+    final appearance = widgetContext.appearance;
+    final surface =
+        appearance.media || appearance.surface == DashboardSurface.plain
+            ? DashboardSurface.floating
+            : appearance.surface;
     return GestureDetector(
       onTap: () => controller.openModal(null),
       child: ColoredBox(
-        color: Colors.black.withValues(alpha: palette.isDark ? 0.55 : 0.3),
+        color: Colors.black.withValues(alpha: palette.isDark ? 0.55 : 0.28),
         child: Center(
           child: GestureDetector(
             onTap: () {},
@@ -894,11 +926,13 @@ class _ModalWidget extends StatelessWidget {
               width: 900,
               height: 620,
               margin: const EdgeInsets.all(40),
-              decoration: BoxDecoration(
-                color: palette.toneFor(spec.accent).surface,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: palette.cardShadow(raised: true),
-              ),
+              decoration: palette
+                  .surfaceDecoration(
+                    surface,
+                    appearance.tone,
+                    radius: 24,
+                  )
+                  .copyWith(boxShadow: palette.cardShadow(dragging: true)),
               clipBehavior: Clip.antiAlias,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

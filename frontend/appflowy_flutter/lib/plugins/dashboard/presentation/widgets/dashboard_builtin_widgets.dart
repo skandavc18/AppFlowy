@@ -3,6 +3,7 @@ import 'package:appflowy/plugins/dashboard/presentation/widgets/content_widgets.
 import 'package:appflowy/plugins/dashboard/presentation/widgets/control_widgets.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/data_widgets.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/info_widgets.dart';
+import 'package:appflowy/plugins/dashboard/presentation/widgets/page_block_widget.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/text_widgets.dart';
 import 'package:appflowy/plugins/dashboard/presentation/widgets/time_widgets.dart';
 
@@ -10,8 +11,8 @@ import 'package:appflowy/plugins/dashboard/presentation/widgets/time_widgets.dar
 ///
 /// Called lazily the first time a dashboard is drawn. Adding a widget is one
 /// `register` call in one of these files and nothing else: the "Add" panel,
-/// the configuration panel, the `/` menu and the persisted document all read
-/// the registry, so none of them has to learn about it.
+/// the configuration panel, the `/` menu, a canvas's "Add" and the persisted
+/// document all read the registry, so none of them has to learn about it.
 void registerBuiltInDashboardWidgets() {
   registerDashboardTextWidgets();
   registerDashboardDataWidgets();
@@ -20,4 +21,6 @@ void registerBuiltInDashboardWidgets() {
   registerDashboardTimeWidgets();
   registerDashboardControlWidgets();
   registerDashboardInfoWidgets();
+  // Last: it carries blocks from pages, and is offered through them.
+  registerDashboardPageBlockWidget();
 }

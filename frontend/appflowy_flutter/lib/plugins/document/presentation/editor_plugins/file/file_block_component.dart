@@ -1478,13 +1478,15 @@ class FileBlockComponentState extends State<FileBlockComponent>
       return;
     }
     final path = file.path;
-    final documentBloc = context.read<DocumentBloc>();
-    final isLocalMode = documentBloc.isLocalMode;
+    // Outside a page (a dashboard or canvas holding this block) there is no
+    // document to attach a cloud upload to, so the file is kept locally.
+    final documentBloc = context.read<DocumentBloc?>();
+    final isLocalMode = documentBloc?.isLocalMode ?? true;
     final urlType = isLocalMode ? FileUrlType.local : FileUrlType.cloud;
 
     String? url;
     String? errorMsg;
-    if (isLocalMode) {
+    if (isLocalMode || documentBloc == null) {
       url = await saveFileToLocalStorage(path);
     } else {
       final result =

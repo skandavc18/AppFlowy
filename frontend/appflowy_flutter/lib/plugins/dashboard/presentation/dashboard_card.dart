@@ -9,6 +9,7 @@ import 'package:appflowy/shared/find_replace/surface_find.dart';
 import 'package:appflowy/shared/preview_toolbar.dart';
 import 'package:appflowy/shared/scrolling/scroll_activation_region.dart';
 import 'package:appflowy/shared/workspace_design.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_controller.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_document.dart';
 import 'package:appflowy/workspace/application/dashboard/dashboard_widget_spec.dart';
@@ -122,7 +123,8 @@ class _DashboardCardState extends State<DashboardCard> {
     final selected = definition?.requiresScrollActivation == true
         ? controller.selectedWidgetId == spec.id
         : widget.selected;
-    final tone = palette.toneFor(spec.accent);
+    final appearance = dashboardAppearanceOf(spec, palette);
+    final tone = appearance.tone;
     final widgetContext = DashboardWidgetContext(
       context: context,
       controller: controller,
@@ -138,15 +140,17 @@ class _DashboardCardState extends State<DashboardCard> {
           )
         : definition.builder(widgetContext);
 
-    final bare = definition?.paintsOwnSurface ?? false;
-    // Only a chart's automatic card disappears. Keep this shell (rather than
-    // paintsOwnSurface) so its title, padding, selection ring and grips survive,
-    // and honour a saved non-neutral accent as an explicit surface choice.
-    final integratedChart =
-        spec.type == 'chart' && spec.accent == DashboardAccent.neutral;
+    final bare = appearance.media;
     final showsTitle = spec.showTitle && spec.title.isNotEmpty;
     final trailing = definition?.headerTrailing?.call(widgetContext);
-    final showsHeader = showsTitle || trailing != null || _editable;
+    // Only a widget with its own navigation along its top edge gives its
+    // management controls a row of their own. Everything else keeps a clean
+    // top and shows them floating over the corner while it is hovered — a
+    // dashboard at rest should never look like it is being edited.
+    final reserves = definition?.reservesHeader ?? false;
+    final showsHeader =
+        showsTitle || trailing != null || (_editable && reserves);
+    final floatingControls = _editable && !showsHeader;
     final scale = spec.number(dashboardTextScaleKey, fallback: 1);
     final headerHeight = showsTitle || trailing != null
         ? (MediaQuery.textScalerOf(context).scale(13) * scale * 1.25 +
@@ -156,20 +160,22 @@ class _DashboardCardState extends State<DashboardCard> {
             double.infinity,
           )
         : DashboardMetrics.headerHeight;
+    final inset = bare ? 0.0 : 16.0;
 
     Widget content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Management owns layout space, even without a title. An overlay at
-        // top: 0 covered calendar navigation (or an embedded database header)
-        // at any width. Keep both slots mounted across access/title changes;
-        // hover/focus only reveal controls, never move or reparent the body.
+        // The header slot stays mounted across access and title changes, at
+        // zero height when unused. Hover and focus only reveal controls;
+        // they never move or reparent the body.
         _buildTitle(
-          tone,
+          appearance,
+          definition,
           showsTitle: showsTitle,
           height: showsHeader ? headerHeight : 0,
           selected: selected,
           trailing: trailing,
+          controls: _editable && showsHeader,
         ),
         if (!spec.collapsed || dashboardFindRevealsWidget(context, spec.id))
           Expanded(
@@ -177,10 +183,10 @@ class _DashboardCardState extends State<DashboardCard> {
             child: Padding(
               padding: definition?.padding ??
                   EdgeInsets.fromLTRB(
+                    inset,
+                    showsHeader ? (bare ? 0 : 2) : (bare ? 0 : 14),
+                    inset,
                     bare ? 0 : 14,
-                    showsHeader ? 0 : (bare ? 0 : 12),
-                    bare ? 0 : 14,
-                    bare ? 0 : 12,
                   ),
               child: DashboardFindEmbed.supports(spec)
                   ? DashboardFindEmbed(
@@ -212,22 +218,23 @@ class _DashboardCardState extends State<DashboardCard> {
       content = AnimatedContainer(
         duration: _motion,
         curve: DashboardMetrics.curve,
-        decoration: BoxDecoration(
-          color: integratedChart ? null : tone.surface,
-          borderRadius: BorderRadius.circular(DashboardMetrics.cardRadius),
-          boxShadow: integratedChart
-              ? const []
-              : palette.cardShadow(
-                  raised: _hovered,
-                  dragging: widget.dragging,
-                ),
+        decoration: palette.surfaceDecoration(
+          appearance.surface,
+          tone,
+          hovered: _hovered,
+          dragging: widget.dragging,
         ),
         foregroundDecoration: palette.selectionRing(
           selected: selected,
           radius: DashboardMetrics.cardRadius,
         ),
         clipBehavior: Clip.antiAlias,
-        child: content,
+        // Always present, so choosing another surface never rebuilds the
+        // content underneath it.
+        child: DecoratedBox(
+          decoration: palette.sheenFor(appearance.surface),
+          child: content,
+        ),
       );
     } else {
       content = ClipRRect(
@@ -235,6 +242,23 @@ class _DashboardCardState extends State<DashboardCard> {
         child: content,
       );
     }
+
+    // The floating controls are a slot of their own, inside the gesture
+    // detectors so their handle can carry the card.
+    content = Stack(
+      children: [
+        Positioned.fill(child: content),
+        if (floatingControls)
+          PositionedDirectional(
+            top: 8,
+            start: (definition?.controlsAtStart ?? false) ? 8 : null,
+            end: (definition?.controlsAtStart ?? false)
+                ? null
+                : DashboardMetrics.resizeHandle + 4,
+            child: _buildManagementControls(selected: selected, floating: true),
+          ),
+      ],
+    );
 
     Widget card = GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -278,7 +302,7 @@ class _DashboardCardState extends State<DashboardCard> {
     card = Stack(
       children: [
         Positioned.fill(child: card),
-        if (_editable && !widget.dragging) ..._buildGrips(),
+        if (_editable && !widget.dragging) ..._buildGrips(selected: selected),
       ],
     );
     card = DashboardEditingScope(controller: controller, child: card);
@@ -289,7 +313,13 @@ class _DashboardCardState extends State<DashboardCard> {
         // management control does not make it flicker away.
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
-        cursor: _editable ? SystemMouseCursors.grab : MouseCursor.defer,
+        // The hand only appears once a widget has been picked up (or on its
+        // handle): an ordinary hover is for reading, not for rearranging.
+        cursor: _editable && (selected || widget.dragging)
+            ? (widget.dragging
+                ? SystemMouseCursors.grabbing
+                : SystemMouseCursors.grab)
+            : MouseCursor.defer,
         child: AnimatedScale(
           duration: _motion,
           curve: DashboardMetrics.curve,
@@ -305,100 +335,184 @@ class _DashboardCardState extends State<DashboardCard> {
   }
 
   Widget _buildTitle(
-    DashboardTone tone, {
+    DashboardAppearance appearance,
+    DashboardWidgetDefinition? definition, {
     required bool showsTitle,
     required double height,
     required bool selected,
+    required bool controls,
     Widget? trailing,
-  }) =>
-      SizedBox(
-        key: ValueKey('dashboard-card-header-${spec.id}'),
-        height: height,
-        child: Padding(
-          // Both widget and management controls participate in the Row. The
-          // last target also stays clear of the overlaid right resize grip.
-          padding: const EdgeInsets.only(
-            left: 14,
-            right: DashboardMetrics.resizeHandle + 4,
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: showsTitle
-                    ? GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onDoubleTap: _editable ? _rename : null,
-                        child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: SurfaceFindTarget(
-                            id: dashboardFindWidget(spec.id, 'title'),
-                            child: Text(
-                              spec.title,
-                              maxLines: 1,
-                              style: DashboardType.cardTitle(
-                                palette,
-                                color: tone.inkSoft,
+  }) {
+    // On a wash of colour the label is written in that colour's own ink; on
+    // a neutral sheet it stays a quiet grey.
+    final ink =
+        appearance.onColour ? appearance.tone.label : palette.textSecondary;
+    return SizedBox(
+      key: ValueKey('dashboard-card-header-${spec.id}'),
+      height: height,
+      child: Padding(
+        // Both widget and management controls participate in the Row. The
+        // last target also stays clear of the overlaid right resize grip.
+        padding: EdgeInsets.only(
+          left: appearance.media ? 12 : 16,
+          right: DashboardMetrics.resizeHandle + 4,
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: showsTitle
+                  ? GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onDoubleTap: _editable ? _rename : null,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // A header that also carries the widget's own
+                            // controls has no room to spare: the words win.
+                            if (definition != null && trailing == null) ...[
+                              Icon(
+                                definition.icon,
+                                size: 14,
+                                color: appearance.onColour
+                                    ? appearance.tone.label
+                                    : appearance.tone.strong
+                                        .withValues(alpha: 0.85),
+                              ),
+                              const SizedBox(width: 7),
+                            ],
+                            SurfaceFindTarget(
+                              id: dashboardFindWidget(spec.id, 'title'),
+                              child: Text(
+                                spec.title,
+                                maxLines: 1,
+                                style: DashboardType.eyebrow(
+                                  palette,
+                                  color: ink,
+                                ),
                               ),
                             ),
-                          ),
+                          ],
                         ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
-              if (trailing != null) ...[
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 240),
-                      child: trailing,
-                    ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 2,
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 240),
+                    child: trailing,
                   ),
                 ),
-              ],
-              if (_editable) ...[
-                const SizedBox(width: 8),
-                _buildManagementControls(selected: selected),
-              ],
-            ],
-          ),
-        ),
-      );
-
-  Widget _buildManagementControls({required bool selected}) => PreviewToolbar(
-        key: ValueKey('dashboard-card-management-${spec.id}'),
-        keepVisible: selected,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            DashboardIconButton(
-              icon: Icons.tune_rounded,
-              palette: palette,
-              size: 24,
-              iconSize: 15,
-              tooltip: LocaleKeys.dashboard_card_configure.tr(),
-              onPressed: () => controller.configure(spec.id),
-            ),
-            const SizedBox(width: 4),
-            Builder(
-              builder: (anchor) => DashboardIconButton(
-                icon: Icons.more_horiz_rounded,
-                palette: palette,
-                size: 24,
-                tooltip: LocaleKeys.dashboard_card_more.tr(),
-                onPressed: () => _showMenuForCard(anchor),
               ),
-            ),
+            ],
+            if (controls) ...[
+              const SizedBox(width: 8),
+              _buildManagementControls(selected: selected, floating: false),
+            ],
           ],
         ),
-      );
+      ),
+    );
+  }
+
+  /// Configure and More — revealed on hover, focus or selection.
+  ///
+  /// Floating over a widget they sit on a small frosted pill with a handle,
+  /// so they read against any content and the card can be carried by them.
+  Widget _buildManagementControls({
+    required bool selected,
+    required bool floating,
+  }) {
+    final buttons = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (floating)
+          Tooltip(
+            message: LocaleKeys.dashboard_card_drag.tr(),
+            child: MouseRegion(
+              cursor: SystemMouseCursors.grab,
+              child: SizedBox(
+                key: ValueKey('dashboard-card-handle-${spec.id}'),
+                width: 18,
+                height: 24,
+                child: WorkspaceGlyph(
+                  Icons.drag_indicator_rounded,
+                  size: 14,
+                  color: palette.textMuted,
+                ),
+              ),
+            ),
+          ),
+        DashboardIconButton(
+          icon: Icons.tune_rounded,
+          palette: palette,
+          size: 24,
+          iconSize: 15,
+          tooltip: LocaleKeys.dashboard_card_configure.tr(),
+          onPressed: () => controller.configure(spec.id),
+        ),
+        SizedBox(width: floating ? 2 : 4),
+        Builder(
+          builder: (anchor) => DashboardIconButton(
+            icon: Icons.more_horiz_rounded,
+            palette: palette,
+            size: 24,
+            tooltip: LocaleKeys.dashboard_card_more.tr(),
+            onPressed: () => _showMenuForCard(anchor),
+          ),
+        ),
+      ],
+    );
+    return PreviewToolbar(
+      key: ValueKey('dashboard-card-management-${spec.id}'),
+      keepVisible: selected,
+      child: floating
+          ? DecoratedBox(
+              decoration: BoxDecoration(
+                color: palette.raised.withValues(
+                  alpha: palette.isDark ? 0.94 : 0.96,
+                ),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: palette.shadowColor.withValues(
+                      alpha: palette.isDark ? 0.4 : 0.14,
+                    ),
+                    blurRadius: 10,
+                    spreadRadius: -2,
+                    offset: const Offset(0, 2),
+                  ),
+                  if (palette.isDark)
+                    BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      spreadRadius: 0.5,
+                    ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: buttons,
+              ),
+            )
+          : buttons,
+    );
+  }
 
   /// The grips sit just INSIDE the card. A grip hanging off the edge is
   /// outside the stack's own box and can never be hit, which is what made
   /// resizing feel broken.
-  List<Widget> _buildGrips() => [
+  ///
+  /// They are always there to be found by the pointer — the cursor changes
+  /// as soon as it reaches an edge — but their marks only show on the edge
+  /// being pointed at, or around a widget that has been picked up.
+  List<Widget> _buildGrips({required bool selected}) => [
         Positioned(
           top: DashboardMetrics.cardRadius,
           right: 0,
@@ -408,6 +522,7 @@ class _DashboardCardState extends State<DashboardCard> {
             DashboardResizeEdge.right,
             SystemMouseCursors.resizeLeftRight,
             marker: _GripMarker.vertical,
+            selected: selected,
           ),
         ),
         Positioned(
@@ -419,6 +534,7 @@ class _DashboardCardState extends State<DashboardCard> {
             DashboardResizeEdge.bottom,
             SystemMouseCursors.resizeUpDown,
             marker: _GripMarker.horizontal,
+            selected: selected,
           ),
         ),
         Positioned(
@@ -430,6 +546,7 @@ class _DashboardCardState extends State<DashboardCard> {
             DashboardResizeEdge.corner,
             SystemMouseCursors.resizeDownRight,
             marker: _GripMarker.corner,
+            selected: selected,
           ),
         ),
       ];
@@ -438,31 +555,30 @@ class _DashboardCardState extends State<DashboardCard> {
     DashboardResizeEdge edge,
     MouseCursor cursor, {
     required _GripMarker marker,
+    required bool selected,
   }) =>
-      MouseRegion(
+      _ResizeGrip(
         cursor: cursor,
-        child: _EagerPan(
-          onStart: () {
-            if (_editable) widget.onResizeStart?.call(edge);
-          },
-          onUpdate: (delta) {
-            if (_editable) widget.onResizeUpdate?.call(edge, delta);
-          },
-          onEnd: () {
-            if (_editable) widget.onResizeEnd?.call();
-          },
-          child: AnimatedOpacity(
-            duration: _motion,
-            opacity: _hovered || widget.selected ? 1 : 0,
-            child: Center(child: _buildMarker(marker)),
-          ),
-        ),
+        visible: selected || (_hovered && marker == _GripMarker.corner),
+        motion: _motion,
+        onStart: () {
+          if (_editable) widget.onResizeStart?.call(edge);
+        },
+        onUpdate: (delta) {
+          if (_editable) widget.onResizeUpdate?.call(edge, delta);
+        },
+        onEnd: () {
+          if (_editable) widget.onResizeEnd?.call();
+        },
+        builder: (active) => _buildMarker(marker, active: active),
       );
 
   /// A handle nobody can see is a handle nobody uses — each edge shows the
-  /// grab bar it answers to.
-  Widget _buildMarker(_GripMarker marker) {
-    final ink = palette.textMuted.withValues(alpha: 0.75);
+  /// grab bar it answers to once the pointer is near it.
+  Widget _buildMarker(_GripMarker marker, {required bool active}) {
+    final ink = active
+        ? palette.accent.withValues(alpha: 0.85)
+        : palette.textMuted.withValues(alpha: 0.6);
     return switch (marker) {
       _GripMarker.vertical => Container(
           width: 3,
@@ -481,15 +597,15 @@ class _DashboardCardState extends State<DashboardCard> {
           ),
         ),
       _GripMarker.corner => Container(
-          width: 10,
-          height: 10,
+          width: 9,
+          height: 9,
           decoration: BoxDecoration(
             border: Border(
               right: BorderSide(color: ink, width: 2),
               bottom: BorderSide(color: ink, width: 2),
             ),
             borderRadius: const BorderRadius.only(
-              bottomRight: Radius.circular(4),
+              bottomRight: Radius.circular(5),
             ),
           ),
         ),
@@ -624,6 +740,30 @@ class _DashboardCardState extends State<DashboardCard> {
             ),
         ],
       ),
+      if (!(DashboardWidgetRegistry.definitionFor(spec.type)
+              ?.paintsOwnSurface ??
+          false))
+        AppMenuItem(
+          label: LocaleKeys.dashboard_card_style.tr(),
+          icon: Icons.layers_rounded,
+          submenu: [
+            for (final surface in DashboardSurface.values)
+              AppMenuItem(
+                label: dashboardSurfaceLabel(surface),
+                selected: dashboardChosenSurface(spec) == surface,
+                icon: dashboardSurfaceIcon(surface),
+                onSelected: () => controller.edit(
+                  (document) => document.withWidget(
+                    spec.withSettings({
+                      dashboardSurfaceKey: surface == DashboardSurface.automatic
+                          ? null
+                          : surface.name,
+                    }),
+                  ),
+                ),
+              ),
+          ],
+        ),
       AppMenuItem(
         label: LocaleKeys.dashboard_card_textSize.tr(),
         icon: Icons.format_size_rounded,
@@ -798,6 +938,23 @@ String dashboardAccentLabel(DashboardAccent accent) => switch (accent) {
       DashboardAccent.teal => LocaleKeys.dashboard_accent_teal.tr(),
     };
 
+/// The words for one of the ways a widget can meet the page.
+String dashboardSurfaceLabel(DashboardSurface surface) => switch (surface) {
+      DashboardSurface.automatic => LocaleKeys.dashboard_surface_automatic.tr(),
+      DashboardSurface.floating => LocaleKeys.dashboard_surface_floating.tr(),
+      DashboardSurface.tinted => LocaleKeys.dashboard_surface_tinted.tr(),
+      DashboardSurface.gradient => LocaleKeys.dashboard_surface_gradient.tr(),
+      DashboardSurface.plain => LocaleKeys.dashboard_surface_plain.tr(),
+    };
+
+IconData dashboardSurfaceIcon(DashboardSurface surface) => switch (surface) {
+      DashboardSurface.automatic => Icons.auto_awesome_rounded,
+      DashboardSurface.floating => Icons.layers_rounded,
+      DashboardSurface.tinted => Icons.format_color_fill_rounded,
+      DashboardSurface.gradient => Icons.gradient_rounded,
+      DashboardSurface.plain => Icons.text_fields_rounded,
+    };
+
 /// How far the pointer has to go before a press becomes a move.
 const double _dragThreshold = 4;
 
@@ -857,6 +1014,7 @@ class _EagerPan extends StatelessWidget {
               recognizer.onEnd = (_) {
                 onEnd();
               };
+
               recognizer.onCancel = () {
                 onEnd();
               };
@@ -874,6 +1032,68 @@ class _EagerPanRecognizer extends PanGestureRecognizer {
   // A two-finger scroll over a grip is still scrolling, not mouse resizing.
   @override
   void addAllowedPointerPanZoom(PointerPanZoomStartEvent event) {}
+}
+
+/// One edge a card is resized by.
+///
+/// Its mark appears on its own when the pointer reaches it (or while it is
+/// held), so a dashboard at rest is not fringed with handles.
+class _ResizeGrip extends StatefulWidget {
+  const _ResizeGrip({
+    required this.cursor,
+    required this.visible,
+    required this.motion,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+    required this.builder,
+  });
+
+  final MouseCursor cursor;
+
+  /// Shown regardless of the pointer: the card was picked up.
+  final bool visible;
+  final Duration motion;
+  final VoidCallback onStart;
+  final ValueChanged<Offset> onUpdate;
+  final VoidCallback onEnd;
+  final Widget Function(bool active) builder;
+
+  @override
+  State<_ResizeGrip> createState() => _ResizeGripState();
+}
+
+class _ResizeGripState extends State<_ResizeGrip> {
+  bool _hovered = false;
+  bool _held = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = _hovered || _held;
+    return MouseRegion(
+      cursor: widget.cursor,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: _EagerPan(
+        onStart: () {
+          setState(() => _held = true);
+          widget.onStart();
+        },
+        onUpdate: widget.onUpdate,
+        onEnd: () {
+          if (mounted) {
+            setState(() => _held = false);
+          }
+          widget.onEnd();
+        },
+        child: AnimatedOpacity(
+          duration: widget.motion,
+          opacity: widget.visible || active ? 1 : 0,
+          child: Center(child: widget.builder(active)),
+        ),
+      ),
+    );
+  }
 }
 
 class _RenameDialog extends StatelessWidget {

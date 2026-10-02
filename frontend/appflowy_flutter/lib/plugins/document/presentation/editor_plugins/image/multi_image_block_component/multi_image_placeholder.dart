@@ -335,6 +335,6 @@ class MultiImagePlaceholderState extends State<MultiImagePlaceholder> {
   }
 
   bool _isLocalMode() {
-    return context.read<DocumentBloc>().isLocalMode;
+    return context.read<DocumentBloc?>()?.isLocalMode ?? true;
   }
 }

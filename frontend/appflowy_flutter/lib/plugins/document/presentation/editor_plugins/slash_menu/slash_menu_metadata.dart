@@ -6,6 +6,9 @@ enum SlashMenuSection {
   interactive,
   canvas,
   dashboards,
+
+  /// Dashboard widgets placed straight into the page.
+  widgets,
   diagrams,
   media,
   collections,
@@ -19,6 +22,8 @@ class SlashMenuItemMetadata {
     this.shortcut,
     this.description,
     this.isNew = false,
+    this.blockType,
+    this.pageOnly = false,
   });
 
   final SlashMenuSection section;
@@ -28,6 +33,17 @@ class SlashMenuItemMetadata {
   final String? description;
 
   final bool isNew;
+
+  /// The node type the entry inserts, where it is known.
+  ///
+  /// A dashboard widget that already IS this block (its `pageBlock`) is what
+  /// a dashboard offers instead, so the block is not offered twice there.
+  final String? blockType;
+
+  /// The entry only makes sense in a page's flow of text — a heading level,
+  /// an inline date, columns — so it is not offered on dashboards and
+  /// canvases. Everything else, including every entry added later, is.
+  final bool pageOnly;
 }
 
 class SlashMenuSectionItems {
@@ -37,6 +53,9 @@ class SlashMenuSectionItems {
     this.shortcuts = const {},
     this.descriptions = const {},
     this.newItems = const {},
+    this.blockTypes = const {},
+    this.pageOnly = const {},
+    this.wholeSectionPageOnly = false,
   });
 
   final SlashMenuSection section;
@@ -44,6 +63,11 @@ class SlashMenuSectionItems {
   final Map<SelectionMenuItem, String> shortcuts;
   final Map<SelectionMenuItem, String> descriptions;
   final Set<SelectionMenuItem> newItems;
+  final Map<SelectionMenuItem, String> blockTypes;
+  final Set<SelectionMenuItem> pageOnly;
+
+  /// Every entry in the section is [SlashMenuItemMetadata.pageOnly].
+  final bool wholeSectionPageOnly;
 }
 
 final _metadata =
@@ -63,6 +87,9 @@ List<SelectionMenuItem> registerSlashMenuSections(
         shortcut: section.shortcuts[item],
         description: section.descriptions[item],
         isNew: section.newItems.contains(item),
+        blockType: section.blockTypes[item],
+        pageOnly:
+            section.wholeSectionPageOnly || section.pageOnly.contains(item),
       );
       items.add(item);
     }

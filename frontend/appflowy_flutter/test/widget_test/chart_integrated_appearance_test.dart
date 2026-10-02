@@ -522,6 +522,10 @@ void main() {
           icon: original.icon,
           group: original.group,
           paintsOwnSurface: original.paintsOwnSurface,
+          surface: original.surface,
+          identity: original.identity,
+          reservesHeader: original.reservesHeader,
+          controlsAtStart: original.controlsAtStart,
           padding: original.padding,
           headerTrailing: original.headerTrailing,
           builder: (context) => AppChart(
@@ -616,7 +620,8 @@ void main() {
 
     testWidgets('$appearance: non-chart dashboard cards retain their surface',
         (tester) async {
-      final spec = DashboardWidgetRegistry.definitionFor('metric')!.create();
+      // A floating sheet; a metric is now set straight onto the page.
+      final spec = DashboardWidgetRegistry.definitionFor('text')!.create();
       final controller = DashboardController(
         viewId: '',
         document: DashboardDocument(

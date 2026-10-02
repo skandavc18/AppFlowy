@@ -12,6 +12,7 @@ import 'package:appflowy/workspace/application/dashboard/dashboard_action.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'web_embed_block.dart';
 import 'web_embed_sites.dart';
 
 /// The dashboard card for a post, video, map or document from the web.
@@ -26,6 +27,7 @@ const _displayPoster = 'poster';
 DashboardWidgetDefinition webEmbedDashboardWidget(String extensionId) =>
     DashboardWidgetDefinition(
       type: webEmbedWidgetType,
+      pageBlock: WebEmbedBlockKeys.type,
       extensionId: extensionId,
       label: () => 'Web embed',
       description: () =>

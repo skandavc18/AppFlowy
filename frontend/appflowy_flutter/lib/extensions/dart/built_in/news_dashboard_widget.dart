@@ -18,6 +18,7 @@ const _keyShowImages = 'showImages';
 
 DashboardWidgetDefinition newsDashboardWidget() => DashboardWidgetDefinition(
       type: newsWidgetType,
+      pageBlock: NewsBlockKeys.type,
       extensionId: 'news',
       label: () => 'News feed',
       description: () => 'Headlines from any RSS or Atom feed',
@@ -28,6 +29,7 @@ DashboardWidgetDefinition newsDashboardWidget() => DashboardWidgetDefinition(
       minimumColumnSpan: 3,
       minimumRowSpan: 3,
       showsTitleByDefault: false,
+      reservesHeader: true,
       keywords: const ['news', 'feed', 'rss', 'atom', 'headlines', 'articles'],
       defaultSettings: {
         _keyUrl: newsSources.first.url,

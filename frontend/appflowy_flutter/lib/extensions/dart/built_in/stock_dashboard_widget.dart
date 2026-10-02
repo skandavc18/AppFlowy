@@ -24,6 +24,7 @@ const _keyFilled = 'filled';
 
 DashboardWidgetDefinition stockDashboardWidget() => DashboardWidgetDefinition(
       type: stockWidgetType,
+      pageBlock: StockBlockKeys.type,
       extensionId: 'stock',
       label: () => 'Share price',
       description: () => 'A price, its move and a chart you can scrub',
@@ -34,6 +35,7 @@ DashboardWidgetDefinition stockDashboardWidget() => DashboardWidgetDefinition(
       minimumColumnSpan: 3,
       minimumRowSpan: 4,
       showsTitleByDefault: false,
+      reservesHeader: true,
       keywords: const ['stock', 'share', 'ticker', 'price', 'quote', 'market'],
       defaultSettings: const {
         _keySymbol: 'AAPL',

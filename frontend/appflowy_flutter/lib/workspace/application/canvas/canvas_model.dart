@@ -50,7 +50,14 @@ enum CanvasNodeKind {
   code('code'),
 
   /// Mermaid, a mind map, or another drawn figure.
-  diagram('diagram');
+  diagram('diagram'),
+
+  /// A dashboard widget — a clock, a chart, a checklist — live on the canvas.
+  widget('widget'),
+
+  /// Anything a page's `/` menu inserts — a table, a map, a code block —
+  /// kept on the card as blocks of its own.
+  block('block');
 
   const CanvasNodeKind(this.id);
 
@@ -69,7 +76,21 @@ enum CanvasNodeKind {
   /// Whether the card's body is worth reading at a glance, so it should be
   /// searched and outlined.
   bool get carriesText => this == text || this == code || this == diagram;
+
+  /// Whether the card holds something to use in place — a widget's controls,
+  /// a block's own editor — so opening it hands it the pointer.
+  bool get isInteractive => this == widget || this == block;
 }
+
+/// The key a widget card keeps its dashboard widget under, as the dashboard
+/// stores it.
+const String canvasWidgetSpecKey = 'widget';
+
+/// The key a block card keeps its blocks under: a page document's JSON.
+const String canvasBlockDocumentKey = 'document';
+
+/// The `/` entry a block card's blocks came from, kept to name the card.
+const String canvasBlockNameKey = 'block';
 
 /// A diagram card is one of two quite different things, so which one has to be
 /// chosen before the card can draw anything.
@@ -217,6 +238,8 @@ Size defaultCanvasNodeSize(CanvasNodeKind kind) => switch (kind) {
       CanvasNodeKind.image => const Size(420, 300),
       CanvasNodeKind.code => const Size(380, 200),
       CanvasNodeKind.diagram => const Size(440, 320),
+      CanvasNodeKind.widget => const Size(360, 260),
+      CanvasNodeKind.block => const Size(460, 320),
     };
 
 /// How large a picture is allowed to make its own card when it is first put
@@ -353,6 +376,8 @@ class CanvasNode {
         CanvasNodeKind.file =>
           reference.isEmpty,
         CanvasNodeKind.diagram => diagramKind == null,
+        CanvasNodeKind.widget => data[canvasWidgetSpecKey] is! Map,
+        CanvasNodeKind.block => data[canvasBlockDocumentKey] is! Map,
         CanvasNodeKind.text || CanvasNodeKind.code => false,
       };
 
