@@ -288,7 +288,7 @@ void showEventDetails({
     rowCache: databaseController.rowCache,
   );
 
-  FlowyOverlay.show(
+  showRowDetailPage(
     context: context,
     builder: (BuildContext overlayContext) {
       return BlocProvider.value(

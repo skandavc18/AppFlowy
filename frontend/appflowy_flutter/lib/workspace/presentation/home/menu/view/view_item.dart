@@ -1163,6 +1163,7 @@ SidebarIcon sidebarViewIcon(ViewPB view) {
       TableViewKind.form => SidebarIcon.form,
       TableViewKind.gallery => SidebarIcon.gallery,
       TableViewKind.mailbox => SidebarIcon.mailbox,
+      TableViewKind.list => SidebarIcon.list,
     };
   }
   if (view.extensionTableView != null) {

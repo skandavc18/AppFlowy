@@ -1159,7 +1159,7 @@ void _openCard({
     rowCache: databaseController.rowCache,
   );
 
-  FlowyOverlay.show(
+  showRowDetailPage(
     context: context,
     builder: (_) => BlocProvider.value(
       value: context.read<UserWorkspaceBloc>(),

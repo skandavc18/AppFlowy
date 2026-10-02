@@ -9,6 +9,7 @@ import 'package:appflowy/plugins/database_document/database_document_plugin.dart
 import 'package:appflowy/plugins/document/presentation/editor_plugins/page_versions/page_version_host.dart';
 import 'package:appflowy/workspace/application/page_versions/page_versions.dart';
 import 'package:appflowy/plugins/document/presentation/editor_drop_manager.dart';
+import 'package:appflowy/shared/floating_modal.dart';
 import 'package:appflowy/shared/premium_theme.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
 import 'package:appflowy/startup/startup.dart';
@@ -32,6 +33,13 @@ const double _rowDetailMaxWidth = 960;
 const double _rowDetailMinHeight = 320;
 const double _rowDetailMargin = 56;
 const double _rowDetailRadius = 20;
+
+/// Opens a row's page as a popup floating over its table.
+Future<void> showRowDetailPage({
+  required BuildContext context,
+  required WidgetBuilder builder,
+}) =>
+    showFloatingDialog<void>(context: context, builder: builder);
 
 class RowDetailPage extends StatefulWidget with FlowyOverlayDelegate {
   const RowDetailPage({

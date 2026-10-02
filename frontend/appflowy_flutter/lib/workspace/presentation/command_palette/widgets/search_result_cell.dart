@@ -4,12 +4,11 @@ import 'package:appflowy/workspace/application/command_palette/command_palette_b
 import 'package:appflowy/workspace/application/command_palette/search_result_list_bloc.dart';
 import 'package:appflowy/workspace/application/workspace_item/workspace_item.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_delete_button.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_row_surface.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/search_icon.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra/theme_extension.dart';
-import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flowy_infra_ui/widget/spacing.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -123,21 +122,14 @@ class _SearchResultCellState extends State<SearchResultCell> {
             _hasFocus = hasFocus;
           });
         },
-        child: FlowyHover(
-          onHover: (value) {
-            context.read<SearchResultListBloc>().add(
-                  SearchResultListEvent.onHoverResult(
-                    item: item,
-                    userHovered: true,
-                  ),
-                );
-          },
-          isSelected: () => _hasFocus || widget.isHovered,
-          style: HoverStyle(
-            borderRadius: BorderRadius.circular(8),
-            hoverColor: theme.fillColorScheme.contentHover,
-            foregroundColorOnHover: AFThemeExtension.of(context).textColor,
-          ),
+        child: PaletteRowSurface(
+          active: _hasFocus || widget.isHovered,
+          onHover: () => context.read<SearchResultListBloc>().add(
+                SearchResultListEvent.onHoverResult(
+                  item: item,
+                  userHovered: true,
+                ),
+              ),
           child: Padding(
             padding: EdgeInsets.all(theme.spacing.l),
             child: Column(

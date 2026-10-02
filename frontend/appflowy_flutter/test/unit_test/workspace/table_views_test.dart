@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:appflowy/plugins/database/application/card_preview.dart';
 import 'package:appflowy/workspace/application/table_views/form_spec.dart';
 import 'package:appflowy/workspace/application/table_views/gallery_spec.dart';
+import 'package:appflowy/workspace/application/table_views/list_spec.dart';
 import 'package:appflowy/workspace/application/table_views/mailbox_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_query.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
@@ -649,6 +650,169 @@ void main() {
       );
       expect(sections.first.rows.map((row) => row.id).toList(), ['a', 'b']);
       expect(sections.last.rows.single.id, 'd');
+    });
+  });
+
+  group('reading a table as a list', () {
+    test('an arrangement survives a round trip', () {
+      const spec = ListSpec(
+        titleColumn: 'name',
+        propertyColumns: ['status', 'due'],
+        hiddenColumns: ['notes'],
+        showIcons: false,
+        sortColumn: 'due',
+        descending: true,
+        filterColumn: 'status',
+        filterValue: 'Doing',
+        groupColumn: 'status',
+        collapsedGroups: ['Done'],
+      );
+
+      expect(ListSpec.fromJson(spec.toJson()), spec);
+      expect(
+        ListSpec.fromJson(
+          jsonDecode(jsonEncode(spec.toJson())) as Map<String, dynamic>,
+        ),
+        spec,
+      );
+    });
+
+    test('a list nobody has arranged saves nothing and shows icons', () {
+      const spec = ListSpec();
+      expect(spec.toJson(), isEmpty);
+      expect(ListSpec.fromJson(const {}), spec);
+      expect(spec.showIcons, isTrue);
+      expect(spec.query('').isPlain, isTrue);
+    });
+
+    test('the arrangement is kept but the search is not', () {
+      const spec = ListSpec(groupColumn: 'status', collapsedGroups: ['Done']);
+      final query = spec.query('report').copyWith(
+            sortColumn: 'due',
+            direction: TableSortDirection.descending,
+            filterColumn: 'owner',
+            filterValue: 'Ada',
+          );
+
+      final next = spec.withQuery(query);
+
+      expect(next.sortColumn, 'due');
+      expect(next.descending, isTrue);
+      expect(next.filterColumn, 'owner');
+      expect(next.filterValue, 'Ada');
+      expect(next.collapsedGroups, ['Done']);
+      expect(next.toJson().values, isNot(contains('report')));
+      expect(next.query('report').search, 'report');
+    });
+
+    test('regrouping forgets which groups were folded', () {
+      const spec = ListSpec(groupColumn: 'status', collapsedGroups: ['Done']);
+      final next = spec.withQuery(spec.query('').copyWith(groupColumn: 'who'));
+      expect(next.groupColumn, 'who');
+      expect(next.collapsedGroups, isEmpty);
+      expect(next.toggleGroup('Ada').toggleGroup('Ada'), next);
+      expect(next.toggleGroup('Ada').isCollapsed('Ada'), isTrue);
+    });
+
+    test('hidden properties are still read, only not shown', () {
+      const spec = ListSpec(titleColumn: 'name', hiddenColumns: ['notes']);
+      expect(spec.readSpec.titleColumn, 'name');
+      expect(spec.readSpec.hiddenColumns, isEmpty);
+      expect(spec.readSpec.propertyColumns, isEmpty);
+
+      final card = _card(
+        'r',
+        'Report',
+        cells: {'status': 'Doing', 'notes': 'long', 'due': 'Friday'},
+      );
+      expect(
+        spec.shownOf(card.properties).map((p) => p.fieldId).toList(),
+        ['status', 'due'],
+      );
+    });
+
+    test('showing and hiding a property keeps everything else in order', () {
+      const all = ListSpec();
+      final hidden = all.toggleProperty('notes');
+      expect(hidden.isShown('notes'), isFalse);
+      expect(hidden.isShown('status'), isTrue);
+      expect(hidden.toggleProperty('notes'), all);
+
+      const chosen = ListSpec(propertyColumns: ['due', 'status']);
+      final card = _card(
+        'r',
+        'Report',
+        cells: {'status': 'Doing', 'notes': 'long', 'due': 'Friday'},
+      );
+      expect(
+        chosen.shownOf(card.properties).map((p) => p.fieldId).toList(),
+        ['due', 'status'],
+      );
+      final added = chosen.toggleProperty('notes');
+      expect(added.propertyColumns, ['due', 'status', 'notes']);
+      expect(
+        added.shownOf(card.properties).map((p) => p.fieldId).toList(),
+        ['due', 'status', 'notes'],
+      );
+    });
+
+    test('groups follow the column\'s own option order', () {
+      final cards = [
+        _card('a', 'A', cells: {'status': 'Done'}),
+        _card('b', 'B', cells: {'status': 'Later'}),
+        _card('c', 'C'),
+        _card('d', 'D', cells: {'status': 'To do'}),
+        _card('e', 'E', cells: {'status': 'Unlisted'}),
+      ];
+      final groups = groupTableRows(cards, 'status', ungrouped: 'None');
+
+      final ordered = orderListGroups(
+        groups,
+        const ['To do', 'Doing', 'Done', 'Later'],
+        ungrouped: 'None',
+      );
+
+      expect(
+        ordered.map((group) => group.label).toList(),
+        ['To do', 'Done', 'Later', 'Unlisted', 'None'],
+      );
+      expect(
+        orderListGroups(groups, const [], ungrouped: 'None'),
+        same(groups),
+      );
+    });
+
+    test('a select column\'s options are read from its settings', () {
+      final options = SingleSelectTypeOptionPB()
+        ..options.addAll([
+          SelectOptionPB(id: '1', name: 'To do', color: SelectOptionColorPB.Blue),
+          SelectOptionPB(id: '2', name: 'Done', color: SelectOptionColorPB.Green),
+        ]);
+      final field = _field('status', 'Status', FieldType.SingleSelect)
+        ..typeOptionData = options.writeToBuffer();
+
+      expect(
+        listOptionsOf(field).map((option) => option.name).toList(),
+        ['To do', 'Done'],
+      );
+      expect(listOptionsOf(_field('n', 'Notes', FieldType.RichText)), isEmpty);
+      expect(
+        listOptionsOf(
+          _field('broken', 'Broken', FieldType.MultiSelect)
+            ..typeOptionData = [0xFF, 0xFF, 0xFF],
+        ),
+        isEmpty,
+      );
+    });
+
+    test('a line shows whole properties only', () {
+      expect(listStripFit(const [60, 80, 50], 300, gap: 14), 3);
+      expect(listStripFit(const [60, 80, 50], 154, gap: 14), 2);
+      expect(listStripFit(const [60, 80, 50], 153, gap: 14), 1);
+      expect(listStripFit(const [60, 80, 50], 59, gap: 14), 0);
+      expect(listStripFit(const [], 100, gap: 14), 0);
+      // A wide property does not let a narrower one after it jump the queue.
+      expect(listStripFit(const [40, 200, 20], 120, gap: 14), 1);
     });
   });
 }

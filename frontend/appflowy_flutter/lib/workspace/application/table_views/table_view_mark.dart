@@ -15,7 +15,8 @@ enum TableViewKind {
   feed('appflowy_feed'),
   form('appflowy_form'),
   gallery('appflowy_gallery'),
-  mailbox('appflowy_mailbox');
+  mailbox('appflowy_mailbox'),
+  list('appflowy_list');
 
   const TableViewKind(this.envelopeKey);
 
@@ -29,6 +30,7 @@ IconData tableViewIcon(TableViewKind kind) => switch (kind) {
       TableViewKind.form => Icons.assignment_rounded,
       TableViewKind.gallery => Icons.grid_view_rounded,
       TableViewKind.mailbox => Icons.mark_email_unread_rounded,
+      TableViewKind.list => Icons.view_list_rounded,
     };
 
 /// The mark that says a table should open as something other than a grid.
@@ -203,4 +205,6 @@ extension TableViewMarkExtension on ViewPB {
   bool get isGalleryView => tableViewKind == TableViewKind.gallery;
 
   bool get isMailboxView => tableViewKind == TableViewKind.mailbox;
+
+  bool get isListView => tableViewKind == TableViewKind.list;
 }

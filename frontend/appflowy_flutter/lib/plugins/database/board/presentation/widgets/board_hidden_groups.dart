@@ -439,7 +439,7 @@ class HiddenGroupPopupItemList extends StatelessWidget {
                       databaseController: databaseController,
                     ),
                     onPressed: () {
-                      FlowyOverlay.show(
+                      showRowDetailPage(
                         context: context,
                         builder: (_) => BlocProvider.value(
                           value: context.read<UserWorkspaceBloc>(),

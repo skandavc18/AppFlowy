@@ -110,6 +110,7 @@ enum SidebarIcon {
   form('office', 'list-checks'),
   gallery('design', 'squares-four'),
   mailbox('communications', 'envelope-simple'),
+  list('design', 'rows'),
   book('office', 'book-open'),
   album('media', 'images'),
   repository('technology_development', 'git-branch'),

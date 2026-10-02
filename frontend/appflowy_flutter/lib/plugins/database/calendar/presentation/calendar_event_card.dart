@@ -180,7 +180,7 @@ class _EventCardState extends State<EventCard> {
                 rowCache: widget.databaseController.rowCache,
               );
 
-              FlowyOverlay.show(
+              showRowDetailPage(
                 context: context,
                 builder: (_) => BlocProvider.value(
                   value: context.read<UserWorkspaceBloc>(),

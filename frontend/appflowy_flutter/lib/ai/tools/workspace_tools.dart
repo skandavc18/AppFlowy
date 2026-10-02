@@ -204,7 +204,7 @@ class WorkspaceToolServer implements AIToolServer {
     _tool(
       'create_table_view',
       'Add another reading of an existing table: a chart, a map, slides, a '
-          'timeline, a feed, a form, a gallery or a mailbox.',
+          'timeline, a feed, a form, a gallery, a mailbox or a list.',
       properties: {
         'table_id': {
           'type': 'string',
@@ -559,6 +559,7 @@ class WorkspaceToolServer implements AIToolServer {
     'form': 'appflowy_form',
     'gallery': 'appflowy_gallery',
     'mailbox': 'appflowy_mailbox',
+    'list': 'appflowy_list',
   };
 
   @override

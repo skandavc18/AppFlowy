@@ -32,6 +32,7 @@ const _linkedTableViewKinds = [
   WorkspaceTableKind.feed,
   WorkspaceTableKind.form,
   WorkspaceTableKind.mailbox,
+  WorkspaceTableKind.list,
 ];
 
 /// One "Linked …" entry per table reading, so `/linked chart` finds a chart

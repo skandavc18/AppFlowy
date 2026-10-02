@@ -13,14 +13,17 @@ import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/application/document_data_pb_extension.dart';
 import 'package:appflowy/plugins/document/application/document_service.dart';
 import 'package:appflowy/plugins/document/presentation/editor_configuration.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/code_block/deferred_code_highlight.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/cover/document_immersive_cover_bloc.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/archive/archive_document.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/file_preview_kind.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/file/office/office_text_preview.dart';
+import 'package:appflowy/plugins/document/presentation/editor_plugins/file/sandboxed_code_runner.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/media/video_thumbnail_cache.dart';
 import 'package:appflowy/plugins/document/presentation/editor_style.dart';
 import 'package:appflowy/shared/appflowy_network_image.dart';
+import 'package:appflowy/shared/paper_theme.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/shared/patterns/file_type_patterns.dart';
@@ -490,75 +493,87 @@ class _DocumentPagePreviewState extends State<_DocumentPagePreview> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Center(child: CircularProgressIndicator.adaptive());
+      return const _PreviewFadeIn(
+        key: ValueKey('document-preview-loading'),
+        delay: _spinnerDelay,
+        child: Center(child: CircularProgressIndicator.adaptive()),
+      );
     }
 
     final editorState = this.editorState;
     if (hasError || editorState == null) {
-      return _PreviewError(onRetry: () => unawaited(_loadDocument()));
+      return _PreviewFadeIn(
+        key: const ValueKey('document-preview-error'),
+        child: _PreviewError(onRetry: () => unawaited(_loadDocument())),
+      );
     }
     if (blank) {
-      return BoardPreviewEmptyNote(
-        key: const ValueKey('document-preview-empty'),
-        icon: Icons.article_rounded,
-        message: LocaleKeys.viewLibrary_emptyPage.tr(),
+      return _PreviewFadeIn(
+        child: BoardPreviewEmptyNote(
+          key: const ValueKey('document-preview-empty'),
+          icon: Icons.article_rounded,
+          message: LocaleKeys.viewLibrary_emptyPage.tr(),
+        ),
       );
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
-          return const SizedBox.shrink();
-        }
+    return _PreviewFadeIn(
+      key: const ValueKey('document-preview-ready'),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth <= 0 || constraints.maxHeight <= 0) {
+            return const SizedBox.shrink();
+          }
 
-        final scale = constraints.maxWidth / _canvasWidth;
-        final canvasHeight = constraints.maxHeight / scale;
-        final styleCustomizer = EditorStyleCustomizer(
-          context: context,
-          padding: const EdgeInsets.symmetric(horizontal: 40),
-          width: _canvasWidth,
-          editorState: editorState,
-        );
-        final baseEditorStyle = styleCustomizer.style();
-        final editorStyle = baseEditorStyle.copyWith(
-          cursorColor: Colors.transparent,
-          cursorWidth: 0,
-          textStyleConfiguration: baseEditorStyle.textStyleConfiguration
-              .copyWith(lineHeight: _lineHeight),
-        );
-        final blockBuilders = buildBlockComponentBuilders(
-          context: context,
-          editorState: editorState,
-          styleCustomizer: styleCustomizer,
-          editable: false,
-          customPadding: (node) => node.type == HeadingBlockKeys.type
-              ? const EdgeInsets.only(top: 6, bottom: 2)
-              : EdgeInsets.zero,
-          alwaysDistributeSimpleTableColumnWidths: true,
-        );
+          final scale = constraints.maxWidth / _canvasWidth;
+          final canvasHeight = constraints.maxHeight / scale;
+          final styleCustomizer = EditorStyleCustomizer(
+            context: context,
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            width: _canvasWidth,
+            editorState: editorState,
+          );
+          final baseEditorStyle = styleCustomizer.style();
+          final editorStyle = baseEditorStyle.copyWith(
+            cursorColor: Colors.transparent,
+            cursorWidth: 0,
+            textStyleConfiguration: baseEditorStyle.textStyleConfiguration
+                .copyWith(lineHeight: _lineHeight),
+          );
+          final blockBuilders = buildBlockComponentBuilders(
+            context: context,
+            editorState: editorState,
+            styleCustomizer: styleCustomizer,
+            editable: false,
+            customPadding: (node) => node.type == HeadingBlockKeys.type
+                ? const EdgeInsets.only(top: 6, bottom: 2)
+                : EdgeInsets.zero,
+            alwaysDistributeSimpleTableColumnWidths: true,
+          );
 
-        return ClipRect(
-          child: FittedBox(
-            key: const ValueKey('document-preview-canvas'),
-            alignment: Alignment.topLeft,
-            fit: BoxFit.fill,
-            child: SizedBox(
-              width: _canvasWidth,
-              height: canvasHeight,
-              child: AppFlowyEditor(
-                editorState: editorState,
-                editorStyle: editorStyle,
-                blockComponentBuilders: blockBuilders,
-                contextMenuItems: const [],
-                disableSelectionService: true,
-                disableKeyboardService: true,
-                disableAutoScroll: true,
-                editable: false,
+          return ClipRect(
+            child: FittedBox(
+              key: const ValueKey('document-preview-canvas'),
+              alignment: Alignment.topLeft,
+              fit: BoxFit.fill,
+              child: SizedBox(
+                width: _canvasWidth,
+                height: canvasHeight,
+                child: AppFlowyEditor(
+                  editorState: editorState,
+                  editorStyle: editorStyle,
+                  blockComponentBuilders: blockBuilders,
+                  contextMenuItems: const [],
+                  disableSelectionService: true,
+                  disableKeyboardService: true,
+                  disableAutoScroll: true,
+                  editable: false,
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -622,6 +637,68 @@ class _DatabasePagePreview extends StatelessWidget {
 /// Read only the opening of a file; the excerpt can scroll in a short window.
 const _maxFilePreviewBytes = 8 * 1024;
 
+/// A load quicker than this never shows its spinner at all.
+const _spinnerDelay = Duration(milliseconds: 240);
+
+/// Loaded preview content eases in rather than popping into place.
+class _PreviewFadeIn extends StatefulWidget {
+  const _PreviewFadeIn({super.key, required this.child, this.delay});
+
+  final Widget child;
+  final Duration? delay;
+
+  @override
+  State<_PreviewFadeIn> createState() => _PreviewFadeInState();
+}
+
+class _PreviewFadeInState extends State<_PreviewFadeIn>
+    with SingleTickerProviderStateMixin {
+  static const _fade = WorkspaceTokens.transitionDuration;
+
+  late final Duration _delay = widget.delay ?? Duration.zero;
+  late final AnimationController _controller =
+      AnimationController(vsync: this, duration: _delay + _fade);
+  late final CurvedAnimation _progress = CurvedAnimation(
+    parent: _controller,
+    curve: Interval(
+      _delay.inMicroseconds / (_delay + _fade).inMicroseconds,
+      1,
+      curve: AppFlowyMotion.enterCurve,
+    ),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_controller.value > 0 || _controller.isAnimating) return;
+    if (WorkspaceTokens.motion(context, _fade) == Duration.zero) {
+      _controller.value = 1;
+    } else {
+      _controller.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _progress.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: _progress,
+        child: widget.child,
+        builder: (context, child) => Opacity(
+          opacity: _progress.value,
+          child: Transform.translate(
+            offset: Offset(0, 6 * (1 - _progress.value)),
+            child: child,
+          ),
+        ),
+      );
+}
+
 /// The preview of a standalone file: a picture, the first page of a PDF, the
 /// head of a text file, or a card naming what the attachment is.
 class _WorkspaceFilePreview extends StatelessWidget {
@@ -681,7 +758,11 @@ class _WorkspaceFilePreview extends StatelessWidget {
       );
     }
     if (kind != null) {
-      return _FilePreviewText(path: path, fallback: _fallback);
+      return FilePreviewExcerpt(
+        path: path,
+        fallback: _fallback,
+        language: searchPreviewCodeLanguage(view, _name),
+      );
     }
     return _fallback;
   }
@@ -768,57 +849,58 @@ class _FilePreviewArchiveState extends State<_FilePreviewArchive> {
         if (rows.isEmpty) {
           return widget.empty;
         }
-        return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              for (final entry in rows.take(_maxRows))
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    children: [
-                      Icon(
+        return _PreviewFadeIn(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final entry in rows.take(_maxRows))
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      children: [
                         entry.isDirectory
-                            ? Icons.folder_rounded
-                            : fileIconForName(entry.name),
-                        size: 15,
-                        color: theme.iconColorScheme.secondary,
-                      ),
-                      const HSpace(8),
-                      Expanded(
-                        child: Text(
-                          entry.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textStyle.caption.standard(
-                            color: theme.textColorScheme.primary,
-                          ),
-                        ),
-                      ),
-                      if (!entry.isDirectory) ...[
+                            ? const WorkspaceGlyph(
+                                Icons.folder_rounded,
+                                size: 15,
+                              )
+                            : WorkspaceGlyph.file(entry.name, size: 15),
                         const HSpace(8),
-                        Text(
-                          _readableSize(entry.size),
-                          style: theme.textStyle.caption.standard(
-                            color: theme.textColorScheme.tertiary,
+                        Expanded(
+                          child: Text(
+                            entry.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textStyle.caption.standard(
+                              color: theme.textColorScheme.primary,
+                            ),
                           ),
                         ),
+                        if (!entry.isDirectory) ...[
+                          const HSpace(8),
+                          Text(
+                            _readableSize(entry.size),
+                            style: theme.textStyle.caption.standard(
+                              color: theme.textColorScheme.tertiary,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                ),
-              if (rows.length > _maxRows)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    '+${rows.length - _maxRows} more',
-                    style: theme.textStyle.caption.standard(
-                      color: theme.textColorScheme.tertiary,
                     ),
                   ),
-                ),
-            ],
+                if (rows.length > _maxRows)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      '+${rows.length - _maxRows} more',
+                      style: theme.textStyle.caption.standard(
+                        color: theme.textColorScheme.tertiary,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         );
       },
@@ -890,13 +972,15 @@ class _FilePreviewOfficeDocumentState
         if (value.trim().isEmpty) {
           return widget.empty;
         }
-        return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          child: Text(
-            value,
-            maxLines: 18,
-            overflow: TextOverflow.fade,
-            style: WorkspaceTypography.style(context, WorkspaceTextRole.body),
+        return _PreviewFadeIn(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            child: Text(
+              value,
+              maxLines: 18,
+              overflow: TextOverflow.fade,
+              style: WorkspaceTypography.style(context, WorkspaceTextRole.body),
+            ),
           ),
         );
       },
@@ -923,6 +1007,17 @@ class _FilePreviewImage extends StatelessWidget {
                 .clamp(1.0, 1600.0)
                 .round(),
         errorBuilder: (_, __, ___) => fallback,
+        frameBuilder: (context, child, frame, synchronous) => synchronous
+            ? child
+            : AnimatedOpacity(
+                opacity: frame == null ? 0 : 1,
+                duration: WorkspaceTokens.motion(
+                  context,
+                  WorkspaceTokens.transitionDuration,
+                ),
+                curve: WorkspaceTokens.curve,
+                child: child,
+              ),
       ),
     );
   }
@@ -963,10 +1058,14 @@ class _FilePreviewVideoState extends State<_FilePreviewVideo> {
       future: poster,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Center(
-            child: SizedBox.square(
-              dimension: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
+          return const _PreviewFadeIn(
+            key: ValueKey('video-preview-loading'),
+            delay: _spinnerDelay,
+            child: Center(
+              child: SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
             ),
           );
         }
@@ -974,33 +1073,36 @@ class _FilePreviewVideoState extends State<_FilePreviewVideo> {
         if (file == null) {
           return widget.fallback;
         }
-        return Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.file(
-              file,
-              fit: BoxFit.contain,
-              cacheWidth:
-                  (304 * MediaQuery.devicePixelRatioOf(context)).round(),
-              errorBuilder: (_, __, ___) => widget.fallback,
-            ),
-            Center(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: palette.elevatedSurface.withValues(alpha: 0.94),
-                  shape: BoxShape.circle,
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Icon(
-                    Icons.play_arrow_rounded,
-                    size: 26,
-                    color: palette.primaryText,
+        return _PreviewFadeIn(
+          key: const ValueKey('video-preview-ready'),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.file(
+                file,
+                fit: BoxFit.contain,
+                cacheWidth:
+                    (304 * MediaQuery.devicePixelRatioOf(context)).round(),
+                errorBuilder: (_, __, ___) => widget.fallback,
+              ),
+              Center(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: palette.elevatedSurface.withValues(alpha: 0.94),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Icon(
+                      Icons.play_arrow_rounded,
+                      size: 26,
+                      color: palette.primaryText,
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       },
     );
@@ -1109,26 +1211,45 @@ class _FilePreviewMarkdownState extends State<_FilePreviewMarkdown> {
         }
         // This renderer owns a non-shrink-wrapped list and needs the bounded
         // preview height. Do not place it in another vertical scroll view.
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
-          child: FolderGalleryRichTextPreview(blocks: blocks),
+        return _PreviewFadeIn(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 4),
+            child: FolderGalleryRichTextPreview(blocks: blocks),
+          ),
         );
       },
     );
   }
 }
 
-class _FilePreviewText extends StatefulWidget {
-  const _FilePreviewText({required this.path, required this.fallback});
+/// The grammar a code file's excerpt is coloured with: the one its viewer was
+/// last set to, otherwise the one its name implies. Null for anything else.
+String? searchPreviewCodeLanguage(ViewPB view, String name) {
+  if (filePreviewKindFromName(name) != FilePreviewKind.code) return null;
+  final stored = WorkspaceFilePreviewCodec.decode(view.extra)['code_language'];
+  return stored is String ? stored : codeLanguageForName(name);
+}
+
+/// The head of a text file, coloured like its viewer when it is source code.
+class FilePreviewExcerpt extends StatefulWidget {
+  const FilePreviewExcerpt({
+    super.key,
+    required this.path,
+    required this.fallback,
+    this.language,
+  });
 
   final String path;
   final Widget fallback;
 
+  /// Source code is coloured the way its own viewer colours it.
+  final String? language;
+
   @override
-  State<_FilePreviewText> createState() => _FilePreviewTextState();
+  State<FilePreviewExcerpt> createState() => _FilePreviewExcerptState();
 }
 
-class _FilePreviewTextState extends State<_FilePreviewText> {
+class _FilePreviewExcerptState extends State<FilePreviewExcerpt> {
   late Future<String> head;
 
   @override
@@ -1138,7 +1259,7 @@ class _FilePreviewTextState extends State<_FilePreviewText> {
   }
 
   @override
-  void didUpdateWidget(covariant _FilePreviewText oldWidget) {
+  void didUpdateWidget(covariant FilePreviewExcerpt oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.path != widget.path) {
       head = _readHead();
@@ -1171,20 +1292,34 @@ class _FilePreviewTextState extends State<_FilePreviewText> {
         if (text.trim().isEmpty) {
           return widget.fallback;
         }
-        return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-          child: Text(
-            text,
-            maxLines: 24,
-            overflow: TextOverflow.fade,
-            style:
-                WorkspaceTypography.style(context, WorkspaceTextRole.metadata)
-                    .copyWith(
-              fontFamily: 'Geist Mono',
-              fontFamilyFallback: const ['RobotoMono', 'monospace'],
-              height: 1.5,
-              color: WorkspacePalette.of(context).primaryText,
-            ),
+        final style =
+            WorkspaceTypography.style(context, WorkspaceTextRole.metadata)
+                .copyWith(
+          fontFamily: 'Geist Mono',
+          fontFamilyFallback: const ['RobotoMono', 'monospace'],
+          height: 1.5,
+          color: WorkspacePalette.of(context).primaryText,
+        );
+        Widget excerpt(TextSpan span) => Text.rich(
+              span,
+              maxLines: 24,
+              overflow: TextOverflow.fade,
+            );
+        final language = widget.language;
+        return _PreviewFadeIn(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
+            child: language == null
+                ? excerpt(TextSpan(text: text, style: style))
+                // Shown plain at once, then coloured off the UI thread.
+                : DeferredCodeHighlight(
+                    code: text,
+                    language: language,
+                    brightness: Theme.of(context).brightness,
+                    isPaper: PaperTheme.isEnabled(context),
+                    style: style,
+                    builder: (_, span) => excerpt(span),
+                  ),
           ),
         );
       },
@@ -1221,11 +1356,7 @@ class _WorkspaceFileCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              fileIconForName(name),
-              size: 30,
-              color: theme.iconColorScheme.secondary,
-            ),
+            WorkspaceGlyph.file(name, size: 30),
             const VSpace(10),
             Text(
               size == null ? extension : '$extension · ${_readableSize(size)}',

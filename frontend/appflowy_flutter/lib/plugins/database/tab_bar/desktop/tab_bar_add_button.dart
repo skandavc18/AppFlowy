@@ -63,6 +63,8 @@ class DatabaseTabKind {
     DatabaseLayoutPB.Grid,
     tableView: TableViewKind.mailbox,
   );
+  static const list =
+      DatabaseTabKind._(DatabaseLayoutPB.Grid, tableView: TableViewKind.list);
   static const chart = DatabaseTabKind._(DatabaseLayoutPB.Grid, charted: true);
   static const map = DatabaseTabKind._(DatabaseLayoutPB.Grid, mapped: true);
   static const slides = DatabaseTabKind._(DatabaseLayoutPB.Grid, slided: true);
@@ -71,6 +73,7 @@ class DatabaseTabKind {
     grid,
     board,
     calendar,
+    list,
     gallery,
     timeline,
     feed,
@@ -143,6 +146,7 @@ class DatabaseTabKind {
       TableViewKind.form => LocaleKeys.form_name.tr(),
       TableViewKind.gallery => LocaleKeys.gallery_name.tr(),
       TableViewKind.mailbox => LocaleKeys.mailbox_name.tr(),
+      TableViewKind.list => LocaleKeys.listView_name.tr(),
       null => layout.layoutName,
     };
   }

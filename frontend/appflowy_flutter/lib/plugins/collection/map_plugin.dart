@@ -192,7 +192,7 @@ class _MapPageState extends State<MapPage> {
     if (controller == null || rowMeta == null) {
       return;
     }
-    FlowyOverlay.show(
+    showRowDetailPage(
       context: context,
       builder: (_) => BlocProvider.value(
         value: context.read<UserWorkspaceBloc>(),

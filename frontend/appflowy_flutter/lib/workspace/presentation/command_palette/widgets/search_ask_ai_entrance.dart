@@ -1,5 +1,7 @@
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
 import 'package:appflowy_backend/protobuf/flowy-search/result.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -36,17 +38,14 @@ class _AskAIFor extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
     final spaceM = theme.spacing.m, spaceL = theme.spacing.l;
+    final hover = WorkspaceChrome.hoverColor(context);
     return Padding(
       padding: EdgeInsets.symmetric(vertical: theme.spacing.xs),
       child: AFBaseButton(
         borderRadius: spaceM,
         padding: EdgeInsets.all(spaceL),
-        backgroundColor: (context, isHovering, disable) {
-          if (isHovering) {
-            return theme.fillColorScheme.contentHover;
-          }
-          return Colors.transparent;
-        },
+        backgroundColor: (context, isHovering, disable) =>
+            isHovering ? hover : hover.withValues(alpha: 0),
         borderColor: (context, isHovering, disable, isFocused) =>
             Colors.transparent,
         builder: (ctx, isHovering, disable) {
@@ -55,10 +54,9 @@ class _AskAIFor extends StatelessWidget {
               SizedBox.square(
                 dimension: 20,
                 child: Center(
-                  child: FlowySvg(
+                  child: WorkspaceGlyph.svg(
                     FlowySvgs.m_home_ai_chat_icon_m,
-                    size: Size.square(20),
-                    blendMode: null,
+                    size: 20,
                   ),
                 ),
               ),
@@ -127,10 +125,9 @@ class _AISearching extends StatelessWidget {
             SizedBox.square(
               dimension: 20,
               child: Center(
-                child: FlowySvg(
+                child: WorkspaceGlyph.svg(
                   FlowySvgs.m_home_ai_chat_icon_m,
-                  size: Size.square(20),
-                  blendMode: null,
+                  size: 20,
                 ),
               ),
             ),
@@ -190,9 +187,9 @@ class _AIOverview extends StatelessWidget {
               builder: (context, hovering, disabled) {
                 return Row(
                   children: [
-                    FlowySvg(
+                    WorkspaceGlyph.svg(
                       FlowySvgs.chat_ai_page_s,
-                      size: Size.square(20),
+                      size: 20,
                       color: theme.iconColorScheme.primary,
                     ),
                     HSpace(6),
@@ -224,10 +221,9 @@ class _AIOverview extends StatelessWidget {
 
     return Row(
       children: [
-        FlowySvg(
+        WorkspaceGlyph.svg(
           FlowySvgs.ai_searching_icon_m,
-          size: Size.square(20),
-          blendMode: null,
+          size: 20,
         ),
         HSpace(theme.spacing.l),
         Text(

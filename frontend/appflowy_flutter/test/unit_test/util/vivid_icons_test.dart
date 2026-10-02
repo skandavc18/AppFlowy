@@ -142,7 +142,7 @@ void main() {
     );
     expect(
       appFlowyDefaultIconGroups.expand((group) => group.icons),
-      hasLength(57),
+      hasLength(58),
     );
   });
 

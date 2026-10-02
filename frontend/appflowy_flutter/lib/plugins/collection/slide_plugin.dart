@@ -206,7 +206,7 @@ class _SlidePageState extends State<SlidePage> {
 
   void _openRowMeta(DatabaseController controller, RowMetaPB rowMeta) {
     unawaited(
-      FlowyOverlay.show(
+      showRowDetailPage(
         context: context,
         builder: (_) => BlocProvider.value(
           value: context.read<UserWorkspaceBloc>(),

@@ -20,6 +20,7 @@ enum WorkspaceTableKind {
   table(ViewLayoutPB.Grid),
   board(ViewLayoutPB.Board),
   calendar(ViewLayoutPB.Calendar),
+  list(ViewLayoutPB.Grid, tableView: TableViewKind.list),
   gallery(ViewLayoutPB.Grid, tableView: TableViewKind.gallery),
   timeline(ViewLayoutPB.Grid, tableView: TableViewKind.timeline),
   feed(ViewLayoutPB.Grid, tableView: TableViewKind.feed),
@@ -74,6 +75,7 @@ String workspaceTableKindLabel(WorkspaceTableKind kind) => switch (kind) {
       WorkspaceTableKind.feed => LocaleKeys.feed_name.tr(),
       WorkspaceTableKind.form => LocaleKeys.form_name.tr(),
       WorkspaceTableKind.mailbox => LocaleKeys.mailbox_name.tr(),
+      WorkspaceTableKind.list => LocaleKeys.listView_name.tr(),
       WorkspaceTableKind.table => LocaleKeys.collections_database_table.tr(),
     };
 
@@ -88,6 +90,7 @@ IconData workspaceTableKindIcon(WorkspaceTableKind kind) => switch (kind) {
       WorkspaceTableKind.feed => Icons.article_rounded,
       WorkspaceTableKind.form => Icons.assignment_rounded,
       WorkspaceTableKind.mailbox => Icons.mark_email_unread_rounded,
+      WorkspaceTableKind.list => Icons.view_list_rounded,
       WorkspaceTableKind.table => Icons.table_rows_rounded,
     };
 

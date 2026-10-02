@@ -1,23 +1,30 @@
 import 'dart:async';
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
+import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/plugins/database/application/cell/cell_controller.dart';
 import 'package:appflowy/plugins/database/application/database_controller.dart';
 import 'package:appflowy/plugins/database/application/field/field_info.dart';
 import 'package:appflowy/plugins/database/application/row/row_controller.dart';
 import 'package:appflowy/plugins/database/application/row/row_service.dart';
+import 'package:appflowy/plugins/database/domain/cell_service.dart';
 import 'package:appflowy/plugins/database/domain/date_cell_service.dart';
 import 'package:appflowy/plugins/database/domain/select_option_cell_service.dart';
 import 'package:appflowy/plugins/database/widgets/row/row_detail.dart';
 import 'package:appflowy/shared/table_views/row_page_text.dart';
+import 'package:appflowy/workspace/application/table_views/list_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_row.dart';
 import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/view/view_service.dart';
+import 'package:appflowy/workspace/presentation/widgets/dialogs.dart';
 import 'package:appflowy_backend/dispatch/dispatch.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
+import 'package:appflowy_backend/protobuf/flowy-error/errors.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_result/appflowy_result.dart';
-import 'package:flowy_infra_ui/flowy_infra_ui.dart';
+import 'package:collection/collection.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -107,7 +114,7 @@ mixin TableViewHostPlumbing<T extends StatefulWidget> on State<T> {
 
   void openRowMeta(RowMetaPB rowMeta) {
     unawaited(
-      FlowyOverlay.show(
+      showRowDetailPage(
         context: context,
         builder: (_) => BlocProvider.value(
           value: context.read<UserWorkspaceBloc>(),
@@ -334,6 +341,170 @@ mixin TableViewHostPlumbing<T extends StatefulWidget> on State<T> {
       endDate: end,
       isRange: end != null,
     );
+  }
+
+  /// Adds a row already named — what typing on a list's last line means —
+  /// standing in the group it was typed under.
+  ///
+  /// The name is written as the row is made when the title column is plain
+  /// text, so no other view ever sees it untitled.
+  Future<String?> createTitledRow(ListNewRow row) async {
+    final infos = hostController.fieldController.fieldInfos;
+    final titleInfo = row.titleColumn.isEmpty
+        ? infos.firstWhereOrNull((info) => info.isPrimary)
+        : infos.firstWhereOrNull((info) => info.id == row.titleColumn);
+    final titleId = titleInfo?.id ?? row.titleColumn;
+    final atBirth =
+        titleInfo != null && titleInfo.fieldType == FieldType.RichText;
+
+    final created = await RowBackendService.createRow(
+      viewId: hostView.id,
+      withCells: atBirth
+          ? (builder) => builder.insertText(titleInfo, row.title)
+          : null,
+    );
+    final rowId = created.fold<String?>((meta) => meta.id, (error) {
+      Log.error(error);
+      return null;
+    });
+    if (rowId == null) {
+      _reportFailure(LocaleKeys.listView_createFailed.tr());
+      return null;
+    }
+    if (!atBirth && titleId.isNotEmpty) {
+      await _writeValue(rowId, titleId, titleInfo, row.title);
+    }
+    if (row.groupColumn.isNotEmpty && row.groupValue.isNotEmpty) {
+      await _writeValue(
+        rowId,
+        row.groupColumn,
+        infos.firstWhereOrNull((info) => info.id == row.groupColumn),
+        row.groupValue,
+      );
+    }
+    if (mounted) {
+      onRowsChanged();
+    }
+    return rowId;
+  }
+
+  /// Writes a row's new name into the column the view titles it by.
+  Future<bool> renameRow(String rowId, String titleColumn, String title) async {
+    final infos = hostController.fieldController.fieldInfos;
+    final info = titleColumn.isEmpty
+        ? infos.firstWhereOrNull((info) => info.isPrimary)
+        : infos.firstWhereOrNull((info) => info.id == titleColumn);
+    final fieldId = info?.id ?? titleColumn;
+    final done =
+        fieldId.isNotEmpty && await _writeValue(rowId, fieldId, info, title);
+    if (!done) {
+      _reportFailure(LocaleKeys.listView_renameFailed.tr());
+    }
+    if (mounted) {
+      onRowsChanged();
+    }
+    return done;
+  }
+
+  Future<bool> duplicateRow(String rowId) async {
+    final result =
+        await RowBackendService.duplicateRow(hostController.viewId, rowId);
+    return _settle(result, LocaleKeys.listView_duplicateFailed.tr());
+  }
+
+  Future<bool> deleteRow(String rowId) async {
+    final result =
+        await RowBackendService.deleteRows(hostController.viewId, [rowId]);
+    return _settle(result, LocaleKeys.listView_deleteFailed.tr());
+  }
+
+  bool _settle(FlowyResult<void, FlowyError> result, String failure) {
+    final done = result.fold((_) => true, (error) {
+      Log.error(error);
+      return false;
+    });
+    if (!done) {
+      _reportFailure(failure);
+    }
+    if (mounted) {
+      onRowsChanged();
+    }
+    return done;
+  }
+
+  void _reportFailure(String message) {
+    if (!mounted) {
+      return;
+    }
+    showToastNotification(
+      context: context,
+      message: message,
+      type: ToastificationType.error,
+    );
+  }
+
+  /// Writes one value the way its column takes it. A choice is picked from
+  /// the options the column holds, or added to them when it is new.
+  Future<bool> _writeValue(
+    String rowId,
+    String fieldId,
+    FieldInfo? info,
+    String value,
+  ) async {
+    final viewId = hostController.viewId;
+    switch (info?.fieldType) {
+      case FieldType.SingleSelect:
+      case FieldType.MultiSelect:
+        final service = SelectOptionCellBackendService(
+          viewId: viewId,
+          fieldId: fieldId,
+          rowId: rowId,
+        );
+        final optionId = _optionsOf(info!.field)[value.trim().toLowerCase()];
+        final result = optionId == null
+            ? await service.create(name: value.trim())
+            : await service.select(optionIds: [optionId]);
+        return result.isSuccess;
+      case FieldType.Checkbox:
+        return _updateCell(
+          rowId,
+          fieldId,
+          const ['yes', 'true', '1', 'checked']
+                  .contains(value.trim().toLowerCase())
+              ? 'Yes'
+              : 'No',
+        );
+      case FieldType.DateTime:
+        final date = parseTableDate(value);
+        if (date == null) {
+          return false;
+        }
+        final result = await DateCellBackendService(
+          viewId: viewId,
+          fieldId: fieldId,
+          rowId: rowId,
+        ).update(date: date);
+        return result.isSuccess;
+      case null:
+      case FieldType.RichText:
+      case FieldType.Number:
+      case FieldType.URL:
+        return _updateCell(rowId, fieldId, value);
+      default:
+        return false;
+    }
+  }
+
+  Future<bool> _updateCell(String rowId, String fieldId, String data) async {
+    final result = await CellBackendService.updateCell(
+      viewId: hostController.viewId,
+      cellContext: CellContext(fieldId: fieldId, rowId: rowId),
+      data: data,
+    );
+    return result.fold((_) => true, (error) {
+      Log.error(error);
+      return false;
+    });
   }
 }
 

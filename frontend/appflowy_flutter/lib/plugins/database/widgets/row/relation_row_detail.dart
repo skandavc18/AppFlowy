@@ -16,7 +16,7 @@ void showRelatedRowDetailPage(
   required String rowId,
 }) {
   final userWorkspaceBloc = context.read<UserWorkspaceBloc>();
-  FlowyOverlay.show(
+  showRowDetailPage(
     context: context,
     builder: (_) => BlocProvider.value(
       value: userWorkspaceBloc,

@@ -14,7 +14,6 @@ import 'package:appflowy/workspace/application/view/view_service.dart';
 import 'package:appflowy_backend/log.dart';
 import 'package:appflowy_backend/protobuf/flowy-database2/protobuf.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
-import 'package:flowy_infra_ui/flowy_infra_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
@@ -133,7 +132,7 @@ class _SlideTabPageState extends State<SlideTabPage> {
       rowCache: widget.databaseController.rowCache,
     );
     unawaited(
-      FlowyOverlay.show(
+      showRowDetailPage(
         context: context,
         builder: (_) => BlocProvider.value(
           value: context.read<UserWorkspaceBloc>(),

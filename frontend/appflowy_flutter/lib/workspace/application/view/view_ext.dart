@@ -266,6 +266,7 @@ extension ViewExtension on ViewPB {
         TableViewKind.form => FormTabBarBuilderImpl(),
         TableViewKind.gallery => GalleryTabBarBuilderImpl(),
         TableViewKind.mailbox => MailboxTabBarBuilderImpl(),
+        TableViewKind.list => ListTabBarBuilderImpl(),
       };
     }
     final fromExtension = extensionTableView;

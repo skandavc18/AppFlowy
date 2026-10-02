@@ -6,11 +6,13 @@ import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/shared/table_views/feed_stage.dart';
 import 'package:appflowy/shared/table_views/form_stage.dart';
 import 'package:appflowy/shared/table_views/gallery_stage.dart';
+import 'package:appflowy/shared/table_views/list_stage.dart';
 import 'package:appflowy/shared/table_views/mailbox_stage.dart';
 import 'package:appflowy/shared/table_views/timeline_stage.dart';
 import 'package:appflowy/workspace/application/table_views/feed_spec.dart';
 import 'package:appflowy/workspace/application/table_views/form_spec.dart';
 import 'package:appflowy/workspace/application/table_views/gallery_spec.dart';
+import 'package:appflowy/workspace/application/table_views/list_spec.dart';
 import 'package:appflowy/workspace/application/table_views/mailbox_spec.dart';
 import 'package:appflowy/workspace/application/table_views/table_view_mark.dart';
 import 'package:appflowy/workspace/application/table_views/timeline_spec.dart';
@@ -544,6 +546,127 @@ class _MailboxTabPageState extends State<MailboxTabPage>
           onSpecChanged: _save,
           onOpenRow: openRow,
           onAddRow: addRow,
+        ),
+      );
+}
+
+/// A tab that reads the database as a list of pages, one per line.
+class ListTabBarBuilderImpl extends DatabaseTabBarItemBuilder {
+  @override
+  Widget content(
+    BuildContext context,
+    ViewPB view,
+    DatabaseController controller,
+    bool shrinkWrap,
+    String? initialRowId,
+  ) =>
+      ListTabPage(
+        key: ValueKey(view.id),
+        view: view,
+        databaseController: controller,
+      );
+
+  @override
+  Widget settingBar(BuildContext context, DatabaseController controller) =>
+      const SizedBox.shrink();
+
+  @override
+  Widget settingBarExtension(
+    BuildContext context,
+    DatabaseController controller,
+  ) =>
+      const SizedBox.shrink();
+}
+
+class ListTabPage extends StatefulWidget {
+  const ListTabPage({
+    super.key,
+    required this.view,
+    required this.databaseController,
+  });
+
+  final ViewPB view;
+  final DatabaseController databaseController;
+
+  @override
+  State<ListTabPage> createState() => _ListTabPageState();
+}
+
+class _ListTabPageState extends State<ListTabPage>
+    with TableViewHostPlumbing<ListTabPage> {
+  final GlobalKey<ListStageState> _stage = GlobalKey<ListStageState>();
+
+  late ListSpec _spec = ListSpec.fromJson(
+    widget.view.tableViewMark(TableViewKind.list)?.settings ?? const {},
+  );
+
+  @override
+  ViewPB get hostView => widget.view;
+
+  @override
+  DatabaseController get hostController => widget.databaseController;
+
+  @override
+  TableViewKind get hostKind => TableViewKind.list;
+
+  @override
+  void onRowsChanged() => _stage.currentState?.reload();
+
+  @override
+  void initState() {
+    super.initState();
+    hostController.fieldController.addListener(onReceiveFields: _fieldsChanged);
+    startHosting();
+  }
+
+  void _fieldsChanged(List<FieldInfo> _) => onRowsChanged();
+
+  @override
+  void dispose() {
+    hostController.fieldController
+        .removeListener(onFieldsListener: _fieldsChanged);
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(ListTabPage old) {
+    super.didUpdateWidget(old);
+    if (old.view.extra != widget.view.extra) {
+      _spec = ListSpec.fromJson(
+        widget.view.tableViewMark(TableViewKind.list)?.settings ?? const {},
+      );
+    }
+    onRowsChanged();
+  }
+
+  void _save(ListSpec spec) {
+    setState(() => _spec = spec);
+    saveHostSettings(spec.toJson());
+  }
+
+  @override
+  Widget build(BuildContext context) => BlocProvider(
+        create: (_) => PageAccessLevelBloc(view: widget.view)
+          ..add(const PageAccessLevelEvent.initial()),
+        child: BlocBuilder<PageAccessLevelBloc, PageAccessLevelState>(
+          builder: (context, access) => Padding(
+            padding: _stagePadding,
+            child: ListStage(
+              key: _stage,
+              viewId: widget.view.id,
+              spec: _spec,
+              title: widget.view.name,
+              padding: _innerPadding,
+              editable: !access.isLoadingLockStatus && access.isEditable,
+              onSpecChanged: _save,
+              onOpenRow: openRow,
+              onAddRow: addRow,
+              onCreateRow: createTitledRow,
+              onRenameRow: renameRow,
+              onDuplicateRow: duplicateRow,
+              onDeleteRow: deleteRow,
+            ),
+          ),
         ),
       );
 }

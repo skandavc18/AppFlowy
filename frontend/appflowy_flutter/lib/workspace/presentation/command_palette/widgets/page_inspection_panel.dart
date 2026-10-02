@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/shared/workspace_design.dart';
@@ -12,6 +14,7 @@ import 'package:appflowy/workspace/presentation/home/toast.dart';
 import 'package:appflowy/workspace/presentation/widgets/folder_explorer/folder_gallery.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_cover/view_cover_image.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
+import 'package:appflowy_ui/appflowy_ui.dart' show AppFlowyMotion;
 import 'package:easy_localization/easy_localization.dart';
 import 'package:fixnum/fixnum.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
@@ -54,6 +57,17 @@ class PageInspectionPanel extends StatefulWidget {
 }
 
 class _PageInspectionPanelState extends State<PageInspectionPanel> {
+  /// How long the pointer rests on a row before its preview is built, so a
+  /// sweep across the list never builds the preview of every row it crosses.
+  static const _settleDelay = Duration(milliseconds: 80);
+
+  /// The view on show, which trails [PageInspectionPanel.view] while it moves.
+  late ViewPB _view;
+  String? _snippet;
+  Timer? _settle;
+
+  /// Bumped to drop the outgoing preview at once instead of fading it.
+  int _cut = 0;
   late bool isFavorite;
   bool updatingFavorite = false;
   int favoriteRequest = 0;
@@ -62,64 +76,116 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
   @override
   void initState() {
     super.initState();
-    isFavorite = widget.view.isFavorite;
-    inspectedFolderId = widget.view.isWorkspaceFolder ? widget.view.id : null;
+    _show(widget.view);
+  }
+
+  void _show(ViewPB view) {
+    _view = view;
+    _snippet = widget.matchingSnippet;
+    isFavorite = view.isFavorite;
+    updatingFavorite = false;
+    favoriteRequest++;
+    inspectedFolderId = view.isWorkspaceFolder ? view.id : null;
   }
 
   @override
   void didUpdateWidget(covariant PageInspectionPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.view.id != widget.view.id ||
-        oldWidget.view.isWorkspaceFolder != widget.view.isWorkspaceFolder) {
-      isFavorite = widget.view.isFavorite;
-      updatingFavorite = false;
-      favoriteRequest++;
-      inspectedFolderId = widget.view.isWorkspaceFolder ? widget.view.id : null;
+    final next = widget.view;
+    if (next.id == _view.id) {
+      _settle?.cancel();
+      if (next.isWorkspaceFolder != _view.isWorkspaceFolder) {
+        _show(next);
+      } else {
+        _view = next;
+        _snippet = widget.matchingSnippet;
+      }
+      return;
     }
+    _settle?.cancel();
+    if (_available(_view)) {
+      _settle = Timer(_settleDelay, () {
+        if (mounted) setState(() => _show(widget.view));
+      });
+    } else {
+      // A view that was removed or lost its access must not linger, even
+      // while fading out.
+      _cut++;
+      _show(next);
+    }
+  }
+
+  bool _available(ViewPB view) =>
+      widget.cachedViews.containsKey(view.id) &&
+      (widget.canUseView?.call(view.id) ?? true);
+
+  @override
+  void dispose() {
+    _settle?.cancel();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final view = _view;
     final inspectedView = _inspectedView;
+    final content = view.isWorkspaceFolder && inspectedView != null
+        ? _buildFolderInspection(context, inspectedView)
+        : Column(
+            children: [
+              if (widget.onBack != null)
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: TextButton.icon(
+                    key: const ValueKey(
+                      'command-palette-content-preview-back',
+                    ),
+                    onPressed: widget.onBack,
+                    icon: const WorkspaceGlyph(
+                      Icons.arrow_back_rounded,
+                      size: 16,
+                    ),
+                    label: Text(
+                      MaterialLocalizations.of(context).backButtonTooltip,
+                    ),
+                  ),
+                ),
+              Expanded(
+                child: PagePreview(
+                  key: ValueKey(view.id),
+                  view: view,
+                  query: widget.query,
+                  matchingSnippet: _snippet,
+                  contentSearch: widget.contentSearch,
+                  metadataOnly: widget.metadataOnly,
+                  onViewOpened: () => widget.onOpen(view),
+                ),
+              ),
+              _buildMetadata(context, view),
+              _buildActions(context, view),
+            ],
+          );
     return ColoredBox(
       key: const ValueKey('command-palette-inspection-panel'),
       color: WorkspacePalette.of(context).elevatedSurface,
-      child: widget.view.isWorkspaceFolder && inspectedView != null
-          ? _buildFolderInspection(context, inspectedView)
-          : Column(
-              children: [
-                if (widget.onBack != null)
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: TextButton.icon(
-                      key: const ValueKey(
-                        'command-palette-content-preview-back',
-                      ),
-                      onPressed: widget.onBack,
-                      icon: const WorkspaceGlyph(
-                        Icons.arrow_back_rounded,
-                        size: 16,
-                      ),
-                      label: Text(
-                        MaterialLocalizations.of(context).backButtonTooltip,
-                      ),
-                    ),
-                  ),
-                Expanded(
-                  child: PagePreview(
-                    key: ValueKey(widget.view.id),
-                    view: widget.view,
-                    query: widget.query,
-                    matchingSnippet: widget.matchingSnippet,
-                    contentSearch: widget.contentSearch,
-                    metadataOnly: widget.metadataOnly,
-                    onViewOpened: () => widget.onOpen(widget.view),
-                  ),
-                ),
-                _buildMetadata(context, widget.view),
-                _buildActions(context, widget.view),
-              ],
-            ),
+      child: AnimatedSwitcher(
+        key: ValueKey(_cut),
+        duration: WorkspaceTokens.motion(
+          context,
+          WorkspaceTokens.transitionDuration,
+        ),
+        reverseDuration:
+            WorkspaceTokens.motion(context, WorkspaceTokens.exitDuration),
+        switchInCurve: AppFlowyMotion.enterCurve,
+        switchOutCurve: Curves.easeIn,
+        layoutBuilder: (current, previous) => Stack(
+          fit: StackFit.expand,
+          children: [...previous, if (current != null) current],
+        ),
+        transitionBuilder: (child, animation) =>
+            _PreviewTransition(animation: animation, child: child),
+        child: KeyedSubtree(key: ValueKey(view.id), child: content),
+      ),
     );
   }
 
@@ -128,7 +194,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
     if (id == null) {
       return null;
     }
-    return id == widget.view.id ? widget.view : widget.cachedViews[id];
+    return id == _view.id ? _view : widget.cachedViews[id];
   }
 
   Widget _buildFolderInspection(BuildContext context, ViewPB folder) {
@@ -198,7 +264,7 @@ class _PageInspectionPanelState extends State<PageInspectionPanel> {
                       ),
                     ),
                     _FolderInspectionBreadcrumbs(
-                      root: widget.view,
+                      root: _view,
                       current: folder,
                       cachedViews: widget.cachedViews,
                       onSelected: _inspectFolder,
@@ -647,6 +713,38 @@ class _ActionButton extends StatelessWidget {
       ).copyWith(
         animationDuration:
             WorkspaceTokens.motion(context, WorkspaceTokens.hoverDuration),
+      ),
+    );
+  }
+}
+
+/// The next preview rises a few pixels as it fades in; the one leaving only
+/// fades, and stops taking input the moment it starts to go.
+class _PreviewTransition extends AnimatedWidget {
+  const _PreviewTransition({
+    required Animation<double> animation,
+    required this.child,
+  }) : super(listenable: animation);
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final animation = listenable as Animation<double>;
+    final leaving = animation.status == AnimationStatus.reverse ||
+        animation.status == AnimationStatus.dismissed;
+    final progress = animation.value;
+    return IgnorePointer(
+      ignoring: leaving,
+      child: ExcludeSemantics(
+        excluding: leaving,
+        child: Opacity(
+          opacity: progress,
+          child: Transform.translate(
+            offset: Offset(0, leaving ? 0 : 8 * (1 - progress)),
+            child: child,
+          ),
+        ),
       ),
     );
   }

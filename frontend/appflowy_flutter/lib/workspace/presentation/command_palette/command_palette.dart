@@ -5,6 +5,7 @@ import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/flowy_svgs.g.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_content.dart';
+import 'package:appflowy/shared/floating_modal.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/plugin/plugin.dart';
@@ -167,7 +168,6 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
       final navigator = Navigator.of(context, rootNavigator: true);
       final themes =
           InheritedTheme.capture(from: context, to: navigator.context);
-      final palette = WorkspacePalette.of(context);
       final route = _CommandPaletteRoute(
         context: context,
         themes: themes,
@@ -177,8 +177,7 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
           return media?.disableAnimations == true ||
               media?.accessibleNavigation == true;
         },
-        barrierColor:
-            palette.shadow.withValues(alpha: palette.isDark ? .16 : .10),
+        barrierColor: FloatingModal.barrierColor(context),
         builder: (dialogContext) {
           return MultiBlocProvider(
             providers: [
@@ -237,9 +236,11 @@ class _CommandPaletteControllerState extends State<_CommandPaletteController> {
       );
 }
 
-/// Only the popup moves. The underlying page and its focus tree stay mounted.
-/// Both accessibility flags suppress entry AND reverse motion.
-class _CommandPaletteRoute extends DialogRoute<void> {
+/// Only the popup moves; the page behind dims and softens but stays mounted
+/// with its focus tree. Both accessibility flags suppress entry AND reverse
+/// motion.
+class _CommandPaletteRoute extends DialogRoute<void>
+    with FloatingModalBarrier<void> {
   _CommandPaletteRoute({
     required this.reduceMotion,
     required super.context,
@@ -255,29 +256,21 @@ class _CommandPaletteRoute extends DialogRoute<void> {
     final reduced = reduceMotion() ||
         media?.disableAnimations == true ||
         media?.accessibleNavigation == true;
-    return AnimatedBuilder(
+    return FloatingModalEntrance(
       animation: animation,
+      enabled: !reduced,
+      offset: const Offset(0, 8),
       child: child,
-      builder: (_, child) {
-        final progress =
-            reduced ? 1.0 : Curves.easeOutCubic.transform(animation.value);
-        return Opacity(
-          opacity: progress,
-          child: Transform.translate(
-            offset: Offset(0, -8 * (1 - progress)),
-            child: child,
-          ),
-        );
-      },
     );
   }
 
   final bool Function() reduceMotion;
   @override
   Duration get transitionDuration =>
-      reduceMotion() ? Duration.zero : const Duration(milliseconds: 160);
+      reduceMotion() ? Duration.zero : FloatingModal.enterDuration;
   @override
-  Duration get reverseTransitionDuration => transitionDuration;
+  Duration get reverseTransitionDuration =>
+      reduceMotion() ? Duration.zero : FloatingModal.exitDuration;
 
   @override
   bool didPop(dynamic result) {

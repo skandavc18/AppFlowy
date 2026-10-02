@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/floating_modal.dart';
 import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_bloc.dart';
@@ -67,11 +68,10 @@ Future<void> showHomeSearch(
   final spaceBloc = context.read<SpaceBloc?>();
   bloc.add(const CommandPaletteEvent.refreshCachedViews());
   final navigator = Navigator.of(context, rootNavigator: true);
-  final palette = WorkspacePalette.of(context);
   await navigator.push<void>(
     _HomeSearchRoute(
       themes: InheritedTheme.capture(from: context, to: navigator.context),
-      barrierColor: palette.shadow.withValues(alpha: palette.isDark ? .16 : .1),
+      barrierColor: FloatingModal.barrierColor(context),
       barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
       reduceMotion: WorkspaceTokens.motion(
             context,
@@ -121,7 +121,8 @@ class _HomeSearchShortcuts extends StatelessWidget {
       );
 }
 
-class _HomeSearchRoute extends PopupRoute<void> {
+class _HomeSearchRoute extends PopupRoute<void>
+    with FloatingModalBarrier<void> {
   _HomeSearchRoute({
     required this.themes,
     required Color barrierColor,
@@ -150,7 +151,11 @@ class _HomeSearchRoute extends PopupRoute<void> {
 
   @override
   Duration get transitionDuration =>
-      reduceMotion ? Duration.zero : const Duration(milliseconds: 150);
+      reduceMotion ? Duration.zero : FloatingModal.enterDuration;
+
+  @override
+  Duration get reverseTransitionDuration =>
+      reduceMotion ? Duration.zero : FloatingModal.exitDuration;
 
   @override
   Widget buildPage(
@@ -174,34 +179,19 @@ class _HomeSearchRoute extends PopupRoute<void> {
               children: [
                 Positioned.fromRect(
                   rect: rect,
-                  child: builder(context, rect.size),
+                  // The panel unfolds from the bar it covers.
+                  child: FloatingModalEntrance(
+                    animation: animation,
+                    enabled: !reduceMotion,
+                    alignment: Alignment.topCenter,
+                    offset: const Offset(0, -6),
+                    child: builder(context, rect.size),
+                  ),
                 ),
               ],
             );
           },
         ),
-      );
-
-  @override
-  Widget buildTransitions(
-    BuildContext context,
-    Animation<double> animation,
-    Animation<double> secondaryAnimation,
-    Widget child,
-  ) =>
-      AnimatedBuilder(
-        animation: animation,
-        child: child,
-        builder: (context, child) {
-          final progress = Curves.easeOutCubic.transform(animation.value);
-          return Opacity(
-            opacity: progress,
-            child: Transform.translate(
-              offset: Offset(0, -6 * (1 - progress)),
-              child: child,
-            ),
-          );
-        },
       );
 }
 

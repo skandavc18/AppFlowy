@@ -211,7 +211,7 @@ class _GridPageState extends State<GridPage> {
         rowCache: rowCache,
       );
 
-      FlowyOverlay.show(
+      showRowDetailPage(
         context: context,
         builder: (_) => BlocProvider.value(
           value: context.read<UserWorkspaceBloc>(),
@@ -248,7 +248,7 @@ class _GridPageState extends State<GridPage> {
             rowCache: context.read<GridBloc>().rowCache,
           );
           unawaited(
-            FlowyOverlay.show(
+            showRowDetailPage(
               context: context,
               builder: (_) => BlocProvider.value(
                 value: context.read<UserWorkspaceBloc>(),
@@ -702,7 +702,7 @@ class _GridRowsState extends State<_GridRows> {
           return;
         }
         unawaited(
-          FlowyOverlay.show(
+          showRowDetailPage(
             context: rowDetailContext,
             builder: (_) {
               final rowMeta = rowCache.getRow(rowId)?.rowMeta;

@@ -59,6 +59,7 @@ const _catalogue = <String, Map<String, String>>{
     'dashboard': 'layout',
     'canvas': 'canvas',
     'mailbox': 'inbox',
+    'list': 'rows',
   },
   'files': {
     'file': 'file',

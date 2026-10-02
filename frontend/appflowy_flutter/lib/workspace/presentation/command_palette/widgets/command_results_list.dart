@@ -1,11 +1,11 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/palette_command.dart';
 import 'package:appflowy/workspace/presentation/command_palette/palette_commands.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_row_surface.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -209,13 +209,8 @@ class _PaletteCommandCellState extends State<PaletteCommandCell> {
           }
           return KeyEventResult.ignored;
         },
-        child: FlowyHover(
-          style: HoverStyle(
-            borderRadius: BorderRadius.circular(8),
-            hoverColor: theme.fillColorScheme.contentHover,
-            foregroundColorOnHover: AFThemeExtension.of(context).textColor,
-          ),
-          isSelected: () => _focused || widget.preselected,
+        child: PaletteRowSurface(
+          active: _focused || widget.preselected,
           child: Padding(
             padding: EdgeInsets.all(theme.spacing.l),
             child: Row(
@@ -223,9 +218,8 @@ class _PaletteCommandCellState extends State<PaletteCommandCell> {
                 SizedBox.square(
                   dimension: 20,
                   child: Center(
-                    child: Icon(
+                    child: WorkspaceGlyph(
                       command.icon,
-                      size: 18,
                       color: theme.iconColorScheme.secondary,
                     ),
                   ),
@@ -281,7 +275,7 @@ class NoCommandsHint extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
+          WorkspaceGlyph(
             Icons.terminal_rounded,
             size: 24,
             color: theme.iconColorScheme.secondary,

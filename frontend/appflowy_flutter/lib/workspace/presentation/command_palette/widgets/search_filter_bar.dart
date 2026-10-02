@@ -1,4 +1,6 @@
 import 'package:appflowy/generated/locale_keys.g.dart';
+import 'package:appflowy/shared/workspace_chrome.dart';
+import 'package:appflowy/shared/workspace_design.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/workspace/application/command_palette/command_palette_filter.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -277,6 +279,11 @@ class _FilterButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = AppFlowyTheme.of(context);
+    final hover = WorkspaceChrome.hoverColor(context);
+    final selectedFill = WorkspaceChrome.selectedColor(context);
+    final ink = selected
+        ? WorkspacePalette.of(context).accent
+        : theme.textColorScheme.secondary;
 
     return Semantics(
       toggled: selected,
@@ -285,19 +292,15 @@ class _FilterButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
         borderRadius: theme.borderRadius.m,
         borderColor: (_, __, ___, ____) => Colors.transparent,
-        backgroundColor: (_, isHovering, __) => selected || isHovering
-            ? theme.fillColorScheme.contentHover
-            : Colors.transparent,
+        backgroundColor: (_, isHovering, __) => selected
+            ? (isHovering
+                ? Color.alphaBlend(hover, selectedFill)
+                : selectedFill)
+            : (isHovering ? hover : hover.withValues(alpha: 0)),
         builder: (_, __, ___) => Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            WorkspaceGlyph(
-              icon,
-              size: 16,
-              color: selected
-                  ? theme.iconColorScheme.primary
-                  : theme.iconColorScheme.secondary,
-            ),
+            WorkspaceGlyph(icon, size: 16, color: ink),
             const SizedBox(width: 5),
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 160),
@@ -305,20 +308,12 @@ class _FilterButton extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: theme.textStyle.caption.standard(
-                  color: selected
-                      ? theme.textColorScheme.primary
-                      : theme.textColorScheme.secondary,
-                ),
+                style: theme.textStyle.caption.standard(color: ink),
               ),
             ),
             if (showChevron) ...[
               const SizedBox(width: 2),
-              WorkspaceGlyph(
-                Icons.arrow_drop_down,
-                size: 16,
-                color: theme.iconColorScheme.secondary,
-              ),
+              WorkspaceGlyph(Icons.arrow_drop_down, size: 16, color: ink),
             ],
           ],
         ),

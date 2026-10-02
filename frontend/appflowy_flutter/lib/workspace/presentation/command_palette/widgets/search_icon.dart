@@ -47,7 +47,11 @@ extension SearchIconItemExtension on ResultIconPB {
             SizedBox.shrink(),
       );
     } else {
-      return getIcon(iconColor: color) ?? SizedBox.shrink();
+      final icon = getIcon(iconColor: color);
+      // A layout glyph joins the app's icon set; saved artwork is left as is.
+      return icon == null
+          ? SizedBox.shrink()
+          : WorkspaceGlyph.adapt(icon, color: color);
     }
   }
 }

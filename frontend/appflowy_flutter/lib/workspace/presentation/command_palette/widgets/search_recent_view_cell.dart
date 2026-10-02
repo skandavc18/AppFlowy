@@ -3,11 +3,10 @@ import 'package:appflowy/workspace/application/recent/recent_views_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/presentation/command_palette/navigation_bloc_extension.dart';
 import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_delete_button.dart';
+import 'package:appflowy/workspace/presentation/command_palette/widgets/palette_row_surface.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
-import 'package:flowy_infra/theme_extension.dart';
 import 'package:flowy_infra_ui/flowy_infra_ui.dart';
-import 'package:flowy_infra_ui/style_widget/hover.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -69,17 +68,12 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
             bloc.add(RecentViewsEvent.hoverView(view));
           }
         },
-        child: FlowyHover(
-          onHover: (value) {
-            if (hoveredView?.id == view.id) return;
+        child: PaletteRowSurface(
+          active: widget.isSelected,
+          onHover: () {
+            if (bloc.state.hoveredView?.id == view.id) return;
             bloc.add(RecentViewsEvent.hoverView(view));
           },
-          style: HoverStyle(
-            borderRadius: BorderRadius.circular(8),
-            hoverColor: theme.fillColorScheme.contentHover,
-            foregroundColorOnHover: AFThemeExtension.of(context).textColor,
-          ),
-          isSelected: () => widget.isSelected,
           child: Padding(
             padding: EdgeInsets.all(spaceL),
             child: Row(

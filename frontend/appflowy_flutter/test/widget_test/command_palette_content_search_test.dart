@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/plugins/database/tab_bar/tab_bar_view.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/find_and_replace/document_find_content.dart';
 import 'package:appflowy/plugins/document/presentation/editor_plugins/header/emoji_icon_widget.dart';
+import 'package:appflowy/shared/floating_modal.dart';
 import 'package:appflowy/shared/workspace_icons.dart';
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/workspace/application/action_navigation/action_navigation_bloc.dart';
@@ -719,13 +721,36 @@ void main() {
         expect(modal, findsOneWidget);
         final route = ModalRoute.of(tester.element(modal))!;
         expect(route, isA<DialogRoute<void>>());
+        expect(route, isA<FloatingModalBarrier<void>>());
         expect(
-            route.barrierColor!.a, closeTo(mode == 'dark' ? .16 : .10, .005));
-        final duration = accessibility == 'normal'
-            ? const Duration(milliseconds: 160)
-            : Duration.zero;
-        expect(route.transitionDuration, duration);
-        expect(route.reverseTransitionDuration, duration);
+          route.barrierColor,
+          FloatingModal.barrierColor(
+            tester.element(find.byKey(const ValueKey('palette-background'))),
+          ),
+        );
+        expect(
+          tester
+              .widget<BackdropFilter>(
+                find.ancestor(
+                  of: find.byType(ModalBarrier),
+                  matching: find.byType(BackdropFilter),
+                ),
+              )
+              .filter,
+          ImageFilter.blur(
+            sigmaX: FloatingModal.blur,
+            sigmaY: FloatingModal.blur,
+          ),
+        );
+        final animated = accessibility == 'normal';
+        expect(
+          route.transitionDuration,
+          animated ? FloatingModal.enterDuration : Duration.zero,
+        );
+        expect(
+          route.reverseTransitionDuration,
+          animated ? FloatingModal.exitDuration : Duration.zero,
+        );
         final field = tester.widget<EditableText>(find.byType(EditableText));
         expect(field.focusNode.hasFocus, isTrue);
         await tester.enterText(find.byType(EditableText), 'needle');
