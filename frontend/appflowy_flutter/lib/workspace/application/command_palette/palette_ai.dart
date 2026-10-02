@@ -321,8 +321,7 @@ class PaletteAIConversation extends ChangeNotifier {
       sources: turn.sources,
     );
 
-    bool current() =>
-        generation == _generation && !_disposed && turn.isActive;
+    bool current() => generation == _generation && !_disposed && turn.isActive;
 
     try {
       await engine.answer(
@@ -435,9 +434,7 @@ String composePaletteAIPrompt(
     buffer
       ..writeln()
       ..writeln(
-        source.isCurrentPage
-            ? '## $title (the page I have open)'
-            : '## $title',
+        source.isCurrentPage ? '## $title (the page I have open)' : '## $title',
       )
       ..writeln(source.excerpt.trim());
   }

@@ -143,8 +143,7 @@ void main() {
       );
     });
 
-    test('nothing when only the name, or part of a longer word, was typed',
-        () {
+    test('nothing when only the name, or part of a longer word, was typed', () {
       expect(paletteCommandArgument(newPage, 'new page'), isNull);
       expect(paletteCommandArgument(newPage, 'new page   '), isNull);
       expect(paletteCommandArgument(newPage, 'new pages'), isNull);

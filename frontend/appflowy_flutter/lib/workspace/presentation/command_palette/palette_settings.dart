@@ -275,8 +275,8 @@ List<PaletteSetting> buildPaletteSettings(BuildContext context) {
           options: [
             PaletteSettingOption(
               id: ViewCoverSet.nature.id,
-              label: LocaleKeys.settings_appearance_automaticCovers_setNature
-                  .tr(),
+              label:
+                  LocaleKeys.settings_appearance_automaticCovers_setNature.tr(),
               icon: Icons.landscape_rounded,
             ),
             PaletteSettingOption(
@@ -408,8 +408,8 @@ List<PaletteSetting> buildPaletteSettings(BuildContext context) {
       ),
       PaletteSetting(
         id: 'rtl_toolbar',
-        title: LocaleKeys.settings_workspacePage_textDirection_enableRTLItems
-            .tr(),
+        title:
+            LocaleKeys.settings_workspacePage_textDirection_enableRTLItems.tr(),
         description: LocaleKeys.commandPalette_setting_rtlToolbarHint.tr(),
         section: PaletteSettingSection.editor,
         icon: Icons.format_align_right_rounded,
@@ -706,7 +706,8 @@ PaletteSetting _aiModelSetting() {
       ],
       selectedId:
           store.activeSelection == null ? '' : store.selectedModelName ?? '',
-      onSelected: (option) => store.select(option.id.isEmpty ? null : option.id),
+      onSelected: (option) =>
+          store.select(option.id.isEmpty ? null : option.id),
     ),
   );
 }

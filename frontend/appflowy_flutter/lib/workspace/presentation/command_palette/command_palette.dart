@@ -571,8 +571,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
         enabled: filter.pageContents,
         filter: filter,
       );
-      if (!filter.pageContents &&
-          (_paletteBloc.state.query ?? '') != _draft) {
+      if (!filter.pageContents && (_paletteBloc.state.query ?? '') != _draft) {
         _paletteBloc.add(
           _draft.isEmpty
               ? const CommandPaletteEvent.clearSearch()
@@ -659,9 +658,8 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
     if (_closing || !mounted) return;
     final text = question.trim();
     final fromSearch = _scope != PaletteScope.ai;
-    final sources = fromSearch
-        ? _initialAISources(withSearchResults: true)
-        : _aiSources;
+    final sources =
+        fromSearch ? _initialAISources(withSearchResults: true) : _aiSources;
     setState(() {
       _scope = PaletteScope.ai;
       _pickerSettingId = null;
@@ -805,7 +803,8 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
         _focusField();
       },
       onSaveAsPage: _saveAnswer,
-      onInsert: open == null ? null : (markdown) => _insertAnswer(open, markdown),
+      onInsert:
+          open == null ? null : (markdown) => _insertAnswer(open, markdown),
       insertTargetName: open?.nameOrDefault ?? '',
       onContinueInChat: CustomAIProviderStore.instance.activeSelection == null
           ? null
@@ -919,8 +918,10 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
           final extensionSettings = buildPaletteExtensionSettings();
           final pickerSetting = _pickerSettingId == null
               ? null
-              : [...appSettings, ...extensionSettings]
-                  .firstWhereOrNull((setting) => setting.id == _pickerSettingId);
+              : [
+                  ...appSettings,
+                  ...extensionSettings
+                ].firstWhereOrNull((setting) => setting.id == _pickerSettingId);
           final pickerControl = pickerSetting?.control;
           final picker = pickerSetting != null && pickerControl is PaletteChoice
               ? (setting: pickerSetting, choice: pickerControl)
@@ -1050,8 +1051,7 @@ class _CommandPaletteModalState extends State<CommandPaletteModal> {
                 };
           final hasCommands = matchedCommands.isNotEmpty;
           final hasSettings = matchedSettings.isNotEmpty;
-          final commandRunQuery =
-              scope == PaletteScope.all ? rawQuery : text;
+          final commandRunQuery = scope == PaletteScope.all ? rawQuery : text;
           // A command handed what was typed ("new page Ideas") is the answer
           // Enter gives, ahead of any page whose title happens to match.
           final commandTakesQuery = scope == PaletteScope.all &&

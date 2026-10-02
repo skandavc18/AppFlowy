@@ -644,15 +644,13 @@ PaletteCommand _extensionAction(
   LoadedExtension extension,
   ActionDefinition action,
 ) {
-  final name = extension.manifest.name.isEmpty
-      ? extension.id
-      : extension.manifest.name;
+  final name =
+      extension.manifest.name.isEmpty ? extension.id : extension.manifest.name;
   return PaletteCommand(
     id: 'extension_action_${extension.id}_${action.id}',
     title: LocaleKeys.commandPalette_command_runAction.tr(args: [action.id]),
-    subtitle: action.description.isEmpty
-        ? name
-        : '$name · ${action.description}',
+    subtitle:
+        action.description.isEmpty ? name : '$name · ${action.description}',
     icon: Icons.play_circle_outline_rounded,
     group: PaletteCommandGroup.extensions,
     keywords: ['run', 'action', 'extension', extension.id, name],

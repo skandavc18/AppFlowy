@@ -95,8 +95,7 @@ class _SearchFieldState extends State<SearchField> {
   void initState() {
     super.initState();
     _ownsController = widget.controller == null;
-    controller =
-        widget.controller ?? TextEditingController(text: widget.query);
+    controller = widget.controller ?? TextEditingController(text: widget.query);
     _ownsFocusNode = widget.focusNode == null;
     focusNode = (widget.focusNode ?? FocusNode())..onKeyEvent = _handleKeyEvent;
     focusNode.requestFocus();

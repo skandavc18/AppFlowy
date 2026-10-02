@@ -359,8 +359,7 @@ class CommandPaletteHintBar extends StatelessWidget {
         switch (mode) {
           PaletteHintMode.search => LocaleKeys.commandPalette_hintOpen.tr(),
           PaletteHintMode.commands => LocaleKeys.commandPalette_hintRun.tr(),
-          PaletteHintMode.settings =>
-            LocaleKeys.commandPalette_hintChange.tr(),
+          PaletteHintMode.settings => LocaleKeys.commandPalette_hintChange.tr(),
           PaletteHintMode.picker => LocaleKeys.commandPalette_hintChoose.tr(),
           PaletteHintMode.ai => LocaleKeys.commandPalette_hintAsk.tr(),
         },

@@ -87,7 +87,8 @@ class PaletteSettingsList extends StatelessWidget {
       } else if (!grouped && children.isEmpty) {
         children.add(
           CommandPaletteSectionHeader(
-            label: sectionLabel ?? LocaleKeys.commandPalette_scope_settings.tr(),
+            label:
+                sectionLabel ?? LocaleKeys.commandPalette_scope_settings.tr(),
           ),
         );
       }
@@ -472,8 +473,9 @@ class PaletteSwitch extends StatelessWidget {
             child: AnimatedAlign(
               duration: duration,
               curve: WorkspaceTokens.curve,
-              alignment:
-                  value ? AlignmentDirectional.centerEnd : AlignmentDirectional.centerStart,
+              alignment: value
+                  ? AlignmentDirectional.centerEnd
+                  : AlignmentDirectional.centerStart,
               child: Container(
                 width: 14,
                 height: 14,
@@ -588,9 +590,8 @@ class _SegmentState extends State<_Segment> {
               color: fill,
               borderRadius:
                   BorderRadius.circular(WorkspaceTokens.controlRadius - 2),
-              boxShadow: widget.selected
-                  ? palette.elevation().take(1).toList()
-                  : null,
+              boxShadow:
+                  widget.selected ? palette.elevation().take(1).toList() : null,
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,

@@ -145,8 +145,7 @@ class PaletteScopeBar extends StatelessWidget {
                 selected: value == scope,
                 onTap: () => onChanged(value),
               ),
-              if (value != PaletteScope.values.last)
-                const SizedBox(width: 2),
+              if (value != PaletteScope.values.last) const SizedBox(width: 2),
             ],
           ],
         ),

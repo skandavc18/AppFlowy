@@ -49,9 +49,9 @@ class _AskAIFor extends StatelessWidget {
         borderColor: (context, isHovering, disable, isFocused) =>
             Colors.transparent,
         builder: (ctx, isHovering, disable) {
-          final hasQuery = (context.read<CommandPaletteBloc?>()?.state.query ??
-                  '')
-              .isNotEmpty;
+          final hasQuery =
+              (context.read<CommandPaletteBloc?>()?.state.query ?? '')
+                  .isNotEmpty;
           return Row(
             children: [
               SizedBox.square(

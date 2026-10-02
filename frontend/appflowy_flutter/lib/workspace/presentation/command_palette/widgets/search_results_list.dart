@@ -221,9 +221,8 @@ class _SearchResultListState extends State<SearchResultList> {
     final settings = widget.settings;
     final onOpenPicker = widget.onOpenSettingPicker;
     final onOpenSettings = widget.onOpenSettingsPage;
-    final showSettings = settings.isNotEmpty &&
-        onOpenPicker != null &&
-        onOpenSettings != null;
+    final showSettings =
+        settings.isNotEmpty && onOpenPicker != null && onOpenSettings != null;
     if (resultItems.isEmpty && !showCommands && !showSettings) {
       return const SizedBox.shrink();
     }

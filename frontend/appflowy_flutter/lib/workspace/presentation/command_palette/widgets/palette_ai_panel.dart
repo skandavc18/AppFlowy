@@ -965,8 +965,6 @@ class _ActionButton extends StatelessWidget {
             .standard(color: theme.textColorScheme.secondary),
       ),
     );
-    return tooltip.isEmpty
-        ? button
-        : Tooltip(message: tooltip, child: button);
+    return tooltip.isEmpty ? button : Tooltip(message: tooltip, child: button);
   }
 }

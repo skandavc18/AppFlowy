@@ -170,7 +170,8 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const ValueKey('command-palette-option-dark')));
+      await tester
+          .tap(find.byKey(const ValueKey('command-palette-option-dark')));
       await tester.pumpAndSettle();
       expect(selected, 'dark');
 
@@ -290,7 +291,8 @@ void main() {
           findsOneWidget,
         );
       }
-      await tester.tap(find.text(LocaleKeys.commandPalette_scope_settings.tr()));
+      await tester
+          .tap(find.text(LocaleKeys.commandPalette_scope_settings.tr()));
       await tester.tap(find.text(LocaleKeys.commandPalette_scope_ai.tr()));
       await tester.pump();
       expect(chosen, [PaletteScope.settings, PaletteScope.ai]);
@@ -373,7 +375,8 @@ void main() {
         engine.failNeedingSetup('No model is set up.');
         await tester.pumpAndSettle();
         expect(find.text('No model is set up.'), findsOneWidget);
-        await tester.tap(find.byKey(const ValueKey('command-palette-ai-setup')));
+        await tester
+            .tap(find.byKey(const ValueKey('command-palette-ai-setup')));
         await tester.pump();
         expect(setUp, 1);
         expect(engine.requests.last.history.single.question, suggestion);
@@ -422,7 +425,8 @@ void main() {
       expect(
         tester
             .widget<PaletteSwitch>(
-              find.descendant(of: spelling, matching: find.byType(PaletteSwitch)),
+              find.descendant(
+                  of: spelling, matching: find.byType(PaletteSwitch)),
             )
             .value,
         isFalse,
