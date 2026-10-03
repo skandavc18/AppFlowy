@@ -589,6 +589,13 @@ List<PaletteCommand> _navigation(UserWorkspaceBloc? workspaceBloc) {
         Icons.extension_rounded,
         const ['extensions', 'plugins', 'add-ons', 'marketplace'],
       ),
+      (
+        'open_workflows',
+        PluginType.workflows,
+        LocaleKeys.workflows_openCommand.tr(),
+        Icons.all_inclusive_rounded,
+        const ['workflows', 'automation', 'automate', 'zapier', 'zap'],
+      ),
     ])
       if (_canOpenPlugin(type))
         PaletteCommand(

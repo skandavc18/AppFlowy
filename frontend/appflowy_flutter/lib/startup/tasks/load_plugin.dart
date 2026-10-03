@@ -11,6 +11,7 @@ import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/plugins/blank/blank.dart';
 import 'package:appflowy/plugins/document/document.dart';
 import 'package:appflowy/plugins/trash/trash.dart';
+import 'package:appflowy/workflows/presentation/workflows_plugin.dart';
 import 'package:appflowy/workspace/presentation/widgets/view_gallery/view_gallery_labels.dart';
 
 class PluginLoadTask extends LaunchTask {
@@ -32,6 +33,10 @@ class PluginLoadTask extends LaunchTask {
     registerPlugin(
       builder: ExtensionsPluginBuilder(),
       config: ExtensionsPluginConfig(),
+    );
+    registerPlugin(
+      builder: WorkflowsPluginBuilder(),
+      config: WorkflowsPluginConfig(),
     );
     registerPlugin(
       builder: ViewLibraryPluginBuilder(ViewLibrary.recents),

@@ -94,6 +94,7 @@ const _catalogue = <String, Map<String, String>>{
     'trash': 'trash',
     'templates': 'layout',
     'extensions': 'puzzle-piece',
+    'workflows': 'infinity',
     'pin': 'push-pin',
     'settings': 'gear',
     'notifications': 'bell',

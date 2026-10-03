@@ -193,6 +193,458 @@
     "triggerAt": "At {}",
     "history": "Recent runs ({})"
   },
+  "workflows": {
+    "title": "Workflows",
+    "openCommand": "Open workflows",
+    "subtitle": "Automate your workspace. When something happens, AppFlowy does the rest.",
+    "newWorkflow": "New workflow",
+    "untitled": "Untitled workflow",
+    "copyName": "{} (copy)",
+    "search": "Search workflows",
+    "backgroundButton": "Background",
+    "tabs": {
+      "all": "All",
+      "on": "On",
+      "off": "Off",
+      "history": "History"
+    },
+    "stats": {
+      "workflows": "Workflows",
+      "on": "Turned on",
+      "runsToday": "Runs today",
+      "failedToday": "Failed today"
+    },
+    "card": {
+      "needsSetup": "Needs setup",
+      "neverRun": "Never run",
+      "lastRun": "last run {}",
+      "nextRun": "next {}",
+      "running": "Running…",
+      "steps": "{} steps",
+      "oneStep": "1 step",
+      "turnOn": "Turn workflow on",
+      "turnOff": "Turn workflow off"
+    },
+    "menu": {
+      "open": "Open",
+      "runNow": "Run now",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "more": "More"
+    },
+    "delete": {
+      "title": "Delete \"{}\"?",
+      "description": "Its run history goes with it. This cannot be undone."
+    },
+    "empty": {
+      "title": "Automate the busywork",
+      "body": "Pick what starts a workflow, such as a schedule, a webhook, a feed or a new table row, then add the steps AppFlowy should take for you.",
+      "scratch": "Start from scratch",
+      "noMatches": "No workflows match \"{}\"."
+    },
+    "templates": {
+      "title": "Start from a template",
+      "body": "Each one opens ready to adjust. Nothing runs until you turn it on.",
+      "dailyJournal": {
+        "title": "Daily journal page",
+        "description": "Every morning, a fresh page for the day is waiting for you.",
+        "today": "Today",
+        "notes": "Notes"
+      },
+      "webhookToTable": {
+        "title": "Webhook to table row",
+        "description": "Anything another app or script sends becomes a row in a table."
+      },
+      "feedDigest": {
+        "title": "Feed to reading list",
+        "description": "New articles from an RSS feed are added to a page as links."
+      },
+      "stretchBreak": {
+        "title": "Hourly stretch break",
+        "description": "A gentle desktop nudge to move, every hour.",
+        "notifyTitle": "Time to stretch",
+        "notifyBody": "Stand up, roll your shoulders and look away from the screen for a minute."
+      },
+      "rowAlert": {
+        "title": "New row alert",
+        "description": "Get a notification whenever a table gains a row.",
+        "notifyTitle": "New row added"
+      },
+      "weeklyReview": {
+        "title": "Weekly review",
+        "description": "Every Friday afternoon, a review page and a reminder to fill it in.",
+        "pageTitle": "Weekly review",
+        "wins": "Wins",
+        "lessons": "Lessons",
+        "next": "Next week",
+        "notifyTitle": "Time for your weekly review"
+      },
+      "pageToChat": {
+        "title": "Announce new pages",
+        "description": "Post to Slack, Discord or any chat webhook when a page is added.",
+        "message": "New page: {}"
+      },
+      "startOfDay": {
+        "title": "Launch counter",
+        "description": "Count every start of AppFlowy and say hello.",
+        "notifyTitle": "Welcome back",
+        "notifyBody": "AppFlowy has started {} times."
+      }
+    },
+    "paused": {
+      "banner": "Workflows are paused. Nothing runs on its own until you resume.",
+      "resume": "Resume"
+    },
+    "foreground": {
+      "banner": "Workflows only run while AppFlowy is open.",
+      "action": "Keep running after closing"
+    },
+    "trigger": {
+      "when": "When",
+      "then": "Then",
+      "pick": "Choose what starts this workflow.",
+      "kind": {
+        "manual": "Run manually",
+        "schedule": "Schedule",
+        "webhook": "Webhook",
+        "feed": "RSS feed",
+        "databaseRow": "Table row",
+        "newPage": "New page",
+        "appStart": "App starts"
+      },
+      "about": {
+        "manual": "Runs only when you press Run now.",
+        "schedule": "Runs on a timetable you choose.",
+        "webhook": "Runs when another app or script sends a request to its address.",
+        "feed": "Runs once for each new item in an RSS or Atom feed.",
+        "databaseRow": "Runs when a table gains a row, and optionally when a row changes.",
+        "newPage": "Runs when a page is added inside another page.",
+        "appStart": "Runs each time AppFlowy starts."
+      }
+    },
+    "step": {
+      "add": "Add a step",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "duplicate": "Duplicate step",
+      "delete": "Delete step",
+      "rename": "Step name",
+      "kind": {
+        "httpRequest": "Web request",
+        "createPage": "Create page",
+        "appendToPage": "Add to page",
+        "addRow": "Add table row",
+        "notify": "Notification",
+        "reminder": "Reminder",
+        "filter": "Only continue if",
+        "delay": "Wait",
+        "formatter": "Format data",
+        "code": "Run code",
+        "storage": "Store a value"
+      },
+      "about": {
+        "httpRequest": "Call any web API or webhook and use its answer.",
+        "createPage": "Make a new page, filled with text you write.",
+        "appendToPage": "Add text to the end of a page.",
+        "addRow": "Add a row to a table, column by column.",
+        "notify": "Show a desktop notification.",
+        "reminder": "Set a reminder in your calendar.",
+        "filter": "Stop the run unless conditions hold.",
+        "delay": "Pause before the next step.",
+        "formatter": "Clean up text, numbers and dates.",
+        "code": "Shape data with a little JavaScript.",
+        "storage": "Remember a value between runs."
+      },
+      "group": {
+        "workspace": "In AppFlowy",
+        "alerts": "Alerts",
+        "web": "Web",
+        "logic": "Logic and data"
+      }
+    },
+    "editor": {
+      "back": "Back to workflows",
+      "namePlaceholder": "Name this workflow",
+      "runNow": "Run now",
+      "on": "On",
+      "off": "Off",
+      "tabs": {
+        "editor": "Editor",
+        "runs": "Runs"
+      },
+      "incomplete": "Finish setting up the highlighted steps to turn this workflow on.",
+      "sample": "Sample data",
+      "noSample": "Test to see the data this produces. Later steps can then pick from it.",
+      "testTrigger": "Test trigger",
+      "testStep": "Test step",
+      "testWarning": "Testing does the step for real.",
+      "testFailed": "Test failed",
+      "stopped": "The filter would stop here",
+      "listening": "Waiting for a request to the address above…",
+      "cancel": "Cancel",
+      "runStarted": "The workflow started.",
+      "runSucceeded": "The workflow ran.",
+      "runFailed": "The workflow failed: {}",
+      "runFiltered": "A filter stopped the workflow.",
+      "runWaiting": "Waiting until {}"
+    },
+    "fields": {
+      "insertData": "Insert data",
+      "noData": "Test the trigger to pick from real data.",
+      "trigger": "Trigger",
+      "builtIn": "Date and time",
+      "storage": "Stored values",
+      "now": "Current date and time",
+      "today": "Today's date",
+      "time": "Current time",
+      "workflowName": "Workflow name",
+      "add": "Add",
+      "remove": "Remove",
+      "key": "Name",
+      "value": "Value",
+      "choose": "Choose…",
+      "clear": "Clear",
+      "topLevel": "Top of the workspace",
+      "missing": "Not found. It may have been deleted.",
+      "useData": "Use data from an earlier step"
+    },
+    "schedule": {
+      "mode": {
+        "interval": "Every…",
+        "daily": "Daily",
+        "weekly": "Weekly",
+        "monthly": "Monthly"
+      },
+      "every": "Every",
+      "at": "At",
+      "on": "On",
+      "day": "Day of the month",
+      "badTime": "Type a time like 09:30.",
+      "noDays": "Pick at least one day.",
+      "unit": {
+        "minutes": "minutes",
+        "hours": "hours",
+        "days": "days"
+      },
+      "summaryInterval": "Every {} {}",
+      "summaryDaily": "Every day at {}",
+      "summaryWeekly": "{} at {}",
+      "summaryMonthly": "Day {} of every month at {}"
+    },
+    "webhook": {
+      "address": "Address",
+      "copy": "Copy address",
+      "copied": "Address copied",
+      "hint": "Send a GET, POST, PUT, PATCH or DELETE request to this address. JSON, form and plain-text bodies all work.",
+      "localOnly": "Only reachable from this computer, while AppFlowy is running.",
+      "example": "Example",
+      "regenerate": "New address",
+      "regenerated": "The old address stops working."
+    },
+    "feed": {
+      "url": "Feed address",
+      "urlHint": "https://example.com/feed.xml",
+      "every": "Check every",
+      "minutes": "{} minutes"
+    },
+    "table": {
+      "table": "Table",
+      "choose": "Choose a table",
+      "updates": "Also run when a row changes",
+      "every": "Check every",
+      "columns": "Columns",
+      "loading": "Reading columns…",
+      "noColumns": "This table has no columns that can be filled in."
+    },
+    "page": {
+      "parent": "Inside",
+      "page": "Page",
+      "title": "Title",
+      "content": "Content",
+      "contentHint": "Markdown works here.",
+      "choosePage": "Choose a page",
+      "chooseParent": "Choose a page"
+    },
+    "http": {
+      "method": "Method",
+      "url": "Address",
+      "query": "Query parameters",
+      "headers": "Headers",
+      "body": "Body",
+      "raw": "Raw body",
+      "failOnError": "Stop the workflow when the answer is an error",
+      "bodyKind": {
+        "json": "JSON",
+        "form": "Form",
+        "raw": "Raw",
+        "none": "None"
+      }
+    },
+    "notify": {
+      "title": "Title",
+      "body": "Message",
+      "hint": "Shown as a desktop notification, even when the window is closed."
+    },
+    "reminder": {
+      "title": "Title",
+      "note": "Note",
+      "when": "When",
+      "whenHint": "tomorrow 9am, in 2 hours, or a date from an earlier step"
+    },
+    "filter": {
+      "match": "Continue when",
+      "all": "All conditions hold",
+      "any": "Any condition holds",
+      "add": "Add condition",
+      "value": "Value",
+      "compare": "Compare with",
+      "operator": {
+        "equals": "is",
+        "notEquals": "is not",
+        "contains": "contains",
+        "notContains": "does not contain",
+        "startsWith": "starts with",
+        "endsWith": "ends with",
+        "greaterThan": "is greater than",
+        "lessThan": "is less than",
+        "isEmpty": "is empty",
+        "isNotEmpty": "is not empty"
+      }
+    },
+    "delay": {
+      "for": "Wait for",
+      "hint": "The rest of the run continues afterwards, even if AppFlowy restarts in between."
+    },
+    "formatter": {
+      "operation": "Operation",
+      "input": "Input",
+      "find": "Find",
+      "replaceWith": "Replace with",
+      "length": "Maximum length",
+      "separator": "Separator",
+      "index": "Which item",
+      "indexHint": "all, first, last or a number",
+      "fallback": "Default value",
+      "pattern": "Pattern",
+      "patternHint": "yyyy-MM-dd HH:mm",
+      "amount": "Amount",
+      "operator": "Operator",
+      "operand": "Number",
+      "decimals": "Decimal places",
+      "op": {
+        "trim": "Trim spaces",
+        "uppercase": "UPPERCASE",
+        "lowercase": "lowercase",
+        "titleCase": "Title Case",
+        "replace": "Replace text",
+        "truncate": "Shorten",
+        "split": "Split into a list",
+        "extractNumber": "Extract a number",
+        "extractEmail": "Extract an email address",
+        "extractUrl": "Extract a link",
+        "stripHtml": "Remove HTML",
+        "urlEncode": "URL-encode",
+        "wordCount": "Count words",
+        "defaultValue": "Default when empty",
+        "formatDate": "Format a date",
+        "addTime": "Add time to a date",
+        "math": "Arithmetic",
+        "round": "Round a number",
+        "parseJson": "Read JSON"
+      },
+      "group": {
+        "text": "Text",
+        "numbers": "Numbers",
+        "dates": "Dates",
+        "data": "Data"
+      },
+      "units": {
+        "minutes": "minutes",
+        "hours": "hours",
+        "days": "days",
+        "weeks": "weeks",
+        "months": "months"
+      }
+    },
+    "code": {
+      "code": "JavaScript",
+      "hint": "input holds the trigger and every earlier step. Return a value or an object. The code runs in a sandbox with no network or file access."
+    },
+    "storage": {
+      "operation": "Action",
+      "key": "Name",
+      "value": "Value",
+      "hint": "Stored values are shared by every workflow. Later steps can insert them from Stored values.",
+      "op": {
+        "set": "Set",
+        "increment": "Add to a number",
+        "append": "Add to a list",
+        "get": "Read",
+        "remove": "Remove"
+      }
+    },
+    "history": {
+      "empty": "No runs yet",
+      "emptyBody": "Runs appear here as soon as a workflow starts.",
+      "trigger": "Trigger data",
+      "duration": "{} ms",
+      "status": {
+        "running": "Running",
+        "succeeded": "Succeeded",
+        "failed": "Failed",
+        "filtered": "Filtered",
+        "waiting": "Waiting",
+        "cancelled": "Cancelled",
+        "skipped": "Skipped"
+      },
+      "cause": {
+        "manual": "Run manually",
+        "test": "Test",
+        "schedule": "Schedule",
+        "webhook": "Webhook",
+        "feed": "Feed",
+        "databaseRow": "Table row",
+        "newPage": "New page",
+        "appStart": "App start"
+      }
+    },
+    "background": {
+      "title": "Run in the background",
+      "body": "Keep workflows going when the window is closed.",
+      "keepRunning": "Keep running after closing the window",
+      "keepRunningHint": "Closing the window hides AppFlowy in the notification area. Quit from its icon to stop everything.",
+      "launchAtLogin": "Start when I sign in to Windows",
+      "launchAtLoginHint": "AppFlowy starts hidden, so scheduled workflows never miss a beat.",
+      "notifyOnFailure": "Notify me when a workflow fails",
+      "pauseAll": "Pause all workflows",
+      "pauseAllHint": "Nothing starts on its own while paused. Run now still works.",
+      "unsupported": "Running in the background is available on Windows.",
+      "webhookPort": "Webhooks listen on port {}.",
+      "done": "Done"
+    },
+    "tray": {
+      "tooltip": "AppFlowy · {} workflows on",
+      "tooltipPaused": "AppFlowy · workflows paused",
+      "open": "Open AppFlowy",
+      "pause": "Pause workflows",
+      "resume": "Resume workflows",
+      "quit": "Quit AppFlowy",
+      "stillRunningTitle": "AppFlowy is still running",
+      "stillRunningBody": "Workflows keep running in the background. Use the AppFlowy icon in the notification area to open or quit."
+    },
+    "notifications": {
+      "failedTitle": "\"{}\" failed"
+    },
+    "time": {
+      "justNow": "just now",
+      "minutesAgo": "{} min ago",
+      "hoursAgo": "{} h ago",
+      "inMoments": "in a moment",
+      "inMinutes": "in {} min",
+      "todayAt": "today at {}",
+      "tomorrowAt": "tomorrow at {}"
+    }
+  },
   "blockActions": {
     "addBelowTooltip": "Click to add below",
     "addAboveCmd": "Alt+click",

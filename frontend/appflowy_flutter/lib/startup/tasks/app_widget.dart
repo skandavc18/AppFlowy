@@ -38,6 +38,7 @@ import 'package:appflowy/workspace/application/sidebar/rename_view/rename_view_b
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
 import 'package:appflowy/workspace/presentation/command_palette/command_palette.dart';
+import 'package:appflowy/workflows/application/workflow_manager.dart';
 import 'package:appflowy_backend/protobuf/flowy-folder/view.pb.dart';
 import 'package:appflowy_backend/protobuf/flowy-user/protobuf.dart';
 import 'package:appflowy_ui/appflowy_ui.dart';
@@ -121,6 +122,10 @@ class InitAppWidgetTask extends LaunchTask {
 
     // Extensions read their folder, watch it, and start their own scheduler.
     unawaited(ExtensionManager.instance.start());
+
+    // Workflows keep their own clock too — and keep it while the window is
+    // hidden in the notification area.
+    unawaited(WorkflowManager.instance.start());
 
     // Restore device-only glyph appearance before any application UI mounts.
     // Failure keeps the safe default and remains retryable from Settings.

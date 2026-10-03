@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:appflowy/startup/startup.dart';
 import 'package:appflowy/startup/tasks/app_window_size_manager.dart';
+import 'package:appflowy/workflows/application/workflow_background.dart';
 import 'package:bitsdojo_window/bitsdojo_window.dart';
 import 'package:flutter/material.dart';
 import 'package:scaled_app/scaled_app.dart';
@@ -65,7 +66,13 @@ class InitAppWindowTask extends LaunchTask with WindowListener {
         /// from a maximized state.
         final isMaximized = await windowSizeManager.getWindowMaximized();
         if (isMaximized) {
-          appWindow.maximize();
+          if (WorkflowBackground.startedInBackground) {
+            // Maximizing shows the window. Started at sign-in it stays
+            // hidden until somebody opens it, and is maximized then.
+            _maximizeWhenShown();
+          } else {
+            appWindow.maximize();
+          }
         }
       });
     } else {
@@ -84,6 +91,15 @@ class InitAppWindowTask extends LaunchTask with WindowListener {
             (v) => ScaledWidgetsFlutterBinding.instance.scaleFactor = (_) => v,
           ),
     );
+  }
+
+  void _maximizeWhenShown() {
+    late final VoidCallback listener;
+    listener = () {
+      WorkflowBackground.instance.removeShownListener(listener);
+      appWindow.maximize();
+    };
+    WorkflowBackground.instance.addShownListener(listener);
   }
 
   @override

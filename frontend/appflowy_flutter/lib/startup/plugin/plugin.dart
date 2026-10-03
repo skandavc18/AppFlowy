@@ -16,6 +16,7 @@ enum PluginType {
   trash,
   templates,
   extensions,
+  workflows,
   grid,
   board,
   calendar,

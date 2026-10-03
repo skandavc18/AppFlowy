@@ -44,6 +44,7 @@ class SidebarFooter extends StatelessWidget {
             const UserSettingButton(),
             const SidebarTemplatesButton(compact: true),
             const SidebarExtensionsButton(compact: true),
+            const SidebarWorkflowsButton(compact: true),
             const SidebarTrashButton(compact: true),
             BlocSelector<UserWorkspaceBloc, UserWorkspaceState, String>(
               selector: (state) =>
@@ -101,6 +102,29 @@ class SidebarExtensionsButton extends StatelessWidget {
         getIt<TabsBloc>().add(
           TabsEvent.openPlugin(
             plugin: makePlugin(pluginType: PluginType.extensions),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class SidebarWorkflowsButton extends StatelessWidget {
+  const SidebarWorkflowsButton({super.key, this.compact = false});
+
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    return SidebarFooterButton(
+      compact: compact,
+      icon: SidebarIcon.workflows,
+      text: LocaleKeys.workflows_title.tr(),
+      onTap: () {
+        getIt<MenuSharedState>().latestOpenView = null;
+        getIt<TabsBloc>().add(
+          TabsEvent.openPlugin(
+            plugin: makePlugin(pluginType: PluginType.workflows),
           ),
         );
       },

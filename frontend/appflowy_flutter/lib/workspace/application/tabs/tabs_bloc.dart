@@ -513,6 +513,7 @@ class TabsBloc extends Bloc<TabsEvent, TabsState> {
       PluginType.trash,
       PluginType.templates,
       PluginType.extensions,
+      PluginType.workflows,
       PluginType.recents,
       PluginType.favorites,
       PluginType.pageLibrary,

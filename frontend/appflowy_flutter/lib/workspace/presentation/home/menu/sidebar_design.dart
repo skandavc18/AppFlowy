@@ -92,6 +92,7 @@ enum SidebarIcon {
   trash('office', 'trash'),
   templates('design', 'layout'),
   extensions('games', 'puzzle-piece'),
+  workflows('technology_development', 'infinity'),
   pin('office', 'push-pin'),
   settings('system', 'gear'),
   bell('system', 'bell'),

@@ -367,6 +367,7 @@ void main() {
       'NotificationButton(',
       'PluginType.templates',
       'PluginType.extensions',
+      'PluginType.workflows',
       'PluginType.trash',
     ]) {
       expect(footer, contains(entry));
