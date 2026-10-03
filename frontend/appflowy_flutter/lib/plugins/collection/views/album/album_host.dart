@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:appflowy/plugins/collection/collection_style.dart';
 import 'package:appflowy/plugins/collection/providers/external_collection_host.dart';
+import 'package:appflowy/plugins/collection/providers/google_photos_keep.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/collection/providers/provider_page_flow.dart';
 import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
@@ -76,15 +77,7 @@ class _AlbumHostState extends State<AlbumHost> {
       _bindProvider();
       return;
     }
-    widget.collection.explorer.addListener(_syncItems);
-    _syncItems();
-    unawaited(
-      widget.collection.explorer
-          .ensureLoaded(widget.collection.collectionView.id),
-    );
-    if (widget.needsDates) {
-      unawaited(controller.ensureAllMetadata());
-    }
+    _watchWorkspace();
   }
 
   @override
@@ -96,9 +89,25 @@ class _AlbumHostState extends State<AlbumHost> {
       provider?.removeListener(_syncProviderItems);
       provider?.dispose();
       provider = null;
+      oldWidget.collection.explorer.removeListener(_syncItems);
       if (source.isRemote) {
         _bindProvider();
+      } else {
+        // Kept copies or an unbound album: its own files replace the service's.
+        _watchWorkspace();
       }
+    }
+  }
+
+  void _watchWorkspace() {
+    widget.collection.explorer.addListener(_syncItems);
+    _syncItems();
+    unawaited(
+      widget.collection.explorer
+          .ensureLoaded(widget.collection.collectionView.id),
+    );
+    if (widget.needsDates) {
+      unawaited(controller.ensureAllMetadata());
     }
   }
 
@@ -218,11 +227,21 @@ class _AlbumHostState extends State<AlbumHost> {
             onRetry: () => unawaited(live.refresh()),
             onReconnect: () =>
                 ProviderReconnectRequest.of(context)?.call(source),
+            onPickAgain: pickPhotosAgainAction(
+              context,
+              collection: widget.collection,
+              failure: live.failure,
+            ),
           ));
     }
     if (live == null) {
       return widget.builder(context, controller, palette);
     }
+    final offer = keepPhotosOffer(
+      context,
+      collection: widget.collection,
+      live: live,
+    );
     final banner = live.hasFailed
         ? ProviderStaleBanner(
             status: live.status,
@@ -231,8 +250,19 @@ class _AlbumHostState extends State<AlbumHost> {
             onRetry: () => unawaited(live.refresh(silent: true)),
             onReconnect: () =>
                 ProviderReconnectRequest.of(context)?.call(source),
+            onPickAgain: pickPhotosAgainAction(
+              context,
+              collection: widget.collection,
+              failure: live.failure,
+            ),
           )
-        : null;
+        : offer == null
+            ? null
+            : ProviderKeepBanner(
+                palette: palette,
+                onKeep: offer.keep,
+                onLinkOnly: offer.linkOnly,
+              );
     final header = FileBrowserPageHeader.maybeOf(context);
     if (header != null) {
       return FileBrowserPageHeader(

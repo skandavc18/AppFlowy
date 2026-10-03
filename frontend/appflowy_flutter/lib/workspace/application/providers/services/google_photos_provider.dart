@@ -79,6 +79,10 @@ class GooglePhotosProvider extends RemoteCollectionProvider
   /// Where the picked session id lives on the collection's binding.
   static const sessionOption = 'session';
 
+  /// Set when somebody chose to only link a selection rather than keep a copy:
+  /// it lapses, and they pick again.
+  static const linkOnlyOption = 'link_only';
+
   @override
   ProviderService get service => ProviderService.googlePhotos;
 
@@ -109,8 +113,36 @@ class GooglePhotosProvider extends RemoteCollectionProvider
     }
     // A session is not permanent. When it lapses the collection says so and
     // offers to pick again, rather than looking empty for no reason.
-    await readSession(sessionId);
+    await _fromSelection(() => readSession(sessionId));
   }
+
+  /// Google keeps a picked set only for a while. Afterwards it answers 403 for
+  /// a session it still knows and 404 for one it has dropped, and neither a
+  /// retry nor a fresh sign in brings it back.
+  Future<T> _fromSelection<T>(Future<T> Function() read) async {
+    try {
+      return await read();
+    } on ProviderFailure catch (failure) {
+      if (selectionLapses(failure)) {
+        throw const ProviderFailure(
+          ProviderStatus.notFound,
+          detail: ProviderFailure.selectionLapsed,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  @visibleForTesting
+  static bool selectionLapses(ProviderFailure failure) =>
+      switch (failure.status) {
+        ProviderStatus.notFound => true,
+        // The Picker API switched off for the project is not the selection.
+        ProviderStatus.permissionDenied =>
+          failure.reason != 'SERVICE_DISABLED' &&
+              failure.reason != 'accessNotConfigured',
+        _ => false,
+      };
 
   // --- Picking --------------------------------------------------------------
 
@@ -183,13 +215,16 @@ class GooglePhotosProvider extends RemoteCollectionProvider
     }
 
     final answer = jsonMap(
-      await transport.json(
-        '$apiBase/mediaItems',
-        query: {
-          'sessionId': id,
-          'pageSize': '$_pageSize',
-          if (pageToken != null && pageToken.isNotEmpty) 'pageToken': pageToken,
-        },
+      await _fromSelection(
+        () => transport.json(
+          '$apiBase/mediaItems',
+          query: {
+            'sessionId': id,
+            'pageSize': '$_pageSize',
+            if (pageToken != null && pageToken.isNotEmpty)
+              'pageToken': pageToken,
+          },
+        ),
       ),
     );
 

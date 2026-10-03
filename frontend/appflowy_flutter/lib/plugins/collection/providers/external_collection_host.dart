@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:appflowy/plugins/collection/collection_style.dart';
+import 'package:appflowy/plugins/collection/providers/google_photos_keep.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/collection/providers/provider_page_flow.dart';
 import 'package:appflowy/plugins/collection/views/collection_page_scroll_scope.dart';
@@ -138,6 +139,11 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
                 retryAfter: live.failure?.retryAfter,
                 onRetry: () => unawaited(live.refresh()),
                 onReconnect: () => _reconnect(context),
+                onPickAgain: pickPhotosAgainAction(
+                  context,
+                  collection: widget.collection,
+                  failure: live.failure,
+                ),
               ));
         }
 
@@ -151,6 +157,11 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
               ));
         }
 
+        final offer = keepPhotosOffer(
+          context,
+          collection: widget.collection,
+          live: live,
+        );
         final banner = live.hasFailed
             ? ProviderStaleBanner(
                 status: live.status,
@@ -158,8 +169,19 @@ class _ExternalCollectionHostState extends State<ExternalCollectionHost> {
                 palette: palette,
                 onRetry: () => unawaited(live.refresh(silent: true)),
                 onReconnect: () => _reconnect(context),
+                onPickAgain: pickPhotosAgainAction(
+                  context,
+                  collection: widget.collection,
+                  failure: live.failure,
+                ),
               )
-            : null;
+            : offer == null
+                ? null
+                : ProviderKeepBanner(
+                    palette: palette,
+                    onKeep: offer.keep,
+                    onLinkOnly: offer.linkOnly,
+                  );
         final header = FileBrowserPageHeader.maybeOf(context);
         if (header != null) {
           return FileBrowserPageHeader(

@@ -71,6 +71,7 @@ class ProviderFailure implements Exception {
   const ProviderFailure(
     this.status, {
     this.detail = '',
+    this.reason = '',
     this.retryAfter,
   });
 
@@ -81,46 +82,89 @@ class ProviderFailure implements Exception {
   factory ProviderFailure.fromStatusCode(
     int code, {
     String detail = '',
+    String reason = '',
     String? retryAfterHeader,
   }) {
     final retryAfter = _parseRetryAfter(retryAfterHeader);
     return switch (code) {
-      401 => ProviderFailure(ProviderStatus.authExpired, detail: detail),
+      401 => ProviderFailure(
+          ProviderStatus.authExpired,
+          detail: detail,
+          reason: reason,
+        ),
       403 when retryAfter != null => ProviderFailure(
           ProviderStatus.rateLimited,
           detail: detail,
+          reason: reason,
           retryAfter: retryAfter,
         ),
-      403 => ProviderFailure(ProviderStatus.permissionDenied, detail: detail),
-      404 || 410 => ProviderFailure(ProviderStatus.notFound, detail: detail),
+      403 when reason == insufficientScope => ProviderFailure(
+          ProviderStatus.authExpired,
+          detail: detail,
+          reason: reason,
+        ),
+      403 => ProviderFailure(
+          ProviderStatus.permissionDenied,
+          detail: detail,
+          reason: reason,
+        ),
+      404 || 410 => ProviderFailure(
+          ProviderStatus.notFound,
+          detail: detail,
+          reason: reason,
+        ),
       429 => ProviderFailure(
           ProviderStatus.rateLimited,
           detail: detail,
+          reason: reason,
           retryAfter: retryAfter,
         ),
-      _ => ProviderFailure(ProviderStatus.error, detail: 'HTTP $code $detail'),
+      _ => ProviderFailure(
+          ProviderStatus.error,
+          detail: 'HTTP $code $detail',
+          reason: reason,
+        ),
     };
   }
 
   const ProviderFailure.offline([this.detail = ''])
       : status = ProviderStatus.offline,
+        reason = '',
         retryAfter = null;
 
   const ProviderFailure.authExpired([this.detail = ''])
       : status = ProviderStatus.authExpired,
+        reason = '',
         retryAfter = null;
 
   const ProviderFailure.permissionDenied([this.detail = ''])
       : status = ProviderStatus.permissionDenied,
+        reason = '',
         retryAfter = null;
 
   const ProviderFailure.notFound([this.detail = ''])
       : status = ProviderStatus.notFound,
+        reason = '',
         retryAfter = null;
 
   final ProviderStatus status;
   final String detail;
+
+  /// The machine-readable reason the service answered with, such as Google's
+  /// `SERVICE_DISABLED`, for telling failures with one status apart. Like
+  /// [detail] it is never rendered.
+  final String reason;
   final Duration? retryAfter;
+
+  /// Google's reason for a token that was never granted the permission asked
+  /// for. Signing in again, and allowing it, is the way out.
+  static const insufficientScope = 'ACCESS_TOKEN_SCOPE_INSUFFICIENT';
+
+  /// The binding names a set somebody picked, and the service no longer hands
+  /// it out. Neither retrying nor signing in brings it back; picking again does.
+  static const selectionLapsed = 'appflowy_selection_lapsed';
+
+  bool get isLapsedSelection => detail == selectionLapsed;
 
   static Duration? _parseRetryAfter(String? header) {
     if (header == null || header.isEmpty) {
@@ -139,7 +183,9 @@ class ProviderFailure implements Exception {
   }
 
   @override
-  String toString() => 'ProviderFailure(${status.name}: $detail)';
+  String toString() => reason.isEmpty
+      ? 'ProviderFailure(${status.name}: $detail)'
+      : 'ProviderFailure(${status.name}: $detail [$reason])';
 }
 
 /// What a provider can be asked to do.

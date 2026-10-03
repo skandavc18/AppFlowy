@@ -21,13 +21,16 @@ class ProviderConnector {
     http.Client? client,
     ProviderConnections? connections,
     OAuthFlow? oauth,
+    OAuthAppRegistry? apps,
   })  : _client = client ?? http.Client(),
         _connections = connections ?? ProviderConnections.instance,
-        _oauth = oauth ?? OAuthFlow();
+        _oauth = oauth ?? OAuthFlow(),
+        _apps = apps ?? OAuthAppRegistry.instance;
 
   final http.Client _client;
   final ProviderConnections _connections;
   final OAuthFlow _oauth;
+  final OAuthAppRegistry _apps;
 
   /// Connects a service that issues its own token: Immich, GitHub, GitLab.
   ///
@@ -91,11 +94,17 @@ class ProviderConnector {
   /// account of this family is already signed in, which is what a plain
   /// "sign in again" wants; an empty string means a NEW account, so it starts
   /// from this service's own permissions instead of inheriting another
-  /// person's.
+  /// person's. Any other value makes the sign in for that account alone.
+  ///
+  /// [reconnectId] is the connection a collection or page embed names, when
+  /// this sign in is to bring it back. The sign in is then for that
+  /// connection's account, and its token lands under that very id — even when
+  /// the connection had been removed in the meantime.
   Future<ProviderConnection> connectWithOAuth({
     required ProviderService service,
     bool requestWriteAccess = false,
     String? preferAccountId,
+    String? reconnectId,
   }) async {
     final endpoints = OAuthServices.forService(service);
     if (endpoints == null) {
@@ -105,7 +114,7 @@ class ProviderConnector {
       );
     }
 
-    final app = await OAuthAppRegistry.instance.read(service);
+    final app = await _apps.read(service);
     if (app == null || !app.isConfigured) {
       throw const ProviderFailure(
         ProviderStatus.authExpired,
@@ -118,13 +127,23 @@ class ProviderConnector {
     // A family that issues one token per capability keeps them in separate
     // connections, so only the one holding this capability may be joined.
     final scoped = family.sharesOneGrant ? null : service;
+    final reviving =
+        reconnectId == null || reconnectId.isEmpty ? null : reconnectId;
+    final bound = reviving == null ? null : _connections.byId(reviving);
+    final expected = expectedAccountFor(
+      service,
+      preferAccountId: preferAccountId,
+      reconnectId: reviving,
+      bound: bound,
+    );
     final existing = preferAccountId != null && preferAccountId.isEmpty
         ? null
-        : _connections.accountFor(
-            family,
-            accountId: preferAccountId ?? '',
-            service: scoped,
-          );
+        : bound ??
+            _connections.accountFor(
+              family,
+              accountId: expected ?? preferAccountId ?? '',
+              service: scoped,
+            );
 
     // Only ask for write access when somebody has said they want to write.
     // Asking for it up front is how an application ends up holding a
@@ -142,18 +161,40 @@ class ProviderConnector {
       endpoints: endpoints,
       app: app,
       scopeOverride: scopes,
+      loginHint: expected == null
+          ? null
+          : _loginHint(family, expected, bound ?? existing),
     );
 
     final account = await _identify(service, '', credentials);
+    // The browser offers whichever account it is signed in to. Storing that
+    // one would leave the thing being reconnected on the token that failed,
+    // and quietly add an account nobody asked for.
+    if (expected != null &&
+        account.id.toLowerCase() != expected.toLowerCase()) {
+      Log.warn('A sign in came back as an account nobody asked for.');
+      throw const ProviderFailure(
+        ProviderStatus.error,
+        detail: oauthWrongAccount,
+      );
+    }
+
+    // Only an account that was checked may land under the id a collection
+    // names.
+    final reconnecting = expected == null ? null : reviving;
     final joined = _connections.accountFor(
-      family,
-      accountId: account.id,
-      service: scoped,
-    );
+          family,
+          accountId: account.id,
+          service: scoped,
+        ) ??
+        (reconnecting == null ? null : bound);
     final connection = ProviderConnection(
       // Keep the id an account already has: every collection and page embed
-      // bound to it names that id.
-      id: joined?.id ?? ProviderConnections.idFor(service, account: account.id),
+      // bound to it names that id. One that was removed gets back the id its
+      // collection still names, so it reads again without being bound anew.
+      id: joined?.id ??
+          reconnecting ??
+          ProviderConnections.idFor(service, account: account.id),
       service: joined?.service ?? service,
       accountLabel: account.label,
       accountId: account.id,
@@ -167,8 +208,90 @@ class ProviderConnector {
       avatarUrl: account.avatarUrl,
     );
 
-    await _connections.upsert(connection, credentials);
+    final renewed = <ProviderConnection>[
+      connection,
+      // The same account under the ids it was signed in with before one sign
+      // in covered everything: the same grant, so the same token.
+      for (final other in _connections.sharingGrantWith(connection))
+        other.copyWith(
+          accountLabel: account.label,
+          scopes: scopes,
+          expiresAt: credentials.expiresAt,
+          avatarUrl: account.avatarUrl,
+        ),
+    ];
+    // The connection this was asked to bring back takes the token whatever
+    // else holds it, including when it was removed and only a collection still
+    // names it.
+    if (reconnecting != null && !renewed.any((c) => c.id == reconnecting)) {
+      renewed.add(
+        bound?.copyWith(
+              accountLabel: account.label,
+              accountId: account.id,
+              scopes: scopes,
+              expiresAt: credentials.expiresAt,
+              avatarUrl: account.avatarUrl,
+            ) ??
+            ProviderConnection(
+              id: reconnecting,
+              service: service,
+              accountLabel: account.label,
+              accountId: account.id,
+              scopes: scopes,
+              services: {service},
+              connectedAt: DateTime.now(),
+              expiresAt: credentials.expiresAt,
+              avatarUrl: account.avatarUrl,
+            ),
+      );
+    }
+
+    await _connections.upsertAll(renewed, credentials);
     return connection;
+  }
+
+  /// Whose account a sign in is for, or null when any account will do.
+  ///
+  /// A connection being brought back says so itself or, once removed, through
+  /// the id its collection still names. Otherwise [preferAccountId] does, but
+  /// only for a family that is one account under one id: Microsoft is asked
+  /// who signed in two ways, Graph for OneDrive and the id token for mail, and
+  /// the two need not agree on one person's id.
+  static String? expectedAccountFor(
+    ProviderService service, {
+    String? preferAccountId,
+    String? reconnectId,
+    ProviderConnection? bound,
+  }) {
+    final String? named;
+    if (bound != null && bound.accountId.isNotEmpty) {
+      named = bound.accountId;
+    } else if (reconnectId != null && reconnectId.isNotEmpty) {
+      named = ProviderConnections.accountIdIn(reconnectId, service);
+    } else if (ProviderServices.of(service).family.sharesOneGrant) {
+      named = preferAccountId;
+    } else {
+      named = null;
+    }
+    return named == null || named.isEmpty ? null : named;
+  }
+
+  /// What the browser is told about the account being signed in for, so it
+  /// opens on that account rather than on whichever one it last used.
+  ///
+  /// Google takes the account's own id; Microsoft wants the address it signs
+  /// in with. Box has no such parameter.
+  static String? _loginHint(
+    ProviderAccountFamily family,
+    String accountId,
+    ProviderConnection? known,
+  ) {
+    final label = known?.accountLabel ?? '';
+    return switch (family) {
+      ProviderAccountFamily.google => accountId,
+      ProviderAccountFamily.microsoft when label.contains('@') => label,
+      _ => null,
+    };
   }
 
   /// Asks the service who the token belongs to.

@@ -227,6 +227,7 @@ class ProviderStateView extends StatelessWidget {
     required this.palette,
     this.onRetry,
     this.onReconnect,
+    this.onPickAgain,
     this.retryAfter,
   });
 
@@ -235,6 +236,10 @@ class ProviderStateView extends StatelessWidget {
   final CollectionPalette palette;
   final VoidCallback? onRetry;
   final VoidCallback? onReconnect;
+
+  /// Set when the binding is a picked set the service let lapse; the panel
+  /// then says so and offers to pick again instead of anything else.
+  final VoidCallback? onPickAgain;
   final Duration? retryAfter;
 
   @override
@@ -262,7 +267,9 @@ class ProviderStateView extends StatelessWidget {
       );
     }
 
-    final copy = providerStateCopy(status, info);
+    final copy = onPickAgain != null
+        ? _lapsedSelectionCopy()
+        : providerStateCopy(status, info);
     final wait = retryAfter;
     return _Centred(
       child: ConstrainedBox(
@@ -306,20 +313,37 @@ class ProviderStateView extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (status.needsReconnect && onReconnect != null)
-                  _ActionButton(
-                    label: LocaleKeys.providers_reconnect.tr(),
-                    palette: palette,
-                    primary: true,
-                    onPressed: onReconnect!,
+                // Flexible, so a long translation wraps inside its button
+                // rather than running off the panel.
+                if (onPickAgain != null)
+                  Flexible(
+                    child: _ActionButton(
+                      label: LocaleKeys.providers_photos_chooseAgain.tr(),
+                      palette: palette,
+                      primary: true,
+                      onPressed: onPickAgain!,
+                    ),
+                  )
+                else if (status.needsReconnect && onReconnect != null)
+                  Flexible(
+                    child: _ActionButton(
+                      label: LocaleKeys.providers_reconnect.tr(),
+                      palette: palette,
+                      primary: true,
+                      onPressed: onReconnect!,
+                    ),
                   ),
-                if (status.isRetryable && onRetry != null) ...[
+                if (onPickAgain == null &&
+                    status.isRetryable &&
+                    onRetry != null) ...[
                   if (status.needsReconnect && onReconnect != null)
                     const SizedBox(width: 8),
-                  _ActionButton(
-                    label: LocaleKeys.providers_tryAgain.tr(),
-                    palette: palette,
-                    onPressed: onRetry!,
+                  Flexible(
+                    child: _ActionButton(
+                      label: LocaleKeys.providers_tryAgain.tr(),
+                      palette: palette,
+                      onPressed: onRetry!,
+                    ),
                   ),
                 ],
               ],
@@ -341,6 +365,7 @@ class ProviderStaleBanner extends StatelessWidget {
     required this.palette,
     this.onRetry,
     this.onReconnect,
+    this.onPickAgain,
   });
 
   final ProviderStatus status;
@@ -349,9 +374,14 @@ class ProviderStaleBanner extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback? onReconnect;
 
+  /// See [ProviderStateView.onPickAgain].
+  final VoidCallback? onPickAgain;
+
   @override
   Widget build(BuildContext context) {
-    final copy = providerStateCopy(status, info);
+    final copy = onPickAgain != null
+        ? _lapsedSelectionCopy()
+        : providerStateCopy(status, info);
     final accent = _warningColor(context);
     return Container(
       margin: const EdgeInsets.fromLTRB(28, 0, 28, 10),
@@ -372,7 +402,14 @@ class ProviderStaleBanner extends StatelessWidget {
               style: TextStyle(color: palette.textSecondary, fontSize: 12.5),
             ),
           ),
-          if (status.needsReconnect && onReconnect != null)
+          if (onPickAgain != null)
+            _ActionButton(
+              label: LocaleKeys.providers_photos_chooseAgain.tr(),
+              palette: palette,
+              dense: true,
+              onPressed: onPickAgain!,
+            )
+          else if (status.needsReconnect && onReconnect != null)
             _ActionButton(
               label: LocaleKeys.providers_reconnect.tr(),
               palette: palette,
@@ -398,6 +435,65 @@ Color _warningColor(BuildContext context) =>
     Theme.of(context).brightness == Brightness.dark
         ? const Color(0xFFE0A33A)
         : const Color(0xFFB4761B);
+
+/// An offer to keep photos the service only lends for a while, over content
+/// that is still readable.
+class ProviderKeepBanner extends StatelessWidget {
+  const ProviderKeepBanner({
+    super.key,
+    required this.palette,
+    required this.onKeep,
+    required this.onLinkOnly,
+  });
+
+  final CollectionPalette palette;
+  final VoidCallback onKeep;
+  final VoidCallback onLinkOnly;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        margin: const EdgeInsets.fromLTRB(28, 0, 28, 10),
+        padding: const EdgeInsets.fromLTRB(12, 9, 8, 9),
+        decoration: BoxDecoration(
+          color: palette.accent.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.save_alt_rounded, size: 15, color: palette.accent),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Text(
+                LocaleKeys.providers_photos_keepHint.tr(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: palette.textSecondary, fontSize: 12.5),
+              ),
+            ),
+            _ActionButton(
+              label: LocaleKeys.providers_photos_linkOnly.tr(),
+              palette: palette,
+              dense: true,
+              onPressed: onLinkOnly,
+            ),
+            const SizedBox(width: 6),
+            _ActionButton(
+              label: LocaleKeys.providers_photos_keep.tr(),
+              palette: palette,
+              dense: true,
+              primary: true,
+              onPressed: onKeep,
+            ),
+          ],
+        ),
+      );
+}
+
+({String title, String body, IconData icon}) _lapsedSelectionCopy() => (
+      title: LocaleKeys.providers_photos_expiredTitle.tr(),
+      body: LocaleKeys.providers_photos_lapsedBody.tr(),
+      icon: Icons.timer_off_rounded,
+    );
 
 class _Centred extends StatelessWidget {
   const _Centred({required this.child});
@@ -460,6 +556,7 @@ class _ActionButtonState extends State<_ActionButton> {
           ),
           child: Text(
             widget.label,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: widget.primary ? palette.accent : palette.textSecondary,
               fontSize: widget.dense ? 11.5 : 12.5,

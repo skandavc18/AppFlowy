@@ -454,7 +454,7 @@ class _ExternalEmbedBlockComponentState
   Future<void> _reconnect() async {
     final signedIn = await reconnectProviderAccount(
       context,
-      info: ProviderServices.of(_source.service),
+      source: _source,
     );
     if (signedIn && mounted) {
       await _load();

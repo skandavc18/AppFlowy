@@ -9,6 +9,7 @@ import 'package:appflowy/plugins/collection/providers/external_repository_view.d
 import 'package:appflowy/plugins/collection/providers/connect_dialog.dart';
 import 'package:appflowy/plugins/collection/providers/external_collection_host.dart';
 import 'package:appflowy/plugins/collection/providers/external_import.dart';
+import 'package:appflowy/plugins/collection/providers/google_photos_keep.dart';
 import 'package:appflowy/plugins/collection/providers/provider_chrome.dart';
 import 'package:appflowy/plugins/collection/providers/source_picker.dart';
 import 'package:appflowy/plugins/collection/providers/provider_text_field.dart';
@@ -30,6 +31,7 @@ import 'package:appflowy/workspace/application/collections/collection_registry.d
 import 'package:appflowy/workspace/application/collections/collection_service.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/provider_cache.dart';
+import 'package:appflowy/workspace/application/providers/services/google_photos_provider.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
 import 'package:appflowy/features/workspace/logic/workspace_bloc.dart';
 import 'package:appflowy/workspace/application/tabs/tabs_bloc.dart';
@@ -190,6 +192,7 @@ class _CollectionPageState extends State<CollectionPage> {
             radius: 0,
             child: ProviderSourceUpdate(
               onChanged: (source) => unawaited(_persistSource(source)),
+              canRebind: _canEdit,
               child: ProviderReconnectRequest(
                 onReconnect: (source) => unawaited(_reconnect(source)),
                 child: view.supportsPageHeader
@@ -621,12 +624,50 @@ class _CollectionPageState extends State<CollectionPage> {
       return;
     }
 
+    // A picked Google Photos selection expires: either its photos are copied
+    // in, or the collection only links and is picked again when it lapses.
+    var next = chosen;
+    if (chosen.info.picksExternally) {
+      final keepCopy = await askToKeepPhotos(context);
+      if (keepCopy == null || !mounted) {
+        return;
+      }
+      if (keepCopy) {
+        await _keepPicked(chosen, previous: previous, viewId: view.id);
+        return;
+      }
+      next = chosen.withOption(GooglePhotosProvider.linkOnlyOption, true);
+    }
+
     // Everything cached for the old binding is about content this collection
     // no longer shows, so it goes with the binding rather than lingering.
     if (previous.isRemote) {
       unawaited(ProviderCache.instance.evict(previous.cacheKey));
     }
-    await _persistSource(chosen);
+    await _persistSource(next);
+  }
+
+  /// Copies a picked selection in; the collection then shows its own files.
+  Future<void> _keepPicked(
+    CollectionSource picked, {
+    required CollectionSource previous,
+    required String viewId,
+  }) async {
+    final kept = await keepPickedPhotos(
+      context,
+      parentViewId: viewId,
+      picked: picked,
+    );
+    if (kept == 0 || !mounted) {
+      return;
+    }
+    if (previous.isRemote) {
+      unawaited(ProviderCache.instance.evict(previous.cacheKey));
+      await _persistSource(CollectionSource.local);
+    }
+    if (mounted) {
+      await controller.refresh();
+    }
   }
 
   Future<void> _persistSource(CollectionSource source) async {
@@ -677,7 +718,7 @@ class _CollectionPageState extends State<CollectionPage> {
 
   /// Signs in again to the account this collection reads through.
   Future<void> _reconnect(CollectionSource source) async {
-    await reconnectProviderAccount(context, info: source.info);
+    await reconnectProviderAccount(context, source: source);
     if (mounted) {
       setState(() {});
     }

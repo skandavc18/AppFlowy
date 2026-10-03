@@ -29,6 +29,13 @@ Future<CollectionSource?> pickGooglePhotosSelection(
       builder: (context) => _GooglePhotosPicker(connection: connection),
     );
 
+/// Runs a picking session for [connection]; [pickGooglePhotosSelection] is the
+/// real one.
+typedef GooglePhotosSelectionPicker = Future<CollectionSource?> Function(
+  BuildContext context, {
+  required ProviderConnection connection,
+});
+
 class _GooglePhotosPicker extends StatefulWidget {
   const _GooglePhotosPicker({required this.connection});
 

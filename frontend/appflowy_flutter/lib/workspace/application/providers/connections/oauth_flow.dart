@@ -20,6 +20,11 @@ const oauthClientIdRequired = 'appflowy_client_id_required';
 const oauthClientSecretRequired = 'appflowy_client_secret_required';
 const oauthGrantRevoked = 'appflowy_grant_revoked';
 
+/// A sign in made for one account came back as another. Nothing is stored for
+/// it: what was asked for was that account's token, and keeping someone else's
+/// would leave the thing being reconnected exactly as broken as before.
+const oauthWrongAccount = 'appflowy_wrong_account';
+
 /// What a token endpoint says when it refuses, as RFC 6749 §5.2 defines it.
 @immutable
 class OAuthError {
@@ -114,10 +119,14 @@ class OAuthFlow {
 
   /// Runs the whole round trip and returns the credentials, or throws a
   /// [ProviderFailure] the interface can render.
+  ///
+  /// [loginHint] names the account the browser should open on, for a sign in
+  /// that is for one account in particular.
   Future<ProviderCredentials> authorize({
     required OAuthEndpoints endpoints,
     required OAuthApp app,
     List<String>? scopeOverride,
+    String? loginHint,
   }) async {
     if (!app.isConfigured) {
       throw const ProviderFailure(
@@ -150,6 +159,7 @@ class OAuthFlow {
         challenge: challenge,
         state: state,
         scopes: scopeOverride ?? endpoints.scopes,
+        loginHint: loginHint,
       );
 
       final opened = await launchUrl(
@@ -225,6 +235,7 @@ class OAuthFlow {
     required String challenge,
     required String state,
     required List<String> scopes,
+    String? loginHint,
   }) {
     final base = Uri.parse(
       app.tenant.isEmpty
@@ -243,6 +254,7 @@ class OAuthFlow {
           'code_challenge': challenge,
           'code_challenge_method': 'S256',
         },
+        if (loginHint != null && loginHint.isNotEmpty) 'login_hint': loginHint,
         ...endpoints.extraAuthorizationParameters,
       },
     );

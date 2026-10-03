@@ -191,8 +191,14 @@ class ProviderTransport {
     }
 
     if (response.statusCode >= 400) {
+      final reason = readServiceErrorReason(response.bodyBytes);
+      Log.warn(
+        '${Uri.tryParse(url)?.host ?? 'A service'} refused a request: '
+        'HTTP ${response.statusCode} $reason',
+      );
       throw ProviderFailure.fromStatusCode(
         response.statusCode,
+        reason: reason,
         retryAfterHeader: response.headers['retry-after'] ??
             response.headers['x-ratelimit-reset'],
       );
@@ -385,3 +391,47 @@ Future<String?> providerAccessToken(String connectionId) async {
     transport.close();
   }
 }
+
+/// The machine-readable reason a service gave for refusing, or ''.
+///
+/// Google says it in `error.details[].reason`, older Google APIs in
+/// `error.errors[].reason`, an OAuth endpoint in a bare `error` string. Only
+/// the reason is kept: the message is a stranger's prose.
+String readServiceErrorReason(List<int> body) {
+  if (body.isEmpty) {
+    return '';
+  }
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(utf8.decode(body, allowMalformed: true));
+  } catch (_) {
+    return '';
+  }
+  if (decoded is! Map) {
+    return '';
+  }
+  final error = decoded['error'];
+  if (error is String) {
+    return _clipReason(error);
+  }
+  if (error is! Map) {
+    return '';
+  }
+  for (final key in const ['details', 'errors']) {
+    final entries = error[key];
+    if (entries is! List) {
+      continue;
+    }
+    for (final entry in entries) {
+      final reason = entry is Map ? entry['reason'] : null;
+      if (reason is String && reason.isNotEmpty) {
+        return _clipReason(reason);
+      }
+    }
+  }
+  final status = error['status'] ?? error['code'];
+  return status is String ? _clipReason(status) : '';
+}
+
+String _clipReason(String reason) =>
+    reason.length > 80 ? reason.substring(0, 80) : reason;

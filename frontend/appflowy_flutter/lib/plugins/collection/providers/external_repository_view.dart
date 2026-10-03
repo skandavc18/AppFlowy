@@ -269,19 +269,33 @@ class ProviderSourceUpdate extends InheritedWidget {
   const ProviderSourceUpdate({
     super.key,
     required this.onChanged,
+    this.canRebind = true,
     required super.child,
   });
 
   final void Function(CollectionSource source) onChanged;
+
+  /// Whether a view may point the collection at different content, the way
+  /// changing its source does. False while the page is locked or read only.
+  final bool canRebind;
 
   static void Function(CollectionSource source)? of(BuildContext context) =>
       context
           .dependOnInheritedWidgetOfExactType<ProviderSourceUpdate>()
           ?.onChanged;
 
+  /// [onChanged] for a change of content, or null when it is not allowed.
+  static void Function(CollectionSource source)? rebindOf(
+    BuildContext context,
+  ) {
+    final scope =
+        context.dependOnInheritedWidgetOfExactType<ProviderSourceUpdate>();
+    return scope != null && scope.canRebind ? scope.onChanged : null;
+  }
+
   @override
   bool updateShouldNotify(ProviderSourceUpdate oldWidget) =>
-      onChanged != oldWidget.onChanged;
+      onChanged != oldWidget.onChanged || canRebind != oldWidget.canRebind;
 }
 
 class _Toolbar extends StatelessWidget {

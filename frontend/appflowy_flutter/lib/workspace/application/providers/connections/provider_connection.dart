@@ -65,8 +65,7 @@ class ProviderConnection {
   /// [services] is authoritative once it has been written, so a capability can
   /// be turned off again; an empty set means nothing has ever narrowed it and
   /// the account stands for the one thing it was signed in for.
-  Set<ProviderService> get covered =>
-      services.isEmpty ? {service} : services;
+  Set<ProviderService> get covered => services.isEmpty ? {service} : services;
 
   bool covers(ProviderService service) => covered.contains(service);
 
@@ -381,17 +380,55 @@ class ProviderConnections extends ChangeNotifier {
   Future<void> upsert(
     ProviderConnection connection,
     ProviderCredentials credentials,
+  ) =>
+      upsertAll([connection], credentials);
+
+  /// Stores one sign in under every connection it serves, then says so once.
+  ///
+  /// One grant can stand behind several ids — see [sharingGrantWith] — and
+  /// each of them has to hold it, or whatever names the others keeps the token
+  /// that just failed.
+  Future<void> upsertAll(
+    List<ProviderConnection> connections,
+    ProviderCredentials credentials,
   ) async {
     await ensureLoaded();
-    await secrets.write(connection.id, credentials.encode());
-    final index = _connections.indexWhere((c) => c.id == connection.id);
-    if (index < 0) {
-      _connections.add(connection);
-    } else {
-      _connections[index] = connection;
+    final sealed = credentials.encode();
+    for (final connection in connections) {
+      await secrets.write(connection.id, sealed);
+      final index = _connections.indexWhere((c) => c.id == connection.id);
+      if (index < 0) {
+        _connections.add(connection);
+      } else {
+        _connections[index] = connection;
+      }
     }
     await _write();
     notifyListeners();
+  }
+
+  /// The other connections one sign in to [connection]'s account serves.
+  ///
+  /// Before one sign in covered a whole account, each capability was signed in
+  /// on its own and kept an id of its own (`googledrive|…`, `googlephotos|…`).
+  /// Collections and page embeds still name those ids, so they stay — but they
+  /// are one account holding one grant, and renewing only the first of them
+  /// leaves everything bound to the rest on a dead token.
+  ///
+  /// Empty for a family whose token endpoint serves one capability at a time,
+  /// where each connection really is a grant of its own.
+  List<ProviderConnection> sharingGrantWith(ProviderConnection connection) {
+    if (!connection.family.sharesOneGrant || connection.accountId.isEmpty) {
+      return const <ProviderConnection>[];
+    }
+    return [
+      for (final other in _connections)
+        if (other.id != connection.id &&
+            other.family == connection.family &&
+            other.host == connection.host &&
+            other.accountId == connection.accountId)
+          other,
+    ];
   }
 
   /// Replaces the stored token after a refresh, leaving the account alone.
@@ -460,6 +497,32 @@ class ProviderConnections extends ChangeNotifier {
       if (account.isNotEmpty) account,
     ];
     return parts.join('|').toLowerCase();
+  }
+
+  /// The account [connectionId] was made for, read back out of the id.
+  ///
+  /// The inverse of [idFor], including the ids it made before one sign in
+  /// covered a family (`googlephotos|<account>`). A collection whose connection
+  /// has since been removed has nothing else left to say whose account it read
+  /// through. Null when the id is not one of these.
+  static String? accountIdIn(String connectionId, ProviderService service) {
+    final parts = connectionId.split('|');
+    if (parts.length < 2) {
+      return null;
+    }
+    final family = ProviderServices.of(service).family;
+    final names = {
+      family.name.toLowerCase(),
+      for (final info in ProviderServices.forFamily(family))
+        info.service.name.toLowerCase(),
+    };
+    final account = parts.last;
+    if (!names.contains(parts.first) ||
+        account.isEmpty ||
+        names.contains(account)) {
+      return null;
+    }
+    return account;
   }
 }
 

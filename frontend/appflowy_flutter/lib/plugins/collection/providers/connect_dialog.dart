@@ -23,11 +23,14 @@ import 'package:url_launcher/url_launcher.dart';
 ///
 /// [preferAccountId] names the account being signed in for: null for whichever
 /// one is already there, an empty string for a new account beside it.
+/// [reconnectId] is the connection a collection or embed names, when the sign
+/// in is to bring that connection back.
 Future<ProviderConnection?> showProviderConnectDialog(
   BuildContext context, {
   required ProviderServiceInfo info,
   bool requestWriteAccess = false,
   String? preferAccountId,
+  String? reconnectId,
 }) =>
     showDialog<ProviderConnection>(
       context: context,
@@ -35,20 +38,26 @@ Future<ProviderConnection?> showProviderConnectDialog(
         info: info,
         requestWriteAccess: requestWriteAccess,
         preferAccountId: preferAccountId,
+        reconnectId: reconnectId,
       ),
     );
 
 /// Signs in to the account a binding already uses, again.
 ///
 /// A lapsed token is not a reason to choose a different folder, which is all
-/// the source picker can offer. A connection's id is derived from the account,
-/// so signing in again replaces the stored credentials in place and every
-/// collection bound to that account starts working.
+/// the source picker can offer. The sign in is for the account [source] reads
+/// through: the browser is pointed at it, a different account is refused, and
+/// the token lands under the very connection [source] names, the one its
+/// collection is waiting on.
 Future<bool> reconnectProviderAccount(
   BuildContext context, {
-  required ProviderServiceInfo info,
+  required CollectionSource source,
 }) async {
-  final connection = await showProviderConnectDialog(context, info: info);
+  final connection = await showProviderConnectDialog(
+    context,
+    info: source.info,
+    reconnectId: source.connectionId,
+  );
   return connection != null;
 }
 
@@ -76,6 +85,7 @@ Future<bool> ensureProviderWriteAccess(
     context,
     info: source.info,
     requestWriteAccess: true,
+    reconnectId: source.connectionId,
   );
   return granted != null &&
       OAuthServices.grantsWrite(granted.service, granted.scopes);
@@ -86,11 +96,13 @@ class _ConnectDialog extends StatefulWidget {
     required this.info,
     required this.requestWriteAccess,
     this.preferAccountId,
+    this.reconnectId,
   });
 
   final ProviderServiceInfo info;
   final bool requestWriteAccess;
   final String? preferAccountId;
+  final String? reconnectId;
 
   @override
   State<_ConnectDialog> createState() => _ConnectDialogState();
@@ -115,6 +127,31 @@ class _ConnectDialogState extends State<_ConnectDialog> {
 
   bool get showsAppFields => needsApp || editingApp;
 
+  /// The account this sign in is for, as the connections list names it.
+  ///
+  /// Null when any account will do, or when the one asked for is no longer
+  /// stored and nothing is left to name it by.
+  String? get _expectedAccountLabel {
+    final connections = ProviderConnections.instance;
+    final reconnectId = widget.reconnectId;
+    final bound = reconnectId == null || reconnectId.isEmpty
+        ? null
+        : connections.byId(reconnectId);
+    final expected = ProviderConnector.expectedAccountFor(
+      widget.info.service,
+      preferAccountId: widget.preferAccountId,
+      reconnectId: reconnectId,
+      bound: bound,
+    );
+    if (expected == null) {
+      return null;
+    }
+    final known = bound ??
+        connections.accountFor(widget.info.family, accountId: expected);
+    final label = known?.accountLabel ?? '';
+    return label.isEmpty ? null : label;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -125,6 +162,8 @@ class _ConnectDialogState extends State<_ConnectDialog> {
 
   Future<void> _loadApp() async {
     final app = await OAuthAppRegistry.instance.read(widget.info.service);
+    // The account being reconnected is named from the connection list.
+    await ProviderConnections.instance.ensureLoaded();
     if (!mounted) {
       return;
     }
@@ -271,7 +310,19 @@ class _ConnectDialogState extends State<_ConnectDialog> {
       case ProviderAuthKind.oauth:
         final endpoints = OAuthServices.forService(info.service);
         if (!showsAppFields) {
+          final account = _expectedAccountLabel;
           return [
+            if (account != null) ...[
+              Text(
+                LocaleKeys.providers_signInAs.tr(args: [account]),
+                style: TextStyle(
+                  color: palette.textSecondary,
+                  fontSize: 12.5,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             _SecurityNote(palette: palette),
             const SizedBox(height: 10),
             Text(
@@ -405,6 +456,7 @@ class _ConnectDialogState extends State<_ConnectDialog> {
           service: info.service,
           requestWriteAccess: widget.requestWriteAccess,
           preferAccountId: widget.preferAccountId,
+          reconnectId: widget.reconnectId,
         );
         if (mounted) {
           Navigator.of(context).pop(connection);
@@ -423,7 +475,11 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     } on ProviderFailure catch (failure) {
       if (mounted) {
         setState(() {
-          error = _readable(failure, widget.info);
+          error = _readable(
+            failure,
+            widget.info,
+            expectedAccount: _expectedAccountLabel,
+          );
           // A failure about the application itself has to reopen the fields,
           // or there is no way to correct what it is complaining about.
           if (_isAboutTheApp(failure.detail)) {
@@ -455,8 +511,16 @@ class _ConnectDialogState extends State<_ConnectDialog> {
   /// A service's own prose never reaches the screen; what does is the standard
   /// OAuth code it answered with, said in AppFlowy's terms — because the fix is
   /// always something to change in this dialog.
-  static String _readable(ProviderFailure failure, ProviderServiceInfo info) {
-    final named = _fromCode(failure.detail, info);
+  static String _readable(
+    ProviderFailure failure,
+    ProviderServiceInfo info, {
+    String? expectedAccount,
+  }) {
+    final named = _fromCode(
+      failure.detail,
+      info,
+      expectedAccount: expectedAccount,
+    );
     if (named != null) {
       return named;
     }
@@ -475,8 +539,17 @@ class _ConnectDialogState extends State<_ConnectDialog> {
     };
   }
 
-  static String? _fromCode(String detail, ProviderServiceInfo info) =>
+  static String? _fromCode(
+    String detail,
+    ProviderServiceInfo info, {
+    String? expectedAccount,
+  }) =>
       switch (detail) {
+        oauthWrongAccount => expectedAccount == null
+            ? LocaleKeys.providers_error_wrongAccountUnnamed
+                .tr(args: [info.family.label])
+            : LocaleKeys.providers_error_wrongAccount
+                .tr(args: [info.family.label, expectedAccount]),
         oauthClientIdRequired =>
           LocaleKeys.providers_error_clientIdRequired.tr(),
         oauthClientSecretRequired => LocaleKeys

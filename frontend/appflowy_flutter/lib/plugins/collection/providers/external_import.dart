@@ -20,6 +20,7 @@ import 'package:appflowy/shared/viewer_card.dart';
 import 'package:appflowy/workspace/application/providers/collection_provider.dart';
 import 'package:appflowy/workspace/application/providers/collection_source.dart';
 import 'package:appflowy/workspace/application/providers/connections/provider_connection.dart';
+import 'package:appflowy/workspace/application/providers/provider_cache.dart';
 import 'package:appflowy/workspace/application/providers/provider_node.dart';
 import 'package:appflowy/workspace/application/providers/provider_registry.dart';
 import 'package:appflowy/workspace/application/providers/provider_service.dart';
@@ -114,16 +115,21 @@ Future<ExternalSelection?> _pickThroughService(
     return null;
   }
 
+  final nodes = await _readSelection(bound);
+  return nodes == null ? null : ExternalSelection(source: bound, nodes: nodes);
+}
+
+/// Everything in a picked selection, every page of it.
+Future<List<ProviderNode>?> _readSelection(CollectionSource picked) async {
   CollectionProvider? provider;
   try {
-    final live = ProviderRegistry.create(bound);
+    final live = ProviderRegistry.create(picked);
     if (live == null) {
       return null;
     }
     provider = live;
     await live.ensureReady();
-    final page = await live.list();
-    return ExternalSelection(source: bound, nodes: page.nodes);
+    return await live.listAll();
   } on ProviderFailure catch (failure) {
     Log.warn('Unable to read a picked selection: ${failure.status.name}');
     return null;
@@ -133,6 +139,41 @@ Future<ExternalSelection?> _pickThroughService(
   } finally {
     provider?.dispose();
   }
+}
+
+/// Copies a picked Google Photos selection into [parentViewId] as ordinary
+/// files and returns how many arrived.
+///
+/// Google lends picked photos only until the picking session expires, so a
+/// copy is the only way a selection is still there afterwards.
+Future<int> keepPickedPhotos(
+  BuildContext context, {
+  required String parentViewId,
+  required CollectionSource picked,
+}) async {
+  final nodes = await _readSelection(picked);
+  if (!context.mounted) {
+    return 0;
+  }
+  if (nodes == null || nodes.isEmpty) {
+    showToastNotification(
+      message: LocaleKeys.providers_import_nothing.tr(),
+      type: ToastificationType.warning,
+    );
+    return 0;
+  }
+  final kept = await _copyIn(
+    context,
+    parentViewId: parentViewId,
+    source: picked,
+    nodes: nodes,
+    label: picked.info.label,
+  );
+  if (kept > 0) {
+    // The downloads passed through the selection's cache; the files own them.
+    unawaited(ProviderCache.instance.evict(picked.cacheKey));
+  }
+  return kept;
 }
 
 /// Chooses ONE object out of a service, whichever way that service allows.

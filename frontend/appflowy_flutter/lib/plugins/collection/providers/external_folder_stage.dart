@@ -122,7 +122,7 @@ class _ExternalFolderStageState extends State<ExternalFolderStage> {
   Future<void> _reconnect(ProviderController live) async {
     final signedIn = await reconnectProviderAccount(
       context,
-      info: widget.source.info,
+      source: live.source,
     );
     if (signedIn && mounted && identical(controller, live)) {
       await live.refresh();
