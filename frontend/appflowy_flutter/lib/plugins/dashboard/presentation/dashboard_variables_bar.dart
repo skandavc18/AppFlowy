@@ -412,20 +412,28 @@ class _PickerChip extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '$label:',
-                    style: DashboardType.caption(palette),
-                  ),
-                  const SizedBox(width: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 180),
+                  // Both texts shorten in a narrow strip instead of
+                  // overflowing the chip.
+                  Flexible(
                     child: Text(
-                      value,
+                      '$label:',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: DashboardType.cardTitle(
-                        palette,
-                        color: palette.textPrimary,
+                      style: DashboardType.caption(palette),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 180),
+                      child: Text(
+                        value,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: DashboardType.cardTitle(
+                          palette,
+                          color: palette.textPrimary,
+                        ),
                       ),
                     ),
                   ),
@@ -483,11 +491,15 @@ class _ToggleChip extends StatelessWidget {
                   color: value ? palette.accent : palette.textMuted,
                 ),
                 const SizedBox(width: 7),
-                Text(
-                  label,
-                  style: DashboardType.cardTitle(
-                    palette,
-                    color: value ? palette.accent : palette.textSecondary,
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: DashboardType.cardTitle(
+                      palette,
+                      color: value ? palette.accent : palette.textSecondary,
+                    ),
                   ),
                 ),
               ],

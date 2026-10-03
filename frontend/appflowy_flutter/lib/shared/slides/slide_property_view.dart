@@ -284,11 +284,15 @@ class SlidePropertyView extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 7),
-                Text(
-                  name,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: palette.textPrimary,
+                Flexible(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: palette.textPrimary,
+                    ),
                   ),
                 ),
               ],
@@ -316,13 +320,15 @@ class SlidePropertyView extends StatelessWidget {
                     color: palette.textMuted,
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      color: palette.textPrimary,
+                  Flexible(
+                    child: Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: palette.textPrimary,
+                      ),
                     ),
                   ),
                 ],
@@ -351,15 +357,17 @@ class SlidePropertyView extends StatelessWidget {
                     color: palette.accent,
                   ),
                   const SizedBox(width: 6),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 150),
-                    child: Text(
-                      _fileNameOf(name),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12.5,
-                        color: palette.textPrimary,
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 150),
+                      child: Text(
+                        _fileNameOf(name),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: palette.textPrimary,
+                        ),
                       ),
                     ),
                   ),

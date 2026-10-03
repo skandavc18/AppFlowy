@@ -438,13 +438,15 @@ class _Attachments extends StatelessWidget {
                         color: theme.iconRest,
                       ),
                       const SizedBox(width: EmailMetrics.space2),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 220),
-                        child: Text(
-                          part.filename ??
-                              LocaleKeys.collections_email_unnamedPart.tr(),
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.metaStrong,
+                      Flexible(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 220),
+                          child: Text(
+                            part.filename ??
+                                LocaleKeys.collections_email_unnamedPart.tr(),
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.metaStrong,
+                          ),
                         ),
                       ),
                       const SizedBox(width: EmailMetrics.space2),

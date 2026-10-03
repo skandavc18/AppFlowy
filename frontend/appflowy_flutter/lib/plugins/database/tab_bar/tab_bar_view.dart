@@ -78,6 +78,9 @@ abstract class DatabaseTabBarItemBuilder {
     DatabaseController controller,
   );
 
+  /// A grid or board grows with its rows instead of filling the box it is in.
+  bool get growsWithContent => false;
+
   /// Should be called in case a builder has resources it
   /// needs to dispose of.
   ///
@@ -105,8 +108,8 @@ class DatabaseTabBarView extends StatefulWidget {
   final Node? node;
   final bool showPageDecoration;
 
-  /// How tall this reading should stand when it is embedded and cannot shrink
-  /// to its content. Null falls back to the layout's own figure.
+  /// The embedding block's fixed height, tab header included. Null when the
+  /// block grows with its content.
   final double? embedHeight;
 
   /// Used to open a Row on plugin load
@@ -276,6 +279,7 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
         pageSettingBarExtensionFromState(context, state),
         wrapContent(
           layout: layout,
+          growsWithContent: tab.builder.growsWithContent,
           child: Padding(
             // Only the header carries the block's action gutter, so
             // only then does the content below need to line up with
@@ -372,14 +376,26 @@ class _DatabaseTabBarViewState extends State<DatabaseTabBarView> {
     );
   }
 
-  Widget wrapContent({required ViewLayoutPB layout, required Widget child}) {
+  Widget wrapContent({
+    required ViewLayoutPB layout,
+    required Widget child,
+    bool growsWithContent = false,
+  }) {
     if (widget.shrinkWrap) {
+      // The block frame is embedHeight tall and also holds the tab header.
+      if (widget.embedHeight != null) {
+        return Expanded(
+          child: growsWithContent
+              ? SingleChildScrollView(primary: false, child: child)
+              : child,
+        );
+      }
       if (layout.shrinkWrappable) {
         return child;
       }
 
       return SizedBox(
-        height: widget.embedHeight ?? layout.pluginHeight,
+        height: layout.pluginHeight,
         child: child,
       );
     }

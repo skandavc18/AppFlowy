@@ -308,9 +308,13 @@ class TablePropertyView extends StatelessWidget {
               children: [
                 TableAvatar(name: name, palette: palette),
                 const SizedBox(width: 7),
-                Text(
-                  name,
-                  style: TextStyle(fontSize: 13, color: palette.textPrimary),
+                Flexible(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, color: palette.textPrimary),
+                  ),
                 ),
               ],
             ),
@@ -437,13 +441,15 @@ class TablePropertyView extends StatelessWidget {
           children: [
             Icon(icon, size: 13, color: tint),
             const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 150),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12.5, color: palette.textPrimary),
+            Flexible(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 150),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12.5, color: palette.textPrimary),
+                ),
               ),
             ),
           ],

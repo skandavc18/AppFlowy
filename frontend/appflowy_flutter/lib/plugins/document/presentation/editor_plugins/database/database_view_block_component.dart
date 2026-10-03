@@ -207,9 +207,8 @@ class _DatabaseBlockComponentWidgetState
         view: view,
         showActions: false,
         node: widget.node,
-        // A reading that cannot shrink to its content is sized by a `SizedBox`
-        // inside the tab bar, so the dragged height has to reach it there —
-        // the outer box alone never gets past the tab bar's own Column.
+        // The tab bar fits its reading into what this height leaves under its
+        // header; null keeps a grid or board growing with its rows.
         embedHeight:
             givesHeight ? (_height ?? embeddedDatabaseViewHeight) : null,
       ),

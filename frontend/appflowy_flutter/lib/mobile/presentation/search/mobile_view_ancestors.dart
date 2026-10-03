@@ -113,26 +113,26 @@ extension ViewAncestorTextExtension on ViewAncestorState {
     final style = theme.textStyle.caption
         .standard(color: theme.textColorScheme.tertiary)
         .copyWith(letterSpacing: 0.1);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        HSpace(8),
-        Text(
-          '-',
-          style: style.copyWith(
-            color: theme.borderColorScheme.primaryHover,
-          ),
+    // One ellipsized line, so a squeezed path can never overflow its row.
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 8),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '-',
+              style: style.copyWith(
+                color: theme.borderColorScheme.primaryHover,
+              ),
+            ),
+            const WidgetSpan(child: SizedBox(width: 8)),
+            TextSpan(text: displayPath.join(' / ')),
+          ],
         ),
-        HSpace(8),
-        Flexible(
-          child: Text(
-            displayPath.join(' / '),
-            style: style,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
+        style: style,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     );
   }
 }

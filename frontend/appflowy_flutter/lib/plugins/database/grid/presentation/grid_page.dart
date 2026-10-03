@@ -58,6 +58,9 @@ class DesktopGridTabBarBuilderImpl extends DatabaseTabBarItemBuilder {
   final _toggleExtension = ToggleExtensionNotifier();
 
   @override
+  bool get growsWithContent => true;
+
+  @override
   Widget content(
     BuildContext context,
     ViewPB view,

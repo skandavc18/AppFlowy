@@ -30,6 +30,9 @@ import 'widgets/row/mobile_row.dart';
 
 class MobileGridTabBarBuilderImpl extends DatabaseTabBarItemBuilder {
   @override
+  bool get growsWithContent => true;
+
+  @override
   Widget content(
     BuildContext context,
     ViewPB view,

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:appflowy/mobile/presentation/search/mobile_view_ancestors.dart';
 import 'package:appflowy/workspace/application/recent/recent_views_bloc.dart';
 import 'package:appflowy/workspace/application/view/view_ext.dart';
@@ -80,20 +82,33 @@ class _SearchRecentViewCellState extends State<SearchRecentViewCell> {
               children: [
                 widget.icon,
                 HSpace(8),
-                Container(
-                  constraints: BoxConstraints(
-                    maxWidth: !widget.isNarrowWindow ? 480.0 : 680.0,
-                  ),
-                  child: Text(
-                    view.nameOrDefault,
-                    maxLines: 1,
-                    style: theme.textStyle.body
-                        .enhanced(color: theme.textColorScheme.primary)
-                        .copyWith(height: 22 / 14),
-                    overflow: TextOverflow.ellipsis,
+                // The name keeps priority; the path only gets what is left.
+                Flexible(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: math.min(
+                              widget.isNarrowWindow ? 680.0 : 480.0,
+                              constraints.maxWidth,
+                            ),
+                          ),
+                          child: Text(
+                            view.nameOrDefault,
+                            maxLines: 1,
+                            style: theme.textStyle.body
+                                .enhanced(color: theme.textColorScheme.primary)
+                                .copyWith(height: 22 / 14),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Flexible(child: buildPath(theme)),
+                      ],
+                    ),
                   ),
                 ),
-                Flexible(child: buildPath(theme)),
                 PaletteDeleteButton(
                   view: view,
                   visible: hovering || widget.isSelected,

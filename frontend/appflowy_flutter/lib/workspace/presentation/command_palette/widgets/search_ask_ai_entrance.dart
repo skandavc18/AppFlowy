@@ -210,37 +210,40 @@ class _AIOverview extends StatelessWidget {
             },
           ),
           VSpace(12),
-          SizedBox(
-            width: 143,
-            child: AFOutlinedButton.normal(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              borderRadius: 16,
-              builder: (context, hovering, disabled) {
-                return Row(
-                  children: [
-                    WorkspaceGlyph.svg(
-                      FlowySvgs.chat_ai_page_s,
-                      size: 20,
-                      color: theme.iconColorScheme.primary,
-                    ),
-                    HSpace(6),
-                    Text(
+          // Sized by its label, so a longer translation never overflows.
+          AFOutlinedButton.normal(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            borderRadius: 16,
+            builder: (context, hovering, disabled) {
+              return Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  WorkspaceGlyph.svg(
+                    FlowySvgs.chat_ai_page_s,
+                    size: 20,
+                    color: theme.iconColorScheme.primary,
+                  ),
+                  HSpace(6),
+                  Flexible(
+                    child: Text(
                       LocaleKeys.commandPalette_aiAskFollowUp.tr(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: theme.textStyle.body.enhanced(
                         color: theme.textColorScheme.primary,
                       ),
                     ),
-                  ],
-                );
-              },
-              onTap: () {
-                context.read<CommandPaletteBloc?>()?.add(
-                      CommandPaletteEvent.goingToAskAI(
-                        sources: summaries.first.sources,
-                      ),
-                    );
-              },
-            ),
+                  ),
+                ],
+              );
+            },
+            onTap: () {
+              context.read<CommandPaletteBloc?>()?.add(
+                    CommandPaletteEvent.goingToAskAI(
+                      sources: summaries.first.sources,
+                    ),
+                  );
+            },
           ),
         ],
       ),

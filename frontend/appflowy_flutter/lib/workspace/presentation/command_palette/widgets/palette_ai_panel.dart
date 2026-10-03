@@ -202,44 +202,53 @@ class _Header extends StatelessWidget {
       padding: EdgeInsets.only(bottom: theme.spacing.s),
       child: Row(
         children: [
-          ExcludeFocus(
-            child: TextButton.icon(
-              key: const ValueKey('command-palette-ai-model'),
-              onPressed: onPickModel,
-              style: WorkspaceChrome.controlStyle(context).copyWith(
-                minimumSize: const WidgetStatePropertyAll(Size(0, 28)),
-                padding: const WidgetStatePropertyAll(
-                  EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-              icon: WorkspaceGlyph(
-                Icons.auto_awesome_rounded,
-                size: 14,
-                color: palette.accent,
-              ),
-              label: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 220),
-                    child: Text(
-                      modelLabel,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textStyle.caption
-                          .enhanced(color: theme.textColorScheme.secondary),
+          // Takes what the trailing buttons leave, so a long model name
+          // shortens instead of pushing them out of a narrow palette.
+          Expanded(
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: ExcludeFocus(
+                child: TextButton.icon(
+                  key: const ValueKey('command-palette-ai-model'),
+                  onPressed: onPickModel,
+                  style: WorkspaceChrome.controlStyle(context).copyWith(
+                    minimumSize: const WidgetStatePropertyAll(Size(0, 28)),
+                    padding: const WidgetStatePropertyAll(
+                      EdgeInsets.symmetric(horizontal: 8),
                     ),
                   ),
-                  WorkspaceGlyph(
-                    Icons.arrow_drop_down_rounded,
-                    size: 16,
-                    color: palette.secondaryText,
+                  icon: WorkspaceGlyph(
+                    Icons.auto_awesome_rounded,
+                    size: 14,
+                    color: palette.accent,
                   ),
-                ],
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 220),
+                          child: Text(
+                            modelLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textStyle.caption.enhanced(
+                              color: theme.textColorScheme.secondary,
+                            ),
+                          ),
+                        ),
+                      ),
+                      WorkspaceGlyph(
+                        Icons.arrow_drop_down_rounded,
+                        size: 16,
+                        color: palette.secondaryText,
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-          const Spacer(),
           if (busy)
             _HeaderButton(
               key: const ValueKey('command-palette-ai-stop'),
